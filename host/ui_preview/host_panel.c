@@ -5744,12 +5744,18 @@ bool host_panel_web_login_temporary(uint8_t user)
  * draft, fr-CA made for 0.6.0, de-DE refused; the language it-IT, which the walk stores, isn't
  * installed. host_panel_lang_greek() adds a fifth, el-GR, ready, without words (its catalog is
  * empty: every phrase stays English) but with a font: a Greek body font, fixtures/font_greek_body.bin
- * (I18N-049; fixtures/README.md says how it was made). */
+ * (I18N-049; fixtures/README.md says how it was made). The test languages (en-XA, ar-XB) bring a
+ * headline font, fixtures/font_test_headline.bin: the image's headline holds only the shipped
+ * catalogs' letters and the letters pack has no headline part (docs/features/39 asset-packs.md),
+ * so their made-up accents would draw as boxes, wider than letters, and the walk would measure
+ * those instead of the words. */
 static bool s_lang_world;
 static bool s_lang_greek;
 static uint32_t s_lang_gen = 1u;
 static void *s_greek_font;
 static size_t s_greek_font_size;
+static void *s_test_headline;
+static size_t s_test_headline_size;
 
 void host_panel_lang_greek(bool on)
 {
@@ -5768,12 +5774,10 @@ void host_panel_zone_name(uint16_t zone, const char *name)
     }
 }
 
-/* The fixture's bytes, read once from next to this source file. */
-static bool greek_font_load(void)
+/* A fixture's bytes, read from next to this source file into buf; 0 when it can't be read or
+ * doesn't fit. */
+static size_t fixture_read(const char *name, uint8_t *buf, size_t cap)
 {
-    if (s_greek_font != NULL) {
-        return true;
-    }
     char path[512];
     const char *src = __FILE__;
     const char *slash = strrchr(src, '/');
@@ -5782,25 +5786,39 @@ static bool greek_font_load(void)
         slash = back;
     }
     const size_t dir = slash != NULL ? (size_t)(slash - src) + 1u : 0u;
-    if (dir + 32u >= sizeof(path)) {
-        return false;
+    if (dir + 48u >= sizeof(path)) {
+        return 0u;
     }
     memcpy(path, src, dir);
-    snprintf(path + dir, sizeof(path) - dir, "fixtures/font_greek_body.bin");
+    snprintf(path + dir, sizeof(path) - dir, "fixtures/%s", name);
     FILE *f = fopen(path, "rb");
     if (f == NULL) {
         fprintf(stderr, "cannot open %s\n", path);
-        return false;
+        return 0u;
     }
-    static uint8_t buf[16384];
-    const size_t n = fread(buf, 1, sizeof(buf), f);
+    const size_t n = fread(buf, 1, cap, f);
     fclose(f);
-    if (n == 0u || n == sizeof(buf)) {
-        return false;
+    return n == cap ? 0u : n;
+}
+
+/* The fixtures' bytes, read once. */
+static bool greek_font_load(void)
+{
+    static uint8_t buf[16384];
+    if (s_greek_font == NULL && (s_greek_font_size = fixture_read("font_greek_body.bin", buf, sizeof(buf))) > 0u) {
+        s_greek_font = buf;
     }
-    s_greek_font = buf;
-    s_greek_font_size = n;
-    return true;
+    return s_greek_font != NULL;
+}
+
+static bool test_headline_load(void)
+{
+    static uint8_t buf[131072];
+    if (s_test_headline == NULL &&
+        (s_test_headline_size = fixture_read("font_test_headline.bin", buf, sizeof(buf))) > 0u) {
+        s_test_headline = buf;
+    }
+    return s_test_headline != NULL;
 }
 
 void host_panel_lang_world(bool on)
@@ -5881,7 +5899,18 @@ static bool be_lang_font(void *ctx, const char *locale, const char *role, const 
                          size_t *size)
 {
     (void)ctx;
-    /* The one test font, for the body and for the label font a card's title is set in (a pixel
+    /* A test language's headline font (see "languages" above). */
+    const size_t len = strlen(locale);
+    if (strcmp(role, "headline") == 0 && len == 5u &&
+        (strcmp(locale + 2, "-XA") == 0 || strcmp(locale + 2, "-XB") == 0)) {
+        if (!test_headline_load()) {
+            return false;
+        }
+        *data = s_test_headline;
+        *size = s_test_headline_size;
+        return true;
+    }
+    /* The Greek test font, for the body and for the label font a card's title is set in (a pixel
      * smaller than the label: a test, not a picture of a real pack). */
     if (!s_lang_greek || strcmp(locale, "el-GR") != 0 ||
         (strcmp(role, "body") != 0 && strcmp(role, "label") != 0) || !greek_font_load()) {

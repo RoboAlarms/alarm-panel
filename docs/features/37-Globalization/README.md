@@ -421,7 +421,8 @@ language costs the image nothing.
 - **Preview and simulator:** a `-Locale <tag>` option for `ui_preview.ps1` and `ui_sim.ps1`; the walk
   in every shipped language and in `en-XA` and `ar-XB`, with the clipping check (I18N-022); the
   simulator switches language on Home and while an alarm shows (the change waits). A real
-  language (`es-US`) comes from the committed catalogs, a test language from `build/i18n/pseudo`;
+  language (`es-US`) comes from the committed catalogs, a test language from `build/i18n/pseudo`
+  and brings its own headline font for its made-up accents (I18N-049, `host/ui_preview/fixtures`);
   the walk finds a text by its translation under any context the template has, and through the
   pattern it came from (numbers, or one value at either end, as placeholders). The English walk
   is built with `I18N_NO_DRAFTS`, like a release, so a draft doesn't change its pictures.

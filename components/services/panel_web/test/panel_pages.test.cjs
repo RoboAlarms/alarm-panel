@@ -4395,8 +4395,9 @@ test('Software updates: each stage of an update has its own card, with the steps
     assert.ok(text(card).includes('Checking for updates') && /data-update="check" disabled/.test(card));
     card = await show({check: 'failed', checkReason: 'The update server can’t be reached'}, {});
     assert.ok(text(card).includes('Couldn’t check for updates') && text(card).includes('The update server can’t be reached.'));
-    // the bar is the exit time's timebar and never moves by itself
-    const css = read('panel.css'), mine = css.slice(css.indexOf('BL-188'), css.indexOf('@media', css.indexOf('BL-188')));
+    // the bar is the exit time's timebar and never moves by itself. The section is found by its
+    // comment, which the shipped (minified) file no longer has: read the source.
+    const css = readFileSync(path.join(dir, 'panel.css'), 'utf8'), mine = css.slice(css.indexOf('BL-188'), css.indexOf('@media', css.indexOf('BL-188')));
     assert.ok(mine.length > 200 && !/animation|transition/.test(mine), 'nothing animates');
     // a plain check has no steps and no Stop; the page says each step once, in a hidden status line
     const page = (await u.page()).html;

@@ -1,0 +1,52 @@
+<component>
+	<!-- A time of day and the days it holds for (BL-168, Settings > Automations "At a time of
+	     day"): the clock sheet's time_rollers beside seven day_toggles in the region's week order,
+	     and under them the whole sentence the list will show ("Runs on weekdays at 11:00 PM"), or
+	     in amber what is missing. ui_forms.c (ui_time_sheet_open) fills it and dims "time_ok"
+	     while it can't be used; Done calls ui_on_sheet_done, Cancel ui_on_sheet_cancel. -->
+	<view extends="box" width="100%" height="100%" clickable="true">
+		<style name="style_backdrop" />
+		<box name="time_card" width="880" height="content" align="center">
+			<style name="style_sheet_card" />
+			<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
+				<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="2">
+					<lv_label width="100%" long_mode="dots" bind_text="subject_sheet_title" style_text_font="font_title" />
+					<lv_label width="100%" long_mode="wrap" bind_text="subject_sheet_note" style_text_color="#color_text_2" />
+				</box>
+				<box name="time_cancel" width="content" clickable="true" ext_click_area="6">
+					<style name="style_button" />
+					<style name="style_button_pressed" selector="pressed" />
+					<event_cb callback="ui_on_sheet_cancel" trigger="clicked" />
+					<lv_label text="Cancel" />
+				</box>
+				<box name="time_ok" width="content" clickable="true" ext_click_area="6">
+					<style name="style_button" />
+					<style name="style_button_primary" />
+					<style name="style_button_tone_pressed" selector="pressed" />
+					<style name="style_disabled" selector="disabled" />
+					<event_cb callback="ui_on_sheet_done" trigger="clicked" />
+					<lv_label text="Done" />
+				</box>
+			</box>
+			<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_xxl" style_pad_top="#space_sm">
+				<time_rollers name="time_at" roll_w="#roller_w" ampm_w="#roller_ampm_w" />
+				<box width="content" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="#space_sm">
+					<!-- tr-context: the days an automation runs on -->
+					<lv_label text="Days" style_text_font="font_caption" style_text_color="#color_text_2" />
+					<box width="content" height="content" style_layout="flex" style_flex_flow="row" style_pad_column="#space_sm">
+						<day_toggle name="day_1" />
+						<day_toggle name="day_2" />
+						<day_toggle name="day_3" />
+						<day_toggle name="day_4" />
+						<day_toggle name="day_5" />
+						<day_toggle name="day_6" />
+						<day_toggle name="day_7" />
+					</box>
+				</box>
+			</box>
+			<box width="100%" height="content" style_border_side="top" style_border_width="1" style_border_color="#color_line" style_pad_top="#space_md" style_pad_left="#space_xs" style_pad_right="#space_xs">
+				<lv_label name="time_result" width="100%" long_mode="wrap" text="" style_text_font="font_label" />
+			</box>
+		</box>
+	</view>
+</component>

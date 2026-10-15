@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 600" width="1024" height="600">
+<rect width="1024" height="600" fill="#0a0e13"/>
+<rect x="0" y="0" width="96" height="600" rx="0" fill="#0c1117" fill-opacity="1.0"/>
+<rect x="28" y="22" width="40" height="40" rx="10" fill="#5aa0ff" fill-opacity="0.2"/>
+<text x="48" y="50" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="26" font-weight="800" fill="#5aa0ff" text-anchor="middle">R</text>
+<text x="48" y="110" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="24" font-weight="400" fill="#8b98a5" text-anchor="middle">◇</text>
+<text x="48" y="136" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="middle">Home</text>
+<text x="48" y="186" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="24" font-weight="400" fill="#8b98a5" text-anchor="middle">▦</text>
+<text x="48" y="212" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="middle">Zones</text>
+<text x="48" y="262" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="24" font-weight="400" fill="#8b98a5" text-anchor="middle">↺</text>
+<text x="48" y="288" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="middle">Activity</text>
+<text x="48" y="338" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="24" font-weight="400" fill="#8b98a5" text-anchor="middle">△</text>
+<text x="48" y="364" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="middle">Troubles</text>
+<text x="48" y="414" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="24" font-weight="400" fill="#8b98a5" text-anchor="middle">♪</text>
+<text x="48" y="440" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="middle">Chime</text>
+<text x="48" y="548" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="22" font-weight="400" fill="#f87171" text-anchor="middle">▲</text>
+<text x="48" y="572" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="600" fill="#f87171" text-anchor="middle">Panic</text>
+<rect x="120" y="12" width="380" height="40" rx="20" fill="#5aa0ff" fill-opacity="0.14"/>
+<text x="140" y="39" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="19" font-weight="600" fill="#5aa0ff" text-anchor="start">Installer · Arming off · Tap to leave</text>
+<text x="842" y="43" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="28" font-weight="600" fill="#e8edf2" text-anchor="start">12:52</text>
+<text x="920" y="43" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="15" font-weight="500" fill="#8b98a5" text-anchor="start">AM</text>
+<circle cx="978" cy="32" r="22" fill="#131a22" fill-opacity="1.0"/>
+<text x="978" y="39" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="18" font-weight="400" fill="#8b98a5" text-anchor="middle">⚙</text>
+<text x="120" y="90" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="26" font-weight="600" fill="#e8edf2" text-anchor="start">Settings</text>
+<circle cx="152" cy="138" r="18" fill="#5aa0ff" fill-opacity="0.16"/>
+<text x="152" y="144" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="700" fill="#5aa0ff" text-anchor="middle">☼</text>
+<text x="184" y="135" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="19" font-weight="600" fill="#e8edf2" text-anchor="start">Display and sound</text>
+<text x="184" y="155" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="start">Brightness and volume</text>
+<circle cx="152" cy="198" r="18" fill="#a78bfa" fill-opacity="0.16"/>
+<text x="152" y="204" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="700" fill="#a78bfa" text-anchor="middle">☺</text>
+<text x="184" y="195" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="19" font-weight="600" fill="#e8edf2" text-anchor="start">Users</text>
+<text x="184" y="215" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="start">Codes and who can do what</text>
+<circle cx="152" cy="258" r="18" fill="#5aa0ff" fill-opacity="0.16"/>
+<text x="152" y="264" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="700" fill="#5aa0ff" text-anchor="middle">≋</text>
+<text x="184" y="255" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="19" font-weight="600" fill="#e8edf2" text-anchor="start">Wi-Fi</text>
+<text x="184" y="275" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="start">Network and signal</text>
+<circle cx="152" cy="318" r="18" fill="#34d399" fill-opacity="0.16"/>
+<text x="152" y="324" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="700" fill="#34d399" text-anchor="middle">◷</text>
+<text x="184" y="315" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="19" font-weight="600" fill="#e8edf2" text-anchor="start">Date and time</text>
+<text x="184" y="335" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="start">Time zone, 24-hour clock</text>
+<circle cx="152" cy="378" r="18" fill="#a78bfa" fill-opacity="0.16"/>
+<text x="152" y="384" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="700" fill="#a78bfa" text-anchor="middle">⌂</text>
+<text x="184" y="375" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="19" font-weight="600" fill="#e8edf2" text-anchor="start">Integrations</text>
+<text x="184" y="395" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="start">Smart home and notifications</text>
+<circle cx="152" cy="438" r="18" fill="#34d399" fill-opacity="0.16"/>
+<text x="152" y="444" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="700" fill="#34d399" text-anchor="middle">≡</text>
+<text x="184" y="435" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="19" font-weight="600" fill="#e8edf2" text-anchor="start">Event log</text>
+<text x="184" y="455" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="start">Everything the panel did</text>
+<rect x="120" y="470" width="300" height="56" rx="14" fill="#1a2330" fill-opacity="1.0"/>
+<circle cx="152" cy="498" r="18" fill="#f5b93b" fill-opacity="0.16"/>
+<text x="152" y="504" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="700" fill="#f5b93b" text-anchor="middle">✎</text>
+<text x="184" y="495" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="19" font-weight="600" fill="#e8edf2" text-anchor="start">Installer</text>
+<text x="184" y="515" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="start">Zones, delays, codes, reset</text>
+<circle cx="152" cy="558" r="18" fill="#f87171" fill-opacity="0.16"/>
+<text x="152" y="564" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="700" fill="#f87171" text-anchor="middle">i</text>
+<text x="184" y="555" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="19" font-weight="600" fill="#e8edf2" text-anchor="start">About</text>
+<text x="184" y="575" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="14" font-weight="400" fill="#8b98a5" text-anchor="start">Storage and system</text>
+<circle cx="466" cy="94" r="22" fill="#131a22" fill-opacity="1.0"/>
+<text x="466" y="101" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="26" font-weight="600" fill="#e8edf2" text-anchor="middle">‹</text>
+<text x="500" y="92" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="27" font-weight="600" fill="#e8edf2" text-anchor="start">Z-Wave</text>
+<text x="500" y="120" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="18" font-weight="400" fill="#8b98a5" text-anchor="start">Sensors paired to the panel's Z-Wave radio</text>
+<rect x="444" y="136" width="556" height="64" rx="14" fill="#131a22" fill-opacity="1.0"/>
+<circle cx="484" cy="168.0" r="20" fill="#34d399" fill-opacity="0.16"/>
+<text x="484" y="174.0" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="700" fill="#34d399" text-anchor="middle">Z</text>
+<text x="514" y="165.0" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="20" font-weight="600" fill="#e8edf2" text-anchor="start">Radio · Working</text>
+<text x="514" y="186.0" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="15" font-weight="400" fill="#8b98a5" text-anchor="start">United States · 5 devices</text>
+<text x="980" y="176.0" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="24" font-weight="400" fill="#5c6773" text-anchor="middle">›</text>
+<rect x="0" y="0" width="1024" height="600" rx="0" fill="#000000" fill-opacity="0.55"/>
+<rect x="232" y="130" width="560" height="340" rx="26" fill="#10161d" fill-opacity="1.0" stroke="#222c38" stroke-width="1.5"/>
+<text x="258" y="180" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="27" font-weight="600" fill="#e8edf2" text-anchor="start">Reset the Z-Wave network?</text>
+<circle cx="746" cy="180" r="22" fill="#131a22" fill-opacity="1.0"/>
+<text x="746" y="187" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="16" font-weight="400" fill="#8b98a5" text-anchor="middle">✕</text>
+<text x="258" y="230" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="400" fill="#e8edf2" text-anchor="start">All 5 devices lose the panel. Each one must be reset</text>
+<text x="258" y="256" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="17" font-weight="400" fill="#e8edf2" text-anchor="start">and added again, and their zones show CHECK until then.</text>
+<rect x="258" y="320" width="508" height="56" rx="14" fill="#f87171" fill-opacity="0.07" stroke="#f87171" stroke-width="1.5"/>
+<text x="512.0" y="355.0" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="20" font-weight="600" fill="#f87171" text-anchor="middle">!  Reset the network</text>
+<rect x="258" y="388" width="508" height="56" rx="14" fill="#8b98a5" fill-opacity="0.07" stroke="#8b98a5" stroke-width="1.5"/>
+<text x="512.0" y="423.0" font-family="Inter, 'Segoe UI', Arial, sans-serif" font-size="20" font-weight="600" fill="#8b98a5" text-anchor="middle">Cancel</text>
+</svg>

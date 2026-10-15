@@ -1,0 +1,43 @@
+menu "Zone source: Z-Wave sensors (zwave_service)"
+
+    config ALARM_ZSRC_ZWAVE
+        bool "Zone source: Z-Wave sensors through a Zooz ZAC93"
+        default n
+        help
+            Off-the-shelf Z-Wave door and window contacts, motion, water, smoke, CO and other
+            sensors added straight to the panel through a Zooz ZAC93 module on a UART
+            (docs/features/36): encrypted with Security 2, supervised by their check-ins, with
+            tamper and low battery, working with no Wi-Fi and no Home Assistant. The panel runs
+            its own Z-Wave host (components/core/zwave_host) and is its network's only
+            controller.
+
+            Needs PSRAM: the network's state is about 160 KB. The radio stays off until a place
+            is chosen (`zwave place socket|j7` on the console, or the Flasher): until then no
+            pin is touched. Every board's manifest states this option: the CrowPanel P4's turns
+            it on (docs/features/36 Z9); a board without PSRAM leaves it off.
+
+    if ALARM_ZSRC_ZWAVE
+    config ALARM_ZWAVE_S0
+        bool "Allow the older S0 security (phase 3, not built yet)"
+        default n
+        help
+            Reserved for docs/features/36 phase 3 (security.md §10): devices that only speak S0.
+            The host grants no S0 key in this firmware whatever this says.
+
+    config ALARM_ZWAVE_LR
+        bool "Z-Wave Long Range (phase 3, not built yet)"
+        default n
+        help
+            Reserved for docs/features/36 phase 3 (network.md §13): 16-bit node IDs and the Long
+            Range node list at start-up where the region has it. Off: classic Z-Wave only.
+
+    config ALARM_ZWAVE_UART_NUM
+        int "UART controller for the ZAC93"
+        range 1 4
+        default 3
+        help
+            UART0 is the service console and UART2 the ESP32-H2 sensor radio's
+            (docs/features/20); the ZAC93 takes UART3 (docs/features/36 hardware.md §4).
+    endif
+
+endmenu

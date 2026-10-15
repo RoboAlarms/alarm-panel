@@ -1,0 +1,21 @@
+<component>
+	<!-- One trouble: what, where, and whether it has already restored. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE1B4;" help="Lucide glyph" />
+		<prop name="title" type="string" default="AC power lost" help="Trouble" />
+		<prop name="detail" type="string" default="Panel" help="Where / state" />
+	</api>
+
+	<styles>
+		<style name="style_trouble_row" width="100%" height="56" bg_color="#color_surface" bg_opa="100%" radius="#radius_md" border_width="1" border_color="#color_line" pad_left="#space_md" pad_right="#space_lg" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_md" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_trouble_row" />
+		<icon_chip name="chip" glyph="$glyph" size="40" font="icons_20" color="#color_amber" />
+		<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="0">
+			<lv_label name="title_label" width="100%" long_mode="dots" text="$title" style_text_font="font_label" />
+			<lv_label name="detail_label" width="100%" long_mode="dots" text="$detail" style_text_font="font_caption" style_text_color="#color_text_2" />
+		</box>
+	</view>
+</component>

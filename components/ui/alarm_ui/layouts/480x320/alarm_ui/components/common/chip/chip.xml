@@ -1,0 +1,19 @@
+<component>
+	<!-- Toggle pill bound two-way to a 0/1 subject (arming options). 36 px tall; the extended
+	     click area makes it a 48 px target. -->
+	<api>
+		<prop name="text" type="string" default="No entry delay" help="Caption" />
+		<prop name="subject" type="subject" help="0/1 subject" />
+	</api>
+
+	<styles>
+		<style name="style_chip" height="36" radius="#radius_full" border_width="1" border_color="#color_line" pad_left="#space_md" pad_right="#space_md" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" text_font="font_caption" text_color="#color_text_2" />
+		<style name="style_chip_checked" bg_color="#color_blue" bg_opa="18%" border_color="#color_blue" text_color="#color_text" />
+	</styles>
+
+	<view extends="box" width="content" clickable="true" checkable="true" ext_click_area="6" bind_checked="$subject">
+		<style name="style_chip" />
+		<style name="style_chip_checked" selector="checked" />
+		<lv_label text="$text" />
+	</view>
+</component>

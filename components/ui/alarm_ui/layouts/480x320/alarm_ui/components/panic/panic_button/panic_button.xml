@@ -1,0 +1,32 @@
+<component>
+	<!-- Emergency button: press and hold; the ring fills over 2 s (ui_app.c drives it).
+	     Presses bubble up to the instance, which the screen wires to ui_on_panic. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE2EF;" help="Lucide glyph (icons_40 set)" />
+		<prop name="text" type="string" default="Police" help="Caption" />
+		<prop name="color" type="color" default="#color_red" help="Tone" />
+	</api>
+
+	<styles>
+		<style name="style_panic_ring" arc_width="8" arc_opa="0%" />
+		<style name="style_panic_ring_indicator" arc_width="8" arc_rounded="true" />
+		<style name="style_panic_button" width="84" height="84" radius="#radius_full" bg_opa="16%" border_width="2" border_opa="50%" />
+		<style name="style_panic_button_pressed" bg_opa="40%" transform_width="-4" transform_height="-4" />
+	</styles>
+
+	<view extends="box" width="content" height="content" style_layout="flex" style_flex_flow="column" style_flex_cross_place="center" style_flex_track_place="center" style_pad_row="#space_sm">
+		<box name="ring_box" width="104" height="104" event_bubble="true">
+			<lv_arc name="progress" width="100%" height="100%" bg_start_angle="0" bg_end_angle="360" rotation="270" min_value="0" max_value="100" value="0" clickable="false" style_arc_color-indicator="$color">
+				<style name="style_panic_ring" />
+				<style name="style_panic_ring_indicator" selector="indicator" />
+				<style name="style_knob_off" selector="knob" />
+			</lv_arc>
+			<box name="button" align="center" clickable="true" event_bubble="true" press_lock="true" style_bg_color="$color" style_border_color="$color">
+				<style name="style_panic_button" />
+				<style name="style_panic_button_pressed" selector="pressed" />
+				<lv_label align="center" text="$glyph" style_text_font="icons_40" style_text_color="$color" />
+			</box>
+		</box>
+		<lv_label text="$text" style_text_font="font_label" />
+	</view>
+</component>

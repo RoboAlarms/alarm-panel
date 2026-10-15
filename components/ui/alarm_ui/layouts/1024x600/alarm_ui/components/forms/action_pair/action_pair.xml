@@ -1,0 +1,16 @@
+<component>
+	<!-- Two actions side by side, each half the width: the code reads "No, reject" on the left and
+	     "Yes, allow" on the right. The code puts a row_button in "left" and one in "right". -->
+	<api>
+	</api>
+
+	<styles>
+		<style name="style_action_pair" width="100%" height="content" layout="flex" flex_flow="row" flex_cross_place="start" flex_track_place="start" pad_column="#space_md" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_action_pair" />
+		<box name="left" flex_grow="1" height="content" />
+		<box name="right" flex_grow="1" height="content" />
+	</view>
+</component>

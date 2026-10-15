@@ -1,0 +1,5 @@
+version: "0.1.0"
+description: "MQTT messages for the alarm panel: JSON, commands, Home Assistant discovery, store-and-forward (C11, no heap)"
+dependencies:
+  idf:
+    version: ">=6.1"

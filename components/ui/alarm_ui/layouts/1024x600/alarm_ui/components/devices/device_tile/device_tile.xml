@@ -1,0 +1,38 @@
+<component>
+	<!-- Smart Home (docs/features/24, BL-045): one device, its icon tinted by state, its name and
+	     its state in words. One cell: the chip over the words, a tap does what a tap can do.
+	     ui_devices.c widens a tile to two cells (device_wide_w) and lays "top" out as a row with the
+	     control under it (device_level, device_stepper, device_keys). "more" is the arrow to the
+	     detail sheet, the tile's corner. Nothing moves: a dimmed chip says an action is under way. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE1C2;" help="Lucide glyph of the device's kind" />
+		<prop name="title" type="string" default="Porch Light" help="Device name" />
+		<prop name="detail" type="string" default="On" help="State in words" />
+	</api>
+
+	<styles>
+		<style name="style_device_tile" width="#device_cell_w" height="#device_cell_h" bg_color="#color_surface" bg_opa="100%" radius="#radius_lg" pad_left="#space_lg" pad_right="#space_lg" pad_top="#space_md" pad_bottom="#space_md" layout="flex" flex_flow="column" flex_main_place="space_between" />
+		<style name="style_device_tile_pressed" bg_color="#color_raised" />
+	</styles>
+
+	<view extends="box" clickable="true">
+		<style name="style_device_tile" />
+		<style name="style_device_tile_pressed" selector="pressed" />
+		<!-- As laid out here, a wide tile's: the chip beside the words, clear of the arrow. A
+		     one-cell tile's is a column, the chip over the words (ui_devices.c). -->
+		<box name="top" width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md" style_pad_right="40">
+			<icon_chip name="chip" glyph="$glyph" size="48" font="icons_28" color="#color_text_3" />
+			<box name="words" flex_grow="1" height="content" style_layout="flex" style_flex_flow="column">
+				<!-- Whole lines of their fonts, so LVGL ends a long name or state with "..." in place
+				     (BL-184): the name one line (device_name_h); ui_devices.c gives a wide tile
+				     without a control under it two (device_name_two_h). The stored name is kept
+				     whole; a long press opens the sheet that shows it. -->
+				<lv_label name="title_label" width="100%" height="#device_name_h" long_mode="dots" text="$title" style_text_font="font_label" style_text_line_space="0" />
+				<lv_label name="detail_label" width="100%" height="#device_state_h" long_mode="dots" text="$detail" style_text_font="font_caption" style_text_line_space="0" style_text_color="#color_text_2" />
+			</box>
+		</box>
+		<box name="more" width="64" height="72" align="top_right" x="16" y="-12" floating="true" clickable="true">
+			<lv_label align="center" text="&#xE06F;" style_text_font="icons_20" style_text_color="#color_text_3" />
+		</box>
+	</view>
+</component>

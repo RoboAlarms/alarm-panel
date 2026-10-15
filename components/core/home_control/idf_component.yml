@@ -1,0 +1,5 @@
+version: "0.1.0"
+description: "Devices: the device source interface, the registry, security classes, Home Assistant as a source (C11, no heap, no RTOS)"
+dependencies:
+  idf:
+    version: ">=6.1"

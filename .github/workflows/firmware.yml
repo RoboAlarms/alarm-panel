@@ -1,0 +1,67 @@
+name: firmware
+
+# Every finished board's firmware builds from the same components, and each image fits its OTA
+# slot with room to grow (docs/features/33 step 10, docs/features/19 CYD-013). The images are signed with a
+# key made for this run only: CI images are for checking, never for a panel (a panel accepts only
+# images signed with its builder's key, which never leaves secrets/ on the builder's PC).
+#
+# The 4" E32R40T (firmware/e32r40t) is left out while its feature is blocked (docs/features/19,
+# decided 2026-09-24): CI neither builds it nor holds it to the 85 % size limit, and since its
+# 480x320 layout fell behind the 7"'s UI its image no longer builds (CONTRIBUTING.md). When
+# docs/features/19 resumes, add it back:
+#           - project: e32r40t
+#             options: ""
+#             build_dir: build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: espressif/idf:v6.1
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: crowpanel_p4
+            options: --chip-rev v1
+            build_dir: build_v1
+          - project: crowpanel_p4
+            options: --chip-rev v3
+            build_dir: build_v3
+          # The 10.1" is built on the 7"'s firmware (ALARM_BOARD_BASE): one silicon is enough to
+          # show it builds and fits.
+          - project: crowpanel_10
+            options: --chip-rev v1
+            build_dir: build_v1
+    name: ${{ matrix.project }} ${{ matrix.options }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - name: A signing key for this run only
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          . "$IDF_PATH/export.sh" >/dev/null
+          mkdir -p secrets
+          espsecure generate-signing-key --version 2 --scheme rsa3072 secrets/ota_signing_key.pem
+      - name: Registry components (the Zigbee library is 170 MB)
+        uses: actions/cache@v4
+        with:
+          path: firmware/${{ matrix.project }}/managed_components
+          key: managed-${{ matrix.project }}-${{ matrix.build_dir }}-${{ hashFiles(format('firmware/{0}/dependencies.lock', matrix.project)) }}
+      - name: Build
+        run: tools/idf.sh --project ${{ matrix.project }} ${{ matrix.options }} build
+      - name: Image size against the OTA slot, static RAM
+        run: |
+          . "$IDF_PATH/export.sh" >/dev/null
+          python tools/check_image_size.py firmware/${{ matrix.project }}/${{ matrix.build_dir }} --ram
+      - name: Where the image's bytes go (OPT-003)
+        if: matrix.project == 'crowpanel_p4' && matrix.build_dir == 'build_v1'
+        run: |
+          python tools/size_report.py firmware/crowpanel_p4/build_v1 --markdown \
+            --fonts components/ui/alarm_ui/layouts/1024x600/alarm_ui/fonts \
+            --summary "$GITHUB_STEP_SUMMARY"

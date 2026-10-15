@@ -1,0 +1,23 @@
+<component>
+	<!-- A section of Settings: on the 4" screen an icon tab in the row above the page (the
+	     page title names the section). The title and subtitle stay in the API, shared with
+	     the 7" layout's list, and are not drawn here. Nine tabs of 42 px fill the row's 392. The screen binds the selected style and
+	     the click. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE178;" help="Lucide glyph" />
+		<prop name="title" type="string" default="Display and sound" help="Section" />
+		<prop name="subtitle" type="string" default="Brightness, volume, clock" help="What it holds" />
+		<prop name="color" type="color" default="#color_blue" help="Tone of the icon" />
+	</api>
+
+	<styles>
+		<style name="style_settings_item" width="42" height="44" radius="#radius_md" />
+		<style name="style_settings_item_pressed" bg_color="#color_pressed" bg_opa="100%" />
+	</styles>
+
+	<view extends="box" clickable="true" ext_click_area="2">
+		<style name="style_settings_item" />
+		<style name="style_settings_item_pressed" selector="pressed" />
+		<lv_label align="center" text="$glyph" style_text_font="icons_20" style_text_color="$color" />
+	</view>
+</component>

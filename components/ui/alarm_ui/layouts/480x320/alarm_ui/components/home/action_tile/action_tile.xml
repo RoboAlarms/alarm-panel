@@ -1,0 +1,23 @@
+<component>
+	<!-- One large action (disarm, clear alarm memory, end walk test). The title and subtitle
+	     are subjects so the tile can say "Cancel arming" during exit time. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE10C;" help="Lucide glyph (icons_40 set)" />
+		<prop name="title" type="subject" help="String subject: action" />
+		<prop name="subtitle" type="subject" help="String subject: detail" />
+		<prop name="color" type="color" default="#color_green" help="Tone" />
+	</api>
+
+	<styles>
+		<style name="style_action_tile" bg_color="#color_surface" bg_opa="100%" radius="#radius_xl" border_width="1" border_color="#color_line" pad_all="#space_xl" layout="flex" flex_flow="column" flex_main_place="center" flex_cross_place="center" flex_track_place="center" pad_row="#space_md" />
+		<style name="style_action_tile_pressed" bg_color="#color_raised" transform_width="-3" transform_height="-3" />
+	</styles>
+
+	<view extends="box" clickable="true">
+		<style name="style_action_tile" />
+		<style name="style_action_tile_pressed" selector="pressed" />
+		<icon_chip glyph="$glyph" size="88" font="icons_40" color="$color" style_margin_bottom="#space_xs" />
+		<lv_label width="100%" long_mode="wrap" bind_text="$title" style_text_font="font_headline" style_text_align="center" />
+		<lv_label width="100%" long_mode="wrap" bind_text="$subtitle" style_text_align="center" style_text_color="#color_text_2" />
+	</view>
+</component>

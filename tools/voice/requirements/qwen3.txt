@@ -1,0 +1,2 @@
+# Qwen3-TTS 1.7B (it pins its own transformers, 4.57.3)
+qwen-tts==0.1.1

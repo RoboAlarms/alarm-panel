@@ -1,0 +1,41 @@
+<component>
+	<!-- The arming level as one row of three 64 px keys (BL-170, the "Arm the panel" sheet,
+	     drawing automation-arm): Away, Stay and Night with the arming tiles' glyphs; the chosen
+	     one is tinted in its level's tone (rose, blue, violet), a 2 px edge in that tone. Not
+	     common/segment (44 px, words only). ui_auto_edit.c marks the chosen key "checked" and
+	     answers each key's tap; it changes at once, with no transition (UI-020). -->
+	<styles>
+		<style name="style_arm_level" flex_grow="1" height="100%" radius="#radius_md" bg_color="#color_raised" bg_opa="100%" text_color="#color_text" layout="flex" flex_flow="row" flex_main_place="center" flex_cross_place="center" flex_track_place="center" pad_column="#space_sm" />
+		<style name="style_arm_level_pressed" bg_color="#color_pressed" />
+		<style name="style_arm_level_away" bg_color="#color_rose" bg_opa="20%" border_width="2" border_color="#color_rose" text_color="#color_rose" />
+		<style name="style_arm_level_stay" bg_color="#color_blue" bg_opa="20%" border_width="2" border_color="#color_blue" text_color="#color_blue" />
+		<style name="style_arm_level_night" bg_color="#color_violet" bg_opa="20%" border_width="2" border_color="#color_violet" text_color="#color_violet" />
+	</styles>
+
+	<view extends="box" width="100%" height="64" style_layout="flex" style_flex_flow="row" style_pad_column="#space_sm">
+		<box name="level_away" clickable="true">
+			<style name="style_arm_level" />
+			<style name="style_arm_level_pressed" selector="pressed" />
+			<style name="style_arm_level_away" selector="checked" />
+			<lv_label text="&#xE10E;" style_text_font="icons_20" />
+			<!-- tr-context: arming mode -->
+			<lv_label text="Away" style_text_font="font_label" />
+		</box>
+		<box name="level_stay" clickable="true">
+			<style name="style_arm_level" />
+			<style name="style_arm_level_pressed" selector="pressed" />
+			<style name="style_arm_level_stay" selector="checked" />
+			<lv_label text="&#xE0F5;" style_text_font="icons_20" />
+			<!-- tr-context: arming mode -->
+			<lv_label text="Stay" style_text_font="font_label" />
+		</box>
+		<box name="level_night" clickable="true">
+			<style name="style_arm_level" />
+			<style name="style_arm_level_pressed" selector="pressed" />
+			<style name="style_arm_level_night" selector="checked" />
+			<lv_label text="&#xE11E;" style_text_font="icons_20" />
+			<!-- tr-context: arming mode -->
+			<lv_label text="Night" style_text_font="font_label" />
+		</box>
+	</view>
+</component>

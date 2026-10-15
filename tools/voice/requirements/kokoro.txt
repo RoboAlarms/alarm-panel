@@ -1,0 +1,5 @@
+# Kokoro-82M. transformers is pinned: unpinned, the resolver falls back to 4.12 (a
+# 2021 release whose tokenizers needs a Rust compiler) to fit the newest huggingface-hub.
+kokoro==0.9.4
+misaki[en]==0.9.4
+transformers==5.19.0

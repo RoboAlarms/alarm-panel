@@ -1,0 +1,16 @@
+<component>
+	<!-- A navigation rail entry that carries a state instead of a destination: its icon comes
+	     from a subject, so Chime shows a bell when it is on and a crossed-out bell when it is
+	     off. Tapping it acts; it never selects a view (UI-025). -->
+	<api>
+		<prop name="icon" type="subject" default="subject_chime_icon" help="String subject with the Lucide glyph" />
+		<prop name="text" type="string" default="Chime" help="Caption" />
+	</api>
+
+	<view extends="box" clickable="true">
+		<style name="style_nav_item" />
+		<style name="style_nav_item_pressed" selector="pressed" />
+		<lv_label bind_text="$icon" style_text_font="icons_28" />
+		<lv_label text="$text" width="100%" long_mode="dots" style_max_height="36" style_text_line_space="-2" style_text_align="center" style_text_font="font_caption" />
+	</view>
+</component>

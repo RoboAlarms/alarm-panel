@@ -1,0 +1,227 @@
+<globals>
+	<!-- Design system of the 4" alarm panel UI (480 x 320, resistive touch): the 7" layout's
+	     calm dark theme, tones, Inter typography and Lucide icons, scaled to a screen with a
+	     similar pixel density but a fifth of the area. Controls stay large for a finger pressing
+	     a resistive film: primary targets at least 56 px, any target 48 px including its
+	     extended click area (docs/features/19 CYD-010).
+	     Reference constants as #name. The subjects are the contract with the application and
+	     are the same as in components/ui/alarm_ui/layouts/1024x600/alarm_ui (tools/check_ui_contract.py checks it):
+	     components/ui/alarm_ui/src/ui_app.c writes them, the screens only read them. -->
+
+	<consts>
+		<!-- Spacing scale -->
+		<int name="space_xs" value="2" help="Tightest spacing" />
+		<int name="space_sm" value="4" help="Small spacing" />
+		<int name="space_md" value="8" help="Default gap between related items" />
+		<int name="space_lg" value="10" help="Gap between items and card padding on small cards" />
+		<int name="space_xl" value="12" help="Card padding and gap between cards" />
+		<int name="space_xxl" value="16" help="Section spacing" />
+
+		<!-- Shape -->
+		<int name="radius_sm" value="8" help="Small rounding (chips inside cards)" />
+		<int name="radius_md" value="12" help="Buttons and keys" />
+		<int name="radius_lg" value="14" help="Cards and tiles" />
+		<int name="radius_xl" value="18" help="Large panels" />
+		<int name="radius_full" value="32767" help="Pills and circles" />
+
+		<!-- Layout of the 480x320 screen -->
+		<int name="rail_w" value="72" help="Navigation rail width" />
+		<int name="bar_h" value="36" help="Status bar height" />
+		<int name="content_w" value="408" help="Screen width minus the rail" />
+		<int name="content_h" value="284" help="Screen height minus the status bar" />
+		<int name="pane_w" value="164" help="Width of Home's state card" />
+		<int name="key_w" value="80" help="Code pad key width" />
+		<int name="key_h" value="58" help="Code pad key height" />
+		<int name="keys_w" value="252" help="Three keys and two gaps" />
+		<int name="toast_x" value="36" help="Toast: offset from the screen's centre (the content's centre, right of the rail)" />
+		<int name="toast_y" value="-10" help="Toast: offset from the bottom" />
+		<int name="toast_kb_y" value="2" help="Toast while the keyboard is open: offset from the top. The keyboard fills the screen, so the toast lies over the sheet's title row, clear of every key (it takes no touch)" />
+
+		<!-- Surfaces and text: the Dark theme's; themes.xml has every theme's -->
+		<color name="color_bg" value="0x0B0F14" help="Screen background" />
+		<color name="color_rail" value="0x0E141B" help="Navigation rail" />
+		<color name="color_surface" value="0x141B24" help="Cards and tiles" />
+		<color name="color_raised" value="0x1C2531" help="Keys, buttons, selected items" />
+		<color name="color_pressed" value="0x2A3544" help="Pressed keys and buttons" />
+		<color name="color_line" value="0x232D3A" help="Card borders and separators" />
+		<color name="color_text" value="0xF1F5F9" help="Primary text" />
+		<color name="color_text_2" value="0x94A3B8" help="Secondary text" />
+		<color name="color_text_3" value="0x808DA0" help="Tertiary text, hints" />
+
+		<!-- Tones: every alarm state has one -->
+		<color name="color_green" value="0x34D399" help="Disarmed and ready" />
+		<color name="color_amber" value="0xFBBF24" help="Not ready, troubles, alarm memory" />
+		<color name="color_blue" value="0x60A5FA" help="Armed Stay" />
+		<color name="color_violet" value="0xA78BFA" help="Armed Night" />
+		<color name="color_rose" value="0xFB7185" help="Armed Away" />
+		<color name="color_orange" value="0xFB923C" help="Entry delay: disarm now" />
+		<color name="color_red" value="0xF87171" help="Alarms" />
+		<color name="color_alarm_bg" value="0x2A0B0E" help="Screen background during an alarm" />
+		<color name="color_on_tone" value="0x0B0F14" help="Text drawn on a tone colour" />
+		<color name="color_alarm_card" value="0x3A1216" help="The state card during an alarm" />
+		<color name="color_toast_line" value="0x3A4658" help="A toast's edge" />
+		<color name="color_knob" value="0xF1F5F9" help="A switch's and a slider's knob" />
+		<color name="color_key_special" value="0x232D3A" help="The keyboard's special keys" />
+		<opa name="opa_tint" value="16%" help="Tinted backgrounds (tone at 16 %)" />
+	</consts>
+
+	<!-- Inter (SIL OFL 1.1) and Lucide icons (ISC), compiled in as bitmap fonts. Flash is 4 MB,
+	     so only the 20 px set holds every icon; the 28 and 40 px sets hold just what is drawn that
+	     large (the state and setup icons, the action tiles, the panic buttons, the pad's keys), and
+	     there is no 96 px set. -->
+	<fonts>
+		<bin name="font_caption" src_path="fonts/Inter-Medium.ttf" size="13" bpp="4" range="0x20-0x7E" symbols="·–—…’" as_file="false" />
+		<bin name="font_body" src_path="fonts/Inter-Regular.ttf" size="15" bpp="4" range="0x20-0x7E" symbols="·–—…’" as_file="false" />
+		<bin name="font_label" src_path="fonts/Inter-SemiBold.ttf" size="16" bpp="4" range="0x20-0x7E" symbols="·–—…’" as_file="false" />
+		<bin name="font_title" src_path="fonts/Inter-SemiBold.ttf" size="20" bpp="4" range="0x20-0x7E" symbols="·–—…’•" as_file="false" />
+		<bin name="font_headline" src_path="fonts/InterDisplay-SemiBold.ttf" size="26" bpp="4" range="0x20-0x7E" symbols="·–—…’" as_file="false" />
+		<bin name="font_keypad" src_path="fonts/InterDisplay-Light.ttf" size="28" bpp="4" range="0x30-0x39" as_file="false" />
+		<bin name="font_digits" src_path="fonts/InterDisplay-Light.ttf" size="56" bpp="4" range="0x30-0x3A" as_file="false" />
+		<bin name="icons_20" src_path="fonts/lucide.ttf" size="20" bpp="4" range="0xE038,0xE053,0xE054,0xE055,0xE056,0xE057,0xE059,0xE05A,0xE06C,0xE06E,0xE06F,0xE077,0xE082,0xE084,0xE087,0xE08D,0xE0A1,0xE0A9,0xE0AE,0xE0B5,0xE0BA,0xE0BB,0xE0D2,0xE0E8,0xE0ED,0xE0EF,0xE0F5,0xE0F9,0xE0FD,0xE0FF,0xE101,0xE10B,0xE10C,0xE10D,0xE10E,0xE11C,0xE11E,0xE13D,0xE142,0xE145,0xE148,0xE153,0xE154,0xE158,0xE15A,0xE178,0xE17F,0xE186,0xE18E,0xE193,0xE19F,0xE1A2,0xE1A4,0xE1AB,0xE1AE,0xE1AF,0xE1B1,0xE1B2,0xE1B4,0xE1C2,0xE1E4,0xE1F5,0xE1F9,0xE1FE,0xE1FF,0xE200,0xE214,0xE224,0xE226,0xE241,0xE283,0xE284,0xE29A,0xE2EF,0xE304,0xE343,0xE345,0xE36E,0xE37F,0xE3AC,0xE3B9,0xE3D5,0xE3D6,0xE3E6,0xE402,0xE404,0xE412,0xE426,0xE445,0xE45F,0xE4A3,0xE531,0xE57B,0xE5F7,0xE5F8,0xE5F9,0xE63C" as_file="false" />
+		<bin name="icons_28" src_path="fonts/lucide.ttf" size="28" bpp="4" range="0xE06C,0xE0AE,0xE0D2,0xE0E8,0xE0F5,0xE10B,0xE10C,0xE10E,0xE11E,0xE158,0xE17F,0xE1AE,0xE1B1,0xE1FE,0xE1FF,0xE214,0xE224,0xE226,0xE2EF,0xE343,0xE36E,0xE3B9,0xE3D6,0xE412,0xE4A3" as_file="false" />
+		<bin name="icons_40" src_path="fonts/lucide.ttf" size="40" bpp="4" range="0xE0D2,0xE0E8,0xE0F5,0xE10B,0xE10C,0xE10E,0xE11E,0xE158,0xE17F,0xE1AE,0xE1B1,0xE1FE,0xE1FF,0xE214,0xE224,0xE226,0xE2EF,0xE343,0xE36E,0xE3B9,0xE3D6,0xE412,0xE4A3" as_file="false" />
+	</fonts>
+
+	<!-- The view model. ui_app.c computes these from the alarm engine's status snapshot. -->
+	<subjects>
+		<int name="subject_view" value="0" min_value="0" max_value="5" help="0 home, 1 zones, 2 activity, 3 troubles, 4 emergency, 5 settings" />
+		<int name="subject_panel" value="0" help="Right side of Home: 0 arm, 1 disarm, 2 code pad, 3 alarm memory, 4 walk test" />
+		<int name="subject_alarm_active" value="0" help="1 while an alarm sounds: red screen" />
+		<color name="subject_tone_color" value="0x34D399" help="Colour of the current state" />
+		<color name="subject_pad_color" value="0x34D399" help="Colour of the code pad's check key: the action" />
+		<string name="subject_hero_icon" value="&#xE1FF;" help="Lucide glyph of the current state" />
+		<string name="subject_headline" value="Disarmed" help="State in words" />
+		<string name="subject_detail" value="Ready to arm" help="What it means / what to do" />
+		<string name="subject_hero_note" value="All zones closed" help="Small print under the state" />
+		<int name="subject_countdown" value="0" help="Exit/entry seconds left, 0 = none" />
+		<int name="subject_countdown_pct" value="1000" min_value="0" max_value="1000" help="Ring fill, 0..1000" />
+		<string name="subject_disarm_title" value="Disarm" help="Title of the disarm tile" />
+		<string name="subject_disarm_note" value="Enter your code to disarm" help="Subtitle of the disarm tile" />
+		<string name="subject_memory_note" value="" help="Zones in alarm memory" />
+		<string name="subject_walk_count" value="" help="Walk test: how many zones it tested, of how many" />
+		<string name="subject_walk_left" value="" help="Walk test: how long until it ends" />
+		<string name="subject_walk_from" value="" help="Walk test: who started it and from where, when not at this panel (WALK-023)" />
+		<int name="subject_walk_from_on" value="0" help="1 = the walk test was started elsewhere: Home's card shows subject_walk_from" />
+		<int name="subject_walk_warn" value="0" help="1 = the walk test ends within 5 minutes (WALK-004): the time left in amber" />
+		<string name="subject_walk_banner" value="" help="The status bar's walk test banner (bar banner 4): a start from elsewhere, the end warning, the summary" />
+		<string name="subject_date" value="Saturday, September 19" help="Status bar date" />
+		<string name="subject_time" value="10:42" help="Clock" />
+		<string name="subject_ampm" value="PM" help="Clock suffix, empty in 24 h mode" />
+		<string name="subject_wifi_icon" value="&#xE1AE;" help="Lucide wifi glyph for the signal" />
+		<string name="subject_battery_icon" value="&#xE053;" />
+		<string name="subject_battery_text" value="" />
+		<int name="subject_battery_critical" value="1" />
+		<int name="subject_battery_warn" value="0" />
+		<int name="subject_wifi_ok" value="1" help="0 = offline" />
+		<int name="subject_trouble_count" value="0" help="Active troubles" />
+		<string name="subject_trouble_text" value="" help="Active troubles in words (screen saver)" />
+		<int name="subject_open_count" value="0" help="Faulted zones" />
+		<int name="subject_chime" value="0" help="Chime on" />
+		<int name="subject_default_codes" value="3" help="Factory codes still in use (bit 0 installer, bit 1 master)" />
+		<string name="subject_chime_icon" value="&#xE05A;" help="Lucide bell / bell-off: chime on or off" />
+		<string name="subject_pad_title" value="Arm Away" help="Code pad title" />
+		<string name="subject_pad_hint" value="Enter your code" help="Code pad hint or error" />
+		<string name="subject_pad_glyph" value="" help="Lucide glyph left of the pad's title" />
+		<int name="subject_pad_glyph_on" value="0" help="1 = show the glyph left of the title" />
+		<string name="subject_pad_note" value="" help="What the action does, in plain words" />
+		<int name="subject_pad_note_on" value="0" help="1 = show the note under the title" />
+		<int name="subject_pad_close_on" value="1" help="1 = show the pad's X (0: the Disarm pad that stays on Home while armed has nothing to go back to)" />
+		<int name="subject_modal_pad" value="0" help="1 = the code pad is open over the screen (chime, bypass, acknowledge)" />
+		<int name="subject_pad_dots_on" value="0" help="1 = the dots show in the hint's place (digits typed, no error)" />
+		<int name="subject_pad_digits" value="0" min_value="0" max_value="10" help="Digits typed (dots)" />
+		<int name="subject_pad_error" value="0" help="1 = hint shows an error" />
+		<int name="subject_pad_options" value="0" help="1 = show arming options" />
+		<int name="subject_pad_silence" value="0" help="1 = show Silence (fire, CO)" />
+		<int name="subject_opt_instant" value="0" help="Arm without entry delay" />
+		<int name="subject_opt_silent" value="0" help="Silent exit" />
+		<int name="subject_opt_silent_avail" value="1" help="1 = offer silent exit (Away only: Stay and Night exit time is silent anyway)" />
+		<int name="subject_locked" value="0" help="1 = armed or in alarm: Settings, chime, codes and acknowledging troubles are locked" />
+		<int name="subject_opt_bypass" value="0" help="Bypass open zones and arm" />
+		<int name="subject_opt_bypass_avail" value="0" help="1 = zones are open, offer the bypass option" />
+		<string name="subject_toast" value="" help="Toast text" />
+		<int name="subject_toast_visible" value="0" help="1 = toast shown" />
+		<string name="subject_zones_note" value="" help="Zones view summary" />
+		<int name="subject_zone_filter" value="0" min_value="0" max_value="3" help="0 all, 1 open, 2 bypassed, 3 trouble" />
+		<string name="subject_events_note" value="" help="Activity view summary" />
+		<string name="subject_troubles_note" value="" help="Troubles view summary: every active and restored trouble, counted" />
+		<int name="subject_troubles_empty" value="1" help="1 = no troubles to list" />
+		<int name="subject_zones_empty" value="0" min_value="0" max_value="1" help="1 = the Zones filter shows no zone" />
+		<int name="subject_troubles_pager" value="0" help="1 = more troubles than one page: show the pager" />
+		<string name="subject_troubles_page" value="" help="Which troubles are on screen, e.g. 49-60 of 60" />
+		<string name="subject_panic_report" value="" help="Emergency: what the panel can and can't pass on (never a promise of help)" />
+		<int name="subject_bar_banner" value="0" help="Status bar left side: 0 date, 1 factory-code banner, 2 installer-mode banner, 3 remote keypad, 4 walk test" />
+		<string name="subject_update_banner" value="" help="The status bar's update banner words (BL-188); this layout draws no banner yet" />
+		<string name="subject_update_banner_glyph" value="&#xE0B2;" help="The update banner's icon" />
+		<string name="subject_remote_banner" value="" help="The red remote keypad banner: who, and tap to pause" />
+
+		<!-- Settings (view 5) -->
+		<int name="subject_settings_section" value="0" help="0 screen and sound, 1 users, 2 Wi-Fi and network, 3 time and language, 4 integrations, 5 event log, 6 installer, 7 about, 8 walk test" />
+		<int name="subject_update_waiting" value="0" help="1 while an update waits (a newer version, or one downloaded): About's tag in the Settings list" />
+		<int name="subject_settings_pad" value="0" help="1 = the settings page shows the code pad" />
+		<string name="subject_page_title" value="Display and sound" help="Title of the settings page" />
+		<string name="subject_page_note" value="" help="Line under the page title" />
+		<int name="subject_page_back" value="0" help="1 = a sub-page is open: show Back" />
+		<int name="subject_busy" value="0" help="1 = working (scanning, connecting): spinner" />
+
+		<!-- Sheets over the screen -->
+		<int name="subject_sheet" value="0" help="0 none, 1 text entry, 2 choice list, 3 confirmation" />
+		<string name="subject_sheet_title" value="" help="Title of the open sheet" />
+		<string name="subject_sheet_note" value="" help="Explanation under the title" />
+		<string name="subject_sheet_ok" value="Done" help="Caption of the confirm button" />
+		<string name="subject_sheet_cancel" value="Cancel" help="Caption of the confirmation's cancel button" />
+		<int name="subject_sheet_eye" value="0" help="1 while the text sheet holds a password: its field ends in an eye" />
+		<int name="subject_sheet_shown" value="0" help="1 while the eye shows the password in the clear" />
+
+		<!-- First-boot setup -->
+		<int name="subject_wiz_step" value="0" min_value="0" max_value="5" help="0 welcome, 1 Wi-Fi, 2 time zone, 3 codes, 4 name, 5 done" />
+		<string name="subject_wiz_icon" value="&#xE412;" help="Lucide glyph of the step" />
+		<string name="subject_wiz_title" value="Welcome" help="Step title" />
+		<string name="subject_wiz_note" value="" help="What the step is for" />
+		<string name="subject_wiz_next" value="Start" help="Caption of the main button" />
+		<int name="subject_wiz_next_on" value="1" help="1 = the main button can be pressed" />
+		<int name="subject_wiz_back" value="0" help="1 = show Back" />
+		<int name="subject_wiz_exit" value="0" help="1 = show Leave setup (the panel is already set up)" />
+		<int name="subject_wiz_pad" value="0" help="1 = the step shows the code pad" />
+	</subjects>
+
+	<styles>
+		<!-- Screen: sets the inherited text colour and default font for everything. -->
+		<style name="style_screen" bg_color="#color_bg" bg_opa="100%" text_color="#color_text" text_font="font_body" pad_all="0" />
+		<style name="style_screen_alarm" bg_color="#color_alarm_bg" bg_grad_color="#color_bg" bg_grad_dir="ver" />
+		<style name="style_saver" bg_color="0x000000" bg_opa="100%" text_color="#color_text" text_font="font_body" pad_all="0" />
+
+		<!-- Surfaces -->
+		<style name="style_card" bg_color="#color_surface" bg_opa="100%" radius="#radius_lg" border_width="1" border_color="#color_line" />
+		<style name="style_pressable" bg_color="#color_raised" />
+		<style name="style_knob_off" bg_opa="0%" pad_all="0" />
+
+		<!-- Text roles -->
+		<style name="style_text_2" text_color="#color_text_2" />
+		<style name="style_text_3" text_color="#color_text_3" />
+		<style name="style_text_error" text_color="#color_red" />
+		<style name="style_text_warn" text_color="#color_amber" />
+
+		<!-- Selection -->
+		<style name="style_nav_item" width="64" height="48" radius="#radius_md" layout="flex" flex_flow="column" flex_main_place="center" flex_cross_place="center" flex_track_place="center" pad_row="1" text_color="#color_text_2" />
+		<style name="style_nav_item_pressed" bg_color="#color_pressed" bg_opa="100%" />
+		<style name="style_nav_active" bg_color="#color_raised" bg_opa="100%" text_color="#color_text" />
+		<style name="style_nav_on" text_color="#color_blue" />
+		<style name="style_segment_active" bg_color="#color_raised" bg_opa="100%" text_color="#color_text" />
+
+		<!-- Buttons -->
+		<style name="style_button" height="44" radius="#radius_full" bg_color="#color_raised" bg_opa="100%" pad_left="#space_xxl" pad_right="#space_xxl" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_sm" text_font="font_label" text_color="#color_text" />
+		<style name="style_button_pressed" bg_color="#color_pressed" />
+		<style name="style_button_primary" bg_color="#color_blue" text_color="#color_on_tone" />
+		<style name="style_button_danger" bg_color="#color_red" text_color="#color_on_tone" />
+		<style name="style_button_tone_pressed" bg_opa="80%" />
+		<style name="style_disabled" opa="40%" />
+
+		<!-- Sheets -->
+		<style name="style_backdrop" bg_color="0x000000" bg_opa="65%" />
+		<style name="style_sheet_card" bg_color="#color_surface" bg_opa="100%" radius="#radius_xl" border_width="1" border_color="#color_line" pad_all="#space_xl" layout="flex" flex_flow="column" pad_row="#space_md" />
+
+		<!-- First-boot setup: progress -->
+		<style name="style_step" width="20" height="5" radius="#radius_full" bg_color="#color_line" bg_opa="100%" />
+		<style name="style_step_on" bg_color="#color_blue" />
+	</styles>
+</globals>

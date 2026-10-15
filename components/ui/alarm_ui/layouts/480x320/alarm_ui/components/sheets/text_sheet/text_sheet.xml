@@ -1,0 +1,56 @@
+<component>
+	<!-- Text entry over the whole screen: title, one field ("sheet_text") and a keyboard
+	     ("sheet_kb") with keys about 42 x 46. ui_app.c installs the key layouts (Lucide glyphs
+	     on the special keys) and handles the keys; Done and Cancel call ui_on_sheet_done /
+	     ui_on_sheet_cancel. -->
+	<styles>
+		<style name="style_text_card" width="100%" height="content" bg_color="#color_surface" bg_opa="100%" radius="#radius_xl" border_width="1" border_color="#color_line" pad_left="#space_md" pad_right="#space_md" pad_top="#space_sm" pad_bottom="#space_sm" layout="flex" flex_flow="column" pad_row="#space_sm" />
+		<style name="style_text_field" width="100%" height="44" radius="#radius_md" bg_color="#color_raised" bg_opa="100%" border_width="2" border_color="#color_raised" pad_left="#space_lg" pad_right="#space_lg" pad_top="11" text_font="font_label" text_color="#color_text" />
+		<style name="style_text_field_focused" border_color="#color_blue" />
+		<style name="style_text_cursor" border_color="#color_blue" border_width="2" border_side="left" bg_opa="0%" />
+		<style name="style_text_placeholder" text_color="#color_text_3" />
+		<style name="style_keyboard" height="196" bg_opa="0%" border_width="0" pad_all="0" pad_row="4" pad_column="4" />
+		<style name="style_keyboard_key" radius="#radius_sm" bg_color="#color_raised" bg_opa="100%" border_width="0" shadow_width="0" text_font="font_label" text_color="#color_text" />
+		<style name="style_keyboard_key_pressed" bg_color="#color_pressed" />
+		<style name="style_keyboard_key_special" bg_color="#color_line" text_color="#color_text_2" />
+		<style name="style_keyboard_key_enter" bg_color="#color_blue" text_color="#color_on_tone" />
+	</styles>
+
+	<view extends="box" width="100%" height="100%" clickable="true" style_pad_all="#space_sm">
+		<style name="style_backdrop" />
+		<box name="text_card" align="bottom_mid">
+			<style name="style_text_card" />
+			<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_sm">
+				<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="0">
+					<lv_label width="100%" long_mode="dots" bind_text="subject_sheet_title" style_text_font="font_label" />
+					<lv_label width="100%" long_mode="dots" bind_text="subject_sheet_note" style_text_font="font_caption" style_text_color="#color_text_2" />
+				</box>
+				<box name="sheet_cancel" width="content" clickable="true" ext_click_area="4">
+					<style name="style_button" />
+					<style name="style_button_pressed" selector="pressed" />
+					<event_cb callback="ui_on_sheet_cancel" trigger="clicked" />
+					<lv_label text="Cancel" />
+				</box>
+				<box name="sheet_done" width="content" clickable="true" ext_click_area="4">
+					<style name="style_button" />
+					<style name="style_button_primary" />
+					<style name="style_button_tone_pressed" selector="pressed" />
+					<event_cb callback="ui_on_sheet_done" trigger="clicked" />
+					<lv_label bind_text="subject_sheet_ok" />
+				</box>
+			</box>
+			<lv_textarea name="sheet_text" one_line="true" placeholder_text="" password_show_time="1200" scrollbar_mode="off">
+				<style name="style_text_field" />
+				<style name="style_text_field_focused" selector="focused" />
+				<style name="style_text_cursor" selector="cursor" />
+				<style name="style_text_placeholder" selector="textarea_placeholder" />
+			</lv_textarea>
+			<lv_keyboard name="sheet_kb" width="100%" textarea="sheet_text">
+				<style name="style_keyboard" />
+				<style name="style_keyboard_key" selector="items" />
+				<style name="style_keyboard_key_pressed" selector="items|pressed" />
+				<style name="style_keyboard_key_special" selector="items|checked" />
+			</lv_keyboard>
+		</box>
+	</view>
+</component>

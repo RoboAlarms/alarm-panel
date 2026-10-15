@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The panel's appearances (docs/features/07 UI-010, BL-132): the colours of each theme, and what
+     a theme adds to the styles. A theme names every colour const of globals.xml; the first is
+     globals.xml's own (what the LVGL Pro Editor shows). tools/lvpro_gen.py makes them a palette
+     table that COLOR_* read, and ui_theme_apply() switches it at run time, in one step (UI-020).
+     contrast="high" asks for the stricter targets of tools/ui_mockup.py's check (7:1 text, 3:1
+     outlines); saver= names the theme whose colours the screen saver keeps, a dark photo in every
+     appearance. The 4" layout (on hold) has the palettes only. -->
+<themes>
+	<theme name="dark" title="Dark" help="Today's colours, with text_3 brighter: hints were 2.7 to 3.4:1, now 4.6 to 5.7:1">
+		<color name="color_bg" value="0x0B0F14" />
+		<color name="color_rail" value="0x0E141B" />
+		<color name="color_surface" value="0x141B24" />
+		<color name="color_raised" value="0x1C2531" />
+		<color name="color_pressed" value="0x2A3544" />
+		<color name="color_line" value="0x232D3A" />
+		<color name="color_text" value="0xF1F5F9" />
+		<color name="color_text_2" value="0x94A3B8" />
+		<color name="color_text_3" value="0x808DA0" />
+		<color name="color_green" value="0x34D399" />
+		<color name="color_amber" value="0xFBBF24" />
+		<color name="color_blue" value="0x60A5FA" />
+		<color name="color_violet" value="0xA78BFA" />
+		<color name="color_rose" value="0xFB7185" />
+		<color name="color_orange" value="0xFB923C" />
+		<color name="color_red" value="0xF87171" />
+		<color name="color_alarm_bg" value="0x2A0B0E" />
+		<color name="color_on_tone" value="0x0B0F14" />
+		<color name="color_alarm_card" value="0x3A1216" />
+		<color name="color_toast_line" value="0x3A4658" />
+		<color name="color_knob" value="0xF1F5F9" />
+		<color name="color_key_special" value="0x232D3A" />
+	</theme>
+	<theme name="light" title="Light" saver="dark" help="Dark words on a light screen; the tones darker, so words in them still read">
+		<color name="color_bg" value="0xEDF1F5" />
+		<color name="color_rail" value="0xF8FAFC" />
+		<color name="color_surface" value="0xFFFFFF" />
+		<color name="color_raised" value="0xE1E7EE" />
+		<color name="color_pressed" value="0xCBD4DF" />
+		<color name="color_line" value="0xD3DAE3" />
+		<color name="color_text" value="0x0F172A" />
+		<color name="color_text_2" value="0x475569" />
+		<color name="color_text_3" value="0x56657A" />
+		<color name="color_green" value="0x047656" />
+		<color name="color_amber" value="0x9C5600" />
+		<color name="color_blue" value="0x1D4ED8" />
+		<color name="color_violet" value="0x6D28D9" />
+		<color name="color_rose" value="0xC71E4E" />
+		<color name="color_orange" value="0xB83E0B" />
+		<color name="color_red" value="0xB91C1C" />
+		<color name="color_alarm_bg" value="0xFDE2E2" />
+		<color name="color_on_tone" value="0xFFFFFF" />
+		<color name="color_alarm_card" value="0xFFE4E6" />
+		<color name="color_toast_line" value="0xB8C3D0" />
+		<color name="color_knob" value="0xFFFFFF" />
+		<color name="color_key_special" value="0xD3DAE3" />
+	</theme>
+	<theme name="contrast" title="High contrast" contrast="high" help="White on black, bright tones, every card and control outlined">
+		<color name="color_bg" value="0x000000" />
+		<color name="color_rail" value="0x000000" />
+		<color name="color_surface" value="0x0A0C10" />
+		<color name="color_raised" value="0x1A1F27" />
+		<color name="color_pressed" value="0x394150" />
+		<color name="color_line" value="0xA7B1BE" />
+		<color name="color_text" value="0xFFFFFF" />
+		<color name="color_text_2" value="0xE8ECF1" />
+		<color name="color_text_3" value="0xC9D0D9" />
+		<color name="color_green" value="0x4ADE80" />
+		<color name="color_amber" value="0xFCD34D" />
+		<color name="color_blue" value="0x93C5FD" />
+		<color name="color_violet" value="0xC4B5FD" />
+		<color name="color_rose" value="0xFDA4AF" />
+		<color name="color_orange" value="0xFDBA74" />
+		<color name="color_red" value="0xFF8A8A" />
+		<color name="color_alarm_bg" value="0x3D0000" />
+		<color name="color_on_tone" value="0x000000" />
+		<color name="color_alarm_card" value="0x4A0A0A" />
+		<color name="color_toast_line" value="0xE8ECF1" />
+		<color name="color_knob" value="0xFFFFFF" />
+		<color name="color_key_special" value="0x2A313C" />
+	</theme>
+	<theme name="contrast_light" title="High contrast, light" contrast="high" saver="contrast" help="Black on white, deep tones, every card and control outlined">
+		<color name="color_bg" value="0xFFFFFF" />
+		<color name="color_rail" value="0xFFFFFF" />
+		<color name="color_surface" value="0xFFFFFF" />
+		<color name="color_raised" value="0xEEF1F4" />
+		<color name="color_pressed" value="0xD5DBE2" />
+		<color name="color_line" value="0x4B5563" />
+		<color name="color_text" value="0x000000" />
+		<color name="color_text_2" value="0x1F2937" />
+		<color name="color_text_3" value="0x374151" />
+		<color name="color_green" value="0x065C44" />
+		<color name="color_amber" value="0x744600" />
+		<color name="color_blue" value="0x1E40AF" />
+		<color name="color_violet" value="0x5B21B6" />
+		<color name="color_rose" value="0x9F1239" />
+		<color name="color_orange" value="0x903111" />
+		<color name="color_red" value="0x991B1B" />
+		<color name="color_alarm_bg" value="0xFFE1E1" />
+		<color name="color_on_tone" value="0xFFFFFF" />
+		<color name="color_alarm_card" value="0xFFE1E1" />
+		<color name="color_toast_line" value="0x1F2937" />
+		<color name="color_knob" value="0xFFFFFF" />
+		<color name="color_key_special" value="0xE0E5EA" />
+	</theme>
+</themes>

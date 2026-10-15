@@ -1,0 +1,30 @@
+<component>
+	<!-- A row of a settings list (users, zones, networks, choices, log entries): icon chip,
+	     title, detail, a value and a trailing glyph. ui_app.c creates the rows and hides the
+	     parts it leaves empty. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE19F;" help="Lucide glyph in the chip" />
+		<prop name="color" type="color" default="#color_blue" help="Chip tone" />
+		<prop name="title" type="string" default="Master" help="Main text" />
+		<prop name="detail" type="string" default="System master" help="Second line" />
+		<prop name="value" type="string" default="" help="Short value on the right" />
+		<prop name="trail" type="string" default="&#xE06F;" help="Trailing Lucide glyph (chevron, check, lock)" />
+	</api>
+
+	<styles>
+		<style name="style_list_row" width="100%" height="56" bg_color="#color_surface" bg_opa="100%" radius="#radius_md" pad_left="#space_md" pad_right="#space_lg" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_md" />
+		<style name="style_list_row_pressed" bg_color="#color_raised" />
+	</styles>
+
+	<view extends="box" clickable="true">
+		<style name="style_list_row" />
+		<style name="style_list_row_pressed" selector="pressed" />
+		<icon_chip name="chip" glyph="$glyph" size="36" font="icons_20" color="$color" />
+		<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="0">
+			<lv_label name="title_label" width="100%" long_mode="dots" text="$title" style_text_font="font_label" />
+			<lv_label name="detail_label" width="100%" long_mode="dots" text="$detail" style_text_font="font_caption" style_text_color="#color_text_2" />
+		</box>
+		<lv_label name="value_label" text="$value" style_text_font="font_caption" style_text_color="#color_text_2" />
+		<lv_label name="trail_label" text="$trail" style_text_font="icons_20" style_text_color="#color_text_3" />
+	</view>
+</component>

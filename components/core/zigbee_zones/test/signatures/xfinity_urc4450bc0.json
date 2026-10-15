@@ -1,0 +1,44 @@
+{
+  "device": "Xfinity XHK1-UE (URC4450BC0-X-R)",
+  "tests": "a keypad (deCONZ)",
+  "provenance": "Seed row from the zigpy/zha and deCONZ device files (docs/features/20 testing.md section 2); capture a real unit (console: zigbee device <id> signature) before a quirk depends on it. Addresses are fictional.",
+  "ieee": "0x02ABCD000000000E",
+  "nwk": "0x1A0E",
+  "node": {
+    "logical_type": "end_device",
+    "mac_caps": "0x80",
+    "manufacturer_code": 0,
+    "server_mask": "0x0000"
+  },
+  "power_source": 3,
+  "basic": {
+    "manufacturer": "Universal Electronics Inc",
+    "model": "URC4450BC0-X-R"
+  },
+  "endpoints": [
+    {
+      "endpoint": 1,
+      "profile": "0x0104",
+      "device_id": "0x0401",
+      "in": [
+        "0x0000",
+        "0x0001",
+        "0x0500",
+        "0x0402"
+      ],
+      "out": [
+        "0x0501"
+      ],
+      "zone_type": "0x021D"
+    }
+  ],
+  "expect": {
+    "role": "keypad",
+    "router": false,
+    "sleepy": true,
+    "enroll": "standard",
+    "supervision_s": 7200,
+    "quirk": null,
+    "inputs": []
+  }
+}

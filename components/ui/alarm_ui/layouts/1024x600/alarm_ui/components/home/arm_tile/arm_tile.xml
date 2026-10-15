@@ -1,0 +1,25 @@
+<component>
+	<!-- One way to arm: tone chip, name, what it means, chevron. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE10E;" help="Lucide glyph" />
+		<prop name="title" type="string" default="Away" help="Arm level" />
+		<prop name="subtitle" type="string" default="Everyone is leaving" help="What it means" />
+		<prop name="color" type="color" default="#color_rose" help="Tone of the level" />
+	</api>
+
+	<styles>
+		<style name="style_arm_tile" bg_color="#color_surface" bg_opa="100%" radius="#radius_lg" border_width="1" border_color="#color_line" pad_left="#space_xl" pad_right="#space_xl" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_xl" />
+		<style name="style_arm_tile_pressed" bg_color="#color_raised" transform_width="-4" transform_height="-4" />
+	</styles>
+
+	<view extends="box" clickable="true">
+		<style name="style_arm_tile" />
+		<style name="style_arm_tile_pressed" selector="pressed" />
+		<icon_chip glyph="$glyph" size="76" font="icons_40" color="$color" />
+		<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="4">
+			<lv_label text="$title" style_text_font="font_title" />
+			<lv_label width="100%" long_mode="wrap" text="$subtitle" style_text_color="#color_text_2" />
+		</box>
+		<lv_label text="&#xE06F;" style_text_font="icons_28" style_text_color="#color_text_3" />
+	</view>
+</component>

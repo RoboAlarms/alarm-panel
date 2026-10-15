@@ -1,0 +1,59 @@
+{
+  "device": "Sonoff SNZB-02D",
+  "tests": "temperature only, no IAS",
+  "provenance": "Seed row from the zigpy/zha and deCONZ device files (docs/features/20 testing.md section 2); capture a real unit (console: zigbee device <id> signature) before a quirk depends on it. Addresses are fictional.",
+  "ieee": "0x02ABCD0000000002",
+  "nwk": "0x1A02",
+  "node": {
+    "logical_type": "end_device",
+    "mac_caps": "0x80",
+    "manufacturer_code": 4742,
+    "server_mask": "0x0000"
+  },
+  "power_source": 3,
+  "basic": {
+    "manufacturer": "SONOFF",
+    "model": "SNZB-02D"
+  },
+  "endpoints": [
+    {
+      "endpoint": 1,
+      "profile": "0x0104",
+      "device_id": "0x0302",
+      "in": [
+        "0x0000",
+        "0x0001",
+        "0x0003",
+        "0x0020",
+        "0x0402",
+        "0x0405",
+        "0xFC11",
+        "0xFC57"
+      ],
+      "out": [],
+      "zone_type": null
+    }
+  ],
+  "expect": {
+    "role": "sensor",
+    "router": false,
+    "sleepy": true,
+    "enroll": "none",
+    "supervision_s": 7200,
+    "quirk": null,
+    "inputs": [
+      {
+        "endpoint": 1,
+        "clusters": [
+          "BASIC",
+          "POWER_CFG",
+          "IDENTIFY",
+          "POLL_CTRL",
+          "TEMP"
+        ],
+        "zone_type": null,
+        "class": "temperature"
+      }
+    ]
+  }
+}

@@ -1,0 +1,8 @@
+<project lvgl_version="9.5.0" theme="simple">
+	<targets>
+		<!-- LCDWiki 4.0" ESP32-32E display (E32R40T, ST7796S), landscape -->
+		<target name="e32r40t_4in">
+			<display width="480" height="320" />
+		</target>
+	</targets>
+</project>

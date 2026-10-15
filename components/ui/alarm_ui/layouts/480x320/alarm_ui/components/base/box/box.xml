@@ -1,0 +1,12 @@
+<component>
+	<!-- Style-free container. The only place <remove_style_all/> runs, so components that
+	     extend it can add their own styles afterwards (same-view styles would be wiped).
+	     Not clickable and not scrollable unless asked. A box that scrolls has to be clickable
+	     as well: LVGL starts a drag only on an object the touch can land on, so a finger put
+	     down on a plain row or an empty gap would miss the page and nothing would move. Give
+	     those boxes user_1 too - it marks "a surface to scroll, not a control", so pressing
+	     the background doesn't make the key click. -->
+	<view extends="lv_obj" clickable="false" scrollable="false">
+		<remove_style_all />
+	</view>
+</component>

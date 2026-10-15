@@ -1,0 +1,30 @@
+menu "RoboAlarms H2 radio co-processor"
+
+    config RCP_UART_BAUD
+        int "UART baud rate to the panel"
+        default 460800
+        help
+            Must match the panel's side (components/services/zigbee_service). 460800 is
+            ESP-IDF's RCP default.
+
+    config RCP_UART_PIN_MANUAL
+        bool "Choose the UART pins by hand"
+        default n
+        help
+            Off: UART0 keeps its own pins (GPIO24 TX, GPIO23 RX on the ESP32-H2), which is
+            how the Elecrow wireless module is expected to reach the socket. Turn on only if
+            the module's schematic shows other GPIOs behind the socket's U1TXD/U1RXD pads.
+
+    config RCP_UART_RX_PIN
+        int "RX pin (from the panel)"
+        depends on RCP_UART_PIN_MANUAL
+        default 23
+        range 0 27
+
+    config RCP_UART_TX_PIN
+        int "TX pin (to the panel)"
+        depends on RCP_UART_PIN_MANUAL
+        default 24
+        range 0 27
+
+endmenu

@@ -1,0 +1,9 @@
+description: "Board support shared by the Elecrow CrowPanel Advanced ESP32-P4 boards (7in, 10.1in)"
+dependencies:
+  idf: ">=6.1"
+  # The 10.1in V1.2's ES8311 codec (CONFIG_BOARD_CROWPANEL_P4_ES8311).
+  espressif/esp_codec_dev: "~1.6.2"
+  espressif/esp_lcd_ek79007: "~2.0.2"
+  espressif/esp_lcd_touch_gt911: "~1.2.1"
+  espressif/esp_lvgl_port: "~2.9.0"
+  lvgl/lvgl: "~9.5.0"

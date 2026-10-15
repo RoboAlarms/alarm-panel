@@ -1,0 +1,37 @@
+menu "Firmware updates"
+
+    config PANEL_OTA_DEVICE
+        string "Device name the update server knows this board by (empty: the board's id)"
+        default ""
+        help
+            The "device" a check sends to the update server (docs/features/13 OTA-018): the
+            server's catalogue names a board by its product, for example "crowpanel_dhe04107d"
+            for the CrowPanel Advanced 7" (set in its sdkconfig.defaults). Empty uses the board's
+            id from its description (board_info()->id, for example "crowpanel_p4"), which backups
+            use too and which stays as it is.
+
+    config PANEL_OTA_DEFAULT_DOMAIN
+        string "Update server (a domain)"
+        default "roboalarms.com"
+        help
+            This build's own update server (OTA-017): the panel asks https://firmware.<domain>.
+            The installer can choose another one (its signing key is then checked and confirmed,
+            OTA-020); a panel with no choice stored, or a damaged one, uses this. Empty: no
+            automatic checks until a server is chosen.
+
+    config PANEL_OTA_CHECK_HOURS
+        int "Check for updates every (hours)"
+        range 0 720
+        default 24
+        help
+            Only checks and shows what is available; installing always needs a person
+            (panel, Home Assistant or console). 0 = check only on request.
+
+    config PANEL_OTA_CP_AUTO
+        bool "Update the Wi-Fi co-processor from the cp_fw partition automatically"
+        default y
+        help
+            When the image in "cp_fw" differs from what the co-processor runs, send it once
+            the system is idle (OTA-007). A failed attempt is not repeated automatically.
+
+endmenu

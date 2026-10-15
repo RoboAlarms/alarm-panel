@@ -1,0 +1,10 @@
+CONFIG_ALARM_BUILD_DEV=y
+CONFIG_ALARM_DEV_REMOTE=y
+CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=y
+# Z-Wave (docs/features/36): the manifest (sdkconfig.defaults) turns it on for every profile; the
+# developer link also serves its state, requests and frame trace (docs/features/30).
+CONFIG_ALARM_ZSRC_ZWAVE=y
+# The bench keeps ESP-IDF's assert and check messages (docs/features/39 F1): the other profiles
+# leave them out.
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_ENABLE=y
+CONFIG_COMPILER_OPTIMIZATION_CHECKS_SILENT=n

@@ -1,0 +1,17 @@
+<component>
+	<!-- One option of a segmented control. The screen binds the active style and the click. -->
+	<api>
+		<prop name="text" type="string" default="All" help="Caption" />
+	</api>
+
+	<styles>
+		<style name="style_segment" height="36" radius="#radius_md" pad_left="#space_md" pad_right="#space_md" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" text_font="font_caption" text_color="#color_text_2" />
+		<style name="style_segment_pressed" bg_color="#color_pressed" bg_opa="100%" />
+	</styles>
+
+	<view extends="box" width="content" clickable="true" ext_click_area="6">
+		<style name="style_segment" />
+		<style name="style_segment_pressed" selector="pressed" />
+		<lv_label text="$text" />
+	</view>
+</component>

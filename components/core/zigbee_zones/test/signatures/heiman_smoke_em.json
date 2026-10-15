@@ -1,0 +1,59 @@
+{
+  "device": "Heiman SmokeSensor-EM",
+  "tests": "a smoke sensor with its own sounder",
+  "provenance": "Seed row from the zigpy/zha and deCONZ device files (docs/features/20 testing.md section 2); capture a real unit (console: zigbee device <id> signature) before a quirk depends on it. Addresses are fictional.",
+  "ieee": "0x02ABCD0000000009",
+  "nwk": "0x1A09",
+  "node": {
+    "logical_type": "end_device",
+    "mac_caps": "0x80",
+    "manufacturer_code": 4619,
+    "server_mask": "0x0000"
+  },
+  "power_source": 3,
+  "basic": {
+    "manufacturer": "HEIMAN",
+    "model": "SmokeSensor-EM"
+  },
+  "endpoints": [
+    {
+      "endpoint": 1,
+      "profile": "0x0104",
+      "device_id": "0x0402",
+      "in": [
+        "0x0000",
+        "0x0001",
+        "0x0003",
+        "0x0500",
+        "0x0502"
+      ],
+      "out": [],
+      "zone_type": "0x0028"
+    }
+  ],
+  "expect": {
+    "role": "sensor",
+    "router": false,
+    "sleepy": true,
+    "enroll": "standard",
+    "supervision_s": 7200,
+    "quirk": {
+      "manufacturer": "HEIMAN",
+      "model": null
+    },
+    "inputs": [
+      {
+        "endpoint": 1,
+        "clusters": [
+          "BASIC",
+          "POWER_CFG",
+          "IDENTIFY",
+          "IAS_ZONE",
+          "IAS_WD"
+        ],
+        "zone_type": "0x0028",
+        "class": "smoke"
+      }
+    ]
+  }
+}

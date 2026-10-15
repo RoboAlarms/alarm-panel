@@ -1,0 +1,57 @@
+name: Bug report
+description: Something on the panel, in the PC simulator or in a tool doesn't work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Security problems don't go here**: see SECURITY.md for how to report them privately.
+        Leave out anything that identifies your home (Wi-Fi name, addresses, codes, names).
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does it happen?
+      options:
+        - On a panel (touchscreen)
+        - Panel Manager (browser)
+        - Home Assistant / MQTT
+        - Notifications (ntfy, Pushover)
+        - Sensors (wired, 433 MHz, Zigbee, Z-Wave)
+        - RoboAlarms Flasher
+        - PC simulator or preview
+        - Building or testing the code
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: board
+    attributes:
+      label: Board and P4 silicon revision
+      description: The boot log prints the silicon revision ("chip revision v1.3").
+      placeholder: CrowPanel Advanced 7" V1.1, P4 v1.3
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version and build profile
+      description: Settings > About, or `status` on the service console.
+      placeholder: 0.6.1 dev
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Arm Away from the touchscreen
+        2. Open zone 3
+        3. ...
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output, log lines or screenshots
+      description: The service console's output (115200 baud) often says why. Remove anything personal first.
+      render: text

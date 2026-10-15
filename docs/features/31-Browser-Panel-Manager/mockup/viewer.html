@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Panel Manager mockup</title>
+<link rel="icon" href="data:,">
+<style>
+/* The Panel Manager's own tokens (components/services/panel_web/web/panel.css), so the viewer reads as part of it */
+/*@TOKENS@*/
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
+button, select { font: inherit; color: inherit; }
+/* ---- the striped bar: this is a mockup, not the Panel Manager ---- */
+.bar { flex-shrink: 0; display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 14px;
+  background: repeating-linear-gradient(135deg, var(--surface-2) 0 12px, var(--surface) 12px 24px);
+  border-bottom: 2px dashed var(--line-strong); font-size: 12.5px; }
+.bar .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13px; margin-right: 4px; }
+.bar .brand img { width: 24px; height: 24px; border-radius: 6px; }
+.bar .brand small { display: block; font-weight: 500; font-size: 10.5px; letter-spacing: .8px; text-transform: uppercase; color: var(--faint); }
+.grp { display: inline-flex; align-items: center; gap: 6px; }
+.grp > label, .grp > span { color: var(--muted); }
+.bar select { min-height: 30px; max-width: 220px; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); }
+.seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 999px; overflow: hidden; background: var(--surface); }
+.seg button { border: 0; background: none; padding: 4px 11px; min-height: 28px; cursor: pointer; font-size: 12px; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg button:disabled { opacity: .45; cursor: default; }
+.pill { border: 1px solid var(--line-strong); background: var(--surface); border-radius: 999px; padding: 4px 11px; min-height: 30px; cursor: pointer; font-size: 12px; }
+.pill[aria-expanded="true"] { background: var(--ink); color: var(--surface); }
+.spacer { flex: 1; }
+#more { display: none; width: 100%; gap: 8px 14px; flex-wrap: wrap; align-items: center; padding-top: 4px; border-top: 1px dashed var(--line); }
+body.more #more { display: flex; }
+/* ---- a proposal's notes: one line and the looks; the rest folds away, so the frames keep the screen ---- */
+#notes { flex-shrink: 0; display: none; max-height: 40vh; overflow: auto; padding: 8px 16px 10px; background: var(--surface); border-bottom: 1px solid var(--line); font-size: 13px; }
+body.proposal #notes { display: block; }
+#notes .head { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
+#notes h2 { margin: 0; font-size: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+#notes .status { font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+#notes .status.approved { background: var(--good-soft); color: var(--good); }
+#notes .status.rejected { background: var(--bad-soft); color: var(--bad); }
+#notes .status.draft { background: var(--warn-soft); color: var(--warn); }
+#notes p { margin: 6px 0 0; color: var(--muted); max-width: 110ch; }
+#notes ul { margin: 6px 0 0; padding-left: 20px; color: var(--muted); max-width: 110ch; }
+#notes .look { flex: 1 1 420px; min-width: 0; display: flex; gap: 6px; align-items: center; }
+#notes .look label { color: var(--muted); white-space: nowrap; }
+#notes .look select { flex: 1; min-width: 0; min-height: 30px; padding: 3px 8px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); }
+#notes .look button { min-width: 30px; min-height: 30px; border: 1px solid var(--line-strong); background: var(--surface-2); border-radius: 8px; cursor: pointer; }
+#notes .look button:disabled { opacity: .45; cursor: default; }
+#notes .look .count { color: var(--faint); font-size: 12px; white-space: nowrap; }
+#notes .look-label { margin: 6px 0 0; color: var(--ink); max-width: 110ch; }
+#notes h3 { margin: 10px 0 0; font-size: 12.5px; color: var(--ink); }
+#notes details { margin-top: 6px; }
+#notes summary { cursor: pointer; color: var(--muted); font-size: 12.5px; }
+/* ---- the frames ---- */
+#stage { flex: 1; min-height: 0; overflow: auto; display: flex; gap: 18px; padding: 14px; justify-content: center; align-items: flex-start; }
+#stage.stack { flex-direction: column; align-items: center; }
+.device { display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.device .label { font-size: 12px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.device .label strong { color: var(--ink); }
+.device .label a { color: var(--muted); }
+.device.proposed .label strong::after { content: " · proposed"; color: var(--warn); font-weight: 600; }
+.screen { box-sizing: content-box; position: relative; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--bg); box-shadow: 0 8px 30px rgb(0 0 0 / 18%); }
+.screen.phone { border: 9px solid #05090c; border-radius: 34px; }
+.screen iframe { position: absolute; top: 0; left: 0; border: 0; transform-origin: 0 0; background: var(--bg); }
+/* ---- the sensors ---- */
+#sensors { display: none; position: fixed; z-index: 5; max-height: 60vh; overflow: auto; min-width: 240px; padding: 8px; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 12px 40px rgb(0 0 0 / 25%); }
+#sensors.open { display: block; }
+#sensors label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; }
+#sensors label:hover { background: var(--surface-2); }
+#sensors p { margin: 4px 8px 8px; font-size: 12px; color: var(--muted); max-width: 30ch; }
+@media (max-width: 760px) {
+  .bar { gap: 6px 10px; padding: 8px 10px; }
+  .bar select { max-width: 150px; }
+  .hide-narrow { display: none !important; }
+  #stage { padding: 10px 8px; }
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <span class="brand"><img alt="" src="/*@BRAND@*/"><span>Panel Manager<small>Mockup</small></span></span>
+  <span class="grp"><label for="page">Page</label><select id="page" aria-label="Page"></select></span>
+  <span class="grp"><label for="role">Who</label><select id="role">
+    <option value="installer">Installer</option><option value="master">Alex · system master</option>
+    <option value="partition">Pat · partition master</option><option value="standard">Sam · standard user</option>
+    <option value="guest">Dog walker · guest</option><option value="temporary">Alex · temporary password</option>
+    <option value="signedout">Signed out</option></select></span>
+  <span class="grp"><label for="scenario">Panel</label><select id="scenario">
+    <option value="ready">Disarmed, ready</option><option value="notready">Not ready, a trouble</option>
+    <option value="motion">Motion (Away blocked)</option><option value="exit">Exit time</option>
+    <option value="armed">Armed Away</option><option value="stay">Armed Stay</option><option value="entry">Entry time</option>
+    <option value="alarm">Alarm sounding</option><option value="memory">Alarm occurred</option><option value="fire">Fire alarm</option>
+    <option value="troubles">Troubles to fix</option></select></span>
+  <span class="grp"><span>Proposal</span><select id="proposal" aria-label="Proposal"></select>
+    <span class="seg" id="view" role="group" aria-label="Show"><button type="button" data-v="today">Today</button><button type="button" data-v="proposed">Proposed</button><button type="button" data-v="both">Both</button></span></span>
+  <span class="spacer"></span>
+  <button type="button" class="pill" id="sensor-button" aria-expanded="false" aria-controls="sensors">Sensors</button>
+  <button type="button" class="pill" id="more-button" aria-expanded="false" aria-controls="more">More</button>
+  <div id="more">
+    <span class="grp"><span>Partitions</span><span class="seg" data-key="parts"><button type="button" data-v="1">One</button><button type="button" data-v="2">Two</button></span></span>
+    <span class="grp"><span>Z-Wave</span><span class="seg" data-key="zwave"><button type="button" data-v="1">On</button><button type="button" data-v="0">None</button><button type="button" data-v="jammed">Jammed</button></span></span>
+    <span class="grp"><span>Clock module</span><span class="seg" data-key="clock"><button type="button" data-v="none">None</button><button type="button" data-v="ok">Fitted</button><button type="button" data-v="lost">Lost time</button><button type="button" data-v="failed">Failed</button></span></span>
+    <span class="grp"><span>Walk test</span><span class="seg" data-key="walk"><button type="button" data-v="0">Off</button><button type="button" data-v="1">Running</button></span></span>
+    <span class="grp"><span>Delays</span><span class="seg" data-key="fast"><button type="button" data-v="0">Real</button><button type="button" data-v="1">20× faster</button></span></span>
+    <span class="grp"><span>Theme</span><span class="seg" data-key="theme"><button type="button" data-v="dark">Dark</button><button type="button" data-v="light">Light</button></span></span>
+    <span class="grp"><span>Frame</span><span class="seg" data-key="frame"><button type="button" data-v="desktop">Computer</button><button type="button" data-v="tablet">Tablet</button><button type="button" data-v="phone">Phone</button></span></span>
+    <span class="grp"><span>Pages</span><span class="seg" data-key="link"><button type="button" data-v="1">Move together</button><button type="button" data-v="0">Apart</button></span></span>
+    <button type="button" class="pill" id="reset">Start the panel again</button>
+  </div>
+</header>
+<section id="notes" aria-live="polite"></section>
+<main id="stage"></main>
+<div id="sensors" role="dialog" aria-label="Sensors"></div>
+<script>
+'use strict';
+const PROPOSALS = /*@PROPOSALS@*/;
+const BUILD = /*@BUILD@*/;
+// Sub-pages the menu doesn't list, worth opening on their own: [route, label, the page whose access it needs].
+const EXTRA = [['zones/setup', 'Zones › Set up zones', 'sensors'], ['binding/1', 'Sensor sources › Zone 1’s sensor link'],
+  ['integration/mqtt', 'Integrations › MQTT'], ['integration/home_assistant', 'Integrations › Home Assistant'],
+  ['integration/ntfy', 'Integrations › ntfy'], ['integration/pushover', 'Integrations › Pushover'], ['zwaveradio', 'Z-Wave › Radio'], ['password', 'Your password']];
+const DEFAULTS = {role: 'installer', scenario: 'ready', parts: '1', zwave: '1', clock: 'none', walk: '0', fast: '0',
+  theme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light', frame: innerWidth < 760 ? 'phone' : 'desktop',
+  link: '1', p: '', view: 'today', page: '/overview'};
+const FRAME = {desktop: [1280, 800], tablet: [820, 1180], phone: [390, 844]};
+const RELOADS = ['role', 'scenario', 'parts', 'zwave', 'clock', 'walk', 'fast', 'theme', 'p', 'view'];
+const $ = s => document.querySelector(s);
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'})[c]);
+
+let s = read();
+let frames = []; // {name, iframe, proposed, hash}
+let lastReport = null;
+
+function read() {
+  const h = new URLSearchParams(location.hash.slice(1));
+  const out = {...DEFAULTS};
+  for (const k of Object.keys(DEFAULTS)) if (h.has(k)) out[k] = h.get(k);
+  if (out.p && !PROPOSALS.some(p => p.id === out.p)) out.p = '';
+  if (!out.p) out.view = 'today';
+  else if (!h.has('view')) out.view = innerWidth < 760 ? 'proposed' : 'both';
+  if (!h.has('role') && out.p) out.role = PROPOSALS.find(p => p.id === out.p)?.role || out.role;
+  return out;
+}
+function write() {
+  const h = new URLSearchParams();
+  for (const [k, v] of Object.entries(s)) if (v !== DEFAULTS[k] || k === 'view' && s.p) h.set(k, v);
+  history.replaceState(null, '', '#' + h.toString());
+}
+function set(changes) {
+  const reload = Object.entries(changes).some(([k, v]) => RELOADS.includes(k) && s[k] !== v);
+  Object.assign(s, changes);
+  if (!s.p) s.view = 'today';
+  write();
+  controls();
+  if (reload) mount(); else layout();
+}
+
+// ---- the controls ------------------------------------------------------------------------------------
+function controls() {
+  document.documentElement.dataset.theme = s.theme;
+  $('#role').value = s.role;
+  $('#scenario').value = s.scenario;
+  $('#proposal').value = s.p;
+  for (const b of document.querySelectorAll('#view button')) {
+    b.setAttribute('aria-pressed', String(b.dataset.v === s.view));
+    b.disabled = !s.p && b.dataset.v !== 'today';
+  }
+  for (const seg of document.querySelectorAll('.seg[data-key]'))
+    for (const b of seg.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.v === s[seg.dataset.key]));
+  document.body.classList.toggle('proposal', !!s.p);
+  notes();
+}
+function proposalOptions() {
+  const label = p => `${p.bl} · ${p.title}${p.status !== 'draft' ? ` (${p.status})` : ''}`;
+  $('#proposal').innerHTML = `<option value="">None: today’s pages</option>` + PROPOSALS.map(p => `<option value="${esc(p.id)}">${esc(label(p))}</option>`).join('');
+}
+function pageOptions(report) {
+  const sel = $('#page'), groups = new Map();
+  const pages = (report?.pages || []).filter(p => p.allowed && p.nav);
+  for (const p of pages) { const g = p.group || 'Main'; if (!groups.has(g)) groups.set(g, []); groups.get(g).push(['/' + p.id, p.title]); }
+  const extra = EXTRA.filter(([r, , needs]) => (report?.pages || []).some(p => p.id === (needs || r.split('/')[0]) && p.allowed)).map(([r, l]) => ['/' + r, l]);
+  const proposed = (report?.pages || []).filter(p => p.allowed && !p.nav && !EXTRA.some(([r]) => r.split('/')[0] === p.id)).map(p => ['/' + p.id, p.title]);
+  let html = [...groups].map(([g, list]) => `<optgroup label="${esc(g)}">${list.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</optgroup>`).join('');
+  if (extra.length) html += `<optgroup label="Inside pages">${extra.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</optgroup>`;
+  if (proposed.length) html += `<optgroup label="Other pages">${proposed.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('')}</optgroup>`;
+  const current = (s.page || '/overview');
+  if (![...html.matchAll(/value="([^"]*)"/g)].some(m => m[1] === current)) html += `<option value="${esc(current)}">${esc(current.slice(1))}</option>`;
+  if (sel.dataset.html !== html) { sel.innerHTML = html; sel.dataset.html = html; }
+  sel.value = current;
+}
+// The looks are one numbered list with back and next, and the proposal's why, details and decision fold
+// away under "About this proposal": a proposal with twenty looks used to fill the screen above the frames.
+let lookAt = -1;      // the look last chosen; several looks can share a page
+let aboutOpen = false;
+function notes() {
+  const p = PROPOSALS.find(x => x.id === s.p);
+  if (!p) { $('#notes').innerHTML = ''; lookAt = -1; return; }
+  const why = Array.isArray(p.why) ? p.why : [p.why];
+  if (!p.look[lookAt] || '/' + p.look[lookAt][0] !== s.page) lookAt = p.look.findIndex(([route]) => '/' + route === s.page);
+  const n = p.look.length;
+  $('#notes').innerHTML = `<div class="head"><h2>${esc(p.title)} <span class="status ${esc(p.status)}">${esc(p.status)}</span> <small style="font-weight:500;color:var(--faint)">${esc(p.bl)} · proposals/${esc(p.id)}.js</small></h2>
+    ${n ? `<div class="look"><label for="look">Look at</label><button type="button" id="look-back" aria-label="Previous look"${lookAt <= 0 ? ' disabled' : ''}>‹</button>
+      <select id="look">${lookAt < 0 ? '<option value="-1" selected>Another page: pick a look</option>' : ''}${p.look.map(([, label], i) =>
+        `<option value="${i}"${i === lookAt ? ' selected' : ''}>${i + 1}. ${esc(label)}</option>`).join('')}</select>
+      <button type="button" id="look-next" aria-label="Next look"${lookAt >= n - 1 ? ' disabled' : ''}>›</button>
+      <span class="count">${lookAt < 0 ? n : `${lookAt + 1} of ${n}`}</span></div>` : ''}</div>
+    ${lookAt >= 0 ? `<p class="look-label">${esc(p.look[lookAt][1])}</p>` : ''}
+    <details id="about"${aboutOpen ? ' open' : ''}><summary>About this proposal</summary>
+      ${why.map(w => `<p>${esc(w)}</p>`).join('')}
+      ${p.notes.length ? `<h3>What changes, in detail</h3><ul>${p.notes.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
+      ${p.decided ? `<p><strong>Decided:</strong> ${esc(p.decided)}</p>` : ''}</details>`;
+  const pick = i => {
+    if (i < 0 || i >= n) return;
+    const [route, , opts = {}] = p.look[i];
+    lookAt = i;
+    set({...opts, page: '/' + route});
+    go('/' + route);
+    notes();
+  };
+  if (n) {
+    $('#look').onchange = e => pick(Number(e.target.value));
+    $('#look-back').onclick = () => pick(lookAt - 1);
+    $('#look-next').onclick = () => pick(lookAt + 1);
+  }
+  $('#about').ontoggle = e => { aboutOpen = e.target.open; };
+}
+
+// ---- the frames ---------------------------------------------------------------------------------------
+// A page only the proposal has: the Today frame shows the one it replaces (the proposal's `today`).
+function todayHash(hash) {
+  const map = PROPOSALS.find(x => x.id === s.p)?.today || {}, id = hash.replace(/^\/+/, '').split('/')[0];
+  return Object.hasOwn(map, id) ? '/' + map[id] : hash;
+}
+function src(proposed, name) {
+  const q = new URLSearchParams({role: s.role, scenario: s.scenario, parts: s.parts, zwave: s.zwave, clock: s.clock, walk: s.walk,
+    fast: s.fast, theme: s.theme, frame: name});
+  // A proposal that builds on others is shown with them on (BL-136 on BL-135).
+  if (proposed && s.p) q.set('p', [...(PROPOSALS.find(x => x.id === s.p)?.builds || []), s.p].join(','));
+  q.set('v', BUILD);
+  return `app.html?${q}#${proposed ? s.page : todayHash(s.page)}`;
+}
+function mount() {
+  const want = s.view === 'both' ? [['today', false], ['proposed', true]] : [[s.view, s.view === 'proposed']];
+  const p = PROPOSALS.find(x => x.id === s.p);
+  $('#stage').innerHTML = want.map(([name, proposed]) => `<div class="device${proposed ? ' proposed' : ''}" data-name="${name}">
+    <div class="label"><strong>${proposed ? esc(p?.bl || '') : 'Today'}</strong><a href="${esc(src(proposed, name))}" target="_blank" rel="noopener">Open alone</a></div>
+    <div class="screen"><iframe title="${proposed ? 'Proposed' : 'Today'}" src="${esc(src(proposed, name))}"></iframe></div></div>`).join('');
+  frames = want.map(([name, proposed]) => ({name, proposed, iframe: document.querySelector(`.device[data-name="${name}"] iframe`),
+    hash: proposed ? s.page : todayHash(s.page)}));
+  layout();
+}
+function layout() {
+  const stage = $('#stage'), n = frames.length, [w, h] = FRAME[s.frame];
+  const narrow = innerWidth < 760;
+  const stack = n > 1 && (narrow || (s.frame !== 'phone' && stage.clientWidth < 1100));
+  stage.classList.toggle('stack', stack);
+  const columns = stack ? 1 : n;
+  const availW = (stage.clientWidth - 28 - (columns - 1) * 18) / columns - (s.frame === 'phone' ? 18 : 2);
+  const availH = stage.clientHeight - 28 - 24 - (s.frame === 'phone' ? 18 : 2);
+  let scale = Math.min(1, availW / w);
+  let height = h;
+  if (s.frame === 'phone') scale = Math.min(scale, Math.max(0.45, availH / h));
+  else height = stack ? Math.max(560, h) : Math.max(560, availH / scale);
+  for (const f of frames) {
+    const box = f.iframe.parentElement;
+    box.classList.toggle('phone', s.frame === 'phone');
+    box.style.width = `${Math.round(w * scale)}px`;
+    box.style.height = `${Math.round(height * scale)}px`;
+    Object.assign(f.iframe.style, {width: `${w}px`, height: `${height}px`, transform: `scale(${scale})`});
+  }
+}
+function go(hash, except) {
+  for (const f of frames) {
+    const to = f.proposed ? hash : todayHash(hash);
+    if (f === except || f.hash === to || (f.proposed && todayHash(f.hash) === hash)) continue;
+    f.hash = to;
+    f.iframe.contentWindow?.postMessage({mockup: 'go', hash: '#' + to}, '*');
+  }
+}
+
+// ---- what the frames say ----------------------------------------------------------------------------------
+addEventListener('message', event => {
+  const d = event.data;
+  if (!d || d.mockup !== 'route') return;
+  const f = frames.find(x => x.iframe.contentWindow === event.source);
+  if (!f) return;
+  const hash = (d.hash || '#/overview').replace(/^#/, '') || '/overview';
+  f.hash = hash;
+  if (!f.proposed || frames.length === 1) lastReport = d;
+  if (f.proposed && frames.length > 1) lastReport = {...lastReport, pages: mergePages(lastReport?.pages, d.pages)};
+  // Today showing the page the proposal's new one replaces is the same place, not a move.
+  const same = !f.proposed && frames.some(x => x.proposed && todayHash(x.hash) === hash);
+  if (s.page !== hash && !same) {
+    s.page = hash;
+    write();
+    if (s.link === '1') go(hash, f);
+    notes();
+  }
+  pageOptions(lastReport || d);
+  if (f === frames[0]) sensors(d.zones);
+});
+const mergePages = (a = [], b = []) => [...a, ...b.filter(x => !a.some(y => y.id === x.id))];
+
+function sensors(zones) {
+  if (!zones) return;
+  const box = $('#sensors');
+  box.dataset.zones = JSON.stringify(zones);
+  if (!box.classList.contains('open')) return;
+  box.innerHTML = `<p>Open or close a sensor, as if someone walked past. Both frames hear it.</p>` + zones.map(z =>
+    `<label><input type="checkbox" data-zone="${z.number}"${z.open ? ' checked' : ''}> ${esc(z.number)} · ${esc(z.name || 'Zone ' + z.number)}</label>`).join('');
+  for (const box2 of box.querySelectorAll('input[data-zone]')) box2.onchange = () => {
+    for (const f of frames) f.iframe.contentWindow?.postMessage({mockup: 'sensor', zone: Number(box2.dataset.zone), open: box2.checked}, '*');
+  };
+}
+
+// ---- wiring -----------------------------------------------------------------------------------------------
+proposalOptions();
+controls();
+$('#role').onchange = e => set({role: e.target.value});
+$('#scenario').onchange = e => set({scenario: e.target.value});
+$('#proposal').onchange = e => {
+  const p = PROPOSALS.find(x => x.id === e.target.value);
+  set({p: e.target.value, view: p ? (innerWidth < 760 ? 'proposed' : 'both') : 'today', ...(p?.role ? {role: p.role} : {}),
+    ...(p?.look?.[0] ? {page: '/' + p.look[0][0], ...(p.look[0][2] || {})} : {})});
+};
+$('#page').onchange = e => { s.page = e.target.value; write(); go(s.page); notes(); };
+for (const b of document.querySelectorAll('#view button')) b.onclick = () => set({view: b.dataset.v});
+for (const seg of document.querySelectorAll('.seg[data-key]'))
+  for (const b of seg.querySelectorAll('button')) b.onclick = () => set({[seg.dataset.key]: b.dataset.v});
+$('#more-button').onclick = () => {
+  const open = document.body.classList.toggle('more');
+  $('#more-button').setAttribute('aria-expanded', String(open));
+  layout();
+};
+$('#sensor-button').onclick = event => {
+  const box = $('#sensors'), open = box.classList.toggle('open');
+  $('#sensor-button').setAttribute('aria-expanded', String(open));
+  if (!open) return;
+  const r = event.currentTarget.getBoundingClientRect();
+  Object.assign(box.style, {top: `${r.bottom + 6}px`, left: `${Math.max(8, Math.min(innerWidth - 260, r.left - 120))}px`});
+  sensors(JSON.parse(box.dataset.zones || '[]'));
+  for (const f of frames) f.iframe.contentWindow?.postMessage({mockup: 'tell'}, '*');
+};
+document.addEventListener('click', e => {
+  if (!e.target.closest('#sensors, #sensor-button')) { $('#sensors').classList.remove('open'); $('#sensor-button').setAttribute('aria-expanded', 'false'); }
+});
+$('#reset').onclick = () => mount();
+addEventListener('resize', layout);
+addEventListener('hashchange', () => { const next = read(); if (JSON.stringify(next) !== JSON.stringify(s)) { s = next; controls(); mount(); } });
+write();
+mount();
+</script>
+</body>
+</html>

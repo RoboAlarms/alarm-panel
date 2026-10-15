@@ -1,0 +1,9 @@
+<component>
+	<!-- The code pad over the screen, on a dimmed backdrop: for the actions that are not about
+	     arming (chime, bypass, acknowledging troubles). The panel stays on the view you were
+	     looking at and says, with an icon and plain words, what it will do (UI-025). -->
+	<view extends="box" width="100%" height="100%" clickable="true">
+		<style name="style_backdrop" />
+		<code_pad name="modal_pad_card" width="464" height="304" align="center" words_max="180" top_grow="1" />
+	</view>
+</component>

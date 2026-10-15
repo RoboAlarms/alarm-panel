@@ -1,0 +1,21 @@
+<component>
+	<!-- A full-width action in a settings list (add a user, forget a network, leave installer
+	     mode), tinted in its tone. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE13D;" help="Lucide glyph" />
+		<prop name="text" type="string" default="Add user" help="Caption" />
+		<prop name="color" type="color" default="#color_blue" help="Tone" />
+	</api>
+
+	<styles>
+		<style name="style_row_button" width="100%" height="52" radius="#radius_md" bg_opa="14%" border_width="1" layout="flex" flex_flow="row" flex_main_place="center" flex_cross_place="center" flex_track_place="center" pad_column="#space_sm" text_font="font_label" text_color="#color_text" />
+		<style name="style_row_button_pressed" bg_opa="30%" />
+	</styles>
+
+	<view extends="box" clickable="true" style_bg_color="$color" style_border_color="$color">
+		<style name="style_row_button" />
+		<style name="style_row_button_pressed" selector="pressed" />
+		<lv_label text="$glyph" style_text_font="icons_20" style_text_color="$color" />
+		<lv_label name="text_label" text="$text" />
+	</view>
+</component>

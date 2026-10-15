@@ -1,0 +1,57 @@
+{
+  "device": "Aqara lumi.magnet.agl02",
+  "tests": "a newer Aqara contact that IS IAS, unlike the older lumi.sensor_magnet row",
+  "provenance": "Seed row from the zigpy/zha and deCONZ device files (docs/features/20 testing.md section 2); capture a real unit (console: zigbee device <id> signature) before a quirk depends on it. Addresses are fictional.",
+  "ieee": "0x02ABCD0000000004",
+  "nwk": "0x1A04",
+  "node": {
+    "logical_type": "end_device",
+    "mac_caps": "0x80",
+    "manufacturer_code": 4447,
+    "server_mask": "0x0000"
+  },
+  "power_source": 3,
+  "basic": {
+    "manufacturer": "LUMI",
+    "model": "lumi.magnet.agl02"
+  },
+  "endpoints": [
+    {
+      "endpoint": 1,
+      "profile": "0x0104",
+      "device_id": "0x0402",
+      "in": [
+        "0x0000",
+        "0x0001",
+        "0x0003",
+        "0x0500"
+      ],
+      "out": [],
+      "zone_type": "0x0015"
+    }
+  ],
+  "expect": {
+    "role": "sensor",
+    "router": false,
+    "sleepy": true,
+    "enroll": "standard",
+    "supervision_s": 7200,
+    "quirk": {
+      "manufacturer": "LUMI",
+      "model": null
+    },
+    "inputs": [
+      {
+        "endpoint": 1,
+        "clusters": [
+          "BASIC",
+          "POWER_CFG",
+          "IDENTIFY",
+          "IAS_ZONE"
+        ],
+        "zone_type": "0x0015",
+        "class": "door"
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+<component>
+	<!-- What a sheet's choices add up to, in one sentence under a line (the kit's result_line;
+	     BL-170, the "Arm the panel" sheet: "Warns at 10:25 PM, arms Night at 10:30 PM."). The code
+	     rewrites "result_label" as the choices change; never live words (UI-023). -->
+	<api>
+		<prop name="text" type="string" default="Warns at 10:25 PM, arms Night at 10:30 PM." help="The sentence" />
+	</api>
+
+	<view extends="box" width="100%" height="content" style_border_side="top" style_border_width="1" style_border_color="#color_line" style_pad_top="#space_md" style_pad_left="#space_xs" style_pad_right="#space_xs">
+		<lv_label name="result_label" width="100%" long_mode="wrap" text="$text" style_text_font="font_label" />
+	</view>
+</component>

@@ -1,0 +1,395 @@
+{
+  "format": 1,
+  "version": "2026.10.12",
+  "about": "One entry per firmware/<board> (tools/tests/test_flasher_safety.py checks). Hints for the Flasher: how to recognise the board and what to tell the person flashing it. The firmware images themselves come from a bundle. \"version\" (year.month.n) orders this file against the board descriptions the firmware server offers (FWS-032): raise it with every change, and the newer one wins. A board with \"offered\": false is known but not installed by the Flasher (not_offered says why): it is never chosen, its images are refused, and bundles are not made for it. The rf pins and the clock module's rtc pins, and their other places (rf.places, rtc.places: RF_PLACES and I2C_PLACES), and the Z-Wave radio's places (zwave.places: ZWAVE_PLACES) are the firmware's own (board_desc.c / board_pins.h; the tests compare them). Pad and pin names are as printed on the board. A board without an rtc entry has no connector for a clock module. \"connect\" is the maker's advice for plugging the board in: the port this computer uses, the power it needs while it is set up, what to try when it doesn't appear (the CrowPanel's: Elecrow's wiki and the V1.1 schematic, where each 5 V input has its own diode).",
+  "boards": {
+    "crowpanel_p4": {
+      "name": "CrowPanel 7\"",
+      "long_name": "Elecrow CrowPanel Advanced 7\" (ESP32-P4), board V1.1",
+      "revision": "V1.1",
+      "revision_note": "On V1.2 boards IO27 and IO28 are wired to the radio socket instead.",
+      "offered": true,
+      "chip": "esp32p4",
+      "flash_size": "16MB",
+      "usb": [
+        {"usb_id": "1A86:7522", "bridge": "CH340K"}
+      ],
+      "download_mode": "The Flasher restarts the panel into its loader through the USB cable. If that fails: hold BOOT, press and release RESET, then release BOOT, and try again.",
+      "connect": {
+        "port": "UART0",
+        "power_port": "USB2.0",
+        "steps": [
+          {"do": "Slide the POWER switch to ON.", "why": "The computer can't find the panel while it's off."},
+          {"do": "Plug the cable from this computer into the port marked UART0.", "why": ""},
+          {"do": "Plug a phone charger into the port marked USB2.0.", "why": "The computer alone can't power the screen, so it may go dark without the charger."},
+          {"do": "Does the panel have its own power supply? Keep it connected.", "why": "It's safe to use alongside the computer, and you won't need the phone charger."}
+        ],
+        "not_showing": [
+          {"do": "Is the POWER switch on?", "why": "The computer can't find the panel while it's off."},
+          {"do": "Is the cable in the port marked UART0?", "why": "The port marked USB2.0 is only for power."}
+        ],
+        "before_install": "POWER on, a phone charger on the USB2.0 port (or the panel's own 5 V supply): the panel starts with its screen on at the end, which needs more power than a computer's USB port gives.",
+        "more_power": "Plug its USB2.0 port into a phone charger (5 V, 2 A or more) as well, then switch it off and on with POWER."
+      },
+      "rf": {
+        "default_gpio": 10,
+        "default_where": "wireless-module socket pad IO10",
+        "pins": [2, 3, 4, 5, 49, 50, 51, 52],
+        "module_wires": [
+          {"pin": "VCC", "to": "3V3", "note": "never 5V: DATA would carry 5 V into the panel"},
+          {"pin": "GND", "to": "GND"},
+          {"pin": "DATA", "to": "socket pad IO10, or the J7 pin chosen for it", "gpio": 10},
+          {"pin": "ANT", "to": "the receiver antenna, or 17.3 cm of wire"}
+        ],
+        "cc1101": {
+          "where": "wireless-module socket (while it is empty)",
+          "spi": {"sck": 8, "mosi": 6, "miso": 7, "cs": 9},
+          "gdo0": 10,
+          "wires": [
+            {"pin": "VCC", "to": "3V3", "note": "the CC1101 is a 3.3 V part"},
+            {"pin": "GND", "to": "GND"},
+            {"pin": "SI (MOSI)", "to": "socket pad IO6", "gpio": 6},
+            {"pin": "SO (MISO)", "to": "socket pad IO7", "gpio": 7},
+            {"pin": "SCLK", "to": "socket pad IO8", "gpio": 8},
+            {"pin": "CSn", "to": "socket pad IO9", "gpio": 9},
+            {"pin": "GDO0", "to": "socket pad IO10", "gpio": 10},
+            {"pin": "GDO2", "to": "not connected"},
+            {"pin": "ANT", "to": "a 433 MHz antenna, or 17.3 cm of wire"}
+          ]
+        },
+        "reserved": {
+          "25": "IO25 is the chip's own USB data line, so it is not offered.",
+          "27": "IO27 is kept for the clock module's or the Z-Wave radio's own wiring (on V1.2 boards it is the radio socket's serial line).",
+          "28": "IO28 is kept for the clock module's or the Z-Wave radio's own wiring (on V1.2 boards it is the radio socket's serial line)."
+        },
+        "places": {
+          "j7": {
+            "where": "J7 header",
+            "spi": {"sck": 52, "mosi": 51, "miso": 50, "cs": 49},
+            "gdo0": 5,
+            "wires": [
+              {"pin": "VCC", "to": "3V3", "note": "the CC1101 is a 3.3 V part"},
+              {"pin": "GND", "to": "GND"},
+              {"pin": "SI (MOSI)", "to": "J7 IO51", "gpio": 51},
+              {"pin": "SO (MISO)", "to": "J7 IO50", "gpio": 50},
+              {"pin": "SCLK", "to": "J7 IO52", "gpio": 52},
+              {"pin": "CSn", "to": "J7 IO49", "gpio": 49},
+              {"pin": "GDO0", "to": "J7 IO5", "gpio": 5},
+              {"pin": "GDO2", "to": "not connected"},
+              {"pin": "ANT", "to": "a 433 MHz antenna, or 17.3 cm of wire"}
+            ],
+            "note": "Its five pins stop being wired zone terminals; IO2, IO3 and IO4 remain. Dupont leads of 10 to 15 cm, the antenna away from the board, the display's ribbon and the Zigbee module's antenna."
+          }
+        }
+      },
+      "rtc": {
+        "chip": "DS3231",
+        "where": "I2C connector (J13, PH2.0, 4 pins)",
+        "sda": 45,
+        "scl": 46,
+        "wires": [
+          {
+            "pin": "VCC",
+            "to": "3V3",
+            "note": "never 5V: the module's pull-ups would lift the connector's lines above 3.3 V"
+          },
+          {"pin": "GND", "to": "GND"},
+          {"pin": "SDA", "to": "SDA", "gpio": 45},
+          {"pin": "SCL", "to": "SCL", "gpio": 46},
+          {"pin": "SQW, 32K", "to": "not connected"}
+        ],
+        "connector": {
+          "name": "J13",
+          "printed": "I2C1",
+          "plug": "PH2.0",
+          "pins": ["SCL", "SDA", "3V3", "GND"]
+        },
+        "note": "This connector shares the touch screen's wiring: keep the module inside the case beside it, on 10 to 20 cm of lead away from siren and mains wires, or a fault on it can freeze the touch screen. Match the wires to the printed labels, not their colours.",
+        "places": {
+          "j7": {
+            "where": "J7 header, IO27 (SDA) and IO28 (SCL)",
+            "port": 1,
+            "sda": 27,
+            "scl": 28,
+            "wires": [
+              {"pin": "VCC", "to": "3V3", "note": "never 5V"},
+              {"pin": "GND", "to": "GND"},
+              {"pin": "SDA", "to": "J7 IO27", "gpio": 27},
+              {"pin": "SCL", "to": "J7 IO28", "gpio": 28},
+              {"pin": "SQW, 32K", "to": "not connected"}
+            ],
+            "note": "Its own I2C controller: nothing on it can reach the touch screen, and no wired zone is lost. V1.1 boards only: V1.2 boards carry the radio socket's serial line on these two pins."
+          }
+        },
+        "cell": "A CR2032 coin cell keeps the time through power cuts. Many DS3231 boards (the ZS-042) try to charge it: with a CR2032 remove the charging diode or its resistor, or fit a rechargeable LIR2032."
+      },
+      "zigbee": {
+        "name": "ESP32-H2 module",
+        "where": "wireless-module socket",
+        "socket_printed": [["IO53", "IO8", "IO7", "IO6", "3V3", "GND", "NC"], ["IO54", "IO46", "IO45", "NC", "IO9", "IO10", "NC"]],
+        "note": "Elecrow's module made to plug into the socket on top of the board. It takes every pad of the socket, so a 433 MHz receiver goes on J7 while it is there. The panel uses it for Zigbee sensors, and it needs its radio software first: the Flasher installs it.",
+        "radio": {"chip": "esp32h2", "project": "roboalarms_h2_rcp", "usb": "303A:1001", "parts": {"bootloader": "0x0", "partition-table": "0x8000", "app": "0x10000"}}
+      },
+      "zwave": {
+        "name": "Zooz ZAC93",
+        "note": "The ZAC93 is made for a Raspberry Pi's header: its positions are numbered as a Pi's, 1 to 10. Before wiring, check with a meter on the unpowered radio that positions 1 and 6 are its supply and ground. Its optional reset line (position 7, boards etched Version 2.0) is set on the console: `zwave reset-pin`.",
+        "places": {
+          "socket": {
+            "where": "wireless-module socket",
+            "tx": 53,
+            "rx": 54,
+            "wires": [
+              {"pin": "VCC", "to": "3V3", "note": "its position 1; never 5V"},
+              {"pin": "GND", "to": "GND", "note": "its position 6"},
+              {"pin": "RX", "to": "socket pad IO53, the panel's TX", "note": "its position 8", "gpio": 53},
+              {"pin": "TX", "to": "socket pad IO54, the panel's RX", "note": "its position 10", "gpio": 54}
+            ]
+          },
+          "j7": {
+            "where": "J7 header, IO27 (TX) and IO28 (RX)",
+            "tx": 27,
+            "rx": 28,
+            "wires": [
+              {"pin": "VCC", "to": "3V3", "note": "its position 1; never 5V"},
+              {"pin": "GND", "to": "GND", "note": "its position 6"},
+              {"pin": "RX", "to": "J7 IO27, the panel's TX", "note": "its position 8", "gpio": 27},
+              {"pin": "TX", "to": "J7 IO28, the panel's RX", "note": "its position 10", "gpio": 28}
+            ]
+          }
+        }
+      },
+      "layouts": [
+        {"title": "Receiver module and clock", "parts": {"rf": "module", "rf_place": "j7", "rf_pin": 3, "clock": true, "clock_place": "j13", "zigbee": false}},
+        {"title": "CC1101 and clock", "parts": {"rf": "cc1101", "rf_place": "socket", "clock": true, "clock_place": "j13", "zigbee": false}},
+        {"title": "Zigbee, CC1101 and clock", "parts": {"rf": "cc1101", "rf_place": "j7", "clock": true, "clock_place": "j7", "zigbee": true}},
+        {"title": "Z-Wave, receiver module and clock", "parts": {"rf": "module", "rf_place": "j7", "rf_pin": 3, "clock": true, "clock_place": "j7", "zigbee": false, "zwave": true, "zwave_place": "socket"}}
+      ],
+      "header": {
+        "name": "J7",
+        "rows": [
+          ["5V", "5V", "5V", "GND", "GND", "IO52", "IO51", "IO50", "IO49", "IO28", "GND", "GND"],
+          ["3V3", "3V3", "3V3", "GND", "IO2", "IO3", "IO4", "IO5", "IO25", "IO27", "GND", "GND"]
+        ]
+      },
+      "custom": {
+        "pins": [
+          {"gpio": 2, "label": "IO2", "connector": "J7"},
+          {"gpio": 3, "label": "IO3", "connector": "J7"},
+          {"gpio": 4, "label": "IO4", "connector": "J7"},
+          {"gpio": 5, "label": "IO5", "connector": "J7"},
+          {"gpio": 27, "label": "IO27", "connector": "J7"},
+          {"gpio": 28, "label": "IO28", "connector": "J7"},
+          {"gpio": 49, "label": "IO49", "connector": "J7"},
+          {"gpio": 50, "label": "IO50", "connector": "J7"},
+          {"gpio": 51, "label": "IO51", "connector": "J7"},
+          {"gpio": 52, "label": "IO52", "connector": "J7"}
+        ]
+      }
+    },
+    "crowpanel_10": {
+      "name": "CrowPanel 10.1\"",
+      "long_name": "Elecrow CrowPanel Advanced 10.1\" (ESP32-P4), board V1.2",
+      "revision": "V1.2",
+      "revision_note": "On V1.1 boards IO27 and IO28 are on J7 instead, and the radio socket uses IO53 and IO54.",
+      "offered": true,
+      "chip": "esp32p4",
+      "flash_size": "16MB",
+      "usb": [
+        {"usb_id": "1A86:7522", "bridge": "CH340K"}
+      ],
+      "download_mode": "The Flasher restarts the panel into its loader through the USB cable. If that fails: hold BOOT, press and release RESET, then release BOOT, and try again.",
+      "connect": {
+        "port": "UART0",
+        "power_port": "USB2.0",
+        "steps": [
+          {"do": "Slide the POWER switch to ON.", "why": "The computer can't find the panel while it's off."},
+          {"do": "Plug the cable from this computer into the port marked UART0.", "why": ""},
+          {"do": "Plug a phone charger into the port marked USB2.0.", "why": "The computer alone can't power the screen, so it may go dark without the charger."},
+          {"do": "Does the panel have its own power supply? Keep it connected.", "why": "It's safe to use alongside the computer, and you won't need the phone charger."}
+        ],
+        "not_showing": [
+          {"do": "Is the POWER switch on?", "why": "The computer can't find the panel while it's off."},
+          {"do": "Is the cable in the port marked UART0?", "why": "The port marked USB2.0 is only for power."}
+        ],
+        "before_install": "POWER on, a phone charger on the USB2.0 port (or the panel's own 5 V supply): the panel starts with its screen on at the end, which needs more power than a computer's USB port gives.",
+        "more_power": "Plug its USB2.0 port into a phone charger (5 V, 2 A or more) as well, then switch it off and on with POWER."
+      },
+      "rf": {
+        "default_gpio": 10,
+        "default_where": "wireless-module socket pad IO10",
+        "pins": [2, 3, 4, 5, 49, 50, 51, 52],
+        "module_wires": [
+          {"pin": "VCC", "to": "3V3", "note": "never 5V: DATA would carry 5 V into the panel"},
+          {"pin": "GND", "to": "GND"},
+          {"pin": "DATA", "to": "socket pad IO10, or the J7 pin chosen for it", "gpio": 10},
+          {"pin": "ANT", "to": "the receiver antenna, or 17.3 cm of wire"}
+        ],
+        "cc1101": {
+          "where": "wireless-module socket (while it is empty)",
+          "spi": {"sck": 8, "mosi": 6, "miso": 7, "cs": 9},
+          "gdo0": 10,
+          "wires": [
+            {"pin": "VCC", "to": "3V3", "note": "the CC1101 is a 3.3 V part"},
+            {"pin": "GND", "to": "GND"},
+            {"pin": "SI (MOSI)", "to": "socket pad IO6", "gpio": 6},
+            {"pin": "SO (MISO)", "to": "socket pad IO7", "gpio": 7},
+            {"pin": "SCLK", "to": "socket pad IO8", "gpio": 8},
+            {"pin": "CSn", "to": "socket pad IO9", "gpio": 9},
+            {"pin": "GDO0", "to": "socket pad IO10", "gpio": 10},
+            {"pin": "GDO2", "to": "not connected"},
+            {"pin": "ANT", "to": "a 433 MHz antenna, or 17.3 cm of wire"}
+          ]
+        },
+        "reserved": {
+          "25": "IO25 is the chip's own USB data line, so it is not offered.",
+          "53": "IO53 is kept for the clock module's or the Z-Wave radio's own wiring.",
+          "54": "IO54 is kept for the clock module's or the Z-Wave radio's own wiring."
+        },
+        "places": {
+          "j7": {
+            "where": "J7 header",
+            "spi": {"sck": 52, "mosi": 51, "miso": 50, "cs": 49},
+            "gdo0": 5,
+            "wires": [
+              {"pin": "VCC", "to": "3V3", "note": "the CC1101 is a 3.3 V part"},
+              {"pin": "GND", "to": "GND"},
+              {"pin": "SI (MOSI)", "to": "J7 IO51", "gpio": 51},
+              {"pin": "SO (MISO)", "to": "J7 IO50", "gpio": 50},
+              {"pin": "SCLK", "to": "J7 IO52", "gpio": 52},
+              {"pin": "CSn", "to": "J7 IO49", "gpio": 49},
+              {"pin": "GDO0", "to": "J7 IO5", "gpio": 5},
+              {"pin": "GDO2", "to": "not connected"},
+              {"pin": "ANT", "to": "a 433 MHz antenna, or 17.3 cm of wire"}
+            ],
+            "note": "Its five pins stop being wired zone terminals; IO2, IO3 and IO4 remain. Dupont leads of 10 to 15 cm, the antenna away from the board, the display's ribbon and the Zigbee module's antenna."
+          }
+        }
+      },
+      "rtc": {
+        "chip": "DS3231",
+        "where": "I2C connector (J13, HY2.0, 4 pins)",
+        "sda": 45,
+        "scl": 46,
+        "wires": [
+          {
+            "pin": "VCC",
+            "to": "3V3",
+            "note": "never 5V: the module's pull-ups would lift the connector's lines above 3.3 V"
+          },
+          {"pin": "GND", "to": "GND"},
+          {"pin": "SDA", "to": "SDA", "gpio": 45},
+          {"pin": "SCL", "to": "SCL", "gpio": 46},
+          {"pin": "SQW, 32K", "to": "not connected"}
+        ],
+        "connector": {
+          "name": "J13",
+          "printed": "I2C1",
+          "plug": "HY2.0",
+          "pins": ["SCL", "SDA", "3V3", "GND"]
+        },
+        "note": "This connector shares the touch screen's wiring: keep the module inside the case beside it, on 10 to 20 cm of lead away from siren and mains wires, or a fault on it can freeze the touch screen. Match the wires to the printed labels, not their colours.",
+        "places": {
+          "j7": {
+            "where": "J7 header, IO53 (SDA) and IO54 (SCL)",
+            "port": 1,
+            "sda": 53,
+            "scl": 54,
+            "wires": [
+              {"pin": "VCC", "to": "3V3", "note": "never 5V"},
+              {"pin": "GND", "to": "GND"},
+              {"pin": "SDA", "to": "J7 IO53", "gpio": 53},
+              {"pin": "SCL", "to": "J7 IO54", "gpio": 54},
+              {"pin": "SQW, 32K", "to": "not connected"}
+            ],
+            "note": "Its own I2C controller: nothing on it can reach the touch screen, and no wired zone is lost."
+          }
+        },
+        "cell": "A CR2032 coin cell keeps the time through power cuts. Many DS3231 boards (the ZS-042) try to charge it: with a CR2032 remove the charging diode or its resistor, or fit a rechargeable LIR2032."
+      },
+      "zigbee": {
+        "name": "ESP32-H2 module",
+        "where": "wireless-module socket",
+        "socket_printed": [["IO27", "IO8", "IO7", "IO6", "3V3", "GND", "NC"], ["IO28", "IO46", "IO45", "NC", "IO9", "IO10", "NC"]],
+        "note": "Elecrow's module made to plug into the socket on top of the board. It takes every pad of the socket, so a 433 MHz receiver goes on J7 while it is there. The panel uses it for Zigbee sensors, and it needs its radio software first: the Flasher installs it.",
+        "radio": {"chip": "esp32h2", "project": "roboalarms_h2_rcp", "usb": "303A:1001", "parts": {"bootloader": "0x0", "partition-table": "0x8000", "app": "0x10000"}}
+      },
+      "zwave": {
+        "name": "Zooz ZAC93",
+        "note": "The ZAC93 is made for a Raspberry Pi's header: its positions are numbered as a Pi's, 1 to 10. Before wiring, check with a meter on the unpowered radio that positions 1 and 6 are its supply and ground. Its optional reset line (position 7, boards etched Version 2.0) is set on the console: `zwave reset-pin`.",
+        "places": {
+          "socket": {
+            "where": "wireless-module socket",
+            "tx": 27,
+            "rx": 28,
+            "wires": [
+              {"pin": "VCC", "to": "3V3", "note": "its position 1; never 5V"},
+              {"pin": "GND", "to": "GND", "note": "its position 6"},
+              {"pin": "RX", "to": "socket pad IO27, the panel's TX", "note": "its position 8", "gpio": 27},
+              {"pin": "TX", "to": "socket pad IO28, the panel's RX", "note": "its position 10", "gpio": 28}
+            ]
+          },
+          "j7": {
+            "where": "J7 header, IO53 (TX) and IO54 (RX)",
+            "tx": 53,
+            "rx": 54,
+            "wires": [
+              {"pin": "VCC", "to": "3V3", "note": "its position 1; never 5V"},
+              {"pin": "GND", "to": "GND", "note": "its position 6"},
+              {"pin": "RX", "to": "J7 IO53, the panel's TX", "note": "its position 8", "gpio": 53},
+              {"pin": "TX", "to": "J7 IO54, the panel's RX", "note": "its position 10", "gpio": 54}
+            ]
+          }
+        }
+      },
+      "layouts": [
+        {"title": "Receiver module and clock", "parts": {"rf": "module", "rf_place": "j7", "rf_pin": 3, "clock": true, "clock_place": "j13", "zigbee": false}},
+        {"title": "CC1101 and clock", "parts": {"rf": "cc1101", "rf_place": "socket", "clock": true, "clock_place": "j13", "zigbee": false}},
+        {"title": "Zigbee, CC1101 and clock", "parts": {"rf": "cc1101", "rf_place": "j7", "clock": true, "clock_place": "j7", "zigbee": true}},
+        {"title": "Z-Wave, receiver module and clock", "parts": {"rf": "module", "rf_place": "j7", "rf_pin": 3, "clock": true, "clock_place": "j7", "zigbee": false, "zwave": true, "zwave_place": "socket"}}
+      ],
+      "header": {
+        "name": "J7",
+        "rows": [
+          ["5V", "5V", "5V", "GND", "GND", "IO54", "IO53", "IO52", "IO51", "IO50", "GND", "GND"],
+          ["3V3", "3V3", "3V3", "GND", "IO2", "IO3", "IO4", "IO5", "IO25", "IO49", "GND", "GND"]
+        ]
+      },
+      "custom": {
+        "pins": [
+          {"gpio": 2, "label": "IO2", "connector": "J7"},
+          {"gpio": 3, "label": "IO3", "connector": "J7"},
+          {"gpio": 4, "label": "IO4", "connector": "J7"},
+          {"gpio": 5, "label": "IO5", "connector": "J7"},
+          {"gpio": 49, "label": "IO49", "connector": "J7"},
+          {"gpio": 50, "label": "IO50", "connector": "J7"},
+          {"gpio": 51, "label": "IO51", "connector": "J7"},
+          {"gpio": 52, "label": "IO52", "connector": "J7"},
+          {"gpio": 53, "label": "IO53", "connector": "J7"},
+          {"gpio": 54, "label": "IO54", "connector": "J7"}
+        ]
+      }
+    },
+    "e32r40t": {
+      "name": "E32R40T 4\"",
+      "long_name": "LCDWiki E32R40T 4.0\" (ESP32-32E)",
+      "offered": false,
+      "not_offered": "The 4-inch E32R40T panel is not finished yet, so the Flasher does not install RoboAlarms on it.",
+      "chip": "esp32",
+      "flash_size": "4MB",
+      "usb": [
+        {"usb_id": "1A86:7523", "bridge": "CH340C"}
+      ],
+      "download_mode": "The Flasher restarts the board into its loader through the USB cable. If that fails: hold BOOT, press and release RESET (EN), then release BOOT, and try again.",
+      "rf": {
+        "default_gpio": 35,
+        "default_where": "input header IO35",
+        "pins": [39, 25, 32],
+        "cc1101": {
+          "where": "SPI header (the SD card's bus), data on IO35",
+          "spi": {"sck": 18, "mosi": 23, "miso": 19, "cs": 21},
+          "gdo0": 35
+        }
+      }
+    }
+  }
+}

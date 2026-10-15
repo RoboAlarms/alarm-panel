@@ -1,0 +1,54 @@
+{
+  "device": "Tuya TS0216 _TYZB01_8scntis1",
+  "tests": "a siren; the Green Power endpoint ignored",
+  "provenance": "Seed row from the zigpy/zha and deCONZ device files (docs/features/20 testing.md section 2); capture a real unit (console: zigbee device <id> signature) before a quirk depends on it. Addresses are fictional.",
+  "ieee": "0x02ABCD000000000A",
+  "nwk": "0x1A0A",
+  "node": {
+    "logical_type": "router",
+    "mac_caps": "0x8E",
+    "manufacturer_code": 0,
+    "server_mask": "0x0000"
+  },
+  "power_source": 1,
+  "basic": {
+    "manufacturer": "_TYZB01_8scntis1",
+    "model": "TS0216"
+  },
+  "endpoints": [
+    {
+      "endpoint": 1,
+      "profile": "0x0104",
+      "device_id": "0x0403",
+      "in": [
+        "0x0000",
+        "0x0001",
+        "0x0003",
+        "0x0500",
+        "0x0502",
+        "0x0B05"
+      ],
+      "out": [],
+      "zone_type": "0x0225"
+    },
+    {
+      "endpoint": 242,
+      "profile": "0xA1E0",
+      "device_id": "0x0061",
+      "in": [],
+      "out": [
+        "0x0021"
+      ],
+      "zone_type": null
+    }
+  ],
+  "expect": {
+    "role": "siren",
+    "router": true,
+    "sleepy": false,
+    "enroll": "standard",
+    "supervision_s": 1800,
+    "quirk": null,
+    "inputs": []
+  }
+}

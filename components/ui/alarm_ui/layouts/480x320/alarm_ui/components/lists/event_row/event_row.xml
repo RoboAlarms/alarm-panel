@@ -1,0 +1,23 @@
+<component>
+	<!-- One entry of the activity log. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE10B;" help="Lucide glyph" />
+		<prop name="title" type="string" default="Armed Away" help="What happened" />
+		<prop name="detail" type="string" default="By Master" help="Who / where" />
+		<prop name="time" type="string" default="10:41 PM" help="When" />
+	</api>
+
+	<styles>
+		<style name="style_event_row" width="100%" height="56" bg_color="#color_surface" bg_opa="100%" radius="#radius_md" pad_left="#space_md" pad_right="#space_lg" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_md" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_event_row" />
+		<icon_chip name="chip" glyph="$glyph" size="36" font="icons_20" color="#color_text_2" />
+		<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="0">
+			<lv_label name="title_label" width="100%" long_mode="dots" text="$title" style_text_font="font_label" />
+			<lv_label name="detail_label" width="100%" long_mode="dots" text="$detail" style_text_font="font_caption" style_text_color="#color_text_2" />
+		</box>
+		<lv_label name="time_label" text="$time" style_text_font="font_caption" style_text_color="#color_text_2" />
+	</view>
+</component>

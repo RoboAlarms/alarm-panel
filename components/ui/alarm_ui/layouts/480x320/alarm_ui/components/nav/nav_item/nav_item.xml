@@ -1,0 +1,15 @@
+<component>
+	<!-- Navigation rail entry: icon over caption. The screen binds the selected style.
+	     nav_toggle is the same entry with an icon that follows a subject. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE158;" help="Lucide glyph" />
+		<prop name="text" type="string" default="Home" help="Caption" />
+	</api>
+
+	<view extends="box" clickable="true">
+		<style name="style_nav_item" />
+		<style name="style_nav_item_pressed" selector="pressed" />
+		<lv_label text="$glyph" style_text_font="icons_20" />
+		<lv_label text="$text" style_text_font="font_caption" />
+	</view>
+</component>

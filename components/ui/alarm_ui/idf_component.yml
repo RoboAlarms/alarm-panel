@@ -1,0 +1,4 @@
+description: "Touch UI of the alarm panel (LVGL Pro project components/ui/alarm_ui/layouts/1024x600/alarm_ui + logic + ESP-IDF port)"
+dependencies:
+  idf: ">=6.1"
+  lvgl/lvgl: "~9.5.0"

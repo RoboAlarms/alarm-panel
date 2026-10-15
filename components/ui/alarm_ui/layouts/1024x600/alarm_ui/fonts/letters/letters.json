@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "fingerprint": "0x7145e655",
+  "fonts": {
+    "caption": "font_caption.bin",
+    "body": "font_body.bin",
+    "label": "font_label.bin",
+    "title": "font_title.bin"
+  }
+}

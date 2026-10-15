@@ -1,0 +1,104 @@
+<screen permanent="true">
+	<!-- First-boot setup: welcome, Wi-Fi, time zone, factory codes, system name, done. The
+	     left column says where you are and why; the right side holds the step (lists filled
+	     from C) and the buttons. A step that asks for a code gives the code pad the whole
+	     screen (the pad's title says which code). 480 x 320. -->
+	<view extends="lv_obj" scrollable="false">
+		<style name="style_screen" />
+
+		<box name="wiz_row" width="100%" height="100%" style_layout="flex" style_flex_flow="row">
+			<box name="wiz_side" width="164" height="100%" style_bg_color="#color_rail" style_bg_opa="100%" style_border_side="right" style_border_width="1" style_border_color="#color_line" style_pad_all="#space_xxl" style_layout="flex" style_flex_flow="column" style_pad_row="#space_md">
+				<bind_flag_if_eq subject="subject_wiz_pad" flag="hidden" ref_value="1" />
+				<box name="wiz_steps" width="content" height="content" style_layout="flex" style_flex_flow="row" style_pad_column="#space_sm">
+					<box>
+						<style name="style_step" />
+						<style name="style_step_on" selector="checked" />
+						<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="1" />
+					</box>
+					<box>
+						<style name="style_step" />
+						<style name="style_step_on" selector="checked" />
+						<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="2" />
+					</box>
+					<box>
+						<style name="style_step" />
+						<style name="style_step_on" selector="checked" />
+						<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="3" />
+					</box>
+					<box>
+						<style name="style_step" />
+						<style name="style_step_on" selector="checked" />
+						<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="4" />
+					</box>
+					<box>
+						<style name="style_step" />
+						<style name="style_step_on" selector="checked" />
+						<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="5" />
+					</box>
+				</box>
+				<box name="wiz_disk" width="64" height="64" style_margin_top="#space_md" style_radius="#radius_full" style_bg_color="#color_blue" style_bg_opa="#opa_tint">
+					<lv_label name="wiz_icon" align="center" bind_text="subject_wiz_icon" style_text_font="icons_40" style_text_color="#color_blue" />
+				</box>
+				<lv_label name="wiz_title" width="100%" long_mode="wrap" bind_text="subject_wiz_title" style_margin_top="#space_xs" style_text_font="font_title" />
+				<lv_label name="wiz_note" width="100%" long_mode="wrap" bind_text="subject_wiz_note" style_text_font="font_caption" style_text_color="#color_text_2" />
+			</box>
+
+			<box name="wiz_main" flex_grow="1" height="100%" style_pad_all="#space_md" style_layout="flex" style_flex_flow="column" style_pad_row="#space_md">
+				<box name="wiz_body" width="100%" flex_grow="1" scrollable="true" clickable="true" user_1="true" scrollbar_mode="off" style_layout="flex" style_flex_flow="column" style_pad_row="#space_sm">
+					<bind_flag_if_eq subject="subject_wiz_pad" flag="hidden" ref_value="1" />
+				</box>
+				<box name="wiz_pad_area" width="100%" flex_grow="1">
+					<bind_flag_if_eq subject="subject_wiz_pad" flag="hidden" ref_value="0" />
+					<code_pad name="wiz_pad" width="100%" height="100%" words_max="180" />
+				</box>
+				<box name="wiz_footer" width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
+					<bind_flag_if_eq subject="subject_wiz_pad" flag="hidden" ref_value="1" />
+					<box name="wiz_exit" width="content" clickable="true">
+						<style name="style_button" />
+						<style name="style_button_pressed" selector="pressed" />
+						<bind_flag_if_eq subject="subject_wiz_exit" flag="hidden" ref_value="0" />
+						<event_cb callback="ui_on_wizard_exit" trigger="clicked" />
+						<lv_label text="&#xE10E;" style_text_font="icons_20" />
+						<lv_label text="Leave" />
+					</box>
+					<box name="wiz_back" width="44" height="44" clickable="true" ext_click_area="4" style_radius="#radius_full" style_bg_color="#color_raised" style_bg_opa="100%">
+						<style name="style_button_pressed" selector="pressed" />
+						<bind_flag_if_eq subject="subject_wiz_back" flag="hidden" ref_value="0" />
+						<event_cb callback="ui_on_wizard_back" trigger="clicked" />
+						<lv_label align="center" text="&#xE06E;" style_text_font="icons_20" />
+					</box>
+					<lv_spinner name="wiz_spinner" width="28" height="28" anim_duration="1000" arc_sweep="240" style_arc_width="4" style_arc_color="#color_line" style_arc_width-indicator="4" style_arc_color-indicator="#color_blue">
+						<bind_flag_if_eq subject="subject_busy" flag="hidden" ref_value="0" />
+					</lv_spinner>
+					<box width="8" height="8" flex_grow="1" />
+					<box name="wiz_next" width="content" clickable="true">
+						<style name="style_button" />
+						<style name="style_button_primary" />
+						<style name="style_button_tone_pressed" selector="pressed" />
+						<bind_style name="style_disabled" subject="subject_wiz_next_on" ref_value="0" />
+						<event_cb callback="ui_on_wizard_next" trigger="clicked" />
+						<lv_label bind_text="subject_wiz_next" />
+						<lv_label text="&#xE06F;" style_text_font="icons_20" />
+					</box>
+				</box>
+			</box>
+		</box>
+
+		<text_sheet name="wiz_text_sheet">
+			<bind_flag_if_not_eq subject="subject_sheet" flag="hidden" ref_value="1" />
+		</text_sheet>
+		<pick_sheet name="wiz_pick_sheet">
+			<bind_flag_if_not_eq subject="subject_sheet" flag="hidden" ref_value="2" />
+		</pick_sheet>
+		<confirm_dialog name="wiz_confirm_dialog">
+			<bind_flag_if_not_eq subject="subject_sheet" flag="hidden" ref_value="3" />
+		</confirm_dialog>
+
+		<!-- At the top of the step, clear of the footer's buttons (the 7" puts it over the left
+		     column, which has no room here); it takes no touch. -->
+		<box name="wiz_toast" width="content" height="40" align="top_mid" x="82" y="8" style_max_width="300" style_bg_color="#color_pressed" style_bg_opa="100%" style_radius="#radius_full" style_border_width="1" style_border_color="0x3A4658" style_pad_left="#space_xl" style_pad_right="#space_xl" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center">
+			<bind_flag_if_eq subject="subject_toast_visible" flag="hidden" ref_value="0" />
+			<lv_label height="20" long_mode="dots" bind_text="subject_toast" style_max_width="276" style_text_font="font_label" />
+		</box>
+	</view>
+</screen>

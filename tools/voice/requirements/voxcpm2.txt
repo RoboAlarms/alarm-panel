@@ -1,0 +1,2 @@
+# VoxCPM2
+voxcpm==2.0.3

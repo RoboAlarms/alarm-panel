@@ -1,0 +1,8 @@
+<project lvgl_version="9.5.0" theme="simple">
+	<targets>
+		<!-- Elecrow CrowPanel Advanced 7" (ESP32-P4), landscape -->
+		<target name="crowpanel_7in">
+			<display width="1024" height="600" />
+		</target>
+	</targets>
+</project>

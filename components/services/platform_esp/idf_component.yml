@@ -1,0 +1,11 @@
+description: "ESP-IDF glue for alarm_core: alarm task, NVS store, code hashing, Wi-Fi, time, console"
+dependencies:
+  idf: ">=6.1"
+  espressif/esp_wifi_remote:
+    version: "~1.6.4"
+    rules:
+      - if: "target in [esp32p4]"
+  espressif/esp_hosted: # 3.0.8 on: the AP record keeps its RSSI (BL-031)
+    version: "~3.0.9"
+    rules:
+      - if: "target in [esp32p4]"

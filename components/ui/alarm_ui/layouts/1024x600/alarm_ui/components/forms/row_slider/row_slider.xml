@@ -1,0 +1,30 @@
+<component>
+	<!-- A level (brightness, volume): icon chip, title, value in words and a slider ("slider"). The
+	     chip and the padding are list_row's, so the title starts where a list row's does. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE178;" help="Lucide glyph" />
+		<prop name="title" type="string" default="Brightness" help="Setting" />
+		<prop name="value" type="string" default="80%" help="Current value in words" />
+	</api>
+
+	<styles>
+		<style name="style_row_slider" width="100%" height="content" bg_color="#color_surface" bg_opa="100%" radius="#radius_md" pad_left="#space_md" pad_right="#space_lg" pad_top="#space_sm" pad_bottom="#space_lg" layout="flex" flex_flow="column" pad_row="#space_sm" />
+		<style name="style_slider" height="8" radius="#radius_full" bg_color="#color_pressed" bg_opa="100%" />
+		<style name="style_slider_indicator" radius="#radius_full" bg_color="#color_blue" bg_opa="100%" />
+		<style name="style_slider_knob" radius="#radius_full" bg_color="#color_knob" bg_opa="100%" pad_all="10" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_row_slider" />
+		<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
+			<icon_chip glyph="$glyph" size="44" font="icons_20" color="#color_blue" />
+			<lv_label flex_grow="1" text="$title" style_text_font="font_label" />
+			<lv_label name="value_label" text="$value" style_text_color="#color_text_2" />
+		</box>
+		<lv_slider name="slider" width="100%" min_value="0" max_value="100" value="50" ext_click_area="16" style_margin_left="14" style_margin_right="10">
+			<style name="style_slider" />
+			<style name="style_slider_indicator" selector="indicator" />
+			<style name="style_slider_knob" selector="knob" />
+		</lv_slider>
+	</view>
+</component>

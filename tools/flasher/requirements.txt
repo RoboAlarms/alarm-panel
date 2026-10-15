@@ -1,0 +1,7 @@
+# RoboAlarms Flasher (docs/features/34). The engine needs esptool and pyserial; the window needs
+# pywebview (without it the Flasher opens a browser tab instead); certifi gives the firmware server's
+# downloads the certificates a program built for macOS has none of. The build adds pyinstaller.
+esptool>=5.4,<6
+pyserial==3.5
+pywebview>=5.3,<7
+certifi>=2024.2

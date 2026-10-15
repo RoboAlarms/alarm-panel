@@ -1,0 +1,84 @@
+menu "Zone source: 433 MHz sensors (rf_service)"
+
+    config ALARM_ZSRC_RF
+        bool "Zone source: 433 MHz sensors (CC1101 or a receiver module)"
+        default y
+        help
+            The cheap one-way 433 MHz door contacts, PIRs, water and smoke detectors and
+            remotes that speak the EV1527 / PT2262 fixed code (docs/features/25), received by a
+            TI CC1101 module wired to the wireless socket's SPI and one data pin, or by a
+            fixed superheterodyne receiver module (RX470-4 / WL101-341, RXB6, SRX882: the
+            Amazon "433 MHz transmitter and receiver" kits) on the data pin alone. Codes are
+            learned by triggering the sensor in the zone editor. They send no heartbeat and
+            can be replayed, so the source is not supervised and not trusted for fire, CO or
+            24-hour panic zones by default (docs/features/22 ZSRC-008).
+
+            Harmless without the module: the service asks the bus every 30 s and offers the
+            source in the picker only while a receiver answers. `rf` on the console is the
+            bench: status, `rf retry`, `rf freq <kHz>`, `rf module`, `rf raw on`, `rf capture <ms>`.
+
+    if ALARM_ZSRC_RF
+    config ALARM_RF_SPI_MOSI_GPIO
+        int "CC1101 MOSI (SI) GPIO (-1: the board's wiring)"
+        range -1 54
+        default -1
+        help
+            -1 uses where the board description puts a receiver (board_info_t.rf): on the
+            CrowPanel, the wireless-module socket's SPI - MOSI 6, MISO 7, SCK 8, CS on IO9 and
+            the data line on IO10. Wire a CC1101 breakout there while the socket is empty, or
+            anywhere else and set the pins here. The firmware checks the pins against the
+            board at start-up and leaves the receiver off rather than use a flash pin, a pin
+            the board already uses, or a strapping pin for the data line (GDO0 idles high on
+            noise and would hold the strap through a reset).
+    config ALARM_RF_SPI_MISO_GPIO
+        int "CC1101 MISO (SO) GPIO (-1: the board's wiring)"
+        range -1 54
+        default -1
+    config ALARM_RF_SPI_SCK_GPIO
+        int "CC1101 SCK GPIO (-1: the board's wiring)"
+        range -1 54
+        default -1
+    config ALARM_RF_SPI_CS_GPIO
+        int "CC1101 CSn GPIO (-1: the board's wiring)"
+        range -1 54
+        default -1
+    config ALARM_RF_GDO0_GPIO
+        int "Data GPIO: the CC1101's GDO0, or a receiver module's DATA (-1: the board's)"
+        range -1 54
+        default -1
+        help
+            The demodulated line the RMT peripheral captures. A fixed receiver module (RX470-4,
+            WL101-341, RXB6, SRX882) needs only this pin, 3V3 and GND - power it from 3V3, never
+            5V: its DATA swings to its supply and the P4's pins are not 5 V tolerant.
+
+    choice ALARM_RF_MODULE
+        prompt "Receiver"
+        default ALARM_RF_MODULE_AUTO
+        help
+            Which receiver this panel uses. `rf module auto|cc1101|ook` on the console
+            overrides it and is remembered.
+        config ALARM_RF_MODULE_AUTO
+            bool "Automatic: a CC1101 if one answers, else a module on the data pin"
+        config ALARM_RF_MODULE_CC1101
+            bool "CC1101 only"
+        config ALARM_RF_MODULE_OOK
+            bool "Receiver module only (RX470-4, WL101-341, RXB6, SRX882)"
+    endchoice
+    config ALARM_RF_FREQ_KHZ
+        int "Receive frequency, kHz"
+        default 433920
+        range 300000 464000
+        help
+            433920 for the cheap sensors and remotes; 315000 and 345000 for the American
+            ones (345 MHz decoders come later). `rf freq` on the console
+            overrides this and is remembered.
+    config ALARM_RF_INVERT
+        bool "The data line idles high"
+        default n
+        help
+            A CC1101 in asynchronous mode idles low with the carrier off; some
+            superheterodyne modules idle high. Set this when `rf capture` shows every frame
+            upside down.
+    endif
+
+endmenu

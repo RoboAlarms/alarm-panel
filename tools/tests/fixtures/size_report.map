@@ -1,0 +1,66 @@
+Archive member included to satisfy reference by file (symbol)
+
+esp-idf/alarm_core/libalarm_core.a(core.c.obj)
+                              CMakeFiles/fixture.elf.dir/main.c.obj (engine_step)
+
+Discarded input sections
+
+ .text          0x00000000        0x0 esp-idf/alarm_core/libalarm_core.a(core.c.obj)
+ .text.unused_helper
+                0x00000000       0x40 esp-idf/alarm_ui/libalarm_ui.a(ui_main.c.obj)
+ .rodata.discarded.str1.4
+                0x00000000       0x99 esp-idf/alarm_ui/libalarm_ui.a(ui_main.c.obj)
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+iram0_0_seg      0x4ff00000         0x00050000         xr
+default_rela_dummy 0x00000000       0xffffffff
+
+Linker script and memory map
+
+                0x00000000                        IDF_TARGET_ESP32P4 = 0x0
+LOAD esp-idf/alarm_core/libalarm_core.a
+LOAD esp-idf/alarm_ui/libalarm_ui.a
+
+.dram0.data     0x4ff11e80       0x20
+ *(.sdata)
+ .sdata         0x4ff11e80        0x4 toolchain/lib\libc.a(libc_environ.c.o)
+                0x4ff11e80                environ
+ .data.engine_state
+                0x4ff11e84       0x10 esp-idf/alarm_core/libalarm_core.a(core.c.obj)
+                0x4ff11e84                engine_state
+
+.dram0.bss      0x4ff11ea0     0x1000
+ .bss.big_buffer
+                0x4ff11ea0     0x1000 esp-idf/alarm_core/libalarm_core.a(core.c.obj)
+
+.flash.text     0x40000020      0x700
+ *(EXCLUDE_FILE(*libfoo.a:foo.*) .text .text.*)
+ .text.engine_step
+                0x40000020      0x100 esp-idf/alarm_core/libalarm_core.a(core.c.obj)
+                0x40000020                engine_step
+ .text.ui_build
+                0x40000120      0x300 esp-idf/alarm_ui/libalarm_ui.a(ui_main.c.obj)
+                0x40000120                ui_build
+ .text.a_function_with_a_very_long_name_that_wraps
+                0x40000420       0x80 esp-idf/alarm_ui/libalarm_ui.a(ui_main.c.obj)
+ .text.lv_obj_create
+                0x400004a0      0x200 esp-idf/lvgl__lvgl/liblvgl__lvgl.a(lv_obj.c.obj)
+                0x400004a0                lv_obj_create
+
+.flash.rodata   0x401c0120      0x460
+ .rodata.glyph_bitmap
+                0x401c0120      0x400 esp-idf/alarm_ui/libalarm_ui.a(font_body_data.c.obj)
+ .rodata.ui_build.str1.4
+                0x401c0520       0x60 esp-idf/alarm_ui/libalarm_ui.a(ui_main.c.obj)
+                                 0x40 (size before relaxing)
+ .rodata.engine_step.str1.4
+                0x401c0580        0x0 esp-idf/alarm_core/libalarm_core.a(core.c.obj)
+                                 0x20 (size before relaxing)
+ .rodata.lv_obj_create.str1.4
+                0x401c0580        0x0 esp-idf/lvgl__lvgl/liblvgl__lvgl.a(lv_obj.c.obj)
+                                 0x20 (size before relaxing)
+
+.comment        0x00000000       0x20
+ .comment       0x00000000       0x20 esp-idf/alarm_core/libalarm_core.a(core.c.obj)

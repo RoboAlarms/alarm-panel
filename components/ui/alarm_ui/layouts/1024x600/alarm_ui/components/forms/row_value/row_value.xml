@@ -1,0 +1,17 @@
+<component>
+	<!-- A read-only line: what on the left, the value on the right (About, network status). -->
+	<api>
+		<prop name="title" type="string" default="Firmware" help="What" />
+		<prop name="value" type="string" default="v0.4.0" help="Value" />
+	</api>
+
+	<styles>
+		<style name="style_row_value" width="100%" height="content" min_height="52" border_side="bottom" border_width="1" border_color="#color_line" pad_left="#space_xs" pad_right="#space_xs" pad_top="12" pad_bottom="13" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_lg" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_row_value" />
+		<lv_label name="title_label" text="$title" style_text_color="#color_text_2" />
+		<lv_label name="value_label" flex_grow="1" long_mode="wrap" text="$value" style_text_font="font_label" style_text_align="right" />
+	</view>
+</component>

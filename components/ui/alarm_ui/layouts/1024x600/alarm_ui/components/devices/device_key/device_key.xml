@@ -1,0 +1,20 @@
+<component>
+	<!-- One key of device_keys: an optional icon ("icon", hidden by ui_devices.c when the key has
+	     none) and its word. The lit key is tinted in its state's colour from C. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE04A;" help="Lucide glyph, or none" />
+		<prop name="text" type="string" default="Open" help="Caption" />
+	</api>
+
+	<styles>
+		<style name="style_device_key" height="100%" radius="#radius_md" bg_color="#color_raised" bg_opa="100%" layout="flex" flex_flow="row" flex_main_place="center" flex_cross_place="center" flex_track_place="center" pad_column="#space_xs" text_font="font_label" />
+		<style name="style_device_key_pressed" bg_color="#color_pressed" />
+	</styles>
+
+	<view extends="box" flex_grow="1" clickable="true">
+		<style name="style_device_key" />
+		<style name="style_device_key_pressed" selector="pressed" />
+		<lv_label name="icon" text="$glyph" style_text_font="icons_20" />
+		<lv_label name="text_label" text="$text" long_mode="dots" style_max_width="100%" />
+	</view>
+</component>

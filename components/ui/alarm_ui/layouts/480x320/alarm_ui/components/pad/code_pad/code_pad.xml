@@ -1,0 +1,173 @@
+<component>
+	<!-- Code entry on the 4" screen: the keypad on the right, three keys of 80 x 58, and
+	     beside it what the pad is for - the action's icon, the action as the title (in its
+	     colour), the hint or a dot per digit (codes are 4-10 digits, so the length is open),
+	     over the screen a line of plain words (UI-025), the arming options and Silence. The X
+	     sits in the top-left corner, away from the keys. Same names as the 7" pad: the UI code
+	     finds "pad_hint" to shake it and the preview presses "pad_keys" by position. -->
+	<api>
+		<prop name="top_grow" type="int" default="1" help="1: the header takes the height the options and Silence leave; 0 for a pad sized by its content" />
+		<prop name="words_max" type="int" default="112" help="Widest the title and hint may be before they wrap (px): the column beside the keys" />
+	</api>
+
+	<styles>
+		<style name="style_pad" bg_color="#color_surface" bg_opa="100%" radius="#radius_xl" border_width="1" border_color="#color_line" pad_all="#space_md" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_md" />
+		<style name="style_pad_icon" width="44" height="44" radius="#radius_full" bg_opa="22%" />
+		<style name="style_pad_hint_under_dots" text_opa="0" />
+		<style name="style_pad_dot" width="8" height="8" radius="#radius_full" bg_color="#color_text" bg_opa="100%" />
+		<style name="style_pad_close" width="36" height="36" radius="#radius_full" bg_color="#color_raised" bg_opa="100%" text_color="#color_text_2" />
+		<style name="style_pad_close_pressed" bg_color="#color_pressed" />
+		<style name="style_pad_keys" layout="flex" flex_flow="row_wrap" flex_main_place="center" pad_row="6" pad_column="6" />
+		<style name="style_pad_enter" text_color="#color_on_tone" />
+		<style name="style_pad_silence" height="40" radius="#radius_full" bg_color="#color_red" bg_opa="18%" border_width="1" border_color="#color_red" pad_left="#space_lg" pad_right="#space_lg" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_sm" text_font="font_label" text_color="#color_text" />
+		<style name="style_pad_silence_pressed" bg_opa="40%" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_pad" />
+
+		<box name="pad_close" align="top_left" x="2" y="2" floating="true" clickable="true" ext_click_area="10">
+			<style name="style_pad_close" />
+			<style name="style_pad_close_pressed" selector="pressed" />
+			<bind_flag_if_eq subject="subject_pad_close_on" flag="hidden" ref_value="0" />
+			<event_cb callback="ui_on_pad_close" trigger="clicked" />
+			<lv_label align="center" text="&#xE1B2;" style_text_font="icons_20" />
+		</box>
+
+		<!-- Beside the keys: what the pad is for, centred in the column. -->
+		<box name="pad_side" flex_grow="1" height="100%" style_layout="flex" style_flex_flow="column" style_flex_main_place="center" style_flex_cross_place="center" style_flex_track_place="center" style_pad_row="#space_md">
+			<box name="pad_top" width="100%" height="content" flex_grow="$top_grow" style_layout="flex" style_flex_flow="column" style_flex_main_place="center" style_flex_cross_place="center" style_flex_track_place="center" style_pad_row="#space_sm">
+				<box name="pad_header" width="100%" height="content" style_layout="flex" style_flex_flow="column" style_flex_cross_place="center" style_flex_track_place="center">
+					<box name="pad_lead" width="100%" height="content" style_layout="flex" style_flex_flow="column" style_flex_cross_place="center" style_flex_track_place="center" style_pad_row="#space_sm">
+						<box name="pad_icon">
+							<style name="style_pad_icon" />
+							<bind_style_prop prop="bg_color" subject="subject_pad_color" />
+							<bind_flag_if_eq subject="subject_pad_glyph_on" flag="hidden" ref_value="0" />
+							<lv_label align="center" bind_text="subject_pad_glyph" style_text_font="icons_20">
+								<bind_style_prop prop="text_color" subject="subject_pad_color" />
+							</lv_label>
+						</box>
+						<box name="pad_words" width="content" height="content" style_min_width="110" style_layout="flex" style_flex_flow="column" style_flex_cross_place="center" style_flex_track_place="center" style_pad_row="2" style_text_align="center">
+							<lv_label name="pad_title" long_mode="wrap" bind_text="subject_pad_title" style_max_width="$words_max" style_text_font="font_title">
+								<bind_style_prop prop="text_color" subject="subject_pad_color" />
+							</lv_label>
+							<lv_label name="pad_hint" long_mode="wrap" bind_text="subject_pad_hint" style_max_width="$words_max" style_text_font="font_caption">
+								<style name="style_text_2" />
+								<bind_style name="style_text_error" subject="subject_pad_error" ref_value="1" />
+								<bind_style name="style_pad_hint_under_dots" subject="subject_pad_dots_on" ref_value="1" />
+							</lv_label>
+							<box name="pad_dots" align="bottom_mid" floating="true" width="content" height="18" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="3">
+								<bind_flag_if_eq subject="subject_pad_dots_on" flag="hidden" ref_value="0" />
+							<box>
+								<style name="style_pad_dot" />
+								<bind_flag_if_lt subject="subject_pad_digits" flag="hidden" ref_value="1" />
+							</box>
+							<box>
+								<style name="style_pad_dot" />
+								<bind_flag_if_lt subject="subject_pad_digits" flag="hidden" ref_value="2" />
+							</box>
+							<box>
+								<style name="style_pad_dot" />
+								<bind_flag_if_lt subject="subject_pad_digits" flag="hidden" ref_value="3" />
+							</box>
+							<box>
+								<style name="style_pad_dot" />
+								<bind_flag_if_lt subject="subject_pad_digits" flag="hidden" ref_value="4" />
+							</box>
+							<box>
+								<style name="style_pad_dot" />
+								<bind_flag_if_lt subject="subject_pad_digits" flag="hidden" ref_value="5" />
+							</box>
+							<box>
+								<style name="style_pad_dot" />
+								<bind_flag_if_lt subject="subject_pad_digits" flag="hidden" ref_value="6" />
+							</box>
+							<box>
+								<style name="style_pad_dot" />
+								<bind_flag_if_lt subject="subject_pad_digits" flag="hidden" ref_value="7" />
+							</box>
+							<box>
+								<style name="style_pad_dot" />
+								<bind_flag_if_lt subject="subject_pad_digits" flag="hidden" ref_value="8" />
+							</box>
+							<box>
+								<style name="style_pad_dot" />
+								<bind_flag_if_lt subject="subject_pad_digits" flag="hidden" ref_value="9" />
+							</box>
+							<box>
+								<style name="style_pad_dot" />
+								<bind_flag_if_lt subject="subject_pad_digits" flag="hidden" ref_value="10" />
+							</box>
+							</box>
+						</box>
+					</box>
+				</box>
+				<lv_label name="pad_note" width="100%" long_mode="wrap" bind_text="subject_pad_note" style_text_align="center" style_text_font="font_caption" style_text_color="#color_text_3">
+					<bind_flag_if_eq subject="subject_pad_note_on" flag="hidden" ref_value="0" />
+				</lv_label>
+			</box>
+
+			<box name="pad_options" width="100%" height="content" style_layout="flex" style_flex_flow="column" style_flex_cross_place="center" style_flex_track_place="center" style_pad_row="#space_sm">
+				<bind_flag_if_eq subject="subject_pad_options" flag="hidden" ref_value="0" />
+				<chip text="No entry delay" subject="subject_opt_instant" />
+				<chip text="Silent exit" subject="subject_opt_silent">
+					<bind_flag_if_eq subject="subject_opt_silent_avail" flag="hidden" ref_value="0" />
+				</chip>
+				<chip text="Bypass open" subject="subject_opt_bypass">
+					<bind_flag_if_eq subject="subject_opt_bypass_avail" flag="hidden" ref_value="0" />
+				</chip>
+			</box>
+
+			<box name="pad_silence" width="content" clickable="true">
+				<style name="style_pad_silence" />
+				<style name="style_pad_silence_pressed" selector="pressed" />
+				<bind_flag_if_eq subject="subject_pad_silence" flag="hidden" ref_value="0" />
+				<event_cb callback="ui_on_silence" trigger="clicked" />
+				<lv_label text="&#xE05A;" style_text_font="icons_20" style_text_color="#color_red" />
+				<lv_label text="Silence" />
+			</box>
+		</box>
+
+		<box name="pad_keys" width="#keys_w" height="content">
+			<style name="style_pad_keys" />
+			<pad_key text="1">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="1" />
+			</pad_key>
+			<pad_key text="2">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="2" />
+			</pad_key>
+			<pad_key text="3">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="3" />
+			</pad_key>
+			<pad_key text="4">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="4" />
+			</pad_key>
+			<pad_key text="5">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="5" />
+			</pad_key>
+			<pad_key text="6">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="6" />
+			</pad_key>
+			<pad_key text="7">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="7" />
+			</pad_key>
+			<pad_key text="8">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="8" />
+			</pad_key>
+			<pad_key text="9">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="9" />
+			</pad_key>
+			<pad_key text="&#xE0AE;" font="icons_28">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="del" />
+			</pad_key>
+			<pad_key text="0">
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="0" />
+			</pad_key>
+			<pad_key name="pad_enter" text="&#xE06C;" font="icons_28">
+				<style name="style_pad_enter" />
+				<bind_style_prop prop="bg_color" subject="subject_pad_color" />
+				<event_cb callback="ui_on_pad_key" trigger="clicked" user_data="ok" />
+			</pad_key>
+		</box>
+	</view>
+</component>

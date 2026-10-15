@@ -1,0 +1,7 @@
+if(ESP_PLATFORM)
+    idf_component_register(SRCS "src/power_monitor.c" INCLUDE_DIRS "include")
+else()
+    add_library(power_monitor STATIC src/power_monitor.c)
+    target_include_directories(power_monitor PUBLIC include)
+    target_compile_features(power_monitor PUBLIC c_std_11)
+endif()

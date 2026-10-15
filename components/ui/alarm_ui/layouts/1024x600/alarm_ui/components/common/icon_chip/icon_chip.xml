@@ -1,0 +1,19 @@
+<component>
+	<!-- A tinted circle with a coloured Lucide icon: the recurring motif for states,
+	     zone classes and events. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE1FF;" help="Lucide glyph" />
+		<prop name="size" type="int" default="56" help="Diameter in px" />
+		<prop name="font" type="font" default="icons_28" help="Icon font (icons_20/28/40/96)" />
+		<prop name="color" type="color" default="#color_green" help="Tone" />
+	</api>
+
+	<styles>
+		<style name="style_icon_chip" radius="#radius_full" bg_opa="#opa_tint" />
+	</styles>
+
+	<view extends="box" width="$size" height="$size" style_bg_color="$color">
+		<style name="style_icon_chip" />
+		<lv_label name="icon" align="center" text="$glyph" style_text_font="$font" style_text_color="$color" />
+	</view>
+</component>

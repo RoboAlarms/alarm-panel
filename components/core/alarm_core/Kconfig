@@ -1,0 +1,25 @@
+menu "Alarm core"
+
+    config ALARM_MAX_PARTITIONS
+        int "Maximum partitions"
+        range 1 8
+        default 4
+
+    config ALARM_MAX_ZONES
+        int "Maximum zones"
+        range 1 999
+        default 128 if IDF_TARGET_ESP32P4
+        default 64
+
+    config ALARM_MAX_USERS
+        int "Maximum user codes (including installer and system master)"
+        range 2 99
+        default 64 if IDF_TARGET_ESP32P4
+        default 32
+
+    config ALARM_MAX_DEVICES
+        int "Maximum supervised devices (keypads, expanders, radios)"
+        range 1 32
+        default 16
+
+endmenu

@@ -1,0 +1,7 @@
+version: "0.1.0"
+description: "MQTT client of the alarm panel: TLS, Home Assistant discovery, store-and-forward"
+dependencies:
+  idf:
+    version: ">=6.1"
+  # ESP-IDF 6 moved esp-mqtt out of the IDF into the component registry.
+  espressif/mqtt: "^1.1.0"

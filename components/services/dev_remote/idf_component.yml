@@ -1,0 +1,6 @@
+version: "0.1.0"
+description: "Enrolled developer access: network flashing, diagnostics, screen (docs/features/30)"
+dependencies:
+  idf:
+    version: ">=6.1"
+  espressif/mdns: "^1.8.0"

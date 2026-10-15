@@ -1,0 +1,77 @@
+{
+  "device": "CentraLite 3326-L",
+  "tests": "a vendor profile endpoint kept last, not a sensor",
+  "provenance": "Seed row from the zigpy/zha and deCONZ device files (docs/features/20 testing.md section 2); capture a real unit (console: zigbee device <id> signature) before a quirk depends on it. Addresses are fictional.",
+  "ieee": "0x02ABCD0000000008",
+  "nwk": "0x1A08",
+  "node": {
+    "logical_type": "end_device",
+    "mac_caps": "0x80",
+    "manufacturer_code": 4174,
+    "server_mask": "0x0000"
+  },
+  "power_source": 3,
+  "basic": {
+    "manufacturer": "CentraLite",
+    "model": "3326-L"
+  },
+  "endpoints": [
+    {
+      "endpoint": 1,
+      "profile": "0x0104",
+      "device_id": "0x0402",
+      "in": [
+        "0x0000",
+        "0x0001",
+        "0x0003",
+        "0x0020",
+        "0x0402",
+        "0x0500",
+        "0x0B05"
+      ],
+      "out": [
+        "0x0019"
+      ],
+      "zone_type": "0x000D"
+    },
+    {
+      "endpoint": 2,
+      "profile": "0xC2DF",
+      "device_id": "0x000C",
+      "in": [
+        "0x0000",
+        "0x0003",
+        "0x0B05",
+        "0xFC0F"
+      ],
+      "out": [
+        "0x0003"
+      ],
+      "zone_type": null
+    }
+  ],
+  "expect": {
+    "role": "sensor",
+    "router": false,
+    "sleepy": true,
+    "enroll": "standard",
+    "supervision_s": 7200,
+    "quirk": null,
+    "inputs": [
+      {
+        "endpoint": 1,
+        "clusters": [
+          "BASIC",
+          "POWER_CFG",
+          "IDENTIFY",
+          "POLL_CTRL",
+          "TEMP",
+          "IAS_ZONE",
+          "DIAGNOSTICS"
+        ],
+        "zone_type": "0x000D",
+        "class": "motion"
+      }
+    ]
+  }
+}

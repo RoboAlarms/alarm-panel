@@ -1,0 +1,36 @@
+menu "Zone source: Zigbee sensors (zigbee_service)"
+
+    config ALARM_ZSRC_ZIGBEE
+        bool "Zigbee sensors through the ESP32-H2 radio (bench: not yet accepted on hardware)"
+        default n
+        help
+            Off-the-shelf Zigbee door and window contacts, motion, water, smoke, CO and panic
+            sensors paired straight to the panel through the ESP32-H2 module in the CrowPanel's
+            wireless socket (docs/features/20). They work with no Wi-Fi and no Home Assistant, are
+            supervised by their own check-ins and report tamper and low battery, which is why
+            this is the one radio source trusted for fire, CO and 24-hour panic zones by
+            default (docs/features/22 ZSRC-008).
+
+            The panel runs Espressif's Zigbee stack (esp-zigbee-lib) as coordinator and drives
+            the H2, which runs firmware/radios/h2_rcp, over the socket's UART. On in every
+            P4 image (firmware/crowpanel_p4/sdkconfig.defaults, ADR-047); bench acceptance is
+            in docs/features/20. The stack keeps its network in the
+            panel's NVS partition, in its own namespace; the partition table is unchanged.
+
+    config ALARM_ZB_UART_BAUD
+        int "UART baud rate to the ESP32-H2"
+        depends on ALARM_ZSRC_ZIGBEE
+        default 460800
+        help
+            Must match the H2's firmware (firmware/radios/h2_rcp, CONFIG_RCP_UART_BAUD).
+
+    config ALARM_ZB_CHANNEL_MASK
+        hex "Zigbee channels the network may form on"
+        depends on ALARM_ZSRC_ZIGBEE
+        default 0x02108800
+        help
+            Bit n set: channel n may be used. The default is 11, 15, 20 and 25 - the channels
+            that fall between the usual Wi-Fi channels 1, 6 and 11, as Zigbee coordinators
+            commonly prefer. The stack picks the quietest of them when it forms the network.
+
+endmenu

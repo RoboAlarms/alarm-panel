@@ -1,0 +1,40 @@
+<component>
+	<!-- The state of the partition at a glance: a ring in the state's tone (it becomes the
+	     exit/entry countdown), the state's icon or the seconds left, and the state in words.
+	     Everything is bound to subjects; ui_app.c only adds the alarm pulse. -->
+	<styles>
+		<style name="style_hero" bg_color="#color_surface" bg_opa="100%" radius="#radius_xl" border_width="1" border_color="#color_line" pad_all="#space_xl" layout="flex" flex_flow="column" flex_main_place="center" flex_cross_place="center" flex_track_place="center" pad_row="#space_sm" />
+		<style name="style_ring_track" arc_width="12" arc_color="#color_text" arc_opa="8%" />
+		<style name="style_ring_indicator" arc_width="12" arc_rounded="true" />
+		<style name="style_disk" radius="#radius_full" bg_opa="12%" shadow_width="72" shadow_opa="30%" />
+		<style name="style_hero_alarm" bg_color="#color_alarm_card" border_color="#color_red" border_width="2" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_hero" />
+		<bind_style name="style_hero_alarm" subject="subject_alarm_active" ref_value="1" />
+		<box name="ring_box" width="236" height="236" style_margin_bottom="#space_md">
+			<lv_arc name="ring" width="100%" height="100%" bg_start_angle="0" bg_end_angle="360" rotation="270" min_value="0" max_value="1000" bind_value="subject_countdown_pct" clickable="false">
+				<style name="style_ring_track" />
+				<style name="style_ring_indicator" selector="indicator" />
+				<style name="style_knob_off" selector="knob" />
+				<bind_style_prop prop="arc_color" selector="indicator" subject="subject_tone_color" />
+			</lv_arc>
+			<box name="disk" width="176" height="176" align="center">
+				<style name="style_disk" />
+				<bind_style_prop prop="bg_color" subject="subject_tone_color" />
+				<bind_style_prop prop="shadow_color" subject="subject_tone_color" />
+				<lv_label name="hero_icon" align="center" bind_text="subject_hero_icon" style_text_font="icons_96">
+					<bind_style_prop prop="text_color" subject="subject_tone_color" />
+					<bind_flag_if_gt subject="subject_countdown" flag="hidden" ref_value="0" />
+				</lv_label>
+				<lv_label name="hero_count" align="center" bind_text="subject_countdown" bind_text-fmt="%d" style_text_font="font_digits">
+					<bind_flag_if_eq subject="subject_countdown" flag="hidden" ref_value="0" />
+				</lv_label>
+			</box>
+		</box>
+		<lv_label name="hero_headline" bind_text="subject_headline" style_text_font="font_headline" />
+		<lv_label name="hero_detail" width="100%" long_mode="wrap" bind_text="subject_detail" style_text_align="center" style_text_color="#color_text_2" />
+		<lv_label name="hero_note" width="100%" long_mode="dots" bind_text="subject_hero_note" style_text_align="center" style_text_font="font_caption" style_text_color="#color_text_3" />
+	</view>
+</component>

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/RoboAlarms/alarm-panel/security/advisories/new
+    about: Privately, not in a public issue (SECURITY.md).
+  - name: User and Installer Guides
+    url: https://docs.roboalarms.com
+    about: How to set up and use the panel.

@@ -1,0 +1,51 @@
+<component>
+	<!-- A window of time (BL-168, an automation's "Only between"): From and To as the night sheet's
+	     time_rollers; it may pass midnight. Under them the window as the row will say it ("From
+	     6:00 PM to 6:00 AM") and "Any time", which clears it. ui_forms.c (ui_window_sheet_open)
+	     fills it, gives "window_any" its click and dims "window_ok" while From and To are
+	     the same; Done calls ui_on_sheet_done, Cancel ui_on_sheet_cancel. -->
+	<view extends="box" width="100%" height="100%" clickable="true">
+		<style name="style_backdrop" />
+		<box name="window_card" width="760" height="content" align="center">
+			<style name="style_sheet_card" />
+			<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
+				<lv_label flex_grow="1" long_mode="dots" bind_text="subject_sheet_title" style_text_font="font_title" />
+				<box name="window_cancel" width="content" clickable="true" ext_click_area="6">
+					<style name="style_button" />
+					<style name="style_button_pressed" selector="pressed" />
+					<event_cb callback="ui_on_sheet_cancel" trigger="clicked" />
+					<lv_label text="Cancel" />
+				</box>
+				<box name="window_ok" width="content" clickable="true" ext_click_area="6">
+					<style name="style_button" />
+					<style name="style_button_primary" />
+					<style name="style_button_tone_pressed" selector="pressed" />
+					<style name="style_disabled" selector="disabled" />
+					<event_cb callback="ui_on_sheet_done" trigger="clicked" />
+					<lv_label text="Done" />
+				</box>
+			</box>
+			<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_main_place="space_around" style_pad_top="#space_sm">
+				<box width="content" height="content" style_layout="flex" style_flex_flow="column" style_flex_cross_place="center" style_pad_row="#space_sm">
+					<!-- tr-context: a window of time -->
+					<lv_label text="From" style_text_font="font_label" />
+					<time_rollers name="window_from" roll_w="#roller_w" ampm_w="#roller_ampm_w" />
+				</box>
+				<box width="content" height="content" style_layout="flex" style_flex_flow="column" style_flex_cross_place="center" style_pad_row="#space_sm">
+					<!-- tr-context: a window of time -->
+					<lv_label text="To" style_text_font="font_label" />
+					<time_rollers name="window_to" roll_w="#roller_w" ampm_w="#roller_ampm_w" />
+				</box>
+			</box>
+			<box width="100%" height="content" style_border_side="top" style_border_width="1" style_border_color="#color_line" style_pad_top="#space_md" style_pad_left="#space_xs" style_pad_right="#space_xs" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_lg">
+				<lv_label name="window_result" flex_grow="1" long_mode="dots" text="" style_text_font="font_label" />
+				<box name="window_any" width="content" clickable="true" ext_click_area="6">
+					<style name="style_button" />
+					<style name="style_button_pressed" selector="pressed" />
+					<!-- tr-context: a window of time -->
+					<lv_label text="Any time" />
+				</box>
+			</box>
+		</box>
+	</view>
+</component>

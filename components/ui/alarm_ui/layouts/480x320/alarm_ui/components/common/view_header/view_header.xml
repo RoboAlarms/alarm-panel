@@ -1,0 +1,13 @@
+<component>
+	<!-- Title of a view with a live one-line summary under it; both cut with dots when the
+	     row beside them (filters, Acknowledge) leaves little room. -->
+	<api>
+		<prop name="title" type="string" default="Zones" help="View title" />
+		<prop name="note" type="subject" help="String subject with the summary" />
+	</api>
+
+	<view extends="box" width="100%" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="0">
+		<lv_label width="100%" long_mode="dots" text="$title" style_text_font="font_title" />
+		<lv_label width="100%" height="17" long_mode="dots" bind_text="$note" style_text_font="font_caption" style_text_color="#color_text_2" />
+	</view>
+</component>

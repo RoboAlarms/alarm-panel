@@ -1,0 +1,5 @@
+version: "0.1.0"
+description: "Sensor radio bring-up: the panel puts the ESP32-H2's firmware there itself (C11, no heap, no RTOS)"
+dependencies:
+  idf:
+    version: ">=6.1"

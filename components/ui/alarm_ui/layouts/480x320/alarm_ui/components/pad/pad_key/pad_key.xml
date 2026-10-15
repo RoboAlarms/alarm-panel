@@ -1,0 +1,18 @@
+<component>
+	<!-- One key of the code pad: 80 x 58, the size a thumb hits on a resistive film. -->
+	<api>
+		<prop name="text" type="string" default="1" help="Digit or Lucide glyph" />
+		<prop name="font" type="font" default="font_keypad" help="font_keypad for digits, icons_28 for glyphs" />
+	</api>
+
+	<styles>
+		<style name="style_pad_key" width="#key_w" height="#key_h" radius="#radius_md" bg_color="#color_raised" bg_opa="100%" text_color="#color_text" />
+		<style name="style_pad_key_pressed" bg_color="#color_pressed" transform_width="-2" transform_height="-2" />
+	</styles>
+
+	<view extends="box" clickable="true">
+		<style name="style_pad_key" />
+		<style name="style_pad_key_pressed" selector="pressed" />
+		<lv_label align="center" text="$text" style_text_font="$font" />
+	</view>
+</component>

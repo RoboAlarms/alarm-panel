@@ -1,0 +1,32 @@
+# Source files whose text is marked for translation (docs/features/37, I18N-034), one
+# repo-relative path per line. `tools/i18n.py check` reports a word-like string literal in
+# these files that is not inside TR(), TRN(), TR_NOOP() ... or NOTR(). A UI unit adds its
+# module here when it has marked every string in it.
+components/ui/alarm_ui/src/ui_app.c
+components/ui/alarm_ui/src/ui_settings.c
+components/ui/alarm_ui/src/ui_forms.c
+components/ui/alarm_ui/src/ui_saver.c
+components/ui/alarm_ui/src/ui_storage.c
+components/ui/alarm_ui/src/ui_update.c
+components/ui/alarm_ui/src/ui_wizard.c
+components/ui/alarm_ui/src/ui_status.c
+components/ui/alarm_ui/src/ui_text.c
+components/core/notify/src/notify_words.c
+components/ui/alarm_ui/src/ui_net.c
+components/ui/alarm_ui/src/ui_integrations.c
+components/ui/alarm_ui/src/ui_notify.c
+components/ui/alarm_ui/src/ui_sources.c
+components/ui/alarm_ui/src/ui_installer.c
+components/ui/alarm_ui/src/ui_lang.c
+components/ui/alarm_ui/src/ui_zwave.c
+components/ui/alarm_ui/src/ui_tz.c
+components/services/panel_web/web/panel.html
+components/services/panel_web/web/panel-words.js
+components/services/panel_web/web/panel.js
+components/services/panel_web/web/panel-pages.js
+components/services/panel_web/web/panel-keypad.js
+components/ui/alarm_ui/src/ui_walk.c
+components/ui/alarm_ui/src/ui_zigbee.c
+components/ui/alarm_ui/src/ui_automations.c
+components/ui/alarm_ui/src/ui_auto_edit.c
+components/ui/alarm_ui/src/ui_voice.c

@@ -1,0 +1,3 @@
+# encode.py: PyAV's wheels carry FFmpeg with libopus; no PyTorch in this environment.
+av==19.0.1
+numpy==2.5.3

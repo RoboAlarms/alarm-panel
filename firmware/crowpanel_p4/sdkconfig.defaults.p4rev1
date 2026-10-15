@@ -1,0 +1,7 @@
+# ESP32-P4 silicon v1.x (v0.1 .. v1.99). ESP-IDF 6.x defaults to v3.x silicon; images for
+# the two families are not interchangeable. Check the boot log: "chip revision: v1.3".
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_1=y
+# The ECDSA peripheral works from v3 only: on v1.x every TLS handshake tried it, logged an error
+# and fell back to software (docs/features/06, Hardware findings 7). Software from the start.
+CONFIG_MBEDTLS_HARDWARE_ECDSA_VERIFY=n

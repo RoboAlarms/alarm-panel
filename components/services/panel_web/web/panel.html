@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Panel Manager</title>
+<link rel="icon" href="data:,"><!-- no /favicon.ico request on every page: each costs the panel a TLS request -->
+<link rel="stylesheet" href="/panel.css">
+<script src="/panel-words.js" defer></script>
+<script src="/panel-keypad.js" defer></script>
+<script src="/panel-pages.js" defer></script>
+<script src="/panel.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main" data-t>Skip to content</a>
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="Panel Manager" data-t-label>
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><img width="34" height="34" alt="" src="data:image/png;base64,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"></span><span><span translate="no">RoboAlarms</span><small data-t>Panel Manager</small></span></div>
+    <div class="panel-card">
+      <strong id="panel-name" data-t>Connecting…</strong>
+      <span id="panel-address"></span>
+    </div>
+    <nav id="nav" aria-label="Pages" data-t-label></nav>
+    <div class="account" id="account" hidden>
+      <span id="account-name"></span>
+      <button type="button" class="link" id="change-password" hidden data-t>Change password</button>
+      <button type="button" class="link" id="signout" data-t>Sign out</button>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="workspace">
+    <header class="topbar">
+      <button type="button" class="icon-button menu-button" id="menu" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu" data-t-label></button>
+      <span class="topbar-title" id="crumb" data-t>Panel Manager</span>
+      <span class="connection" id="connection" data-t>Connecting</span>
+    </header>
+    <main id="main" tabindex="-1">
+      <p class="loading" data-t>Connecting to your panel…</p>
+    </main>
+  </div>
+</div>
+<dialog id="dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

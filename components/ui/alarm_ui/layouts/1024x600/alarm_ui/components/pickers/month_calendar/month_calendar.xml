@@ -1,0 +1,66 @@
+<component>
+	<!-- A month to pick a day from (BL-131): arrows for the month before and after, the month
+	     and year between them, the days of the week and six rows of days (ui_net.c fills them
+	     with cal_day cells, in the region's week). A tap on the month and year ("cal_title")
+	     puts month and year rollers ("cal_pick") where the days were, another tap takes them
+	     away again; the calendar keeps its size, so nothing around it moves. -->
+	<api>
+		<prop name="cal_w" type="int" default="392" help="Width" />
+		<prop name="day_h" type="int" default="44" help="Height of a day" />
+	</api>
+
+	<styles>
+		<style name="style_cal_round" width="44" height="44" radius="#radius_full" bg_color="#color_raised" bg_opa="100%" text_font="icons_20" text_color="#color_text" />
+		<style name="style_cal_week" flex_grow="1" text_font="font_caption" text_color="#color_text_3" text_align="center" />
+		<style name="style_cal_row" width="100%" layout="flex" flex_flow="row" pad_column="#space_xs" />
+	</styles>
+
+	<view extends="box" width="$cal_w" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="#space_sm">
+		<box name="cal_head" width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_sm">
+			<box name="cal_prev" clickable="true" ext_click_area="6">
+				<style name="style_cal_round" />
+				<style name="style_button_pressed" selector="pressed" />
+				<lv_label align="center" text="&#xE06E;" />
+			</box>
+			<box name="cal_title" flex_grow="1" height="44" clickable="true" style_radius="#radius_full" style_bg_color="#color_pressed" style_bg_opa="0%" style_bg_opa-pressed="100%" style_layout="flex" style_flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_xs">
+				<!-- A long month's name gives way to "...", the arrow stays beside it (I18N-022) -->
+				<lv_label name="cal_month" long_mode="dots" text="" style_max_width="85%" style_text_font="font_label" />
+				<lv_label text="&#xE06D;" style_text_font="icons_20" style_text_color="#color_text_3" />
+			</box>
+			<box name="cal_next" clickable="true" ext_click_area="6">
+				<style name="style_cal_round" />
+				<style name="style_button_pressed" selector="pressed" />
+				<lv_label align="center" text="&#xE06F;" />
+			</box>
+		</box>
+		<box name="cal_body" width="100%" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="#space_xs">
+			<box name="cal_week" width="100%" height="24" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_xs">
+				<lv_label text=""><style name="style_cal_week" /></lv_label>
+				<lv_label text=""><style name="style_cal_week" /></lv_label>
+				<lv_label text=""><style name="style_cal_week" /></lv_label>
+				<lv_label text=""><style name="style_cal_week" /></lv_label>
+				<lv_label text=""><style name="style_cal_week" /></lv_label>
+				<lv_label text=""><style name="style_cal_week" /></lv_label>
+				<lv_label text=""><style name="style_cal_week" /></lv_label>
+			</box>
+			<box name="cal_days" width="100%" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="#space_xs">
+				<box height="$day_h"><style name="style_cal_row" /></box>
+				<box height="$day_h"><style name="style_cal_row" /></box>
+				<box height="$day_h"><style name="style_cal_row" /></box>
+				<box height="$day_h"><style name="style_cal_row" /></box>
+				<box height="$day_h"><style name="style_cal_row" /></box>
+				<box height="$day_h"><style name="style_cal_row" /></box>
+			</box>
+			<box name="cal_pick" width="100%" flex_grow="1" hidden="true" style_layout="flex" style_flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_sm">
+				<lv_roller name="roll_month" flex_grow="1">
+					<style name="style_roller" />
+					<style name="style_roller_selected" selector="selected" />
+				</lv_roller>
+				<lv_roller name="roll_year" width="112">
+					<style name="style_roller" />
+					<style name="style_roller_selected" selector="selected" />
+				</lv_roller>
+			</box>
+		</box>
+	</view>
+</component>

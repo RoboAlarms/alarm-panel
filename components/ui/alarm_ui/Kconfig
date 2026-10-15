@@ -1,0 +1,23 @@
+menu "Touch UI (alarm_ui)"
+
+    config ALARM_UI_LAYOUT
+        string "Screen layout (components/ui/alarm_ui/layouts/<WxH>/alarm_ui)"
+        default "1024x600"
+        help
+            Which LVGL Pro project the UI is built from: the folder layouts/<this>/alarm_ui. Each
+            screen size has its own layout with the same subjects, object names and component
+            signatures, so the UI logic is the same for all of them (ADR-036, docs/features/33). A
+            board's manifest (firmware/<board>/sdkconfig.defaults) names its layout, and its PC
+            simulator profile reads the same line.
+
+    config ALARM_UI_LVGL_BUDGET_KB
+        int "LVGL memory the board can spare for the UI (KB, 0 = not checked)"
+        range 0 4096
+        default 0
+        help
+            What the board can give LVGL for the touch UI at its busiest. The firmware doesn't
+            use it: the PC preview measures the most the scripted walk ever needs (halved: the
+            PC's pointers are twice as wide) and reports it against this budget, so a UI that
+            outgrows its board shows on the PC first. 0 = not checked (boards with PSRAM).
+
+endmenu

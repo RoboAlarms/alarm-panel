@@ -1,0 +1,66 @@
+menu "Alarm platform"
+
+    config ALARM_DEMO_ZONES
+        bool "Create demo zones on first boot"
+        default y
+        help
+            Adds eight simulator zones (doors, windows, motion, smoke, CO, water) to the
+            factory configuration so the panel can be exercised from the serial console
+            ("zone 1 open") before real sensors exist.
+
+    config ALARM_ZSRC_SIM
+        bool "Zone source: simulator"
+        default y
+        help
+            Zones bound to the simulator are driven from the service console ("zone 3 open")
+            instead of a sensor (docs/features/22). On the first start with zone sources, every
+            existing zone is bound to it, since that is how zones were driven before.
+
+    config ALARM_ZSRC_WIRED
+        bool "Zone source: wired terminals"
+        default y
+        help
+            Dry contacts between a terminal GPIO (the board's list, e.g. the CrowPanel's J7
+            header) and GND, with the internal pull-up, sampled every 10 ms and debounced with
+            each zone's response time (docs/features/22, ZONE-004). A pin is configured only once a
+            zone is bound to it, or while the installer picks a terminal.
+
+    config ALARM_ZSRC_HA
+        bool "Zone source: Home Assistant entities"
+        depends on ALARM_FEATURE_HA
+        default y
+        help
+            Entities the paired Home Assistant shares (docs/features/23 M13, HAI-009) can feed
+            zones: the integration's options pick what the panel may see, the zone editor
+            searches that catalog, and state changes arrive over the paired TLS link
+            (ha_link). Usable only while the integration is paired and connected; not
+            trusted for fire, CO or 24-hour panic zones (docs/features/22 ZSRC-008).
+
+    config ALARM_SERVICE_CONSOLE
+        bool "Serial service console"
+        default y
+        help
+            Status, zone simulator, virtual keypad and network settings on the debug UART.
+            Turn off for release builds until the console asks for the installer code.
+
+    config ALARM_CRYPTO_DIAGNOSTICS
+        bool "Isolated crypto fault-injection test (development only)"
+        depends on ALARM_SERVICE_CONSOLE
+        default n
+        help
+            Adds crypto_test to the serial console. Runs on the alarm task with a test
+            credential, injects a one-shot PSA allocation failure and checks recovery.
+            Never verifies or changes a real user code. With BOARD_BACKLIGHT_FORCE_OFF,
+            also adds ui_memory_test to walk unauthenticated UI pages. Disable in normal builds.
+
+    config ALARM_TASK_PRIORITY
+        int "Alarm task priority"
+        range 2 22
+        default 10
+
+    config ALARM_EVENT_RING
+        int "Recent events kept in RAM"
+        range 16 1000
+        default 100
+
+endmenu

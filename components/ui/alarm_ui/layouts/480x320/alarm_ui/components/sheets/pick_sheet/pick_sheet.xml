@@ -1,0 +1,21 @@
+<component>
+	<!-- A list of choices over the screen (zone type, device, time zone, authority). ui_app.c
+	     fills "pick_list" with list rows and marks the current one. -->
+	<view extends="box" width="100%" height="100%" clickable="true">
+		<style name="style_backdrop" />
+		<box name="pick_card" width="464" height="304" align="center">
+			<style name="style_sheet_card" />
+			<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
+				<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="0">
+					<lv_label width="100%" long_mode="dots" bind_text="subject_sheet_title" style_text_font="font_title" />
+					<lv_label width="100%" long_mode="wrap" bind_text="subject_sheet_note" style_text_font="font_caption" style_text_color="#color_text_2" />
+				</box>
+				<box name="pick_close" width="40" height="40" clickable="true" ext_click_area="8" style_radius="#radius_full" style_bg_color="#color_raised" style_bg_opa="100%">
+					<event_cb callback="ui_on_sheet_cancel" trigger="clicked" />
+					<lv_label align="center" text="&#xE1B2;" style_text_font="icons_20" style_text_color="#color_text_2" />
+				</box>
+			</box>
+			<box name="pick_list" width="100%" flex_grow="1" scrollable="true" clickable="true" user_1="true" scrollbar_mode="off" style_layout="flex" style_flex_flow="column" style_pad_row="#space_sm" />
+		</box>
+	</view>
+</component>

@@ -1,0 +1,8 @@
+version: "0.1.0"
+description: "The alarm panel's voice: spoken zone names from a voice pack (Opus, micro-opus)"
+dependencies:
+  idf:
+    version: ">=6.1"
+  # Exactly 0.4.1 = esphome-libs/micro-opus 8354085908683c6130e32a832aeec8a7ca115c51 (D10);
+  # host builds fetch the same commit (cmake/alarm_opus.cmake).
+  esphome/micro-opus: "==0.4.1"

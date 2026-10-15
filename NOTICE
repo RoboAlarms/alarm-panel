@@ -1,0 +1,93 @@
+RoboAlarms - an open-source alarm panel
+Copyright 2026 the RoboAlarms authors
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+this file except in compliance with the License. You may obtain a copy of the
+License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied. See the License for the
+specific language governing permissions and limitations under the License.
+
+--------------------------------------------------------------------------------
+Third-party material distributed with this repository
+--------------------------------------------------------------------------------
+
+Unity test framework - host/third_party/unity
+    MIT License; see host/third_party/unity/LICENSE.txt.
+
+Inter typeface - components/ui/alarm_ui/layouts/*/alarm_ui/fonts (Inter-*.ttf,
+InterDisplay-*.ttf, and the generated *_data.c derived from them)
+    SIL Open Font License 1.1; see LICENSE-Inter.txt in each fonts folder.
+
+Lucide icons - components/ui/alarm_ui/layouts/*/alarm_ui/fonts/lucide.ttf, the
+generated icon fonts, and the icons drawn inline by the Panel Manager
+(components/services/panel_web/web) and the Flasher (tools/flasher/roboflash/web)
+    ISC License; a fork of Feather Icons (MIT).
+    See LICENSE-Lucide.txt in each fonts folder.
+
+Z-Wave JS - https://github.com/zwave-js/zwave-js
+    Parts of the Z-Wave host stack follow Z-Wave JS and are ported from its source
+    (components/core/zwave_host, zwave_proto, zwave_zones and zone_hub/src/zw_quirks.c, with
+    their tests), and the quirk table's rows come from its device configuration files.
+    MIT License, Copyright (c) 2018-2024 AlCalzone;
+    see components/core/zwave_host/LICENSE-zwave-js.txt.
+
+Unicode CLDR 48 - https://cldr.unicode.org
+    The region table and the plural rules in components/core/i18n (src/i18n_region.c,
+    src/i18n_plural.c) are derived from CLDR data.
+    Unicode License v3, Copyright (c) 2004-2025 Unicode, Inc.;
+    see components/core/i18n/LICENSE-Unicode.txt.
+
+ESP32-H2 radio co-processor - firmware/radios/h2_rcp/main
+    Adapted from ESP-IDF's OpenThread RCP example (examples/openthread/ot_rcp),
+    Copyright Espressif Systems (Shanghai) CO LTD, released under CC0-1.0.
+
+The en-US voice - assets/voice/en-US/qwen3-designed_female
+    Synthetic speech made with the Qwen3-TTS models (Apache License 2.0); no recording of a real
+    person. No model is distributed here. See that folder's NOTICE.md.
+
+--------------------------------------------------------------------------------
+Built into the firmware from dependencies fetched at build time
+(not distributed here; listed for anyone who distributes a firmware image)
+--------------------------------------------------------------------------------
+
+ESP-IDF (Espressif Systems) - Apache License 2.0, with the libraries it carries
+    (among them Mbed TLS, lwIP, FreeRTOS, newlib, wpa_supplicant and OpenThread),
+    each under its own licence as ESP-IDF's docs/en/COPYRIGHT.rst describes.
+Espressif components from the ESP Component Registry - Apache License 2.0:
+    esp_hosted, esp_wifi_remote, wifi_remote_over_eppp, eppp_link,
+    esp_serial_slave_link, esp_lvgl_port, esp_lcd_ek79007, esp_lcd_st7796,
+    esp_lcd_touch, esp_lcd_touch_gt911, esp_codec_dev, esp_h264, esp-zigbee-lib,
+    mdns, mqtt and cmake_utilities
+cJSON - MIT License, Copyright (c) 2009-2017 Dave Gamble and cJSON contributors
+LVGL - MIT License, with the libraries it carries that this firmware turns on:
+    TJpgDec (ChaN) and the QR Code generator library (Project Nayuki, MIT);
+    see LVGL's COPYRIGHTS.md
+micro-opus (esphome-libs/micro-opus 0.4.1, the voice's Opus decoder) - Apache License 2.0;
+    it carries libopus (Xiph.Org Foundation and contributors) - BSD 3-Clause License, and
+    micro-ogg-demuxer - Apache License 2.0
+Mozilla's root certificate list (certdata.txt) - Mozilla Public License 2.0;
+    the certificate pack is built from ESP-IDF's copy of it
+
+--------------------------------------------------------------------------------
+Bundled into the Flasher's builds (tools/flasher; not distributed here)
+--------------------------------------------------------------------------------
+
+Python - Python Software Foundation License
+esptool - GNU General Public License v2.0 or later
+esp_pylib - Apache License 2.0
+pyserial - BSD 3-Clause License
+pywebview - BSD 3-Clause License
+cryptography - Apache License 2.0 or BSD 3-Clause License
+certifi - Mozilla Public License 2.0
+PyInstaller's bootloader - GNU General Public License v2.0 or later, with an
+    exception that allows distributing the programs it builds
+...and the packages these depend on, each under its own licence.
+
+--------------------------------------------------------------------------------
+
+RoboAlarms is an independent project, not affiliated with any alarm system manufacturer. It is a DIY project and is not a listed or certified alarm system.

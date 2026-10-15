@@ -1,0 +1,11 @@
+## Espressif's Zigbee stack for the P4 as a gateway host, with the ESP32-H2 as its radio
+## co-processor (docs/features/20). Fetched only for a build with CONFIG_ALARM_ZSRC_ZIGBEE (on
+## in every P4 image, ADR-047; the 4-inch board keeps it off): the library is 170 MB for every
+## chip it supports. 2.0.1 is the first release
+## with ESP32-P4 libraries (1.6.x has none).
+dependencies:
+  espressif/esp-zigbee-lib:
+    version: "~2.0.4"
+    rules:
+      - if: "target in [esp32p4]"
+      - if: "$CONFIG{ALARM_ZSRC_ZIGBEE} == True"

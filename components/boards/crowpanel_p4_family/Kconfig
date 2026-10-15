@@ -1,0 +1,50 @@
+menu "CrowPanel Advanced P4 board"
+
+    config BOARD_CROWPANEL_P4_ES8311
+        bool
+        help
+            The board may carry an ES8311 codec on its sound lines (the 10.1in V1.2's
+            schematic draws one): at start it is looked for at I2C0 0x18 and, where it
+            answers, clocked from GPIO24 and set up. Where none answers the sound is plain
+            I2S, as on the 7in, and GPIO24 is let go. Selected by the board component
+            (board_crowpanel_10/Kconfig), never by hand.
+
+    config BOARD_FLICKER_GUARD
+        bool "Turn the backlight off when the display refresh stalls"
+        default y
+        help
+            Photosensitivity safety. The display refresh is timed every frame; at the first
+            late frame the backlight goes off, and it comes back only after the refresh has
+            been steady for BOARD_FLICKER_GUARD_HOLD_S seconds. Keeps a stalling display from
+            ever showing as a flashing screen.
+
+    config BOARD_FLICKER_GUARD_HOLD_S
+        int "Seconds of steady refresh before the backlight comes back"
+        depends on BOARD_FLICKER_GUARD
+        range 2 600
+        default 10
+
+    config BOARD_FRAME_CAPTURE
+        bool "Let the app copy the screen (remote viewing and screenshots)"
+        default y
+        help
+            Keeps track of which DSI frame buffer holds the last complete frame, so that
+            board_dev_frame() can copy it for the Panel Manager's remote keypad and the
+            developer screenshot (docs/features/30, /31). Costs one LVGL event per flush.
+
+    config BOARD_BACKLIGHT_FORCE_OFF
+        bool "Keep the backlight off (test builds)"
+        default n
+        help
+            The display and UI run normally but the backlight never turns on. For testing
+            display changes without anyone looking at the screen (console: "display").
+
+    config BOARD_DISPLAY_DIAG
+        bool "Display self-check (investigation builds)"
+        default n
+        help
+            Compares every flush with the frame buffer and marks pixels no object paints
+            (docs/bugs/B023); logs the chip temperature with the counts. Slows each redraw by
+            a few milliseconds: for investigation builds only. Console: "dispdiag".
+
+endmenu

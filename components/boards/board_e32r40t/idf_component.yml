@@ -1,0 +1,6 @@
+description: "Board support for the LCDWiki 4.0in ESP32-32E display (E32R40T)"
+dependencies:
+  idf: ">=6.1"
+  espressif/esp_lcd_st7796: "~1.4.0"
+  espressif/esp_lvgl_port: "~2.9.0"
+  lvgl/lvgl: "~9.5.0"

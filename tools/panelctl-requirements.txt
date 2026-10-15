@@ -1,0 +1,5 @@
+# Runtime CLI: stdlib; serial enrollment and LAN discovery use these libraries.
+cryptography==48.0.1
+pyserial==3.5
+zeroconf==0.151.3
+ifaddr==0.2.0

@@ -1,0 +1,1334 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flasher guided setup</title>
+<meta name="description" content="Static prototype of the proposed RoboAlarms Flasher guided setup (docs/features/34, research 2026-09-24). Nothing here talks to a board.">
+<script>/* Follow this computer's light or dark setting (FLS-017) until the toggle picks one. */
+try { document.documentElement.dataset.theme = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; } catch (e) { /* light */ }</script>
+<!-- Prototype for docs/research/FlasherUXResearch.md. One file, no external assets, no
+     motion (FLS-017). Icons: Lucide (ISC), the set the touchscreen UI already uses. Pins and
+     wiring are the CrowPanel 7"'s (tools/flasher/roboflash/boards.json, board_pins.h). -->
+<style>
+/* The website's tokens ("At home") and the docs' accent
+ * (src/styles/custom.css in RoboAlarms/documentation, docs/BRAND.md): teal #007b7d on light, #94eff0 on dark, the
+ * Segoe UI system stack, 7px buttons, 4px tags, 12px cards. Added for an app: --amber-bg and
+ * a red for errors (the site has neither), wire colours, and the panel frame from .panel-frame. */
+:root, :root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f7faf9;
+  --surface: #ffffff;
+  --surface-raised: #edf3f2;
+  --soft: #eef4f2;
+  --ink: #142b30;
+  --muted: #536970;
+  --faint: #7a8e92;
+  --line: #d3dfdd;
+  --line-strong: #b9cac7;
+  --accent: #007b7d;
+  --accent-strong: #006668;
+  --accent-bg: #e0f3ef;
+  --button-ink: #ffffff;
+  --amber: #865914;
+  --amber-bg: #fbf1de;
+  --red: #b3261e;
+  --red-bg: #fdecea;
+  --panel-frame: #070e11;
+  --panel-edge: #34464a;
+  --panel-screen: #0f2428;
+  --mark: #94eff0;
+  --pcb: #2b6e4a;
+  --pcb-ink: #e3f5ea;
+  --pad: #c9a227;
+  --wire-vcc: #d9480f;
+  --wire-gnd: #142b30;
+  --wire-data: #1c6fd6;
+  --wire-sig: #7b4fc9;
+  --wire-y: #c99400;
+  --wire-g: #2b8a3e;
+  --wire-p: #c2255c;
+  --radius: 12px;
+  --shadow: none;
+  --font: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: ui-monospace, 'Cascadia Code', Consolas, 'SF Mono', Menlo, monospace;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #111719;
+  --surface: #172023;
+  --surface-raised: #1c282b;
+  --soft: #151d20;
+  --ink: #f3f7f6;
+  --muted: #a5b5b8;
+  --faint: #7d8f93;
+  --line: #2a373b;
+  --line-strong: #3a4b50;
+  --accent: #94eff0;
+  --accent-strong: #17bec2;
+  --accent-bg: #17393b;
+  --button-ink: #093335;
+  --amber: #f0cf8f;
+  --amber-bg: #2c2517;
+  --red: #ff8a80;
+  --red-bg: #3a1d1b;
+  --pcb: #2f7a52;
+  --pad: #d8b440;
+  --wire-vcc: #ff7a45;
+  --wire-gnd: #c3d1d4;
+  --wire-data: #5aa2ff;
+  --wire-sig: #b69cff;
+  --wire-y: #ffd43b;
+  --wire-g: #69db7c;
+  --wire-p: #f783ac;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  font: 15px/1.6 var(--font);
+  color: var(--ink);
+  background: var(--bg);
+}
+::selection { background: var(--accent); color: var(--bg); }
+h1, h2, h3, p, ol, ul, dl { margin: 0; }
+[hidden] { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 12.5px; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.ic { width: 18px; height: 18px; flex-shrink: 0; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* prototype strip (the website's .announcement and .preview-label): not part of the design */
+.proto {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+  padding: 7px 20px; font-size: 13px; line-height: 1.4; color: var(--muted);
+  background: var(--soft); border-bottom: 1px solid var(--line);
+}
+.preview-label { font-size: 12px; letter-spacing: .03em; color: var(--accent); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; white-space: nowrap; }
+.proto .grow { flex: 1; min-width: 200px; }
+.proto select, .proto button {
+  font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line);
+  border-radius: 5px; padding: 3px 8px; cursor: pointer;
+}
+
+/* app bar (the website's header and wordmark) */
+.appbar {
+  display: flex; align-items: center; gap: 16px; padding: 10px 20px; min-height: 64px;
+  background: var(--bg); border-bottom: 1px solid var(--line);
+}
+.wordmark { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+.wordmark img { width: 32px; height: 32px; object-fit: contain; }
+.wordmark b { font-size: 21px; font-weight: 750; letter-spacing: -.055em; }
+.wordmark span { color: var(--muted); font-size: 15px; padding-left: 12px; border-left: 1px solid var(--line); }
+.seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 8px; background: var(--soft); border: 1px solid var(--line); }
+.seg button {
+  font: inherit; font-size: 13.5px; font-weight: 600; color: var(--muted);
+  border: 0; border-radius: 5px; background: transparent; padding: 6px 12px; cursor: pointer;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed=true] { background: var(--accent-bg); color: var(--accent); }
+.theme-toggle { background: transparent; border: 0; display: grid; place-content: center; width: 40px; height: 40px; border-radius: 50%; color: var(--muted); cursor: pointer; }
+.theme-toggle:hover { background: var(--surface-raised); color: var(--ink); }
+.theme-toggle svg { width: 20px; height: 20px; }
+
+/* shell */
+.shell { flex: 1; display: flex; min-height: 0; }
+.rail {
+  width: 272px; flex-shrink: 0; padding: 26px 16px 20px; overflow-y: auto;
+  background: var(--soft); border-right: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 22px;
+}
+.steps { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.step {
+  width: 100%; display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start;
+  padding: 10px; border-radius: 12px; border: 1px solid transparent; background: none;
+  font: inherit; color: inherit; text-align: left;
+}
+button.step { cursor: pointer; }
+button.step:hover { background: var(--surface); border-color: var(--line); }
+.step .num {
+  width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 13px; font-weight: 650; color: var(--faint);
+  border: 1.5px solid var(--line-strong); background: var(--surface);
+}
+.step .num .ic { width: 16px; height: 16px; stroke-width: 3; }
+.step b { display: block; font-weight: 600; line-height: 28px; }
+.step small { display: block; margin-top: -3px; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+.step.done .num { background: var(--accent); border-color: var(--accent); color: var(--button-ink); }
+.step.current { background: var(--accent-bg); }
+.step.current b { color: var(--accent); }
+.step.current .num { border: 2px solid var(--accent); color: var(--accent); background: transparent; }
+.step.todo b { color: var(--muted); font-weight: 500; }
+.rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: 12px; padding: 0 10px; }
+.fw { display: flex; gap: 10px; align-items: center; font-size: 13px; }
+.fw .ic { color: var(--accent); }
+.fw small { display: block; color: var(--muted); font-size: 12px; }
+
+.content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.page { flex: 1; overflow-y: auto; padding: 36px 48px 32px; }
+.inner { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.inner.wide { max-width: 900px; }
+.eyebrow { display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 650; letter-spacing: .145em; text-transform: uppercase; color: var(--accent); margin-bottom: -8px; }
+.eyebrow::before { content: ""; width: 25px; height: 2px; background: var(--accent); }
+h1 { font-size: 30px; line-height: 1.13; font-weight: 650; letter-spacing: -.035em; outline: none; }
+h2 { font-size: 16.5px; font-weight: 650; letter-spacing: -.02em; }
+h2.section { font-size: 13px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 8px 0 -6px; }
+.lead { font-size: 15.5px; line-height: 1.55; color: var(--muted); max-width: 64ch; margin-top: -8px; }
+
+.actions {
+  display: flex; align-items: center; gap: 10px; padding: 14px 48px;
+  background: var(--surface); border-top: 1px solid var(--line);
+}
+.spacer { flex: 1; }
+
+/* buttons */
+.btn {
+  font: inherit; font-size: 14px; font-weight: 600; display: inline-flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 8px 16px; border-radius: 7px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--line); background: transparent; color: var(--ink);
+}
+.btn:hover:not(:disabled) { background: var(--surface); border-color: var(--muted); }
+.btn.primary { min-height: 46px; padding: 11px 21px; font-size: 15px; background: var(--accent); border-color: var(--accent); color: var(--button-ink); }
+.btn.primary:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--muted); }
+.btn.ghost:hover:not(:disabled) { background: var(--surface-raised); color: var(--ink); }
+.btn.small { min-height: 32px; padding: 5px 12px; font-size: 13px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.link {
+  font: inherit; font-weight: 600; color: var(--accent); background: none; border: 0; padding: 0;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 4px; text-align: left;
+}
+.link:hover { text-decoration: underline; }
+.link .ic { width: 16px; height: 16px; }
+
+/* cards, notes, chips */
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px 22px; }
+.note { display: grid; grid-template-columns: 20px 1fr; gap: 10px; padding: 12px 14px; border-radius: 7px; font-size: 14px; line-height: 1.55; }
+.note .ic { width: 20px; height: 20px; margin-top: 0; }
+.note.warn { background: var(--amber-bg); color: var(--amber); }
+.note.info { background: var(--soft); color: var(--ink); border: 1px solid var(--line); }
+.note.info .ic { color: var(--accent); }
+.note.good { background: var(--accent-bg); color: var(--accent); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 4px;
+  font-size: 12px; line-height: 1.4; font-weight: 600; background: transparent; color: var(--muted); border: 1px solid var(--line);
+}
+.chip .ic { width: 14px; height: 14px; stroke-width: 2.5; }
+.chip.good { background: var(--accent-bg); color: var(--accent); }
+.chip.info { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+.icon-tile {
+  width: 44px; height: 44px; border-radius: 10px; display: grid; place-items: center; flex-shrink: 0;
+  background: var(--accent-bg); color: var(--accent);
+}
+.icon-tile .ic { width: 22px; height: 22px; }
+.icon-tile.plain { background: var(--surface-raised); color: var(--muted); }
+.icon-tile.small { width: 34px; height: 34px; border-radius: 10px; }
+.icon-tile.small .ic { width: 18px; height: 18px; }
+
+/* step 1 */
+.hero { display: grid; place-items: center; padding: 6px 0 0; }
+.art { width: 100%; height: auto; display: block; }
+.hero .art { max-width: 540px; }
+.status-row { display: flex; gap: 14px; align-items: center; }
+.status-row b { font-size: 15px; }
+details.help { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+details summary { cursor: pointer; font-weight: 600; color: var(--accent); list-style-position: inside; }
+details.help ol { margin: 10px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
+details.help b { color: var(--ink); }
+details.help a { color: var(--accent); font-weight: 600; }
+
+/* step 2 */
+.board-card { display: grid; grid-template-columns: 210px 1fr; gap: 24px; align-items: center; }
+.board-card .how { margin-top: 12px; }
+.board-card h2 { font-size: 19px; }
+.board-card .chips { margin-top: 12px; }
+details.more { border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; background: var(--surface); }
+details.more summary { color: var(--ink); display: flex; gap: 8px; align-items: center; list-style: none; }
+details.more summary::-webkit-details-marker { display: none; }
+details.more summary::after { content: "Show"; margin-left: auto; color: var(--accent); font-size: 13px; }
+details.more[open] summary::after { content: "Hide"; }
+details.more[open] summary { margin-bottom: 12px; }
+dl.facts { display: grid; grid-template-columns: 160px 1fr; gap: 6px 16px; font-size: 13.5px; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; font-family: var(--mono); font-size: 13px; }
+.boards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.board {
+  font: inherit; color: inherit; text-align: left; padding: 12px; border-radius: 14px; cursor: pointer;
+  border: 1.5px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 6px;
+}
+.board[aria-checked=true] { border-color: var(--accent); background: var(--accent-bg); }
+.board[aria-disabled=true] { cursor: not-allowed; color: var(--faint); }
+.board .thumb { height: 86px; border-radius: 10px; background: var(--soft); display: grid; place-items: center; }
+.board .thumb svg { height: 64px; width: auto; }
+.board small { color: var(--muted); font-size: 12.5px; }
+
+/* step 3 */
+.part { padding: 0; overflow: hidden; }
+.part-head { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; padding: 18px 20px; }
+.part-head h2 { font-size: 16px; }
+.part-pick { padding: 0 20px 18px; }
+.part-body { border-top: 1px solid var(--line); background: var(--soft); padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+.part.later { box-shadow: none; background: transparent; border-style: dashed; }
+.part.later h2 { color: var(--muted); }
+.choices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.choice {
+  font: inherit; color: inherit; text-align: left; cursor: pointer; padding: 12px;
+  border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface);
+}
+.choice:hover { border-color: var(--line-strong); }
+.choice[aria-checked=true] { border-color: var(--accent); background: var(--accent-bg); }
+.choice[aria-checked=true] b { color: var(--accent); }
+.choice .dot { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--line-strong); display: block; margin-bottom: 8px; background: var(--surface); }
+.choice[aria-checked=true] .dot { border: 5px solid var(--accent); }
+.choice b { display: block; font-weight: 600; }
+.choice small { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+.switch {
+  width: 46px; height: 26px; border-radius: 999px; border: 0; padding: 0; cursor: pointer; position: relative;
+  background: var(--line-strong);
+}
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); }
+.switch[aria-checked=true] { background: var(--accent); }
+.switch[aria-checked=true]::after { left: 23px; background: var(--button-ink); }
+.wiring { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+.wiring svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.wiring svg text { font-family: var(--mono); }
+.pin rect.body { stroke: var(--line-strong); stroke-width: 1; }
+.pin.p3 rect.body { fill: var(--accent-bg); }
+.pin.p3 text { fill: var(--accent); font-weight: 700; }
+.pin.p5 rect.body { fill: var(--amber-bg); }
+.pin.p5 text { fill: var(--amber); font-weight: 700; }
+.pin.gnd rect.body { fill: var(--surface-raised); }
+.pin.gnd text { fill: var(--ink); }
+.pin.io rect.body { fill: var(--surface); }
+.pin.io text { fill: var(--muted); }
+.pin.reserved { opacity: .45; }
+.pin.pickable { cursor: pointer; }
+.pin.pickable rect.body { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 3 2; fill: var(--accent-bg); }
+.pin.pickable text { fill: var(--accent); font-weight: 700; }
+.pin.pickable:hover rect.body, .pin.pickable:focus rect.body { fill: var(--accent); stroke-dasharray: none; }
+.pin.pickable:hover text, .pin.pickable:focus text { fill: var(--button-ink); }
+.pin:focus { outline: none; }
+.pin-caption { min-height: 20px; font-size: 13px; color: var(--muted); margin-top: -6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--muted); }
+.legend b { color: var(--ink); font-weight: 600; }
+.sw { display: inline-block; width: 22px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 8px; background: var(--line-strong); }
+.sw.none { background: transparent; border-top: 2px dashed var(--line-strong); height: 0; }
+.pin-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+table.wires { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+table.wires th { text-align: left; font-weight: 650; color: var(--muted); font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; padding: 4px 8px 8px; }
+table.wires td { padding: 9px 8px; border-top: 1px solid var(--line); vertical-align: middle; }
+table.wires td.mono { font-size: 13px; }
+
+/* step 4 */
+.summary { padding: 6px 22px; }
+.sum-row { display: grid; grid-template-columns: 110px 1fr auto; gap: 16px; align-items: baseline; padding: 12px 0; border-top: 1px solid var(--line); }
+.sum-row:first-child { border-top: 0; }
+.sum-row .k { color: var(--muted); font-size: 13px; }
+.sum-row .v { font-weight: 600; }
+.timeline { list-style: none; padding: 4px 22px; }
+.timeline li { display: grid; grid-template-columns: 28px 1fr auto; gap: 12px; align-items: center; padding: 11px 0; border-top: 1px solid var(--line); }
+.timeline li:first-child { border-top: 0; }
+.tl-num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 12.5px; font-weight: 650; background: var(--surface-raised); color: var(--muted); }
+.timeline .time { color: var(--faint); font-size: 13px; }
+.option-card { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface); cursor: pointer; }
+.option-card:has(input:checked) { border-color: var(--accent); background: var(--accent-bg); }
+.option-card input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); }
+.option-card small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.overall { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+.overall b { font-size: 26px; font-weight: 650; letter-spacing: -0.3px; }
+.bar { height: 8px; border-radius: 999px; background: var(--surface-raised); overflow: hidden; margin-top: 6px; }
+.bar.big { height: 12px; margin: 0 0 18px; }
+.bar > i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+ol.job { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 14px; }
+ol.job li { display: grid; grid-template-columns: 26px 1fr; gap: 12px; align-items: start; }
+ol.job .mark { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line-strong); display: grid; place-items: center; }
+ol.job .mark .ic { width: 14px; height: 14px; stroke-width: 3; }
+ol.job .done .mark { background: var(--accent); border-color: var(--accent); color: var(--button-ink); }
+ol.job .running .mark { border-color: var(--accent); }
+ol.job .running .mark::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+ol.job .waiting b { color: var(--muted); font-weight: 500; }
+ol.job small { font-size: 12.5px; }
+
+/* step 5 */
+.success { display: grid; grid-template-columns: 56px 1fr; gap: 16px; align-items: center; }
+.big-check { width: 56px; height: 56px; border-radius: 50%; background: var(--accent); color: var(--button-ink); display: grid; place-items: center; }
+.big-check .ic { width: 30px; height: 30px; stroke-width: 3; }
+.success .lead { margin-top: 4px; }
+ol.todo { margin-top: 10px; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.test { display: flex; flex-direction: column; gap: 12px; }
+.test-head { display: grid; grid-template-columns: 44px 1fr auto; gap: 14px; align-items: center; }
+.row-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* advanced tools */
+.rail-title { font-size: 12px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 0 10px; margin-bottom: -10px; }
+.panel-pick { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); }
+.panel-pick small { display: block; color: var(--muted); font-size: 12px; }
+.tool-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.tool {
+  width: 100%; font: inherit; font-weight: 550; color: var(--muted); display: flex; gap: 10px; align-items: center;
+  padding: 9px 10px; border: 0; border-radius: 10px; background: none; cursor: pointer; text-align: left;
+}
+.tool:hover { background: var(--surface); color: var(--ink); }
+.tool.on { background: var(--accent-bg); color: var(--accent); }
+.console-bar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.qc { font: 12.5px var(--mono); padding: 4px 10px; border-radius: 4px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.log {
+  margin: 0; height: 300px; overflow: auto; padding: 12px 14px; border-radius: 12px;
+  background: var(--panel-frame); color: #d9e4e3; border: 1px solid var(--panel-edge); font: 12.5px/1.55 var(--mono); white-space: pre-wrap;
+}
+.log .you { color: #94eff0; }
+.log .w { color: #f0cf8f; }
+.send { display: flex; gap: 8px; margin-top: 10px; }
+.send input { flex: 1; font: 13px var(--mono); padding: 8px 12px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); }
+.list-row { display: grid; grid-template-columns: 34px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+.list-row:first-child { border-top: 0; }
+.list-row small { display: block; color: var(--muted); font-size: 12.5px; }
+
+/* connected parts: placements, layouts, pin check */
+.tag { display: inline-flex; align-items: center; font-size: 12px; line-height: 1.4; font-weight: 600; border-radius: 4px; padding: 3px 8px; white-space: nowrap; }
+.tag.ok { color: var(--accent); background: var(--accent-bg); }
+.tag.plan { color: var(--amber); border: 1px solid var(--line); }
+.places { display: flex; flex-direction: column; gap: 8px; }
+.place, .layout {
+  font: inherit; color: inherit; text-align: left; cursor: pointer; background: var(--surface);
+  border: 1.5px solid var(--line); border-radius: 10px; padding: 12px 14px;
+}
+.place { display: grid; grid-template-columns: 16px 1fr auto; gap: 12px; align-items: start; }
+.place:hover, .layout:hover { border-color: var(--line-strong); }
+.place[aria-checked=true], .layout[aria-checked=true] { border-color: var(--accent); background: var(--accent-bg); }
+.place[aria-checked=true] b, .layout[aria-checked=true] b { color: var(--accent); }
+.place[aria-disabled=true], .layout[aria-disabled=true], .choice[aria-disabled=true] { cursor: not-allowed; opacity: .62; }
+.place .dot { width: 16px; height: 16px; margin-top: 3px; border-radius: 50%; border: 1.5px solid var(--line-strong); background: var(--surface); }
+.place[aria-checked=true] .dot { border: 5px solid var(--accent); }
+.place b, .layout b { display: block; font-weight: 600; }
+.place small, .layout small { display: block; margin-top: 2px; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.place small.why, .layout small.why, .choice small.why { color: var(--red); }
+.layouts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.layout { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.wiring-block { display: flex; flex-direction: column; gap: 6px; }
+.note.bad { background: var(--red-bg); color: var(--red); }
+ul.tight { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.pincheck { display: flex; flex-direction: column; gap: 14px; }
+.pc-row { display: grid; grid-template-columns: 34px 1fr; gap: 12px; align-items: center; }
+.pc-row small { display: block; color: var(--muted); font-size: 13px; }
+.pin.taken rect.body { fill: var(--surface-raised); stroke-dasharray: 2 2; }
+.pin.taken text { fill: var(--faint); }
+
+@media (max-width: 900px) {
+  .rail { width: 220px; }
+  .page, .actions { padding-left: 24px; padding-right: 24px; }
+  .choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .board-card { grid-template-columns: 1fr; }
+}
+@media (max-width: 700px) {
+  .shell { flex-direction: column; }
+  .rail { width: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 12px 16px; }
+  .rail-foot, .step small { display: none; }
+  .steps { flex-direction: row; overflow-x: auto; }
+  .step b { display: none; }
+  .page, .actions { padding-left: 16px; padding-right: 16px; }
+  .boards, .layouts { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="proto" role="note">
+  <span class="preview-label">Prototype</span>
+  <span class="grow">A static mock-up of the proposed guided setup. Nothing here talks to a board; the console text is illustrative.</span>
+  <label>Scenario
+    <select id="scenario" aria-label="Prototype scenario">
+      <option value="new">New panel (maker's demo)</option>
+      <option value="running">Panel already running RoboAlarms</option>
+      <option value="none">Nothing plugged in yet</option>
+    </select>
+  </label>
+  <label>Firmware
+    <select id="firmware" aria-label="Prototype firmware">
+      <option value="today">RoboAlarms 0.6.0 (today)</option>
+      <option value="future">A later RoboAlarms (planned places)</option>
+    </select>
+  </label>
+  <button id="proto-finish" data-act="finish-install" hidden>Finish the pretend install</button>
+  <button data-act="restart">Start over</button>
+</div>
+<header class="appbar">
+  <div class="wordmark"><img src="data:image/png;base64,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" alt=""><b>RoboAlarms</b><span>Flasher</span></div>
+  <div class="seg" role="group" aria-label="Mode">
+    <button id="mode-guided" data-act="mode" data-mode="guided">Guided setup</button>
+    <button id="mode-tools" data-act="mode" data-mode="tools">Advanced tools</button>
+  </div>
+  <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to dark theme" title="Switch to dark theme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+</header>
+<div id="app" class="shell"></div>
+
+<script>
+'use strict';
+
+/* Lucide icons (ISC licence), inner markup only. */
+const I = {
+  usb: '<circle cx="10" cy="7" r="1"/><circle cx="4" cy="20" r="1"/><path d="M4.7 19.3 19 5"/><path d="m21 3-3 1 2 2Z"/><path d="M9.26 7.68 5 12l2 5"/><path d="m10 14 5 2 3.5-3.5"/><path d="m18 12 1-1 1 1-1 1Z"/>',
+  cpu: '<path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/>',
+  radio: '<path d="M16.247 7.761a6 6 0 0 1 0 8.478"/><path d="M19.075 4.933a10 10 0 0 1 0 14.134"/><path d="M4.925 19.067a10 10 0 0 1 0-14.134"/><path d="M7.753 16.239a6 6 0 0 1 0-8.478"/><circle cx="12" cy="12" r="2"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6h4"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  circleCheck: '<circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/>',
+  triangle: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  chevron: '<path d="m9 18 6-6-6-6"/>',
+  sliders: '<path d="M14 17H5"/><path d="M19 7h-9"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  terminal: '<path d="M12 19h8"/><path d="m4 17 6-6-6-6"/>',
+  download: '<path d="M12 2v8"/><path d="m16 6-4 4-4-4"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 18h.01"/><path d="M10 18h.01"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  plug: '<path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  folder: '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  siren: '<path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/><path d="M21 12h1"/><path d="M18.5 4.5 18 5"/><path d="M2 12h1"/><path d="M12 2v1"/><path d="m4.929 4.929.707.707"/><path d="M12 12v6"/>',
+  right: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  left: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/>',
+  archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  search: '<path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  tower: '<path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9"/><path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5"/><circle cx="12" cy="9" r="2"/><path d="M16.2 4.8c2 2 2.26 5.11.8 7.47"/><path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1"/><path d="M9.5 18h5"/><path d="m8 22 4-11 4 11"/>',
+  door: '<path d="M10 21H2"/><path d="M10 3H7a2 2 0 00-2 2v16"/><path d="M14 12h.01"/><path d="M19 21V5a2 2 0 00-1.675-1.974l-6.163-1.013A1 1 0 0010 3v18a1 1 0 001.124.992z"/><path d="M22 21h-3"/>',
+};
+const icon = (n, cls = '') =>
+  `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[n]}</svg>`;
+
+/* The CrowPanel 7"'s J7 header as printed on the board (boards.json), the pins the firmware
+ * accepts for the receiver's DATA (`rf pin`, BOARD_WIRED_TERMINALS) and why the others are not
+ * offered (board_pins.h). In the real Flasher these reasons come from the board description. */
+const J7 = [
+  ['5V', '5V', '5V', 'GND', 'GND', 'IO52', 'IO51', 'IO50', 'IO49', 'IO28', 'GND', 'GND'],
+  ['3V3', '3V3', '3V3', 'GND', 'IO2', 'IO3', 'IO4', 'IO5', 'IO25', 'IO27', 'GND', 'GND'],
+];
+const J7_TERMINALS = [2, 3, 4, 5, 49, 50, 51, 52];
+const WHY = {
+  25: 'IO25 is the chip’s own USB data line, so it is not offered.',
+  27: 'IO27 becomes the radio socket’s serial line on V1.2 boards, so it is not offered.',
+  28: 'IO28 becomes the radio socket’s serial line on V1.2 boards, so it is not offered.',
+};
+/* Where each add-on can go on a CrowPanel 7" V1.1 (docs/research/AddOnWiringResearch.md).
+ * `today`: the firmware in this Flasher can use that place; the others need firmware work.
+ * The radio socket's pads are named as printed beside it (IO6 to IO10, the chip's GPIOs). */
+const J7C = { title: 'J7 header, labels as printed', rows: J7 };
+const J13C = { title: 'I2C connector (J13), as printed', rows: [['SCL', 'SDA', '3V3', 'GND']] };
+const CC_J7 = [['SCK', 'IO52', 'wire-y'], ['MOSI', 'IO51', 'wire-g'], ['MISO', 'IO50', 'wire-data'],
+  ['CSn', 'IO49', 'wire-sig'], ['GDO0', 'IO5', 'wire-p']];
+const CC_SOCKET = [
+  ['VCC', 'Pad 3V3', '', 'wire-vcc'], ['GND', 'Pad GND', '', 'wire-gnd'],
+  ['SI (MOSI)', 'Pad IO6', 'GPIO 6', 'wire-g'], ['SO (MISO)', 'Pad IO7', 'GPIO 7', 'wire-data'],
+  ['SCLK', 'Pad IO8', 'GPIO 8', 'wire-y'], ['CSn', 'Pad IO9', 'GPIO 9', 'wire-sig'],
+  ['GDO0', 'Pad IO10', 'GPIO 10', 'wire-p'], ['GDO2', 'Not connected', '', ''],
+  ['ANT', 'A 433 MHz antenna, or 17.3 cm of wire', '', ''],
+];
+const PLACES = {
+  module: {
+    socket: { title: 'Radio socket, pad IO10', sub: 'The board’s default place for DATA', today: true },
+    j7: { title: 'J7 header', sub: 'DATA on any free IO pin, chosen below', today: true },
+  },
+  cc1101: {
+    socket: { title: 'Radio socket', sub: 'Seven wires onto the socket’s pins', today: true },
+    j7: { title: 'J7 header', sub: 'IO52, IO51, IO50, IO49 and IO5', today: false },
+  },
+  clock: {
+    j13: { title: 'I2C connector (J13)', sub: 'Shares the touch screen’s wiring: short leads', today: true },
+    j7: { title: 'J7 header, IO27 and IO28', sub: 'Its own wiring, recommended. V1.1 boards', today: false },
+  },
+};
+const LAYOUTS = [
+  { key: 'module', title: 'Receiver module and clock', today: true,
+    sub: 'Receiver DATA on J7 IO3, clock on the I2C connector. Seven wired zones left.',
+    set: { rf: 'module', rfPlace: 'j7', rfPin: 3, clock: true, clockPlace: 'j13', zigbee: false } },
+  { key: 'cc-socket', title: 'CC1101 and clock', today: true,
+    sub: 'CC1101 on the radio socket, clock on the I2C connector. All eight wired zones left.',
+    set: { rf: 'cc1101', ccPlace: 'socket', clock: true, clockPlace: 'j13', zigbee: false } },
+  { key: 'all', title: 'Zigbee, CC1101 and clock', today: false,
+    sub: 'Zigbee module in the socket, CC1101 and clock on J7. Three wired zones left: IO2 to IO4.',
+    set: { rf: 'cc1101', ccPlace: 'j7', clock: true, clockPlace: 'j7', zigbee: true } },
+];
+
+const S = { scenario: 'new', future: false };
+function resetFlow() {
+  const running = S.scenario === 'running';
+  Object.assign(S, {
+    step: 0, checked: false, installing: false, pickBoard: false, picking: false, mode: 'guided',
+    tool: 'console', backup: true, open: {}, skipParts: false,
+    rf: running ? 'module' : 'none', rfPlace: running ? 'j7' : 'socket', rfPin: 3, ccPlace: 'socket',
+    clock: running, clockPlace: 'j13', zigbee: false,
+  });
+}
+resetFlow();
+
+const running = () => S.scenario === 'running';
+const STEP_TITLES = () => ['Connect', 'Check the panel', 'Connected parts', running() ? 'Update' : 'Install', 'Test and finish'];
+
+function partsSummary() {
+  if (S.skipParts) return 'Set up later';
+  const p = [];
+  if (S.rf === 'module') p.push(S.rfPlace === 'j7' ? `Receiver on J7 IO${S.rfPin}` : 'Receiver on the socket');
+  else if (S.rf === 'cc1101') p.push(S.ccPlace === 'j7' ? 'CC1101 on J7' : 'CC1101 on the socket');
+  else if (S.rf === 'auto') p.push('433 MHz receiver');
+  if (S.clock) p.push('clock');
+  if (S.zigbee) p.push('Zigbee');
+  return p.length ? p.join(' · ') : 'Nothing extra';
+}
+function stepNote(i) {
+  if (i >= S.step) return '';
+  return [
+    'Found on COM5',
+    running() ? 'RoboAlarms 0.5.2, idle' : 'CrowPanel Advanced 7″',
+    partsSummary(),
+    running() ? 'Updated to 0.6.0' : 'RoboAlarms 0.6.0',
+  ][i] || '';
+}
+
+/* ---- guided setup --------------------------------------------------------------------- */
+function rail() {
+  const locked = S.installing || S.step === 4;
+  const items = STEP_TITLES().map((title, i) => {
+    const st = i < S.step ? 'done' : i === S.step ? 'current' : 'todo';
+    const note = stepNote(i);
+    const inner = `<span class="num">${st === 'done' ? icon('check') : i + 1}</span>
+      <span><b>${title}</b>${note ? `<small>${note}</small>` : ''}</span>`;
+    return st === 'done' && !locked
+      ? `<li><button class="step done" data-act="goto" data-step="${i}" aria-label="${title}: done. Go back to it">${inner}</button></li>`
+      : `<li><div class="step ${st}"${st === 'current' ? ' aria-current="step"' : ''}>${inner}</div></li>`;
+  }).join('');
+  return `<ol class="steps">${items}</ol>
+    <div class="rail-foot">
+      <div class="fw">${icon('download')}<div><b>RoboAlarms 0.6.0</b><small>Built into this Flasher</small></div></div>
+      <button class="link small" data-act="mode" data-mode="tools">Advanced tools ${icon('chevron')}</button>
+    </div>`;
+}
+
+function head(i, title, lead) {
+  return `<p class="eyebrow">Step ${i + 1} of 5</p>
+    <h1 id="page-title" tabindex="-1">${title}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}`;
+}
+
+function artConnect(found) {
+  const cable = found ? 'var(--accent)' : 'var(--line-strong)';
+  const end = found ? 332 : 292;
+  return `<svg class="art" viewBox="0 0 560 180" role="img" aria-label="A computer and the panel joined by a USB-C cable">
+    <rect x="40" y="26" width="170" height="108" rx="10" fill="var(--surface)" stroke="var(--line-strong)" stroke-width="2"/>
+    <rect x="52" y="38" width="146" height="84" rx="4" fill="var(--surface-raised)"/>
+    <path d="M22 136 h206 l-10 14 h-186 z" fill="var(--surface)" stroke="var(--line-strong)" stroke-width="2" stroke-linejoin="round"/>
+    <rect x="210" y="104" width="10" height="14" rx="2" fill="${cable}"/>
+    <path d="M220 111 C 262 111, ${end - 40} 90, ${end} 90" fill="none" stroke="${cable}" stroke-width="5" stroke-linecap="round"/>
+    <rect x="${end}" y="83" width="16" height="14" rx="3" fill="${cable}"/>
+    <rect x="348" y="20" width="190" height="130" rx="14" fill="var(--panel-frame)" stroke="var(--panel-edge)" stroke-width="1.5"/>
+    <rect x="360" y="32" width="166" height="106" rx="6" fill="var(--panel-screen)"/>
+    <path d="M443 60 l22 17 v28 h-44 v-28 z" fill="none" stroke="var(--mark)" stroke-width="3.5" stroke-linejoin="round"/>
+    <rect x="345" y="84" width="4" height="12" rx="1" fill="var(--faint)"/>
+    <text x="443" y="172" text-anchor="middle" font-size="12" fill="var(--muted)" font-family="var(--font)">USB-C, on the panel</text>
+  </svg>`;
+}
+
+function artPanel(w = 188, h = 120, label = '7″ · 1024 × 600') {
+  return `<svg class="art" viewBox="0 0 200 140" role="img" aria-label="The panel">
+    <rect x="${100 - w / 2}" y="${70 - h / 2}" width="${w}" height="${h}" rx="12" fill="var(--panel-frame)" stroke="var(--panel-edge)" stroke-width="1.5"/>
+    <rect x="${100 - w / 2 + 10}" y="${70 - h / 2 + 10}" width="${w - 20}" height="${h - 20}" rx="5" fill="var(--panel-screen)"/>
+    <path d="M100 ${70 - h / 5} l${h / 6} ${h / 8} v${h / 5} h-${h / 3} v-${h / 5} z" fill="none" stroke="var(--mark)" stroke-width="3" stroke-linejoin="round"/>
+    ${label ? `<text x="100" y="${70 + h / 2 - 16}" text-anchor="middle" font-size="10" fill="#9db2bf" font-family="var(--font)">${label}</text>` : ''}
+  </svg>`;
+}
+
+function pConnect() {
+  const none = S.scenario === 'none';
+  return head(0, 'Plug the panel into this computer',
+    'Use a USB-C cable that carries data. The Flasher finds the panel by itself and doesn’t change anything on it yet.') +
+    `<div class="hero">${artConnect(!none)}</div>` +
+    (none
+      ? `<div class="card">
+          <div class="status-row"><span class="icon-tile plain">${icon('usb')}</span>
+            <div><b>Looking for a panel…</b><p class="muted">Plug it in now. It appears here within a couple of seconds.</p></div></div>
+          <details class="help" data-key="help"${S.open.help ? ' open' : ''}><summary>Nothing showing up?</summary>
+            <ol>
+              <li><b>Check the POWER switch is ON.</b> A CrowPanel only appears on this computer while it is on.</li>
+              <li><b>Check the cable is in the port marked UART0.</b> The one marked USB2.0 only powers the panel.</li>
+              <li><b>Try another cable.</b> Many USB-C cables only charge.</li>
+              <li><b>Try another USB port</b> on this computer, not a hub.</li>
+              <li><b>Close programs that use boards:</b> Arduino IDE, PuTTY, another Flasher.</li>
+              <li><b>Windows:</b> a panel listed under “Other devices” in Device Manager needs the CH340 USB driver. <a href="#" data-act="noop">Install the driver</a></li>
+            </ol>
+          </details>
+        </div>`
+      : `<div class="card"><div class="status-row"><span class="icon-tile">${icon('circleCheck')}</span>
+          <div><b>${running() ? 'Found your panel' : 'Found a panel'}</b><p class="muted">USB device on COM5 · CH340 USB-serial</p></div></div></div>`) +
+    `<div class="note info">${icon('plug')}<div><b>Ports and power</b><ul class="tight">
+      <li><b>Slide the POWER switch to ON.</b> While it is off, the panel doesn’t appear on this computer.</li>
+      <li><b>Plug this computer’s cable into the port marked UART0.</b> The Flasher talks to the panel through it.</li>
+      <li><b>Plug the port marked USB2.0 into a phone charger as well</b> (5 V, 2 A or more). With its screen on the panel uses 8 to 10 W, more than a computer’s USB port gives, and the screen can go black.</li>
+      <li><b>Got its own 5 V supply? Leave it connected.</b> Each power input has its own diode, so none of it flows back into this computer. Its place is UART3-IN (+5V and GND), not J7’s 5V pins.</li>
+    </ul></div></div>`;
+}
+
+function boardCard(chips, how) {
+  return `<div class="card board-card">
+    <div>${artPanel()}</div>
+    <div>
+      <h2>Elecrow CrowPanel Advanced 7″</h2>
+      <p class="muted small">Board V1.1 · ESP32-P4 · touch screen</p>
+      <div class="chips">${chips.map(([c, t, ic]) => `<span class="chip ${c}">${ic ? icon(ic) : ''}${t}</span>`).join('')}</div>
+      <p class="small muted how">${how}</p>
+    </div>
+  </div>`;
+}
+
+function techDetails() {
+  const rows = [['Port', 'COM5'], ['USB bridge', 'CH340K · 1A86:7523'], ['Chip', 'ESP32-P4, silicon v1.3'],
+    ['Flash memory', '16 MB'], ['MAC address', '30:ed:a0:12:34:50'], ['Software for it', 'RoboAlarms 0.6.0, build for silicon v1.x']];
+  if (running()) rows.splice(2, 0, ['Running now', 'RoboAlarms 0.5.2 (dev)']);
+  return `<details class="more" data-key="tech"${S.open.tech ? ' open' : ''}><summary>${icon('info')}Technical details</summary>
+    <dl class="facts">${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></details>`;
+}
+
+function boardPicker() {
+  const boards = [
+    ['crowpanel', 'CrowPanel Advanced 7″', 'Elecrow · ESP32-P4', true, artPanel(188, 120, '')],
+    ['e32r40t', 'E32R40T 4″', 'LCDWiki · coming later', false, artPanel(118, 84, '')],
+    ['other', 'Another board', 'Not supported yet', false, `<svg class="art" viewBox="0 0 200 140" aria-hidden="true"><rect x="40" y="30" width="120" height="80" rx="10" fill="none" stroke="var(--line-strong)" stroke-width="2" stroke-dasharray="6 5"/><text x="100" y="78" text-anchor="middle" font-size="26" fill="var(--faint)" font-family="var(--font)">?</text></svg>`],
+  ];
+  return `<div class="boards" role="radiogroup" aria-label="Board">${boards.map(([k, t, d, ok, art]) =>
+    `<button class="board" role="radio" aria-checked="${k === 'crowpanel'}"${ok ? '' : ' aria-disabled="true"'} data-act="noop">
+      <span class="thumb">${art}</span><b>${t}</b><small>${d}</small></button>`).join('')}</div>`;
+}
+
+function pCheck() {
+  if (running()) {
+    return head(1, 'Your panel runs RoboAlarms 0.5.2', 'It answered by itself, so nothing needed to restart.') +
+      boardCard([['good', 'Disarmed and idle: safe to update', 'check'], ['info', 'Update available: 0.6.0', 'download']],
+        'How the Flasher knows: the panel’s own software said so.') + techDetails();
+  }
+  if (!S.checked) {
+    return head(1, 'Let’s check which board this is',
+      'A new panel still runs its maker’s demo, which can’t say what it is. To read its chip, the Flasher restarts it for a moment. Nothing on the panel changes.') +
+      `<div class="card"><div class="status-row"><span class="icon-tile plain">${icon('usb')}</span>
+        <div><b>USB device on COM5</b><p class="muted">No RoboAlarms software answered. That is normal for a new panel.</p></div></div></div>
+      <div class="note info">${icon('info')}<div>Is something else on this USB port, like a 3D printer? Don’t check it: go back, unplug it and plug in the panel.</div></div>`;
+  }
+  return head(1, 'This is a CrowPanel Advanced 7″', 'RoboAlarms 0.6.0 is made for this board.') +
+    boardCard([['good', 'Ready for RoboAlarms 0.6.0', 'check'], ['', 'Now running: the maker’s demo']],
+      'How the Flasher knows: its chip (ESP32-P4, revision 1.3) and memory (16 MB) match this board.') +
+    `<div class="row-actions"><button class="link" data-act="pickboard">${S.pickBoard ? 'Hide the list of boards' : 'Not this board? Choose it yourself'}</button></div>` +
+    (S.pickBoard ? boardPicker() : '') + techDetails();
+}
+
+/* The wiring pictures are drawn from the connector tables, so each is the pin map, not a
+ * drawing of it. Wires run in lanes (between J7's rows, above J13's) in an order where no wire
+ * crosses another or a pin it doesn't end on: VCC must never look as if it lands on 5V. */
+function findPin(label, rows = J7) {
+  for (let r = 0; r < rows.length; r++) {
+    const c = rows[r].indexOf(label);
+    if (c >= 0) return [r, c];
+  }
+  return [rows.length - 1, 0];
+}
+function pinTip(label, n, mine, taken, reserved, pickable, opt) {
+  if (mine) return `${label}: the ${opt.short}’s ${mine.pin}.`;
+  if (taken) return `${label}: taken by ${taken}.`;
+  if (reserved) return WHY[n] || `${label}: not offered for this part.`;
+  if (label === '5V') return '5V: never for these parts.';
+  if (label === '3V3') return '3V3: power for these parts.';
+  if (label === 'GND') return 'GND: ground.';
+  if (label === 'SCL' || label === 'SDA') return `${label}: the connector’s ${label} line.`;
+  if (pickable) return `${label}: free. Click to put DATA here.`;
+  return J7_TERMINALS.includes(n) ? `${label}: a wired-zone terminal, free.` : `${label}: free.`;
+}
+function wiring(conn, wires, opt) {
+  const P = 31, W = 26, H = 23, LS = 12, x0 = 250;
+  const two = conn.rows.length === 2;
+  const top = two ? 96 : opt.kind === 'clock' ? 36 : 84;
+  const X = (c) => x0 + c * P;
+  const list = wires.map((w) => ({ ...w, rc: Array.isArray(w.to) ? w.to : findPin(w.to, conn.rows) }));
+  // Top-row pins take the upper lanes from the left, bottom-row pins the rest from the right.
+  const order = two
+    ? [...list.filter((w) => w.rc[0] === 0).sort((a, b) => a.rc[1] - b.rc[1]),
+      ...list.filter((w) => w.rc[0] === 1).sort((a, b) => b.rc[1] - a.rc[1])]
+    : [...list].sort((a, b) => b.rc[1] - a.rc[1]);
+  const n = order.length;
+  const lane = (i) => (two ? top + H / 2 + 13 + i * LS : top + i * LS);
+  const rowY = two ? [top, lane(n - 1) + 13 + H / 2] : [lane(n - 1) + 13 + H / 2];
+  const cols = conn.rows[0].length;
+  const bx = X(0) - W / 2 - 10, by = rowY[0] - H / 2 - 9;
+  const bw = (cols - 1) * P + W + 20, bh = rowY[rowY.length - 1] - rowY[0] + H + 18;
+  const mid = (lane(0) + lane(n - 1)) / 2;
+  const mTop = Math.min(lane(0) - 24, mid - 36), mBot = Math.max(lane(n - 1) + 24, mid + 36);
+  const titleY = two ? by - 10 : by + bh + 18;
+  const width = Math.max(bx + bw, bx + conn.title.length * 6.6) + 8, height = Math.max(two ? by + bh : titleY, mBot) + 12;
+  let s = `<svg viewBox="0 0 ${width} ${height}" width="${Math.round(width * 1.2)}" height="${Math.round(height * 1.2)}" role="img" aria-label="${opt.label}">`;
+  if (opt.kind !== 'clock') {
+    const pts = [`44,${mTop}`];
+    for (let k = 1; k <= 7; k++) pts.push(`${44 + (k % 2 ? -8 : 8)},${mTop - k * 6}`);
+    pts.push(`44,${mTop - 48}`);
+    s += `<polyline points="${pts.join(' ')}" fill="none" stroke="var(--faint)" stroke-width="2.5" stroke-linejoin="round"/>`;
+  }
+  s += `<rect x="24" y="${mTop}" width="130" height="${mBot - mTop}" rx="7" fill="var(--pcb)"/>`;
+  s += opt.kind === 'clock'
+    ? `<circle cx="58" cy="${mid - 8}" r="17" fill="#c5cbcf" stroke="#8d989e" stroke-width="1.5"/>`
+    : `<rect x="38" y="${mTop + 14}" width="34" height="26" rx="3" fill="rgb(0 0 0 / 28%)"/>`;
+  s += `<text x="34" y="${mBot - 10}" font-size="10.5" fill="var(--pcb-ink)" font-weight="700">${opt.name}</text>`;
+  order.forEach((w, i) => {
+    s += `<rect x="154" y="${lane(i) - 5}" width="12" height="10" rx="1.5" fill="var(--pad)"/>`;
+    s += `<text x="146" y="${lane(i) + 3.5}" text-anchor="end" font-size="9.5" fill="var(--pcb-ink)" font-weight="700">${w.pin}</text>`;
+  });
+  s += `<text x="${bx}" y="${titleY}" font-size="11.5" fill="var(--muted)" font-family="var(--font)" font-weight="600">${conn.title}</text>`;
+  s += `<rect x="${bx}" y="${by}" width="${bw}" height="${bh}" rx="9" fill="var(--surface-raised)" stroke="var(--line)"/>`;
+  conn.rows.forEach((row, r) => row.forEach((label, c) => {
+    const pn = label.startsWith('IO') ? Number(label.slice(2)) : null;
+    const mine = order.find((w) => w.rc[0] === r && w.rc[1] === c);
+    const taken = pn !== null && !mine && opt.taken ? opt.taken[label] || '' : '';
+    const reserved = pn !== null && !mine && !taken && (opt.reserved || []).includes(pn);
+    const pickable = !!opt.pick && pn !== null && opt.pick.includes(pn) && pn !== opt.current && !taken;
+    let cls = label === '3V3' ? 'p3' : label === '5V' ? 'p5' : label === 'GND' ? 'gnd' : 'io';
+    if (taken) cls += ' taken';
+    if (reserved) cls += ' reserved';
+    if (pickable) cls += ' pickable';
+    const tip = pinTip(label, pn, mine, taken, reserved, pickable, opt);
+    const attrs = pickable ? ` role="button" tabindex="0" data-act="pin" data-pin="${pn}" aria-label="Put DATA on J7 IO${pn}"` : '';
+    s += `<g class="pin ${cls}" data-tip="${tip}"${attrs}><rect class="body" x="${X(c) - W / 2}" y="${rowY[r] - H / 2}" width="${W}" height="${H}" rx="4"/>`;
+    s += `<text x="${X(c)}" y="${rowY[r] + 3.5}" text-anchor="middle" font-size="8.5">${label}</text></g>`;
+  }));
+  order.forEach((w, i) => {
+    const [r, c] = w.rc;
+    const y = lane(i), x2 = X(c);
+    const up = two && r === 0;
+    const edge = up ? rowY[0] + H / 2 : rowY[r] - H / 2;
+    const turn = up ? -6 : 6;
+    s += `<path d="M166 ${y} H ${x2 - 6} Q ${x2} ${y} ${x2} ${y + turn} V ${edge}" fill="none" stroke="var(--${w.colour})" stroke-width="3" stroke-linecap="round"/>`;
+    s += `<rect x="${x2 - W / 2 - 2.5}" y="${rowY[r] - H / 2 - 2.5}" width="${W + 5}" height="${H + 5}" rx="5.5" fill="none" stroke="var(--${w.colour})" stroke-width="2.5"/>`;
+  });
+  return s + '</svg>';
+}
+
+const tag = (today) => (today ? '<span class="tag ok">Works with 0.6.0</span>' : '<span class="tag plan">Planned</span>');
+function placeWhyNot(part, place) {
+  if (S.zigbee && place === 'socket' && (part === 'module' || part === 'cc1101')) return 'The Zigbee module is in the socket.';
+  if (!S.future && !PLACES[part][place].today) return 'Needs a newer RoboAlarms.';
+  return '';
+}
+function places(part, current, act) {
+  return `<div class="places" role="radiogroup" aria-label="Where it is wired">${Object.entries(PLACES[part]).map(([k, p]) => {
+    const why = placeWhyNot(part, k);
+    const on = current === k;
+    return `<button class="place" role="radio" aria-checked="${on}"${why && !on ? ' aria-disabled="true"' : ''} data-act="${act}" data-v="${k}">
+      <span class="dot"></span><span><b>${p.title}</b><small>${p.sub}</small>${why ? `<small class="why">${why}</small>` : ''}</span>${tag(p.today)}</button>`;
+  }).join('')}</div>`;
+}
+function legend(items, extra) {
+  return `<div class="legend">${items.map(([c, a, b]) => `<span><i class="sw" style="background:var(--${c})"></i><b>${a}</b> to <b>${b}</b></span>`).join('')}${extra ? `<span>${extra}</span>` : ''}</div>`;
+}
+function block(svg, caption) {
+  return `<div class="wiring-block"><div class="wiring">${svg}</div><p class="pin-caption" aria-live="polite" data-default="${caption}">${caption}</p></div>`;
+}
+function wireTable(first, rows) {
+  return `<table class="wires"><thead><tr><th>${first}</th><th>Goes to</th><th>Panel pin</th></tr></thead><tbody>
+    ${rows.map(([p, to, g, c]) => `<tr><td>${c ? `<i class="sw" style="background:var(--${c})"></i>` : '<i class="sw none"></i>'}<b>${p}</b></td><td>${to}</td><td class="mono muted">${g}</td></tr>`).join('')}
+    </tbody></table>`;
+}
+const beforeJ7 = (vcc) => `<div class="note warn">${icon('triangle')}<div><b>Before you wire J7</b><ul class="tight">
+  <li>Find the 5V row with a meter: panel on USB, nothing wired, DC volts, black probe on a GND pin, red on the end pin of each row. One row reads 5 V, the other 3.3 V. The drawing follows the printed labels; your board may be the other way up. Then unplug the panel to wire it.</li>
+  <li>${vcc}</li></ul></div></div>`;
+const plannedNote = (what) => `<div class="note info">${icon('info')}<div><b>Planned:</b> ${what} needs a newer RoboAlarms. It is drawn so you can plan the wiring.</div></div>`;
+function j7Taken(except) {
+  const t = {};
+  if (except !== 'rf') {
+    if (S.rf === 'module' && S.rfPlace === 'j7') t['IO' + S.rfPin] = 'the 433 MHz receiver (DATA)';
+    if (S.rf === 'cc1101' && S.ccPlace === 'j7') CC_J7.forEach(([sig, io]) => { t[io] = `the CC1101 (${sig})`; });
+  }
+  if (except !== 'clock' && S.clock && S.clockPlace === 'j7') { t.IO27 = 'the clock (SDA)'; t.IO28 = 'the clock (SCL)'; }
+  return t;
+}
+
+function receiverJ7() {
+  const wires = [{ pin: 'DATA', to: 'IO' + S.rfPin, colour: 'wire-data' }, { pin: 'GND', to: [1, 3], colour: 'wire-gnd' },
+    { pin: 'VCC', to: [1, 0], colour: 'wire-vcc' }];
+  return block(wiring(J7C, wires, { kind: 'receiver', name: 'RECEIVER', short: 'receiver', taken: j7Taken('rf'),
+    reserved: [25, 27, 28], pick: S.picking ? J7_TERMINALS : null, current: S.rfPin,
+    label: `Receiver wiring: VCC to J7 3V3, GND to GND, DATA to J7 IO${S.rfPin}` }),
+    S.picking ? 'Click the pin the DATA wire is on. Dimmed pins can’t be used; point at one to see why.' : 'Point at a pin to see what it is.') +
+    legend([['wire-vcc', 'VCC', '3V3'], ['wire-gnd', 'GND', 'GND'], ['wire-data', 'DATA', 'IO' + S.rfPin]], 'Antenna: its spring, or 17.3 cm of wire') +
+    `<div class="pin-line"><span>The panel listens for DATA on <b>J7 IO${S.rfPin}</b>.</span>
+      <button class="btn small" data-act="picking">${S.picking ? 'Keep IO' + S.rfPin : 'Change pin'}</button></div>` +
+    beforeJ7('<b>VCC goes to 3V3, never 5V:</b> on 5V the receiver’s DATA would put 5 V into the panel’s chip, which takes 3.3 V at most.');
+}
+function receiverSocket() {
+  return wireTable('Receiver pin', [['VCC', 'Pad 3V3', '', 'wire-vcc'], ['GND', 'Pad GND', '', 'wire-gnd'],
+    ['DATA', 'Pad IO10', 'GPIO 10', 'wire-data'], ['ANT', 'Its spring, or 17.3 cm of wire', '', '']]) +
+    `<p class="small muted">Dupont wires onto the socket’s pins, labelled beside it on the board. The Zigbee module can’t go in the socket while they are there.</p>
+    <div class="note warn">${icon('triangle')}<div><b>VCC goes to 3V3, never 5V:</b> on 5V the receiver’s DATA would put 5 V into the panel’s chip.</div></div>`;
+}
+function cc1101Socket() {
+  return wireTable('CC1101 pin', CC_SOCKET) +
+    `<p class="small muted">Dupont wires onto the socket’s pins, labelled beside it on the board. Pin order differs between CC1101 boards: match the labels, not the positions.</p>
+    <div class="note warn">${icon('triangle')}<div><b>The CC1101 is a 3.3 V part:</b> VCC to 3V3 only.</div></div>`;
+}
+function cc1101J7() {
+  const wires = CC_J7.map(([pin, to, colour]) => ({ pin, to, colour }))
+    .concat([{ pin: 'GND', to: [1, 3], colour: 'wire-gnd' }, { pin: 'VCC', to: [1, 0], colour: 'wire-vcc' }]);
+  return (S.future ? plannedNote('the CC1101 on J7') : '') +
+    block(wiring(J7C, wires, { kind: 'cc1101', name: 'CC1101', short: 'CC1101', taken: j7Taken('rf'), reserved: [25],
+      label: 'CC1101 wiring: SCK to IO52, MOSI to IO51, MISO to IO50, CSn to IO49, GDO0 to IO5, VCC to 3V3, GND to GND' }),
+    'Point at a pin to see what it is.') +
+    legend(CC_J7.map(([pin, to, c]) => [c, pin, to]).concat([['wire-vcc', 'VCC', '3V3'], ['wire-gnd', 'GND', 'GND']]), 'GDO2 unconnected') +
+    `<p class="small muted">Dupont leads of 10 to 15 cm. Keep its antenna (17.3 cm of wire will do) away from the board, the display’s ribbon and the Zigbee module’s antenna. Pin order differs between CC1101 boards: match the labels.</p>` +
+    beforeJ7('<b>The CC1101 is a 3.3 V part:</b> VCC to 3V3, never 5V.');
+}
+function rfBody() {
+  if (S.rf === 'auto') return '<p class="muted">The panel looks for a CC1101 on the radio socket first, then listens for a receiver module on the socket’s pad IO10. Pick the part when you know it, to see its wiring.</p>';
+  if (S.rf === 'module') return places('module', S.rfPlace, 'rfplace') + (S.rfPlace === 'j7' ? receiverJ7() : receiverSocket());
+  if (S.rf === 'cc1101') return places('cc1101', S.ccPlace, 'ccplace') + (S.ccPlace === 'j7' ? cc1101J7() : cc1101Socket());
+  return '';
+}
+function partRf() {
+  const opts = [
+    ['none', 'None', 'No wireless sensors'],
+    ['module', 'Receiver module', 'Three pins: VCC, GND, DATA (RX470, RXB6…)'],
+    ['cc1101', 'CC1101 board', 'Eight pins; also hears 315 and 345 MHz'],
+    ['auto', 'Not sure', 'The panel looks for either'],
+  ];
+  const body = rfBody();
+  return `<section class="card part">
+    <div class="part-head"><span class="icon-tile">${icon('radio')}</span>
+      <div><h2>Wireless sensors (433 MHz)</h2><p class="muted small">Door, window and motion sensors and remotes that send on 433 MHz.</p></div><span></span></div>
+    <div class="part-pick"><div class="choices" role="radiogroup" aria-label="Receiver">
+      ${opts.map(([k, title, d]) => {
+        const off = k === 'auto' && S.zigbee;
+        return `<button class="choice" role="radio" aria-checked="${S.rf === k}"${off && S.rf !== k ? ' aria-disabled="true"' : ''} data-act="rf" data-v="${k}"><span class="dot"></span><b>${title}</b><small>${d}</small>${off ? '<small class="why">Not with the Zigbee module</small>' : ''}</button>`;
+      }).join('')}
+    </div></div>
+    ${body ? `<div class="part-body">${body}</div>` : ''}
+  </section>`;
+}
+
+function clockJ13() {
+  const wires = [{ pin: 'SCL', to: [0, 0], colour: 'wire-sig' }, { pin: 'SDA', to: [0, 1], colour: 'wire-data' },
+    { pin: 'VCC', to: [0, 2], colour: 'wire-vcc' }, { pin: 'GND', to: [0, 3], colour: 'wire-gnd' }];
+  return block(wiring(J13C, wires, { kind: 'clock', name: 'DS3231', short: 'clock module',
+    label: 'Clock wiring to the I2C connector: SCL to SCL, SDA to SDA, VCC to 3V3, GND to GND' }), 'Point at a pin to see what it is.') +
+    legend([['wire-sig', 'SCL', 'SCL'], ['wire-data', 'SDA', 'SDA'], ['wire-vcc', 'VCC', '3V3'], ['wire-gnd', 'GND', 'GND']], 'SQW and 32K unconnected') +
+    `<p class="small muted">A pre-crimped PH2.0 4-pin lead with Dupont ends fits a ZS-042’s header. Match the wires to the printed labels, not their colours.</p>
+    <div class="note warn">${icon('triangle')}<div><b>Short leads, 3V3 only.</b> This connector shares the touch screen’s wiring: keep the module inside the case beside it, on 10 to 20 cm of lead away from siren and mains wires, or a fault on it can freeze the touch screen. VCC to 3V3, never 5V: the module’s pull-ups would lift the connector’s lines above 3.3 V.</div></div>`;
+}
+function clockJ7() {
+  const wires = [{ pin: 'SCL', to: 'IO28', colour: 'wire-sig' }, { pin: 'SDA', to: 'IO27', colour: 'wire-data' },
+    { pin: 'GND', to: [1, 10], colour: 'wire-gnd' }, { pin: 'VCC', to: [1, 0], colour: 'wire-vcc' }];
+  return (S.future ? plannedNote('the clock on J7') : '') +
+    block(wiring(J7C, wires, { kind: 'clock', name: 'DS3231', short: 'clock module', taken: j7Taken('clock'), reserved: [25],
+      label: 'Clock wiring to J7: SDA to IO27, SCL to IO28, VCC to 3V3, GND to GND' }), 'Point at a pin to see what it is.') +
+    legend([['wire-data', 'SDA', 'IO27'], ['wire-sig', 'SCL', 'IO28'], ['wire-vcc', 'VCC', '3V3'], ['wire-gnd', 'GND', 'GND']], 'SQW and 32K unconnected') +
+    `<p class="small muted">Its own wiring: nothing on it can reach the touch screen, and no wired zone is lost. V1.1 boards only: V1.2 boards carry the radio socket’s serial line on these two pins (the version is printed on the board).</p>` +
+    beforeJ7('<b>VCC to 3V3, never 5V.</b>');
+}
+function partClock() {
+  return `<section class="card part">
+    <div class="part-head"><span class="icon-tile">${icon('clock')}</span>
+      <div><h2>Battery-backed clock</h2><p class="muted small">Keeps the date and time through power cuts: a DS3231 board (ZS-042).</p></div>
+      <button class="switch" role="switch" aria-checked="${S.clock}" aria-label="Battery-backed clock fitted" data-act="clock"></button></div>
+    ${S.clock ? `<div class="part-body">${places('clock', S.clockPlace, 'clockplace')}${S.clockPlace === 'j7' ? clockJ7() : clockJ13()}
+      <div class="note info">${icon('info')}<div>A CR2032 coin cell keeps the time. A ZS-042 tries to charge it: remove its charging diode or resistor, or fit a rechargeable LIR2032.</div></div>
+    </div>` : ''}
+  </section>`;
+}
+
+function partZigbee() {
+  return `<section class="card part">
+    <div class="part-head"><span class="icon-tile">${icon('tower')}</span>
+      <div><h2>Zigbee radio (ESP32-H2 module)</h2><p class="muted small">Elecrow’s module made to plug into the wireless-module socket on top of the board.</p></div>
+      <button class="switch" role="switch" aria-checked="${S.zigbee}" aria-label="Zigbee module fitted" data-act="zigbee"></button></div>
+    ${S.zigbee ? `<div class="part-body">
+      <p>It plugs into the socket: nothing to wire. Keep its antenna, on its lead, away from the 433 MHz antenna and the display’s ribbon.</p>
+      <div class="note info">${icon('info')}<div><b>The panel can’t use it yet:</b> Zigbee is planned. Fitted now, it takes every pad of the socket, so a 433 MHz receiver goes on J7 and “Not sure” can’t be chosen.</div></div>
+    </div>` : ''}
+  </section>`;
+}
+
+function partLater() {
+  return `<section class="card part later"><div class="part-head"><span class="icon-tile plain">${icon('siren')}</span>
+    <div><h2>Sirens, strobes and relays</h2><p class="muted small">Arrive with a later version of RoboAlarms.</p></div><span class="chip">Later</span></div></section>`;
+}
+
+function conflicts() {
+  const out = [];
+  if (S.rf === 'module' || S.rf === 'cc1101') {
+    const place = S.rf === 'module' ? S.rfPlace : S.ccPlace;
+    const why = placeWhyNot(S.rf, place);
+    if (why) out.push(`${S.rf === 'module' ? 'The receiver module' : 'The CC1101'} on the ${place === 'socket' ? 'radio socket' : 'J7 header'}: ${why}`);
+  }
+  if (S.rf === 'auto' && S.zigbee) out.push('“Not sure” can’t be used with the Zigbee module fitted: the search would probe its pins. Choose the receiver.');
+  if (S.clock) {
+    const why = placeWhyNot('clock', S.clockPlace);
+    if (why) out.push(`The clock on ${S.clockPlace === 'j7' ? 'J7 IO27 and IO28' : 'the I2C connector'}: ${why}`);
+  }
+  return out;
+}
+function zonesLeft() {
+  const used = new Set();
+  if (S.rf === 'module' && S.rfPlace === 'j7') used.add(S.rfPin);
+  if (S.rf === 'cc1101' && S.ccPlace === 'j7') CC_J7.forEach(([, io]) => used.add(Number(io.slice(2))));
+  return J7_TERMINALS.filter((pn) => !used.has(pn));
+}
+function pinUses() {
+  const u = [];
+  if (S.rf === 'module') {
+    u.push(S.rfPlace === 'j7' ? ['433 MHz receiver', 'DATA', `J7 IO${S.rfPin}`, S.rfPin, true]
+      : ['433 MHz receiver', 'DATA', 'Socket pad IO10', 10, true]);
+  } else if (S.rf === 'cc1101') {
+    if (S.ccPlace === 'j7') CC_J7.forEach(([sig, io]) => u.push(['CC1101', sig, 'J7 ' + io, Number(io.slice(2)), false]));
+    else CC_SOCKET.filter((r) => r[2]).forEach(([sig, pad, g]) => u.push(['CC1101', sig, 'Socket ' + pad.toLowerCase().replace('io', 'IO'), Number(g.slice(5)), true]));
+  } else if (S.rf === 'auto') {
+    u.push(['433 MHz receiver', 'found by the panel', 'Radio socket', '6 to 10', true]);
+  }
+  if (S.clock) {
+    if (S.clockPlace === 'j7') u.push(['Clock', 'SDA', 'J7 IO27', 27, false], ['Clock', 'SCL', 'J7 IO28', 28, false]);
+    else u.push(['Clock', 'SDA', 'I2C connector (J13)', 45, true], ['Clock', 'SCL', 'I2C connector (J13)', 46, true]);
+  }
+  if (S.zigbee) u.push(['Zigbee module', 'serial line', 'Radio socket', '53, 54', false]);
+  return u;
+}
+function pinCheck() {
+  const c = conflicts();
+  const zones = zonesLeft();
+  const uses = pinUses();
+  return `<section class="card pincheck">
+    <h2>Pin check</h2>
+    ${c.length
+    ? `<div class="note bad">${icon('triangle')}<div><b>${c.length === 1 ? 'One thing to fix' : c.length + ' things to fix'}</b><ul class="tight">${c.map((x) => `<li>${x}</li>`).join('')}</ul></div></div>`
+    : `<div class="pc-row"><span class="icon-tile small">${icon('circleCheck')}</span><div><b>No pin is used twice</b><small>Every part is in a place this panel accepts.</small></div></div>`}
+    <div class="pc-row"><span class="icon-tile small plain">${icon('door')}</span><div><b>Wired zones left on J7: ${zones.length}</b><small>${zones.length ? zones.map((pn) => 'IO' + pn).join(', ') : 'None'}. A wired zone is a contact between one of these pins and GND, set up on the panel.</small></div></div>
+    <details class="more" data-key="pins"${S.open.pins ? ' open' : ''}><summary>${icon('sliders')}All pin assignments</summary>
+      ${uses.length ? `<table class="wires"><thead><tr><th>Part</th><th>Signal</th><th>Where</th><th>GPIO</th><th></th></tr></thead><tbody>
+      ${uses.map(([p, sig, where, g, today]) => `<tr><td><b>${p}</b></td><td>${sig}</td><td>${where}</td><td class="mono">${g}</td><td>${tag(today)}</td></tr>`).join('')}</tbody></table>`
+    : '<p class="muted">No extra parts chosen.</p>'}
+      <p class="small muted" style="margin-top:10px">The panel checks every pin against its own board rules before using it: flash, strapping and USB pins are refused. IO25 stays free: it is the chip’s USB data line.</p>
+    </details>
+  </section>`;
+}
+function matches(l) { return Object.entries(l.set).every(([k, v]) => S[k] === v); }
+function layoutsRow() {
+  return `<div class="layouts" role="radiogroup" aria-label="Suggested layouts">${LAYOUTS.map((l) => {
+    const off = !S.future && !l.today;
+    const on = matches(l);
+    return `<button class="layout" role="radio" aria-checked="${on}"${off && !on ? ' aria-disabled="true"' : ''} data-act="layout" data-v="${l.key}">
+      ${tag(l.today)}<b>${l.title}</b><small>${l.sub}</small>${off ? '<small class="why">Needs a newer RoboAlarms.</small>' : ''}</button>`;
+  }).join('')}</div>`;
+}
+
+function pParts() {
+  return head(2, 'What’s connected to the panel?',
+    'Start from a suggested layout or pick each part. The Flasher shows how to wire each one and sets the panel up for them after installing. Nothing extra? Skip this step: you can come back any time.') +
+    (running() ? `<div class="note info">${icon('info')}<div>Read from the panel: these are its settings now.</div></div>` : '') +
+    '<h2 class="section">Suggested layouts</h2>' + layoutsRow() +
+    '<h2 class="section">Parts</h2>' + partRf() + partClock() + partZigbee() + partLater() + pinCheck();
+}
+
+function partsLong() {
+  if (S.skipParts) return 'Set up later';
+  const p = [];
+  if (S.rf === 'module') p.push(S.rfPlace === 'j7' ? `433 MHz receiver module, DATA on J7 IO${S.rfPin}` : '433 MHz receiver module on the radio socket');
+  else if (S.rf === 'cc1101') p.push(S.ccPlace === 'j7' ? 'CC1101 on J7' : 'CC1101 on the radio socket');
+  else if (S.rf === 'auto') p.push('433 MHz receiver, found by the panel');
+  if (S.clock) p.push(S.clockPlace === 'j7' ? 'clock on J7 IO27 and IO28' : 'clock on the I2C connector');
+  if (S.zigbee) p.push('Zigbee module in the socket (not used yet)');
+  return p.length ? p.join('; ') : 'Nothing extra';
+}
+function sumRow(k, v, step) {
+  return `<div class="sum-row"><span class="k">${k}</span><span class="v">${v}</span>${step === null ? '<span></span>'
+    : `<button class="link small" data-act="goto" data-step="${step}">Change</button>`}</div>`;
+}
+
+function pInstall() {
+  if (S.installing) return pInstalling();
+  const steps = running()
+    ? [['Check the panel is still disarmed', 'a moment'], ['Write the new software and check it', 'about 1 minute'],
+      ['Restart and check it runs', 'up to 30 s'], ['Apply the parts’ settings', 'only if they changed']]
+    : [[S.backup ? 'Back up what is on the panel now' : 'No backup (you chose this)', S.backup ? 'about 4 minutes' : ''],
+      ['Erase it and install RoboAlarms', 'about 1 minute'], ['Start it and check it runs', 'up to 30 s'],
+      ['Set it up for your parts', 'one more restart']];
+  return head(3, running() ? 'Ready to update to RoboAlarms 0.6.0' : 'Ready to install RoboAlarms 0.6.0',
+    running() ? 'Codes, users, zones, Wi-Fi and history stay as they are.' : 'Check this is right, then install. About 5 minutes with the backup.') +
+    `<div class="card summary">
+      ${sumRow('Panel', 'Elecrow CrowPanel Advanced 7″ on COM5', 1)}
+      ${sumRow('Software', running() ? 'RoboAlarms 0.6.0 (it runs 0.5.2 now)' : 'RoboAlarms 0.6.0, the build for this panel’s chip', null)}
+      ${sumRow('Parts', partsLong(), 2)}
+    </div>
+    <h2 class="section">What happens</h2>
+    <div class="card" style="padding:0"><ol class="timeline">${steps.map(([t, d], i) =>
+      `<li><span class="tl-num">${i + 1}</span><span>${t}</span><span class="time">${d}</span></li>`).join('')}</ol></div>` +
+    (running() ? '' : `<label class="option-card"><input type="checkbox" data-act="backup"${S.backup ? ' checked' : ''}>
+      <span><b>Back up the panel first</b> (recommended)<small>The only way back to the maker’s demo. Saved in Documents › RoboAlarms › Backups.</small></span></label>`) +
+    (!running() && !S.backup ? `<div class="note warn">${icon('triangle')}<div><b>Without a backup, the maker’s demo is gone for good.</b> The Flasher asks once more before it starts.</div></div>` : '') +
+    `<div class="note good">${icon('shield')}<div><b>Safe to retry.</b> If the cable comes out or this computer sleeps, the panel isn’t harmed: start again.</div></div>` +
+    (running() ? '' : `<div class="note info">${icon('plug')}<div><b>Keep it powered.</b> POWER on, a phone charger on the USB2.0 port (or the panel’s own 5 V supply): the panel starts with its screen on at the end, which needs more power than a computer’s USB port gives.</div></div>`);
+}
+
+function pInstalling() {
+  const rows = running()
+    ? [['Check the panel is still disarmed', 'done'], ['Write the new software', 'running', 64, '1.2 of 1.9 MB written'],
+      ['Restart and check it runs', 'waiting'], ['Apply the parts’ settings', 'waiting']]
+    : [[S.backup ? 'Back up what is on the panel now' : 'Erase it and install RoboAlarms', 'running', 42, S.backup ? '6.7 of 16 MB read' : '0.8 of 1.9 MB written'],
+      [S.backup ? 'Erase it and install RoboAlarms' : 'Start it and check it runs', 'waiting'],
+      [S.backup ? 'Start it and check it runs' : 'Set it up for your parts', 'waiting'],
+      ...(S.backup ? [['Set it up for your parts', 'waiting']] : [])];
+  const pct = running() ? 58 : 28;
+  return head(3, running() ? 'Updating to RoboAlarms 0.6.0' : 'Installing RoboAlarms 0.6.0',
+    'Keep the panel plugged in. You can use this computer meanwhile.') +
+    `<div class="card">
+      <div class="overall"><b>${pct} %</b><span class="muted">About ${running() ? '1 minute' : '4 minutes'} left</span></div>
+      <div class="bar big" role="progressbar" aria-label="Overall progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="width:${pct}%"></i></div>
+      <ol class="job">${rows.map(([t, st, p, d]) => `<li class="${st}"><span class="mark">${st === 'done' ? icon('check') : ''}</span>
+        <div><b>${t}</b>${st === 'running' ? `<div class="bar" role="progressbar" aria-label="${t}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}"><i style="width:${p}%"></i></div><small class="muted">${d}</small>` : ''}</div></li>`).join('')}</ol>
+    </div>
+    <p class="small muted">The words change at most once a second, and nothing on this screen moves by itself.</p>`;
+}
+
+function testRf() {
+  const where = S.rf === 'module' ? (S.rfPlace === 'j7' ? `Receiver module on J7 IO${S.rfPin}` : 'Receiver module on the socket’s pad IO10')
+    : S.rf === 'cc1101' ? `CC1101 on ${S.ccPlace === 'j7' ? 'J7' : 'the radio socket'}, its registers read back right`
+      : 'Receiver found on the radio socket';
+  return `<section class="card test">
+    <div class="test-head"><span class="icon-tile">${icon('radio')}</span>
+      <div><h2>Wireless sensors</h2><p class="muted small">${where} · 12 noise edges a second, a quiet spot</p></div>
+      <span class="chip good">${icon('check')}Working</span></div>
+    <p><b>Press a button on a remote, or open a door sensor near the panel.</b> Each one appears below as the panel hears it.</p>
+    <table class="wires"><thead><tr><th>Heard</th><th>Kind</th><th>Codes</th><th>Last</th></tr></thead><tbody>
+      <tr><td><b>5A3F1</b></td><td>EV1527</td><td class="mono">0A × 3</td><td>just now</td></tr>
+      <tr><td><b>0B7C2</b></td><td>EV1527</td><td class="mono">02 × 1</td><td>12 s ago</td></tr>
+    </tbody></table>
+    <p class="small muted">To use one as a zone: on the panel, Zones › Add a zone › 433 MHz sensor.</p>
+  </section>`;
+}
+function testClock() {
+  const where = S.clockPlace === 'j7' ? 'On J7 IO27 and IO28' : 'On the I2C connector';
+  return `<section class="card test">
+    <div class="test-head"><span class="icon-tile">${icon('clock')}</span>
+      <div><h2>Battery-backed clock</h2><p class="muted small">${where} · found when the panel started · 23.5 °C</p></div>
+      <span class="chip good">${icon('check')}Working</span></div>
+    <p>The panel’s clock matches this computer to the second.</p>
+    <div class="row-actions"><button class="btn small" data-act="noop">Set it from this computer</button></div>
+  </section>`;
+}
+function testZigbee() {
+  return `<section class="card test"><div class="test-head"><span class="icon-tile plain">${icon('tower')}</span>
+    <div><h2>Zigbee radio</h2><p class="muted small">In the socket · this RoboAlarms doesn’t use it yet</p></div>
+    <span class="chip">Later</span></div></section>`;
+}
+
+function pTest() {
+  const none = S.skipParts || (S.rf === 'none' && !S.clock && !S.zigbee);
+  return `<p class="eyebrow">Step 5 of 5</p>
+    <div class="success"><span class="big-check">${icon('check')}</span>
+      <div><h1 id="page-title" tabindex="-1">${running() ? 'Updated: RoboAlarms 0.6.0 is running' : 'RoboAlarms is running on your panel'}</h1>
+      <p class="lead">${running() ? 'Its codes, zones and Wi-Fi came through unchanged.' : 'Finish on the touchscreen, then test your parts here.'}</p></div></div>` +
+    (running() ? '' : `<div class="card"><h2>On the panel’s touchscreen</h2><ol class="todo">
+      <li>Join your Wi-Fi.</li>
+      <li>Change the two factory codes when it asks (installer 69420, master 123456).</li></ol></div>`) +
+    '<h2 class="section">Test your parts</h2>' +
+    (none ? `<p class="muted">${S.skipParts ? 'You chose to set the parts up later' : 'No extra parts were chosen'}. Add them any time: Advanced tools › Hardware.</p>`
+      : (S.rf !== 'none' ? testRf() : '') + (S.clock ? testClock() : '') + (S.zigbee ? testZigbee() : ''));
+}
+
+function actions() {
+  const back = S.step > 0 && S.step < 4 && !S.installing
+    ? `<button class="btn ghost" data-act="back">${icon('left')}Back</button>` : '';
+  let right = '';
+  if (S.step === 0) {
+    right = `<button class="btn primary" data-act="next"${S.scenario === 'none' ? ' disabled' : ''}>${running() ? 'Next: check the panel' : 'Next: check the panel'}${icon('right')}</button>`;
+  } else if (S.step === 1) {
+    right = !running() && !S.checked
+      ? `<button class="btn primary" data-act="identify">${icon('search')}Check this panel</button>`
+      : `<button class="btn primary" data-act="next">Next: connected parts${icon('right')}</button>`;
+  } else if (S.step === 2) {
+    const blocked = conflicts().length > 0;
+    right = `${blocked ? '<span class="small muted">Fix what the pin check marks to continue.</span>' : ''}
+      <button class="btn ghost" data-act="skip">Skip for now</button>
+      <button class="btn primary" data-act="next"${blocked ? ' disabled' : ''}>Next: review${icon('right')}</button>`;
+  } else if (S.step === 3) {
+    right = S.installing
+      ? `<button class="btn" data-act="noop">${icon('x')}Stop…</button>`
+      : `<button class="btn primary" data-act="install">${icon('download')}${running() ? 'Update to 0.6.0' : 'Install RoboAlarms 0.6.0'}</button>`;
+  } else {
+    right = `<button class="btn" data-act="mode" data-mode="tools">${icon('terminal')}Advanced tools</button>
+      <button class="btn primary" data-act="restart">Finish</button>`;
+  }
+  return `${back}<span class="spacer"></span>${right}`;
+}
+
+function guided() {
+  const page = [pConnect, pCheck, pParts, pInstall, pTest][S.step]();
+  return `<nav class="rail" aria-label="Setup steps">${rail()}</nav>
+    <main class="content"><div class="page"><div class="inner">${page}</div></div>
+    <footer class="actions">${actions()}</footer></main>`;
+}
+
+/* ---- advanced tools ------------------------------------------------------------------- */
+const TOOLS = [['ports', 'usb', 'Panels and ports'], ['console', 'terminal', 'Console'], ['hardware', 'wrench', 'Hardware'],
+  ['backups', 'archive', 'Backups'], ['software', 'download', 'Software'], ['logs', 'folder', 'Logs']];
+
+function listRows(rows) {
+  return `<div class="card" style="padding:4px 22px">${rows.map(([ic, t, d, btn]) =>
+    `<div class="list-row"><span class="icon-tile small plain">${icon(ic)}</span><div><b>${t}</b><small>${d}</small></div>${btn ? `<button class="btn small" data-act="noop">${btn}</button>` : '<span></span>'}</div>`).join('')}</div>`;
+}
+
+function toolPage() {
+  const T = (t, lead) => `<h1 id="page-title" tabindex="-1">${t}</h1><p class="lead">${lead}</p>`;
+  switch (S.tool) {
+    case 'ports':
+      return T('Panels and ports', 'Everything plugged into this computer, for when there is more than one board.') + listRows([
+        ['cpu', 'CrowPanel Advanced 7″ · COM5', 'RoboAlarms 0.6.0 · idle · CH340K 1A86:7523', 'Open'],
+        ['cpu', 'ESP32-S3 board · COM8', 'No RoboAlarms software for this chip yet · CP210x 10C4:EA60', ''],
+        ['usb', 'COM1 · built-in serial port', 'Not a USB device', ''],
+        ['usb', 'COM4 · Bluetooth link', 'Not a USB device', '']]);
+    case 'hardware':
+      return T('Hardware', 'Every setting of the parts wired to the panel, and the tools to check them.') + listRows([
+        ['radio', 'Receiver: module on J7 IO3', 'rf module ook · rf pin 3 · 12 edges a second, line 3 % high', 'Change'],
+        ['radio', 'Record 3 seconds of raw pulses', 'Saved to Documents › RoboAlarms › Captures, for the decoder’s tests', 'Record'],
+        ['clock', 'Battery-backed clock: working', 'DS3231 at 0x68 · 0 s from this computer · 23.5 °C', 'Set time'],
+        ['sliders', 'All pin assignments', 'The board description, what uses each pin and why the rest are reserved', 'Show']]);
+    case 'backups':
+      return T('Backups', 'Whole-flash copies taken before an install. The only way back to the maker’s demo.') + listRows([
+        ['archive', 'crowpanel_p4-30eda0123450-2026-09-24.bin', '16 MB · this panel · checksum verified', 'Restore…'],
+        ['folder', 'Documents › RoboAlarms › Backups', 'Open the folder', 'Open'],
+        ['download', 'Back up this panel now', 'About 4 minutes; the panel restarts into its loader', 'Back up']]);
+    case 'software':
+      return T('Software', 'Which RoboAlarms build goes on the panel, and the choices a guided setup makes for you.') + listRows([
+        ['download', 'RoboAlarms 0.6.0 · built in', 'Builds for P4 silicon v1.x and v3.x · signed with the project’s key', ''],
+        ['folder', 'Open another firmware file…', 'A .roboflash bundle; it is checked before anything is written', 'Open'],
+        ['cpu', 'Choose the build by hand', 'Overrides detection; a build for other silicon asks first', 'Choose'],
+        ['triangle', 'Install fresh', 'Erases codes, users, zones, Wi-Fi and history', 'Install…']]);
+    case 'logs':
+      return T('Logs', 'What the Flasher did: every command, every write, and how it recognised each board.') + listRows([
+        ['folder', 'Open the log folder', 'AppData › Local › RoboAlarms › Flasher › logs', 'Open']]);
+    default:
+      return T('Console', 'The panel’s service console. Connecting doesn’t restart the panel, and keypad codes are never typed here.') +
+        `<div class="card">
+          <div class="console-bar">${['status', 'health', 'rf', 'rtc', 'zones', 'power', 'help'].map((c) => `<button class="qc" data-act="noop">${c}</button>`).join('')}
+            <span class="spacer"></span><button class="btn small" data-act="noop">Save log</button><button class="btn small" data-act="noop">Restart panel…</button></div>
+          <pre class="log"><span class="you">&gt; status</span>
+alarm: disarmed, ready  partition 1  zones open 0
+power: mains ok  battery 13.4 V
+<span class="you">&gt; rf</span>
+rf: receiver module on GPIO 3  edges/s 12  high 3 %
+rf: heard EV1527 5A3F1 code 0A (3)
+<span class="w">W (812345) wifi: beacon timeout, reconnecting</span></pre>
+          <div class="send"><input type="text" placeholder="Type a command, e.g. status" aria-label="Console command"><button class="btn primary small" data-act="noop">Send</button></div>
+        </div>`;
+  }
+}
+
+function tools() {
+  return `<nav class="rail" aria-label="Advanced tools">
+      <p class="rail-title">Advanced tools</p>
+      <div class="panel-pick"><span class="icon-tile small">${icon('cpu')}</span><div><b>CrowPanel 7″</b><small>COM5 · RoboAlarms ${S.step === 4 || running() ? '0.6.0' : 'not installed'}</small></div></div>
+      <ul class="tool-list">${TOOLS.map(([k, ic, t]) => `<li><button class="tool${S.tool === k ? ' on' : ''}" data-act="tool" data-v="${k}"${S.tool === k ? ' aria-current="page"' : ''}>${icon(ic)}${t}</button></li>`).join('')}</ul>
+      <div class="rail-foot"><button class="link small" data-act="mode" data-mode="guided">${icon('left')}Back to guided setup</button></div>
+    </nav>
+    <main class="content"><div class="page"><div class="inner wide">${toolPage()}</div></div></main>`;
+}
+
+/* ---- rendering and events ------------------------------------------------------------- */
+function render(moved) {
+  document.getElementById('mode-guided').setAttribute('aria-pressed', String(S.mode === 'guided'));
+  document.getElementById('mode-tools').setAttribute('aria-pressed', String(S.mode === 'tools'));
+  document.getElementById('scenario').value = S.scenario;
+  document.getElementById('firmware').value = S.future ? 'future' : 'today';
+  document.getElementById('proto-finish').hidden = !(S.mode === 'guided' && S.installing);
+  const app = document.getElementById('app');
+  const old = app.querySelector('.page');
+  const keep = old ? old.scrollTop : 0;
+  const a = document.activeElement;
+  const focusKey = a && a.dataset ? [a.dataset.act, a.dataset.v, a.dataset.pin].join('|') : '';
+  app.innerHTML = S.mode === 'guided' ? guided() : tools();
+  if (!moved) {
+    const page = app.querySelector('.page');
+    if (page) page.scrollTop = keep;
+    // Keep the keyboard where it was: the same control, redrawn.
+    const same = [...app.querySelectorAll('[data-act]')].find((el) =>
+      [el.dataset.act, el.dataset.v, el.dataset.pin].join('|') === focusKey);
+    if (same && focusKey !== '||') same.focus({ preventScroll: true });
+  } else {
+    const h = document.getElementById('page-title');
+    if (h) h.focus({ preventScroll: true });
+    const page = app.querySelector('.page');
+    if (page) page.scrollTop = 0;
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-act]');
+  if (!t || t.disabled || t.getAttribute('aria-disabled') === 'true') return;
+  const act = t.dataset.act;
+  let moved = true;
+  switch (act) {
+    case 'next': if (S.step === 2) S.skipParts = false; S.step = Math.min(4, S.step + 1); S.picking = false; break;
+    case 'back': S.step = Math.max(0, S.step - 1); S.picking = false; break;
+    case 'goto': S.step = Number(t.dataset.step); S.picking = false; break;
+    case 'skip': S.skipParts = true; S.step = 3; S.picking = false; break;
+    case 'identify': S.checked = true; break;
+    case 'pickboard': S.pickBoard = !S.pickBoard; moved = false; break;
+    case 'rf': S.rf = t.dataset.v; S.picking = false; moved = false; break;
+    case 'picking': S.picking = !S.picking; moved = false; break;
+    case 'pin': S.rfPin = Number(t.dataset.pin); S.picking = false; moved = false; break;
+    case 'clock': S.clock = !S.clock; moved = false; break;
+    case 'rfplace': S.rfPlace = t.dataset.v; S.picking = false; moved = false; break;
+    case 'ccplace': S.ccPlace = t.dataset.v; moved = false; break;
+    case 'clockplace': S.clockPlace = t.dataset.v; moved = false; break;
+    case 'zigbee': S.zigbee = !S.zigbee; moved = false; break;
+    case 'layout': Object.assign(S, LAYOUTS.find((l) => l.key === t.dataset.v).set); S.picking = false; moved = false; break;
+    case 'install': S.installing = true; break;
+    case 'finish-install': S.installing = false; S.step = 4; break;
+    case 'restart': resetFlow(); break;
+    case 'mode': S.mode = t.dataset.mode; break;
+    case 'tool': S.tool = t.dataset.v; break;
+    case 'backup': return;
+    default: e.preventDefault(); return;
+  }
+  e.preventDefault();
+  render(moved);
+});
+document.addEventListener('change', (e) => {
+  if (e.target.dataset && e.target.dataset.act === 'backup') { S.backup = e.target.checked; render(false); }
+});
+document.addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (d.dataset && d.dataset.key) S.open[d.dataset.key] = d.open;
+}, true);
+document.addEventListener('keydown', (e) => {
+  const t = e.target.closest && e.target.closest('g.pin[role=button]');
+  if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); t.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+});
+function showTip(e) {
+  const box = e.target.closest && e.target.closest('.wiring-block');
+  if (!box) return;
+  const cap = box.querySelector('.pin-caption');
+  const g = e.target.closest('g.pin');
+  cap.textContent = g ? g.dataset.tip : cap.dataset.default;
+}
+document.addEventListener('mouseover', showTip);
+document.addEventListener('focusin', showTip);
+document.getElementById('scenario').addEventListener('change', (e) => { S.scenario = e.target.value; resetFlow(); render(true); });
+document.getElementById('firmware').addEventListener('change', (e) => { S.future = e.target.value === 'future'; render(false); });
+
+/* The website's theme toggle: this prototype starts from the computer's setting and does not
+ * remember a choice (the real Flasher would keep it in its settings). */
+const themeButton = document.getElementById('theme-toggle');
+function syncTheme() {
+  const dark = document.documentElement.dataset.theme === 'dark';
+  themeButton.setAttribute('aria-label', `Switch to ${dark ? 'light' : 'dark'} theme`);
+  themeButton.title = themeButton.getAttribute('aria-label');
+}
+themeButton.addEventListener('click', () => {
+  document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  syncTheme();
+});
+syncTheme();
+
+render(false);
+</script>
+</body>
+</html>

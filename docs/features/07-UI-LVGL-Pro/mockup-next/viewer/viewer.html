@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Panel UI Mockup</title>
+<!-- Built by tools/ui_mockup.py from docs/features/07-UI-LVGL-Pro/mockup: don't edit this file,
+     edit the mockup's sources and build again. -->
+<style>
+/*@FONTS@*/
+/*@TOKENS@*/
+/*@PANEL_CSS@*/
+/*@VIEWER_CSS@*/
+</style>
+</head>
+<body>
+<header class="v-top">
+  <div class="v-brand"><span class="v-logo"></span><div><b>Panel UI mockup</b><small id="v-sub"></small></div></div>
+  <nav class="v-tabs" role="tablist">
+    <button data-tab="screen" class="on">Screen</button>
+    <button data-tab="gallery">Gallery</button>
+    <button data-tab="coverage">Coverage</button>
+    <button data-tab="guide">How to use</button>
+  </nav>
+</header>
+<div class="v-body">
+  <aside class="v-side">
+    <input id="v-search" type="search" placeholder="Find a screen" aria-label="Find a screen">
+    <div id="v-list"></div>
+  </aside>
+  <main class="v-main">
+    <section id="tab-screen" class="v-tab on">
+      <div class="v-bar">
+        <div class="v-seg" id="v-mode">
+          <button data-mode="mockup" class="on">Mockup</button>
+          <button data-mode="panel">Panel</button>
+          <button data-mode="side">Side by side</button>
+          <button data-mode="overlay">Overlay</button>
+          <button data-mode="diff">Difference</button>
+        </div>
+        <div class="v-seg" id="v-theme" title="Appearance: the panel's colours (BL-132)"></div>
+        <label class="v-opa" id="v-opa-wrap" hidden>Panel <input id="v-opa" type="range" min="0" max="100" value="50"></label>
+        <label class="v-check"><input id="v-click" type="checkbox" checked> Tap through</label>
+        <span class="v-grow"></span>
+        <button id="v-prev" title="Previous (←)">‹</button><button id="v-next" title="Next (→)">›</button>
+      </div>
+      <div id="v-warn" class="v-warn" hidden></div>
+      <div id="v-stage" class="v-stage"></div>
+      <div id="v-info" class="v-info"></div>
+    </section>
+    <section id="tab-gallery" class="v-tab"><div id="v-gallery" class="v-gallery"></div></section>
+    <section id="tab-coverage" class="v-tab"><div id="v-coverage"></div></section>
+    <section id="tab-guide" class="v-tab"><div class="v-guide">/*@GUIDE@*/</div></section>
+  </main>
+</div>
+<script>
+window.MOCKUP_ICONS = /*@ICONS@*/;
+window.MOCKUP_PANEL_ICONS = /*@PANEL_ICONS@*/;
+window.MOCKUP_SHOTS = /*@SHOTS@*/;
+window.MOCKUP_BUILT = /*@BUILT@*/;
+window.MOCKUP_THEMES = /*@THEMES@*/;
+</script>
+<script>
+/*@KIT@*/
+</script>
+<script>
+/*@SCREENS@*/
+</script>
+<script>
+/*@VIEWER_JS@*/
+</script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+dependencies:
+  idf: ">=6.1"
+  # The remote keypad's screen as H.264 from the P4's hardware encoder (docs/features/31).
+  espressif/esp_h264: "~1.4.1"

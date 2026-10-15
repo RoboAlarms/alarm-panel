@@ -1,0 +1,28 @@
+<h2>What this is</h2>
+<p>A mockup of the 7" panel's touchscreen as it is today, built from the same design system: the
+colours, spacing, radii and sizes come from the layout's <code>globals.xml</code>, the fonts are the
+panel's Inter and Lucide files, and every part is named after its LVGL component. It is where a
+change to the screen is drawn and agreed <b>before</b> anyone builds it.</p>
+<h3>Reviewing</h3>
+<ul>
+<li><b>Screen</b> shows one screen at its real size (or fitted). Tap the rail, the tiles and the rows
+to move between screens, as on the panel.</li>
+<li><b>Panel</b>, <b>Side by side</b>, <b>Overlay</b> and <b>Difference</b> put the PC preview's picture
+of the same state beside or over the mockup (in a build made with <code>--shots</code>). Difference is
+black where they match.</li>
+<li>Screens under <b>Proposals</b> are changes someone wants to make, with their backlog row and status
+(draft, approved, rejected, built). A proposal that replaces a screen shows today's beside it; what
+it changes has a dashed outline.</li>
+<li><b>Appearance</b> (Dark, Light, High contrast, High contrast light) recolours every screen with a
+proposed palette from the layout's <code>themes.xml</code> (BL-132); the viewer remembers the choice. A screen
+drawn to show one appearance keeps it, whatever the switch says. Dark is today's colours with
+brighter hints.</li>
+<li><b>Coverage</b> lists the preview's pictures that have no mockup screen yet.</li>
+</ul>
+<h3>Changing it</h3>
+<p>The sources are in <code>docs/features/07-UI-LVGL-Pro/mockup</code> (its README has the rules):
+<code>kit/</code> holds the components, <code>screens/</code> today's screens, <code>proposals/</code>
+the changes being discussed. Build with <code>python tools/ui_mockup.py build --shots</code> and check
+with <code>python tools/ui_mockup.py check</code>.</p>
+<p>Nothing here moves or blinks: the panel's display-safety rules (no flashing) hold in the mockup
+too.</p>

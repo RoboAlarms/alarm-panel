@@ -1,0 +1,7 @@
+description: "Firmware updates: signed OTA with rollback, release manifest, serial upload, C6 co-processor OTA"
+dependencies:
+  idf: ">=6.1"
+  espressif/esp_hosted: # the same as platform_esp's
+    version: "~3.0.9"
+    rules:
+      - if: "target in [esp32p4]"

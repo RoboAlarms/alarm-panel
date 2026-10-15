@@ -1,0 +1,152 @@
+# LCDWiki 4.0" ESP32-32E display, E32R40T (ESP32-D0WD-V3, 4 MB flash, no PSRAM), docs/features/19.
+# The engine, event log, zone sources, Wi-Fi, MQTT, signed updates, the service console and the
+# display (ST7796S) with touch (XPT2046); the sounder and battery drivers are still to come
+# (docs/features/19 Phase 2). The touch UI (ui/480x320/alarm_ui) needs more RAM than the board has
+# free yet: until then the screen shows the status screen instead.
+CONFIG_IDF_TARGET="esp32"
+
+# RSA-signed images (below) need ESP32 silicon v3.0 or newer; the owner's board is v3.1.
+CONFIG_ESP32_REV_MIN_3=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# Flash: 4 MB on the ESP32-WROOM-32E module; DIO at 40 MHz works on every flash chip it ships
+# with. No PSRAM on this board.
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+# CONFIG_SPIRAM is not set
+
+# Firmware updates (docs/features/13), as on every board: signed images without eFuse Secure Boot
+# (RSA-3072, the key in secrets/, made by tools/idf.ps1), verified by esp_ota_end(); rollback when
+# a new image fails its self-test. Every image for these panels is signed with the same key.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_SECURE_BOOT_SIGNING_KEY="../../secrets/ota_signing_key.pem"
+
+# Partition table (partitions.csv). At 0xC000 as on the P4: room for a bootloader that grows
+# (0x1000..0xBFFF), which a table at the default 0x8000 would not leave.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0xC000
+
+# FreeRTOS
+CONFIG_FREERTOS_HZ=1000
+
+# SNTP re-sync every 6 h (docs/features/09 NET-004)
+CONFIG_LWIP_SNTP_UPDATE_DELAY=21600000
+
+# Internal RAM is all there is: TLS record buffers are allocated while a session needs them
+# and freed after, instead of 32 KB held per session (docs/features/19, "Budgets").
+CONFIG_MBEDTLS_DYNAMIC_BUFFER=y
+
+# Flash: the image may fill at most 85 % of its 1920 KB slot (docs/features/19 CYD-013). Optimised
+# for size, and of the TLS root certificates only the common authorities (MQTT brokers and the
+# release server normally use widely trusted ones). With the trimmed icon fonts they took the
+# image from 90 % of the slot to 77 % (2026-09-23).
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y
+
+# Alarm firmware
+CONFIG_ALARM_DEMO_ZONES=y
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_LOG_TIMESTAMP_SOURCE_SYSTEM=y
+# No Wi-Fi co-processor on this board.
+# CONFIG_PANEL_OTA_CP_AUTO is not set
+
+# MQTT, the connection check, SNTP and the console's network commands; no web server.
+CONFIG_LWIP_MAX_SOCKETS=12
+
+# LVGL: the system heap (internal RAM, shared with Wi-Fi and TLS; a fixed pool would hold RAM
+# even while the panel runs headless), 30 Hz refresh for an SPI panel. The UI
+# (ui/480x320/alarm_ui) brings its own fonts (Inter, Lucide); Montserrat 14 stays as LVGL's
+# fallback font. No JPEG decoder (no photo saver) and no QR code (no phone notifications).
+# The UI's budget is CONFIG_ALARM_UI_LVGL_BUDGET_KB in the manifest below.
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+CONFIG_LV_DEF_REFR_PERIOD=33
+CONFIG_LV_DPI_DEF=146
+CONFIG_LV_OS_FREERTOS=y
+CONFIG_LV_USE_OBSERVER=y
+CONFIG_LV_USE_OBJ_NAME=y
+CONFIG_LV_USE_THEME_SIMPLE=y
+# CONFIG_LV_USE_TJPGD is not set
+# CONFIG_LV_USE_QRCODE is not set
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_DEFAULT_MONTSERRAT_14=y
+# The icon fonts are RLE-compressed (tools/lvpro_gen.py): lossless, and drawn a few glyphs at
+# a time, so unpacking them costs next to nothing; the text fonts stay plain.
+CONFIG_LV_USE_FONT_COMPRESSED=y
+# Flash: the signed image is padded to 64 KB and may fill 85 % of its slot (CYD-013). The UI
+# draws RGB565 and ARGB8888 layers with A8 pictures and fonts, and needs none of the widgets in
+# this list (the theme would link them in anyway). Without RGB888 a horizontal gradient draws
+# nothing (the saver's shade: invisible here, the saver has no picture; docs/features/19).
+# CONFIG_LV_DRAW_SW_SUPPORT_RGB888 is not set
+# CONFIG_LV_DRAW_SW_SUPPORT_XRGB8888 is not set
+# CONFIG_LV_DRAW_SW_SUPPORT_L8 is not set
+# CONFIG_LV_DRAW_SW_SUPPORT_AL88 is not set
+# CONFIG_LV_DRAW_SW_SUPPORT_I1 is not set
+# CONFIG_LV_USE_ANIMIMG is not set
+# CONFIG_LV_USE_ARCLABEL is not set
+# CONFIG_LV_USE_CALENDAR is not set
+# CONFIG_LV_USE_CANVAS is not set
+# CONFIG_LV_USE_CHART is not set
+# CONFIG_LV_USE_CHECKBOX is not set
+# CONFIG_LV_USE_DROPDOWN is not set
+# CONFIG_LV_USE_IMAGEBUTTON is not set
+# CONFIG_LV_USE_LED is not set
+# CONFIG_LV_USE_LIST is not set
+# CONFIG_LV_USE_MENU is not set
+# CONFIG_LV_USE_MSGBOX is not set
+# CONFIG_LV_USE_ROLLER is not set
+# CONFIG_LV_USE_SCALE is not set
+# CONFIG_LV_USE_SPAN is not set
+# CONFIG_LV_USE_SPINBOX is not set
+# CONFIG_LV_USE_TABLE is not set
+# CONFIG_LV_USE_TABVIEW is not set
+# CONFIG_LV_USE_TILEVIEW is not set
+# CONFIG_LV_USE_WIN is not set
+# Kept: arc, bar, button, buttonmatrix, image, keyboard, label, line, slider, spinner, switch,
+# textarea.
+# CONFIG_LV_BUILD_EXAMPLES is not set
+# CONFIG_LV_BUILD_DEMOS is not set
+
+# ---- Board manifest (docs/features/33): what this board carries, every option stated. -----------
+# tools/check_boards.py checks the list is complete and consistent; the PC preview and
+# simulator profile for this board (-Board e32r40t) read these same lines. The touch UI is
+# built from the 480x320 layout (docs/features/19 Phase 3); while it needs more RAM than is free,
+# the panel shows the status screen (components/ui/alarm_ui/src/ui_status.c) instead.
+CONFIG_ALARM_UI_LAYOUT="480x320"
+CONFIG_ALARM_MAX_ZONES=64
+CONFIG_ALARM_MAX_USERS=32
+CONFIG_ALARM_FEATURE_UI=y
+# What LVGL may take at the UI's busiest, checked by the PC preview. The UI needs about three
+# times this today (docs/features/19 Phase 3: create the setup screen only when needed, one set of
+# sheets, paged lists); the preview reports it as over budget until then.
+CONFIG_ALARM_UI_LVGL_BUDGET_KB=96
+CONFIG_ALARM_FEATURE_MQTT=y
+# CONFIG_ALARM_FEATURE_NOTIFY is not set
+# CONFIG_ALARM_FEATURE_HA is not set
+# CONFIG_ALARM_PANEL_WEB is not set
+# CONFIG_ALARM_DEV_REMOTE is not set
+# CONFIG_ALARM_FEATURE_STORAGE is not set
+# CONFIG_ALARM_FEATURE_LANG_PACKS is not set
+CONFIG_ALARM_I18N_BUILTIN=y
+# CONFIG_ALARM_FEATURE_PHOTO_SAVER is not set
+# Its I2C header's pins are wired zone terminals (board_desc.c): no clock module.
+# CONFIG_ALARM_FEATURE_RTC is not set
+# CONFIG_ALARM_HOME_CONTROL is not set
+# CONFIG_ALARM_FEATURE_AUTOMATIONS is not set
+CONFIG_ALARM_ZSRC_RF=y
+# CONFIG_ALARM_ZSRC_ZIGBEE is not set
+# Z-Wave (docs/features/36) keeps its network in PSRAM, which this board doesn't have.
+# CONFIG_ALARM_ZSRC_ZWAVE is not set
+# CONFIG_ALARM_ZWAVE_S0 is not set
+# CONFIG_ALARM_ZWAVE_LR is not set
+# CONFIG_PANEL_STORAGE_SDMMC is not set
+# CONFIG_PANEL_STORAGE_SDSPI is not set

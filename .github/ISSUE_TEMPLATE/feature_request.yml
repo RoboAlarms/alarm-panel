@@ -1,0 +1,21 @@
+name: Feature request
+description: Something the panel should do, or a board, sensor or integration it should support
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The planned work is in `docs/features/` (one document per feature, index and roadmap in `docs/features/README.md`).
+        If your idea belongs to one of those, say which.
+  - type: textarea
+    id: need
+    attributes:
+      label: What do you need, and why?
+      description: The situation at home or at the install, rather than a particular solution.
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Hardware involved
+      description: Optional. Board, sensor or module, with a link to its maker's page.

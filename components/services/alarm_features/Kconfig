@@ -1,0 +1,141 @@
+menu "Alarm features"
+    # The feature menu every firmware shares (docs/features/33 step 6, the feature model). Each
+    # board's sdkconfig.defaults states every option here explicitly: that file is the board's
+    # manifest, read by its firmware build and by its PC simulator profile alike. An option
+    # that is off compiles its component to nothing (see components/README.md) and the UI
+    # hides what depended on it.
+
+    menu "Build profile"
+        config ALARM_BUILD_DEV
+            bool "Explicit development profile"
+            default n
+            help
+                Set by sdkconfig.defaults.dev (tools/idf.ps1 -Profile dev). The signed project
+                name carries the profile, so a panel only accepts images of its own profile
+                (docs/features/30).
+
+        config ALARM_BUILD_RELEASE
+            bool "Explicit release profile"
+            default n
+            help
+                Set by sdkconfig.defaults.release. The firmware's CMakeLists refuses a release
+                with developer or diagnostic access compiled in.
+    endmenu
+
+    config ALARM_FEATURE_UI
+        bool "Touch UI on the panel's screen (alarm_ui + LVGL)"
+        default y
+        help
+            Off for a headless build: the panel protects, reports and answers on the console
+            without drawing (a board's first bring-up, or a panel with no screen). LVGL and the
+            UI are then not linked (panel_app leaves the display alone).
+
+    config ALARM_FEATURE_MQTT
+        bool "MQTT integration (net_mqtt: TLS, Home Assistant discovery)"
+        default y
+        help
+            One lasting TLS session. Fits every board so far.
+
+    config ALARM_FEATURE_NOTIFY
+        bool "Phone notifications (net_notify: ntfy, Pushover)"
+        default y if SPIRAM
+        default n
+        help
+            A short-lived TLS session per delivery, a configuration copy and a request
+            buffer. On by default where PSRAM is; a board without it can turn it on once its
+            RAM budget allows (docs/features/19).
+
+    config ALARM_FEATURE_HA
+        bool "Home Assistant native integration (ha_link, HACS)"
+        default y if SPIRAM
+        default n
+        help
+            A TLS server with 112 KB of link buffers: boards with PSRAM only.
+
+    config ALARM_PANEL_WEB
+        bool "Browser Panel Manager (panel_web, HTTPS)"
+        default y if SPIRAM
+        default n
+        help
+            The panel-hosted HTTPS configuration and full-resolution keypad (docs/features/31):
+            up to three TLS sessions and a PSRAM frame for the remote screen.
+
+    config ALARM_DEV_REMOTE
+        bool "Developer access (dev_remote: network flashing, diagnostics, screen)"
+        default y if SPIRAM
+        default n
+        help
+            Enrolled workstations (docs/features/30). Controlled at run time from Installer >
+            Remote access; the release profile keeps it (ADR-033).
+
+    config ALARM_FEATURE_STORAGE
+        bool "Storage: the microSD card and Settings > About > Storage (panel_storage)"
+        default y
+        help
+            Mounting, checking and formatting a card on a worker task, and the flash accounting
+            the Storage page shows (docs/features/29). Alarm configuration and the event log never
+            live on the card. Off, panel_storage answers with stubs and the page is hidden.
+
+    config ALARM_FEATURE_LANG_PACKS
+        bool "Language packs: signed translations in the assets partition (lang_packs)"
+        default y if SPIRAM
+        default n
+        help
+            Every language but English is a signed pack file installed after the firmware into
+            the assets partition and loaded into PSRAM when the panel speaks it (docs/features/37
+            language-packs.md). Needs PSRAM and the assets partition; the firmware build makes
+            the packs and signs them with the image's key. Off, the panel speaks English and the
+            catalogs built into the image (ALARM_I18N_BUILTIN).
+
+    config ALARM_FEATURE_VOICE
+        bool "Voice: spoken zone names from a signed voice pack (panel_voice)"
+        default y if SPIRAM
+        default n
+        help
+            The installed voice pack (kind 2 in the assets partition, docs/features/08
+            voice-first-build.md) is read into PSRAM at start-up and decoded on a worker with
+            a 256 KiB PSRAM stack; speech is mixed into the sounder's output over the tones.
+            Announcements stay off until a person switches them on. Needs PSRAM and the assets
+            partition. Off, the panel sounds its tones only and voice packs can't be installed.
+
+    config ALARM_I18N_BUILTIN
+        bool "Translation catalogs built into the image"
+        default n if ALARM_FEATURE_LANG_PACKS
+        default y
+        help
+            Compiles the .po translations into the firmware as C tables (about 140 KB for each
+            full language). Off where language packs carry the languages: the image holds only
+            English, the source text.
+
+    config ALARM_FEATURE_RTC
+        bool "Battery-backed clock module (a DS3231 on the board's I2C connector)"
+        default y
+        help
+            Looks for a DS3231 at start-up (docs/features/35). When one answers, it keeps the time
+            through power cuts: the panel starts with the right time before the internet, and
+            the time can be set by hand at the panel and in the Panel Manager. Without one
+            nothing changes. A few KB of code, no RAM worth counting: on for every board whose
+            description has an I2C connector (board_info()->i2c).
+
+    config ALARM_FEATURE_AUTOMATIONS
+        bool "Built-in automations (docs/features/41)"
+        default y if SPIRAM
+        default n
+        depends on ALARM_HOME_CONTROL
+        help
+            Up to 16 rules the panel runs itself: one trigger (armed, disarmed, an alarm, a
+            zone, a time of day) and one or two device actions from the Devices registry, or
+            arming after a warning, or disarming as the person who saved it (AUT-011). Unlock,
+            open and disarm only while the installer allows less secure automations (AUT-015).
+            Stored in NVS (namespace "automations", at most 308 entries); about 15 KB of PSRAM.
+            Needs the Devices registry (HCTL-010).
+
+    config ALARM_FEATURE_PHOTO_SAVER
+        bool "Photo screen saver (a JPEG decoded into a full-screen picture)"
+        default y if SPIRAM
+        default n
+        help
+            The picture takes width x height x 2 bytes of LVGL memory (1.2 MB at 1024x600).
+            Without it the screen saver shows the clock and the state on a dark screen.
+
+endmenu

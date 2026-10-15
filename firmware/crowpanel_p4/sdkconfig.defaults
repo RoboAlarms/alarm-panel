@@ -1,0 +1,271 @@
+# CrowPanel Advanced 7" (ESP32-P4NRW32, 16 MB flash, 32 MB PSRAM), board rev V1.1
+CONFIG_IDF_TARGET="esp32p4"
+
+# Flash and PSRAM (values from Elecrow's validated examples)
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_HEX=y
+CONFIG_SPIRAM_SPEED_200M=y
+
+# Firmware updates (docs/features/13): signed images without eFuse Secure Boot (RSA-3072, the key in
+# secrets/, made by tools/idf.ps1), verified by esp_ota_end(); rollback when a new image fails its
+# self-test. Every image for these panels must be signed with the same key.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_SECURE_BOOT_SIGNING_KEY="../../secrets/ota_signing_key.pem"
+# The update server names this board by its product (OTA-018), not by board_info()->id.
+CONFIG_PANEL_OTA_DEVICE="crowpanel_dhe04107d"
+
+# Partition table
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0xC000
+
+# Size and speed (2026-09-25): the whole image at -Os, LVGL's drawing at -O2
+# (alarm_optimize_hot_paths(), cmake/alarm_firmware.cmake). The IDF default, -Og, made a bigger
+# image and a slower screen (a full redraw took about 60 ms).
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+# Functions share one copy of their register save and restore code (-msave-restore, 2026-09-30,
+# docs/features/39 F9): about 50 KB less code and 4 KB less internal RAM for slightly slower calls;
+# LVGL keeps its own inline (alarm_optimize_hot_paths()).
+CONFIG_COMPILER_SAVE_RESTORE_LIBCALLS=y
+# ESP-IDF's own assert and check messages (file, line, expression) stay out of the image
+# (docs/features/39 F1, about 175 KB): a failed check still stops in the same place and the crash
+# report still gives its address, which the build's ELF turns into a line. Our own log messages are
+# unchanged. The dev profile keeps the messages (sdkconfig.defaults.dev).
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
+CONFIG_COMPILER_OPTIMIZATION_CHECKS_SILENT=y
+
+# Left out because nothing in the panel uses them (docs/features/39 F15, F16): MQTT over WebSocket
+# (the panel's MQTT settings are mqtt and mqtts only, net_mqtt.c) and lwIP's DHCP server (the panel
+# never runs an access point).
+CONFIG_MQTT_TRANSPORT_WEBSOCKET=n
+CONFIG_LWIP_DHCPS=n
+
+# FreeRTOS
+CONFIG_FREERTOS_HZ=1000
+
+# SNTP re-sync every 6 h (docs/features/09 NET-004)
+CONFIG_LWIP_SNTP_UPDATE_DELAY=21600000
+
+# ESP32-C6 co-processor: ESP-Hosted over SDIO slot 1, 4-bit (V1.1 wiring, from Elecrow's
+# validated V1.1 sdkconfig). GPIO32 drives the C6 enable: high = C6 runs. ESP-Hosted from 3.0.8
+# always resets it that way (high, a low pulse, parked high); 3.0.7 needed
+# CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_LOW=y (docs/features/06, Hardware findings 1).
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
+CONFIG_ESP_HOSTED_P4_DEV_BOARD_NONE=y
+CONFIG_ESP_HOSTED_HOST_TRANSPORT_BUS_SDIO=y
+CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
+CONFIG_ESP_HOSTED_HOST_SDIO_BUS_WIDTH_4=y
+CONFIG_ESP_HOSTED_HOST_SDIO_CLK_KHZ=40000
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CMD=19
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK=18
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D0=17
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D1=16
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D2=15
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D3=14
+CONFIG_ESP_HOSTED_HOST_RESET_GPIO=32
+CONFIG_ESP_HOSTED_HOST_SDIO_RX_STREAMING_MODE=y
+
+# LVGL: PSRAM-backed C library allocator, 60 Hz refresh. The UI (ui/1024x600/alarm_ui) brings its own
+# fonts (Inter, Lucide); LVGL's own default font is the small 8 px one, never drawn (see below).
+CONFIG_LV_USE_CUSTOM_MALLOC=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+CONFIG_LV_DEF_REFR_PERIOD=16
+
+# The DSI frame DMA is restarted from an interrupt after every frame. It must run while flash
+# is written (the cache is off then), or the picture drops out many times a second: a strobe.
+# Never turn this off (docs/features/06 P4-012, photosensitivity).
+CONFIG_LCD_DSI_ISR_CACHE_SAFE=y
+CONFIG_LV_DPI_DEF=160
+CONFIG_LV_OS_FREERTOS=y
+CONFIG_LV_USE_OBSERVER=y
+CONFIG_LV_USE_OBJ_NAME=y
+CONFIG_LV_USE_THEME_SIMPLE=y
+# LVGL's default theme is off: the UI sets the simple one itself (alarm_ui_gen.c, lv_theme_simple_init)
+# and nothing draws before that, so lv_display_create() need not initialise a theme it replaces
+# (docs/features/39 F12, OPT-011).
+# CONFIG_LV_USE_THEME_DEFAULT is not set
+# JPEG decoder: the screen saver's picture is a JPEG decoded once into PSRAM (ui_saver.c)
+CONFIG_LV_USE_TJPGD=y
+# QR code: subscribing a phone to an ntfy topic without typing it (ui_notify.c, NTFY-011)
+CONFIG_LV_USE_QRCODE=y
+# LVGL's fallback font: the 8 px one instead of Montserrat 14 (13.6 KB). Every text the UI
+# draws names an Inter or Lucide font; the PC preview walk found none that resolves to the fallback
+# (docs/features/39 F12, OPT-011).
+CONFIG_LV_FONT_UNSCII_8=y
+CONFIG_LV_FONT_DEFAULT_UNSCII_8=y
+# The icon fonts are RLE-compressed (tools/lvpro_gen.py): lossless, and drawn a few glyphs at
+# a time, so unpacking them costs next to nothing; the text fonts stay plain.
+CONFIG_LV_USE_FONT_COMPRESSED=y
+# A character the fonts lack draws as a box, never as nothing (docs/features/37 I18N-011).
+CONFIG_LV_USE_FONT_PLACEHOLDER=y
+# A language pack's fonts are loaded from the pack's bytes in memory (lv_binfont_create_from_buffer,
+# ui_app.c, docs/features/37 I18N-049), which LVGL reads through its memory file system.
+CONFIG_LV_USE_FS_MEMFS=y
+CONFIG_LV_FS_MEMFS_LETTER=77
+# Only what the UI uses, as on the 4" (the theme would link every enabled widget in). The UI
+# draws into the RGB565 screen and ARGB8888 layers, with A8 pictures and fonts; the saver's
+# picture is decoded to RGB565 (ui_saver.c), the ntfy QR code is an indexed image LVGL decodes
+# to ARGB8888, and a horizontal gradient (the saver's shade) is blended from an RGB888 line
+# (lv_draw_sw_fill.c), so RGB888 stays. A widget turned off here fails the build where it is
+# used; the PC preview and simulator read these lines too (cmake/alarm_board.cmake), so a
+# missing draw format shows in their pictures and as LVGL warnings.
+# CONFIG_LV_DRAW_SW_SUPPORT_RGB565_SWAPPED is not set
+# CONFIG_LV_DRAW_SW_SUPPORT_XRGB8888 is not set
+# CONFIG_LV_DRAW_SW_SUPPORT_L8 is not set
+# CONFIG_LV_DRAW_SW_SUPPORT_AL88 is not set
+# CONFIG_LV_DRAW_SW_SUPPORT_I1 is not set
+# The premultiplied ARGB8888 format is never a layer, canvas or picture here (layers are ARGB8888 or
+# RGB565; nothing sets the decoder's premultiply flag), so its blend code is off (docs/features/39 F12).
+# CONFIG_LV_DRAW_SW_SUPPORT_ARGB8888_PREMULTIPLIED is not set
+# CONFIG_LV_USE_GRID is not set
+# CONFIG_LV_USE_ANIMIMG is not set
+# CONFIG_LV_USE_ARCLABEL is not set
+# CONFIG_LV_USE_CALENDAR is not set
+# CONFIG_LV_USE_CHART is not set
+# CONFIG_LV_USE_CHECKBOX is not set
+# CONFIG_LV_USE_DROPDOWN is not set
+# CONFIG_LV_USE_IMAGEBUTTON is not set
+# CONFIG_LV_USE_LED is not set
+# CONFIG_LV_USE_LINE is not set
+# CONFIG_LV_USE_LIST is not set
+# CONFIG_LV_USE_MENU is not set
+# CONFIG_LV_USE_MSGBOX is not set
+# CONFIG_LV_USE_SCALE is not set
+# CONFIG_LV_USE_SPAN is not set
+# CONFIG_LV_USE_SPINBOX is not set
+# CONFIG_LV_USE_TABLE is not set
+# CONFIG_LV_USE_TABVIEW is not set
+# CONFIG_LV_USE_TILEVIEW is not set
+# CONFIG_LV_USE_WIN is not set
+# Kept: arc, bar, button, buttonmatrix, canvas (the QR code), image, keyboard, label, roller (the
+# date and time's rollers, BL-131; the calendar is plain objects, so lv_calendar stays off),
+# slider, spinner, switch, textarea.
+CONFIG_LV_USE_ROLLER=y
+# CONFIG_LV_BUILD_EXAMPLES is not set
+# CONFIG_LV_BUILD_DEMOS is not set
+
+# General malloc prefers PSRAM above this size. LVGL uses board_lvgl_memory.c to keep even
+# small UI allocations in PSRAM; task stacks (except the few that never write flash) and DMA
+# descriptors stay internal.
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+# Only explicitly annotated, task-context catalog/scratch buffers move out of internal BSS.
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+
+# The Home Assistant link's own certificate is made on the panel (ha_link, docs/features/23):
+# X.509 writing is off by default in the IDF.
+CONFIG_MBEDTLS_X509_CREATE_C=y
+CONFIG_MBEDTLS_X509_CRT_WRITE_C=y
+# The native HA link pins the client's certificate after the TLS handshake.
+CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=y
+# The image keeps ESP-IDF's common authorities; the full list (cacrt_all.pem, as the image held
+# it before) is the certificates pack, made for this version by the build into
+# <build>/assets/certs.roboasset and handed to TLS at start (docs/features/39 asset-packs.md,
+# OPT-013). About 51 KB of the image.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y
+# A chain that ends in a cross-signed root the bundle no longer holds (Google Trust Services' GTS
+# Root R4, signed by the retired GlobalSign Root CA) is trusted through the root the bundle has
+# (docs/bugs/B028). Without it, every update source, broker or notifier on that chain was refused.
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
+# Left out because no feature uses them (docs/features/39 F17, "What the TLS library must keep";
+# OPT-011). The P4's Wi-Fi security runs on the C6, not in this mbedTLS. Kept: TLS 1.2 client and
+# server with ECDHE-ECDSA/ECDHE-RSA and AES-GCM/CBC, the certificate bundle's RSA and P-256/384/521
+# authorities, the panel's own P-256 certificate (written here), RSA-PSS for the update and pack
+# signatures, AES-GCM and PBKDF2 for backups, AES and Curve25519 for Z-Wave S2.
+# Curves no authority, server or feature uses: secp256k1 and the Brainpool curves.
+# CONFIG_MBEDTLS_ECP_DP_SECP256K1_ENABLED is not set
+# CONFIG_MBEDTLS_ECP_DP_BP256R1_ENABLED is not set
+# CONFIG_MBEDTLS_ECP_DP_BP384R1_ENABLED is not set
+# CONFIG_MBEDTLS_ECP_DP_BP512R1_ENABLED is not set
+# AES modes no TLS suite, backup or Z-Wave code uses (S2 builds its CTR, CMAC and CCM on one-block AES).
+# CONFIG_MBEDTLS_CIPHER_MODE_CFB is not set
+# CONFIG_MBEDTLS_CIPHER_MODE_OFB is not set
+# CONFIG_MBEDTLS_CIPHER_MODE_XTS is not set
+# Renegotiation, revocation lists, certificate requests, PKCS#7 and the self-tests: no code calls them.
+# CONFIG_MBEDTLS_SSL_RENEGOTIATION is not set
+# CONFIG_MBEDTLS_X509_CRL_PARSE_C is not set
+# CONFIG_MBEDTLS_X509_CSR_PARSE_C is not set
+# CONFIG_MBEDTLS_X509_CSR_WRITE_C is not set
+# CONFIG_MBEDTLS_PKCS7_C is not set
+# CONFIG_MBEDTLS_SELF_TEST is not set
+# MbedTLS allocates everything from PSRAM: record buffers, keys, handshake state and PSA
+# contexts. The P4 crypto DMA drivers handle PSRAM buffers themselves (esp_aes_dma_core.c),
+# and no TLS code runs while the flash cache is off. With the "internal only" default every
+# browser, MQTT, HA and ntfy connection took ~21 KiB of internal RAM (docs/features/31 cleanup).
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+# mDNS never writes flash: its task stack and its packet buffers come from PSRAM too.
+CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM=y
+CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
+
+# Alarm firmware
+CONFIG_ALARM_DEMO_ZONES=y
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_LOG_TIMESTAMP_SOURCE_SYSTEM=y
+
+CONFIG_LWIP_MAX_SOCKETS=24
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
+# The remote keypad's live screen and its presses and keys travel over one WebSocket
+# (docs/features/31): the session is checked before the upgrade (pre-handshake).
+CONFIG_HTTPD_WS_SUPPORT=y
+CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT=y
+# The screen is H.264 from the P4's encoder (esp_h264); its software decoder is never used, so
+# none of it may sit in internal RAM.
+CONFIG_ESP_H264_DECODER_IRAM=n
+
+# The voice's Opus decoder (esphome/micro-opus, panel_voice; docs/features/08 voice-first-build.md
+# D10): fixed point, generic C (the P4 is RISC-V), scratch with alloca on the voice worker's own
+# PSRAM stack - no pseudostack, nothing in internal RAM.
+CONFIG_OPUS_USE_ALLOCA=y
+CONFIG_OPUS_FLOATING_POINT=n
+CONFIG_OPUS_ENABLE_XTENSA_OPTIMIZATIONS=n
+CONFIG_OPUS_STATE_PSRAM_ONLY=y
+CONFIG_OPUS_OGG_DECODER_PSRAM_ONLY=y
+
+CONFIG_CJSON_NESTING_LIMIT=12
+
+# ---- Board manifest (docs/features/33): what this board carries, every option stated. -----------
+# tools/check_boards.py checks the list is complete and consistent; the PC preview and
+# simulator profile for this board (-Board crowpanel_p4) read these same lines.
+CONFIG_ALARM_UI_LAYOUT="1024x600"
+CONFIG_ALARM_MAX_ZONES=128
+CONFIG_ALARM_MAX_USERS=64
+CONFIG_ALARM_FEATURE_UI=y
+CONFIG_ALARM_FEATURE_MQTT=y
+CONFIG_ALARM_FEATURE_NOTIFY=y
+CONFIG_ALARM_FEATURE_HA=y
+CONFIG_ALARM_PANEL_WEB=y
+CONFIG_ALARM_DEV_REMOTE=y
+CONFIG_ALARM_FEATURE_STORAGE=y
+CONFIG_ALARM_FEATURE_LANG_PACKS=y
+CONFIG_ALARM_FEATURE_VOICE=y
+# CONFIG_ALARM_I18N_BUILTIN is not set
+CONFIG_ALARM_FEATURE_PHOTO_SAVER=y
+CONFIG_ALARM_FEATURE_RTC=y
+CONFIG_ALARM_HOME_CONTROL=y
+CONFIG_ALARM_FEATURE_AUTOMATIONS=y
+CONFIG_ALARM_ZSRC_RF=y
+# The Zigbee sensor radio (docs/features/20, ADR-047): in every P4 image. The ESP32-H2 in the
+# wireless socket runs firmware/radios/h2_rcp; the P4 runs Espressif's Zigbee stack as coordinator
+# (ZCZR) and drives the H2 over the socket's UART. An empty socket never starts the stack (the
+# probe); a socket the Z-Wave radio holds keeps Zigbee off, at run time.
+CONFIG_ALARM_ZSRC_ZIGBEE=y
+CONFIG_ZB_ENABLED=y
+CONFIG_ZB_ZCZR=y
+CONFIG_ZB_RADIO_SPINEL_UART=y
+# Z-Wave sensors through a ZAC93 (docs/features/36, Z9): compiled in, the radio off - touching no
+# pin - until a place is chosen (`zwave place socket|j7`, or the Flasher's Connected parts).
+CONFIG_ALARM_ZSRC_ZWAVE=y
+# CONFIG_ALARM_ZWAVE_S0 is not set
+# CONFIG_ALARM_ZWAVE_LR is not set
+CONFIG_PANEL_STORAGE_SDMMC=y
+# CONFIG_PANEL_STORAGE_SDSPI is not set

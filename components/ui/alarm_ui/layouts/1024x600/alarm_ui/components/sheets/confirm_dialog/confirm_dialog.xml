@@ -1,0 +1,37 @@
+<component>
+	<!-- "Are you sure?" over the screen: title, explanation, Cancel and a confirm button, red
+	     (dialog_ok) when it destroys something, blue (dialog_ok_primary) when it only asks
+	     (subject_sheet_tone, ui_confirm_primary). They call ui_on_sheet_cancel / ui_on_sheet_done. -->
+	<view extends="box" width="100%" height="100%" clickable="true">
+		<style name="style_backdrop" />
+		<box name="dialog_card" width="560" height="content" align="center">
+			<style name="style_sheet_card" />
+			<lv_label width="100%" long_mode="wrap" bind_text="subject_sheet_title" style_text_font="font_title" />
+			<lv_label width="100%" long_mode="wrap" bind_text="subject_sheet_note" style_text_color="#color_text_2" />
+			<box width="100%" height="content" style_margin_top="#space_md" style_layout="flex" style_flex_flow="row" style_flex_main_place="end" style_pad_column="#space_md">
+				<box name="dialog_cancel" width="content" clickable="true">
+					<style name="style_button" />
+					<style name="style_button_pressed" selector="pressed" />
+					<event_cb callback="ui_on_sheet_cancel" trigger="clicked" />
+					<lv_label bind_text="subject_sheet_cancel" />
+				</box>
+				<box name="dialog_ok" width="content" clickable="true">
+					<bind_flag_if_not_eq subject="subject_sheet_tone" flag="hidden" ref_value="0" />
+					<style name="style_button" />
+					<style name="style_button_danger" />
+					<style name="style_button_tone_pressed" selector="pressed" />
+					<event_cb callback="ui_on_sheet_done" trigger="clicked" />
+					<lv_label bind_text="subject_sheet_ok" />
+				</box>
+				<box name="dialog_ok_primary" width="content" clickable="true">
+					<bind_flag_if_not_eq subject="subject_sheet_tone" flag="hidden" ref_value="1" />
+					<style name="style_button" />
+					<style name="style_button_primary" />
+					<style name="style_button_tone_pressed" selector="pressed" />
+					<event_cb callback="ui_on_sheet_done" trigger="clicked" />
+					<lv_label bind_text="subject_sheet_ok" />
+				</box>
+			</box>
+		</box>
+	</view>
+</component>

@@ -1,0 +1,12 @@
+<component>
+	<!-- Title of a view with a live one-line summary under it. -->
+	<api>
+		<prop name="title" type="string" default="Zones" help="View title" />
+		<prop name="note" type="subject" help="String subject with the summary" />
+	</api>
+
+	<view extends="box" width="100%" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="2">
+		<lv_label text="$title" width="100%" long_mode="wrap" style_text_font="font_title" />
+		<lv_label bind_text="$note" width="100%" long_mode="wrap" style_text_color="#color_text_2" />
+	</view>
+</component>

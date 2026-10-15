@@ -1,0 +1,5 @@
+version: "0.1.0"
+description: "Zone sources: interface, hub, binding blob, debouncer, simulator (C11, no heap, no RTOS)"
+dependencies:
+  idf:
+    version: ">=6.1"

@@ -1,0 +1,10 @@
+# LCDWiki E32R40T (4 MB flash). See docs/features/19, "Budgets": decide before the first flash, since
+# changing it later wipes the panel (configuration, users and the event log).
+# The table sits at 0xC000 (CONFIG_PARTITION_TABLE_OFFSET), as on the P4.
+# Name,     Type, SubType,   Offset,   Size
+nvs,        data, nvs,       0xD000,   0x10000
+otadata,    data, ota,       0x1D000,  0x2000
+phy_init,   data, phy,       0x1F000,  0x1000
+ota_0,      app,  ota_0,     0x20000,  1920K
+ota_1,      app,  ota_1,     ,         1920K
+eventlog,   data, undefined, ,         128K

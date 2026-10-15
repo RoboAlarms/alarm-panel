@@ -1,0 +1,30 @@
+<component>
+	<!-- Smart Home: a thermostat's set point on its wide tile (BL-045): minus, what the set point
+	     does and its value, plus ("minus", "label", "value_label", "plus"). -->
+	<api>
+		<prop name="label" type="string" default="Heat to" help="What the set point does" />
+		<prop name="value" type="string" default="72°" help="The set point" />
+	</api>
+
+	<styles>
+		<style name="style_device_step" width="48" height="48" radius="#radius_full" bg_color="#color_raised" bg_opa="100%" text_color="#color_text" />
+		<style name="style_device_step_pressed" bg_color="#color_pressed" />
+	</styles>
+
+	<view extends="box" width="100%" height="48" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
+		<box name="minus" clickable="true" ext_click_area="8">
+			<style name="style_device_step" />
+			<style name="style_device_step_pressed" selector="pressed" />
+			<lv_label align="center" text="&#xE11C;" style_text_font="icons_20" />
+		</box>
+		<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="row" style_flex_main_place="center" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_sm">
+			<lv_label name="what_label" text="$label" style_text_color="#color_text_2" />
+			<lv_label name="value_label" text="$value" style_text_font="font_title" />
+		</box>
+		<box name="plus" clickable="true" ext_click_area="8">
+			<style name="style_device_step" />
+			<style name="style_device_step_pressed" selector="pressed" />
+			<lv_label align="center" text="&#xE13D;" style_text_font="icons_20" />
+		</box>
+	</view>
+</component>

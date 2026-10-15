@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voice bench</title>
+<!-- tools/voice/bench_server.py serves this page and fills BOOT; docs/features/08 AUD-030. -->
+<style>
+:root{--bg:#f7f6f2;--card:#ffffff;--fg:#1f1e1d;--muted:#6b6a66;--line:#dcdad2;--soft:#efede6;
+ --accent:#0c5ea8;--accent-bg:#e3eefa;--ok:#2f6b2f;--ok-bg:#e6f2e3;--warn:#8a5a00;--warn-bg:#fbf0d9;
+ --bad:#a32d2d;--bad-bg:#fbe6e6;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1a19;--card:#242322;--fg:#ecebe6;--muted:#a3a29c;
+ --line:#3d3c39;--soft:#2e2d2b;--accent:#8cc0f2;--accent-bg:#1d3550;--ok:#9fd39a;--ok-bg:#20331f;
+ --warn:#f0c674;--warn-bg:#3a2f16;--bad:#f09595;--bad-bg:#3b2020;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:820px;margin:0 auto;padding:16px 16px 40px}
+h1{font-size:20px;font-weight:600;margin:0}
+h2{font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+.top{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 10px}
+.device{font-size:13px;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:0 0 14px}
+.status{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:14px}
+.status b{font-weight:600}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:1px}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}
+.note{border-radius:8px;padding:8px 12px;margin:10px 0 0;font-size:14px}
+.note.warn{background:var(--warn-bg);color:var(--warn)}.note.bad{background:var(--bad-bg);color:var(--bad)}
+details{font-size:14px}
+summary{cursor:pointer;color:var(--muted)}
+ol.how{margin:10px 0 0;padding:0;list-style:none;display:grid;gap:8px}
+ol.how li{display:grid;grid-template-columns:28px 1fr;gap:8px;align-items:start}
+.num{width:24px;height:24px;border-radius:50%;background:var(--accent-bg);color:var(--accent);font-size:13px;font-weight:600;display:grid;place-items:center}
+.where{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-right:6px}
+.field{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;align-items:center;margin:0 0 16px}
+.field:last-child{margin-bottom:0}
+.label{font-weight:600}
+.hint{grid-column:2;font-size:13px;color:var(--muted)}
+.volrow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+input[type=range]{flex:1;min-width:180px;accent-color:var(--accent)}
+.volval{font-variant-numeric:tabular-nums;font-weight:600;min-width:52px}
+.gain{font-size:14px}
+.saved{font-size:13px;color:var(--muted);min-width:64px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;color:var(--fg);background:transparent;border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover{background:var(--soft)}
+button[aria-pressed=true]{background:var(--accent-bg);color:var(--accent);border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--card);font-weight:600}
+button.primary:hover{filter:brightness(1.08)}
+button:disabled{opacity:.45;cursor:default}
+.tag{font-size:11px;color:var(--muted);margin-left:4px}
+.sayrow{display:flex;gap:8px;flex-wrap:wrap}
+.sayrow input{flex:1;min-width:200px;font:inherit;font-size:16px;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.preview{font-size:14px;min-height:22px;margin:8px 0 14px;color:var(--muted)}
+.preview.bad{color:var(--bad)}
+.suggest{display:flex;flex-wrap:wrap;gap:6px;margin:-6px 0 14px}
+.suggest button{padding:3px 10px;font-size:14px;border-style:dashed}
+.sub{font-size:13px;color:var(--muted);margin:0 0 8px}
+.repeat{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+select{font:inherit;color:var(--fg);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.busy{font-size:14px;color:var(--accent)}
+#history{display:grid;gap:10px}
+.entry{border:1px solid var(--line);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:1fr auto;gap:2px 12px}
+.entry.bad{border-color:var(--bad);background:var(--bad-bg)}
+.entry .what{font-weight:600}
+.entry .time{font-size:12px;color:var(--muted);font-weight:400;margin-left:8px}
+.entry .line{grid-column:1;font-size:14px}
+.entry .line .where{display:inline-block;min-width:52px}
+.entry .again{grid-row:1/span 3;grid-column:2;align-self:center}
+.ids{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--muted)}
+.empty{color:var(--muted);font-size:14px}
+@media (max-width:560px){.field{grid-template-columns:1fr}.hint{grid-column:1}}
+</style>
+</head>
+<body>
+<main>
+<div class="top"><h1>Voice bench</h1><span class="device" id="device"></span></div>
+
+<section class="card" aria-label="The panel now">
+  <div class="status" id="status"><span><span class="dot"></span>Asking the panel…</span></div>
+  <div id="warnings"></div>
+  <details id="howbox">
+    <summary>How it works</summary>
+    <ol class="how">
+      <li><span class="num">1</span><span><span class="where">This page</span>You pick the words. Only their clip numbers and the pause between words go to the panel: no audio.</span></li>
+      <li><span class="num">2</span><span><span class="where">Panel</span>It takes each word from its own voice pack and joins them with that pause, as it does for a zone's name.</span></li>
+      <li><span class="num">3</span><span><span class="where">Panel</span>Its Voice volume sets the loudness, 3 dB for every 10 %: at 70 % (the default) the pack plays as it is, below that quieter, above it louder - up to +9 dB of gain at 100 %, heard as about +4.7 dB because the words already peak near the top and its limiter takes the rest back. Then its speaker plays it.</span></li>
+    </ol>
+  </details>
+</section>
+
+<section class="card" aria-labelledby="h-set">
+  <h2 id="h-set">Set on the panel</h2>
+  <div class="field">
+    <span class="label"><label for="vol">Voice volume</label></span>
+    <div class="volrow">
+      <input type="range" id="vol" min="0" max="100" step="5" value="70" disabled>
+      <span class="volval" id="volval">–</span>
+      <span class="saved" id="volsaved" aria-live="polite"></span>
+    </div>
+    <span class="hint"><span class="gain" id="gain"></span><br>Saved on the panel, as its own Settings slider is.</span>
+  </div>
+  <div class="field">
+    <span class="label">Pause between words</span>
+    <div class="chips" id="gaps" role="group" aria-label="Pause between words"></div>
+    <span class="hint" id="gaphint"></span>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="h-say">
+  <h2 id="h-say">Say</h2>
+  <form class="sayrow" id="sayform" autocomplete="off">
+    <input id="text" placeholder="Type a zone name, e.g. Garage side window" aria-label="Words to say">
+    <button class="primary" id="saybtn" type="submit">Say it</button>
+  </form>
+  <div class="preview" id="preview" aria-live="polite"></div>
+  <div class="suggest" id="suggest" aria-label="Words that fit"></div>
+  <p class="sub">Zone names</p>
+  <div class="chips" id="quick"></div>
+  <div class="repeat">
+    <button id="again" type="button" disabled>Say the last one again</button>
+    <label for="every" class="sub" style="margin:0">Repeat every</label>
+    <select id="every"><option value="4">4 s</option><option value="6" selected>6 s</option><option value="10">10 s</option><option value="20">20 s</option></select>
+    <button id="repeat" type="button" disabled aria-pressed="false">Repeat it</button>
+    <button id="stop" type="button" disabled>Stop</button>
+    <span class="busy" id="busy" aria-live="polite"></span>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="h-done">
+  <h2 id="h-done">What happened</h2>
+  <div id="history"><p class="empty">Nothing said yet. Each phrase shows here: what this page sent, and what the panel did with it.</p></div>
+</section>
+</main>
+
+<script>
+const BOOT = /*BOOT*/null;
+const $ = id => document.getElementById(id);
+const vocab = new Set(BOOT.words);
+let gap = BOOT.gap, last = null, run = 0, panelVoice = null, sayBusy = false;
+
+/* ---- the words, as the server and the panel's pack have them (bench.parse: longest match first) */
+function parse(text) {
+  const toks = (text.toLowerCase().match(/[a-z0-9']+/g) || []);
+  const out = [];
+  for (let i = 0; i < toks.length;) {
+    let j = toks.length;
+    for (; j > i; j--) { if (vocab.has(toks.slice(i, j).join(' '))) break; }
+    if (j === i) return { bad: toks[i], at: i, n: toks.length };
+    out.push(toks.slice(i, j).join(' '));
+    i = j;
+  }
+  return { words: out };
+}
+const title = w => w.replace(/\b\w/g, c => c.toUpperCase());
+
+/* ---- the panel's state ---- */
+function kib(n) { return Math.round(n / 1024) + ' KiB'; }
+/* The panel's gain at a Voice volume (speech_boost.c sb_gain), and about what is heard of it. */
+function gainDb(v) { return BOOT.boostDb * (Math.min(v, 100) - BOOT.unity) / (100 - BOOT.unity); }
+function heardDb(g) {
+  const h = BOOT.heard;
+  if (g <= h[0][0]) return g;
+  for (let i = 1; i < h.length; i++) {
+    if (g <= h[i][0]) return h[i - 1][1] + (h[i][1] - h[i - 1][1]) * (g - h[i - 1][0]) / (h[i][0] - h[i - 1][0]);
+  }
+  return h[h.length - 1][1];
+}
+function loudText(g, heard) {
+  if (Math.abs(g) < 0.05) return 'the pack as it is';
+  if (g <= BOOT.ceilingDb) return (-g).toFixed(1) + ' dB quieter than the pack';
+  return 'about ' + Math.abs(heard).toFixed(1) + ' dB ' + (heard >= 0 ? 'louder' : 'quieter') + ' than the pack';
+}
+function gainText(v) {
+  if (!v) return 'Silent: the panel says nothing at 0 %.';
+  const g = gainDb(v), t = loudText(g, heardDb(g));
+  const s = t.charAt(0).toUpperCase() + t.slice(1);
+  return g >= 0.05 ? `${s}: +${g.toFixed(1)} dB of gain, its peaks held under -1 dBFS.` : s + '.';
+}
+function showVolume(v) {
+  $('vol').value = v; $('volval').textContent = v + ' %'; $('gain').textContent = gainText(v);
+}
+function showStatus(s) {
+  const st = $('status'), w = $('warnings');
+  w.innerHTML = '';
+  if (!s.ok) {
+    st.innerHTML = '<span><span class="dot bad"></span><b>Panel not answering</b></span>';
+    note('bad', s.error + ' The page tries again when you say something or come back to it.');
+    return;
+  }
+  const v = s.voice || {};
+  panelVoice = v;
+  const parts = [`<span><span class="dot ok"></span><b>${esc(BOOT.device)}</b> ${esc(s.version || '')}</span>`];
+  if (v.state === 'ready') {
+    parts.push(`<span>Voice pack <b>revision ${v.pack_revision}</b>${v.draft ? ' (draft)' : ''}, ${v.clips} words, ${kib(v.file_bytes)}</span>`);
+    if ('volume' in v) parts.push(`<span>Voice <b>${v.volume} %</b></span>`, `<span>Pause now <b>${v.word_gap_ms} ms</b></span>`);
+  } else {
+    parts.push(`<span>Voice: <b>${esc(v.state || 'unknown')}</b></span>`);
+  }
+  if (s.speaker != null) parts.push(`<span>Speaker <b>${s.speaker === 'off' ? 'off' : 'on'}</b></span>`);
+  if ('enabled' in v) parts.push(`<span>Announcements <b>${v.enabled ? 'on' : 'off'}</b></span>`);
+  st.innerHTML = parts.join('');
+  if (v.state !== 'ready') note('bad', 'The panel has no voice pack ready, so it cannot say anything. Install one with panelctl voice install.');
+  if (s.speaker === 'off') note('warn', "The panel's speaker is switched off (panelctl speaker on turns it back on): you will hear nothing.");
+  if (!('volume' in v) && v.state === 'ready') note('warn', 'This firmware is older than 0.8.14: the page cannot show or set the Voice volume.');
+  if (v.volume === 0) note('warn', 'The Voice volume is 0 %: the panel says nothing until you raise it.');
+  if ('volume' in v) { $('vol').disabled = false; if (!volDirty) showVolume(v.volume); }
+  $('gaphint').textContent = `Sent with each phrase and kept on the panel (its announcements use it too) until it restarts; the pack's own is ${BOOT.packGap} ms.`;
+}
+function note(kind, text) {
+  const d = document.createElement('div'); d.className = 'note ' + kind; d.textContent = text; $('warnings').appendChild(d);
+}
+function esc(t) { return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+async function api(path, body) {
+  try {
+    const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
+    return await r.json();
+  } catch (e) { return { ok: false, error: 'The bench server on this computer is not answering (' + e.message + '): is bench_server.py still running?' }; }
+}
+async function refresh() { showStatus(await api('/api/status')); }
+
+/* ---- the Voice volume: saved on the panel when the slider is let go ---- */
+let volDirty = false, volTimer = null, volSeq = 0;
+$('vol').addEventListener('input', () => { volDirty = true; volSeq++; showVolume(+$('vol').value); $('volsaved').textContent = ''; });
+$('vol').addEventListener('change', () => { clearTimeout(volTimer); volTimer = setTimeout(saveVolume, 250); });
+async function saveVolume() {
+  const v = +$('vol').value, seq = volSeq;
+  $('volsaved').textContent = 'Saving…';
+  const r = await api('/api/volume', { volume: v });
+  if (seq !== volSeq) return; /* the slider moved since: its own save follows */
+  volDirty = false;
+  if (r.ok) { $('volsaved').textContent = 'Saved'; if (panelVoice) panelVoice.volume = r.voice.volume; refresh(); }
+  else { $('volsaved').textContent = 'Not saved'; showStatus({ ok: false, error: r.error }); }
+}
+
+/* ---- the pause ---- */
+for (const g of BOOT.gaps) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.dataset.gap = g; b.setAttribute('aria-pressed', g === gap);
+  b.innerHTML = g + ' ms' + (g === BOOT.packGap ? '<span class="tag">pack</span>' : '');
+  b.onclick = () => { gap = g; document.querySelectorAll('#gaps button').forEach(x => x.setAttribute('aria-pressed', +x.dataset.gap === g)); };
+  $('gaps').appendChild(b);
+}
+
+/* ---- saying ---- */
+for (const q of BOOT.quick) {
+  const b = document.createElement('button'); b.type = 'button'; b.textContent = q;
+  b.onclick = () => { stopAll(); $('text').value = q; check(); say(q); };
+  $('quick').appendChild(b);
+}
+const all = document.createElement('button'); all.type = 'button'; all.textContent = 'All of them, in turn';
+all.onclick = () => sayList(BOOT.quick); $('quick').appendChild(all);
+
+/* Words of the pack that finish what is being typed: the last one, two or three words typed. */
+function fits(text) {
+  if (/\s$/.test(text)) return null;
+  const toks = text.toLowerCase().match(/[a-z0-9']+/g) || [];
+  for (let k = Math.min(3, toks.length); k > 0; k--) {
+    const p = toks.slice(-k).join(' ');
+    const found = BOOT.words.filter(w => w.startsWith(p) && w !== p).slice(0, 12);
+    if (found.length) return { k, found };
+  }
+  return null;
+}
+function suggest(text) {
+  const box = $('suggest'); box.innerHTML = '';
+  const f = text.trim() ? fits(text) : null;
+  if (!f) return null;
+  for (const w of f.found) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = title(w);
+    b.onclick = () => {
+      const toks = $('text').value.match(/[A-Za-z0-9']+/g) || [];
+      $('text').value = toks.slice(0, toks.length - f.k).concat(title(w)).join(' ') + ' ';
+      $('text').focus(); check();
+    };
+    box.appendChild(b);
+  }
+  return f;
+}
+function check() {
+  const t = $('text').value, p = $('preview');
+  const typing = suggest(t);
+  if (!t.trim()) { p.textContent = ''; p.className = 'preview'; $('saybtn').disabled = false; return null; }
+  const r = parse(t);
+  if (r.bad && typing && r.at >= r.n - typing.k) { /* only the word being typed is unknown */ p.textContent = 'Keep typing, or pick a word below.'; p.className = 'preview'; $('saybtn').disabled = true; return null; }
+  if (r.bad) { p.textContent = `"${r.bad}" is not in the voice pack.`; p.className = 'preview bad'; $('saybtn').disabled = true; return null; }
+  if (r.words.length > 8) { p.textContent = 'At most eight words at a time.'; p.className = 'preview bad'; $('saybtn').disabled = true; return null; }
+  p.textContent = `${r.words.length} word${r.words.length > 1 ? 's' : ''}: ${r.words.map(title).join(' · ')}`; p.className = 'preview'; $('saybtn').disabled = false;
+  return r.words;
+}
+$('text').addEventListener('input', check);
+$('sayform').addEventListener('submit', e => { e.preventDefault(); if (check()) { stopAll(); say($('text').value); } });
+
+const sleep = ms => new Promise(res => setTimeout(res, ms));
+async function say(text) {
+  sayBusy = true; $('busy').textContent = 'Saying "' + text + '"…';
+  const r = await api('/api/say', { text, gap });
+  sayBusy = false; $('busy').textContent = '';
+  addEntry(r);
+  if (r.ok) { last = text; $('again').disabled = false; $('repeat').disabled = false; if (panelVoice) { panelVoice.word_gap_ms = r.gap_ms; } refresh(); }
+  return r;
+}
+async function sayList(list) {
+  stopAll(); const me = ++run; $('stop').disabled = false;
+  for (const t of list) {
+    if (me !== run) return;
+    $('text').value = t; check();
+    const r = await say(t);
+    if (!r.ok || me !== run) break;
+    await sleep((r.seconds + 0.9) * 1000);
+  }
+  if (me === run) { $('stop').disabled = true; $('busy').textContent = ''; }
+}
+async function repeat() {
+  if (!last) return;
+  stopAll(); const me = ++run; const text = last;
+  $('repeat').setAttribute('aria-pressed', 'true'); $('stop').disabled = false;
+  while (me === run) {
+    const r = await say(text);
+    if (!r.ok) break;
+    const wait = Math.max(+$('every').value, r.seconds + 1);
+    for (let left = Math.ceil(wait); left > 0 && me === run; left--) { $('busy').textContent = `Again in ${left} s`; await sleep(1000); }
+  }
+  if (me === run) stopAll();
+}
+function stopAll() { run++; $('repeat').setAttribute('aria-pressed', 'false'); $('stop').disabled = true; if (!sayBusy) $('busy').textContent = ''; }
+$('again').onclick = () => { if (last) { stopAll(); say(last); } };
+$('repeat').onclick = () => ($('repeat').getAttribute('aria-pressed') === 'true' ? stopAll() : repeat());
+$('stop').onclick = stopAll;
+
+/* ---- what happened ---- */
+function addEntry(r) {
+  const h = $('history'); const empty = h.querySelector('.empty'); if (empty) empty.remove();
+  const e = document.createElement('div'); e.className = 'entry' + (r.ok ? '' : ' bad');
+  const time = new Date().toLocaleTimeString();
+  let html = `<div class="what">${esc(r.text || '')}<span class="time">${time}</span></div>`;
+  if (r.ids) html += `<div class="line"><span class="where">Sent</span>${r.ids.length} clip number${r.ids.length > 1 ? 's' : ''} <span class="ids">${r.ids.join(' ')}</span> and a ${r.ok ? r.gap_ms : gap} ms pause</div>`;
+  if (r.ok) {
+    const v = r.volume;
+    const loud = v ? loudText(r.gain_db, r.heard_db) + (r.limiter ? ', peaks held' : '') : 'silent';
+    html += `<div class="line"><span class="where">Panel</span>Joined ${r.words.map(esc).join(' · ')} from its pack, ${r.gap_ms} ms apart, about ${r.seconds.toFixed(1)} s, at Voice ${v} % (${loud})</div>`;
+  } else {
+    html += `<div class="line"><span class="where">Not said</span>${esc(r.error || 'unknown error')}</div>`;
+  }
+  e.innerHTML = html;
+  if (r.ok) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'again'; b.textContent = 'Again';
+    b.setAttribute('aria-label', 'Say ' + r.text + ' again'); b.onclick = () => { stopAll(); say(r.text); };
+    e.appendChild(b);
+  }
+  h.prepend(e);
+  while (h.children.length > 12) h.lastChild.remove();
+}
+
+/* ---- start ---- */
+$('device').textContent = 'Development panel: ' + BOOT.device;
+try { $('howbox').open = localStorage.getItem('bench-how') !== 'closed'; } catch (e) { $('howbox').open = true; }
+$('howbox').addEventListener('toggle', () => { try { localStorage.setItem('bench-how', $('howbox').open ? 'open' : 'closed'); } catch (e) { } });
+window.addEventListener('focus', refresh);
+refresh();
+</script>
+</body>
+</html>

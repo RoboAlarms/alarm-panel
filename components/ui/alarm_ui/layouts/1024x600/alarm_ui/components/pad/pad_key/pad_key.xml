@@ -1,0 +1,27 @@
+<component>
+	<!-- One key of the code pad. -->
+	<api>
+		<prop name="text" type="string" default="1" help="Digit or Lucide glyph" />
+		<prop name="font" type="font" default="font_keypad" help="font_keypad for digits, icons_28 for glyphs" />
+	</api>
+
+	<styles>
+		<style name="style_pad_key" width="120" height="60" radius="#radius_md" bg_color="#color_raised" bg_opa="100%" text_color="#color_text" />
+		<style name="style_pad_key_pressed" bg_color="#color_pressed" transform_width="-3" transform_height="-3" />
+		<!-- Shorter keys while the arming options take a third row (a language's long words, one
+		     chip a row): the code sets user_2 on every key then (ui_app.c pad_fit), so the title
+		     and the hint keep their place above the keys. -->
+		<style name="style_pad_key_short" height="48" />
+		<!-- The digits while the keypad is locked out after wrong codes (ui_app.c update_lockout):
+		     dim, still, nothing blinks. -->
+		<style name="style_pad_key_disabled" text_color="#color_text_3" />
+	</styles>
+
+	<view extends="box" clickable="true">
+		<style name="style_pad_key" />
+		<style name="style_pad_key_pressed" selector="pressed" />
+		<style name="style_pad_key_short" selector="user_2" />
+		<style name="style_pad_key_disabled" selector="disabled" />
+		<lv_label align="center" text="$text" style_text_font="$font" />
+	</view>
+</component>

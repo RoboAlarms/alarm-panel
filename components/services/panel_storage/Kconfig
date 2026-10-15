@@ -1,0 +1,19 @@
+menu "Storage (panel_storage)"
+    # Which SD card drivers this firmware links (docs/features/33 step 8). A board's manifest turns
+    # on the one its card needs; the other costs flash and IRAM for nothing.
+
+    config PANEL_STORAGE_SDMMC
+        bool "Cards on the SDMMC peripheral (1-bit)"
+        default y if SOC_SDMMC_HOST_SUPPORTED
+        default n
+        help
+            The CrowPanel's card slot. board_info_t.sd.bus = BOARD_SD_SDMMC_1BIT.
+
+    config PANEL_STORAGE_SDSPI
+        bool "Cards on an SPI bus"
+        default n
+        help
+            The classic ESP32 boards' card slots, often sharing the bus with an SPI header
+            (board_info_t.sd.bus = BOARD_SD_SPI). The storage service sets the bus up with DMA,
+            so it starts before anything else on that bus (panel_app does this).
+endmenu

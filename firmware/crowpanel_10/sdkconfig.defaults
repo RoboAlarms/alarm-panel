@@ -1,0 +1,12 @@
+# CrowPanel Advanced 10.1" (ESP32-P4NRW32, 16 MB flash, 32 MB PSRAM), board rev V1.2.
+# Built on firmware/crowpanel_p4 (ALARM_BOARD_BASE): its sdkconfig.defaults and every fragment
+# (.p4rev1, .dev, .release, .dark) come first, then these lines, which win. The board manifest
+# (docs/features/33) is the 7"'s: this board carries the same features (tools/check_boards.py
+# reads the two files in the same order).
+
+# The 7"'s flash layout: one main board, one partition table.
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="../crowpanel_p4/partitions.csv"
+
+# The update server names this board by its id (board_info()->id, crowpanel_10) until it has a
+# product name in the server's catalogue (OTA-018).
+CONFIG_PANEL_OTA_DEVICE=""

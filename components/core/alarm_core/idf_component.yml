@@ -1,0 +1,5 @@
+version: "0.1.0"
+description: "Portable alarm panel engine (C11, no heap, no RTOS)"
+dependencies:
+  idf:
+    version: ">=6.1"

@@ -1,0 +1,18 @@
+<component>
+	<!-- A navigation entry that carries a state instead of a destination: its icon comes
+	     from a subject, so Chime shows a bell when it is on and a crossed-out bell when it is
+	     off. Tapping it acts; it never selects a view (UI-025). The 4" screen puts Chime in
+	     the status bar instead (the rail has room for five entries); this stays for the
+	     layouts that share the component set. -->
+	<api>
+		<prop name="icon" type="subject" default="subject_chime_icon" help="String subject with the Lucide glyph" />
+		<prop name="text" type="string" default="Chime" help="Caption" />
+	</api>
+
+	<view extends="box" clickable="true">
+		<style name="style_nav_item" />
+		<style name="style_nav_item_pressed" selector="pressed" />
+		<lv_label bind_text="$icon" style_text_font="icons_20" />
+		<lv_label text="$text" style_text_font="font_caption" />
+	</view>
+</component>

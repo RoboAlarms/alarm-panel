@@ -1,0 +1,17 @@
+<component>
+	<!-- Count bubble pinned to the top-right corner of its parent; hidden at 0. -->
+	<api>
+		<prop name="subject" type="subject" help="Int subject with the count" />
+		<prop name="color" type="color" default="#color_amber" help="Bubble colour" />
+	</api>
+
+	<styles>
+		<style name="style_badge" height="22" min_width="22" radius="#radius_full" bg_opa="100%" pad_left="6" pad_right="6" layout="flex" flex_flow="row" flex_main_place="center" flex_cross_place="center" flex_track_place="center" text_font="font_caption" text_color="#color_on_tone" />
+	</styles>
+
+	<view extends="box" width="content" floating="true" align="top_right" x="-4" y="2" style_bg_color="$color">
+		<style name="style_badge" />
+		<bind_flag_if_eq subject="$subject" flag="hidden" ref_value="0" />
+		<lv_label bind_text="$subject" bind_text-fmt="%d" />
+	</view>
+</component>

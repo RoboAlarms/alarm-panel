@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walk test mockup · Panel Manager</title>
+<style>
+/*@PANEL_CSS@*/
+
+/* ================= MOCKUP ONLY: the pretend panel's controls and the phone frame ================= */
+.mock-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 10px 16px;
+  background: repeating-linear-gradient(135deg, var(--surface-2) 0 12px, var(--surface) 12px 24px);
+  border-bottom: 2px dashed var(--line-strong); font-size: 12.5px; }
+.mock-bar strong { letter-spacing: 1px; text-transform: uppercase; font-size: 11px; color: var(--faint); }
+.mock-bar .grp { display: inline-flex; align-items: center; gap: 6px; }
+.mock-bar .grp > span { color: var(--muted); }
+.mock-bar .filters { margin: 0; gap: 4px; }
+.mock-bar .filters button, .mock-bar > .grp > button { min-height: 28px; padding: 2px 10px; font-size: 12px; border-radius: 999px; }
+body.framed .mock-bar, body.framed #notes { display: none; }
+body.phone-mode :is(.sidebar, .topbar, #main) { display: none; }
+body.phone-mode .workspace { margin-left: 0; }
+#phone-stage { display: grid; place-items: center; padding: 22px 12px 40px; }
+#phone-stage iframe { width: 390px; height: 844px; border: 10px solid #05090c; border-radius: 38px; background: var(--bg);
+  box-shadow: 0 20px 60px rgb(0 0 0 / 35%); }
+#phone-stage p { margin-top: 10px; font-size: 12px; }
+#notes { margin: 0; padding: 14px 18px 16px 34px; background: var(--surface); border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+#notes li + li { margin-top: 4px; }
+#notes code { color: var(--ink); }
+
+/* ================= PROPOSED for panel.css: the walk test (docs/features/40) ================= */
+/* The walk test's tone: the touchscreen's walk test is blue (ui_tone_blue), the Stay hue. No new colour. */
+:root { --fill-test: var(--fill-stay); --tone-test: var(--tone-stay); }
+button.choice.fill.test:not(:disabled) { background: var(--fill-test); border-color: var(--fill-test); }
+.choice.test .glyph { color: var(--tone-test); background: color-mix(in srgb, var(--tone-test) var(--tint), transparent); }
+/* The count beside the state, as the Overview's countdown sits */
+.wt-count { text-align: right; flex-shrink: 0; }
+.wt-count .count { display: block; }
+.wt-count .count small { font-size: 22px; font-weight: 600; letter-spacing: 0; color: var(--muted); }
+.wt-count .summary { display: block; margin-top: 4px; }
+.wt-ends { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12.5px; color: var(--muted); }
+.command.warn .wt-ends strong { color: var(--warn); }
+.command .notice { margin: 0; }
+/* The zone tested last: a steady strip that changes when the next one is tested; nothing flashes (UI-020) */
+.wt-last { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: 12px;
+  background: color-mix(in srgb, var(--good) 9%, var(--surface)); border: 1px solid color-mix(in srgb, var(--good) 30%, var(--line)); }
+.wt-last .main { flex: 1; min-width: 0; }
+.wt-last .main strong { display: block; font-size: 15px; overflow-wrap: anywhere; }
+.wt-last .main span { display: block; font-size: 13px; color: var(--ink); }
+.wt-last .main span.before { margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.wt-last:not(.none) .wt-chip { border: 0; background: var(--good-soft); color: var(--good); }
+.wt-last.none { background: var(--surface-2); border-color: var(--line); }
+/* A zone's chip: its sensor's icon, coloured by where it is in the test */
+.wt-chip { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+  background: transparent; color: var(--muted); border: 2px dashed var(--line-strong); }
+.wt-chip svg.icon { width: 20px; height: 20px; stroke-width: 2; }
+.tested .wt-chip { background: var(--good-soft); color: var(--good); border: 0; }
+.open .wt-chip { background: var(--warn-soft); color: var(--warn); border: 0; }
+.nocontact .wt-chip { background: var(--bad-soft); color: var(--bad); border: 0; }
+.live .wt-chip { background: var(--info-soft); color: var(--info); border: 0; }
+/* The whole row is a button that opens the zone's details: 64 px high, the full width */
+.wt-list > li { padding: 0; }
+.wt-list button.wt-row { display: flex; align-items: center; justify-content: flex-start; gap: 14px; width: 100%; min-height: 64px;
+  padding: 11px 22px; border: 0; border-radius: 0; background: none; text-align: left; font-weight: 400; }
+.wt-list button.wt-row:hover { background: var(--surface-2); }
+.wt-list .warnword { color: var(--warn); font-weight: 600; }
+.wt-list .main .num, .wt-list .main .now { display: inline; }
+.wt-list .main strong .num { color: var(--faint); font-weight: 600; margin-right: 6px; font-variant-numeric: tabular-nums; }
+.wt-list .main .now { font-weight: 600; color: var(--muted); }
+.wt-list .tested .now { color: var(--good); } .wt-list .open .now { color: var(--warn); } .wt-list .nocontact .now { color: var(--bad); }
+.wt-list .live .now { color: var(--info); }
+.wt-list li.fresh { background: color-mix(in srgb, var(--good) 7%, transparent); }
+/* Signal: four steady bars and a word; the measured value is one tap deeper (title, the zone page) */
+.wt-signal { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; min-width: 62px; }
+.wt-signal small { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 14px; }
+.bars i { width: 4px; border-radius: 1px; background: var(--line-strong); }
+.bars i:nth-child(1) { height: 5px; } .bars i:nth-child(2) { height: 8px; } .bars i:nth-child(3) { height: 11px; } .bars i:nth-child(4) { height: 14px; }
+.bars i.on { background: var(--good); }
+.bars.weak i.on { background: var(--warn); } .bars.poor i.on { background: var(--bad); }
+.wt-signal.weak small { color: var(--warn); } .wt-signal.poor small { color: var(--bad); }
+/* What the phone does: pills that say it, on or off, like the Zones page's filters */
+.wt-phone { margin-top: 18px; }
+.wt-phone h2 { font-size: 13px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+/* Four equal switches on a grid, so they line up whatever the width: 4 across, 2 x 2 on a phone */
+.wt-toggles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.wt-toggles button { display: flex; align-items: center; justify-content: flex-start; gap: 10px; min-height: 52px; padding: 8px 12px;
+  border-radius: 12px; font-size: 14px; font-weight: 600; text-align: left; background: var(--surface); border-color: var(--line); color: var(--ink); }
+.wt-toggles button svg.icon { width: 20px; height: 20px; flex-shrink: 0; }
+.wt-toggles button .name { flex: 1; min-width: 0; }
+/* On or off in words as well as colour */
+.wt-toggles button .on { font-size: 12px; font-weight: 700; color: var(--muted); }
+.wt-toggles button[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); }
+.wt-toggles button[aria-pressed=true] svg.icon, .wt-toggles button[aria-pressed=true] .on { color: var(--accent); }
+.wt-toggles button[aria-pressed=false] { color: var(--muted); }
+@media (max-width: 640px) { .wt-toggles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* The Overview's line and the nav's count while a test runs: information, not a warning */
+nav a .badge.info { background: var(--info-soft); color: var(--info); }
+/* On a phone the count and End stay under the thumb while the list scrolls */
+.wt-dock { display: none; }
+/* Field use: every control on this page is at least 44 px high (WCAG 2.5.5, Apple's 44 pt; Material 48 dp),
+   for a thumb in a glove or a hand holding a ladder */
+.wt-page .filters button, .wt-page button.small { min-height: 44px; padding: 6px 14px; font-size: 14px; }
+.wt-phone .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.wt-phone .head h2 { margin: 0; }
+.wt-phone .note { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; color: var(--muted); }
+.wt-phone .note svg.icon { width: 16px; height: 16px; flex-shrink: 0; }
+/* The zone's details */
+.wt-facts { display: grid; gap: 10px; margin: 4px 0 12px; }
+.wt-facts > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; align-items: baseline; }
+.wt-facts dt { font-size: 13px; color: var(--muted); }
+.wt-facts dd { margin: 0; display: flex; align-items: center; gap: 8px; }
+.wt-facts dd > span:last-child { flex: 1; min-width: 0; }
+/* The last test stays on the Ready card until the next one starts */
+.wt-lasttest { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--surface-2); font-size: 13.5px; }
+button.confirm.test { background: var(--fill-test); border-color: var(--fill-test); color: var(--on-fill); }
+button.choice.fill small { color: inherit; opacity: 0.85; }
+.wt-end-acts button { min-height: 44px; }
+.wt-toggles button:disabled { opacity: 1; cursor: default; background: transparent; border-style: dashed; color: var(--faint); }
+.wt-toggles button:disabled .on { color: var(--faint); }
+/* Heard by a screen reader, not seen: "Back door tested. 6 of 12." */
+.wt-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+@media (max-width: 860px) {
+  .wt-dock { display: flex; position: sticky; bottom: 0; z-index: 5; margin: 18px -16px -32px; padding: 10px 16px 14px;
+    align-items: center; gap: 12px; background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -6px 18px rgb(4 20 30 / 12%); }
+  .wt-dock .main { flex: 1; min-width: 0; }
+  .wt-dock .main strong { display: block; font-size: 15px; }
+  .wt-dock .main span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 12.5px; color: var(--muted); }
+  .wt-dock .acts { display: flex; gap: 8px; flex-shrink: 0; }
+  /* Five minutes left, or off the Wi-Fi: the bar under the thumb says so, steadily, wherever the list is scrolled */
+  .wt-dock.ending, .wt-dock.off { background: color-mix(in srgb, var(--warn) 12%, var(--surface)); border-top: 2px solid var(--warn); }
+  .wt-dock.ending .main strong, .wt-dock.off .main strong { color: var(--warn); }
+  .wt-dock.off .main span { color: var(--ink); }
+  /* On a phone the bar carries End and the connection; the card's copies would only push the list down */
+  .wt-wide-only, .wt-off-top { display: none; }
+  .wt-list button.wt-row { padding-left: 16px; padding-right: 16px; }
+}
+/* A narrow card: the count joins one line under the words instead of a tall block of its own */
+@container (max-width: 420px) {
+  /* Also fixes today's Overview card: at 360-370 px (many Android phones) the badge's 68 px and the
+     words' 220 px minimum no longer fit, and the badge sat alone above the words */
+  .command .state-words { min-width: 0; }
+  .wt-count { text-align: left; display: flex; align-items: baseline; gap: 8px; flex-basis: 100%; }
+  .command .wt-count .count { font-size: 30px; }
+  .wt-count .count small { font-size: 18px; }
+  .wt-count .summary { margin-top: 0; }
+}
+/* A narrow phone keeps the word only where it matters: Weak and Too weak */
+@media (max-width: 480px) {
+  .wt-signal:not(.weak):not(.poor) small { display: none; }
+  .wt-signal { min-width: 0; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="sidebar" id="sidebar" aria-label="Panel Manager">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><img width="34" height="34" alt="" src="/*@BRAND@*/"></span><span><span translate="no">RoboAlarms</span><small>Panel Manager</small></span></div>
+    <div class="panel-card"><strong>Harbor House</strong><span>192.0.2.40</span></div>
+    <nav id="nav" aria-label="Pages"></nav>
+    <div class="account"><span id="account-name"></span><button type="button" class="link">Change password</button><button type="button" class="link">Sign out</button></div>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+  <div class="workspace">
+<div class="mock-bar" id="mock-bar">
+  <strong>Mockup</strong>
+  <span class="grp"><span>Page</span><span class="filters" data-set="page"><button data-v="overview">Overview</button><button data-v="walk">Walk test</button></span></span>
+  <span class="grp"><span>Test</span><span class="filters" data-set="phase"><button data-v="ready">Not started</button><button data-v="running">Running</button><button data-v="ending">4 min left</button><button data-v="ended">Ended</button></span></span>
+  <span class="grp"><button id="trip" title="The next zone faults at the panel">Trip next zone</button><button id="again" title="The last zone faults again">Trip it again</button></span>
+  <span class="grp"><span>Wi-Fi</span><span class="filters" data-set="online"><button data-v="1">Connected</button><button data-v="0">Off the Wi-Fi</button></span></span>
+  <span class="grp"><span>Phone</span><span class="filters" data-set="device"><button data-v="android">Android</button><button data-v="iphone">iPhone</button></span></span>
+  <span class="grp"><span>Started</span><span class="filters" data-set="origin"><button data-v="phone">On this phone</button><button data-v="panel">At the panel</button></span></span>
+  <span class="grp"><span>Signed in</span><span class="filters" data-set="role"><button data-v="installer">Installer</button><button data-v="master">Master</button><button data-v="standard">Standard user</button></span></span>
+  <span class="grp"><span>Partitions</span><span class="filters" data-set="parts"><button data-v="1">1</button><button data-v="2">2</button></span></span>
+  <span class="grp"><span>Theme</span><span class="filters" data-set="theme"><button data-v="dark">Dark</button><button data-v="light">Light</button></span></span>
+  <span class="grp"><span>View</span><span class="filters" data-set="frame"><button data-v="full">This window</button><button data-v="phone">Phone frame</button></span></span>
+  <span class="grp"><button id="notes-toggle" aria-expanded="false">What is proposed</button></span>
+</div>
+<ul id="notes" hidden>
+  <li><strong>Where and who</strong>: the first entry of the <strong>System</strong> group, as modern panels keep it among their system tests, for the installer, the system master and partition masters (<code>shared</code> access). A standard user has no page; the Overview shows them the test with End (asked first). The nav shows the count while a test runs.</li>
+  <li><strong>Phone first</strong> (an installer's walk, 2026-09-30): the zones come right under the status card; the four switches go below the list once the test runs (set once, before the walk); the bottom bar keeps the count, the last zone and End under the thumb, turns amber with Extend at 5 minutes left, and says "Not connected · last update" off the Wi-Fi (the top notice is for wide screens).</li>
+  <li>The bar under the count is the <strong>zones tested</strong>, not the time; the time is in words. The strip names the zone tested last and the two before it; zones tested while the phone was away are named, not counted.</li>
+  <li>A <strong>row opens the zone</strong>: the signal in words and dBm over the noise, the battery. Weak and Too weak keep their word on a narrow phone; Low battery shows on the row. No "unmark": the test proves the sensor reports, whatever tripped it; coverage is the detector's own test LED.</li>
+  <li><strong>End ends at once</strong>, as code + Off does on a keypad: an installer who added one sensor tests only that one. Nothing is lost: the summary opens at its top with Still open first, and Test again picks up the rest; Done is a button, and the Ready card keeps "Last test · View" until the next start. The panic option is off again after each test.</li>
+  <li><strong>Sound</strong> works however the test started: the Panel Manager unlocks the phone's audio and speech on its first tap anywhere (browsers, iOS above all, play nothing before one), and getting to this page took taps, so an installer who started at the panel and then picked up the phone hears the same beeps. Test sound checks a muted phone; on an iPhone, Vibrate says "Not on iPhone" and the ring switch is named.</li>
+  <li>Every control here is at least 44 px (WCAG 2.5.5, Apple 44 pt, Material 48 dp); each zone tested is announced to a screen reader ("Back door tested. 6 of 12."); times keep "2:14 PM" on one line. Nothing flashes: colours change once, steadily.</li>
+  <li>Built from the Overview's pieces (<code>.command</code>, <code>.timebar</code>, <code>.choices</code>, <code>.opts</code>, <code>.list</code>, <code>.filters</code>, <code>.notice</code>, <code>dialog</code>); new: the <code>.wt-*</code> classes, <code>button.choice.fill.test</code>, <code>button.confirm.test</code>, <code>nav a .badge.info</code>: the "PROPOSED" block of this file's style. New icons (Lucide): walk, volume, vibrate, speech, phone, plus, stop, untested, report, again, keyfob. The tone is the touchscreen's walk test blue (the Stay hue).</li>
+</ul>
+<div id="phone-stage" hidden><iframe id="phone" title="The page on a phone"></iframe><p class="muted">390 x 844, the width of a common phone. Use the bar above; the page in the frame works too.</p></div>
+    <header class="topbar">
+      <button type="button" class="icon-button menu-button" id="menu" aria-controls="sidebar" aria-expanded="false" aria-label="Open menu"></button>
+      <span class="topbar-title" id="crumb"></span>
+      <span class="connection" id="connection"><span>Connected</span></span>
+    </header>
+    <main id="main" tabindex="-1"></main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<div class="wt-sr" id="wt-say" role="status" aria-live="polite"></div>
+<dialog id="wt-dialog" aria-labelledby="wt-dialog-title"></dialog>
+<script>
+const ICONS = /*@ICONS@*/;
+// PROPOSED additions to panel.js ICONS (Lucide, ISC licence), for the walk test.
+Object.assign(ICONS, {
+  walk: '<path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z"/><path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z"/><path d="M16 17h4"/><path d="M4 13h4"/>',
+  volume: '<path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 18.4a9 9 0 0 0 0-12.8"/>',
+  vibrate: '<path d="m2 8 2 2-2 2 2 2-2 2"/><path d="m22 8-2 2 2 2-2 2 2 2"/><rect width="8" height="14" x="8" y="5" rx="1"/>',
+  speech: '<path d="M8.8 20v-4.1l1.9.2a2.3 2.3 0 0 0 2.2-2.1V8.3A5.4 5.4 0 0 0 2 8.3c0 2.8.7 3 1 4.5a5.8 5.8 0 0 1 0 2.8L2 20"/><path d="M19.8 17.8a7.5 7.5 0 0 0 0-10.6"/><path d="M17 15a3.5 3.5 0 0 0 0-5"/>',
+  phone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  stop: '<rect width="14" height="14" x="5" y="5" rx="2"/>',
+  untested: '<path d="M10.1 2.2a10 10 0 0 1 3.8 0"/><path d="M13.9 21.8a10 10 0 0 1-3.8 0"/><path d="M17.6 3.7a10 10 0 0 1 2.7 2.7"/><path d="M2.2 13.9a10 10 0 0 1 0-3.8"/><path d="M20.3 17.6a10 10 0 0 1-2.7 2.7"/><path d="M21.8 10.1a10 10 0 0 1 0 3.8"/><path d="M3.7 6.4a10 10 0 0 1 2.7-2.7"/><path d="M6.4 20.3a10 10 0 0 1-2.7-2.7"/>',
+  report: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/>',
+  again: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  keyfob: '<rect x="7" y="2" width="10" height="20" rx="5"/><circle cx="12" cy="8.5" r="1.6"/><circle cx="12" cy="14.5" r="1.6"/>',
+});
+const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+const $ = (sel, root = document) => root.querySelector(sel);
+const framed = location.hash === '#frame';
+// In the phone frame the page scrolls as a phone's does: no scrollbar taking width
+if (framed) { document.body.classList.add('framed'); document.documentElement.style.scrollbarWidth = 'none'; }
+
+// ---- The pretend panel: made-up zones (fictional names), as the panel would send them ----
+const ZONES = {
+  1: [
+    {n: 1, name: 'Front door', kind: 'door', src: 'wired'},
+    {n: 2, name: 'Back door', kind: 'door', src: 'rf', dbm: -58, floor: -96},
+    {n: 3, name: 'Garage entry', kind: 'door', src: 'rf', dbm: -71, floor: -96},
+    {n: 4, name: 'Kitchen window', kind: 'window', src: 'rf', dbm: -66, floor: -96},
+    {n: 5, name: 'Living room window', kind: 'window', src: 'rf', dbm: -62, floor: -96},
+    {n: 6, name: 'Bedroom window', kind: 'window', src: 'zw', dbm: -74, floor: -98, bat: 'low'},
+    {n: 7, name: 'Hallway motion', kind: 'motion', src: 'rf', dbm: -60, floor: -96},
+    {n: 8, name: 'Living room motion', kind: 'motion', src: 'zw', dbm: -69, floor: -98},
+    {n: 9, name: 'Basement glass', kind: 'glass', src: 'wired'},
+    {n: 10, name: 'Shed door', kind: 'door', src: 'zw', dbm: -84, floor: -91},
+    {n: 11, name: 'Gate', kind: 'door', src: 'rf', dbm: -88, floor: -96},
+    {n: 12, name: 'Alex’s keyfob', kind: 'keyfob', src: 'rf', dbm: -55, floor: -96},
+  ],
+  2: [
+    {n: 20, name: 'Garage door', kind: 'garage', src: 'zw', dbm: -66, floor: -98},
+    {n: 21, name: 'Garage motion', kind: 'motion', src: 'rf', dbm: -70, floor: -96},
+  ],
+};
+// Fire and CO stay live; 24-hour zones and panics join only with the start's option (WALK-007)
+const LIVE = {
+  1: [
+    {n: 13, name: 'Hallway smoke', kind: 'smoke', src: 'zw', dbm: -63, floor: -98, life: true},
+    {n: 14, name: 'Kitchen CO', kind: 'co', src: 'zw', dbm: -67, floor: -98, life: true},
+    {n: 15, name: 'Basement water', kind: 'water', src: 'rf', dbm: -79, floor: -96},
+    {n: 16, name: 'Bedside panic', kind: 'keyfob', src: 'rf', dbm: -61, floor: -96},
+  ],
+  2: [],
+};
+const PART = {1: 'Home', 2: 'Garage'};
+const TRIP_ORDER = [3, 5, 6, 8, 10, 1, 2, 9, 15, 16, 20, 21];
+const TIMES = ['2:16 PM', '2:17 PM', '2:19 PM', '2:20 PM', '2:22 PM', '2:24 PM', '2:25 PM', '2:27 PM', '2:29 PM', '2:31 PM', '2:33 PM', '2:35 PM'];
+
+let S = {
+  page: 'walk', phase: 'running', online: '1', origin: 'phone', role: 'installer', parts: '1', theme: 'dark', frame: 'full', device: 'android',
+  part: 1, filter: 'untested', panic: false, fb: {beep: true, vibrate: true, names: true, awake: true},
+  marks: {}, last: 0, fresh: [], minutes: 54, menu: false, trip: 0, tripKind: '',
+  held: {}, bumps: {}, // what the panel saw while this phone was off the Wi-Fi: shown when it is back
+  order: [], away: [], confirm: null, detail: 0, endedBy: 'time', lastTest: null, scroll: 0,
+};
+const NB = String.fromCharCode(160); // keeps "2:14 PM" on one line
+const tm = t => String(t).replace(' ', NB);
+const person = () => ({installer: 'Installer', master: 'Alex', standard: 'Sam'})[S.role];
+// WALK-001: the installer, the system master and partition masters start, extend and follow a test
+// (the Panel Manager's `shared` access); WALK-025: anyone who can disarm can end one.
+const canWalk = () => S.role !== 'standard';
+const canPanic = canWalk;
+
+function preset(phase) {
+  const m = {}, order = [];
+  const mark = (n, t, count = 1, extra = {}) => { m[n] = {at: t, count, ...extra}; order.push(n); };
+  if (phase === 'running' || phase === 'ending' || phase === 'ended') {
+    mark(1, '2:16 PM'); mark(2, '2:17 PM', 2, {cover: true}); mark(4, '2:19 PM', 1, {open: true});
+    mark(7, '2:20 PM', 6); mark(12, '2:22 PM');
+  }
+  if (phase === 'ending' || phase === 'ended') { mark(3, '2:41 PM'); mark(5, '2:42 PM'); mark(6, '2:44 PM'); mark(8, '2:45 PM', 3); }
+  if (phase === 'ended') mark(10, '2:48 PM');
+  m[11] = {nocontact: true};
+  S.marks = m; S.order = order;
+  S.last = phase === 'ready' ? 0 : order[order.length - 1];
+  S.fresh = S.last && phase !== 'ended' ? [S.last] : [];
+  S.minutes = phase === 'ending' ? 4 : 54;
+  S.held = {}; S.bumps = {}; S.away = []; S.tripKind = '';
+  S.filter = 'untested'; S.confirm = null; S.detail = 0; S.endedBy = 'time';
+  S.panic = false; // the option is per start: off again after every test
+}
+
+// ---- What the page shows ----
+const zonesOf = p => ZONES[p].concat(S.panic ? LIVE[p].filter(z => !z.life) : []);
+const liveOf = p => LIVE[p].filter(z => z.life || !S.panic);
+const isTested = z => !!S.marks[z.n]?.at;
+const counts = p => { const zs = zonesOf(p); return {total: zs.length, tested: zs.filter(isTested).length}; };
+const KIND_ICON = {door: 'door', window: 'window', motion: 'motion', glass: 'glass', smoke: 'smoke', co: 'co', water: 'water', keyfob: 'keyfob', garage: 'garage'};
+const KIND_WORD = {door: 'Door', window: 'Window', motion: 'Motion', glass: 'Glass break', smoke: 'Smoke', co: 'CO', water: 'Water', keyfob: 'Button', garage: 'Garage door'};
+const SRC_WORD = {wired: 'Wired', rf: '433 MHz', zw: 'Z-Wave'};
+function signal(z) {
+  if (z.src === 'wired') return {cls: '', word: 'Wired', bars: 0, title: 'A wired zone: no radio signal'};
+  const margin = z.dbm - z.floor;
+  const [cls, word, bars] = margin >= 20 ? ['', 'Strong', 4] : margin >= 12 ? ['', 'Good', 3] : margin >= 6 ? ['weak', 'Weak', 2] : ['poor', 'Too weak', 1];
+  return {cls, word, bars, title: `${z.dbm} dBm, ${margin} dB over the noise (${SRC_WORD[z.src]})`};
+}
+const barsHtml = s => s.bars ? `<span class="bars ${s.cls}">${[1, 2, 3, 4].map(i => `<i class="${i <= s.bars ? 'on' : ''}"></i>`).join('')}</span>` : '';
+const signalHtml = z => { const s = signal(z); return `<span class="wt-signal ${s.cls}" title="${esc(s.title)}">${barsHtml(s)}<small>${esc(s.word)}</small></span>`; };
+function zoneState(z) {
+  const m = S.marks[z.n] || {};
+  if (m.nocontact) return ['nocontact', 'No contact', 'Check its battery or range'];
+  if (m.at && m.open) return ['open tested', 'Open', `Tested ${tm(m.at)} · close it`];
+  if (m.at) return ['tested', 'Tested', [tm(m.at), m.count > 1 ? `${m.count} times` : '', m.cover ? 'cover too' : ''].filter(Boolean).join(' · ')];
+  return ['untested', 'Not tested', KIND_WORD[z.kind]];
+}
+// The whole row is a button: it opens the zone's details (the signal's number, the battery)
+function rowHtml(z) {
+  const [cls, word, line] = zoneState(z);
+  const fresh = S.fresh.includes(z.n) ? ' fresh' : '';
+  const glyph = cls === 'untested' ? icon(KIND_ICON[z.kind]) : cls === 'nocontact' ? icon('alert') : cls.startsWith('open') ? icon(KIND_ICON[z.kind]) : icon('check');
+  const bat = z.bat === 'low' ? ` · <span class="warnword">Low battery</span>` : '';
+  return `<li class="${cls}${fresh}"><button type="button" class="wt-row" data-zone="${z.n}"><span class="wt-chip">${glyph}</span>
+    <span class="main"><strong><span class="num">${z.n}</span>${esc(z.name)}</strong><span><span class="now">${esc(word)}</span> · ${esc(line)}${bat}</span></span>
+    ${cls === 'nocontact' ? '' : signalHtml(z)}</button></li>`;
+}
+function liveRowHtml(z) {
+  const m = S.marks[z.n] || {};
+  const line = m.at ? `Tested ${tm(m.at)} by its test button` : z.life ? 'Its test button marks it' : 'Sets off a real alarm';
+  return `<li class="live${m.at ? ' tested' : ''}"><button type="button" class="wt-row" data-zone="${z.n}"><span class="wt-chip">${icon(m.at ? 'check' : KIND_ICON[z.kind])}</span>
+    <span class="main"><strong><span class="num">${z.n}</span>${esc(z.name)}</strong><span><span class="now">${m.at ? 'Tested' : 'Stays on'}</span> · ${esc(line)}</span></span>
+    ${signalHtml(z)}</button></li>`;
+}
+const choice = (cls, glyph, title, sub, attrs = '') => `<button type="button" class="choice ${cls}" ${attrs}>
+  <span class="glyph">${glyph}</span><span><strong>${esc(title)}</strong>${sub ? `<small>${esc(sub)}</small>` : ''}</span>${icon('chev', 'chev')}</button>`;
+const partName = p => `<span class="part-name">${esc(PART[p])}</span>`;
+const startedLine = () => S.origin === 'phone' ? S.role === 'installer' ? `Started on this phone · ${tm('2:14 PM')}` : `Started on a phone by the installer · ${tm('2:14 PM')}` : `Started at the panel by Alex · ${tm('2:14 PM')}`;
+const running = () => S.phase === 'running' || S.phase === 'ending';
+
+// iPhones (every browser on them is WebKit) have no web vibration, and the ring/silent switch mutes
+// Web Audio and speech: the page says so rather than offering a switch that does nothing
+const iphone = () => S.device === 'iphone';
+const offline = () => S.online === '0';
+const dis = () => offline() ? ' disabled' : '';
+function phonePills() {
+  const pill = (k, ic, label) => k === 'vibrate' && iphone()
+    ? `<button type="button" disabled>${icon(ic)}<span class="name">${esc(label)}</span><span class="on">Not on iPhone</span></button>`
+    : `<button type="button" data-fb="${k}" aria-pressed="${S.fb[k]}">${icon(ic)}<span class="name">${esc(label)}</span><span class="on">${S.fb[k] ? 'On' : 'Off'}</span></button>`;
+  return `<section class="wt-phone" aria-labelledby="wt-phone-h"><div class="head"><h2 id="wt-phone-h">On this phone</h2>
+      <button type="button" class="small" data-act="try">${icon('volume')}Test sound</button></div>
+    <div class="wt-toggles">${pill('beep', 'volume', 'Beep')}${pill('vibrate', 'vibrate', 'Vibrate')}${pill('names', 'speech', 'Say names')}${pill('awake', 'sun', 'Keep screen on')}</div>
+    ${iphone() ? `<p class="note">No sound? The ring switch on the side mutes the beeps and names.</p>` : ''}</section>`;
+}
+const offTop = () => offline() ? `<div class="notice warn wt-off-top">${icon('wifiOff')}<div><strong>Not connected to the panel</strong>
+  <p>The test goes on and the panel still beeps. Zones tested meanwhile show when you’re back.</p></div></div>` : '';
+const zoneList = list => `<div class="card"><ul class="list wt-list">${list.map(rowHtml).join('')}</ul></div>`;
+const liveSection = p => {
+  const live = liveOf(p);
+  return live.length ? `<section class="section"><div class="section-head"><h2>Stay on during the test</h2></div>
+    <div class="card"><ul class="list wt-list">${live.map(liveRowHtml).join('')}</ul></div></section>` : '';
+};
+
+function walkReady(p) {
+  const zs = zonesOf(p);
+  const opts = canPanic() ? `<div class="opts"><label class="opt"><span class="main"><strong>Include panic and 24-hour zones</strong><small>They beep instead of alarming · off again after the test</small></span>
+      <input type="checkbox" class="switch" data-panic${S.panic ? ' checked' : ''}></label></div>` : '';
+  const last = S.lastTest && p === 1 ? `<div class="wt-lasttest"><span>Last test: <strong>${S.lastTest.tested} of ${S.lastTest.total}</strong> · ${tm(S.lastTest.time)}</span>
+      <button type="button" class="small" data-act="view">View</button></div>` : '';
+  return `${offTop()}<section class="card command">
+    <div class="command-top"><span class="state-badge">${icon('walk')}</span>
+      <div class="state-words">${partName(p)}<span class="state">Ready to test</span><p>${zs.length} zones · smoke and CO stay on</p></div></div>
+    ${opts}${last}
+    <p class="summary">The siren sounds for 1 s at the start · ends after 60 min</p>
+    <div class="choices one">${choice('fill test', icon('walk'), 'Start walk test', '', `data-act="start"${dis()}`)}</div>
+  </section>
+  ${phonePills()}
+  <section class="section"><div class="section-head"><h2>Zones to test</h2><p>${zs.length}</p></div>${zoneList(zs)}</section>
+  ${liveSection(p)}`;
+}
+
+// The zone tested last, and the two before it (the latest first); zones tested while the
+// phone was away are named, never only counted
+function lastStrip(p, zs) {
+  const all = zs.concat(liveOf(p));
+  const byN = n => all.find(z => z.n === n);
+  const last = S.last ? byN(S.last) : null;
+  if (!last) return `<div class="wt-last none"><span class="wt-chip">${icon('untested')}</span><span class="main"><strong>Nothing tested yet</strong><span>Open a door or walk past a sensor</span></span></div>`;
+  const m = S.marks[last.n] || {};
+  let title = esc(last.name), line;
+  if (S.tripKind === 'repeat') line = `Again · ${m.count} times`;
+  else if (S.away.length > 1) { title = `${S.away.length} tested while you were away`; line = esc(S.away.join(', ')); }
+  else if (S.away.length === 1) line = 'Tested while you were away';
+  else line = `Tested · ${tm(m.at)}`;
+  const before = S.order.filter(n => n !== last.n && !S.away.includes(byN(n)?.name)).slice(-2).reverse().map(n => byN(n)?.name).filter(Boolean);
+  return `<div class="wt-last"><span class="wt-chip">${icon('check')}</span>
+    <span class="main"><strong>${title}</strong><span>${line}</span>${before.length ? `<span class="before">Before: ${esc(before.join(', '))}</span>` : ''}</span>
+    ${S.away.length > 1 ? '' : signalHtml(last)}</div>`;
+}
+
+function walkRunning(p) {
+  const zs = zonesOf(p), c = counts(p), ending = S.phase === 'ending';
+  const untested = zs.filter(z => !isTested(z));
+  const tested = S.order.map(n => zs.find(z => z.n === n)).filter(Boolean).reverse(); // newest first
+  const shown = S.filter === 'untested' ? untested : S.filter === 'tested' ? tested : zs;
+  const filters = [['untested', `Not tested ${untested.length}`], ['tested', `Tested ${c.tested}`], ['all', `All ${zs.length}`]];
+  const lastName = S.last ? zs.concat(liveOf(p)).find(z => z.n === S.last)?.name : '';
+  const dockTop = offline() ? 'Not connected' : `${S.parts === '2' ? `${esc(PART[p])} · ` : ''}${c.tested} of ${c.total} tested`;
+  const dockLine = offline() ? `Last update ${tm('2:23 PM')} · the panel still beeps`
+    : ending ? `Ends in ${S.minutes} min` : `${lastName ? `${esc(lastName)} · ` : ''}ends in ${S.minutes} min`;
+  return `${offTop()}
+  <section class="card command ${ending ? 'warn' : 'info'}">
+    <div class="command-top"><span class="state-badge">${icon('walk')}</span>
+      <div class="state-words">${partName(p)}<span class="state">Testing zones</span><p>${esc(startedLine())}</p></div>
+      <div class="wt-count"><span class="count">${c.tested}<small>/${c.total}</small></span><span class="summary">tested</span></div></div>
+    <div class="timebar"><progress max="${c.total}" value="${c.tested}" aria-label="Zones tested"></progress>
+      <div class="wt-ends"><span><strong>Ends in ${S.minutes} min</strong> · ${tm('3:14 PM')}</span>${ending ? '' : `<button type="button" class="small" data-act="extend"${dis()}>${icon('plus')}Extend</button>`}</div></div>
+    ${S.panic ? `<div class="notice">${icon('info')}<div><p>Panic and 24-hour zones only beep</p></div></div>` : ''}
+    ${lastStrip(p, zs)}
+    ${ending ? `<div class="choices one wt-wide-only">${choice('fill test', icon('plus'), 'Extend 60 min', '', `data-act="extend"${dis()}`)}</div>` : ''}
+    <div class="choices one wt-wide-only">${choice('neutral', icon('stop'), 'End walk test', '', `data-act="end"${dis()}`)}</div>
+  </section>
+  <section class="section"><div class="section-head"><h2>Zones</h2>
+    <div class="filters" role="group" aria-label="Show">${filters.map(([v, label]) => `<button type="button" data-filter="${v}" aria-pressed="${S.filter === v}">${esc(label)}</button>`).join('')}</div></div>
+    ${shown.length ? zoneList(shown) : `<div class="card"><p class="empty">${S.filter === 'untested' ? 'Every zone is tested.' : 'None yet.'}</p></div>`}</section>
+  ${liveSection(p)}
+  ${phonePills()}
+  <div class="wt-dock${offline() ? ' off' : ending ? ' ending' : ''}"><span class="main"><strong>${dockTop}</strong><span>${dockLine}</span></span>
+    <span class="acts">${ending && !offline() ? `<button type="button" class="small confirm test" data-act="extend">${icon('plus')}Extend</button>` : ''}<button type="button" class="small" data-act="end"${dis()}>${icon('stop')}End</button></span></div>`;
+}
+
+function walkEnded(p) {
+  const zs = zonesOf(p), c = counts(p);
+  const untested = zs.filter(z => !isTested(z)), open = zs.filter(z => S.marks[z.n]?.open), weak = zs.filter(z => isTested(z) && signal(z).cls);
+  const all = untested.length === 0;
+  const group = (title, list, help) => list.length ? `<section class="section"><div class="section-head"><div><h2>${esc(title)} · ${list.length}</h2>${help ? `<p>${esc(help)}</p>` : ''}</div></div>${zoneList(list)}</section>` : '';
+  const how = S.endedBy === 'you' ? `Ended by you · ${tm('2:51 PM')} · 37 min` : `Time ran out · ${tm('3:14 PM')} · 60 min`;
+  return `<section class="card command ${all ? 'good' : 'warn'}">
+    <div class="command-top"><span class="state-badge">${icon(all ? 'check' : 'alert')}</span>
+      <div class="state-words">${partName(p)}<span class="state">${c.tested} of ${c.total} tested</span><p>${esc(how)}</p></div></div>
+    ${all ? '' : `<div class="choices one">${choice('fill test', icon('again'), `Test ${untested.length} again`, 'The siren sounds for 1 s', `data-act="again"${dis()}`)}</div>`}
+    <div class="actions wt-end-acts"><button type="button" data-act="report">${icon('report')}Save report</button><button type="button" data-act="done">Done</button></div>
+  </section>
+  ${group('Still open', open, 'Close before arming')}
+  ${group('Not tested', untested, '')}
+  ${group('Weak signal', weak, 'May drop out: try another spot')}
+  <section class="section"><div class="card"><details class="more"><summary>Tested · ${c.tested}</summary>
+    <ul class="list wt-list">${S.order.map(n => zs.find(z => z.n === n)).filter(Boolean).map(rowHtml).join('')}</ul></details></div></section>`;
+}
+
+function walkPage() {
+  const parts = S.parts === '2' ? [1, 2] : [1];
+  const p = parts.includes(S.part) ? S.part : 1;
+  const c = counts(1);
+  // The partition pills say which one is testing, and how far it is
+  const partPills = parts.length > 1 ? `<div class="filters" role="group" aria-label="Partition">${parts.map(n =>
+    `<button type="button" data-part="${n}" aria-pressed="${n === p}">${esc(PART[n])}${n === 1 && running() ? ` · ${c.tested}/${c.total}` : ''}</button>`).join('')}</div>` : '';
+  // Only the first partition runs the test in this mockup; the second is ready.
+  const phase = p === 1 ? S.phase : 'ready';
+  if (!canWalk()) return `<div class="page-head"><div><h1>Walk test</h1></div></div>
+    <div class="notice">${icon('info')}<div><strong>Mockup note: a standard user has no Walk test page</strong>
+    <p>It isn't in their menu and the panel refuses it. They see a running test on the Overview, with End.</p></div></div>`;
+  const body = phase === 'ready' ? walkReady(p) : phase === 'ended' ? walkEnded(p) : walkRunning(p);
+  return `<div class="wt-page"><div class="page-head"><div><h1>Walk test</h1><p>Trip each sensor once. The panel keeps the list.</p></div></div>
+    ${partPills}${body}</div>`;
+}
+
+// A row's details
+function dialogHtml() {
+  const z = zonesOf(1).concat(liveOf(1), ZONES[2]).find(x => x.n === S.detail);
+  if (!z) return '';
+  const m = S.marks[z.n] || {}, sg = signal(z), word = zoneState(z)[1];
+  const heard = !m.nocontact;
+  const margin = z.src === 'wired' || !heard ? '' : ` · ${z.dbm} dBm, ${z.dbm - z.floor} dB over the noise`;
+  const fact = (k, v) => `<div><dt>${esc(k)}</dt><dd>${v}</dd></div>`;
+  const walkWords = m.at ? `${word} · ${tm(m.at)}${m.count > 1 ? ` · ${m.count} times` : ''}${m.cover ? ' · cover too' : ''}` : word;
+  return `<div class="dialog-head"><h2 id="wt-dialog-title">${esc(z.name)}</h2><p>Zone ${z.n} · ${esc(KIND_WORD[z.kind])} · ${esc(SRC_WORD[z.src])}</p></div>
+    <div class="dialog-body"><dl class="wt-facts">
+      ${fact('Walk test', esc(walkWords))}
+      ${fact('Signal', heard ? `${barsHtml(sg)}<span>${esc(sg.word + margin)}</span>` : 'Not heard since 1:40 PM')}
+      ${fact('Battery', z.src === 'wired' ? 'None (wired)' : z.bat === 'low' ? '<span class="warnword">Low battery</span>' : 'Good')}
+    </dl>
+    <p class="summary">${z.src === 'wired' ? '' : 'Weak: under 12 dB over the noise, it may drop out. Too weak: under 6 dB.'}</p></div>
+    <div class="dialog-foot"><button type="button" data-confirm="close" autofocus>Close</button></div>`;
+}
+
+function overviewCard(p) {
+  const phase = p === 1 ? S.phase : 'ready';
+  if (phase === 'running' || phase === 'ending') {
+    const c = counts(p), tone = phase === 'ending' ? 'warn' : 'info';
+    // Someone who may not follow the test sees who is testing and End (asked first), not the count
+    if (!canWalk()) return `<section class="card command ${tone}">
+      <div class="command-top"><span class="state-badge">${icon('walk')}</span>
+        <div class="state-words">${partName(p)}<span class="state">Walk test</span><p>${S.origin === 'phone' ? 'The installer is testing the zones' : 'Alex is testing the zones'}</p></div></div>
+      <p class="summary">Arming waits until the test ends · ends in ${S.minutes} min</p>
+      <div class="choices one">${choice('neutral', icon('stop'), 'End walk test', '', 'data-act="end"')}</div></section>`;
+    return `<section class="card command ${tone}">
+      <div class="command-top"><span class="state-badge">${icon('walk')}</span>
+        <div class="state-words">${partName(p)}<span class="state">Walk test</span><p>${esc(S.origin === 'phone' ? (S.role === 'installer' ? `Started on a phone by you · ${tm('2:14 PM')}` : `Started on a phone by the installer · ${tm('2:14 PM')}`) : `Started at the panel by Alex · ${tm('2:14 PM')}`)}</p></div>
+        <div class="wt-count"><span class="count">${c.tested}<small>/${c.total}</small></span><span class="summary">tested</span></div></div>
+      <div class="timebar"><progress max="${c.total}" value="${c.tested}" aria-label="Zones tested"></progress></div>
+      <p class="summary">Arming waits for the test · ends in ${S.minutes} min</p>
+      <div class="choices one">${choice('fill test', icon('walk'), 'Open walk test', '', 'data-go="walk"')}</div></section>`;
+  }
+  return `<section class="card command good">
+    <div class="command-top"><span class="state-badge">${icon('shieldCheck')}</span>
+      <div class="state-words">${partName(p)}<span class="state">Ready to arm</span><p>All zones closed</p></div></div>
+    <div class="choices">${choice('away', icon('away'), 'Away', 'Everyone is leaving')}${choice('stay', icon('house'), 'Stay', 'Someone is home')}${choice('night', icon('moon'), 'Night', 'Going to bed')}</div></section>`;
+}
+function overviewPage() {
+  const parts = S.parts === '2' ? [1, 2] : [1];
+  const tiles = [['Zones', icon('grid'), running() ? 'warn' : 'good', running() ? '1 zone open' : 'All closed', running() ? 'Kitchen window' : '14 zones'],
+    ['Troubles', icon('alert'), 'warn', '1 trouble', 'Gate · No contact'], ['Power', icon('batFull'), 'good', 'Plugged in', 'Battery full'],
+    ['Connection', icon('wifi'), 'good', 'Online', 'Harbor House']];
+  const events = running() || S.phase === 'ended' ? [
+    ['walk', 'Walk test · Alex’s keyfob', 'Home', '2:22 PM'], ['walk', 'Walk test · Hallway motion', 'Home', '2:20 PM'],
+    ['walk', 'Walk test · Kitchen window', 'Home', '2:19 PM'], ['walk', 'Walk test started', `Home · ${S.origin === 'phone' ? 'Installer, Panel Manager' : 'Alex, at the panel'}`, '2:14 PM'],
+    ['house', 'Disarmed', 'Home · Alex', '1:58 PM']] : [['house', 'Disarmed', 'Home · Alex', '1:58 PM'], ['away', 'Armed Away', 'Home · Alex', '8:02 AM']];
+  return `<div class="page-head"><div><h1>Overview</h1><p>Wednesday 2:23 PM</p></div></div>
+    <div class="grid${parts.length > 1 ? ' two' : ''}">${parts.map(overviewCard).join('')}</div>
+    <div class="grid four" style="margin-top:16px">${tiles.map(([label, glyph, kind, value, detail]) => `<a class="card tile ${kind}" href="#">
+      ${icon('chev', 'go-to')}<span class="tile-label">${glyph}${esc(label)}</span><span class="tile-value">${esc(value)}</span><span class="tile-detail">${esc(detail)}</span></a>`).join('')}</div>
+    <section class="section"><div class="section-head"><h2>Recent activity</h2><a href="#">All activity</a></div>
+    <div class="card"><ul class="list">${events.map(([ic, title, line, at]) => `<li>${icon(ic)}<span class="main"><strong>${esc(title)}</strong><span>${esc(line)}</span></span><span class="side">${esc(at)}</span></li>`).join('')}</ul></div></section>`;
+}
+
+function navHtml() {
+  const c = counts(1);
+  // As panel-pages.js's PAGES and their access levels (panel_web.c): users, system, shared, installer
+  const inst = S.role === 'installer', shared = canWalk();
+  const walk = shared ? [['walk', 'walk', 'Walk test', running() ? `<span class="badge info">${c.tested}/${c.total}</span>` : '']] : [];
+  const groups = [
+    ['', [['overview', 'home', 'Overview'], ['keypad', 'monitor', 'Remote keypad'], ['activity', 'activity', 'Activity'], ['zones', 'grid', 'Zones'],
+      ['troubles', 'alert', 'Troubles', '<span class="badge">1</span>']]],
+    ['Household', shared ? [['people', 'users', 'People and codes'], ['integrations', 'plug', 'Integrations']] : []],
+    ['Panel settings', [['display', 'sun', 'Display and sound'], ...(shared ? [['network', 'wifi', 'Network']] : []), ['time', 'clock', 'Date and time'], ['storage', 'drive', 'Storage']]],
+    ['Installer', inst ? [['sensors', 'radio', 'Sensor sources'], ['partitions', 'layers', 'Partitions and devices'], ['options', 'sliders', 'System options'], ['access', 'key', 'Access and maintenance']] : []],
+    ['System', [...walk, ['health', 'heart', 'System health'], ['updates', 'download', 'Software updates']]],
+  ];
+  return groups.filter(([, items]) => items.length).map(([g, items]) => (g ? `<div class="nav-group">${esc(g)}</div>` : '') + items.map(([id, ic, title, extra = '']) =>
+    `<a href="#" data-nav="${id}"${id === S.page ? ' aria-current="page"' : ''}>${icon(ic)}<span>${esc(title)}</span>${extra}</a>`).join('')).join('');
+}
+
+let seenScroll = 0;
+function render() {
+  document.documentElement.dataset.theme = S.theme;
+  document.body.classList.toggle('menu-open', !!S.menu);
+  $('#scrim').hidden = !S.menu;
+  $('#menu').innerHTML = icon('menu');
+  $('#nav').innerHTML = navHtml();
+  $('#account-name').textContent = `${person()} · ${({installer: 'installer', master: 'system master', standard: 'standard user'})[S.role]}`;
+  $('#crumb').textContent = S.page === 'walk' ? 'Walk test' : 'Overview';
+  const conn = $('#connection');
+  conn.classList.toggle('offline', S.online === '0');
+  conn.innerHTML = `<span>${S.online === '0' ? 'Not connected' : 'Connected'}</span>`;
+  $('#main').innerHTML = S.page === 'walk' ? walkPage() : overviewPage();
+  // The dialog opens where the page is seen: in the phone frame, not in the window behind it
+  const dlg = $('#wt-dialog'), here = framed || S.frame !== 'phone';
+  if (S.confirm && here) { dlg.innerHTML = dialogHtml(); if (!dlg.open) dlg.showModal(); dlg.querySelector('[autofocus]')?.focus(); }
+  else if (dlg.open) dlg.close();
+  // A new stage opens at its top (the summary's headline, not the middle of the list)
+  if (S.scroll !== seenScroll) { seenScroll = S.scroll; window.scrollTo(0, 0); }
+  if (!framed) {
+    for (const g of document.querySelectorAll('.mock-bar [data-set]'))
+      for (const b of g.querySelectorAll('button')) b.setAttribute('aria-pressed', String(String(S[g.dataset.set]) === b.dataset.v));
+    $('#trip').disabled = $('#again').disabled = !running();
+    document.body.classList.toggle('phone-mode', S.frame === 'phone');
+    $('#phone-stage').hidden = S.frame !== 'phone';
+    const f = $('#phone');
+    if (S.frame === 'phone' && !f.src) f.src = location.href.split('#')[0] + '#frame';
+    if (S.frame === 'phone' && f.contentWindow) f.contentWindow.postMessage({mock: 'state', S}, '*');
+  }
+}
+
+// ---- The phone's own feedback (WALK-014, WALK-015): played where the click was, outside the frame ----
+let audio = null, speaking = 0, waiting = 0;
+function beep(repeat) {
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = audio.currentTime + 0.02;
+    const steps = repeat ? [[0, 0.04]] : [[0, 0.07], [0.13, 0.07], [0.26, 0.07]]; // the panel's: 1760 Hz, 70 on / 60 off, x3
+    for (const [at, len] of steps) {
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = 1760; g.gain.value = 0.12;
+      o.connect(g).connect(audio.destination); o.start(t0 + at); o.stop(t0 + at + len);
+    }
+  } catch { /* no audio here */ }
+}
+function say(text) {
+  if (!('speechSynthesis' in window)) return;
+  if (speaking) { waiting++; return; } // at most one name waits; more become a count
+  const u = new SpeechSynthesisUtterance(text);
+  speaking = 1;
+  u.onend = u.onerror = () => {
+    speaking = 0;
+    if (waiting) { const n = waiting; waiting = 0; say(n === 1 ? '1 more zone tested' : `${n} more zones tested`); }
+  };
+  speechSynthesis.speak(u);
+}
+function feedback(z, repeat) {
+  if (S.online === '0') return; // the phone hears nothing until it is back
+  if (!repeat) { const c = counts(1); $('#wt-say').textContent = `${z.name} tested. ${c.tested} of ${c.total}.`; }
+  if (S.fb.beep) beep(repeat);
+  // Browsers allow sound and vibration only after a tap on the page: the real page's Start (or a tap) unlocks them
+  if (S.fb.vibrate && !iphone() && navigator.vibrate) navigator.vibrate(repeat ? 30 : [70, 60, 70, 60, 70]);
+  if (S.fb.names && !repeat) say(z.name);
+}
+// "Test sound": the beeps, a buzz and a spoken line now, so a muted phone is found before the walk
+function trySound() {
+  beep(false);
+  if (!iphone() && navigator.vibrate) navigator.vibrate([70, 60, 70, 60, 70]);
+  say('Sound check');
+}
+
+// ---- Actions: applied here, or sent to the window around the frame ----
+function endTest() {
+  const c = counts(1);
+  S.phase = 'ended'; S.endedBy = 'you'; S.fresh = []; S.away = []; S.confirm = null; S.scroll++;
+  if (S.fb.names) say(`Walk test ended. ${c.tested} of ${c.total} tested.`);
+}
+function apply(a) {
+  if (a.set) {
+    S[a.set] = a.v;
+    if (a.set === 'phase') { preset(a.v); S.scroll++; }
+    if (a.set === 'online' && a.v === '1') {
+      const got = Object.keys(S.held).map(Number);
+      Object.assign(S.marks, S.held);
+      for (const [n, k] of Object.entries(S.bumps)) if (S.marks[n]) S.marks[n].count += k;
+      if (got.length) {
+        const names = got.map(n => zonesOf(1).concat(liveOf(1)).find(z => z.n === n)?.name).filter(Boolean);
+        S.order.push(...got); S.fresh = got; S.last = got[got.length - 1]; S.tripKind = 'away'; S.away = names;
+        if (S.fb.names) say(names.length <= 3 ? `Tested while you were away: ${names.join(', ')}` : `${names.length} zones tested while you were away`);
+      }
+      S.held = {}; S.bumps = {};
+    }
+    if (a.set === 'parts' && a.v === '1') S.part = 1;
+  } else if (a.act === 'start') {
+    const panic = S.panic;
+    preset('ready');
+    S.panic = panic; S.phase = 'running'; S.marks = {11: {nocontact: true}}; S.order = []; S.last = 0; S.fresh = [];
+    S.minutes = 60; S.lastTest = null; S.scroll++;
+  }
+  else if (a.act === 'end') endTest();
+  else if (a.act === 'extend') { S.phase = 'running'; S.minutes = 60; }
+  else if (a.act === 'again') { S.phase = 'running'; S.minutes = 60; S.filter = 'untested'; S.scroll++; }
+  else if (a.act === 'done') {
+    const c = counts(1);
+    S.lastTest = {tested: c.tested, total: c.total, time: S.endedBy === 'you' ? '2:51 PM' : '3:14 PM', by: S.endedBy, marks: S.marks, order: S.order};
+    S.phase = 'ready'; preset('ready'); S.scroll++;
+  }
+  else if (a.act === 'view') {
+    const t = S.lastTest; S.phase = 'ended'; preset('ended');
+    if (t) { S.marks = t.marks; S.order = t.order; S.endedBy = t.by; }
+    S.scroll++;
+  }
+  else if (a.act === 'report') toast('Opens the share sheet: email, print or save. The date, the panel, who tested, and every zone with its result and signal.');
+  else if (a.act === 'try') trySound();
+  else if (a.detail) { S.detail = a.detail; S.confirm = 'zone'; }
+  else if (a.confirm !== undefined) S.confirm = a.confirm;
+  else if (a.fb) S.fb[a.fb] = !S.fb[a.fb];
+  else if (a.filter) S.filter = a.filter;
+  else if (a.part) { S.part = Number(a.part); S.panic = false; }
+  else if (a.panic !== undefined) S.panic = a.panic;
+  else if (a.go) { S.page = a.go; S.menu = false; }
+  else if (a.nav) { if (a.nav === 'walk' || a.nav === 'overview') S.page = a.nav; else toast('Not part of this mockup.'); S.menu = false; }
+  else if (a.menu !== undefined) S.menu = a.menu;
+  else if (a.trip) {
+    const zs = zonesOf(1).concat(liveOf(1));
+    let z;
+    const off = S.online === '0';
+    if (a.trip === 'again' && S.last) {
+      z = zs.find(x => x.n === S.last); S.tripKind = 'repeat'; S.away = [];
+      if (off) S.bumps[z.n] = (S.bumps[z.n] || 0) + 1; else S.marks[z.n].count++;
+    } else {
+      z = TRIP_ORDER.map(n => zs.find(x => x.n === n)).find(x => x && !S.marks[x.n]?.at && !S.held[x.n] && !S.marks[x.n]?.nocontact);
+      if (!z) { toast('Every zone that can be tested is tested.'); render(); return; }
+      const mark = {at: TIMES[(S.order.length + Object.keys(S.held).length) % TIMES.length], count: 1};
+      if (off) S.held[z.n] = mark;
+      else { S.marks[z.n] = mark; S.order.push(z.n); S.fresh = [z.n]; S.last = z.n; S.tripKind = 'first'; S.away = []; }
+    }
+    feedback(z, a.trip === 'again');
+  }
+  render();
+}
+const dispatch = a => framed ? parent.postMessage({mock: 'act', a}, '*') : apply(a);
+let toastTimer = 0;
+function toast(text) {
+  const t = $('#toast'); t.textContent = text; t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
+}
+
+window.addEventListener('message', e => {
+  const m = e.data || {};
+  if (framed && m.mock === 'state') { S = m.S; render(); }
+  if (!framed && m.mock === 'act') apply(m.a);
+});
+document.addEventListener('click', e => {
+  const el = e.target.closest('button, a, input');
+  if (!el) return;
+  if (el.closest('.mock-bar')) {
+    const g = el.closest('[data-set]');
+    if (g && el.dataset.v !== undefined) return apply({set: g.dataset.set, v: el.dataset.v});
+    if (el.id === 'trip') return apply({trip: 'next'});
+    if (el.id === 'again') return apply({trip: 'again'});
+    if (el.id === 'notes-toggle') { const n = $('#notes'); n.hidden = !n.hidden; el.setAttribute('aria-expanded', String(!n.hidden)); }
+    return;
+  }
+  if (el.matches('[data-panic]')) return dispatch({panic: el.checked});
+  if (el.tagName === 'A') e.preventDefault();
+  const d = el.dataset;
+  if (d.act) dispatch({act: d.act});
+  else if (d.fb) dispatch({fb: d.fb});
+  else if (d.filter) dispatch({filter: d.filter});
+  else if (d.part) dispatch({part: d.part});
+  else if (d.go) dispatch({go: d.go});
+  else if (d.nav) dispatch({nav: d.nav});
+  else if (d.zone) dispatch({detail: Number(d.zone)});
+  else if (d.confirm) dispatch({confirm: null});
+  else if (el.id === 'menu') dispatch({menu: !S.menu});
+});
+$('#scrim').addEventListener('click', () => dispatch({menu: false}));
+$('#wt-dialog').addEventListener('close', () => { if (S.confirm) dispatch({confirm: null}); }); // Esc
+$('#phone').addEventListener('load', () => render());
+
+// A state can be linked: ?page=overview&phase=ended&role=standard&theme=light&device=iphone (the bar's names)
+const ask = new URLSearchParams(location.search);
+for (const k of ['page', 'phase', 'online', 'origin', 'role', 'parts', 'theme', 'frame', 'device']) if (ask.has(k)) S[k] = ask.get(k);
+if (ask.has('h')) $('#phone').style.height = `${Number(ask.get('h'))}px`; // a taller phone frame, for a whole-page picture
+preset(S.phase);
+if (ask.has('zone')) { S.detail = Number(ask.get('zone')); S.confirm = 'zone'; } // ?zone=10 opens that row's details
+render();
+</script>
+</body>
+</html>

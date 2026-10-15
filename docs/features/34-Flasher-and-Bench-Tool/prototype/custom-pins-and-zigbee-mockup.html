@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Custom Pins and Zigbee Radio</title>
+<meta name="description" content="Proposal for docs/features/34: a Custom pins tab in Advanced tools > Hardware for a person's own plug-in board, and installing the Zigbee module's radio software from the Flasher. Nothing here talks to a board.">
+<link rel="icon" href="../../../../tools/flasher/roboflash/web/logo.png">
+<!-- The Flasher's own stylesheet, so the mockup looks as the app does and follows it. -->
+<link rel="stylesheet" href="../../../../tools/flasher/roboflash/web/app.css">
+<!-- Mockup for docs/features/34: custom pins (FLS-029) and the Zigbee radio's software (FLS-030),
+     drawn from the plan in custom-pins-and-zigbee-radio-plan.local.md (git-ignored). One file
+     with the app's CSS linked; page markup copied from what web/app.js renders today, new pieces
+     built from the same classes. Pins are the CrowPanel 7" V1.1's from roboflash/boards.json. No
+     motion (FLS-017). Purple is the mockup's own: its bar, its notes and the outline marking what
+     is new, never the app. -->
+<style>
+/* the system theme too (app.css follows only data-theme, which theme.js always sets in the app) */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111719; --surface: #172023; --surface-raised: #1c282b; --soft: #151d20; --ink: #f3f7f6;
+    --muted: #a5b5b8; --faint: #7d8f93; --line: #2a373b; --line-strong: #3a4b50; --accent: #94eff0;
+    --accent-strong: #17bec2; --accent-bg: #17393b; --button-ink: #093335; --amber: #f0cf8f;
+    --amber-bg: #2c2517; --red: #ff8a80; --red-bg: #3a1d1b; --red-ink: #2a0d0b; --pcb: #2f7a52;
+    --pad: #d8b440; --wire-vcc: #ff7a45; --wire-gnd: #c3d1d4; --wire-data: #5aa2ff;
+    --wire-sig: #b69cff; --wire-y: #ffd43b; --wire-g: #69db7c; --wire-p: #f783ac;
+  }
+}
+/* the mockup's own colours */
+:root { --mk: #6d4fc7; --mk-bar: #2e2750; --mk-bar-ink: #ece9fb; --mk-bar-soft: #a99ee0; --mk-bar-line: #5b4f96; --mk-tint: rgb(109 79 199 / 7%); }
+:root[data-theme="dark"] { --mk: #b9a6ff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --mk: #b9a6ff; } }
+
+.mk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 8px 20px; background: var(--mk-bar); color: var(--mk-bar-ink); font-size: 12.5px; }
+.mk-bar > b { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #c9bfff; }
+.mk-group { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.mk-group > span { color: var(--mk-bar-soft); margin-right: 4px; }
+.mk-bar button { font: inherit; font-size: 12.5px; color: var(--mk-bar-ink); background: transparent; border: 1px solid var(--mk-bar-line); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+.mk-bar button:hover { border-color: #c9bfff; }
+.mk-bar button[aria-pressed=true] { background: var(--mk-bar-ink); color: var(--mk-bar); border-color: var(--mk-bar-ink); font-weight: 600; }
+.mk-states { flex-basis: 100%; }
+.mk-note { border: 1.5px dashed var(--mk); background: var(--mk-tint); border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5; color: var(--ink); }
+.mk-note::before { content: "Mockup note"; display: block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--mk); margin-bottom: 2px; }
+.mk-note b { color: var(--ink); }
+body.no-notes .mk-note { display: none; }
+.mk-new { outline: 2px dashed var(--mk); outline-offset: 4px; border-radius: 8px; }
+body.no-changes .mk-new { outline: 0; }
+
+/* proposed for app.css: the Hardware tabs, the custom pin tables, the J7 summary */
+.tabs { align-self: flex-start; }
+.tablewrap { overflow-x: auto; }
+table.wires.pins td:first-child { font-weight: 650; white-space: nowrap; }
+table.wires.pins td.dir { color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+table.wires.pins td.what { color: var(--muted); font-size: 12.5px; }
+table.wires.pins tr.fixed td { color: var(--muted); }
+table.wires.pins tr.fixed td:first-child { font-weight: 500; }
+table.wires.pins select.select { min-width: 200px; }
+.j7map { display: grid; grid-template-columns: repeat(12, minmax(52px, 1fr)); gap: 4px; min-width: 640px; }
+.j7cell { border: 1px solid var(--line-strong); border-radius: 6px; padding: 5px 4px; text-align: center; background: var(--surface); font-family: var(--mono); font-size: 12px; line-height: 1.25; }
+.j7cell small { display: block; font-family: var(--font); font-size: 11px; color: var(--muted); min-height: 14px; overflow-wrap: anywhere; }
+.j7cell.p5 { background: var(--amber-bg); color: var(--amber); font-weight: 700; }
+.j7cell.p3 { background: var(--accent-bg); color: var(--accent); font-weight: 700; }
+.j7cell.gnd { background: var(--surface-raised); }
+.j7cell.off { opacity: .45; }
+.j7cell.used { border: 2px solid var(--accent); font-weight: 700; }
+.j7cell.used small { color: var(--accent); font-weight: 600; }
+.j7cell.zone { border-style: dashed; }
+.j7cell { position: relative; }
+.j7wrap { padding: 8px 2px 2px 6px; }
+.j7cell .num-badge { position: absolute; top: -7px; left: -5px; min-width: 16px; height: 16px; font-size: 10px; margin: 0; }
+.why-inline { font-size: 13px; color: var(--red); }
+.card > h2 + p, .card > h2 + .need { margin-top: 6px; }
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.radio-art { max-width: 460px; }
+
+/* phone width: the real app is a desktop window; the mockup still reads on a phone */
+@media (max-width: 700px) {
+  .appbar { flex-wrap: wrap; padding: 8px 16px; min-height: 0; }
+  .shell { flex-direction: column; }
+  .rail { display: none; }
+  .page { padding: 20px 16px; }
+  .actions { padding: 12px 16px; flex-wrap: wrap; }
+  .mk-bar { padding: 8px 16px; }
+  .part-head, .test-head { grid-template-columns: 44px 1fr; }
+  .part-head > :last-child, .test-head > :last-child { grid-column: 1 / -1; }
+  .choices, .subpick .choices { grid-template-columns: 1fr; }
+  .list-row { grid-template-columns: 34px 1fr; }
+  .list-row .row-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  dl.facts { grid-template-columns: 1fr; }
+  h1 { font-size: 25px; }
+}
+</style>
+</head>
+<body>
+<div class="mk-bar" id="mk-bar" role="toolbar" aria-label="Mockup controls"></div>
+<header class="appbar">
+  <div class="wordmark"><img src="../../../../tools/flasher/roboflash/web/logo.png" alt=""><b>RoboAlarms</b><span>Flasher</span></div>
+  <div class="seg" role="group" aria-label="Mode">
+    <button id="mode-guided" type="button" data-mk="mode" data-v="guided">Guided setup</button>
+    <button id="mode-tools" type="button" data-mk="mode" data-v="tools">Advanced tools</button>
+  </div>
+  <button class="icon-btn" id="theme-toggle" type="button" aria-label="Switch theme" title="Switch theme"></button>
+</header>
+<div id="app" class="shell"></div>
+<div class="modal-wrap" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h2 id="modal-title">Apply these pins and restart the panel?</h2>
+    <div id="modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn" type="button" id="modal-cancel">Cancel</button>
+      <button class="btn primary" type="button" id="modal-ok">Apply and restart</button>
+    </div>
+  </div>
+</div>
+<script>
+'use strict';
+/* ---- helpers, as web/app.js has them ---------------------------------------------------------- */
+function h(tag, attrs, ...kids) { const el = document.createElement(tag); setAttrs(el, attrs); append(el, kids); return el; }
+const SVGNS = 'http://www.w3.org/2000/svg';
+function s(tag, attrs, ...kids) { const el = document.createElementNS(SVGNS, tag); setAttrs(el, attrs); append(el, kids); return el; }
+function setAttrs(el, attrs) {
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'text') el.textContent = v;
+    else if (v === true) el.setAttribute(k, '');
+    else el.setAttribute(k, String(v));
+  }
+}
+function append(el, kids) {
+  for (const kid of kids.flat(3)) {
+    if (kid === null || kid === undefined || kid === false || kid === '') continue;
+    el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+}
+const $ = (id) => document.getElementById(id);
+const clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
+
+/* Lucide icons (ISC licence), the app's set */
+const ICONS = {
+  usb: '<circle cx="10" cy="7" r="1"/><circle cx="4" cy="20" r="1"/><path d="M4.7 19.3 19 5"/><path d="m21 3-3 1 2 2Z"/><path d="M9.26 7.68 5 12l2 5"/><path d="m10 14 5 2 3.5-3.5"/><path d="m18 12 1-1 1 1-1 1Z"/>',
+  cpu: '<path d="M12 20v2"/><path d="M12 2v2"/><path d="M17 20v2"/><path d="M17 2v2"/><path d="M2 12h2"/><path d="M2 17h2"/><path d="M2 7h2"/><path d="M20 12h2"/><path d="M20 17h2"/><path d="M20 7h2"/><path d="M7 20v2"/><path d="M7 2v2"/><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="8" y="8" width="8" height="8" rx="1"/>',
+  radio: '<path d="M16.247 7.761a6 6 0 0 1 0 8.478"/><path d="M19.075 4.933a10 10 0 0 1 0 14.134"/><path d="M4.925 19.067a10 10 0 0 1 0-14.134"/><path d="M7.753 16.239a6 6 0 0 1 0-8.478"/><circle cx="12" cy="12" r="2"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6h4"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  circleCheck: '<circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/>',
+  triangle: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  sliders: '<path d="M14 17H5"/><path d="M19 7h-9"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  terminal: '<path d="M12 19h8"/><path d="m4 17 6-6-6-6"/>',
+  download: '<path d="M12 2v8"/><path d="m16 6-4 4-4-4"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 18h.01"/><path d="M10 18h.01"/>',
+  plug: '<path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  folder: '<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/>',
+  siren: '<path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/><path d="M21 12h1"/><path d="M18.5 4.5 18 5"/><path d="M2 12h1"/><path d="M12 2v1"/><path d="m4.929 4.929.707.707"/><path d="M12 12v6"/>',
+  right: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  left: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/>',
+  archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  tower: '<path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9"/><path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5"/><circle cx="12" cy="9" r="2"/><path d="M16.2 4.8c2 2 2.26 5.11.8 7.47"/><path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1"/><path d="M9.5 18h5"/><path d="m8 22 4-11 4 11"/>',
+  undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/>',
+  power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+};
+function icon(name) {
+  const t = document.createElement('template');
+  t.innerHTML = `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+  return t.content.firstChild;
+}
+const note = (kind, ic, lead, text) => h('div', { class: 'note ' + kind }, icon(ic), h('div', {}, lead ? h('b', { text: lead + ' ' }) : null, text));
+const mk = (...kids) => h('div', { class: 'mk-note' }, ...kids);
+const chip = (kind, ic, text) => h('span', { class: 'chip ' + kind }, ic ? icon(ic) : null, text);
+
+/* ---- the board: the CrowPanel 7" V1.1 (boards.json) ------------------------------------------- */
+const J7 = [['5V', '5V', '5V', 'GND', 'GND', 'IO52', 'IO51', 'IO50', 'IO49', 'IO28', 'GND', 'GND'],
+  ['3V3', '3V3', '3V3', 'GND', 'IO2', 'IO3', 'IO4', 'IO5', 'IO25', 'IO27', 'GND', 'GND']];
+const REACH = [2, 3, 4, 5, 27, 28, 49, 50, 51, 52];      // J7's IO pins a custom board may use (25 is USB)
+const TERMINALS = [2, 3, 4, 5, 49, 50, 51, 52];          // the wired-zone terminals among them
+// Zones wired to a terminal today (the panel's `terminals`), an example. The hardware layout
+// overrides them: they are never offered or refused in the pin lists, only named in the
+// confirmation, because a zone whose terminal is taken shows Check after the restart (ZSRC-010).
+const ZONES = { 4: { n: 3, name: 'Back door' } };
+
+const MODS = {
+  cc1101: { name: 'CC1101 board', short: 'CC1101', icon: 'radio', signals: [
+    { k: 'mosi', pin: 'SI (MOSI)', dir: 'Panel → CC1101', what: 'Data into the CC1101' },
+    { k: 'miso', pin: 'SO (MISO)', dir: 'CC1101 → panel', what: 'Data out of the CC1101' },
+    { k: 'sck', pin: 'SCLK', dir: 'Panel → CC1101', what: 'The clock the panel sends' },
+    { k: 'cs', pin: 'CSn', dir: 'Panel → CC1101', what: 'Selects the CC1101' },
+    { k: 'gdo0', pin: 'GDO0', dir: 'CC1101 → panel', what: 'What it hears' }],
+    fixed: [['GDO2', 'Not connected'], ['VCC', 'Any 3V3 pin, never 5V. It may share one with other modules.'], ['GND', 'Any GND pin. It may share one too.']] },
+  module: { name: 'Receiver module', short: 'Receiver', icon: 'radio', signals: [
+    { k: 'data', pin: 'DATA', dir: 'Receiver → panel', what: 'What it hears' }],
+    fixed: [['VCC', 'Any 3V3 pin, never 5V: DATA would carry 5 V into the panel.'], ['GND', 'Any GND pin. It may share one with other modules.']] },
+  zwave: { name: 'Z-Wave radio (ZAC93)', short: 'Z-Wave', icon: 'radio', signals: [
+    { k: 'rx', pin: 'RX (position 8)', dir: 'Panel → radio', what: 'Takes what the panel sends' },
+    { k: 'tx', pin: 'TX (position 10)', dir: 'Radio → panel', what: 'What the radio sends' },
+    { k: 'reset', pin: 'RESET (position 7)', dir: 'Panel → radio', what: 'Optional: lets the panel restart the radio. Boards etched Version 2.0.', optional: true }],
+    fixed: [['Position 1 (VCC)', 'Any 3V3 pin, never 5V.'], ['Position 6 (GND)', 'Any GND pin.'], ['Positions 2 and 4', 'Not connected: 5 V on a Raspberry Pi.']] },
+  clock: { name: 'Battery-backed clock (DS3231)', short: 'Clock', icon: 'clock', signals: [
+    { k: 'sda', pin: 'SDA', dir: 'Both ways', what: 'Data' },
+    { k: 'scl', pin: 'SCL', dir: 'Panel → clock', what: 'The clock the panel sends' }],
+    fixed: [['SQW, 32K', 'Not connected'], ['VCC', 'Any 3V3 pin, never 5V.'], ['GND', 'Any GND pin.']] },
+};
+
+/* ---- the mockup's state ------------------------------------------------------------------------ */
+// A pin is null (not chosen yet), 'nc' (not connected: optional pins only) or a GPIO number.
+const BLANK_PINS = () => ({ cc1101: { mosi: null, miso: null, sck: null, cs: null, gdo0: null }, module: { data: null },
+  zwave: { rx: null, tx: null, reset: null }, clock: { sda: null, scl: null } });
+// what a panel that already has custom pins reports, an example
+const PANEL_PINS = () => ({ cc1101: { mosi: 51, miso: 50, sck: 52, cs: 49, gdo0: 5 }, module: { data: null },
+  zwave: { rx: 27, tx: 28, reset: 'nc' }, clock: { sda: 2, scl: 3 } });
+const copyPins = (p) => JSON.parse(JSON.stringify(p));
+const M = {
+  mode: 'tools', screen: 'custom', notes: true, changes: true,
+  custom: 'first',      // first (suggested places) | fromPanel | newpanel (no RoboAlarms) | oldfw | applied
+  how: 'apply',         // how the pins went on: apply | install | update
+  panel: null,          // the custom layout the panel stores ({pins, clockPlace}), or null
+  cleared: false,       // the pins read from the panel were reset
+  radio: 'found',       // none | seen | found | installing | done | uptodate
+  test: 'working',      // working | notheard
+  parts: 'new',         // new | custom
+  // the parts the panel has now; the pins are this tab's draft, kept while the Flasher is open
+  rf: 'cc1101', zwave: true, clock: true, zigbee: true, clockPlace: null,
+  pins: BLANK_PINS(),
+  ticks: { v11: false, vcc: false },
+  alone: false, keepCopy: false,   // the module's copy: off until ticked
+};
+function setCustom(v) {   // the mockup's State buttons for the Custom pins tab
+  M.custom = v; M.cleared = false;
+  if (v === 'first' || v === 'oldfw' || v === 'newpanel') { M.panel = null; M.pins = BLANK_PINS(); M.clockPlace = null; return; }
+  if (v === 'applied') M.how = 'apply';
+  if (v === 'applied' && !problems().length) { M.panel = { pins: copyPins(M.pins), clockPlace: M.clockPlace }; return; }
+  M.panel = { pins: PANEL_PINS(), clockPlace: 'j7' };
+  M.pins = copyPins(M.panel.pins); M.clockPlace = M.panel.clockPlace;
+}
+const SCREENS = {
+  tools: [['custom', 'Hardware › Custom pins'], ['places', 'Hardware › Suggested places'], ['zbtool', 'Zigbee module'], ['software', 'Software'], ['ports', 'Panels and ports']],
+  guided: [['parts', 'Panel and parts'], ['ready', 'Get ready'], ['zigbee', 'Prepare the Zigbee module'], ['test', 'Test and finish']],
+};
+const STATES = {
+  custom: ['custom', [['first', 'First time (all blank)'], ['fromPanel', 'Read from the panel'], ['newpanel', 'New panel (no RoboAlarms)'], ['oldfw', 'Older RoboAlarms'], ['applied', 'Applied']]],
+  places: ['custom', [['first', 'Panel on suggested places'], ['fromPanel', 'Panel with custom pins'], ['newpanel', 'New panel (no RoboAlarms)']]],
+  zbtool: ['radio', [['none', 'No module'], ['seen', 'Plugged in'], ['found', 'Checked'], ['installing', 'Installing'], ['done', 'Done'], ['uptodate', 'Already has it']]],
+  ports: ['radio', [['none', 'No module'], ['seen', 'Plugged in'], ['found', 'Checked']]],
+  parts: ['parts', [['new', 'New panel'], ['custom', 'Panel with custom pins']]],
+  ready: ['radio', [['none', 'Not done yet'], ['done', 'Done']]],
+  zigbee: ['radio', [['none', 'Plug it in'], ['seen', 'Plugged in'], ['found', 'Checked'], ['installing', 'Installing'], ['done', 'Done'], ['uptodate', 'Already has it']]],
+  test: ['test', [['working', 'Zigbee working'], ['notheard', 'Zigbee not heard']]],
+};
+
+/* ---- the custom layout: who uses which pin ----------------------------------------------------- */
+function active() {
+  const a = [];
+  if (M.rf !== 'none') a.push(M.rf);
+  if (M.zwave) a.push('zwave');
+  if (M.clock && M.clockPlace === 'j7') a.push('clock');
+  return a;
+}
+function badgeNo(mod) {   // the number each module carries on the J7 summary and its card
+  const order = []; if (M.rf !== 'none') order.push(M.rf); if (M.zwave) order.push('zwave'); if (M.clock) order.push('clock');
+  return order.indexOf(mod) + 1;
+}
+function uses() {         // gpio -> [{mod, sig}]
+  const u = {};
+  for (const mod of active()) for (const sg of MODS[mod].signals) {
+    const g = M.pins[mod][sg.k];
+    if (typeof g !== 'number') continue;
+    (u[g] = u[g] || []).push({ mod, sig: sg });
+  }
+  return u;
+}
+function whoElse(g, mod, k) {   // only the modules on this tab: zones never block a pin here
+  const u = (uses()[g] || []).filter((x) => !(x.mod === mod && x.sig.k === k));
+  return u.length ? `used by ${MODS[u[0].mod].short} ${u[0].sig.pin}` : '';
+}
+function problems() {
+  const out = [];
+  let missing = 0;
+  for (const mod of active()) for (const sg of MODS[mod].signals) if (M.pins[mod][sg.k] === null) missing++;
+  if (missing) out.push(`${missing} pin${missing > 1 ? 's' : ''} still to choose.`);
+  if (M.clock && !M.clockPlace) out.push('The clock: choose where it is wired.');
+  for (const [g, list] of Object.entries(uses())) {
+    if (list.length > 1) out.push(`IO${g} is chosen twice: ${list.map((x) => MODS[x.mod].short + ' ' + x.sig.pin).join(' and ')}.`);
+  }
+  return out;
+}
+function zonesMoved() {   // zones wired to a terminal the new layout takes
+  if (M.custom === 'newpanel') return [];   // a new panel has no zones yet
+  const u = uses();
+  return Object.keys(ZONES).filter((g) => u[g]).map((g) => ({ g, ...ZONES[g] }));
+}
+function zonesLeft() { const u = uses(); return TERMINALS.filter((g) => !u[g]); }
+
+/* ---- shell ------------------------------------------------------------------------------------- */
+function railTools(on) {
+  const items = [['ports', 'usb', 'Panels and ports'], ['console', 'terminal', 'Console'], ['hardware', 'wrench', 'Hardware'], ['zigbee', 'tower', 'Zigbee module'], ['backups', 'archive', 'Backups'], ['software', 'download', 'Software'], ['logs', 'folder', 'Logs']];
+  const ver = M.custom === 'oldfw' ? 'RoboAlarms 0.5.9' : M.custom === 'newpanel' ? 'No RoboAlarms yet' : 'RoboAlarms 0.7.0';
+  return h('nav', { class: 'rail', 'aria-label': 'Advanced tools' }, h('p', { class: 'rail-title', text: 'Advanced tools' }),
+    h('div', { class: 'panel-pick' }, h('span', { class: 'icon-tile small' }, icon('cpu')), h('div', {}, h('b', { text: 'CrowPanel 7"' }), h('small', { text: 'COM6 · ' + ver }))),
+    h('ul', { class: 'tool-list' }, items.map(([k, ic, t]) => h('li', {}, h('button', { class: 'tool' + (k === on ? ' on' : '') + (k === 'zigbee' ? ' mk-new' : ''), type: 'button', 'data-mk': 'tool', 'data-v': k, 'aria-current': k === on ? 'page' : null }, icon(ic), t)))),
+    h('div', { class: 'rail-foot' }, h('button', { class: 'link small', type: 'button', 'data-mk': 'mode', 'data-v': 'guided' }, icon('left'), 'Back to guided setup')));
+}
+function railGuided(cur) {
+  const steps = [['Plan', 'Panel and parts', 'CrowPanel 7" · CC1101 · Zigbee · Z-Wave · Clock'], ['Wire', 'Get ready', M.radio === 'done' || M.radio === 'uptodate' ? 'Zigbee module ready' : '0 of 8 ticked'], ['Wire', 'Full wiring', ''], ['Wire', 'Check before power', ''],
+    ['Install', 'Connect', ''], ['Install', 'Check the panel', ''], ['Install', 'Install', ''], ['Install', 'Test and finish', '']];
+  const groups = [];
+  steps.forEach(([g, t, sub], i) => {
+    let grp = groups.find((x) => x.g === g); if (!grp) { grp = { g, items: [] }; groups.push(grp); }
+    const st = i < cur ? 'done' : i === cur ? 'current' : 'todo';
+    grp.items.push(h('li', {}, h(st === 'todo' ? 'div' : 'button', { class: 'step ' + st, type: st === 'todo' ? null : 'button', 'aria-current': st === 'current' ? 'step' : null },
+      h('span', { class: 'num' }, st === 'done' ? icon('check') : String(i + 1)), h('span', {}, h('b', { text: t }), sub && i <= cur ? h('small', { text: sub }) : null))));
+  });
+  return h('nav', { class: 'rail', 'aria-label': 'Setup steps' },
+    groups.map((g) => h('div', { class: 'rail-group' }, h('p', { class: 'rail-title', text: g.g }), h('ol', { class: 'steps' }, g.items))),
+    h('div', { class: 'rail-foot' }, h('div', { class: 'fw' }, icon('download'), h('div', {}, h('b', { text: 'RoboAlarms 0.7.0' }), h('small', { text: 'From roboalarms-0.7.0.roboflash' })))));
+}
+function page(kids, footer) {
+  return h('main', { class: 'content' }, h('div', { class: 'page', id: 'page' }, h('div', { class: 'inner wide' }, kids)), footer || null);
+}
+function footer(...kids) { return h('footer', { class: 'actions' }, kids); }
+
+/* ---- Advanced tools › Hardware ----------------------------------------------------------------- */
+function hwTabs(on) {
+  return h('div', { class: 'seg tabs mk-new', role: 'tablist', 'aria-label': 'How the parts are placed' },
+    h('button', { type: 'button', role: 'tab', 'aria-selected': String(on === 'places'), 'aria-pressed': String(on === 'places'), 'data-mk': 'screen', 'data-v': 'places' }, 'Suggested places'),
+    h('button', { type: 'button', role: 'tab', 'aria-selected': String(on === 'custom'), 'aria-pressed': String(on === 'custom'), 'data-mk': 'screen', 'data-v': 'custom' }, 'Custom pins'));
+}
+function hwHead(on) {
+  return [h('h1', { id: 'page-title', tabindex: -1, text: 'Hardware' }),
+    h('p', { class: 'lead', text: 'What is wired to the panel, and where. Change it here, then apply: the panel stores it and restarts once.' }),
+    hwTabs(on)];
+}
+function pcard(key, on, title, text, ic, sub, extraClass) {
+  return h('div', { class: 'pcard' + (on ? ' on' : '') + (extraClass ? ' ' + extraClass : '') },
+    h('button', { class: 'pcard-head', type: 'button', role: 'checkbox', 'aria-checked': String(on), 'data-mk': 'part', 'data-v': key },
+      h('span', { class: 'tick' }, on ? icon('check') : null), h('span', { class: 'icon-tile' }, icon(ic)), h('span', {}, h('b', { text: title }), h('small', { text: text }))),
+    on && sub ? h('div', { class: 'subpick' }, sub) : null);
+}
+function modulesGrid() {
+  const kinds = [['cc1101', 'CC1101 board', 'Eight pins: VCC, GND, SI, SO, SCLK, CSN, GDO0 and GDO2.'], ['module', 'Receiver module', 'Three pins: VCC, GND and DATA.']];
+  const rfSub = [h('b', { class: 'small', text: 'Which one is on your board?' }),
+    h('div', { class: 'choices', role: 'radiogroup', 'aria-label': '433 MHz radio' }, kinds.map(([k, t, d]) =>
+      h('button', { class: 'choice', type: 'button', role: 'radio', 'aria-checked': String(M.rf === k), 'data-mk': 'rfkind', 'data-v': k }, h('span', { class: 'dot' }), h('b', { text: t }), h('small', { text: d })))),
+    h('p', { class: 'small muted', text: 'One 433 MHz radio at a time: the panel listens with one.' })];
+  return h('div', { class: 'grid2' },
+    pcard('rf', M.rf !== 'none', '433 MHz radio', 'For 433 MHz door, window and motion sensors and key-fob remotes.', 'radio', rfSub, 'wide'),
+    pcard('zwave', M.zwave, 'Z-Wave radio', 'A Zooz ZAC93, for Z-Wave door, window, motion, smoke and water sensors.', 'radio'),
+    pcard('clock', M.clock, 'Battery-backed clock', 'Keeps the date and time through power cuts (DS3231, often sold as ZS-042).', 'clock'),
+    pcard('zigbee', M.zigbee, 'Zigbee module', 'Elecrow\'s ESP32-H2 module. It goes in its own radio socket, not on J7: nothing to choose.', 'tower'));
+}
+function j7Map() {
+  const u = uses();
+  const cell = (lab) => {
+    if (lab === '5V') return h('div', { class: 'j7cell p5' }, '5V', h('small', { text: 'never' }));
+    if (lab === '3V3') return h('div', { class: 'j7cell p3' }, '3V3', h('small', { text: 'power' }));
+    if (lab === 'GND') return h('div', { class: 'j7cell gnd' }, 'GND', h('small', { text: 'ground' }));
+    const g = Number(lab.slice(2));
+    if (g === 25) return h('div', { class: 'j7cell off' }, lab, h('small', { text: 'USB' }));
+    if (u[g]) { const x = u[g][0]; return h('div', { class: 'j7cell used' }, h('span', { class: 'num-badge', text: String(badgeNo(x.mod)) }), lab, h('small', { text: x.sig.pin.replace(/ \(.*\)/, '') })); }
+    return h('div', { class: 'j7cell' }, lab, h('small', { text: 'free' }));
+  };
+  return h('section', { class: 'card stack' }, h('h2', { text: 'J7, as printed on the board' }),
+    h('div', { class: 'tablewrap j7wrap' }, h('div', { class: 'j7map', role: 'img', 'aria-label': 'J7 with the pins your modules use' }, J7.flat().map(cell))),
+    h('p', { class: 'small muted', text: 'The numbers are your modules below. Power and ground aren\'t set here: wire them to any 3V3 and GND pins. Which row is 5V hasn\'t been confirmed on every board: find it with a meter before you wire power.' }));
+}
+function pinTable(mod) {
+  const def = MODS[mod];
+  const row = (sg) => {
+    const cur = M.pins[mod][sg.k];
+    const sel = h('select', { class: 'select', id: `pin-${mod}-${sg.k}`, 'data-mk': 'pin', 'data-mod': mod, 'data-sig': sg.k, 'aria-label': `${def.short} ${sg.pin}: J7 pin` },
+      h('option', { value: '', selected: cur === null, text: 'Choose a pin…' }),
+      sg.optional ? h('option', { value: 'nc', selected: cur === 'nc', text: 'Not connected' }) : null,
+      REACH.map((g) => { const why = whoElse(g, mod, sg.k); return h('option', { value: String(g), disabled: !!why && cur !== g, selected: cur === g, text: why ? `IO${g} · ${why}` : `IO${g}` }); }));
+    return h('tr', {}, h('td', { text: sg.pin }), h('td', { class: 'dir', text: sg.dir }), h('td', {}, sel), h('td', { class: 'what', text: sg.what }));
+  };
+  return h('div', { class: 'tablewrap' }, h('table', { class: 'wires pins' },
+    h('thead', {}, h('tr', {}, h('th', { text: 'On the module' }), h('th', { text: 'Direction' }), h('th', { text: 'On the panel (J7)' }), h('th', { text: '' }))),
+    h('tbody', {}, def.signals.map(row), def.fixed.map(([p, t]) => h('tr', { class: 'fixed' }, h('td', { text: p }), h('td', { class: 'dir', text: '' }), h('td', { colspan: 2, text: t }))))));
+}
+function modCard(mod) {
+  const def = MODS[mod];
+  const n = def.signals.filter((x) => !x.optional).length;
+  const kids = [h('div', { class: 'part-head' }, h('span', { class: 'icon-tile' }, icon(def.icon)),
+    h('div', {}, h('h2', {}, h('span', { class: 'num-badge', text: String(badgeNo(mod)) }), def.name), h('p', { class: 'muted small', text: `${n} pin${n > 1 ? 's' : ''} to set${def.signals.some((x) => x.optional) ? ', and whether its RESET is wired' : ''}` })), h('span'))];
+  if (mod === 'clock') {
+    kids.push(h('div', { class: 'part-pick' }, h('div', { class: 'places', role: 'radiogroup', 'aria-label': 'Where the clock is wired' },
+      h('button', { class: 'place', type: 'button', role: 'radio', 'aria-checked': String(M.clockPlace === 'j13'), 'data-mk': 'clockplace', 'data-v': 'j13' }, h('span', { class: 'dot' }), h('span', {}, h('b', { text: 'The I2C connector (J13)' }), h('small', { text: 'A lead into J13, not your board. No pins to choose.' })), h('span')),
+      h('button', { class: 'place', type: 'button', role: 'radio', 'aria-checked': String(M.clockPlace === 'j7'), 'data-mk': 'clockplace', 'data-v': 'j7' }, h('span', { class: 'dot' }), h('span', {}, h('b', { text: 'Two pins on J7' }), h('small', { text: 'On your board, with its own wiring away from the touch screen.' })), h('span')))));
+    if (M.clockPlace !== 'j7') return h('section', { class: 'card part' }, kids);
+  }
+  const body = [pinTable(mod)];
+  if (mod === 'clock') body.push(note('warn', 'triangle', 'Pull-ups on your board.', 'SDA and SCL each need a resistor to 3V3 (most DS3231 boards have them). The panel\'s own are weak.'));
+  if (mod === 'zwave') body.push(note('info', 'info', 'TX and RX cross over.', 'The radio\'s RX takes the panel\'s TX and the other way round: the usual mistake is wiring them straight.'));
+  if (mod === 'cc1101') body.push(note('info', 'info', '', 'Keep the leads short (10 to 15 cm) and the antenna away from the panel\'s board.'));
+  return h('section', { class: 'card part' }, kids, h('div', { class: 'part-body' }, body));
+}
+function checkCard() {
+  const p = problems();
+  const left = zonesLeft();
+  return h('section', { class: 'card pincheck' },
+    p.length ? h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small bad' }, icon('triangle')), h('div', {}, h('b', { text: 'Not ready to apply' }), p.map((t) => h('small', { text: t }))))
+      : h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small' }, icon('circleCheck')), h('div', {}, h('b', { text: 'Everything fits' }), h('small', { text: 'No pin is used twice, and every pin is one the panel accepts.' }))),
+    h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small plain' }, icon('plug')), h('div', {}, h('b', { text: `Pins left for wired door contacts: ${left.length}` }),
+      h('small', { text: left.length ? left.map((g) => 'IO' + g).join(', ') + ' on J7.' : 'None.' }))),
+    h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small plain' }, icon('cpu')), h('div', {}, h('b', { text: 'The panel checks again' }), h('small', { text: 'It refuses a pin used twice or one it can\'t use, and stores nothing until every pin fits.' }))));
+}
+function readyCard() {
+  const fresh = M.custom === 'newpanel' || M.custom === 'oldfw';
+  const box = (k, t, sm) => h('li', {}, h('label', {}, h('input', { type: 'checkbox', id: 'tick-' + k, 'data-mk': 'tick', 'data-v': k, checked: M.ticks[k] }), h('span', {}, h('b', { text: t }), sm ? h('small', { text: sm }) : null), h('span')));
+  return h('section', { class: 'card' }, h('h2', { text: fresh ? (M.custom === 'newpanel' ? 'Before you install' : 'Before you update') : 'Before you apply' }),
+    h('ul', { class: 'need' },
+      box('v11', 'This panel is a CrowPanel Advanced 7" board V1.1', 'On V1.2 boards IO27 and IO28 are wired to the radio socket instead.'),
+      box('vcc', 'Every module\'s VCC goes to a 3V3 pin, none to 5V', 'J7\'s pins take 3.3 V at most: 5 V on a signal pin damages the panel.')));
+}
+function toolCustom() {
+  if (M.custom === 'applied') return toolCustomApplied();
+  const old = M.custom === 'oldfw';
+  const fresh = M.custom === 'newpanel';
+  const p = problems();
+  const ready = !p.length && M.ticks.v11 && M.ticks.vcc;
+  const why = p.length ? 'Choose the pins above first.' : !(M.ticks.v11 && M.ticks.vcc) ? 'Tick both checks first.' : '';
+  const act = fresh ? ['download', 'Install RoboAlarms with these pins…'] : old ? ['download', 'Update to 0.7.0 with these pins…'] : [null, 'Apply and restart the panel'];
+  const fromPanel = M.custom === 'fromPanel' && M.panel;
+  const resetBar = !fromPanel ? null : M.cleared
+    ? h('div', { class: 'card' }, h('div', { class: 'list-row' }, h('span', { class: 'icon-tile small plain' }, icon('undo')),
+      h('div', {}, h('b', { text: 'Every pin is cleared' }), h('small', { text: 'Choose them for your new board. The panel keeps using its current pins until you apply.' })),
+      h('div', { class: 'row-actions' }, h('button', { class: 'btn small', type: 'button', 'data-mk': 'reread' }, 'Undo'))))
+    : h('div', { class: 'card' }, h('div', { class: 'list-row' }, h('span', { class: 'icon-tile small' }, icon('cpu')),
+      h('div', {}, h('b', { text: 'Read from the panel: the pins it uses now' }), h('small', { text: 'New hardware? Reset them and choose each pin again. Nothing changes on the panel until you apply.' })),
+      h('div', { class: 'row-actions' }, h('button', { class: 'btn small', type: 'button', 'data-mk': 'resetpins' }, icon('undo'), 'Reset the pins'))));
+  return page([...hwHead('custom'),
+    h('div', { class: 'mk-new stack' }, resetBar,
+      fresh ? note('info', 'download', 'This panel doesn\'t run RoboAlarms yet.', 'Choose your pins anyway. The Flasher installs RoboAlarms 0.7.0, starts it, then sets these pins, all in one go.') : null,
+      old ? note('info', 'download', 'This panel runs RoboAlarms 0.5.9, which can\'t take custom pins.', 'Choose your pins anyway. The Flasher updates it to 0.7.0, keeping its codes, zones and settings, then sets these pins, all in one go.') : null,
+      note('info', 'info', 'For your own board on J7.', 'Pick the modules on it, then the J7 pin each module pin is wired to. Power isn\'t asked for: every module\'s VCC goes to a 3V3 pin and its GND to a GND pin, and they may share.'),
+      h('h2', { class: 'section', text: 'Your modules' }), modulesGrid(),
+      h('h2', { class: 'section', text: 'Which J7 pin each one uses' }), j7Map(),
+      active().length || M.clock ? [M.rf !== 'none' ? modCard(M.rf) : null, M.zwave ? modCard('zwave') : null, M.clock ? modCard('clock') : null] : null,
+      M.zigbee ? h('section', { class: 'card part' }, h('div', { class: 'part-head' }, h('span', { class: 'icon-tile' }, icon('tower')),
+        h('div', {}, h('h2', { text: 'Zigbee module' }), h('p', { class: 'muted small', text: 'Goes into the radio socket with the panel switched off. It never shares a pin with J7.' })), chip('', '', 'Nothing to choose'))) : null,
+      checkCard(), readyCard(),
+      fresh || old ? note('warn', 'triangle', `${fresh ? 'Install' : 'Update'} first, then plug your board in.`, `Keep your board unplugged until the Flasher has finished. Then switch the panel off, plug your board in and switch it on.${old ? ' Until then, the panel still drives the pins it used before.' : ''}`)
+        : note('warn', 'triangle', 'Apply first, then plug your board in.', 'Apply with your board unplugged. When the panel has restarted, switch it off, plug your board in and switch it on. Until it restarts, the panel still drives the pins it used before.')),
+    h('div', { class: 'row-actions' }, h('button', { class: 'btn primary', type: 'button', 'data-mk': 'apply', disabled: !ready }, act[0] ? icon(act[0]) : null, act[1]),
+      why ? h('span', { class: 'why-inline', text: why }) : null, fresh ? null : h('button', { class: 'btn ghost', type: 'button', 'data-mk': 'reread' }, 'Read the panel again')),
+    mk(h('b', { text: 'Every list starts at "Choose a pin…": ' }), 'nothing is filled in for you, not even the optional RESET or where the clock goes. The one exception is a panel that already has custom pins: the tab reads them from it, with "Reset the pins" at the top for new hardware (try "Read from the panel" in the purple bar). What you choose stays while you switch tabs and pages, until the Flasher is closed. ',
+      h('b', { text: 'A pin can\'t be used twice: ' }), 'every list greys out a pin another module on this tab uses and says which. The Flasher checks again before Apply, and the panel a third time before it stores anything. ',
+      h('b', { text: 'Zones don\'t limit the pins: ' }), 'this is the hardware, and it wins. A zone wired to a pin your board now uses is named in the confirmation (choose IO4 to see it); after the restart the panel shows that zone as Check until it gets another terminal, as it does today for any sensor it can no longer reach. ',
+      h('b', { text: 'A new panel or older RoboAlarms: ' }), 'the tab works the same, and the button becomes "Install RoboAlarms with these pins…" or "Update to 0.7.0 with these pins…". The pins ride along with the install or update, as the suggested places already do today, so they are set before the board is plugged in (try "New panel" in the purple bar). In the app the button opens today\'s Install or Update page, with its backup choice; the dialog here stands in for it. ',
+      h('b', { text: 'Also shown (recommended in the plan): ' }), 'J7\'s ten IO pins only; this tab holds the whole layout; VCC and GND rows are fixed advice. ',
+      h('b', { text: 'Asked of you: ' }), 'are both ticks required, or advice only like Check before power?')]);
+}
+function toolCustomApplied() {
+  const rows = [];
+  for (const mod of active()) for (const sg of MODS[mod].signals) {
+    const g = M.pins[mod][sg.k];
+    rows.push(h('tr', {}, h('td', {}, h('span', { class: 'num-badge', text: String(badgeNo(mod)) }), MODS[mod].short + ' ' + sg.pin), h('td', { class: 'mono', text: typeof g === 'number' ? 'IO' + g : 'not connected' }), h('td', { class: 'dir', text: sg.dir })));
+  }
+  const P = M.pins;
+  const rfText = M.rf === 'cc1101' ? `CC1101 on your pins (SCLK IO${P.cc1101.sck}, SI IO${P.cc1101.mosi}, SO IO${P.cc1101.miso}, CSn IO${P.cc1101.cs}, GDO0 IO${P.cc1101.gdo0})`
+    : `Receiver module, DATA on IO${P.module.data}`;
+  const JOB = {
+    apply: ['Your pins are applied', 'The panel stored them, restarted once and read them back.',
+      ['Checked with the panel: every pin fits', 'Stored 3 settings', 'Restarted the panel', 'Read back: the panel uses your pins']],
+    install: ['RoboAlarms is installed, with your pins', 'Installed, started, given your pins, restarted once and read back.',
+      ['Kept a copy of what was on the board (in Backups)', 'Installed RoboAlarms 0.7.0', 'Started it', 'Set your pins: every pin fits', 'Restarted the panel', 'Read back: the panel uses your pins']],
+    update: ['Updated to 0.7.0, with your pins', 'Its codes, zones and settings stayed. Then it took your pins, restarted once and read them back.',
+      ['Updated to RoboAlarms 0.7.0 (settings kept)', 'Started it', 'Set your pins: every pin fits', 'Restarted the panel', 'Read back: the panel uses your pins']],
+  }[M.how];
+  return page([...hwHead('custom'),
+    h('section', { class: 'card stack mk-new' }, h('div', { class: 'test-head' }, h('span', { class: 'icon-tile' }, icon('circleCheck')), h('div', {}, h('h2', { text: JOB[0] }), h('p', { class: 'muted small', text: JOB[1] })), chip('good', 'check', 'Matches')),
+      h('ol', { class: 'job' }, JOB[2].map((t) => h('li', { class: 'done' }, h('span', { class: 'mark' }, icon('check')), h('div', {}, h('b', { text: t }))))),
+      h('div', { class: 'tablewrap' }, h('table', { class: 'wires pins' }, h('thead', {}, h('tr', {}, h('th', { text: 'Module pin' }), h('th', { text: 'J7' }), h('th', { text: 'Direction' }))), h('tbody', {}, rows))),
+      note('warn', 'power', 'Now plug your board in.', M.how === 'install' ? 'Switch the panel off, plug your board in and switch it on. Then finish the panel\'s first-time setup on its touchscreen, and test your parts below.' : 'Switch the panel off, plug your board in, switch it on, then test below.')),
+    h('div', { class: 'row-actions' }, h('button', { class: 'btn', type: 'button', 'data-mk': 'changepins' }, 'Change the pins'), h('button', { class: 'btn ghost', type: 'button' }, 'Read the panel again')),
+    h('h2', { class: 'section', text: 'Test' }),
+    M.rf !== 'none' ? h('section', { class: 'card test' }, h('div', { class: 'test-head' }, h('span', { class: 'icon-tile' }, icon('radio')), h('div', {}, h('h2', { text: 'Wireless sensors' }), h('p', { class: 'muted small', text: rfText })), chip('good', 'check', 'Working')),
+      h('div', { class: 'row-actions' }, h('button', { class: 'btn primary', type: 'button' }, 'Start listening'))) : null,
+    M.zwave ? h('section', { class: 'card test mk-new' }, h('div', { class: 'test-head' }, h('span', { class: 'icon-tile plain' }, icon('radio')), h('div', {}, h('h2', { text: 'Z-Wave radio' }), h('p', { class: 'muted small', text: `Its RX on IO${P.zwave.rx}, its TX on IO${P.zwave.tx}` })), chip('warn', 'triangle', 'Not answering')),
+      h('p', {}, `The panel doesn't hear the radio. The usual cause is TX and RX swapped: the radio's RX (position 8) must go to IO${P.zwave.rx}, its TX (position 10) to IO${P.zwave.tx}. Check with the panel switched off.`),
+      h('div', { class: 'row-actions' }, h('button', { class: 'btn small', type: 'button' }, 'Check again'), h('button', { class: 'btn ghost small', type: 'button' }, 'Turn the Z-Wave radio off'))) : null,
+    M.clock ? h('section', { class: 'card test' }, h('div', { class: 'test-head' }, h('span', { class: 'icon-tile' }, icon('clock')), h('div', {}, h('h2', { text: 'Battery-backed clock' }), h('p', { class: 'muted small', text: M.clockPlace === 'j13' ? '24.3 °C · On the I2C connector (J13)' : `24.3 °C · SDA IO${M.pins.clock.sda}, SCL IO${M.pins.clock.scl}` })), chip('good', 'check', 'Keeping time'))) : null,
+    mk('After the restart the Flasher reads every part back. A radio that doesn\'t answer gets the likely cause for custom wiring (TX/RX or SI/SO swapped) and an offer to turn it off, so a wrong wire can be fixed with the panel off.')]);
+}
+function toolPlaces() {
+  const kinds = [['cc1101', 'CC1101 board', 'A small board with eight pins: VCC, GND, SI, SO, SCLK, CSN, GDO0 and GDO2.'], ['module', 'Receiver module', 'A small board with three pins: VCC, GND and DATA.'], ['auto', 'Not sure', 'The panel looks for either.']];
+  const rfSub = [h('b', { class: 'small', text: 'Which receiver do you have?' }), h('div', { class: 'choices', role: 'radiogroup' }, kinds.map(([k, t, d]) => h('button', { class: 'choice', type: 'button', role: 'radio', 'aria-checked': String(k === 'cc1101') }, h('span', { class: 'dot' }), h('b', { text: t }), h('small', { text: d }))))];
+  return page([...hwHead('places'),
+    M.panel ? h('div', { class: 'mk-new' }, note('info', 'info', 'This panel uses custom pins.', 'They were set on the Custom pins tab. Applying suggested places here replaces them.')) : null,
+    h('h2', { class: 'section', text: 'What is connected' }),
+    h('div', { class: 'grid2' },
+      h('div', { class: 'pcard wide on' }, h('button', { class: 'pcard-head', type: 'button' }, h('span', { class: 'tick' }, icon('check')), h('span', { class: 'icon-tile' }, icon('radio')), h('span', {}, h('b', { text: 'Wireless sensors (433 MHz)' }), h('small', { text: 'Lets the panel hear 433 MHz door, window and motion sensors and key-fob remotes. Needs a receiver.' }))), h('div', { class: 'subpick' }, rfSub)),
+      h('div', { class: 'pcard on mk-new' }, h('button', { class: 'pcard-head', type: 'button' }, h('span', { class: 'tick' }, icon('check')), h('span', { class: 'icon-tile' }, icon('tower')), h('span', {}, h('b', { text: 'Zigbee radio' }), h('small', { text: 'Elecrow\'s plug-in ESP32-H2 module, for Zigbee sensors. It needs its radio software first: Advanced tools › Zigbee module.' })))),
+      h('div', { class: 'pcard on' }, h('button', { class: 'pcard-head', type: 'button' }, h('span', { class: 'tick' }, icon('check')), h('span', { class: 'icon-tile' }, icon('radio')), h('span', {}, h('b', { text: 'Z-Wave sensors' }), h('small', { text: 'A Zooz ZAC93 radio, for Z-Wave door, window, motion, smoke and water sensors.' })))),
+      h('div', { class: 'pcard on' }, h('button', { class: 'pcard-head', type: 'button' }, h('span', { class: 'tick' }, icon('check')), h('span', { class: 'icon-tile' }, icon('clock')), h('span', {}, h('b', { text: 'Battery-backed clock' }), h('small', { text: 'Keeps the date and time through power cuts. A small board with a coin cell (DS3231, often sold as ZS-042).' })))),
+      h('div', { class: 'pcard off' }, h('button', { class: 'pcard-head', type: 'button', disabled: true }, h('span', { class: 'tick' }), h('span', { class: 'icon-tile plain' }, icon('siren')), h('span', {}, h('b', { text: 'Sirens, strobes and relays' }), h('small', { text: 'Come with a later version of RoboAlarms.' }))))),
+    M.custom === 'newpanel' ? h('div', { class: 'row-actions mk-new' }, h('button', { class: 'btn primary', type: 'button' }, icon('download'), 'Install RoboAlarms with these parts…')) : null,
+    mk('This tab is today\'s Hardware page, unchanged below this point: where each part goes, the pin check, Apply, and the tests. New on it: the switch at the top, the note when the panel has custom pins, the Zigbee card\'s words (today they still say the panel can\'t use the module), and, on a panel without RoboAlarms, "Install RoboAlarms with these parts…" where today a greyed-out Apply only says to install first.')]);
+}
+
+/* ---- the Zigbee module's radio software (Advanced › Zigbee module, and the guided page) --------- */
+function artModule() {
+  return s('svg', { class: 'art zb radio-art', viewBox: '0 0 460 170', role: 'img', 'aria-label': 'The Zigbee module on its own, its USB-C cable to this computer' },
+    s('rect', { class: 'mod', x: 40, y: 20, width: 80, height: 118, rx: 6 }),
+    [0, 1, 2, 3, 4, 5, 6].map((i) => [s('rect', { class: 'leg', x: 32, y: 32 + i * 14, width: 8, height: 6, rx: 1 }), s('rect', { class: 'leg', x: 120, y: 32 + i * 14, width: 8, height: 6, rx: 1 })]),
+    s('text', { class: 'ink', x: 80, y: 74, 'text-anchor': 'middle' }, 'ESP32-H2'),
+    s('rect', { class: 'usb', x: 68, y: 132, width: 24, height: 10, rx: 3 }),
+    s('path', { class: 'cable on', d: 'M80 142 V 156 Q 80 162 86 162 H 300 Q 306 162 306 156 V 128' }),
+    s('rect', { class: 'laptop', x: 262, y: 30, width: 150, height: 92, rx: 6 }),
+    s('rect', { class: 'laptop-screen', x: 272, y: 40, width: 130, height: 72, rx: 3 }),
+    s('path', { class: 'laptop', d: 'M246 122 h182 l-10 12 h-162 z' }),
+    s('text', { class: 'cap', x: 80, y: 12, 'text-anchor': 'middle' }, 'Out of the panel'),
+    s('text', { class: 'cap', x: 337, y: 80, 'text-anchor': 'middle' }, 'This computer'),
+    s('text', { class: 'cap', x: 190, y: 156, 'text-anchor': 'middle' }, 'USB-C data cable'));
+}
+function jobList(st) {
+  const steps = [['Connect to the module', ''], M.keepCopy ? ['Keep a copy of what it runs (4 MB)', 'Documents\\RoboAlarms\\Backups'] : null, ['Erase it', ''], ['Write the radio software', 'RoboAlarms radio 1.0.0'], ['Check what was written', ''], ['Restart it', '']].filter(Boolean);
+  const at = st === 'installing' ? steps.findIndex((x) => x[0] === 'Write the radio software') : steps.length;
+  return h('ol', { class: 'job' }, steps.map(([t, sm], i) => {
+    const cls = i < at ? 'done' : i === at ? 'running' : 'waiting';
+    return h('li', { class: cls }, h('span', { class: 'mark' }, cls === 'done' ? icon('check') : null), h('div', {}, h('b', { text: t }), sm ? h('small', { text: sm }) : null,
+      cls === 'running' ? h('div', { class: 'bar' }, h('i', { class: 'w62' })) : null));
+  }));
+}
+function radioFacts(old) {
+  return h('details', { class: 'more' }, h('summary', {}, icon('info'), 'Technical details'),
+    h('dl', { class: 'facts' }, h('dt', { text: 'Port' }), h('dd', { text: 'COM9' }), h('dt', { text: 'USB' }), h('dd', { text: 'Espressif USB serial · 303A:1001' }),
+      h('dt', { text: 'Chip' }), h('dd', { text: 'ESP32-H2, silicon v0.1, 4 MB' }), h('dt', { text: 'Runs now' }), h('dd', { text: old ? 'RoboAlarms radio 1.0.0' : 'OpenThread CLI demo (Elecrow\'s factory software)' }),
+      h('dt', { text: 'Software for it' }), h('dd', { text: 'RoboAlarms radio 1.0.0, in roboalarms-0.7.0.roboflash' })));
+}
+function radioCard() {   // Advanced › Zigbee module
+  const st = M.radio;
+  const head = (title, sub, c) => h('div', { class: 'list-row' }, h('span', { class: 'icon-tile small' }, icon('tower')), h('div', {}, h('b', { text: title }), h('small', { text: sub })), h('div', { class: 'row-actions' }, c));
+  if (st === 'none') {
+    return h('div', { class: 'card stack' }, head('Zigbee module (ESP32-H2)', 'RoboAlarms radio 1.0.0 is in this file. No module is plugged in.', chip('', '', 'Not found')),
+      h('ol', { class: 'plug-steps' }, h('li', { text: 'Take the module out of the panel, with the panel switched off.' }), h('li', { text: 'Plug a USB-C data cable into the module and into this computer.' })));
+  }
+  if (st === 'seen') {
+    return h('div', { class: 'card stack' }, head('Something from Espressif on COM9', 'USB 303A:1001. It may be the Zigbee module: the Flasher hasn\'t looked yet.', null),
+      h('label', { class: 'option-card' + (M.alone ? ' on' : '') }, h('input', { type: 'checkbox', id: 'alone-adv', 'data-mk': 'alone', checked: M.alone }), h('span', {}, h('b', { text: 'It is the Zigbee module, on its own, not in a panel' }), h('small', { text: 'Looking at it restarts it. In a running panel that restarts the panel too.' }))),
+      h('div', { class: 'row-actions' }, h('button', { class: 'btn primary', type: 'button', disabled: !M.alone, 'data-mk': 'state', 'data-v': 'found' }, 'Check it')));
+  }
+  if (st === 'found' || st === 'uptodate') {
+    const up = st === 'uptodate';
+    return h('div', { class: 'card stack' }, head('Zigbee module on COM9', up ? 'Runs RoboAlarms radio 1.0.0: the same as in this file.' : 'Runs Elecrow\'s factory software, not the radio software the panel needs.', up ? chip('good', 'check', 'Up to date') : chip('warn', 'triangle', 'Needs its radio software')),
+      up ? null : h('label', { class: 'option-card' + (M.keepCopy ? ' on' : '') }, h('input', { type: 'checkbox', id: 'keep-adv', 'data-mk': 'keep', checked: M.keepCopy }), h('span', {}, h('b', { text: 'Keep a copy of what it runs now' }), h('small', { text: '4 MB, about a minute. Restore it from Backups to undo.' }))),
+      h('div', { class: 'row-actions' }, h('button', { class: 'btn ' + (up ? '' : 'primary'), type: 'button', 'data-mk': 'state', 'data-v': 'installing' }, up ? 'Install it again' : 'Install the radio software')), radioFacts(up));
+  }
+  if (st === 'installing') return h('div', { class: 'card stack' }, head('Zigbee module on COM9', 'Installing RoboAlarms radio 1.0.0 · about 40 s left', null), jobList(st));
+  return h('div', { class: 'card stack' }, head('Zigbee module on COM9', 'RoboAlarms radio 1.0.0, written and checked.', chip('good', 'check', 'Done')),
+    note('good', 'circleCheck', 'Unplug its cable and put it aside.', 'Fit it into the panel\'s radio socket with the panel switched off: Guided setup › Full wiring shows how.'));
+}
+function toolZigbee() {
+  return page([h('h1', { id: 'page-title', tabindex: -1, text: 'Zigbee module' }),
+    h('p', { class: 'lead', text: 'Puts the radio software on Elecrow\'s ESP32-H2 Zigbee module. The module is out of the panel, on its own USB-C cable: no panel is needed.' }),
+    M.radio === 'none' || M.radio === 'seen' ? h('div', { class: 'hero' }, artModule()) : null,
+    radioCard(),
+    h('h2', { class: 'section', text: 'Copies' }),
+    h('div', { class: 'card' }, h('div', { class: 'list-row' }, h('span', { class: 'icon-tile small plain' }, icon('archive')), h('div', {}, h('b', { text: 'What the module ran before' }), h('small', { text: 'Each copy is kept in Backups beside the panels\' copies, and goes back on from there.' })),
+      h('div', { class: 'row-actions' }, h('button', { class: 'btn small', type: 'button' }, 'Open Backups')))),
+    mk(h('b', { text: 'Its own entry in Advanced tools: ' }), 'it works on the module\'s own USB port, not on the panel chosen at the top of the list, and needs no panel at all. Panels and ports also lists the module and links here. ',
+      h('b', { text: 'Decision 3: only out of the panel. ' }), 'Holding the module in its loader while it sits in a running panel restarts the panel (seen on the bench), and whether its USB power feeds the panel\'s 3V3 hasn\'t been measured. The Flasher never opens an Espressif USB port on its own: it looks only after the tick. Step through it with the state buttons in the purple bar.')]);
+}
+function toolSoftware() {
+  return page([h('h1', { id: 'page-title', tabindex: -1, text: 'Software' }),
+    h('p', { class: 'lead', text: 'Which RoboAlarms build goes on the panel, and the choices the guided setup makes for you.' }),
+    h('div', { class: 'card' }, h('div', { class: 'list-row' }, h('span', { class: 'icon-tile small plain' }, icon('download')), h('div', {}, h('b', { text: 'RoboAlarms 0.7.0 (dev)' }), h('small', { text: '2 builds and the Zigbee radio software · roboalarms-0.7.0.roboflash' })), h('div', { class: 'row-actions' }, h('button', { class: 'btn small', type: 'button' }, 'Open another…')))),
+    h('h2', { class: 'section', text: 'Build for this panel' }),
+    h('div', { class: 'boards' }, h('button', { class: 'option', type: 'button', role: 'radio', 'aria-checked': 'true' }, h('span', { class: 'dot' }), h('span', {}, h('b', { text: 'CrowPanel 7"' }), h('small', { text: 'RoboAlarms 0.7.0 · ESP32-P4, silicon up to v1.99' })), h('span'))),
+    h('h2', { class: 'section', text: 'Start over' }),
+    h('div', { class: 'card' }, h('div', { class: 'list-row' }, h('span', { class: 'icon-tile small plain' }, icon('undo')), h('div', {}, h('b', { text: 'Reset to factory defaults' }), h('small', { text: 'Erases the whole panel - codes, users, zones, Wi-Fi and history - and installs RoboAlarms again: a complete reflash.' })), h('div', { class: 'row-actions' }, h('button', { class: 'btn small danger', type: 'button' }, 'Reset…')))),
+    mk('Today\'s Software page. The only change is the file\'s line, which counts the Zigbee radio software it carries; putting that software on the module is the Zigbee module tool\'s job.')]);
+}
+function toolPorts() {
+  const row = (title, sub, actions, isNew) => h('div', { class: 'list-row' + (isNew ? ' mk-new' : '') }, h('span', { class: 'icon-tile small plain' }, icon(isNew ? 'tower' : 'cpu')), h('div', {}, h('b', { text: title }), h('small', { text: sub })), h('div', { class: 'row-actions' }, actions));
+  const radioRow = M.radio === 'none' ? null : M.radio === 'seen'
+    ? row('Espressif USB device · COM9', 'USB JTAG/serial debug unit (COM9) · ESP USB serial · USB 303A:1001', [h('button', { class: 'btn small', type: 'button', 'data-mk': 'goto', 'data-v': 'zbtool' }, 'Is it the Zigbee module?')], true)
+    : row('Zigbee module (ESP32-H2) · COM9', 'USB JTAG/serial debug unit (COM9) · ESP USB serial · USB 303A:1001', [chip('good', '', 'Zigbee module'), h('button', { class: 'btn small', type: 'button', 'data-mk': 'goto', 'data-v': 'zbtool' }, 'Open Zigbee module')], true);
+  return page([h('h1', { id: 'page-title', tabindex: -1, text: 'Panels and ports' }),
+    h('p', { class: 'lead', text: 'Everything plugged into this computer. Looking at a panel never restarts it.' }),
+    h('div', { class: 'card' },
+      row('CrowPanel 7" · COM5', 'USB-SERIAL CH340 (COM5) · CH340K · USB 1A86:7522', [h('button', { class: 'btn small', type: 'button' }, 'Choose'), h('button', { class: 'btn ghost small', type: 'button' }, 'Look again')]),
+      row('RoboAlarms 0.7.0 · COM6', 'USB-SERIAL CH340 (COM6) · CH340K · USB 1A86:7522', [chip('good', '', 'Chosen'), h('button', { class: 'btn ghost small', type: 'button' }, 'Look again')]),
+      radioRow),
+    h('button', { class: 'link', type: 'button' }, 'Show other ports (2)'),
+    mk('A Zigbee module is listed by itself, never chosen as the panel, and never looked at until you say it is the module on its own. Its USB ID is the same as any Espressif chip\'s, so only a look at the chip can tell.')]);
+}
+
+/* ---- guided pages ------------------------------------------------------------------------------ */
+function eyebrow(t) { return h('p', { class: 'eyebrow', text: t }); }
+function gParts() {
+  const custom = M.parts === 'custom';
+  const p = (key, on, title, text, ic, isNew) => h('div', { class: 'pcard' + (on ? ' on' : '') + (isNew ? ' mk-new' : '') }, h('button', { class: 'pcard-head', type: 'button', disabled: custom },
+    h('span', { class: 'tick' }, on ? icon('check') : null), h('span', { class: 'icon-tile' }, icon(ic)), h('span', {}, h('b', { text: title }), h('small', { text: text }))));
+  return page([eyebrow('Step 1 of 8 · Plan'), h('h1', { id: 'page-title', tabindex: -1, text: 'Your panel, and what you\'ll connect to it' }),
+    h('p', { class: 'lead', text: 'Two choices. Then the Flasher shows how to wire everything, before the panel is plugged in.' }),
+    h('h2', { class: 'section', text: '2. What do you want to connect?' }),
+    custom ? h('div', { class: 'mk-new' }, note('info', 'info', 'Read from your panel: it uses custom pins on J7.', 'A CC1101 and a Z-Wave radio on your own board, set in Advanced tools › Hardware › Custom pins. The Flasher keeps them when it updates the panel, and the wiring steps show their pins instead of jumper wires.')) : h('p', { class: 'muted', text: 'Tick each thing you have, or plan to add. Just what it is: the Flasher works out where it goes.' }),
+    h('div', { class: 'grid2' },
+      p('rf', true, 'Wireless sensors (433 MHz)', custom ? 'CC1101 on your board (custom pins).' : 'Lets the panel hear 433 MHz door, window and motion sensors and key-fob remotes. Needs a receiver.', 'radio'),
+      p('zigbee', true, 'Zigbee radio', 'Elecrow\'s plug-in ESP32-H2 module, for Zigbee sensors. The Flasher puts its radio software on first, in Get ready.', 'tower', true),
+      p('zwave', true, 'Z-Wave sensors', custom ? 'ZAC93 on your board (custom pins).' : 'A Zooz ZAC93 radio, for Z-Wave door, window, motion, smoke and water sensors.', 'radio'),
+      p('clock', true, 'Battery-backed clock', 'Keeps the date and time through power cuts. A small board with a coin cell (DS3231, often sold as ZS-042).', 'clock')),
+    mk(custom ? h('span', {}, h('b', { text: 'Decision 4: custom pins are chosen only in Advanced tools. ' }), 'Guided setup keeps a panel\'s custom layout: an update or a reset puts the same pins back after it.') : h('span', {}, 'The Zigbee card\'s words change: today they say the panel can\'t use the module. Pin choosing stays out of Guided setup (decision 4).'))],
+  footer(h('span', { class: 'spacer' }), h('button', { class: 'btn primary', type: 'button', 'data-mk': 'goto', 'data-v': 'ready' }, 'Next: get ready', icon('right'))));
+}
+function gReady() {
+  const done = M.radio === 'done' || M.radio === 'uptodate';
+  const item = (t, sm, isNew) => h('li', { class: isNew ? 'mk-new' : null }, h('label', {}, h('input', { type: 'checkbox' }), h('span', {}, h('b', { text: t }), sm ? h('small', { text: sm }) : null), h('span')));
+  return page([eyebrow('Step 2 of 8 · Wire'), h('h1', { id: 'page-title', tabindex: -1, text: 'Get ready to wire' }),
+    h('p', { class: 'lead', text: 'Gather these, find the places on your panel, then get the panel ready. Tick each one off as you go: nothing here is checked by the Flasher.' }),
+    h('section', { class: 'card mk-new' }, h('div', { class: 'test-head' }, h('span', { class: 'icon-tile' }, icon('tower')),
+      h('div', {}, h('h2', { text: 'First: the Zigbee module\'s radio software' }), h('p', { class: 'muted small', text: done ? 'RoboAlarms radio 1.0.0 is on it.' : 'It comes with Elecrow\'s demo software. Put the panel\'s radio software on it before it goes in: about 2 minutes, the panel isn\'t needed.' })),
+      done ? chip('good', 'check', 'Done') : chip('warn', 'triangle', 'Not done yet')),
+      h('div', { class: 'row-actions' }, h('button', { class: 'btn ' + (done ? '' : 'primary'), type: 'button', 'data-mk': 'goto', 'data-v': 'zigbee' }, done ? 'Look again' : 'Prepare the Zigbee module', icon('right')))),
+    h('section', { class: 'card' }, h('h2', { text: 'What you need' }), h('ul', { class: 'need' },
+      item('The clock board (DS3231, often sold as ZS-042)'), item('The Zooz ZAC93 Z-Wave radio'), item('Elecrow\'s ESP32-H2 Zigbee module, with the antenna that came with it'),
+      item('A USB-C data cable for the Zigbee module', 'A charging-only cable won\'t work: if the Flasher doesn\'t find the module, try another cable.', true),
+      item('4 jumper wires, female to female, 10 to 20 cm long', 'Also sold as "Dupont wires". Each end has a small plug with a hole that slides onto a pin. A few spares help.'),
+      item('A coin cell for the clock', 'A rechargeable LIR2032. A plain CR2032 only if the board\'s charging part has been removed.'))),
+    h('section', { class: 'card' }, h('h2', { text: 'Get the panel ready' }), h('ul', { class: 'need' },
+      item('Switch the panel\'s POWER switch off.'), item('Unplug every cable from the panel: both USB cables and any power supply.'), item('Touch something metal, like a tap or a radiator, to get rid of static before you handle the boards.'))),
+    note('warn', 'triangle', 'Keep the panel switched off and unplugged', 'until the check in step 4. Wiring it while it is on can damage it.'),
+    mk('The module is prepared from Get ready, on a page of its own (like Print the wiring today), so the step list keeps its eight steps. Full wiring still shows the module going into its socket.')],
+  footer(h('button', { class: 'btn ghost', type: 'button', 'data-mk': 'goto', 'data-v': 'parts' }, icon('left'), 'Back'), h('span', { class: 'spacer' }),
+    done ? null : h('span', { class: 'why', text: 'The Zigbee module still needs its radio software.' }),
+    h('button', { class: 'btn primary', type: 'button' }, 'Next: see the full wiring', icon('right'))));
+}
+function gZigbee() {
+  const st = M.radio;
+  const kids = [eyebrow('Step 2 of 8 · Wire · Zigbee module'), h('h1', { id: 'page-title', tabindex: -1, text: 'Put the radio software on the Zigbee module' }),
+    h('p', { class: 'lead', text: 'Do this before the module goes into the panel. The panel isn\'t needed: it stays switched off.' })];
+  let primary = null;
+  if (st === 'none' || st === 'seen') {
+    kids.push(h('div', { class: 'hero' }, artModule()),
+      h('section', { class: 'card stack' }, h('ol', { class: 'plug-steps' }, h('li', { text: 'Keep the module out of the panel. If it is already in its socket, switch the panel off and lift the module straight out.' }), h('li', { text: 'Plug a USB-C data cable into the module and into this computer.' })),
+        h('label', { class: 'option-card' + (M.alone ? ' on' : '') }, h('input', { type: 'checkbox', id: 'alone-g', 'data-mk': 'alone', checked: M.alone }), h('span', {}, h('b', { text: 'The module is on its own, not in a panel' }), h('small', { text: 'Looking at it restarts it. In a running panel, that would restart the panel too.' }))),
+        st === 'none' ? h('div', { class: 'status-row' }, h('span', { class: 'icon-tile small plain' }, icon('usb')), h('div', { class: 'grow' }, h('b', { text: 'Waiting for the module' }), h('p', { class: 'small muted', text: 'Nothing new is plugged in yet.' })))
+          : h('div', { class: 'status-row' }, h('span', { class: 'icon-tile small' }, icon('usb')), h('div', { class: 'grow' }, h('b', { text: 'Something from Espressif on COM9' }), h('p', { class: 'small muted', text: M.alone ? 'Ready to check.' : 'Tick the box above, then check it.' })))),
+      h('details', { class: 'more' }, h('summary', {}, icon('info'), 'Nothing showing up?'), h('ol', {},
+        h('li', { text: 'Use another USB-C cable: many only charge.' }), h('li', { text: 'Try another USB port on this computer.' }), h('li', { text: 'Unplug the module\'s cable and plug it in again.' }),
+        h('li', { text: 'Still nothing: hold the module\'s button printed BOOT, press and release the one printed RST, then release BOOT. (Not tried on this module yet.)' }))));
+    primary = h('button', { class: 'btn primary', type: 'button', disabled: !(st === 'seen' && M.alone), 'data-mk': 'state', 'data-v': 'found' }, 'Check the module', icon('right'));
+  } else if (st === 'found' || st === 'uptodate') {
+    const up = st === 'uptodate';
+    kids.push(h('div', { class: 'card board-card' }, h('div', {}, artModule()), h('div', {}, h('h2', { text: 'Zigbee module (ESP32-H2) on COM9' }),
+      h('div', { class: 'chips' }, up ? chip('good', 'check', 'Has the radio software, 1.0.0') : chip('warn', 'triangle', 'Runs Elecrow\'s demo software')),
+      h('p', { class: 'small muted how', text: up ? 'Nothing to do: it runs the same radio software as this file.' : 'The panel can\'t use it like this: it needs the panel\'s radio software.' }))),
+      up ? null : h('label', { class: 'option-card' + (M.keepCopy ? ' on' : '') }, h('input', { type: 'checkbox', id: 'keep-g', 'data-mk': 'keep', checked: M.keepCopy }), h('span', {}, h('b', { text: 'Keep a copy of what it runs now' }), h('small', { text: '4 MB, about a minute. You can put it back from Advanced tools › Backups.' }))),
+      radioFacts(up));
+    primary = up ? h('button', { class: 'btn primary', type: 'button', 'data-mk': 'goto', 'data-v': 'ready' }, 'Back to Get ready', icon('right'))
+      : h('button', { class: 'btn primary', type: 'button', 'data-mk': 'state', 'data-v': 'installing' }, 'Install the radio software', icon('right'));
+  } else if (st === 'installing') {
+    kids.push(h('section', { class: 'card' }, h('div', { class: 'overall' }, h('b', { text: '62 %' }), h('span', { class: 'muted', text: 'About 40 s left' })), h('div', { class: 'bar big' }, h('i', { class: 'w62' })), jobList(st)),
+      note('info', 'info', 'Leave the cable in until it says done.', 'If it comes out, nothing is harmed: plug it in and start again.'));
+  } else {
+    kids.length = 0;
+    kids.push(eyebrow('Step 2 of 8 · Wire · Zigbee module'),
+      h('div', { class: 'success' }, h('span', { class: 'big-check' }, icon('check')), h('div', {}, h('h1', { id: 'page-title', tabindex: -1, text: 'The Zigbee module is ready' }), h('p', { class: 'lead', text: 'RoboAlarms radio 1.0.0, written and checked.' }))),
+      h('div', { class: 'card' }, h('h2', { text: 'Now' }), h('ol', { class: 'todo' }, h('li', { text: 'Unplug its USB cable.' }), h('li', { text: 'Put it aside. Full wiring shows where it goes, with the panel switched off.' }))));
+    primary = h('button', { class: 'btn primary', type: 'button', 'data-mk': 'goto', 'data-v': 'ready' }, 'Back to Get ready', icon('right'));
+  }
+  kids.push(mk(h('b', { text: 'Decision 3: out of the panel only. ' }), 'The tick is required before the Flasher touches the port. The job: look, keep a copy (only if ticked: off by default), erase, write, check, restart; then "unplug its cable", which also clears a module left in its loader. The panel confirms it on Test and finish.'));
+  return page(kids, footer(h('button', { class: 'btn ghost', type: 'button', 'data-mk': 'goto', 'data-v': 'ready' }, icon('left'), 'Back'), h('span', { class: 'spacer' }),
+    st === 'installing' || st === 'done' || st === 'uptodate' ? null : h('button', { class: 'btn ghost', type: 'button', 'data-mk': 'goto', 'data-v': 'ready', title: 'Leave the module out of the panel until it has its software.' }, 'Do this later'),
+    primary));
+}
+function gTest() {
+  const ok = M.test === 'working';
+  return page([eyebrow('Step 8 of 8 · Install'),
+    h('div', { class: 'success' }, h('span', { class: 'big-check' }, icon('check')), h('div', {}, h('h1', { id: 'page-title', tabindex: -1, text: 'RoboAlarms is running on your panel' }), h('p', { class: 'lead', text: 'Finish on the touchscreen, then test your parts here.' }))),
+    h('h2', { class: 'section', text: 'Test your parts' }),
+    h('section', { class: 'card test' }, h('div', { class: 'test-head' }, h('span', { class: 'icon-tile' }, icon('radio')), h('div', {}, h('h2', { text: 'Wireless sensors' }), h('p', { class: 'muted small', text: 'CC1101 on J7' })), chip('good', 'check', 'Working'))),
+    h('section', { class: 'card test' }, h('div', { class: 'test-head' }, h('span', { class: 'icon-tile' }, icon('clock')), h('div', {}, h('h2', { text: 'Battery-backed clock' }), h('p', { class: 'muted small', text: '24.3 °C · Time from the clock module' })), chip('good', 'check', 'Keeping time'))),
+    ok ? h('section', { class: 'card test mk-new' }, h('div', { class: 'test-head' }, h('span', { class: 'icon-tile' }, icon('tower')), h('div', {}, h('h2', { text: 'Zigbee radio' }), h('p', { class: 'muted small', text: 'In the socket · ready on channel 11' })), chip('good', 'check', 'Working')),
+      h('p', {}, 'The panel hears the Zigbee module. Add Zigbee sensors on the touchscreen: Settings › Devices › Zigbee.'),
+      h('details', { class: 'more' }, h('summary', {}, icon('info'), 'Radio software'), h('dl', { class: 'facts' }, h('dt', { text: 'Reported' }), h('dd', { text: 'openthread-esp32/fff9895c-b678a4f; esp32h2; 2026-10-04' }))))
+      : h('section', { class: 'card test mk-new' }, h('div', { class: 'test-head' }, h('span', { class: 'icon-tile plain' }, icon('tower')), h('div', {}, h('h2', { text: 'Zigbee radio' }), h('p', { class: 'muted small', text: 'In the socket' })), chip('warn', 'triangle', 'Not heard')),
+        h('p', {}, 'The panel doesn\'t hear the Zigbee module. With the panel switched off, check it sits fully in its socket. If it does, it may still need its radio software: Advanced tools › Zigbee module.'),
+        h('div', { class: 'row-actions' }, h('button', { class: 'btn small', type: 'button' }, 'Check again'))),
+    h('section', { class: 'card test' }, h('div', { class: 'test-head' }, h('span', { class: 'icon-tile' }, icon('radio')), h('div', {}, h('h2', { text: 'Z-Wave radio' }), h('p', { class: 'muted small', text: 'On J7 · its radio answered' })), chip('good', 'check', 'Working'))),
+    mk('The Zigbee card reads the panel\'s "zigbee status" and waits a little for the radio after the restart, as the Z-Wave card does. "Not heard" can mean an empty socket, the demo software or a module stuck in its loader: the panel can\'t tell these apart, so the words name both checks. The version is shown for information only.')],
+  footer(h('span', { class: 'spacer' }), h('button', { class: 'btn primary', type: 'button' }, 'Finish')));
+}
+
+/* ---- render and events ------------------------------------------------------------------------- */
+const VIEWS = { custom: toolCustom, places: toolPlaces, zbtool: toolZigbee, software: toolSoftware, ports: toolPorts, parts: gParts, ready: gReady, zigbee: gZigbee, test: gTest };
+const GUIDED_STEP = { parts: 0, ready: 1, zigbee: 1, test: 7 };
+const TOOL_OF = { custom: 'hardware', places: 'hardware', zbtool: 'zigbee', software: 'software', ports: 'ports' };
+function mkBar() {
+  const bar = clear($('mk-bar'));
+  const btn = (act, v, t, on) => h('button', { type: 'button', 'data-mk': act, 'data-v': v, 'aria-pressed': String(!!on) }, t);
+  const st = STATES[M.screen];
+  append(bar, [h('b', { text: 'Proposal · Flasher' }),
+    h('div', { class: 'mk-group' }, h('span', { text: 'Advanced tools' }), SCREENS.tools.map(([k, t]) => btn('screen', k, t, M.screen === k))),
+    h('div', { class: 'mk-group' }, h('span', { text: 'Guided setup' }), SCREENS.guided.map(([k, t]) => btn('screen', k, t, M.screen === k))),
+    h('div', { class: 'mk-group' }, btn('notes', '', 'Notes', M.notes), btn('changes', '', 'Mark what is new', M.changes)),
+    st ? h('div', { class: 'mk-group mk-states' }, h('span', { text: 'State' }), st[1].map(([k, t]) => btn('state', k, t, M[st[0]] === k))) : null]);
+}
+function render() {
+  M.mode = GUIDED_STEP[M.screen] !== undefined ? 'guided' : 'tools';
+  document.body.classList.toggle('no-notes', !M.notes);
+  document.body.classList.toggle('no-changes', !M.changes);
+  $('mode-guided').setAttribute('aria-pressed', String(M.mode === 'guided'));
+  $('mode-tools').setAttribute('aria-pressed', String(M.mode === 'tools'));
+  mkBar();
+  const keep = $('page') ? $('page').scrollTop : 0;
+  const app = clear($('app'));
+  append(app, [M.mode === 'guided' ? railGuided(GUIDED_STEP[M.screen]) : railTools(TOOL_OF[M.screen]), VIEWS[M.screen]()]);
+  $('page').scrollTop = keep;
+  // determinate bars: widths are classes, as in the app (no inline styles)
+  document.querySelectorAll('.bar > i.w62').forEach((i) => { i.style.width = '62%'; });
+}
+function go(screen) { M.screen = screen; render(); const p = $('page'); if (p) p.scrollTop = 0; }
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-mk]');
+  if (!t || t.disabled) return;
+  const v = t.dataset.v;
+  switch (t.dataset.mk) {
+    case 'screen': case 'goto': go(v); return;
+    case 'mode': go(v === 'guided' ? 'parts' : 'custom'); return;
+    case 'tool': go({ hardware: 'custom', zigbee: 'zbtool', software: 'software', ports: 'ports' }[v] || M.screen); return;
+    case 'state': { const st = STATES[M.screen]; if (st && st[0] === 'custom') setCustom(v); else if (st) M[st[0]] = v;
+      if (st && st[0] === 'radio' && v === 'seen') M.alone = false; render(); return; }
+    case 'changepins': M.custom = 'fromPanel'; M.cleared = false; render(); return;
+    case 'resetpins': M.pins = BLANK_PINS(); M.clockPlace = null; M.cleared = true; render(); return;
+    case 'reread': M.cleared = false;
+      if (M.panel) { M.pins = copyPins(M.panel.pins); M.clockPlace = M.panel.clockPlace; } else { M.pins = BLANK_PINS(); M.clockPlace = null; }
+      render(); return;
+    case 'notes': M.notes = !M.notes; render(); return;
+    case 'changes': M.changes = !M.changes; render(); return;
+    case 'part': if (v === 'rf') M.rf = M.rf === 'none' ? 'cc1101' : 'none'; else M[v] = !M[v]; render(); return;
+    case 'rfkind': M.rf = v; render(); return;
+    case 'clockplace': M.clockPlace = v; render(); return;
+    case 'apply': openApply(); return;
+    default:
+  }
+});
+document.addEventListener('change', (e) => {
+  const t = e.target.closest('[data-mk]');
+  if (!t) return;
+  if (t.dataset.mk === 'pin') { M.pins[t.dataset.mod][t.dataset.sig] = t.value === '' ? null : t.value === 'nc' ? 'nc' : Number(t.value); render(); const again = $(t.id); if (again) again.focus(); }
+  else if (t.dataset.mk === 'tick') { M.ticks[t.dataset.v] = t.checked; render(); }
+  else if (t.dataset.mk === 'alone') { M.alone = t.checked; render(); }
+  else if (t.dataset.mk === 'keep') { M.keepCopy = t.checked; render(); }
+});
+function openApply() {
+  const body = clear($('modal-body'));
+  const list = [];
+  for (const mod of active()) for (const sg of MODS[mod].signals) { const g = M.pins[mod][sg.k]; list.push(h('li', { text: `${MODS[mod].short} ${sg.pin}: ${typeof g === 'number' ? 'IO' + g : 'not connected'}` })); }
+  if (M.clock && M.clockPlace === 'j13') list.push(h('li', { text: 'Clock: on the I2C connector (J13)' }));
+  const moved = zonesMoved();
+  const kind = M.custom === 'newpanel' ? 'install' : M.custom === 'oldfw' ? 'update' : 'apply';
+  $('modal-title').textContent = { apply: 'Apply these pins and restart the panel?', install: 'Install RoboAlarms with these pins?', update: 'Update to 0.7.0 with these pins?' }[kind];
+  $('modal-ok').textContent = { apply: 'Apply and restart', install: 'Install', update: 'Update' }[kind];
+  $('modal-ok').dataset.kind = kind;
+  const what = {
+    apply: 'The panel checks the pins, stores them and restarts once. ',
+    install: 'The Flasher keeps a copy of what is on the board now, installs RoboAlarms 0.7.0, starts it, sets these pins and restarts it once more: about 5 minutes. ',
+    update: 'The Flasher updates the panel to 0.7.0 (its codes, zones and settings stay), then sets these pins and restarts it once more: about 3 minutes. ',
+  }[kind];
+  append(body, [h('p', {}, what, h('strong', { text: 'Your board stays unplugged until the end.' })), h('ul', { class: 'tight' }, list),
+    moved.map((z) => h('p', { class: 'small' }, h('b', { text: `Zone ${z.n} (${z.name}) is wired to IO${z.g} today. ` }), 'Your board takes that pin: after the restart the zone shows Check until you give it another terminal or remove it.'))]);
+  $('modal').hidden = false; $('modal-ok').focus();
+}
+$('modal-cancel').addEventListener('click', () => { $('modal').hidden = true; });
+$('modal-ok').addEventListener('click', () => { $('modal').hidden = true; M.how = $('modal-ok').dataset.kind || 'apply'; M.panel = { pins: copyPins(M.pins), clockPlace: M.clockPlace }; M.custom = 'applied'; M.cleared = false; render(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('modal').hidden = true; });
+
+/* the theme: the viewer's own (data-theme or the system), and the app's toggle */
+$('theme-toggle').append(icon('sun'));
+$('theme-toggle').addEventListener('click', () => {
+  const r = document.documentElement;
+  const dark = r.dataset.theme ? r.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  r.dataset.theme = dark ? 'light' : 'dark';
+});
+
+/* a bare #token opens a screen: #custom, #places, #software, #ports, #parts, #ready, #zigbee, #test */
+const start = location.hash.slice(1);
+if (VIEWS[start]) M.screen = start;
+render();
+</script>
+</body>
+</html>

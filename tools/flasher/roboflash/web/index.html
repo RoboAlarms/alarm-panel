@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RoboAlarms Flasher</title>
+  <link rel="icon" href="logo.png">
+  <link rel="stylesheet" href="app.css">
+  <script src="theme.js"></script>
+</head>
+<body>
+  <header class="appbar">
+    <div class="wordmark"><img src="logo.png" alt=""><b>RoboAlarms</b><span>Flasher</span></div>
+    <div class="seg" role="group" aria-label="Mode">
+      <button id="mode-guided" type="button" data-act="mode" data-v="guided">Guided setup</button>
+      <button id="mode-tools" type="button" data-act="mode" data-v="tools">Advanced tools</button>
+    </div>
+    <button class="btn small update-pill" id="flasher-update" type="button" hidden title="Opens its download page in your browser"></button>
+    <button class="icon-btn" id="theme-toggle" type="button" aria-label="Switch to dark theme" title="Switch to dark theme"></button>
+  </header>
+  <div id="app" class="shell"></div>
+  <div class="modal-wrap" id="modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title"></h2>
+      <div id="modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn" type="button" id="modal-cancel">Cancel</button>
+        <button class="btn primary" type="button" id="modal-ok">Continue</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <div class="drop" id="drop" hidden><div>Drop the firmware file to open it</div></div>
+  <input type="file" id="bundle-file" accept=".roboflash" hidden>
+  <script src="app.js"></script>
+</body>
+</html>

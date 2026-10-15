@@ -1,0 +1,10 @@
+<component>
+	<!-- Small heading that groups the rows of a settings page. -->
+	<api>
+		<prop name="text" type="string" default="Delays" help="Heading" />
+	</api>
+
+	<view extends="box" width="100%" height="content" style_pad_top="#space_md" style_pad_left="#space_xs">
+		<lv_label name="text_label" text="$text" style_text_font="font_caption" style_text_color="#color_text_3" />
+	</view>
+</component>

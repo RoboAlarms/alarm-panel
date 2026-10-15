@@ -1,0 +1,39 @@
+<component>
+	<!-- An automation's arming warning: a short card above Home's arming tiles, which keep their
+	     look and share the height left (docs/features/41 D19, kit arm_strip). The level's chip,
+	     when it arms, who set it, an amber line when the panel isn't ready (D28), and one Put off
+	     button (D26); after a put-off the same card is a quiet grey note without the button (D27).
+	     Steady: no countdown, nothing moves. Everything is bound to subjects (ui_auto_warn.c). -->
+	<styles>
+		<style name="style_arm_strip" bg_color="#color_surface" bg_opa="100%" radius="#radius_lg" border_width="1" border_color="#color_line" pad_top="#space_md" pad_bottom="#space_md" pad_left="#space_lg" pad_right="#space_lg" layout="flex" flex_flow="column" pad_row="#space_md" />
+	</styles>
+
+	<view extends="box" width="100%" height="content">
+		<style name="style_arm_strip" />
+		<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
+			<box name="arm_strip_chip" width="48" height="48" style_radius="#radius_full" style_bg_opa="#opa_tint">
+				<bind_style_prop prop="bg_color" subject="subject_arm_strip_color" />
+				<lv_label align="center" bind_text="subject_arm_strip_glyph" style_text_font="icons_28">
+					<bind_style_prop prop="text_color" subject="subject_arm_strip_color" />
+				</lv_label>
+			</box>
+			<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="2">
+				<!-- one line (font_title's 33 px), so a long language never squeezes the tiles below;
+				     the status bar says the same words -->
+				<lv_label name="arm_strip_title" width="100%" long_mode="dots" style_max_height="33" bind_text="subject_arm_strip_title" style_text_font="font_title" />
+				<lv_label name="arm_strip_detail" width="100%" long_mode="wrap" bind_text="subject_arm_strip_detail" style_text_color="#color_text_2" />
+				<lv_label name="arm_strip_note" width="100%" long_mode="wrap" bind_text="subject_arm_strip_note" style_text_color="#color_amber">
+					<bind_flag_if_eq subject="subject_arm_strip_note_on" flag="hidden" ref_value="0" />
+				</lv_label>
+			</box>
+		</box>
+		<box name="arm_strip_put_off" width="100%" clickable="true" style_flex_main_place="center">
+			<bind_flag_if_not_eq subject="subject_arm_strip" flag="hidden" ref_value="1" />
+			<style name="style_button" />
+			<style name="style_button_pressed" selector="pressed" />
+			<lv_label text="&#xE087;" style_text_font="icons_20" />
+			<!-- tr-context: Home, the arming warning's button -->
+			<lv_label text="Put off" />
+		</box>
+	</view>
+</component>

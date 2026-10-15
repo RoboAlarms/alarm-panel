@@ -1,0 +1,6 @@
+version: "0.1.0"
+description: "Local Home Assistant link of the alarm panel: mDNS, TLS, pairing on the screen"
+dependencies:
+  idf:
+    version: ">=6.1"
+  espressif/mdns: "^1.8.0"

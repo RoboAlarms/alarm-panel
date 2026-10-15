@@ -1,0 +1,56 @@
+# Build output
+build/
+cmake-build-*/
+*.o
+*.obj
+__pycache__/
+*.pyc
+
+# ESP-IDF (commit dependencies.lock and sdkconfig.defaults*, not the generated sdkconfig)
+managed_components/
+sdkconfig
+sdkconfig.old
+
+# IDEs
+.idea/
+.vscode/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets (OTA signing keys, TLS client keys, Wi-Fi credentials)
+*.pem
+*.key
+secrets/
+
+# One panel's own particulars: port, silicon revision, codes, who uses it
+# (PANEL.local.example.md is the template and IS committed)
+PANEL.local.md
+*.local.md
+!*.example.md
+# ...and other local settings (for example Claude Code's .claude/settings.local.json)
+*.local.json
+# Old pages of local handoff and panel notes, and what agent worktrees held (AGENTS.md "Recording work")
+local-archive/
+# Claude Code's agent worktrees (CLAUDE.md): never committed, and kept out of searches
+.claude/worktrees/
+
+# Per-silicon-revision firmware builds (tools/idf.ps1 -ChipRev v1|v3)
+build_v*/
+sdkconfig.v*
+build_web_*/
+sdkconfig.web_*
+
+# Local code-review output
+codex-review/
+
+# Vendor documentation saved for offline reference: not ours to publish (docs/hardware/README.md)
+docs/hardware/*
+!docs/hardware/README.md
+
+# The other boards' builds (tools/idf.ps1 -Project <board>): build_<profile>/, sdkconfig.<profile>
+firmware/*/build_*/
+firmware/*/sdkconfig.*
+!firmware/*/sdkconfig.defaults*

@@ -1,0 +1,214 @@
+{
+  "voice": {
+    "id": "designed_female",
+    "kind": "design",
+    "design": "An adult American English female announcer. Calm, confident and matter-of-fact. Clear consonants, steady moderate pace, restrained pitch movement and firm sentence endings. Clean studio recording, without whispering, breathiness, dramatic acting or sing-song delivery."
+  },
+  "reference": {
+    "file": "reference.wav",
+    "sha256": "91e5ce152fb0cb7de7201904a3566ae7fd2b3d62cbab6418b954e8301c780dd2",
+    "samples": 165120,
+    "text": "Armed away. You may exit now. Front door. Upstairs bedroom window.",
+    "design_seed": 1,
+    "design_models": {
+      "Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign": "5ecdb67327fd37bb2e042aab12ff7391903235d3"
+    },
+    "design_models_from": "the audition run's provenance (build/voice/samples/qwen3/provenance.json, made 2026-10-08 19:25)"
+  },
+  "generation": {
+    "engine": "qwen3",
+    "models": {
+      "Qwen/Qwen3-TTS-12Hz-1.7B-Base": "fd4b254389122332181a7c3db7f27e918eec64e3"
+    },
+    "packages": {
+      "torch": "2.11.0+cu128",
+      "transformers": "4.57.3",
+      "qwen-tts": "0.1.1"
+    },
+    "gpu": "NVIDIA GeForce RTX 4080",
+    "made": "2026-10-08 21:56",
+    "settings": {
+      "token_text": "{}.",
+      "seed": 1234,
+      "max_takes": 4,
+      "token_seconds": [
+        0.2,
+        2.0
+      ],
+      "phrase_seconds": [
+        0.4,
+        6.0
+      ],
+      "rounds": 3,
+      "say": {
+        "word.patio": "Pattio."
+      },
+      "seeds": {
+        "word.dog": 1334
+      }
+    },
+    "trim_level": {
+      "trim": {
+        "floor_db": -45.0,
+        "lead_ms": 30,
+        "tail_ms": 80,
+        "fade_ms": 5
+      },
+      "level": {
+        "target_db": -20.0,
+        "peak_db": -3.0
+      }
+    },
+    "environment_at_export": {
+      "python": "3.12.14",
+      "platform": "Windows-11-10.0.26200-SP0",
+      "packages": [
+        "Jinja2==3.1.6",
+        "MarkupSafe==3.0.3",
+        "PyYAML==6.0.3",
+        "Pygments==2.21.0",
+        "accelerate==1.12.0",
+        "annotated-doc==0.0.5",
+        "annotated-types==0.8.0",
+        "anyio==4.15.1",
+        "brotli==1.2.0",
+        "certifi==2026.7.22",
+        "cffi==2.1.1",
+        "charset-normalizer==3.5.2",
+        "click==8.5.0",
+        "cloudpickle==3.1.2",
+        "colorama==0.4.6",
+        "decorator==5.3.1",
+        "einops==0.8.2",
+        "fastapi==0.143.0",
+        "filelock==3.32.3",
+        "flatbuffers==25.12.19",
+        "fsspec==2026.7.0",
+        "gradio==6.17.3",
+        "gradio_client==2.5.0",
+        "groovy==0.1.2",
+        "h11==0.16.0",
+        "hf-gradio==0.4.1",
+        "httpcore==1.0.9",
+        "httpx==0.28.1",
+        "huggingface_hub==0.36.2",
+        "idna==3.20",
+        "joblib==1.6.0",
+        "lazy-loader==0.6",
+        "librosa==1.0.0",
+        "llvmlite==0.50.0",
+        "markdown-it-py==4.2.0",
+        "mdurl==0.1.2",
+        "mpmath==1.3.0",
+        "msgpack==1.2.3",
+        "narwhals==2.26.0",
+        "networkx==3.6.1",
+        "numba==0.68.0",
+        "numpy==2.5.3",
+        "onnxruntime==1.30.0",
+        "opentelemetry-api==1.45.1",
+        "orjson==3.13.0",
+        "packaging==26.3",
+        "pandas==3.0.6",
+        "pillow==12.3.0",
+        "pip==26.2.1",
+        "platformdirs==4.12.4",
+        "pooch==1.9.0",
+        "protobuf==7.36.2",
+        "psutil==7.2.2",
+        "pycparser==3.1",
+        "pydantic==2.14.0",
+        "pydantic_core==2.50.0",
+        "pydub==0.25.1",
+        "python-dateutil==2.9.0.post0",
+        "python-multipart==0.0.32",
+        "pytz==2026.5",
+        "qwen-tts==0.1.1",
+        "regex==2026.9.29",
+        "requests==2.34.2",
+        "rich==15.0.0",
+        "safehttpx==0.1.7",
+        "safetensors==0.8.0",
+        "scikit-learn==1.9.1",
+        "scipy==1.18.1",
+        "semantic-version==2.10.0",
+        "setuptools==78.1.0",
+        "shellingham==1.5.4",
+        "six==1.17.0",
+        "soundfile==0.14.0",
+        "sox==1.5.0",
+        "soxr==1.1.0",
+        "starlette==1.7.0",
+        "sympy==1.14.0",
+        "threadpoolctl==3.7.0",
+        "tokenizers==0.22.2",
+        "tomlkit==0.14.0",
+        "torch==2.11.0+cu128",
+        "torchaudio==2.11.0+cu128",
+        "tqdm==4.70.1",
+        "transformers==4.57.3",
+        "typer==0.27.3",
+        "typing-inspection==0.4.4",
+        "typing_extensions==4.16.0",
+        "tzdata==2026.5",
+        "urllib3==2.8.0",
+        "uvicorn==0.54.0"
+      ],
+      "torch": "2.11.0+cu128",
+      "cuda": "12.8",
+      "cudnn": 91900,
+      "gpu": "NVIDIA GeForce RTX 4080",
+      "gpu_capability": "8.9",
+      "gpu_driver": "596.36"
+    }
+  },
+  "encoder": {
+    "pipeline": "tools/voice/encode.py: the master read as floats, then the speaker stage (tools/voice/speaker.py for_speaker(), the settings below): its quiet ends trimmed to lead_ms before the first sound and tail_ms after the last, then raised to target_rms_db of voiced RMS, the gain capped at peak_db, nothing limited; FFmpeg's resampler to 16 kHz mono s16, its peaks held under peak_db again (encode.ceiling); libopus at the bitrate below, Ogg Opus; the Ogg framing removed for packets/",
+    "speaker": {
+      "target_rms_db": -15.0,
+      "peak_db": -1.0,
+      "limit": false,
+      "lead_ms": 10,
+      "tail_ms": 20
+    },
+    "bitrate": 32000,
+    "sample_rate": 16000,
+    "frame_ms": 20,
+    "python": "3.12.14",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "packages": [
+      "av==19.0.1",
+      "numpy==2.5.3",
+      "pip==26.2.1"
+    ],
+    "pyav": "19.0.1",
+    "ffmpeg": "9.0.2",
+    "libraries": {
+      "libavutil": "61.1.102",
+      "libavcodec": "63.1.102",
+      "libavformat": "63.1.102",
+      "libavdevice": "63.1.102",
+      "libavfilter": "12.1.102",
+      "libswscale": "10.1.102",
+      "libswresample": "7.1.102"
+    },
+    "libopus": "libopus 1.6.1",
+    "libopus_file_sha256": "278e2dd25a2793d306204c9d966fe0dee6b4f56659b1ea7b759897e406980d79"
+  },
+  "pack": {
+    "gap_ms": 60,
+    "pause_ms": 300
+  },
+  "files_at_export": {
+    "tools/voice/library.json": "ec7859a51e3fd800afca1c00f978dfeac393c8bd2d36d96c2517257acaf4e979",
+    "tools/voice/audition.json": "ad5977ea5a75a27405144a68785d85ae91e460df8c2702d23ec08b4a64be8c89",
+    "tools/voice/record.py": "69d89a11ac83152eb13fbbd2eb74a0fd1279816b9147c4039adbfbbb6ec5adf9",
+    "tools/voice/audition.py": "20739f879a1599bb8101836f7f1378eb9b8d5b44d942a908f4b3c4f18cf5ea4a",
+    "tools/voice/engines.py": "07a6fb66c061ec75569e5afec0a6a4aca3953908e328b51039cb7063b9b89c72",
+    "tools/voice/audio_edit.py": "c464d34060581dff4d4837d4815f268706b7ab9d012e962f217a81243f2ceae5",
+    "tools/voice/encode.py": "0db184e3c71dbcda00f6fc5bd5e01a27c292145cff5be14bd64b82facdefe227",
+    "tools/voice/speaker.py": "3cd51ea5beda314b9a41df4fc477739c0f124e92aac0e59f5f4591e2fb94f2a9",
+    "tools/voice/carrier.py": "4bf2f337b29f4c4eedca103939d509c12df15012eb6ec82361322353c5220989",
+    "docs/features/08-Audio-and-Annunciation/recording-script.csv": "82860e3a8a4ba56aa276f4dd471504aa10b74aa72993e3a096eb4d898654b3e8"
+  }
+}

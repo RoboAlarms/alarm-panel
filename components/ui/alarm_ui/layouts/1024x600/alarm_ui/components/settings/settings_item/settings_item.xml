@@ -1,0 +1,22 @@
+<component>
+	<!-- A section of Settings in the left column, one line in the rail's style (BL-131): its
+	     icon and its name. The screen binds the selected style and the click, and adds a tag
+	     where a section speaks because something needs you (About: "Update"). A fixed height:
+	     LVGL's flex centres a row's line only when the height isn't "content" (min_height or not). -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE178;" help="Lucide glyph" />
+		<prop name="title" type="string" default="Screen and sound" help="Section" />
+	</api>
+
+	<styles>
+		<style name="style_settings_item" width="100%" height="52" radius="#radius_lg" pad_left="#space_md" pad_right="#space_md" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_md" text_color="#color_text_2" />
+		<style name="style_settings_item_pressed" bg_color="#color_pressed" bg_opa="100%" />
+	</styles>
+
+	<view extends="box" clickable="true">
+		<style name="style_settings_item" />
+		<style name="style_settings_item_pressed" selector="pressed" />
+		<lv_label width="28" text="$glyph" style_text_font="icons_20" style_text_align="center" />
+		<lv_label flex_grow="1" long_mode="dots" text="$title" style_text_font="font_label" style_text_color="#color_text" />
+	</view>
+</component>

@@ -1,0 +1,9 @@
+menu "Home Assistant link"
+config HA_LINK_DIAGNOSTICS
+    bool "Enable development-only trust-store fault injection"
+    default n
+    help
+        Adds the serial-console command ha storefail on/off. It simulates a
+        trust-store write failure without filling or corrupting NVS. Never
+        enable this in a release image.
+endmenu

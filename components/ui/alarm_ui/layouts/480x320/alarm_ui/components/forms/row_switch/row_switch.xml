@@ -1,0 +1,30 @@
+<component>
+	<!-- An on/off setting with an explanation. ui_app.c reads the switch ("toggle") when it
+	     changes. -->
+	<api>
+		<prop name="title" type="string" default="Auto-stay" help="Setting" />
+		<prop name="detail" type="string" default="Arm Stay when nobody leaves" help="What it does" />
+	</api>
+
+	<styles>
+		<style name="style_row_setting" width="100%" height="content" min_height="60" bg_color="#color_surface" bg_opa="100%" radius="#radius_md" pad_left="#space_lg" pad_right="#space_lg" pad_top="#space_md" pad_bottom="#space_md" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_lg" />
+		<style name="style_switch" width="56" height="32" radius="#radius_full" bg_color="#color_pressed" bg_opa="100%" />
+		<style name="style_switch_indicator" radius="#radius_full" bg_opa="0%" />
+		<style name="style_switch_on" bg_color="#color_green" bg_opa="100%" />
+		<style name="style_switch_knob" radius="#radius_full" bg_color="#color_text" bg_opa="100%" pad_all="-4" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_row_setting" />
+		<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="0">
+			<lv_label name="title_label" width="100%" long_mode="wrap" text="$title" style_text_font="font_label" />
+			<lv_label name="detail_label" width="100%" long_mode="wrap" text="$detail" style_text_font="font_caption" style_text_color="#color_text_2" />
+		</box>
+		<lv_switch name="toggle" ext_click_area="12">
+			<style name="style_switch" />
+			<style name="style_switch_indicator" selector="indicator" />
+			<style name="style_switch_on" selector="indicator|checked" />
+			<style name="style_switch_knob" selector="knob" />
+		</lv_switch>
+	</view>
+</component>

@@ -1,0 +1,34 @@
+<component>
+	<!-- A number setting with minus and plus ("minus", "value_label", "plus"). ui_app.c keeps
+	     the value within its range and step. -->
+	<api>
+		<prop name="title" type="string" default="Exit delay" help="Setting" />
+		<prop name="detail" type="string" default="Time to leave after arming" help="What it does" />
+		<prop name="value" type="string" default="60 s" help="Current value in words" />
+	</api>
+
+	<styles>
+		<style name="style_row_stepper" width="100%" height="content" min_height="60" bg_color="#color_surface" bg_opa="100%" radius="#radius_md" pad_left="#space_lg" pad_right="#space_md" pad_top="#space_md" pad_bottom="#space_md" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_md" />
+		<style name="style_step_button" width="44" height="44" radius="#radius_full" bg_color="#color_raised" bg_opa="100%" text_color="#color_text" />
+		<style name="style_step_button_pressed" bg_color="#color_pressed" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_row_stepper" />
+		<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="0">
+			<lv_label name="title_label" width="100%" long_mode="wrap" text="$title" style_text_font="font_label" />
+			<lv_label name="detail_label" width="100%" long_mode="wrap" text="$detail" style_text_font="font_caption" style_text_color="#color_text_2" />
+		</box>
+		<box name="minus" clickable="true" ext_click_area="6">
+			<style name="style_step_button" />
+			<style name="style_step_button_pressed" selector="pressed" />
+			<lv_label align="center" text="&#xE11C;" style_text_font="icons_20" />
+		</box>
+		<lv_label name="value_label" width="72" text="$value" style_text_font="font_label" style_text_align="center" />
+		<box name="plus" clickable="true" ext_click_area="6">
+			<style name="style_step_button" />
+			<style name="style_step_button_pressed" selector="pressed" />
+			<lv_label align="center" text="&#xE13D;" style_text_font="icons_20" />
+		</box>
+	</view>
+</component>

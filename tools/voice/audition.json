@@ -1,0 +1,38 @@
+{
+  "locale": "en-US",
+  "reference_text": "Armed away. You may exit now. Front door. Upstairs bedroom window.",
+  "word_text": "{}.",
+  "label_text": "{}.",
+  "seed": 1234,
+  "max_takes": 4,
+  "word_seconds": [0.2, 2.0],
+  "label_seconds": [0.4, 4.0],
+  "gap_ms": 60,
+  "words": ["Front", "Back", "Garage", "Upstairs", "Bedroom", "Living room", "Door", "Window",
+            "Glass break", "Motion"],
+  "labels": [
+    ["Front", "Door"],
+    ["Back", "Garage", "Door"],
+    ["Upstairs", "Bedroom", "Window"],
+    ["Living room", "Glass break"],
+    ["Living room", "Motion"]
+  ],
+  "voices": {
+    "kokoro": [
+      {"id": "af_heart", "voice": "af_heart"},
+      {"id": "am_michael", "voice": "am_michael"}
+    ],
+    "qwen3": [
+      {"id": "designed_female", "kind": "design",
+       "design": "An adult American English female announcer. Calm, confident and matter-of-fact. Clear consonants, steady moderate pace, restrained pitch movement and firm sentence endings. Clean studio recording, without whispering, breathiness, dramatic acting or sing-song delivery."},
+      {"id": "aiden", "kind": "preset", "speaker": "Aiden",
+       "instruct": "Calm, clear and matter-of-fact, like a security system announcer. Steady moderate pace, clear consonants, firm sentence endings."}
+    ],
+    "voxcpm2": [
+      {"id": "designed_female",
+       "design": "An adult American woman, a calm, clear and confident announcer, steady moderate pace, clean studio recording"},
+      {"id": "designed_male",
+       "design": "An adult American man, a calm, clear and confident announcer, steady moderate pace, clean studio recording"}
+    ]
+  }
+}

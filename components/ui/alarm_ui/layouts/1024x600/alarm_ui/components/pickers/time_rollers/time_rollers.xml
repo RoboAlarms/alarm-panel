@@ -1,0 +1,36 @@
+<component>
+	<!-- A time of day as rollers (BL-131): Hour, Minute and, on a 12-hour clock, AM/PM. A flick,
+	     not twenty taps. ui_net.c fills the choices from the clock the panel shows (0-23 on a
+	     24-hour clock, where "ampm_col" hides), sets the selection and reads it back. A roller
+	     never slides to a value: it snaps where the finger leaves it (style_roller, UI-020).
+	     Set the date and time and the setup's clock step use it; Night hours will too. -->
+	<api>
+		<prop name="roll_w" type="int" default="88" help="Width of the Hour and Minute columns" />
+		<prop name="ampm_w" type="int" default="80" help="Width of the AM/PM column" />
+	</api>
+
+	<view extends="box" width="content" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="end" style_pad_column="#space_sm">
+		<box width="$roll_w" height="content" style_layout="flex" style_flex_flow="column" style_flex_cross_place="center" style_pad_row="#space_xs">
+			<!-- tr-context: set the clock -->
+			<lv_label text="Hour" style_text_font="font_caption" style_text_color="#color_text_2" />
+			<lv_roller name="roll_hour" width="100%">
+				<style name="style_roller" />
+				<style name="style_roller_selected" selector="selected" />
+			</lv_roller>
+		</box>
+		<box width="$roll_w" height="content" style_layout="flex" style_flex_flow="column" style_flex_cross_place="center" style_pad_row="#space_xs">
+			<!-- tr-context: set the clock -->
+			<lv_label text="Minute" style_text_font="font_caption" style_text_color="#color_text_2" />
+			<lv_roller name="roll_minute" width="100%">
+				<style name="style_roller" />
+				<style name="style_roller_selected" selector="selected" />
+			</lv_roller>
+		</box>
+		<box name="ampm_col" width="$ampm_w" height="content">
+			<lv_roller name="roll_ampm" width="100%">
+				<style name="style_roller" />
+				<style name="style_roller_selected" selector="selected" />
+			</lv_roller>
+		</box>
+	</view>
+</component>

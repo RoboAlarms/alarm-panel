@@ -1,0 +1,30 @@
+<component>
+	<!-- One zone: class icon tinted by state, name, state in words, and the bypass button.
+	     ui_app.c creates one card per zone and updates the named children in place. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE3D5;" help="Lucide glyph for the device class" />
+		<prop name="title" type="string" default="Front Door" help="Zone name" />
+		<prop name="detail" type="string" default="Closed" help="State in words" />
+	</api>
+
+	<styles>
+		<style name="style_zone_card" width="428" height="content" min_height="88" bg_color="#color_surface" bg_opa="100%" radius="#radius_lg" border_width="1" border_color="#color_line" pad_left="#space_lg" pad_right="#space_lg" pad_top="#space_sm" pad_bottom="#space_sm" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" pad_column="#space_lg" />
+		<style name="style_zone_bypass" height="44" radius="#radius_full" bg_color="#color_raised" bg_opa="100%" pad_left="#space_lg" pad_right="#space_lg" layout="flex" flex_flow="row" flex_cross_place="center" flex_track_place="center" text_font="font_label" />
+		<style name="style_zone_bypass_pressed" bg_color="#color_pressed" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_zone_card" />
+		<icon_chip name="chip" glyph="$glyph" size="56" font="icons_28" color="#color_green" />
+		<box flex_grow="1" height="content" style_min_height="70" style_layout="flex" style_flex_flow="column" style_flex_main_place="center" style_pad_row="2">
+			<lv_label name="title_label" width="100%" long_mode="dots" style_max_height="52" text="$title" style_text_font="font_label" />
+			<lv_label name="detail_label" width="100%" long_mode="wrap" text="$detail" style_text_color="#color_text_2" />
+		</box>
+		<box name="bypass" width="content" clickable="true" ext_click_area="8">
+			<style name="style_zone_bypass" />
+			<style name="style_zone_bypass_pressed" selector="pressed" />
+			<event_cb callback="ui_on_zone_bypass" trigger="clicked" />
+			<lv_label name="bypass_label" text="Bypass" />
+		</box>
+	</view>
+</component>

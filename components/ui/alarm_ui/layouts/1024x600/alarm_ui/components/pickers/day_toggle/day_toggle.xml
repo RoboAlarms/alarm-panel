@@ -1,0 +1,19 @@
+<component>
+	<!-- One day of the week on the time sheet (BL-168), 64 px round: the chips are 40 px, under
+	     the touch target. A tap turns it on or off (checkable); on, it is filled blue. ui_forms.c
+	     (ui_time_sheet_open) writes the short day name into "day_name", in the region's week order.
+	     It changes at once, with no transition (UI-020). font_caption: en-XA's longest short name is
+	     53 px wide in it. -->
+	<styles>
+		<style name="style_day_toggle" width="64" height="64" radius="#radius_full" bg_color="#color_raised" bg_opa="100%" text_font="font_caption" text_color="#color_text_2" />
+		<style name="style_day_toggle_pressed" bg_color="#color_pressed" />
+		<style name="style_day_toggle_on" bg_color="#color_blue" text_color="#color_on_tone" />
+	</styles>
+
+	<view extends="box" clickable="true" checkable="true" ext_click_area="4">
+		<style name="style_day_toggle" />
+		<style name="style_day_toggle_pressed" selector="pressed" />
+		<style name="style_day_toggle_on" selector="checked" />
+		<lv_label name="day_name" align="center" text="" />
+	</view>
+</component>

@@ -1,0 +1,15 @@
+# CrowPanel Advanced 7" (16 MB flash). See docs/features/06-CrowPanel-P4-Platform.
+# The partition table sits at 0xC000 (CONFIG_PARTITION_TABLE_OFFSET): the bootloader
+# (0x2000..0xBFFF) needs the room on P4 silicon v3.x and once secure boot is enabled.
+# Name,     Type, SubType,   Offset,   Size
+nvs,        data, nvs,       0xD000,   0x20000
+otadata,    data, ota,       0x2D000,  0x2000
+phy_init,   data, phy,       0x2F000,  0x1000
+ota_0,      app,  ota_0,     0x30000,  4608K
+ota_1,      app,  ota_1,     ,         4608K
+nvs_keys,   data, nvs_keys,  ,         0x1000
+assets,     data, littlefs,  ,         2560K
+cp_fw,      data, undefined, ,         1536K
+fw_cache,   data, undefined, ,         2M
+eventlog,   data, undefined, ,         384K
+coredump,   data, coredump,  ,         64K

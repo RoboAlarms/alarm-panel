@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The panel's appearances (docs/features/07 UI-010, BL-132): the colours of each theme, and what
+     a theme adds to the styles. A theme names every colour const of globals.xml; the first is
+     globals.xml's own (what the LVGL Pro Editor shows). tools/lvpro_gen.py makes them a palette
+     table that COLOR_* read, and ui_theme_apply() switches it at run time, in one step (UI-020).
+     contrast="high" asks for the stricter targets of tools/ui_mockup.py's check (7:1 text, 3:1
+     outlines); saver= names the theme whose colours the screen saver keeps, a dark photo in every
+     appearance. Both mockups' viewers read this file (their Appearance switch). -->
+<themes>
+	<theme name="dark" title="Dark" help="Today's colours, with text_3 brighter: hints were 2.7 to 3.4:1, now 4.6 to 5.7:1">
+		<color name="color_bg" value="0x0B0F14" />
+		<color name="color_rail" value="0x0E141B" />
+		<color name="color_surface" value="0x141B24" />
+		<color name="color_raised" value="0x1C2531" />
+		<color name="color_pressed" value="0x2A3544" />
+		<color name="color_line" value="0x232D3A" />
+		<color name="color_text" value="0xF1F5F9" />
+		<color name="color_text_2" value="0x94A3B8" />
+		<color name="color_text_3" value="0x808DA0" />
+		<color name="color_green" value="0x34D399" />
+		<color name="color_amber" value="0xFBBF24" />
+		<color name="color_blue" value="0x60A5FA" />
+		<color name="color_violet" value="0xA78BFA" />
+		<color name="color_rose" value="0xFB7185" />
+		<color name="color_orange" value="0xFB923C" />
+		<color name="color_red" value="0xF87171" />
+		<color name="color_alarm_bg" value="0x2A0B0E" />
+		<color name="color_on_tone" value="0x0B0F14" />
+		<color name="color_alarm_card" value="0x3A1216" />
+		<color name="color_toast_line" value="0x3A4658" />
+		<color name="color_knob" value="0xF1F5F9" />
+		<color name="color_key_special" value="0x232D3A" />
+	</theme>
+	<theme name="light" title="Light" saver="dark" help="Dark words on a light screen; the tones darker, so words in them still read">
+		<color name="color_bg" value="0xEDF1F5" />
+		<color name="color_rail" value="0xF8FAFC" />
+		<color name="color_surface" value="0xFFFFFF" />
+		<color name="color_raised" value="0xE1E7EE" />
+		<color name="color_pressed" value="0xCBD4DF" />
+		<color name="color_line" value="0xD3DAE3" />
+		<color name="color_text" value="0x0F172A" />
+		<color name="color_text_2" value="0x475569" />
+		<color name="color_text_3" value="0x56657A" />
+		<color name="color_green" value="0x047656" />
+		<color name="color_amber" value="0x9C5600" />
+		<color name="color_blue" value="0x1D4ED8" />
+		<color name="color_violet" value="0x6D28D9" />
+		<color name="color_rose" value="0xC71E4E" />
+		<color name="color_orange" value="0xB83E0B" />
+		<color name="color_red" value="0xB91C1C" />
+		<color name="color_alarm_bg" value="0xFDE2E2" />
+		<color name="color_on_tone" value="0xFFFFFF" />
+		<color name="color_alarm_card" value="0xFFE4E6" />
+		<color name="color_toast_line" value="0xB8C3D0" />
+		<color name="color_knob" value="0xFFFFFF" />
+		<color name="color_key_special" value="0xD3DAE3" />
+	</theme>
+	<theme name="contrast" title="High contrast" contrast="high" help="White on black, bright tones, every card and control outlined">
+		<color name="color_bg" value="0x000000" />
+		<color name="color_rail" value="0x000000" />
+		<color name="color_surface" value="0x0A0C10" />
+		<color name="color_raised" value="0x1A1F27" />
+		<color name="color_pressed" value="0x394150" />
+		<color name="color_line" value="0xA7B1BE" />
+		<color name="color_text" value="0xFFFFFF" />
+		<color name="color_text_2" value="0xE8ECF1" />
+		<color name="color_text_3" value="0xC9D0D9" />
+		<color name="color_green" value="0x4ADE80" />
+		<color name="color_amber" value="0xFCD34D" />
+		<color name="color_blue" value="0x93C5FD" />
+		<color name="color_violet" value="0xC4B5FD" />
+		<color name="color_rose" value="0xFDA4AF" />
+		<color name="color_orange" value="0xFDBA74" />
+		<color name="color_red" value="0xFF8A8A" />
+		<color name="color_alarm_bg" value="0x3D0000" />
+		<color name="color_on_tone" value="0x000000" />
+		<color name="color_alarm_card" value="0x4A0A0A" />
+		<color name="color_toast_line" value="0xE8ECF1" />
+		<color name="color_knob" value="0xFFFFFF" />
+		<color name="color_key_special" value="0x2A313C" />
+	</theme>
+	<theme name="contrast_light" title="High contrast, light" contrast="high" saver="contrast" help="Black on white, deep tones, every card and control outlined">
+		<color name="color_bg" value="0xFFFFFF" />
+		<color name="color_rail" value="0xFFFFFF" />
+		<color name="color_surface" value="0xFFFFFF" />
+		<color name="color_raised" value="0xEEF1F4" />
+		<color name="color_pressed" value="0xD5DBE2" />
+		<color name="color_line" value="0x4B5563" />
+		<color name="color_text" value="0x000000" />
+		<color name="color_text_2" value="0x1F2937" />
+		<color name="color_text_3" value="0x374151" />
+		<color name="color_green" value="0x065C44" />
+		<color name="color_amber" value="0x744600" />
+		<color name="color_blue" value="0x1E40AF" />
+		<color name="color_violet" value="0x5B21B6" />
+		<color name="color_rose" value="0x9F1239" />
+		<color name="color_orange" value="0x903111" />
+		<color name="color_red" value="0x991B1B" />
+		<color name="color_alarm_bg" value="0xFFE1E1" />
+		<color name="color_on_tone" value="0xFFFFFF" />
+		<color name="color_alarm_card" value="0xFFE1E1" />
+		<color name="color_toast_line" value="0x1F2937" />
+		<color name="color_knob" value="0xFFFFFF" />
+		<color name="color_key_special" value="0xE0E5EA" />
+	</theme>
+
+	<!-- High contrast changes colours and edges, not the layout: every card, row and control has a
+	     2 px outline inside its edge (outline_pad -2: nothing moves), what is chosen is ringed in
+	     the text colour, and a switch's knob on its coloured track takes color_on_tone. -->
+	<styles themes="contrast contrast_light">
+		<style name="style_card" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style name="style_button" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style name="style_bar_round" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style name="style_bar_pill" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style name="style_sheet_card" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="list_row" name="style_list_row" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="row_switch" name="style_row_setting" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="row_switch" name="style_switch" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="row_switch_icon" name="style_row_setting_icon" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="row_switch_icon" name="style_switch_icon" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="row_stepper" name="style_row_stepper" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="row_stepper" name="style_step_button" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="row_slider" name="style_row_slider" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="row_slider" name="style_slider" outline_width="1" outline_pad="0" outline_color="#color_line" />
+		<style component="event_row" name="style_event_row" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="trouble_row" name="style_trouble_row" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="zone_card" name="style_zone_card" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="zone_card" name="style_zone_bypass" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="big_value" name="style_big_value" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="chip" name="style_chip" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="arm_tile" name="style_arm_tile" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="action_tile" name="style_action_tile" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="hero" name="style_hero" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="hero" name="style_hero_alarm" outline_color="#color_red" />
+		<style component="code_pad" name="style_pad" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="code_pad" name="style_pad_close" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="pad_key" name="style_pad_key" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="month_calendar" name="style_cal_round" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="text_sheet" name="style_text_card" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="text_sheet" name="style_text_field" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<style component="text_sheet" name="style_keyboard_key" outline_width="2" outline_pad="-2" outline_color="#color_line" />
+		<!-- What is chosen: ringed in the text colour -->
+		<style name="style_nav_active" outline_width="2" outline_pad="-2" outline_color="#color_text" />
+		<style name="style_segment_active" outline_width="2" outline_pad="-2" outline_color="#color_text" />
+		<style component="cal_day" name="style_cal_day_chosen" outline_width="2" outline_pad="-2" outline_color="#color_text" />
+		<!-- A switch that is on: the knob in the colour of words on a tone -->
+		<style component="row_switch" name="style_switch_knob_on" bg_color="#color_on_tone" />
+		<style component="row_switch_icon" name="style_switch_icon_knob_on" bg_color="#color_on_tone" />
+	</styles>
+
+	<!-- The light themes: the white knob has a thin ring where the track is light -->
+	<styles themes="light contrast_light">
+		<style component="row_switch" name="style_switch_knob" border_width="1" border_color="#color_text_3" />
+		<style component="row_switch_icon" name="style_switch_icon_knob" border_width="1" border_color="#color_text_3" />
+		<style component="row_slider" name="style_slider_knob" border_width="1" border_color="#color_text_3" />
+	</styles>
+</themes>

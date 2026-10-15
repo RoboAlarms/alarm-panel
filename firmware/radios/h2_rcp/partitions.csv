@@ -1,0 +1,6 @@
+# The ESP32-H2 radio co-processor (4 MB flash on the Elecrow module; the RCP needs little).
+# From ESP-IDF's examples/openthread/ot_rcp.
+# Name,   Type, SubType, Offset,  Size, Flags
+nvs,        data, nvs,      0x9000,  0x6000,
+phy_init,   data, phy,      ,        0x1000,
+factory,    app,  factory,  0x10000, 1M,

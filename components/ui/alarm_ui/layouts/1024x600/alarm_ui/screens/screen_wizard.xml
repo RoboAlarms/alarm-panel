@@ -1,0 +1,104 @@
+<screen permanent="true">
+	<!-- First-boot setup: welcome, Wi-Fi, time zone, factory codes, system name, done. The
+	     left side says where you are and why; the right side holds the step (lists filled from
+	     C, or the code pad) and the buttons. 1024 x 600. -->
+	<view extends="lv_obj" scrollable="false">
+		<style name="style_screen" />
+
+		<box name="wiz_side" width="400" height="100%" style_bg_color="#color_rail" style_bg_opa="100%" style_border_side="right" style_border_width="1" style_border_color="#color_line" style_pad_all="48" style_layout="flex" style_flex_flow="column" style_pad_row="#space_lg">
+			<box name="wiz_steps" width="content" height="content" style_layout="flex" style_flex_flow="row" style_pad_column="#space_sm">
+				<box>
+					<style name="style_step" />
+					<style name="style_step_on" selector="checked" />
+					<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="1" />
+				</box>
+				<box>
+					<style name="style_step" />
+					<style name="style_step_on" selector="checked" />
+					<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="2" />
+				</box>
+				<box>
+					<style name="style_step" />
+					<style name="style_step_on" selector="checked" />
+					<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="3" />
+				</box>
+				<box>
+					<style name="style_step" />
+					<style name="style_step_on" selector="checked" />
+					<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="4" />
+				</box>
+				<box>
+					<style name="style_step" />
+					<style name="style_step_on" selector="checked" />
+					<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="5" />
+				</box>
+			</box>
+			<box name="wiz_disk" width="168" height="168" style_margin_top="#space_xxl" style_radius="#radius_full" style_bg_color="#color_blue" style_bg_opa="#opa_tint">
+				<lv_label name="wiz_icon" align="center" bind_text="subject_wiz_icon" style_text_font="icons_96" style_text_color="#color_blue" />
+			</box>
+			<lv_label name="wiz_title" width="100%" long_mode="wrap" bind_text="subject_wiz_title" style_margin_top="#space_md" style_text_font="font_headline" />
+			<lv_label name="wiz_note" width="100%" long_mode="wrap" bind_text="subject_wiz_note" style_text_color="#color_text_2" />
+			<box width="8" height="8" flex_grow="1" />
+			<box name="wiz_exit" width="content" height="content" clickable="true" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_sm" style_pad_ver="#space_sm" style_text_color="#color_text_2" style_text_font="font_label">
+				<bind_flag_if_eq subject="subject_wiz_exit" flag="hidden" ref_value="0" />
+				<event_cb callback="ui_on_wizard_exit" trigger="clicked" />
+				<lv_label text="&#xE10E;" style_text_font="icons_20" />
+				<lv_label text="Leave setup" />
+			</box>
+		</box>
+
+		<box name="wiz_main" x="400" width="624" height="100%" style_pad_all="#space_xl" style_layout="flex" style_flex_flow="column" style_pad_row="#space_lg">
+			<box name="wiz_body_area" width="100%" flex_grow="1" scrollable="false" style_pad_all="0" style_bg_opa="0%" style_border_width="0">
+				<bind_flag_if_eq subject="subject_wiz_pad" flag="hidden" ref_value="1" />
+				<box name="wiz_body" width="100%" height="100%" scrollable="true" clickable="true" user_1="true" scrollbar_mode="off" style_layout="flex" style_flex_flow="column" style_pad_row="#space_sm">
+					<bind_flag_if_eq subject="subject_wiz_pad" flag="hidden" ref_value="1" />
+				</box>
+				<!-- a still shade where the list runs on under the buttons; C hides it at the end -->
+				<box name="wiz_shade" width="100%" height="48" align="bottom_mid" floating="true" clickable="false" scrollable="false" style_border_width="0" style_radius="0" style_bg_color="#color_bg" style_bg_opa="100%" style_bg_grad_color="#color_bg" style_bg_grad_dir="ver" style_bg_main_opa="0%" style_bg_grad_opa="100%" style_bg_main_stop="0" style_bg_grad_stop="255" />
+			</box>
+			<box name="wiz_pad_area" width="100%" flex_grow="1" style_layout="flex" style_flex_flow="column" style_flex_cross_place="center" style_flex_track_place="center">
+				<bind_flag_if_eq subject="subject_wiz_pad" flag="hidden" ref_value="0" />
+				<code_pad name="wiz_pad" width="428" height="100%" />
+			</box>
+			<box name="wiz_footer" width="100%" height="content" style_layout="flex" style_flex_flow="row_wrap" style_flex_main_place="end" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md" style_pad_row="#space_sm">
+				<bind_flag_if_eq subject="subject_wiz_pad" flag="hidden" ref_value="1" />
+				<box name="wiz_back" width="content" clickable="true">
+					<style name="style_button" />
+					<style name="style_button_pressed" selector="pressed" />
+					<bind_flag_if_eq subject="subject_wiz_back" flag="hidden" ref_value="0" />
+					<event_cb callback="ui_on_wizard_back" trigger="clicked" />
+					<lv_label text="&#xE06E;" style_text_font="icons_20" />
+					<lv_label text="Back" />
+				</box>
+				<lv_spinner name="wiz_spinner" width="32" height="32" anim_duration="1000" arc_sweep="240" style_arc_width="4" style_arc_color="#color_line" style_arc_width-indicator="4" style_arc_color-indicator="#color_blue">
+					<bind_flag_if_eq subject="subject_busy" flag="hidden" ref_value="0" />
+				</lv_spinner>
+				<box width="8" height="8" flex_grow="1" />
+				<box name="wiz_next" width="content" clickable="true">
+					<style name="style_button" />
+					<style name="style_button_primary" />
+					<style name="style_button_tone_pressed" selector="pressed" />
+					<bind_style name="style_disabled" subject="subject_wiz_next_on" ref_value="0" />
+					<event_cb callback="ui_on_wizard_next" trigger="clicked" />
+					<lv_label bind_text="subject_wiz_next" />
+					<lv_label text="&#xE06F;" style_text_font="icons_20" />
+				</box>
+			</box>
+		</box>
+
+		<text_sheet name="wiz_text_sheet">
+			<bind_flag_if_not_eq subject="subject_sheet" flag="hidden" ref_value="1" />
+		</text_sheet>
+		<pick_sheet name="wiz_pick_sheet">
+			<bind_flag_if_not_eq subject="subject_sheet" flag="hidden" ref_value="2" />
+		</pick_sheet>
+		<confirm_dialog name="wiz_confirm_dialog">
+			<bind_flag_if_not_eq subject="subject_sheet" flag="hidden" ref_value="3" />
+		</confirm_dialog>
+
+		<box name="wiz_toast" width="content" height="content" style_min_height="52" align="bottom_mid" x="-312" y="-28" style_bg_color="#color_pressed" style_bg_opa="100%" style_radius="#radius_full" style_border_width="1" style_border_color="#color_toast_line" style_pad_left="#space_xl" style_pad_right="#space_xl" style_pad_top="12" style_pad_bottom="12" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center">
+			<bind_flag_if_eq subject="subject_toast_visible" flag="hidden" ref_value="0" />
+			<lv_label bind_text="subject_toast" long_mode="wrap" style_max_width="320" style_text_align="center" style_text_font="font_label" />
+		</box>
+	</view>
+</screen>

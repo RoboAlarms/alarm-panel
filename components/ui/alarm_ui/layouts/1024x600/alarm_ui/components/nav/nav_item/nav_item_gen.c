@@ -1,0 +1,45 @@
+/**
+ * @file nav_item_gen.c
+ * @brief Template source file for LVGL objects
+ */
+
+/*********************
+ *      INCLUDES
+ *********************/
+
+#include "nav_item_gen.h"
+#include "../../../alarm_ui.h"
+
+/**********************
+ *   GLOBAL FUNCTIONS
+ **********************/
+
+lv_obj_t * nav_item_create(lv_obj_t * parent, const char * glyph, const char * text)
+{
+    LV_TRACE_OBJ_CREATE("begin");
+
+
+    lv_obj_t * the_root = NULL;
+
+    #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
+    if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
+        lv_obj_t * box_0 = alarm_ui_run_20(parent);
+        alarm_ui_run_30(box_0, &style_nav_item, 0, &style_nav_item_pressed, LV_STATE_PRESSED);
+        lv_obj_t * lv_label_0 = lv_label_create(box_0);
+        lv_label_set_text(lv_label_0, glyph);
+        lv_obj_set_style_text_font(lv_label_0, icons_28, 0);
+
+        lv_obj_t * lv_label_1 = lv_label_create(box_0);
+        lv_label_set_text(lv_label_1, text);
+        lv_obj_set_width(lv_label_1, lv_pct(100));
+        alarm_ui_run_37(lv_label_1, 36);
+        alarm_ui_run_57(lv_label_1);
+
+        the_root = box_0;
+    }
+    #endif
+
+    LV_TRACE_OBJ_CREATE("finished");
+
+    return the_root;
+}

@@ -1,0 +1,18 @@
+<component>
+	<!-- One value to read out and compare, large, with the question above it (the Home Assistant
+	     pairing code). Not tappable. -->
+	<api>
+		<prop name="label" type="string" default="Does it show this code?" help="The question above the value" />
+		<prop name="value" type="string" default="588 460" help="The value" />
+	</api>
+
+	<styles>
+		<style name="style_big_value" width="100%" height="content" bg_color="#color_surface" bg_opa="100%" radius="#radius_md" pad_all="#space_lg" layout="flex" flex_flow="column" flex_main_place="center" flex_cross_place="center" flex_track_place="center" pad_row="#space_xs" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_big_value" />
+		<lv_label name="label_label" width="100%" long_mode="wrap" text="$label" style_text_font="font_body" style_text_color="#color_text_2" style_text_align="center" />
+		<lv_label name="value_label" text="$value" style_text_font="font_headline" style_text_letter_space="6" />
+	</view>
+</component>

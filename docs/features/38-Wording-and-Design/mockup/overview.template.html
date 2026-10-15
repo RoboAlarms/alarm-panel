@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Overview mockup · Panel Manager</title>
+<style>
+/*@PANEL_CSS@*/
+
+/* ================= MOCKUP ONLY: the proposed pages' own styles ================= */
+.mock-bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 10px 16px;
+  background: repeating-linear-gradient(135deg, var(--surface-2) 0 12px, var(--surface) 12px 24px);
+  border-bottom: 2px dashed var(--line-strong); font-size: 12.5px; }
+.mock-bar strong { letter-spacing: 1px; text-transform: uppercase; font-size: 11px; color: var(--faint); }
+.mock-bar .filters { margin: 0; }
+nav a .count { margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; font-size: 11.5px; font-weight: 700;
+  display: inline-grid; place-items: center; background: var(--warn-soft); color: var(--warn); }
+
+/* The command card: one per partition */
+.command { padding: 22px; display: flex; flex-direction: column; gap: 18px; container-type: inline-size; }
+.command-top { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.state-badge { width: 68px; height: 68px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+  border: 3px solid currentColor; background: var(--good-soft); color: var(--good); }
+.state-badge svg.icon { width: 30px; height: 30px; }
+.command.warn .state-badge { background: var(--warn-soft); color: var(--warn); }
+.command.info .state-badge { background: var(--info-soft); color: var(--info); }
+.command.bad .state-badge { background: var(--bad-soft); color: var(--bad); }
+/* During an alarm the card itself turns red, as the touchscreen's does (color_alarm_bg and a red
+ * border); the button stays the green Disarm, so it stands out against the red. */
+.command.bad { border-color: var(--bad); border-width: 2px; background: color-mix(in srgb, var(--bad) 9%, var(--surface)); }
+.command.bad .facts > div { background: var(--surface); }
+
+/* The sensors that tripped, in order: what a person needs first when more than one went off */
+.sequence { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+.sequence-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 10px 16px; font-size: 13px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.sequence-head strong { color: var(--ink); }
+.sequence ol { list-style: none; margin: 0; padding: 0; }
+.sequence li { display: grid; grid-template-columns: 26px 42px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.sequence li:last-child { border-bottom: 0; }
+.sequence .n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 13px;
+  color: var(--ink); background: var(--surface-2); border: 1px solid var(--line-strong); }
+.sequence .z { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.sequence .z svg.icon { width: 21px; height: 21px; stroke-width: 2; }
+.sequence .main strong { display: block; font-size: 15px; }
+.sequence .main span { display: block; font-size: 13px; color: var(--muted); }
+.sequence .main span.tag { display: inline-flex; margin-left: 8px; vertical-align: 2px; font-size: 11.5px; color: var(--bad); }
+.sequence .when { text-align: right; font-variant-numeric: tabular-nums; font-size: 13.5px; white-space: nowrap; }
+.sequence .when small { display: block; color: var(--muted); font-size: 12px; }
+.sequence li.first { background: color-mix(in srgb, var(--bad) 6%, transparent); }
+.state-words { flex: 1; min-width: 220px; }
+.state-words .part-name { display: block; font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--faint); margin-bottom: 2px; }
+.state-words .state { display: block; font-size: 28px; font-weight: 650; letter-spacing: -0.4px; line-height: 1.2; }
+.command.good .state { color: var(--good); } .command.warn .state { color: var(--warn); }
+.command.info .state { color: var(--info); } .command.bad .state { color: var(--bad); }
+.state-words p { margin-top: 4px; }
+.countdown { font-variant-numeric: tabular-nums; }
+.count { font-size: 40px; font-weight: 650; letter-spacing: -1px; font-variant-numeric: tabular-nums; line-height: 1; }
+.command.info .count { color: var(--info); } .command.warn .count { color: var(--warn); }
+.summary { font-size: 13px; color: var(--muted); }
+.show-all { display: block; width: 100%; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; color: var(--info); font-size: 13px; }
+.since { text-align: right; font-size: 13px; color: var(--muted); line-height: 1.5; }
+.since strong { display: block; color: var(--ink); font-weight: 600; }
+
+/* Facts about the armed state, in a strip */
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1px; background: var(--line);
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.facts > div { background: var(--surface-2); padding: 11px 14px; min-width: 0; }
+.facts span { display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--faint); }
+.facts strong { display: block; font-size: 14.5px; margin-top: 3px; overflow-wrap: anywhere; }
+.facts small { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+
+/* Exit / entry time left: a steady bar that moves once a second (no animation) */
+.timebar { display: flex; flex-direction: column; gap: 6px; }
+.timebar .bar { height: 10px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.timebar .bar > i { display: block; height: 100%; background: var(--info); }
+.command.warn .timebar .bar > i { background: var(--warn); }
+.timebar .ends { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+
+/* Big choices: arming levels, and the one thing to do when armed */
+.choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.choices.one { grid-template-columns: minmax(0, 1fr); }
+button.choice { justify-content: flex-start; text-align: left; gap: 14px; min-height: 78px; padding: 14px 16px;
+  border-radius: 12px; background: var(--surface-2); border-color: var(--line); }
+button.choice:hover:not(:disabled) { border-color: var(--line-strong); background: var(--surface-2); }
+/* The arming tiles' chips, as the touchscreen draws them (layouts/1024x600 icon_chip + arm_tile):
+ * the level's tone at 16 % behind the icon in the full tone, a bigger icon with a 2 px line.
+ * Dark: the panel's own tones (globals.xml color_rose / color_blue / color_violet). Light: the
+ * same hues, darker, so the icon still stands 3:1 or more off its chip on white. */
+:root { --tone-away: #e11d48; --tone-stay: #2563eb; --tone-night: #7c3aed; --tint: 12%; }
+:root[data-theme="dark"] { --tone-away: #fb7185; --tone-stay: #60a5fa; --tone-night: #a78bfa; --tint: 16%; }
+.choice .glyph { width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
+.choice .glyph svg.icon { width: 27px; height: 27px; stroke-width: 2; }
+.choice.away .glyph { color: var(--tone-away); background: color-mix(in srgb, var(--tone-away) var(--tint), transparent); }
+.choice.stay .glyph { color: var(--tone-stay); background: color-mix(in srgb, var(--tone-stay) var(--tint), transparent); }
+.choice.night .glyph { color: var(--tone-night); background: color-mix(in srgb, var(--tone-night) var(--tint), transparent); }
+.choice.neutral .glyph { color: var(--tone-stay); background: color-mix(in srgb, var(--tone-stay) var(--tint), transparent); }
+.choice .chev { color: var(--faint); width: 22px; height: 22px; }
+.choice strong { display: block; font-size: 16px; }
+.choice small { display: block; color: var(--muted); font-size: 12.5px; font-weight: 400; }
+/* The one thing to do while armed, in an alarm or after one: the same tile as Away / Stay / Night,
+ * with a green chip (the panel's color_green in the dark; darker on white, >= 3:1 off its chip). */
+/* One solid button per card, the touchscreen's confirm key: the tone with dark ink in the dark theme
+ * (7:1 or more), a darker tone with white ink on white (4.5:1 or more). */
+:root { --fill-away: #e11d48; --fill-stay: #2563eb; --fill-night: #7c3aed; --fill-go: #047857; --on-fill: #ffffff; }
+:root[data-theme="dark"] { --fill-away: #fb7185; --fill-stay: #60a5fa; --fill-night: #a78bfa; --fill-go: #34d399; --on-fill: #0b0f14; }
+button.choice.fill { color: var(--on-fill); min-height: 72px; }
+button.choice.fill.away { background: var(--fill-away); border-color: var(--fill-away); }
+button.choice.fill.stay { background: var(--fill-stay); border-color: var(--fill-stay); }
+button.choice.fill.night { background: var(--fill-night); border-color: var(--fill-night); }
+button.choice.fill.go { background: var(--fill-go); border-color: var(--fill-go); }
+button.choice.fill:hover:not(:disabled) { filter: brightness(1.06); }
+button.choice.fill .glyph { background: color-mix(in srgb, var(--on-fill) 14%, transparent); color: var(--on-fill); }
+button.choice.fill strong { font-size: 17px; }
+button.choice.fill .chev { color: inherit; opacity: 0.8; }
+/* Cancel arming: quiet, outlined */
+button.choice.neutral { background: transparent; border-color: var(--line-strong); }
+button.choice.neutral .glyph { background: var(--surface-2); color: var(--muted); }
+/* The step's switches take the level's tone when on (no fifth colour) */
+.sheet.away input.switch:checked { background: var(--fill-away); }
+.sheet.stay input.switch:checked { background: var(--fill-stay); }
+.sheet.night input.switch:checked { background: var(--fill-night); }
+.choice .chev { margin-left: auto; }
+
+@container (max-width: 600px) { .choices:not(.one) .choice .chev { display: none; } }
+
+.command-options { display: flex; gap: 10px 28px; flex-wrap: wrap; align-items: center; border-top: 1px solid var(--line); padding-top: 14px; }
+.command-options label { display: inline-flex; align-items: center; gap: 10px; font-size: 13.5px; cursor: pointer; }
+.command-options .note { margin-left: auto; font-size: 12.5px; color: var(--muted); }
+
+/* Arming, one level at a time: what it watches, the options that level has, then the button */
+.sheet { display: flex; flex-direction: column; gap: 14px; border: 1px solid var(--line); border-radius: 14px; padding: 16px; background: var(--surface); }
+.sheet-head { display: flex; gap: 14px; align-items: flex-start; }
+.sheet-head .glyph { width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
+.sheet-head .glyph svg.icon { width: 27px; height: 27px; stroke-width: 2; }
+.sheet.away .sheet-head .glyph { color: var(--tone-away); background: color-mix(in srgb, var(--tone-away) var(--tint), transparent); }
+.sheet.stay .sheet-head .glyph { color: var(--tone-stay); background: color-mix(in srgb, var(--tone-stay) var(--tint), transparent); }
+.sheet.night .sheet-head .glyph { color: var(--tone-night); background: color-mix(in srgb, var(--tone-night) var(--tint), transparent); }
+.sheet-head h3 { font-size: 20px; }
+.sheet-head p { font-size: 13.5px; margin-top: 3px; }
+.sheet-head .main { flex: 1; min-width: 0; }
+.sheet .notice { margin: 0; }
+.sheet .facts > div { background: var(--surface-2); }
+.opts { border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.opts-head { padding: 10px 14px; font-size: 12px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--faint); border-bottom: 1px solid var(--line); }
+label.opt { display: flex; gap: 14px; align-items: center; padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+label.opt:last-child { border-bottom: 0; }
+label.opt .main { flex: 1; min-width: 0; }
+label.opt strong { display: block; font-size: 14.5px; }
+label.opt small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+/* Arm: the level's own tile again (its chip carries the level's tone); not yet possible: muted */
+button.choice.fill:disabled { opacity: 1; background: var(--surface); border-color: var(--line-strong); color: var(--muted); filter: none; }
+button.choice.fill:disabled .glyph { background: var(--surface-2); color: var(--muted); }
+.sheet .foot-note { font-size: 12.5px; color: var(--muted); }
+/* A level that isn't ready says why, in amber, on its own tile */
+.choice.blocked small { color: var(--warn); }
+
+/* The confirmation: the safe choice is the one already focused */
+button.confirm { background: var(--fill-go); border-color: var(--fill-go); color: var(--on-fill); }
+button.confirm:hover:not(:disabled) { background: var(--fill-go); filter: brightness(1.06); }
+.consequences { list-style: none; margin: 8px 0 4px; padding: 0; border: 1px solid var(--line); border-radius: 10px; }
+.consequences li { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 14px; }
+.consequences li:last-child { border-bottom: 0; }
+.consequences .icon { margin-top: 1px; color: var(--muted); }
+.consequences li.warn .icon { color: var(--warn); }
+
+/* Zones that stop arming, inside the card */
+.blockers { border: 1px solid var(--line); border-radius: 12px; }
+.blockers .list > li { padding: 10px 16px; }
+.blockers-head { padding: 10px 16px; border-bottom: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+
+/* At a glance */
+a.tile { text-decoration: none; color: inherit; position: relative; }
+a.tile:hover { border-color: var(--line-strong); }
+a.tile .go-to { position: absolute; right: 14px; top: 14px; color: var(--faint); }
+.tile.good .tile-value { color: var(--good); } .tile.warn .tile-value { color: var(--warn); }
+.tile.bad .tile-value { color: var(--bad); }
+
+/* Zones page */
+.zone-grid > .card + .card { margin-top: 0; }
+.zone-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.zone-card { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
+.zone-card .glyph { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; background: var(--good-soft); color: var(--good); }
+.zone-card.warn .glyph { background: var(--warn-soft); color: var(--warn); }
+.zone-card.bad .glyph { background: var(--bad-soft); color: var(--bad); }
+.zone-card.info .glyph { background: var(--info-soft); color: var(--info); }
+.zone-card.muted .glyph { background: var(--surface-2); color: var(--muted); }
+.zone-card .main { flex: 1; min-width: 0; }
+.zone-card .main strong { display: block; }
+.zone-card .main span { display: block; font-size: 13px; color: var(--muted); }
+.zone-card.warn .main .now { color: var(--warn); } .zone-card.bad .main .now { color: var(--bad); }
+.zone-card.info .main .now { color: var(--info); }
+.explain { display: flex; gap: 14px; align-items: flex-start; padding: 16px 18px; }
+.explain + .explain { border-top: 1px solid var(--line); }
+.explain .glyph { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; background: var(--warn-soft); color: var(--warn); }
+.explain.bad .glyph { background: var(--bad-soft); color: var(--bad); }
+.explain.info .glyph { background: var(--info-soft); color: var(--info); }
+.explain .main { flex: 1; min-width: 0; }
+.explain h3 { font-size: 15.5px; }
+.explain p { font-size: 13.5px; margin-top: 4px; }
+.explain .what { margin-top: 8px; font-size: 13.5px; color: var(--ink); }
+.explain .what b { color: var(--muted); font-weight: 600; }
+.explain .actions { margin-top: 10px; }
+.explain .side { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.legend { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 10px 18px; padding: 16px 22px; font-size: 13.5px; align-items: baseline; }
+.legend dd { margin: 0; color: var(--muted); }
+.checks-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; }
+.checks-list > div { display: flex; gap: 10px; align-items: flex-start; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.checks-list .ok { color: var(--good); } .checks-list .bad { color: var(--warn); }
+.checks-list strong { display: block; font-size: 14px; } .checks-list span { display: block; font-size: 12.5px; color: var(--muted); }
+details.more > summary { cursor: pointer; padding: 14px 22px; font-weight: 600; list-style: none; }
+details.more > summary::before { content: "+ "; color: var(--muted); }
+details.more[open] > summary::before { content: "− "; }
+
+@container (max-width: 600px) {
+  .since { text-align: left; flex-basis: 100%; padding-left: 86px; margin-top: -10px; }
+  .choices:not(.one) button.choice { flex-direction: column; justify-content: center; text-align: center; gap: 8px; min-height: 96px; padding: 12px 8px; }
+  .choices:not(.one) .choice small { display: none; }
+  .command-options .note { margin-left: 0; flex-basis: 100%; }
+}
+@media (max-width: 1100px) { .checks-list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 860px) {
+  .command { padding: 18px 16px; }
+  .zone-grid, .checks-list { grid-template-columns: minmax(0, 1fr); }
+  .explain .side { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" aria-label="Panel Manager">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><img width="34" height="34" alt="" src="/*@BRAND@*/"></span><span><span>RoboAlarms</span><small>Panel Manager</small></span></div>
+    <div class="panel-card"><strong>Home</strong><span>192.0.2.10 · 30eda0123456</span></div>
+    <nav id="nav" aria-label="Pages"></nav>
+    <div class="account"><span>Alex · System master</span><button type="button" class="link">Change password</button><button type="button" class="link">Sign out</button></div>
+  </aside>
+  <div class="workspace">
+    <div class="mock-bar">
+      <strong>Mockup</strong>
+      <div class="filters" role="group" aria-label="State" id="states"></div>
+      <strong>Power</strong><div class="filters" role="group" aria-label="Power" id="powers"></div>
+      <strong>Connection</strong><div class="filters" role="group" aria-label="Connection" id="nets"></div>
+      <strong>Theme</strong><div class="filters" role="group" aria-label="Theme" id="themes"></div>
+    </div>
+    <header class="topbar"><span class="topbar-title" id="crumb">Overview</span><span class="connection">Connected</span></header>
+    <main id="main"></main>
+  </div>
+</div>
+<dialog id="dialog" aria-labelledby="dialog-title"><div id="dialog-content"></div></dialog>
+<script>
+'use strict';
+const ICONS = /*@ICONS@*/;
+Object.assign(ICONS, {
+  away: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  house: '<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  shieldCheck: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/><path d="m9 12 2 2 4-4"/>',
+  shieldAlert: '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3Z"/><path d="M12 8v4M12 16h.01"/>',
+  lockOpen: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.9-1"/>',
+  bypass: '<circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/>',
+  siren: '<path d="M7 18v-6a5 5 0 0 1 10 0v6"/><path d="M5 21h14v-3H5zM12 3v1M4.2 6.2l.7.7M19.8 6.2l-.7.7M2 12h1M21 12h1"/>',
+  chev: '<path d="m9 18 6-6-6-6"/>',
+  door: '<path d="M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17M3 21h18M14 12h.01"/>',
+  window: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M12 4v16"/>',
+  motion: '<circle cx="13" cy="4" r="2"/><path d="m7 21 3-6 3 2v5M10 15l1-6 4 3 3-1M11 9 7 10l-1 3"/>',
+  smoke: '<path d="M4 5h16l-2 4H6z"/><path d="M8 13v2M12 13v5M16 13v2"/>',
+  co: '<path d="M17.5 19H7a5 5 0 1 1 .9-9.9A6 6 0 0 1 19 11a4 4 0 0 1-1.5 8Z"/>',
+  water: '<path d="M12 3s6 6.5 6 11a6 6 0 0 1-12 0c0-4.5 6-11 6-11Z"/>',
+  glass: '<rect x="4" y="3" width="16" height="18" rx="1"/><path d="m9 3 2 6-3 3 4 9M20 9l-6 2"/>',
+  garage: '<path d="M3 21V9l9-6 9 6v12M7 21v-9h10v9M7 15h10M7 18h10"/>',
+  battery: '<rect x="2" y="7" width="17" height="10" rx="2"/><path d="M22 11v2M7 10v4"/>',
+  zap: '<path d="M13 2 4 14h7l-1 8 9-12h-7z"/>',
+  // The status bar's own battery pictures (Lucide battery-full / -medium / -low / -charging), and a plug
+  batFull: '<rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11v2M6 11v2M10 11v2M14 11v2"/>',
+  batMedium: '<rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11v2M6 11v2M10 11v2"/>',
+  batLow: '<rect x="2" y="7" width="16" height="10" rx="2"/><path d="M22 11v2M6 11v2"/>',
+  batCharging: '<path d="M15 7h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2M6 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1M22 11v2"/><path d="m11 7-3 5h4l-3 5"/>',
+  plugOff: '<path d="M9 2v6M15 2v4M6 8h6M18 12a6 6 0 0 1-8.5 5.4M6 12V8M12 18v4M2 2l20 20"/>',
+  wifiOff: '<path d="M2 8.5a15 15 0 0 1 4.2-2.8M9.8 4.6A15 15 0 0 1 22 8.5M5 12a10 10 0 0 1 4.1-2.4M15.3 10A10 10 0 0 1 19 12M8.5 15.5a5 5 0 0 1 7 0M2 2l20 20"/><circle cx="12" cy="19" r="1"/>',
+});
+const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+// ---------------------------------------------------------------- pretend panel
+const LEVEL = {away: 'Away', stay: 'Stay', night: 'Night'};
+const EXIT_WORDS = {away: 'Leave now through the exit door', stay: 'Stay inside, arming shortly', night: 'Stay inside, arming shortly'};
+const ZONES = [[1, 'Front Door', 'door', 'Entry/exit 1'], [2, 'Back door', 'door', 'Perimeter'], [3, 'Garage side door', 'door', 'Entry/exit 2'],
+  [4, 'Living room window', 'window', 'Perimeter'], [5, 'Kitchen window', 'window', 'Perimeter'], [6, 'Hallway motion', 'motion', 'Interior follower'],
+  [7, 'Living room motion', 'motion', 'Interior follower'], [8, 'Kitchen smoke', 'smoke', 'Fire'], [9, 'Hallway CO', 'co', 'Carbon monoxide'],
+  [10, 'Water heater leak', 'water', '24-hour auxiliary'], [11, 'Basement glass break', 'glass', 'Perimeter'], [12, 'Garage door', 'garage', 'Perimeter']];
+// What each zone state means, in the words a homeowner reads (the "What these mean" list and the attention cards)
+// Stay watches the doors and windows; Night adds the motion sensors the installer marked for Night
+// (ALARM_ZF_NIGHT); Away watches every burglary zone. Fire, CO and water are on all the time.
+const NIGHT_ZONES = [6];
+const EXIT_S = 60, ENTRY = {'Entry/exit 1': 30, 'Entry/exit 2': 45};
+const ROLE = z => /Entry/.test(z[3]) ? 'entry' : z[3] === 'Perimeter' ? 'perimeter' : /Interior/.test(z[3]) ? 'interior' : 'always';
+const watchedIn = (z, l) => { const r = ROLE(z); return r === 'entry' || r === 'perimeter' || (r === 'interior' && (l === 'away' || (l === 'night' && NIGHT_ZONES.includes(z[0])))); };
+const levelZones = l => ZONES.filter(z => watchedIn(z, l));
+const blockers = l => levelZones(l).filter(z => ['open', 'active'].includes(zoneState(z[0])));
+const names = list => list.length < 3 ? list.map(z => z[1]).join(' and ') : `${list.slice(0, -1).map(z => z[1]).join(', ')} and ${list[list.length - 1][1]}`;
+const LEVELS = ['away', 'stay', 'night'];
+const MEANS = {
+  normal: ['Normal', 'good', 'Closed and working'],
+  active: ['Active', 'warn', 'Motion right now'],
+  open: ['Open', 'warn', 'Blocks arming until closed or bypassed'],
+  bypassed: ['Bypassed', 'info', 'Off until the next disarm'],
+  low: ['Low battery', 'warn', 'Replace the battery soon'],
+  nocontact: ['No contact', 'bad', 'Not heard from lately'],
+  tamper: ['Tamper', 'bad', 'Cover opened or moved'],
+  alarm: ['Alarm', 'bad', 'Set off the alarm'],
+};
+function base() {
+  return {troubles: [], instant: false, chime: true, zone: {}, when: {},
+    parts: [{name: 'Home', state: 'disarmed', last: ['Disarmed by Alex', '18 min ago']}]};
+}
+const armedAt = s => { s.zone[3] = 'bypassed'; return s; };
+const STATES = {
+  ready: ['Ready', () => base()],
+  notready: ['Not ready + troubles', () => { const s = base(); s.zone[1] = 'open'; s.when[1] = 'Opened 2 min ago'; s.zone[10] = 'low';
+    s.when[10] = 'Since yesterday 2:10 AM'; s.troubles = ['clock']; return s; }],
+  motion: ['Motion inside', () => { const s = base(); s.zone[7] = 'active'; s.when[7] = 'Moving now'; return s; }],
+  exit: ['Arming', () => { const s = armedAt(base()); Object.assign(s.parts[0], {state: 'exit', level: 'away', left: 45, total: 60, last: ['Armed by Alex', 'just now']}); return s; }],
+  armed: ['Armed Away', () => { const s = armedAt(base()); Object.assign(s.parts[0], {state: 'armed', level: 'away', last: ['Armed by Sam', 'Today 8:02 AM']}); return s; }],
+  stay: ['Armed Stay', () => { const s = base(); s.instant = true; Object.assign(s.parts[0], {state: 'armed', level: 'stay', last: ['Armed by Pat', 'Today 9:40 PM']}); return s; }],
+  entry: ['Entry delay', () => { const s = armedAt(base()); s.zone[1] = 'open';
+    Object.assign(s.parts[0], {state: 'entry', level: 'away', left: 18, total: 30, zone: 'Front Door', last: ['Armed by Sam', 'Today 8:02 AM']}); return s; }],
+  // A typical break-in: the back door, then motion in the living room; a third sensor
+  // trips six seconds after this state is picked, to show the list growing while someone watches.
+  alarm: ['Alarm', () => { const s = armedAt(base()); s.seq = BREAK_IN.slice(0, 2); s.pending = BREAK_IN.slice(2); s.pendingIn = 6;
+    s.seq.forEach(x => { s.zone[x.zone] = 'alarm'; });
+    Object.assign(s.parts[0], {state: 'alarm', level: 'away', cause: 'Burglary alarm', last: ['Armed by Sam', 'Today 8:02 AM']}); return s; }],
+  memory: ['After an alarm', () => { const s = base(); s.seq = BREAK_IN.slice();
+    Object.assign(s.parts[0], {state: 'memory', cause: 'Burglary alarm', last: ['Disarmed by Alex', '10:16 PM']}); return s; }],
+  two: ['Two partitions', () => { const s = base(); s.parts = [
+    {name: 'House', state: 'armed', level: 'stay', last: ['Armed by Pat', 'Today 9:40 PM']},
+    {name: 'Garage', state: 'disarmed', last: ['Disarmed by Alex', '2 h ago']}]; return s; }],
+};
+let S = STATES.ready[1](), page = 'overview', timer = null, zoneFilter = 'all';
+const zoneState = n => S.zone[n] || 'normal';
+const openZones = () => ZONES.filter(z => ['open', 'active'].includes(zoneState(z[0])));
+const bypassedZones = () => ZONES.filter(z => zoneState(z[0]) === 'bypassed');
+const troubleZones = () => ZONES.filter(z => ['low', 'nocontact', 'tamper'].includes(zoneState(z[0])));
+// Power and connection: switched on their own in the mockup bar, kept across the alarm states
+let POWER = 'full', NET = 'online';
+const POWERS = {
+  full: ['Plugged in, battery full', 'good', 'batFull', 'Plugged in', 'Battery full'],
+  charging: ['Plugged in, charging', '', 'batCharging', 'Plugged in', 'Charging · 64%'],
+  cut: ['Power cut', 'warn', 'batMedium', 'On battery', '82% left'],
+  low: ['Power cut, battery low', 'bad', 'batLow', 'Battery low', '9% left'],
+  none: ['No battery fitted', '', 'plug', 'Plugged in', 'No backup battery'],
+};
+const NETS = {
+  online: ['Online', 'good', 'wifi', 'Online', 'Harbor House'],
+  weak: ['Weak signal', 'warn', 'wifi', 'Weak signal', 'Harbor House'],
+  down: ['Offline', 'warn', 'wifiOff', 'Offline', 'Wi-Fi down'],
+};
+const panelTroubles = () => [...S.troubles, ...(['cut', 'low'].includes(POWER) ? ['power'] : []), ...(NET === 'down' ? ['network'] : [])];
+const troubleCount = () => panelTroubles().length + troubleZones().length;
+
+// Each sensor that tripped during one alarm: zone, what it saw, the kind of alarm, when, seconds after the first
+const BREAK_IN = [{zone: 2, what: 'Opened', kind: 'Burglary', at: '10:14:02 PM', plus: 0},
+  {zone: 7, what: 'Motion', kind: 'Burglary', at: '10:14:21 PM', plus: 19},
+  {zone: 6, what: 'Motion', kind: 'Burglary', at: '10:14:40 PM', plus: 38}];
+const zoneOf = n => ZONES.find(z => z[0] === n);
+
+function tick() {
+  let again = false;
+  S.parts.forEach(p => {
+    if (p.state !== 'exit' && p.state !== 'entry') return;
+    p.left -= 1; again = true;
+    if (p.left > 0) return;
+    if (p.state === 'exit') Object.assign(p, {state: 'armed', last: ['Armed by Alex', 'just now']});
+    else { Object.assign(p, {state: 'alarm', cause: 'Burglary alarm'}); S.zone[1] = 'alarm';
+      S.seq = [{zone: 1, what: 'Opened, not disarmed in time', kind: 'Burglary', at: '10:12:30 PM', plus: 0}]; }
+  });
+  if (S.pending?.length && S.parts.some(p => p.state === 'alarm')) {
+    again = true;
+    if (--S.pendingIn <= 0) { const x = S.pending.shift(); S.seq.push(x); S.zone[x.zone] = 'alarm'; S.pendingIn = 6; }
+  }
+  if (again) render(); else { clearInterval(timer); timer = null; }
+}
+function startTimer() { if (!timer) timer = setInterval(tick, 1000); }
+const mmss = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+
+// ---------------------------------------------------------------- sidebar
+function nav() {
+  const t = troubleCount();
+  const NAV = [['', [['overview', 'home', 'Overview'], ['zones', 'grid', 'Zones'], ['troubles', 'alert', 'Troubles', t], ['activity', 'activity', 'Activity'], ['keypad', 'monitor', 'Remote keypad']]],
+    ['Household', [['', 'users', 'People and codes'], ['', 'plug', 'Integrations']]],
+    ['Panel settings', [['', 'sun', 'Display and sound'], ['network', 'wifi', 'Network'], ['time', 'clock', 'Date and time'], ['', 'drive', 'Storage']]],
+    ['System', [['health', 'heart', 'System health'], ['', 'download', 'Software updates']]]];
+  $('#nav').innerHTML = NAV.map(([group, items]) => (group ? `<div class="nav-group">${group}</div>` : '') +
+    items.map(([id, g, label, count]) => `<a href="#" data-page="${id}"${id === page ? ' aria-current="page"' : ''}>${icon(g)}<span>${label}</span>${count ? `<span class="count">${count}</span>` : ''}</a>`).join('')).join('');
+}
+
+// ---------------------------------------------------------------- Overview
+// Budgets (docs/features/38 Research, round 1): headline 1-4 words, one line of about 8, buttons 1-3 words and
+// no sub-line, option helpers of a few words; nothing that repeats the headline or the button.
+const choice = (cls, glyph, title, sub = '', attrs = '', chev = false) => `<button type="button" class="choice ${cls}" ${attrs}>
+  <span class="glyph">${icon(glyph)}</span><span><strong>${title}</strong>${sub ? `<small>${sub}</small>` : ''}</span>${chev ? icon('chev', 'chev') : ''}</button>`;
+const facts = list => `<div class="facts">${list.map(([k, v]) => `<div><span>${k}</span><strong>${v}</strong></div>`).join('')}</div>`;
+const timebar = p => `<div class="timebar"><div class="bar"><i style="width:${Math.round(100 * (p.total - p.left) / p.total)}%"></i></div></div>`;
+const HINT = {away: 'Everyone is leaving', stay: 'Someone is home', night: 'Going to bed'}; // the touchscreen's tile words
+const GLYPH = {away: 'away', stay: 'house', night: 'moon'};
+const watchWords = l => l === 'away' ? 'Doors, windows and motion' : l === 'stay' ? 'Doors and windows' : `Doors, windows and ${names(NIGHT_ZONES.map(zoneOf))}`;
+const zones = n => `${n} ${n === 1 ? 'zone' : 'zones'}`;
+const isAre = list => list.length === 1 ? 'is' : 'are';
+const stateWord = list => list.every(z => zoneState(z[0]) === 'active') ? 'active' : 'open';
+const entryRange = () => { const t = [...new Set(ZONES.filter(z => ENTRY[z[3]]).map(z => ENTRY[z[3]]))].sort((a, b) => a - b); return t.length > 1 ? `${t[0]}–${t[t.length - 1]} s` : `${t[0]} s`; };
+
+// Arming, one level at a time: only the options that level has (the touchscreen's arm pad).
+function armSheet(i) {
+  const o = S.sheet, l = o.level, b = blockers(l), canBypass = b.every(z => ROLE(z) !== 'always');
+  const n = levelZones(l).length, exitS = EXIT_S * (l === 'away' && o.silent ? 2 : 1);
+  const opts = [
+    ['instant', 'No entry delay', 'Doors sound the alarm at once'],
+    l === 'away' ? ['silent', 'Silent exit', `No beeps · ${mmss(EXIT_S * 2)} to leave`] : null,
+    b.length && canBypass ? ['bypass', `Bypass ${names(b)}`, 'Off until the next disarm'] : null,
+  ].filter(Boolean);
+  const stuck = b.length && (!canBypass || !o.bypass);
+  const title = `Arm ${LEVEL[l]}`;
+  return `<div class="sheet ${l}">
+    <div class="sheet-head"><span class="glyph">${icon(GLYPH[l])}</span>
+      <div class="main"><h3>Arm ${LEVEL[l]}</h3><p>${watchWords(l)} · ${zones(n)}</p></div>
+      <button type="button" class="small" data-sheet-close>${icon('back')}Back</button></div>
+    ${stuck ? `<div class="notice warn">${icon('alert')}<div><strong>${names(b)} ${isAre(b)} ${stateWord(b)}</strong>${canBypass ? '' : "<p>It can't be bypassed</p>"}</div></div>` : ''}
+    <div class="opts">${opts.map(([k, t, d]) => `<label class="opt"><span class="main"><strong>${t}</strong><small>${d}</small></span>
+      <input type="checkbox" class="switch" data-sopt="${k}"${o[k] ? ' checked' : ''}></label>`).join('')}</div>
+    <p class="summary">${mmss(exitS)} to leave · ${o.instant ? 'no entry delay' : `${entryRange()} to get in`} · ${zones(n - (o.bypass ? b.length : 0))} watched</p>
+    <div class="choices one">${choice(`fill ${l}`, 'lock', title, '', `data-go-arm="${i}"${stuck ? ' disabled' : ''}`, true)}</div>
+  </div>`;
+}
+// Asked before a normal disarm only: not in an alarm or entry delay, where a dialog would
+// delay stopping the siren and use up the abort window. The safe button has the focus.
+function confirmDisarm(i) {
+  // The zones watched right now: the level's, less those bypassed (the card's "8 of 9 zones")
+  const p = S.parts[i], n = levelZones(p.level || 'away').filter(z => zoneState(z[0]) !== 'bypassed').length;
+  const [title, line, go] = [`Disarm ${p.name}?`, `Stops watching ${zones(n)}. Smoke, CO and water stay on.`, 'Disarm'];
+  $('#dialog-content').innerHTML = `<div class="dialog-head"><h2 id="dialog-title">${title}</h2><p>${line}</p></div>
+    <div class="dialog-foot"><button type="button" data-dialog-close autofocus>Keep armed</button>
+      <button type="button" class="confirm" data-do-disarm="${i}">${icon('lockOpen')}${go}</button></div>`;
+  $('#dialog').showModal();
+  $('#dialog [data-dialog-close]').focus();
+}
+function cardFor(p, i, many) {
+  let kind, glyph, state, line = '', side = '', body = '';
+  const disarm = (label, attr = 'data-disarm', glyph = 'lockOpen') => `<div class="choices one">${choice('fill go', glyph, label, '', `${attr}="${i}"`, true)}</div>`;
+  switch (p.state) {
+    case 'disarmed': {
+      const held = LEVELS.filter(l => blockers(l).length), free = LEVELS.filter(l => !blockers(l).length);
+      const by = bypassedZones();
+      if (!held.length) {
+        [kind, glyph, state] = ['good', 'shieldCheck', 'Ready to arm'];
+        line = `All ${zones(ZONES.length)} closed${by.length ? ` · ${by.length} bypassed` : ''}`;
+      } else if (!free.length) {
+        [kind, glyph, state] = ['warn', 'shieldAlert', 'Not ready'];
+        line = `${names(openZones())} ${isAre(openZones())} ${stateWord(openZones())}`;
+      } else {
+        [kind, glyph, state] = ['good', 'shieldCheck', `Ready for ${free.map(l => LEVEL[l]).join(' and ')}`];
+        line = `${held.map(l => LEVEL[l]).join(' and ')}: ${names(blockers(held[0]))} ${isAre(blockers(held[0]))} ${stateWord(blockers(held[0]))}`;
+      }
+      if (S.sheet && S.sheet.p === i) { body = armSheet(i); break; }
+      body = `<div class="choices">${LEVELS.map(l => { const b = blockers(l);
+          return choice(l + (b.length ? ' blocked' : ''), GLYPH[l], LEVEL[l], b.length ? `${names(b)} ${stateWord(b)}` : HINT[l], `data-arm="${l}" data-p="${i}"`, true); }).join('')}</div>
+        <div class="command-options"><label><input type="checkbox" class="switch" data-opt="chime"${S.chime ? ' checked' : ''}> Chime</label>
+          <span class="note">Beeps when a door opens</span></div>`;
+      break;
+    }
+    case 'exit':
+      [kind, glyph, state] = ['info', 'clock', `Arming ${LEVEL[p.level]}`];
+      line = EXIT_WORDS[p.level] + (p.silent ? ' · silent' : '');
+      side = `<span class="count countdown">${mmss(p.left)}</span>`;
+      body = timebar(p) + `<div class="choices one">${choice('neutral', 'lockOpen', 'Cancel arming', '', `data-disarm="${i}"`, true)}</div>`;
+      break;
+    case 'armed': {
+      const by = bypassedZones(), n = levelZones(p.level).length;
+      [kind, glyph, state] = ['info', 'lock', `Armed ${LEVEL[p.level]}`];
+      line = `${p.last[0].replace('Armed by', 'By')} · ${p.last[1]}`;
+      body = facts([['Watching', `${n - by.length} of ${zones(n)}`], ['Bypassed', by.length ? names(by) : 'None'], ['Entry delay', S.instant ? 'Off' : entryRange()]]) + disarm('Disarm');
+      break;
+    }
+    case 'entry':
+      // The touchscreen's headline for entry time (ui_app.c: "Disarm now")
+      [kind, glyph, state] = ['warn', 'clock', 'Disarm now'];
+      line = `${p.zone} opened`;
+      side = `<span class="count countdown">${mmss(p.left)}</span>`;
+      body = timebar(p) + disarm('Disarm');
+      break;
+    case 'alarm': {
+      const first = zoneOf(S.seq[0].zone)[1], more = S.seq.length - 1;
+      [kind, glyph, state] = ['bad', 'siren', p.cause];
+      line = `${first}${more ? `, then ${more} more` : ''} · ${S.seq[0].at.replace(/:\d\d /, ' ')} · Siren on`;
+      body = disarm('Disarm and silence') + sequence(S.seq);
+      break;
+    }
+    case 'memory':
+      // Alarm memory. "Alarm canceled" only when the disarm stopped the report (docs/features/38 Research, round 2)
+      [kind, glyph, state] = ['warn', 'bell', 'Alarm occurred'];
+      line = `${p.last[0]} · ${p.last[1]}`;
+      body = sequence(S.seq) + disarm('Clear alarm', 'data-clear', 'check');
+      break;
+  }
+  return `<section class="card command ${kind}">
+    <div class="command-top"><span class="state-badge">${icon(glyph)}</span>
+      <div class="state-words"><span class="part-name">${p.name}</span><span class="state">${state}</span><p>${line}</p></div>${side}</div>
+    ${body}</section>`;
+}
+// What tripped, first to last: the name, what it saw, the time; later ones as seconds after the first.
+// Five rows show; the rest behind "Show all".
+function sequence(seq) {
+  const rows = S.showAll ? seq : seq.slice(0, 5);
+  return `<div class="sequence"><div class="sequence-head"><strong>What happened</strong><span>${seq.length} sensors</span></div>
+    <ol>${rows.map((x, i) => { const z = zoneOf(x.zone);
+      return `<li class="${i === 0 ? 'first' : ''}"><span class="n">${i + 1}</span><span class="z">${icon(z[2])}</span>
+        <div class="main"><strong>${z[1]}${i === 0 ? '<span class="tag bad">First</span>' : ''}</strong><span>${x.what}</span></div>
+        <div class="when">${i === 0 ? x.at : `+${x.plus} s`}</div></li>`; }).join('')}</ol>
+    ${seq.length > 5 && !S.showAll ? `<button type="button" class="show-all" data-show-all>Show all ${seq.length}</button>` : ''}</div>`;
+}
+function tiles() {
+  const inAlarm = S.seq?.length && S.parts.some(p => p.state === 'alarm') ? S.seq.map(x => zoneOf(x.zone)) : [];
+  const zoneTile = inAlarm.length ? ['bad', `${inAlarm.length} in alarm`, `${inAlarm[0][1]} first`]
+    : openZones().length ? ['warn', `${openZones().length} ${stateWord(openZones())}`, names(openZones())]
+    : ['good', 'All closed', bypassedZones().length ? `${bypassedZones().length} bypassed` : zones(ZONES.length)];
+  const n = troubleCount(), list = [...panelTroubles().map(t => TROUBLES[t][0]), ...troubleZones().map(z => `${z[1]} · ${MEANS[zoneState(z[0])][0]}`)];
+  const troubleTile = n ? ['warn', `${n} ${n === 1 ? 'trouble' : 'troubles'}`, list[0] + (n > 1 ? ` +${n - 1}` : '')] : ['good', 'None', ''];
+  const [, pk, pg, pv, pd] = POWERS[POWER], [, nk, ng, nv, nd] = NETS[NET];
+  return [['zones', 'grid', 'Zones', ...zoneTile], ['troubles', 'alert', 'Troubles', ...troubleTile], ['health', pg, 'Power', pk, pv, pd],
+    ['network', ng, 'Connection', nk, nv, nd]];
+}
+const EVENTS = [['good', 'Disarmed', 'By Alex · Panel Manager', '18 min ago'], ['info', 'Front Door', 'Opened while disarmed', '21 min ago'],
+  ['info', 'Armed Away', 'By Sam · keypad', '9 h ago'], ['warn', 'Trouble: Water heater leak', 'Sensor battery low', '20 h ago'],
+  ['good', 'Trouble cleared', 'Water heater leak battery replaced', 'Sep 28'], ['bad', 'Burglary alarm', 'Back door', 'Sep 27']];
+function overview() {
+  const many = S.parts.length > 1;
+  return `<div class="page-head"><div><h1>Overview</h1>
+      <p>Tuesday, September 29 · 10:41 PM</p></div></div>
+    <div class="grid${many ? ' two' : ''}">${S.parts.map((p, i) => cardFor(p, i, many)).join('')}</div>
+    <div class="grid four gap">${tiles().map(([to, g, label, kind, value, detail]) => `<a class="card tile ${kind}" href="#"${to ? ` data-page="${to}"` : ''}>
+      ${to ? icon('chev', 'go-to') : ''}<span class="tile-label">${icon(g)}${label}</span><span class="tile-value">${value}</span><span class="tile-detail">${detail}</span></a>`).join('')}</div>
+    <section class="section"><div class="section-head"><h2>Recent activity</h2><a href="#">All activity</a></div>
+    <div class="card"><ul class="list">${[...(S.seq || []).slice().reverse().map(x => ['bad', 'Burglary alarm', zoneOf(x.zone)[1], x.at.replace(/:\d\d /, ' ')]), ...EVENTS].slice(0, 6).map(([k, t, b, w]) => `<li><span class="dot ${k}" aria-hidden="true"></span>
+      <div class="main"><strong>${t}</strong><span>${b}</span></div><span class="side">${w}</span></li>`).join('')}</ul></div></section>`;
+}
+
+// ---------------------------------------------------------------- Zones
+function zonesPage() {
+  const disarmed = S.parts.every(p => p.state === 'disarmed');
+  const order = n => { const i = (S.seq || []).findIndex(x => x.zone === n); return i < 0 ? 99 : i; };
+  const nth = i => ['1st', '2nd', '3rd'][i] || `${i + 1}th`;
+  const attention = ZONES.filter(z => zoneState(z[0]) !== 'normal').sort((a, b) => order(a[0]) - order(b[0]));
+  const sideFor = z => { const i = order(z[0]); return i < 99 && zoneState(z[0]) === 'alarm' ? `${nth(i)} · ${S.seq[i].at}` : S.when[z[0]] || ''; };
+  const filters = [['all', 'All'], ['open', 'Open'], ['bypassed', 'Bypassed'], ['trouble', 'Trouble']];
+  const shown = ZONES.filter(z => zoneFilter === 'all' || (zoneFilter === 'trouble' ? ['low', 'nocontact', 'tamper'].includes(zoneState(z[0])) : zoneFilter === 'open' ? ['open', 'active'].includes(zoneState(z[0])) : zoneState(z[0]) === zoneFilter));
+  const bypassBtn = z => !disarmed || ['Fire', 'Carbon monoxide'].includes(z[3]) ? ''
+    : zoneState(z[0]) === 'bypassed' ? `<button type="button" class="small" data-unbypass="${z[0]}">Unbypass</button>`
+    : `<button type="button" class="small" data-bypass="${z[0]}">Bypass</button>`;
+  return `<div class="page-head"><div><h1>Zones</h1>
+      <p>${[zones(ZONES.length), openZones().length && `${openZones().length} open`, bypassedZones().length && `${bypassedZones().length} bypassed`, troubleZones().length && `${troubleZones().length} with a trouble`].filter(Boolean).join(' · ')}</p></div></div>
+    ${attention.length ? `<section class="section"><div class="section-head"><h2>Needs attention</h2></div>
+      <div class="card">${attention.map(z => { const [word, kind, means] = MEANS[zoneState(z[0])];
+        return `<div class="explain ${kind === 'bad' ? 'bad' : kind === 'info' ? 'info' : ''}"><span class="glyph">${icon(z[2])}</span>
+          <div class="main"><h3>${z[1]} · ${word}</h3><p>${means}</p>
+          ${bypassBtn(z) && ['open', 'active', 'bypassed'].includes(zoneState(z[0])) ? `<div class="actions">${bypassBtn(z)}</div>` : ''}</div>
+          <span class="side">${sideFor(z)}</span></div>`; }).join('')}</div></section>` : ''}
+    <section class="section"><div class="section-head"><h2>All zones</h2>
+      <div class="filters" role="group" aria-label="Show">${filters.map(([v, l]) => `<button type="button" data-zfilter="${v}" aria-pressed="${v === zoneFilter}">${l}</button>`).join('')}</div></div>
+      <div class="zone-grid">${shown.map(z => { const [word, kind] = MEANS[zoneState(z[0])];
+        return `<div class="card zone-card ${kind === 'good' ? '' : kind}"><span class="glyph">${icon(z[2])}</span>
+          <div class="main"><strong>${z[1]}</strong><span class="now">${word}</span><span>Zone ${z[0]}</span></div>${bypassBtn(z)}</div>`; }).join('') || '<p class="muted">No zones of this kind.</p>'}</div>
+      ${disarmed ? '' : '<p class="gap muted"><small>Bypass while disarmed.</small></p>'}</section>
+    <section class="section"><div class="card"><details class="more"><summary>What these words mean</summary>
+      <dl class="legend">${Object.values(MEANS).map(([w, k, m]) => `<dt>${`<span class="tag ${k}">${w}</span>`}</dt><dd>${m}</dd>`).join('')}</dl></details></div></section>`;
+}
+
+// ---------------------------------------------------------------- Troubles
+const TROUBLES = {
+  clock: ['Clock not set', 'clock', 'Connect Wi-Fi so the clock can sync', 'Date and time', 'Since 10:38 PM', 'time'],
+  power: ['Mains power lost', 'plugOff', 'Running on battery', 'Power', 'Since 9:58 PM', 'health'],
+  network: ['Network down', 'wifiOff', 'Wi-Fi is disconnected', 'Network', 'Since 10:20 PM', 'network'],
+};
+function watches() {
+  const cut = ['cut', 'low'].includes(POWER);
+  return [['Mains power', cut ? 'Out' : 'On', cut],
+    ['Backup battery', {full: 'Full', charging: 'Charging · 64%', cut: '82% left', low: '9% left', none: 'Not fitted'}[POWER], POWER === 'low'],
+    ['Network', NET === 'down' ? 'Wi-Fi down' : NET === 'weak' ? 'Weak signal' : 'Connected', NET === 'down'],
+    ['Reports', NET === 'down' ? 'Waiting' : 'Getting through', false],
+    ['Clock', S.troubles.includes('clock') ? 'Not set' : 'Set', S.troubles.includes('clock')], ['Wireless sensors', 'All heard', false],
+    ['Siren', 'Working', false], ['Storage', 'Saving', false], ['Panel cover', 'Closed', false]];
+}
+function troublesPage() {
+  const n = troubleCount();
+  const items = [...panelTroubles().map(k => { const [title, g, line, link, since, to] = TROUBLES[k]; return {title, g, line, link, since, to}; }),
+    ...troubleZones().map(z => ({title: `${z[1]} · ${MEANS[zoneState(z[0])][0]}`, g: 'batLow', line: 'Check the sensor', link: 'Zone', since: S.when[z[0]] || '', to: 'zones'}))];
+  return `<div class="page-head"><div><h1>Troubles</h1><p>${n ? `${n} active` : 'Nothing to fix'}</p></div>
+      ${n ? `<div class="actions"><button type="button" id="ack" title="Stops the trouble beeps">${icon('check')}Acknowledge</button></div>` : ''}</div>
+    ${n ? `<div class="card">${items.map(x => `<div class="explain"><span class="glyph">${icon(x.g)}</span>
+        <div class="main"><h3>${x.title}</h3><p>${x.line}</p></div>
+        <span class="side">${x.since}</span><button type="button" class="small" data-page="${x.to}">${x.link}${icon('chev')}</button></div>`).join('')}</div>`
+      : `<div class="notice good">${icon('check')}<div><strong>No troubles</strong></div></div>`}
+    <section class="section"><div class="section-head"><h2>What the panel watches</h2></div>
+      <div class="card checks-list">${watches().map(([label, now, bad]) =>
+        `<div>${icon(bad ? 'alert' : 'check', bad ? 'bad' : 'ok')}<div><strong>${label}</strong><span>${now}</span></div></div>`).join('')}</div></section>`;
+}
+
+// ---------------------------------------------------------------- pages that already exist (stand-ins)
+const EXISTING = {network: ['Network', 'wifi', 'The Network page you have today (Wi-Fi, signal, IP address, the connection check). The Connection tile opens it for anyone who may change the network: the system master, a partition master, the installer. For a standard user the tile opens System health instead.'],
+  health: ['System health', 'heart', 'The System health page you have today, with its Power card (battery, charge, charging). The Power tile opens it.'],
+  time: ['Date and time', 'clock', 'The Date and time page you have today.']};
+function existingPage(id) {
+  const [title, g, words] = EXISTING[id];
+  return `<div class="page-head"><div><h1>${title}</h1></div></div>
+    <div class="notice info">${icon(g)}<div><strong>Existing page, not part of this mockup</strong><p>${words}</p>
+    <div class="actions"><button type="button" class="small" data-page="overview">${icon('back')}Back to the Overview</button></div></div></div>`;
+}
+
+// ---------------------------------------------------------------- render + events
+function render() {
+  nav();
+  $('#crumb').textContent = {overview: 'Overview', zones: 'Zones', troubles: 'Troubles'}[page] || EXISTING[page]?.[0] || 'Overview';
+  $('#main').innerHTML = page === 'zones' ? zonesPage() : page === 'troubles' ? troublesPage() : EXISTING[page] ? existingPage(page) : overview();
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-show-all],[data-do-disarm],[data-dialog-close],[data-page],[data-arm],[data-go-arm],[data-sheet-close],[data-disarm],[data-clear],[data-bypass],[data-unbypass],[data-zfilter],#ack');
+  if (!el) return;
+  e.preventDefault();
+  const d = el.dataset;
+  if (d.page !== undefined) { if (['overview', 'zones', 'troubles'].includes(d.page) || EXISTING[d.page]) { page = d.page; window.scrollTo(0, 0); } }
+  else if (d.arm) { S.sheet = {p: Number(d.p), level: d.arm, instant: false, silent: false, bypass: false}; }
+  else if (d.sheetClose !== undefined) { S.sheet = null; }
+  else if (d.goArm) { const o = S.sheet, total = EXIT_S * (o.level === 'away' && o.silent ? 2 : 1);
+    if (o.bypass) blockers(o.level).forEach(z => { S.zone[z[0]] = 'bypassed'; });
+    S.instant = o.instant;
+    Object.assign(S.parts[o.p], {state: 'exit', level: o.level, silent: o.level === 'away' && o.silent, left: total, total, last: ['Armed by Alex', 'just now']});
+    S.sheet = null; startTimer(); }
+  else if (d.disarm && S.parts[Number(d.disarm)].state === 'armed') { confirmDisarm(Number(d.disarm)); return; }
+  else if (d.dialogClose !== undefined) { $('#dialog').close(); return; }
+  else if (d.doDisarm || d.disarm) { if ($('#dialog').open) $('#dialog').close(); const p = S.parts[Number(d.doDisarm || d.disarm)];
+    if (p.state === 'alarm') { Object.assign(p, {state: 'memory', last: ['Disarmed by Alex', 'just now']}); S.pending = []; }
+    else { Object.assign(p, {state: 'disarmed', last: ['Disarmed by Alex', 'just now']}); }
+    Object.keys(S.zone).forEach(k => { if (S.zone[k] === 'bypassed' || S.zone[k] === 'alarm') S.zone[k] = 'normal'; }); }
+  else if (d.showAll !== undefined) { S.showAll = true; }
+  else if (d.clear) { Object.assign(S.parts[Number(d.clear)], {state: 'disarmed'}); S.seq = null; }
+  else if (d.bypass) { S.zone[d.bypass] = 'bypassed'; }
+  else if (d.unbypass) { S.zone[d.unbypass] = 'normal'; }
+  else if (d.zfilter) { zoneFilter = d.zfilter; }
+  else if (el.id === 'ack') { el.disabled = true; return; }
+  render();
+});
+document.addEventListener('change', e => { const c = e.target.closest('[data-opt]'); if (c) S[c.dataset.opt] = c.checked;
+  const o = e.target.closest('[data-sopt]'); if (o && S.sheet) { S.sheet[o.dataset.sopt] = o.checked; render(); } });
+
+// ---------------------------------------------------------------- mockup switches
+function pick(k) {
+  S = STATES[k][1]();
+  $$('#states button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.k === k)));
+  render();
+  if (S.parts.some(p => p.state === 'exit' || p.state === 'entry') || S.pending?.length) startTimer();
+}
+$('#states').innerHTML = Object.entries(STATES).map(([k, [label]]) => `<button type="button" data-k="${k}">${label}</button>`).join('');
+$('#states').onclick = e => { const b = e.target.closest('button'); if (b) pick(b.dataset.k); };
+$('#themes').innerHTML = ['dark', 'light'].map(t => `<button type="button" data-t="${t}">${t === 'dark' ? 'Dark' : 'Light'}</button>`).join('');
+$('#themes').onclick = e => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.documentElement.dataset.theme = b.dataset.t;
+  $$('#themes button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+};
+$('#themes [data-t=dark]').setAttribute('aria-pressed', 'true');
+function group(id, table, get, set) {
+  const el = $('#' + id);
+  const draw = () => { el.innerHTML = Object.entries(table).map(([k, [label]]) => `<button type="button" data-v="${k}" aria-pressed="${k === get()}">${label}</button>`).join(''); };
+  el.onclick = e => { const b = e.target.closest('button'); if (!b) return; set(b.dataset.v); draw(); render(); };
+  draw();
+}
+group('powers', POWERS, () => POWER, v => { POWER = v; });
+group('nets', NETS, () => NET, v => { NET = v; });
+pick('ready');
+</script>
+</body>
+</html>

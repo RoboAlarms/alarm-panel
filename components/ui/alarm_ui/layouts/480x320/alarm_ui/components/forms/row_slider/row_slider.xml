@@ -1,0 +1,30 @@
+<component>
+	<!-- A level (brightness, volume): icon, title, value in words and a slider ("slider").
+	     The knob is large and the click area generous: a resistive film needs a firm press. -->
+	<api>
+		<prop name="glyph" type="string" default="&#xE178;" help="Lucide glyph" />
+		<prop name="title" type="string" default="Brightness" help="Setting" />
+		<prop name="value" type="string" default="80%" help="Current value in words" />
+	</api>
+
+	<styles>
+		<style name="style_row_slider" width="100%" height="content" bg_color="#color_surface" bg_opa="100%" radius="#radius_md" pad_left="#space_lg" pad_right="#space_lg" pad_top="#space_md" pad_bottom="#space_xl" layout="flex" flex_flow="column" pad_row="#space_lg" />
+		<style name="style_slider" height="8" radius="#radius_full" bg_color="#color_pressed" bg_opa="100%" />
+		<style name="style_slider_indicator" radius="#radius_full" bg_color="#color_blue" bg_opa="100%" />
+		<style name="style_slider_knob" radius="#radius_full" bg_color="#color_text" bg_opa="100%" pad_all="10" />
+	</styles>
+
+	<view extends="box">
+		<style name="style_row_slider" />
+		<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
+			<lv_label text="$glyph" style_text_font="icons_20" style_text_color="#color_text_2" />
+			<lv_label flex_grow="1" text="$title" style_text_font="font_label" />
+			<lv_label name="value_label" text="$value" style_text_color="#color_text_2" />
+		</box>
+		<lv_slider name="slider" width="100%" min_value="0" max_value="100" value="50" ext_click_area="20" style_margin_left="12" style_margin_right="12">
+			<style name="style_slider" />
+			<style name="style_slider_indicator" selector="indicator" />
+			<style name="style_slider_knob" selector="knob" />
+		</lv_slider>
+	</view>
+</component>

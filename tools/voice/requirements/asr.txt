@@ -1,0 +1,2 @@
+# the Whisper check (asr_check.py)
+transformers==5.19.0

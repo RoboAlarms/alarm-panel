@@ -1,0 +1,26 @@
+<component>
+	<!-- The date and time by hand (BL-131, docs/features/35 RTC-008): a month_calendar beside the
+	     time_rollers, and under them what the clock will say, in words. clock_sheet holds one;
+	     the setup's clock step makes a narrower one from C (ui_net.c fills both). -->
+	<api>
+		<prop name="cal_w" type="int" default="392" help="Width of the calendar" />
+		<prop name="day_h" type="int" default="44" help="Height of a day in the calendar" />
+		<prop name="roll_w" type="int" default="88" help="Width of the Hour and Minute rollers" />
+		<prop name="ampm_w" type="int" default="80" help="Width of the AM/PM roller" />
+		<prop name="gap" type="int" default="32" help="Between the calendar and the rollers" />
+		<prop name="roll_y" type="int" default="16" help="The rollers' distance from the top" />
+	</api>
+
+	<view extends="box" width="100%" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="#space_md">
+		<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_main_place="center" style_pad_column="$gap">
+			<month_calendar name="clock_cal" cal_w="$cal_w" day_h="$day_h" />
+			<box width="content" height="content" style_pad_top="$roll_y">
+				<time_rollers name="clock_time" roll_w="$roll_w" ampm_w="$ampm_w" />
+			</box>
+		</box>
+		<box width="100%" height="content" style_border_side="top" style_border_width="1" style_border_color="#color_line" style_pad_top="#space_md" style_pad_left="#space_xs" style_pad_right="#space_xs" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_lg">
+			<lv_label text="The clock will say" style_text_color="#color_text_2" />
+			<lv_label name="clock_result" flex_grow="1" long_mode="dots" text="" style_text_font="font_label" style_text_align="right" />
+		</box>
+	</view>
+</component>

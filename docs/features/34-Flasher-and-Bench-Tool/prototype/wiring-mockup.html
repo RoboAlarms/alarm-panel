@@ -1,0 +1,1281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flasher wiring mockup</title>
+<meta name="description" content="Mockup for BL-117 (docs/features/34): a guided wiring flow in the Flasher for someone with no electronics background, before the panel is plugged in. Nothing here talks to a board.">
+<link rel="icon" href="../../../../tools/flasher/roboflash/web/logo.png">
+<!-- The Flasher's own stylesheet, so the mockup looks as the app does and follows it. -->
+<link rel="stylesheet" href="../../../../tools/flasher/roboflash/web/app.css">
+<script>try { document.documentElement.dataset.theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'; } catch (e) { document.documentElement.dataset.theme = 'light'; }</script>
+<!-- Mockup for docs/features/34 "Wiring before the panel is plugged in" (BL-117). One file with
+     the app's CSS linked; the J7 drawing is web/app.js's wiring() copied, with one wire
+     highlighted and pin picking, and wiringAll() draws every part at once. Pins and places are
+     the CrowPanel 7"'s from tools/flasher/roboflash/boards.json. No motion (FLS-017). Purple is
+     the mockup's own: its bar and notes, never the app. -->
+<style>
+.mk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding: 8px 20px; background: #2e2750; color: #ece9fb; font-size: 12.5px; }
+.mk-bar > b { font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #c9bfff; }
+.mk-group { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.mk-group > span { color: #a99ee0; margin-right: 4px; }
+.mk-bar button { font: inherit; font-size: 12.5px; color: #ece9fb; background: transparent; border: 1px solid #5b4f96; border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+.mk-bar button:hover { border-color: #c9bfff; }
+.mk-bar button[aria-pressed=true] { background: #ece9fb; color: #2e2750; border-color: #ece9fb; font-weight: 600; }
+.mk-note { border: 1.5px dashed #7c5cd6; background: rgb(124 92 214 / 7%); border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5; color: var(--ink); }
+.mk-note::before { content: "Mockup note"; display: block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #7c5cd6; margin-bottom: 2px; }
+:root[data-theme=dark] .mk-note { border-color: #a58cf0; }
+:root[data-theme=dark] .mk-note::before { color: #b9a6ff; }
+
+/* the rail in three parts */
+.rail-group { display: flex; flex-direction: column; gap: 14px; }
+.step.skip b { color: var(--faint); font-weight: 500; }
+.step.skip .num { border-style: dashed; }
+
+/* overview */
+.flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: stretch; }
+.flow span { display: flex; flex-direction: column; justify-content: center; padding: 5px 10px; border-radius: 4px; border: 1px solid var(--line); font-size: 13px; font-weight: 600; color: var(--muted); }
+.flow span small { font-size: 11.5px; font-weight: 500; }
+.flow span.hl { background: var(--accent-bg); color: var(--accent); border-color: transparent; }
+.flow span.bad { background: var(--red-bg); color: var(--red); border-color: transparent; }
+.flow i { align-self: center; color: var(--faint); font-style: normal; }
+.flow b.phase { align-self: center; font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 2px 0 8px; }
+.flow b.phase:first-child { margin-left: 0; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.mini { padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+.mini p { font-size: 13.5px; color: var(--muted); }
+
+/* step 1: panel and parts */
+.board-pick { display: grid; grid-template-columns: 16px 150px 1fr; gap: 18px; align-items: center; padding: 14px 18px; text-align: left; width: 100%; }
+.pcard { border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; }
+.pcard.on { border-color: var(--accent); }
+.pcard.wide { grid-column: 1 / -1; }
+.pcard.off { border-style: dashed; background: transparent; }
+.pcard-head { font: inherit; color: inherit; text-align: left; background: none; border: 0; cursor: pointer; display: grid; grid-template-columns: 22px 44px 1fr; gap: 12px; align-items: start; padding: 14px; border-radius: 12px; }
+.pcard-head:disabled { cursor: not-allowed; opacity: .6; }
+.pcard-head b { display: block; font-weight: 650; }
+.pcard-head small { display: block; color: var(--muted); font-size: 13px; line-height: 1.45; margin-top: 2px; }
+.tick { width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--line-strong); background: var(--surface); display: grid; place-items: center; margin-top: 12px; color: var(--button-ink); }
+.tick .ic { width: 14px; height: 14px; stroke-width: 3; }
+.pcard.on .tick { background: var(--accent); border-color: var(--accent); }
+.subpick { border-top: 1px solid var(--line); padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; background: var(--soft); border-radius: 0 0 12px 12px; }
+.subpick .choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* step 2: places */
+.conn { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.conn svg { width: 100%; height: auto; max-height: 62px; display: block; }
+.conn p { font-size: 13.5px; color: var(--muted); }
+.conn .chips { gap: 6px; }
+.conn.wide { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 8px 20px; align-items: center; }
+.conn.wide > b, .conn.wide > p, .conn.wide > .chips { grid-column: 1; }
+.conn.wide > svg { grid-column: 2; grid-row: 1 / span 4; }
+.tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 4px; background: var(--accent-bg); color: var(--accent); margin-left: 8px; vertical-align: 2px; }
+.pros { color: var(--accent) !important; }
+.cons { color: var(--amber) !important; }
+dl.gloss { display: grid; grid-template-columns: 110px 1fr; gap: 8px 16px; font-size: 14px; margin-top: 4px; }
+dl.gloss dt { font-weight: 700; font-family: var(--mono); font-size: 13.5px; }
+dl.gloss dd { margin: 0; color: var(--muted); }
+
+/* get ready */
+.need { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; }
+.need li { border-top: 1px solid var(--line); }
+.need li:first-child { border-top: 0; }
+.need label { display: grid; grid-template-columns: 20px 1fr auto; gap: 12px; align-items: start; padding: 11px 0; cursor: pointer; }
+.need input { width: 18px; height: 18px; margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
+.need small { display: block; color: var(--muted); font-size: 13px; }
+.need li.danger { border-top: 0; margin-bottom: 6px; }
+.need li.danger + li { border-top: 0; }
+/* The warning is in the frame (a red border and bar, the red icon), the words stay in the text
+ * colour: red words on a red tint were hard to read (2026-09-30). */
+.need li.danger label { padding: 12px 14px 12px 12px; border: 1.5px solid var(--red); border-left-width: 6px; border-radius: 8px; background: var(--surface-raised); }
+.need li.danger b { color: var(--ink); }
+.need li.danger small { color: var(--ink); }
+.need li.danger .ic { width: 20px; height: 20px; margin-top: 1px; color: var(--red); }
+.sheet li.danger { border-left: 4px solid var(--red); padding-left: 8px; }
+.need svg { width: 120px; height: auto; }
+
+/* the wiring steps */
+.wire-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.wire-top .grow { flex: 1; min-width: 200px; }
+.wire-top .bar { margin-top: 6px; }
+.parts-seg { flex-wrap: wrap; }
+.parts-seg .cnt { font-weight: 500; opacity: .8; margin-left: 2px; }
+.now { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; font-size: 14.5px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.now ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.now .muted { font-size: 13.5px; }
+.wiring.big svg { width: 100%; height: auto; }
+.wiring .dim { opacity: .14; }
+.wiring .wire.focus { stroke-width: 5; }
+.pin.target rect.body { stroke: var(--ink); stroke-width: 2; }
+.wl { list-style: none; margin: 0; padding: 4px; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.wl li { display: grid; grid-template-columns: 20px 26px 1fr auto; gap: 12px; align-items: center; padding: 9px 10px; border-radius: 7px; cursor: pointer; }
+.wl li + li { box-shadow: inset 0 1px 0 var(--line); }
+.wl li.focus { background: var(--accent-bg); box-shadow: none; }
+.wl li.focus + li { box-shadow: none; }
+.wl li.done b { color: var(--muted); font-weight: 600; }
+.wl input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.wl .sw { margin: 0; width: 26px; }
+.wl .wl-ic { color: var(--faint); display: grid; place-items: center; }
+.wl small { display: block; color: var(--muted); font-size: 12.5px; }
+.wl .here { font-size: 12px; font-weight: 650; color: var(--accent); }
+details.more ol, details.more ul { margin: 8px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.howto { display: grid; grid-template-columns: 200px 1fr; gap: 18px; align-items: center; }
+.howto svg { width: 100%; height: auto; }
+.wiring .badge { fill: var(--accent); }
+.wiring .loupe { pointer-events: none; }
+.wiring svg.loupe-on { cursor: none; }
+.wiring .loupe-bg { fill: var(--surface); }
+.wiring .loupe-ring { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+.wiring svg.all .pin.used text { font-weight: 750; }
+.wiring svg.all .pin.io:not(.used) text { fill: var(--faint); }
+.wiring .hdr-title.hdr-big { font-size: 13px; }
+.wiring text.badge-t { fill: var(--button-ink); font-family: var(--font); font-weight: 750; }
+.wiring .part[data-act] { cursor: pointer; }
+.wiring .pinbadge[data-act]:focus-visible .badge { stroke: var(--ink); stroke-width: 2; }
+.num-badge { display: inline-grid; place-items: center; min-width: 19px; height: 19px; border-radius: 50%; background: var(--accent); color: var(--button-ink); font-size: 11.5px; font-weight: 750; margin-right: 7px; vertical-align: 1px; }
+.seg .seg-sep { width: 1px; align-self: stretch; margin: 5px 3px; background: var(--line-strong); }
+.zb .mod { fill: #1b2225; stroke: var(--line-strong); stroke-width: 1.5; }
+.zb .leg { fill: #c9a227; }
+.zb .usb { fill: #a7b0b4; }
+.zb .btn-dot { fill: #cfd5d8; }
+.zb .soc { fill: #0b1012; }
+.zb .lead { fill: none; stroke: #5b6468; stroke-width: 3; stroke-linecap: round; }
+.zb .housing { fill: #15191b; stroke: var(--line-strong); }
+.zb .hole { fill: #3a4448; }
+.zb .cap { fill: var(--muted); font: 11px var(--font); }
+.zb .lbl { fill: var(--muted); font: 9px var(--mono); }
+.zb .arrow { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.zb .arrow-t { fill: var(--accent); font: 600 11px var(--font); }
+.ticks > .bar { margin: 12px 0 2px; }
+.tick-part { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; }
+.tick-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+details.more ul.ticklist { list-style: none; margin: 0; padding: 4px; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.ticklist li + li { box-shadow: inset 0 1px 0 var(--line); }
+.ticklist label { display: grid; grid-template-columns: 20px 26px 1fr; gap: 12px; align-items: center; padding: 9px 10px; border-radius: 7px; cursor: pointer; }
+.ticklist label:hover { background: var(--accent-bg); }
+.ticklist input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.ticklist .sw { margin: 0; width: 26px; }
+.ticklist .wl-ic { color: var(--faint); display: grid; place-items: center; }
+.ticklist small { display: block; color: var(--muted); font-size: 12.5px; }
+.ticklist li.done b { color: var(--muted); }
+ol.plug-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.fullmap { display: flex; flex-direction: column; gap: 10px; }
+.fm-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.dimcard { opacity: .35; }
+.sock-part { display: flex; flex-direction: column; gap: 6px; }
+.sock-part + .sock-part { border-top: 1px solid var(--line); padding-top: 12px; }
+
+/* the printed sheet: paper is light in either theme */
+.sheet { --ink: #142b30; --muted: #536970; --faint: #7a8e92; --line: #d3dfdd; --line-strong: #b9cac7; --surface: #ffffff; --surface-raised: #edf3f2; --soft: #f4f8f7;
+  --accent: #007b7d; --accent-bg: #e0f3ef; --amber: #865914; --amber-bg: #fbf1de; --pcb: #2b6e4a; --pcb-ink: #e3f5ea; --pad: #c9a227;
+  --wire-vcc: #d9480f; --wire-gnd: #142b30; --wire-data: #1c6fd6; --wire-sig: #7b4fc9; --wire-y: #c99400; --wire-g: #2b8a3e; --wire-p: #c2255c; --red: #b3261e; --red-bg: #fdecea;
+  color-scheme: light; background: #fff; color: var(--ink); width: 100%; max-width: 794px; margin: 0 auto; padding: 36px 40px; border: 1px solid var(--line); border-radius: 4px;
+  display: flex; flex-direction: column; gap: 18px; font-size: 13.5px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.sheet-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; border-bottom: 2px solid var(--ink); padding-bottom: 10px; }
+.sheet-head b { display: block; font-size: 20px; letter-spacing: -.02em; }
+.sheet-warn { border: 1.5px solid var(--amber); background: var(--amber-bg); color: #5c3d0c; border-radius: 6px; padding: 10px 12px; }
+.sheet-part { display: flex; flex-direction: column; gap: 10px; break-inside: avoid; }
+.sheet-part h2 { font-size: 16px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
+.sheet .wiring { border-radius: 6px; }
+.sheet table.wires td { padding: 6px 8px; }
+.sheet ul { margin: 0; padding-left: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.box { display: inline-block; width: 14px; height: 14px; border: 1.5px solid var(--ink); border-radius: 2px; vertical-align: middle; margin-right: 8px; }
+.sheet-foot { border-top: 1px solid var(--line); padding-top: 10px; color: var(--muted); }
+
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html, body { height: auto; background: #fff; }
+  body { display: block; }
+  .mk-bar, .appbar, .rail, .actions, .no-print { display: none !important; }
+  .shell, .content { display: block; }
+  .page { padding: 0; overflow: visible; }
+  .inner { max-width: none; }
+  .sheet { border: 0; padding: 0; max-width: none; }
+}
+@media (max-width: 900px) { .grid2, .grid3, .subpick .choices { grid-template-columns: 1fr; } .board-pick { grid-template-columns: 16px 1fr; } .board-pick svg { display: none; } .howto { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="mk-bar" id="mk-bar"></div>
+<header class="appbar">
+  <div class="wordmark"><img src="../../../../tools/flasher/roboflash/web/logo.png" alt=""><b>RoboAlarms</b><span>Flasher</span></div>
+  <div class="seg" role="group" aria-label="Mode">
+    <button type="button" aria-pressed="true">Guided setup</button>
+    <button type="button" aria-pressed="false">Advanced tools</button>
+  </div>
+  <button class="icon-btn" id="theme-toggle" type="button" data-act="theme" aria-label="Switch theme" title="Switch theme"></button>
+</header>
+<div id="app" class="shell"></div>
+<script>
+'use strict';
+
+/* ---- helpers, as in web/app.js ------------------------------------------------------------ */
+function h(tag, attrs, ...kids) { const el = document.createElement(tag); setAttrs(el, attrs); append(el, kids); return el; }
+const SVGNS = 'http://www.w3.org/2000/svg';
+function s(tag, attrs, ...kids) { const el = document.createElementNS(SVGNS, tag); setAttrs(el, attrs); append(el, kids); return el; }
+function setAttrs(el, attrs) {
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v === undefined || v === null || v === false) continue;
+    if (k === 'text') el.textContent = v;
+    else if (v === true) el.setAttribute(k, '');
+    else el.setAttribute(k, String(v));
+  }
+}
+function append(el, kids) {
+  for (const kid of kids.flat(4)) {
+    if (kid === null || kid === undefined || kid === false || kid === '') continue;
+    el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  }
+}
+const $ = (id) => document.getElementById(id);
+const clear = (el) => { while (el.firstChild) el.removeChild(el.firstChild); return el; };
+const cap = (t) => t[0].toUpperCase() + t.slice(1);
+const ordinal = (n) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+
+/* Lucide icons (ISC): the app's, plus printer, unplug, power, list-checks, moon, package,
+ * shield-check and hand. */
+const ICONS = {
+  usb: '<circle cx="10" cy="7" r="1"/><circle cx="4" cy="20" r="1"/><path d="M4.7 19.3 19 5"/><path d="m21 3-3 1 2 2Z"/><path d="M9.26 7.68 5 12l2 5"/><path d="m10 14 5 2 3.5-3.5"/><path d="m18 12 1-1 1 1-1 1Z"/>',
+  radio: '<path d="M16.247 7.761a6 6 0 0 1 0 8.478"/><path d="M19.075 4.933a10 10 0 0 1 0 14.134"/><path d="M4.925 19.067a10 10 0 0 1 0-14.134"/><path d="M7.753 16.239a6 6 0 0 1 0-8.478"/><circle cx="12" cy="12" r="2"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6h4"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  circleCheck: '<circle cx="12" cy="12" r="10"/><path d="m16 9-5.5 5.5L8 12"/>',
+  triangle: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  chevron: '<path d="m9 18 6-6-6-6"/>',
+  plug: '<path d="M12 22v-5"/><path d="M15 8V2"/><path d="M17 8a1 1 0 0 1 1 1v4a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1z"/><path d="M9 8V2"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  right: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+  left: '<path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>',
+  download: '<path d="M12 2v8"/><path d="m16 6-4 4-4-4"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 18h.01"/><path d="M10 18h.01"/>',
+  tower: '<path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9"/><path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5"/><circle cx="12" cy="9" r="2"/><path d="M16.2 4.8c2 2 2.26 5.11.8 7.47"/><path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1"/><path d="M9.5 18h5"/><path d="m8 22 4-11 4 11"/>',
+  door: '<path d="M10 21H2"/><path d="M10 3H7a2 2 0 00-2 2v16"/><path d="M14 12h.01"/><path d="M19 21V5a2 2 0 00-1.675-1.974l-6.163-1.013A1 1 0 0010 3v18a1 1 0 001.124.992z"/><path d="M22 21h-3"/>',
+  siren: '<path d="M7 18v-6a5 5 0 1 1 10 0v6"/><path d="M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2z"/><path d="M21 12h1"/><path d="M18.5 4.5 18 5"/><path d="M2 12h1"/><path d="M12 2v1"/><path d="m4.929 4.929.707.707"/><path d="M12 12v6"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  printer: '<path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6"/><rect x="6" y="14" width="12" height="8" rx="1"/>',
+  unplug: '<path d="m19 5 3-3"/><path d="m2 22 3-3"/><path d="M6.3 20.3a2.4 2.4 0 0 0 3.4 0L12 18l-6-6-2.3 2.3a2.4 2.4 0 0 0 0 3.4Z"/><path d="M7.5 13.5 10 11"/><path d="M10.5 16.5 13 14"/><path d="m12 6 6 6 2.3-2.3a2.4 2.4 0 0 0 0-3.4l-2.6-2.6a2.4 2.4 0 0 0-3.4 0Z"/>',
+  power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+  listChecks: '<path d="M13 5h8"/><path d="M13 12h8"/><path d="M13 19h8"/><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/>',
+  package: '<path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"/><path d="m7.5 4.27 9 5.15"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/>',
+  sliders: '<path d="M14 17H5"/><path d="M19 7h-9"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  book: '<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>',
+};
+function icon(name) {
+  const t = document.createElement('template');
+  t.innerHTML = `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+  return t.content.firstChild;
+}
+function note(kind, ic, bold, text) {
+  return h('div', { class: 'note ' + kind }, icon(ic), h('div', {}, bold ? h('b', { text: bold }) : null, bold && text ? ' ' : '', text || ''));
+}
+function mk(text) { return h('div', { class: 'mk-note', text }); }
+function bar(f) { const i = h('i', {}); i.style.width = Math.round(Math.max(0, Math.min(1, f)) * 100) + '%'; return h('div', { class: 'bar' }, i); }
+function btn(text, act, v, cls, opts) {
+  return h('button', Object.assign({ class: 'btn ' + (cls || ''), type: 'button', 'data-act': act, 'data-v': v }, opts || {}), text);
+}
+
+/* ---- the CrowPanel 7" (tools/flasher/roboflash/boards.json) ------------------------------- */
+const BOARD = {
+  name: 'CrowPanel 7"',
+  long: 'Elecrow CrowPanel Advanced 7" (ESP32-P4), board V1.1',
+  rows: [['5V', '5V', '5V', 'GND', 'GND', 'IO52', 'IO51', 'IO50', 'IO49', 'IO28', 'GND', 'GND'],
+    ['3V3', '3V3', '3V3', 'GND', 'IO2', 'IO3', 'IO4', 'IO5', 'IO25', 'IO27', 'GND', 'GND']],
+  rfPins: [2, 3, 4, 5, 49, 50, 51, 52],
+  connect: { port: 'UART0', power_port: 'USB2.0', steps: [
+    ['Slide the POWER switch to ON.', 'The computer can\'t find the panel while it\'s off.'],
+    ['Plug the cable from this computer into the port marked UART0.', ''],
+    ['Plug a phone charger into the port marked USB2.0.', 'The computer alone can\'t power the screen, so it may go dark without the charger.'],
+    ['Does the panel have its own power supply? Keep it connected.', 'It\'s safe to use alongside the computer, and you won\'t need the phone charger.']] },
+};
+function defaultChoice() {
+  return { rf: 'none', rf_place: 'j7', rf_pin: 3, clock: false, clock_place: 'j7', zigbee: false, zwave: false, zwave_place: 'socket' };
+}
+/* The best place for each part given the others: J7 for the receiver module and the clock (their
+ * own wiring), the radio socket for one radio while it is free, then J7. */
+function recommend(choice) {
+  const r = Object.assign(defaultChoice(), choice);
+  let socketFree = !r.zigbee;
+  if (r.rf === 'module') r.rf_place = 'j7';
+  if (r.rf === 'cc1101') { r.rf_place = socketFree ? 'socket' : 'j7'; if (socketFree) socketFree = false; }
+  if (r.zwave) { r.zwave_place = socketFree ? 'socket' : 'j7'; if (socketFree) socketFree = false; }
+  if (r.clock) r.clock_place = r.zwave && r.zwave_place === 'j7' ? 'j13' : 'j7';
+  return r;
+}
+
+/* ---- the drawings: web/app.js wiring(), with opt.focus (one wire lit, the rest faint),
+ * opt.takenRC (any pin another part uses, power pins included) and opt.pick (pins to click) --- */
+function findPin(rows, label) {
+  for (let r = 0; r < rows.length; r++) { const c = rows[r].indexOf(label); if (c >= 0) return [r, c]; }
+  return null;
+}
+function wiring(conn, wires, opt) {
+  const P = 31, W = 26, H = 23, LS = 12, x0 = 250;
+  const two = conn.rows.length === 2;
+  const top = two ? 96 : (opt.kind === 'clock' ? 36 : 84);
+  const X = (c) => x0 + c * P;
+  const list = wires.filter((w) => w.rc);
+  const order = two
+    ? [...list.filter((w) => w.rc[0] === 0).sort((a, b) => a.rc[1] - b.rc[1]), ...list.filter((w) => w.rc[0] === 1).sort((a, b) => b.rc[1] - a.rc[1])]
+    : [...list].sort((a, b) => b.rc[1] - a.rc[1]);
+  const n = Math.max(1, order.length);
+  const lane = (i) => (two ? top + H / 2 + 13 + i * LS : top + i * LS);
+  const rowY = two ? [top, lane(n - 1) + 13 + H / 2] : [lane(n - 1) + 13 + H / 2];
+  const cols = conn.rows[0].length;
+  const bx = X(0) - W / 2 - 10, by = rowY[0] - H / 2 - 9;
+  const bw = (cols - 1) * P + W + 20, bh = rowY[rowY.length - 1] - rowY[0] + H + 18;
+  const mid = (lane(0) + lane(n - 1)) / 2;
+  const mTop = Math.min(lane(0) - 24, mid - 36), mBot = Math.max(lane(n - 1) + 24, mid + 36);
+  const titleY = two ? by - 10 : by + bh + 18;
+  const width = Math.max(bx + bw, bx + conn.title.length * 6.6) + 8;
+  const height = Math.max(two ? by + bh : titleY, mBot) + 12;
+  const dim = (w) => (opt.focus && w.pin !== opt.focus ? ' dim' : '');
+  const svg = s('svg', { viewBox: `0 0 ${width} ${height}`, width: Math.round(width * 1.2), height: Math.round(height * 1.2), role: 'img', 'aria-label': opt.label || '' });
+  if (opt.kind !== 'clock') {
+    const pts = [`44,${mTop}`];
+    for (let k = 1; k <= 7; k++) pts.push(`${44 + (k % 2 ? -8 : 8)},${mTop - k * 6}`);
+    pts.push(`44,${mTop - 48}`);
+    svg.append(s('polyline', { class: 'ant' + (opt.focus ? ' dim' : ''), points: pts.join(' ') }));
+  }
+  svg.append(s('rect', { class: 'pcb', x: 24, y: mTop, width: 130, height: mBot - mTop, rx: 7 }));
+  svg.append(opt.kind === 'clock' ? s('circle', { class: 'cell', cx: 58, cy: mid - 8, r: 17 }) : s('rect', { class: 'chipdark', x: 38, y: mTop + 14, width: 34, height: 26, rx: 3 }));
+  svg.append(s('text', { class: 'pcb-ink', x: 34, y: mBot - 10, 'font-size': 10.5, text: opt.name }));
+  order.forEach((w, i) => {
+    svg.append(s('rect', { class: 'pad' + dim(w), x: 154, y: lane(i) - 5, width: 12, height: 10, rx: 1.5 }));
+    svg.append(s('text', { class: 'pcb-ink' + dim(w), x: 146, y: lane(i) + 3.5, 'text-anchor': 'end', 'font-size': 9.5, text: w.pin }));
+  });
+  svg.append(s('text', { class: 'hdr-title', x: bx, y: titleY, text: conn.title }));
+  svg.append(s('rect', { class: 'hdr', x: bx, y: by, width: bw, height: bh, rx: 9 }));
+  conn.rows.forEach((row, r) => row.forEach((label, c) => {
+    const mine = order.find((w) => w.rc[0] === r && w.rc[1] === c);
+    const taken = !mine && opt.takenRC ? opt.takenRC[r + ',' + c] || '' : '';
+    const pn = /^IO\d+$/.test(label) ? Number(label.slice(2)) : null;
+    const reserved = !mine && !taken && label === 'IO25';
+    const pickable = !!opt.pick && pn !== null && !mine && !taken && opt.pick.includes(pn);
+    let cls = label === '3V3' ? 'p3' : label === '5V' ? 'p5' : label === 'GND' ? 'gnd' : 'io';
+    if (taken) cls += ' taken';
+    if (reserved) cls += ' reserved';
+    if (pickable) cls += ' pickable';
+    if (mine && opt.focus === mine.pin) cls += ' target';
+    const tip = mine ? `${label}: the ${opt.short}'s ${mine.pin}` : taken ? `${label}: taken by ${taken}` : pickable ? `${label}: free. Click to put DATA here` : label === '5V' ? '5V: never for these parts' : label;
+    svg.append(s('g', Object.assign({ class: 'pin ' + cls }, pickable ? { role: 'button', tabindex: 0, 'data-act': 'pin', 'data-v': pn, 'aria-label': `Put DATA on J7 IO${pn}` } : {}),
+      s('title', { text: tip }),
+      s('rect', { class: 'body', x: X(c) - W / 2, y: rowY[r] - H / 2, width: W, height: H, rx: 4 }),
+      s('text', { x: X(c), y: rowY[r] + 3.5, 'text-anchor': 'middle', 'font-size': 8.5, text: label })));
+  }));
+  order.forEach((w, i) => {
+    const [r, c] = w.rc;
+    const y = lane(i), x2 = X(c);
+    const up = two && r === 0;
+    const edge = up ? rowY[0] + H / 2 : rowY[r] - H / 2;
+    const turn = up ? -6 : 6;
+    svg.append(s('path', { class: 'wire w-' + w.colour + dim(w) + (opt.focus === w.pin ? ' focus' : ''), d: `M166 ${y} H ${x2 - 6} Q ${x2} ${y} ${x2} ${y + turn} V ${edge}` }));
+    svg.append(s('rect', { class: 'ring w-' + w.colour + dim(w), x: x2 - W / 2 - 2.5, y: rowY[r] - H / 2 - 2.5, width: W + 5, height: H + 5, rx: 5.5 }));
+  });
+  return svg;
+}
+
+/* A magnifying glass over the header's pins (added 2026-09-30), so their labels read easily: a
+ * circle showing the drawing about 2.4 times larger, centred on the pointer while it is on a row of
+ * pins - not on the wires between the rows, nor on the parts' numbers above and below them, which
+ * stay visible and clickable. A row counts as one band, gaps between its pins included, so moving
+ * along it never makes the lens vanish and reappear (FLS-017). The lens takes no clicks. */
+let loupeSeq = 0;
+function addLoupe(svg, bands) {
+  const id = 'loupe' + (++loupeSeq);
+  const R = 56, Z = 2.4, MARGIN = 4;
+  // A plain copy of the drawing inside the same <svg>, so the page's styles reach it (a <use>
+  // copy sits in a shadow tree the ".wiring ..." rules can't reach, and its wires filled black).
+  // It takes no clicks, no focus and shows no tooltips.
+  const copy = s('g', {});
+  for (const el of svg.childNodes) copy.append(el.cloneNode(true));
+  for (const el of copy.querySelectorAll('title')) el.remove();
+  for (const el of copy.querySelectorAll('[tabindex], [role], [data-act], [aria-label]')) {
+    for (const a of ['tabindex', 'role', 'data-act', 'data-v', 'aria-label']) el.removeAttribute(a);
+  }
+  const lens = s('g', { class: 'loupe', 'aria-hidden': 'true' },
+    s('circle', { class: 'loupe-bg', r: R }),
+    s('g', { 'clip-path': `url(#${id}-k)` }, copy),
+    s('circle', { class: 'loupe-ring', r: R }));
+  lens.style.display = 'none';
+  svg.append(s('defs', {}, s('clipPath', { id: id + '-k' }, s('circle', { r: R }))), lens);
+  let shown = false, frame = 0, last = null;
+  const place = () => {
+    frame = 0;
+    const m = svg.getScreenCTM();
+    if (!m || !last) return;
+    const p = new DOMPoint(last.clientX, last.clientY).matrixTransform(m.inverse());
+    const out = shown ? MARGIN : 0;
+    const inside = bands.some((b) => p.x >= b.x - out && p.x <= b.x + b.w + out && p.y >= b.y - out && p.y <= b.y + b.h + out);
+    if (inside !== shown) { shown = inside; lens.style.display = inside ? '' : 'none'; svg.classList.toggle('loupe-on', inside); }
+    if (!inside) return;
+    lens.setAttribute('transform', `translate(${p.x} ${p.y})`);
+    copy.setAttribute('transform', `scale(${Z}) translate(${-p.x} ${-p.y})`);
+  };
+  svg.addEventListener('pointermove', (e) => { last = e; if (!frame) frame = requestAnimationFrame(place); });
+  svg.addEventListener('pointerleave', () => { shown = false; lens.style.display = 'none'; svg.classList.remove('loupe-on'); });
+}
+/* Every part on J7 in one drawing: each part's board on the left, stacked in the order of its
+ * wires' lanes, its wires fanning out from its pads into the lanes between J7's rows, in the
+ * order wiring() uses so that no wire crosses a pin it doesn't end on. Wires may cross each
+ * other in the fan, away from the header. opt.focus (a part's key) fades the others. */
+function wiringAll(rows, parts, opt) {
+  // The header takes most of the width, so its labels read at the Flasher's window size.
+  const P = 42, W = 36, H = 28, LS = 16, PS = 17, MG = 20, MX = 52, MW = 118;
+  const PX = MX + MW + 12, FX = PX + 80, x0 = FX + 60;
+  const X = (c) => x0 + c * P;
+  const all = parts.flatMap((p, pi) => p.wires.filter((w) => w.rc).map((w) => Object.assign({ part: pi }, w)));
+  const order = [...all.filter((w) => w.rc[0] === 0).sort((a, b) => a.rc[1] - b.rc[1]), ...all.filter((w) => w.rc[0] === 1).sort((a, b) => b.rc[1] - a.rc[1])];
+  order.forEach((w, i) => { w.lane = i; });
+  const n = Math.max(1, order.length);
+  const top = 60;
+  const lane = (i) => top + H / 2 + 13 + i * LS;
+  const rowY = [top, lane(n - 1) + 13 + H / 2];
+  const cols = rows[0].length;
+  const bx = X(0) - W / 2 - 10, by = rowY[0] - H / 2 - 9;
+  const bw = (cols - 1) * P + W + 20, bh = rowY[1] - rowY[0] + H + 18;
+  const mods = parts.map((p, pi) => {
+    const ws = order.filter((w) => w.part === pi);
+    return { p, pi, ws, mean: ws.reduce((a, w) => a + w.lane, 0) / Math.max(1, ws.length) };
+  }).filter((m) => m.ws.length).sort((a, b) => a.mean - b.mean);
+  for (const m of mods) m.h = Math.max(78, 24 + (m.ws.length - 1) * PS + 40);
+  const total = mods.reduce((a, m) => a + m.h, 0) + (mods.length - 1) * MG;
+  let y = (lane(0) + lane(n - 1)) / 2 - total / 2;
+  for (const m of mods) { m.top = y; m.ws.forEach((w, j) => { w.py = y + 24 + j * PS; }); y += m.h + MG; }
+  // Each part's number (assembly order) on its board and beside every J7 pin it uses, so a pin
+  // can be matched to its part without following the wire.
+  const tagged = parts.some((p) => p.num);
+  const minY = Math.min(by - (tagged ? 58 : 34), ...mods.map((m) => m.top)) - 10;
+  const maxY = Math.max(by + bh + (tagged ? 28 : 0), ...mods.map((m) => m.top + m.h)) + 10;
+  const width = bx + bw + 8;
+  const svg = s('svg', { viewBox: `0 ${minY} ${width} ${maxY - minY}`, width: Math.round(width * 1.2), height: Math.round((maxY - minY) * 1.2), role: 'img', 'aria-label': opt.label || '', class: 'all' });
+  const dim = (pi) => (opt.focus && parts[pi].key !== opt.focus ? ' dim' : '');
+  const badge = (x, y, num, r) => [s('circle', { class: 'badge', cx: x, cy: y, r }), s('text', { class: 'badge-t', x, y: y + r * 0.42, 'text-anchor': 'middle', 'font-size': r * 1.25, text: String(num) })];
+  for (const m of mods) {
+    const d = dim(m.pi);
+    const g = s('g', Object.assign({ class: 'part p-' + m.p.key + d }, opt.pick ? { 'data-act': opt.pickAct || 'fullfocus', 'data-v': m.p.key, role: 'button', tabindex: 0, 'aria-label': `Show only the ${m.p.title}` } : {}),
+      s('title', { text: m.p.num ? `${m.p.num}: ${m.p.title}` : m.p.title }));
+    if (m.p.kind === 'receiver' || m.p.kind === 'cc1101') {
+      const pts = [`${MX},${m.top + 18}`];
+      for (let k = 1; k <= 6; k++) pts.push(`${MX - k * 7},${m.top + 18 + (k % 2 ? -7 : 7)}`);
+      g.append(s('polyline', { class: 'ant', points: pts.join(' ') }));
+    }
+    g.append(s('rect', { class: 'pcb', x: MX, y: m.top, width: MW, height: m.h, rx: 7 }));
+    g.append(m.p.kind === 'clock' ? s('circle', { class: 'cell', cx: MX + 46, cy: m.top + m.h / 2 - 4, r: 15 })
+      : s('rect', { class: 'chipdark', x: MX + 32, y: m.top + 12, width: 34, height: 26, rx: 3 }));
+    if (m.p.num) append(g, [badge(MX + 16, m.top + 16, m.p.num, 11)]);
+    g.append(s('text', { class: 'pcb-ink', x: MX + 10, y: m.top + m.h - 11, 'font-size': 12, text: m.p.name }));
+    m.ws.forEach((w) => {
+      g.append(s('rect', { class: 'pad', x: MX + MW, y: w.py - 5, width: 12, height: 10, rx: 1.5 }));
+      g.append(s('text', { class: 'pcb-ink', x: MX + MW - 8, y: w.py + 4, 'text-anchor': 'end', 'font-size': 11, text: w.pin }));
+    });
+    svg.append(g);
+  }
+  svg.append(s('text', { class: 'hdr-title hdr-big', x: bx, y: by - (tagged ? 36 : 12), text: opt.title }));
+  svg.append(s('rect', { class: 'hdr', x: bx, y: by, width: bw, height: bh, rx: 9 }));
+  rows.forEach((row, r) => row.forEach((label, c) => {
+    const mine = order.find((w) => w.rc[0] === r && w.rc[1] === c);
+    const taken = !mine && opt.takenRC ? opt.takenRC[r + ',' + c] || '' : '';
+    let cls = label === '3V3' ? 'p3' : label === '5V' ? 'p5' : label === 'GND' ? 'gnd' : 'io';
+    if (taken) cls += ' taken';
+    if (!mine && !taken && label === 'IO25') cls += ' reserved';
+    if (mine) cls += ' used';
+    const tip = mine ? `${label}: the ${parts[mine.part].short}'s ${mine.pin}` : taken ? `${label}: taken by ${taken}` : label === '5V' ? '5V: never for these parts' : `${label}: free`;
+    svg.append(s('g', { class: 'pin ' + cls }, s('title', { text: tip }),
+      s('rect', { class: 'body', x: X(c) - W / 2, y: rowY[r] - H / 2, width: W, height: H, rx: 4 }),
+      s('text', { x: X(c), y: rowY[r] + 4, 'text-anchor': 'middle', 'font-size': 11, text: label })));
+  }));
+  order.forEach((w) => {
+    const [r, c] = w.rc;
+    const ly = lane(w.lane), x2 = X(c);
+    const up = r === 0;
+    const edge = up ? rowY[0] + H / 2 : rowY[1] - H / 2;
+    const turn = up ? -6 : 6;
+    const p = parts[w.part];
+    const cls = ' part p-' + p.key + dim(w.part);
+    svg.append(s('path', { class: 'wire w-' + w.colour + cls, d: `M${PX} ${w.py} C ${PX + 44} ${w.py}, ${FX - 44} ${ly}, ${FX} ${ly} H ${x2 - 6} Q ${x2} ${ly} ${x2} ${ly + turn} V ${edge}` }));
+    svg.append(s('rect', { class: 'ring w-' + w.colour + cls, x: x2 - W / 2 - 2.5, y: rowY[r] - H / 2 - 2.5, width: W + 5, height: H + 5, rx: 5.5 }));
+    if (p.num) svg.append(s('g', Object.assign({ class: cls.trim() + ' pinbadge' }, opt.pick ? { 'data-act': opt.pickAct || 'fullfocus', 'data-v': p.key, role: 'button', tabindex: 0, 'aria-label': `Show only the ${p.title}` } : {}), s('title', { text: `${p.num}: ${p.title}, ${w.pin}` }), badge(x2, up ? by - 14 : by + bh + 14, p.num, 9.5)));
+  });
+  if (opt.loupe) addLoupe(svg, rowY.map((ry) => ({ x: X(0) - W / 2, y: ry - H / 2, w: (cols - 1) * P + W, h: H })));
+  return svg;
+}
+
+/* A connector as printed, small, for the guide on step 2. */
+function miniHeader(rows) {
+  const P = 21, W = 18, H = 15, pad = 8;
+  const width = pad * 2 + (rows[0].length - 1) * P + W, height = pad * 2 + rows.length * (H + 4) - 4;
+  return s('svg', { viewBox: `0 0 ${width} ${height}`, role: 'img', 'aria-label': 'Its pins, as printed' },
+    s('rect', { class: 'hdr', x: 0, y: 0, width, height, rx: 6, style: 'fill:var(--surface-raised);stroke:var(--line)' }),
+    rows.map((row, r) => row.map((label, c) => {
+      const cls = label === '3V3' ? 'p3' : label === '5V' ? 'p5' : label === 'GND' ? 'gnd' : 'io';
+      return s('g', { class: 'pin ' + cls },
+        s('rect', { class: 'body', x: pad + c * P, y: pad + r * (H + 4), width: W, height: H, rx: 3 }),
+        s('text', { x: pad + c * P + W / 2, y: pad + r * (H + 4) + 10.5, 'text-anchor': 'middle', 'font-size': label.length > 3 ? 5.6 : 6.5, style: 'font-family:var(--mono)', text: label }));
+    })));
+}
+/* The radio socket's two rows of seven, as in the Zigbee module's drawing. */
+function miniSocket() {
+  const col = (x) => [s('rect', { x: x - 7, y: 6, width: 14, height: 118, rx: 3, style: 'fill:#15191b;stroke:var(--line-strong)' }),
+    [0, 1, 2, 3, 4, 5, 6].map((i) => s('rect', { x: x - 3, y: 13 + i * 16, width: 6, height: 6, rx: 1, style: 'fill:#3a4448' }))];
+  return s('svg', { viewBox: '0 0 280 130', role: 'img', 'aria-label': 'The radio socket: two rows of seven holes' },
+    s('rect', { x: 1, y: 1, width: 278, height: 128, rx: 8, style: 'fill:var(--surface-raised);stroke:var(--line)' }),
+    col(100), col(180),
+    s('text', { x: 140, y: 69, 'text-anchor': 'middle', 'font-size': 10, style: 'fill:var(--muted)', text: 'radio' }));
+}
+/* A jumper wire's end going onto a pin, for "How to fit a wire". */
+function artFit() {
+  return s('svg', { viewBox: '0 0 200 120', role: 'img', 'aria-label': 'A jumper wire\'s plug pushed straight down onto a pin until it stops' },
+    s('rect', { x: 10, y: 98, width: 180, height: 14, rx: 3, style: 'fill:var(--pcb)' }),
+    [40, 70, 100, 130, 160].map((x) => s('rect', { x: x - 2, y: 66, width: 4, height: 32, style: 'fill:#aab4b8' })),
+    s('rect', { x: 92, y: 28, width: 16, height: 30, rx: 2, style: 'fill:#20282b' }),
+    s('path', { d: 'M100 28 C 100 10, 130 6, 150 4', style: 'fill:none;stroke:var(--wire-vcc);stroke-width:4;stroke-linecap:round' }),
+    s('path', { d: 'M122 36 v 22 m -6 -7 l 6 7 l 6 -7', style: 'fill:none;stroke:var(--accent);stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round' }),
+    s('text', { x: 20, y: 22, 'font-size': 11, style: 'fill:var(--muted)', text: 'Push straight down' }));
+}
+/* Elecrow's ESP32-H2 module going into the radio socket. The module from above, as its datasheet
+ * draws it (18 x 23.7 mm, seven pins down each side at 2.54 mm, the white triangle by its USB-C, the
+ * round antenna connector between B and R); the socket's two rows of seven as printed beside it,
+ * matched pin for pin in docs/research/AddOnWiringResearch.md: the module's 3V3 and GND side goes
+ * into the row printed 3V3 and GND, and its 5V pin into a hole the panel leaves unconnected. */
+const ZB_MODULE = [['U1RXD', 'IO2', 'IO1', 'IO0', '3V3', 'GND', '5V'], ['U1TXD', 'IO14', 'IO12', 'IO11', 'IO5', 'IO4', 'IO3']];
+const ZB_SOCKET = [['IO53', 'IO8', 'IO7', 'IO6', '3V3', 'GND', 'NC'], ['IO54', 'IO46', 'IO45', 'NC', 'IO9', 'IO10', 'NC']];
+function artZigbee() {
+  // Captions on top, the antenna lead out to the bottom left, larger labels: the picture is read
+  // at arm's length on a bench.
+  const MX = 96, MY = 40, MW = 126, MH = 166, PITCH = 17.8, P0 = MY + 52;
+  const SX = 402, SW = 126;
+  const chipLabel = (x, y, label, anchor) => {
+    const cls = label === '3V3' ? 'p3' : label === 'GND' ? 'gnd' : label === '5V' ? 'p5' : label === 'NC' ? 'io reserved' : 'io';
+    const w = 44, hgt = 15, x0 = anchor === 'end' ? x - w : x;
+    return s('g', { class: 'pin ' + cls }, s('rect', { class: 'body', x: x0, y: y - hgt / 2, width: w, height: hgt, rx: 3 }),
+      s('text', { x: x0 + w / 2, y: y + 3.5, 'text-anchor': 'middle', 'font-size': 9.5, style: 'font-family:var(--mono)', text: label }));
+  };
+  const svg = s('svg', { class: 'zb', viewBox: '0 0 600 280', role: 'img', 'aria-label': 'The ESP32-H2 module, seen from above, pressed down into the radio socket: its 3V3 and GND pins into the holes printed 3V3 and GND' });
+  svg.append(s('text', { class: 'cap', x: MX + MW / 2, y: 16, 'text-anchor': 'middle', text: 'The module, from above' }),
+    s('text', { class: 'cap', x: SX + SW / 2, y: 16, 'text-anchor': 'middle', text: 'The radio socket, labels as printed' }));
+  // the module
+  svg.append(s('path', { class: 'lead', d: `M${MX + 63} ${MY + 152} C ${MX + 63} ${MY + 215}, ${MX - 30} ${MY + 205}, ${MX - 80} ${MY + 222}` }),
+    s('text', { class: 'cap', x: MX - 84, y: MY + 238, text: 'antenna lead' }));
+  svg.append(s('rect', { class: 'mod', x: MX, y: MY, width: MW, height: MH, rx: 6 }));
+  svg.append(s('rect', { class: 'usb', x: MX + 32, y: MY - 5, width: 62, height: 42, rx: 7 }));
+  svg.append(s('path', { d: `M${MX + 7} ${MY + 18} l8 -12 l8 12 z`, style: 'fill:#f2f5f6' }));
+  svg.append(s('rect', { class: 'soc', x: MX + 62, y: MY + 88, width: 30, height: 30, rx: 2 }));
+  svg.append(s('circle', { class: 'btn-dot', cx: MX + 21, cy: MY + 150, r: 8 }), s('circle', { class: 'btn-dot', cx: MX + 105, cy: MY + 150, r: 8 }));
+  svg.append(s('circle', { class: 'leg', cx: MX + 63, cy: MY + 152, r: 5.5 }));
+  svg.append(s('text', { x: MX + 63, y: MY + 133, 'text-anchor': 'middle', style: 'fill:#cfd5d8;font:7px var(--mono)', text: 'ESP32-H2' }));
+  ZB_MODULE.forEach((col, side) => col.forEach((label, i) => {
+    const y = P0 + i * PITCH;
+    const x = side ? MX + MW : MX - 8;
+    svg.append(s('rect', { class: 'leg', x, y: y - 4, width: 8, height: 8, rx: 1 }));
+    svg.append(chipLabel(side ? x + 12 : x - 4, y, label, side ? 'start' : 'end'));
+  }));
+  // the arrow
+  const ay = MY + 83;
+  svg.append(s('path', { class: 'arrow', d: `M300 ${ay} H 340 m -8 -7 l 8 7 l -8 7` }),
+    s('text', { class: 'arrow-t', x: 320, y: ay - 12, 'text-anchor': 'middle', text: 'press in' }));
+  // the socket
+  ZB_SOCKET.forEach((col, side) => {
+    const x = side ? SX + SW : SX;
+    svg.append(s('rect', { class: 'housing', x: x - 9, y: P0 - 12, width: 18, height: 6 * PITCH + 24, rx: 3 }));
+    col.forEach((label, i) => {
+      const y = P0 + i * PITCH;
+      svg.append(s('rect', { class: 'hole', x: x - 3.5, y: y - 3.5, width: 7, height: 7, rx: 1 }));
+      svg.append(chipLabel(side ? x + 14 : x - 14, y, label, side ? 'start' : 'end'));
+    });
+  });
+  return svg;
+}
+const ZB_STEPS = [
+  ['ant', 'Click the antenna lead onto the small round gold connector at the module\'s bottom edge: line it up and press straight down until it clicks.'],
+  ['turn', 'Turn the module so its 3V3 and GND pins line up with the socket holes printed 3V3 and GND.'],
+  ['press', 'Press it straight down into the socket, evenly on both sides, until it sits flat.'],
+  ['lay', 'Lay the antenna lead away from the screen\'s flat ribbon cable and any 433 MHz antenna.']];
+function artJumper() {
+  return s('svg', { viewBox: '0 0 120 30', role: 'img', 'aria-label': 'A jumper wire with a plug at each end' },
+    s('rect', { x: 2, y: 9, width: 18, height: 12, rx: 2, style: 'fill:#20282b' }),
+    s('path', { d: 'M20 15 C 45 2, 75 28, 100 15', style: 'fill:none;stroke:var(--wire-data);stroke-width:3.5;stroke-linecap:round' }),
+    s('rect', { x: 100, y: 9, width: 18, height: 12, rx: 2, style: 'fill:#20282b' }));
+}
+
+/* ---- what gets wired, part by part. Each wire gets its own pin: today each part's drawing picks
+ * 3V3 pin 1 and the GND nearest it by itself, so two parts on J7 are drawn on the same 3V3. ---- */
+function groups(choice) {
+  const c = Object.assign(defaultChoice(), choice);
+  const rows = BOARD.rows;
+  const used = {};
+  const out = [];
+  function free(label, near) {
+    let best = null;
+    rows.forEach((row, r) => row.forEach((l, col) => {
+      if (l !== label || used[r + ',' + col]) return;
+      const score = (row.includes('3V3') ? 0 : 100) + Math.abs(col - near);
+      if (!best || score < best.score) best = { score, rc: [r, col] };
+    }));
+    return best && best.rc;
+  }
+  function onJ7(g, sig) {
+    const wires = sig.map(([pin, label, colour, from]) => ({ pin, colour, rc: findPin(rows, label), to: 'J7 ' + label, from }));
+    wires.forEach((w) => { used[w.rc.join()] = g.short; });
+    const gnd = free('GND', wires[0].rc[1]); used[gnd.join()] = g.short;
+    const vcc = free('3V3', 0); used[vcc.join()] = g.short;
+    g.wires = [{ pin: 'GND', colour: 'wire-gnd', rc: gnd, to: 'J7 GND', from: g.gndFrom }, { pin: 'VCC', colour: 'wire-vcc', rc: vcc, to: 'J7 3V3', from: g.vccFrom }, ...wires];
+    g.wires.forEach((w) => { const rn = rows[w.rc[0]][0]; w.where = `the ${rn} row, ${ordinal(w.rc[1] + 1)} pin from the ${rn} end, printed ${rows[w.rc[0]][w.rc[1]]}`; });
+    g.conn = 'j7';
+    out.push(g);
+  }
+  function onSocket(g, wires) {
+    g.conn = 'socket';
+    g.wires = wires.map(([pin, to, where, colour, from]) => ({ pin, to, where, colour, from }));
+    out.push(g);
+  }
+  const socketPower = [['GND', 'socket GND', 'the socket pin printed GND', 'wire-gnd'], ['VCC', 'socket 3V3', 'the socket pin printed 3V3', 'wire-vcc']];
+  if (c.rf === 'module') {
+    const g = { key: 'rf', title: '433 MHz receiver module', ic: 'radio', kind: 'receiver', name: 'RECEIVER', short: 'receiver', chip: 'Receiver',
+      extras: [{ id: 'ant', text: 'Antenna: its spring, or 17.3 cm of straight wire, away from the board.' }],
+      notes: [['warn', 'triangle', 'VCC goes to 3V3, never 5V:', 'on 5V the receiver\'s DATA would put 5 V into the panel\'s chip, which takes 3.3 V at most.']] };
+    if (c.rf_place === 'j7') { g.place = `J7, DATA on IO${c.rf_pin}`; g.label = `Receiver on J7 IO${c.rf_pin}`; onJ7(g, [['DATA', 'IO' + c.rf_pin, 'wire-data']]); }
+    else { g.place = 'the radio socket'; g.label = 'Receiver on the socket'; onSocket(g, [...socketPower, ['DATA', 'socket IO10', 'the socket pin printed IO10', 'wire-data']]); }
+  } else if (c.rf === 'cc1101') {
+    const g = { key: 'rf', title: 'CC1101 receiver', ic: 'radio', kind: 'cc1101', name: 'CC1101', short: 'CC1101', chip: 'CC1101',
+      extras: [{ id: 'gdo2', text: 'GDO2: leave it unconnected.' }, { id: 'ant', text: 'Antenna: 17.3 cm of wire, away from the display\'s ribbon cable.' }],
+      notes: [['warn', 'triangle', 'The CC1101 is a 3.3 V part.', 'Pin order differs between CC1101 boards: match the labels printed on it, not the positions.']] };
+    if (c.rf_place === 'j7') {
+      g.place = 'J7'; g.label = 'CC1101 on J7';
+      onJ7(g, [['MOSI', 'IO51', 'wire-g', 'the pin labelled SI or MOSI'], ['MISO', 'IO50', 'wire-data', 'the pin labelled SO or MISO'], ['SCK', 'IO52', 'wire-y', 'the pin labelled SCLK or SCK'], ['CSn', 'IO49', 'wire-sig'], ['GDO0', 'IO5', 'wire-p']]);
+    } else {
+      g.place = 'the radio socket'; g.label = 'CC1101 on the socket';
+      onSocket(g, [...socketPower, ['MOSI', 'socket IO6', 'the socket pin printed IO6', 'wire-g', 'the pin labelled SI or MOSI'], ['MISO', 'socket IO7', 'the socket pin printed IO7', 'wire-data', 'the pin labelled SO or MISO'],
+        ['SCK', 'socket IO8', 'the socket pin printed IO8', 'wire-y', 'the pin labelled SCLK or SCK'], ['CSn', 'socket IO9', 'the socket pin printed IO9', 'wire-sig'], ['GDO0', 'socket IO10', 'the socket pin printed IO10', 'wire-p']]);
+    }
+  }
+  if (c.clock) {
+    const g = { key: 'clock', title: 'Battery-backed clock', ic: 'clock', kind: 'clock', name: 'DS3231', short: 'clock', chip: 'Clock',
+      extras: [{ id: 'cell', text: 'Coin cell: fit it now (a rechargeable LIR2032, or a CR2032 if the board\'s charging part has been removed).' }, { id: 'sqw', text: 'SQW and 32K: leave them unconnected.' }], notes: [] };
+    if (c.clock_place === 'j7') {
+      g.place = 'J7, IO27 and IO28'; g.label = 'Clock on J7';
+      onJ7(g, [['SCL', 'IO28', 'wire-sig'], ['SDA', 'IO27', 'wire-data']]);
+    } else {
+      const cn = ['SCL', 'SDA', '3V3', 'GND'];
+      g.place = 'the I2C connector (J13)'; g.label = 'Clock on J13'; g.conn = 'j13'; g.rows = [cn];
+      g.wires = [['GND', 'GND', 'wire-gnd'], ['VCC', '3V3', 'wire-vcc'], ['SCL', 'SCL', 'wire-sig'], ['SDA', 'SDA', 'wire-data']]
+        .map(([pin, to, colour]) => ({ pin, colour, rc: [0, cn.indexOf(to)], to: 'J13 ' + to, where: `the J13 pin printed ${to}` }));
+      g.notes.push(['warn', 'triangle', 'Short leads, 3V3 only.', 'J13 shares the touch screen\'s wiring: keep the clock beside it on 10 to 20 cm of lead, away from siren and mains wires.']);
+      out.push(g);
+    }
+  }
+  if (c.zwave) {
+    const g = { key: 'zwave', title: 'Z-Wave radio', ic: 'radio', kind: 'zwave', name: 'ZAC93', short: 'Z-Wave radio', chip: 'Z-Wave', vccFrom: 'position 1', gndFrom: 'position 6',
+      extras: [{ id: 'meter', text: 'Its pins are numbered 1 to 10, like a Raspberry Pi\'s. Positions 2 and 4 stay empty.' }],
+      notes: [['info', 'info', 'Crossed over:', 'the radio\'s RX goes to the panel\'s TX, and its TX to the panel\'s RX. The drawing already shows it that way.']] };
+    if (c.zwave_place === 'j7') { g.place = 'J7, IO27 and IO28'; g.label = 'Z-Wave on J7'; onJ7(g, [['RX', 'IO27', 'wire-sig', 'position 8'], ['TX', 'IO28', 'wire-data', 'position 10']]); }
+    else {
+      g.place = 'the radio socket'; g.label = 'Z-Wave on the socket';
+      onSocket(g, [['GND', 'socket GND', 'the socket pin printed GND', 'wire-gnd', 'position 6'], ['VCC', 'socket 3V3', 'the socket pin printed 3V3', 'wire-vcc', 'position 1'],
+        ['RX', 'socket IO53', 'the socket pin printed IO53', 'wire-sig', 'position 8'], ['TX', 'socket IO54', 'the socket pin printed IO54', 'wire-data', 'position 10']]);
+    }
+  }
+  if (c.zigbee) {
+    out.push({ key: 'zigbee', title: 'Zigbee radio', ic: 'tower', kind: 'zigbee', short: 'Zigbee module', chip: 'Zigbee', place: 'the radio socket', label: 'Zigbee in the socket', conn: 'plug', wires: [],
+      extras: ZB_STEPS.map(([id, text]) => ({ id, text })), notes: [['info', 'info', 'The panel can\'t use it yet:', 'Zigbee is planned.']] });
+  }
+  for (const g of out) {
+    g.sig = g.key + '@' + g.label;
+    g.taken = {};
+    for (const [rc, who] of Object.entries(used)) if (who !== g.short && g.conn === 'j7') g.taken[rc] = 'the ' + who;
+  }
+  return out;
+}
+/* Assembly order: J7's parts first, then the I2C connector's, then the radio socket's. Each part
+ * gets its number in that order, shown in the drawings, the filter and the tabs. */
+const CONN_RANK = { j7: 0, j13: 1, socket: 2, plug: 2 };
+const CONN_NAME = { j7: 'J7', j13: 'I2C (J13)', socket: 'Radio socket', plug: 'Radio socket' };
+function assembly(gs) {
+  const out = gs.slice().sort((a, b) => CONN_RANK[a.conn] - CONN_RANK[b.conn]);
+  out.forEach((g, i) => { g.num = i + 1; });
+  return out;
+}
+const numbered = (g) => [h('span', { class: 'num-badge', text: String(g.num) }), g.title];
+function socketUser(c, except) {
+  if (except !== 'zigbee' && c.zigbee) return 'the Zigbee module';
+  if (except !== 'rf' && c.rf !== 'none' && c.rf_place === 'socket') return c.rf === 'cc1101' ? 'the CC1101' : 'the receiver';
+  if (except !== 'zwave' && c.zwave && c.zwave_place === 'socket') return 'the Z-Wave radio';
+  return '';
+}
+function problems(choice) {
+  const c = Object.assign(defaultChoice(), choice);
+  const out = [];
+  const onSocket = [c.zigbee ? 'the Zigbee module' : '', c.rf !== 'none' && c.rf_place === 'socket' ? (c.rf === 'cc1101' ? 'the CC1101' : 'the receiver') : '', c.zwave && c.zwave_place === 'socket' ? 'the Z-Wave radio' : ''].filter(Boolean);
+  if (onSocket.length > 1) out.push(`Only one thing fits the radio socket: ${onSocket.join(' and ')} both want it.`);
+  if (c.zwave && c.zwave_place === 'j7' && c.clock && c.clock_place === 'j7') out.push('The Z-Wave radio and the clock can\'t both use J7 IO27 and IO28.');
+  return out;
+}
+function items(g) {
+  return g.wires.map((w) => Object.assign({ id: w.pin, kind: 'wire' }, w)).concat(g.extras.map((e) => ({ id: e.id, kind: 'extra', text: e.text })));
+}
+const tickKey = (g, id) => g.sig + ':' + id;
+const doneOf = (g) => items(g).filter((it) => M.tick[tickKey(g, it.id)]).length;
+const anyParts = () => groups(M.choice).length > 0;
+
+/* What to have ready, from the parts and places chosen. */
+function needs() {
+  const c = M.choice;
+  const gs = groups(c);
+  const jumpers = gs.filter((g) => g.conn === 'j7' || g.conn === 'socket').reduce((n, g) => n + g.wires.length, 0);
+  const out = [];
+  for (const g of gs) {
+    out.push({ id: 'part-' + g.key, text: { rf: c.rf === 'cc1101' ? 'The CC1101 board' : 'The 433 MHz receiver module', clock: 'The clock board (DS3231, often sold as ZS-042)', zwave: 'The Zooz ZAC93 Z-Wave radio', zigbee: 'Elecrow\'s ESP32-H2 Zigbee module, with the antenna that came with it' }[g.key] });
+  }
+  if (jumpers) out.push({ id: 'jumpers', text: `${jumpers} jumper wires, female to female, 10 to 20 cm long`, sub: 'Also sold as "Dupont wires". Each end has a small plug with a hole that slides onto a pin. A few spares help.', art: true });
+  if (c.clock && c.clock_place === 'j13') out.push({ id: 'ph2', text: 'A 4-wire lead with a PH2.0 plug on one end and jumper plugs on the other', sub: 'It plugs into J13 and onto the clock board\'s pins.' });
+  if (c.rf === 'module') out.push({ id: 'ant', text: 'An antenna for the receiver', sub: 'The spring that came with it, or 17.3 cm of plain wire.' });
+  if (c.rf === 'cc1101') out.push({ id: 'ant', text: 'An antenna for the CC1101', sub: '17.3 cm of plain wire, if it didn\'t come with one.' });
+  if (c.clock) out.push({ id: 'cell', text: 'A coin cell for the clock', sub: 'A rechargeable LIR2032. A plain CR2032 only if the board\'s charging part has been removed: most of these boards try to charge the cell.' });
+  if (gs.some((g) => g.conn === 'j7')) out.push({ id: 'meter', text: 'Only if J7\'s labels are hard to read: a multimeter', sub: 'The box below the list shows how to find its 5V row with it.' });
+  return out;
+}
+const PREP = [['off', 'Switch the panel\'s POWER switch off.'], ['unplug', 'Unplug every cable from the panel: both USB cables and any power supply.'],
+  ['static', 'Touch something metal, like a tap or a radiator, to get rid of static before you handle the boards.'], ['lay', 'Lay the panel face down on a soft cloth, so the back of the board faces you.']];
+/* [id, words, why, danger]: nothing on 5V comes first and stands out, since anything wired to it can be
+ * destroyed (2026-09-30). */
+const CHECKS = [['no5v', 'No wire is on a pin printed 5V.', 'A wire on 5V can destroy the part and the panel\'s chip.', true],
+  ['pushed', 'Every wire is pushed all the way on, at both ends.'], ['one', 'Each pin has only one wire on it.'],
+  ['vcc', 'Every VCC wire goes to a pin printed 3V3.'],
+  ['touch', 'No bare metal touches anything else: pins, wire ends or the case.'], ['away', 'Antennas and loose wires lie away from the screen\'s flat ribbon cable.']];
+
+/* ---- mockup state ------------------------------------------------------------------------- */
+const M = { screen: 'overview', back: 'overview', choice: recommend({ rf: 'module', clock: true }), tick: {}, focus: {}, tab: 0, fullFocus: '', checkFocus: '', ready: {}, checks: {}, moved: {}, open: {} };
+
+/* ---- the rail: Plan, Wire, Install -------------------------------------------------------- */
+const STEPS = [['Plan', 'parts', 'Panel and parts'],
+  ['Wire', 'ready', 'Get ready'], ['Wire', 'full', 'Full wiring'], ['Wire', 'check', 'Check before power'],
+  ['Install', 'connect', 'Connect'], ['Install', '', 'Check the panel'], ['Install', '', 'Install'], ['Install', '', 'Test and finish']];
+function stepNote(key) {
+  const gs = groups(M.choice);
+  const nw = gs.reduce((n, g) => n + g.wires.length, 0);
+  switch (key) {
+    case 'parts': return gs.length ? 'CrowPanel 7" · ' + gs.map((g) => ({ rf: M.choice.rf === 'cc1101' ? 'CC1101' : 'receiver', clock: 'clock', zwave: 'Z-Wave', zigbee: 'Zigbee' })[g.key]).join(', ') : 'CrowPanel 7" · nothing extra';
+    case 'ready': { const n = needs().length + PREP.length; const d = Object.values(M.ready).filter(Boolean).length; return `${d} of ${n} ticked`; }
+    case 'full': { const t = gs.reduce((n, g) => n + items(g).length, 0); const d = gs.reduce((n, g) => n + doneOf(g), 0); return `${nw} wires · ${d} of ${t} ticked`; }
+    case 'check': return Object.values(M.checks).filter(Boolean).length === CHECKS.length ? 'All checked' : '';
+    case 'connect': return 'Found on COM4';
+    default: return '';
+  }
+}
+function rail(cur) {
+  const none = !anyParts();
+  const groupsOf = ['Plan', 'Wire', 'Install'];
+  return h('nav', { class: 'rail', 'aria-label': 'Setup steps' },
+    groupsOf.map((gname) => h('div', { class: 'rail-group' }, h('p', { class: 'rail-title', text: gname }),
+      h('ol', { class: 'steps' }, STEPS.map(([gp, key, title], i) => {
+        if (gp !== gname) return null;
+        const skip = none && i >= 1 && i <= 3;
+        const st = skip ? 'skip' : i < cur ? 'done' : i === cur ? 'current' : 'todo';
+        const sub = skip ? 'Nothing to wire' : st === 'done' ? stepNote(key) : '';
+        const inner = [h('span', { class: 'num' }, st === 'done' ? icon('check') : String(i + 1)), h('span', {}, h('b', { text: title }), sub ? h('small', { text: sub }) : null)];
+        return h('li', {}, st === 'done' && key ? h('button', { class: 'step done', type: 'button', 'data-act': 'go', 'data-v': key }, inner) : h('div', { class: 'step ' + st }, inner));
+      })))),
+    h('div', { class: 'rail-foot' },
+      h('div', { class: 'fw' }, icon('download'), h('div', {}, h('b', { text: 'RoboAlarms 0.6.0' }), h('small', { text: 'Built into this Flasher' })))));
+}
+function frame(cur, pageKids, footKids, wide) {
+  return [cur === null ? null : rail(cur), h('main', { class: 'content' },
+    h('div', { class: 'page', id: 'page' }, h('div', { class: 'inner' + (wide ? ' wide' : '') }, pageKids)),
+    footKids ? h('footer', { class: 'actions' }, footKids) : null)];
+}
+function head(i, title, lead) {
+  return [h('p', { class: 'eyebrow', text: `Step ${i + 1} of ${STEPS.length} · ${STEPS[i][0]}` }), h('h1', { id: 'page-title', tabindex: -1, text: title }), lead ? h('p', { class: 'lead', text: lead }) : null];
+}
+const back = (key) => btn([icon('left'), 'Back'], 'go', key, 'ghost');
+const next = (text, key, opts) => btn([text, icon('right')], 'go', key, 'primary', opts);
+
+/* ---- step 1: the panel, then the parts (what, not where) --------------------------------- */
+function artPanel() {
+  return s('svg', { class: 'art', viewBox: '0 0 200 140', role: 'img', 'aria-label': 'The panel' },
+    s('rect', { class: 'frame', x: 6, y: 10, width: 188, height: 120, rx: 12 }),
+    s('rect', { class: 'screen', x: 16, y: 20, width: 168, height: 100, rx: 5 }),
+    s('path', { class: 'mark', d: 'M100 46 l20 15 v24 h-40 v-24 z' }));
+}
+function pcard(key, on, title, text, ic, sub, disabled) {
+  return h('div', { class: 'pcard' + (key === 'rf' ? ' wide' : '') + (on ? ' on' : '') + (disabled ? ' off' : '') },
+    h('button', { class: 'pcard-head', type: 'button', role: 'checkbox', 'aria-checked': String(!!on), 'data-act': 'part', 'data-v': key, disabled },
+      h('span', { class: 'tick' }, on ? icon('check') : null), h('span', { class: 'icon-tile' + (disabled ? ' plain' : '') }, icon(ic)),
+      h('span', {}, h('b', { text: title }), h('small', { text }))),
+    on && sub ? h('div', { class: 'subpick' }, sub) : null);
+}
+function pParts() {
+  const c = M.choice;
+  const rfSub = [h('b', { class: 'small', text: 'Which receiver do you have?' }),
+    h('div', { class: 'choices', role: 'radiogroup', 'aria-label': 'Receiver' }, [['cc1101', 'CC1101 board', 'A small board with eight pins: VCC, GND, SI, SO, SCLK, CSN, GDO0 and GDO2.'], ['module', 'Receiver module', 'A small board with three pins: VCC, GND and DATA.']].map(([k, t, d]) =>
+      h('button', { class: 'choice', type: 'button', role: 'radio', 'aria-checked': String(c.rf === k), 'data-act': 'rfkind', 'data-v': k }, h('span', { class: 'dot' }), h('b', { text: t }), h('small', { text: d })))),
+    h('p', { class: 'small muted', text: 'Not sure? Count the pins along its edge: eight is a CC1101, three is a receiver module.' })];
+  const gs = groups(c);
+  return frame(0, [
+    ...head(0, 'Your panel, and what you\'ll connect to it', 'Two choices. Then the Flasher shows where everything goes and how to wire it, one wire at a time. You don\'t need the panel plugged in yet.'),
+    h('h2', { class: 'section', text: '1. Your panel' }),
+    h('button', { class: 'option board-pick', type: 'button', role: 'radio', 'aria-checked': 'true' }, h('span', { class: 'dot' }), artPanel(),
+      h('span', {}, h('b', { text: 'CrowPanel Advanced 7"' }), h('small', { text: 'Elecrow\'s 7-inch touch screen, board version V1.1. The Flasher checks it is this one when you plug it in.' }))),
+    h('h2', { class: 'section', text: '2. What do you want to connect?' }),
+    h('p', { class: 'muted', text: 'Tick each thing you have, or plan to add. Just what it is: where it goes comes next.' }),
+    h('div', { class: 'grid2' },
+      pcard('rf', c.rf !== 'none', 'Wireless sensors (433 MHz)', 'Lets the panel hear 433 MHz door, window and motion sensors and key-fob remotes. Needs a receiver.', 'radio', rfSub),
+      pcard('zigbee', c.zigbee, 'Zigbee radio', 'Elecrow\'s plug-in ESP32-H2 module. The panel can\'t use it yet: Zigbee is planned.', 'tower'),
+      pcard('zwave', c.zwave, 'Z-Wave sensors', 'A Zooz ZAC93 radio, for Z-Wave door, window, motion, smoke and water sensors.', 'radio'),
+      pcard('clock', c.clock, 'Battery-backed clock', 'Keeps the date and time through power cuts. A small board with a coin cell (DS3231, often sold as ZS-042).', 'clock'),
+      pcard('siren', false, 'Sirens, strobes and relays', 'Come with a later version of RoboAlarms.', 'siren', null, true)),
+    gs.length ? note('good', 'circleCheck', `${gs.length === 1 ? 'One part' : gs.length + ' parts'} to connect.`, 'The Flasher picks the best place for each one, and the next steps show you how to wire it.')
+      : note('info', 'info', 'Nothing extra?', 'That\'s fine: skip to plugging the panel in. You can add parts any time later.'),
+    gs.length ? h('details', { class: 'more', 'data-key': 'adv', open: !!M.open.adv || !isRecommended() },
+      h('summary', {}, icon('sliders'), 'Advanced: choose where each part goes'),
+      h('p', { class: 'muted', text: 'Only if a part is already wired somewhere else, or you know you want another place. Otherwise leave it to the Flasher.' }),
+      h('ul', { class: 'tight' }, assembly(gs).map((g) => h('li', { text: g.label }))),
+      !isRecommended() ? note('info', 'info', 'You chose these places yourself.', '') : null,
+      h('div', { class: 'row-actions' }, btn('Choose where each part goes', 'go', 'places', 'small'),
+        !isRecommended() ? btn('Use the recommended places', 'recommend', '', 'small ghost') : null)) : null,
+  ], [h('span', { class: 'spacer' }), gs.length ? next('Next: get ready to wire', 'ready') : next('Next: plug the panel in', 'connect')]);
+}
+
+/* ---- advanced: where each part plugs in (its pieces) --------------------- */
+function placeBtn(act, key, on, title, sub, pros, cons, why, recKey) {
+  return h('button', { class: 'place', type: 'button', role: 'radio', 'aria-checked': String(on), 'aria-disabled': why && !on ? 'true' : null, 'data-act': act, 'data-v': key },
+    h('span', { class: 'dot' }),
+    h('span', {}, h('b', {}, title, key === recKey ? h('span', { class: 'tag', text: 'Recommended' }) : null), h('small', { text: sub }),
+      pros ? h('small', { class: 'pros', text: '+ ' + pros }) : null, cons ? h('small', { class: 'cons', text: '− ' + cons }) : null,
+      why && !on ? h('small', { class: 'why', text: why }) : null),
+    h('span', {}));
+}
+function partDrawing(g, pick, artOnly) {
+  if (g.conn === 'j7' || g.conn === 'j13') {
+    const conn = g.conn === 'j7' ? { title: 'J7 header, labels as printed', rows: BOARD.rows } : { title: 'I2C connector (J13), as printed', rows: g.rows };
+    return h('div', { class: 'wiring-block' }, h('div', { class: 'wiring' }, wiring(conn, g.wires, { kind: g.kind, name: g.name, short: g.short, takenRC: g.taken, pick, label: `How the ${g.short} plugs in` })),
+      pick ? h('p', { class: 'pin-caption', text: `DATA is on IO${M.choice.rf_pin}. Click another dashed pin to move it; greyed pins are taken or can't be used.` }) : null);
+  }
+  if (g.conn === 'socket') {
+    return h('table', { class: 'wires' }, h('thead', {}, h('tr', {}, ['Its pin', 'Goes to', ''].map((t) => h('th', { text: t })))),
+      h('tbody', {}, g.wires.map((w) => h('tr', {}, h('td', {}, h('i', { class: 'sw s-' + w.colour }), h('b', { text: w.pin }), w.from ? h('small', { class: 'muted', text: ' (' + w.from + ')' }) : null),
+        h('td', { text: cap(w.where) }), h('td', {})))));
+  }
+  return h('div', { class: 'wiring-block' }, h('div', { class: 'wiring' }, artZigbee()),
+    artOnly ? null : h('ol', { class: 'plug-steps' }, ZB_STEPS.map(([, text]) => h('li', { text }))));
+}
+function placeCard(g, rec) {
+  const c = M.choice;
+  let opts = [];
+  if (g.key === 'rf' && c.rf === 'module') {
+    opts = [placeBtn('rfplace', 'j7', c.rf_place === 'j7', 'J7 header', 'Three wires: power and ground, and DATA on one free pin.', 'Leaves the radio socket free for a Z-Wave or Zigbee radio.', 'Uses one of the pins wired zones can use.', '', rec.rf_place),
+      placeBtn('rfplace', 'socket', c.rf_place === 'socket', 'Radio socket', 'Three wires onto the socket\'s pins; DATA on the pin printed IO10.', 'Keeps every J7 pin for wired zones.', 'Nothing else can use the socket then.', socketUser(c, 'rf') ? `${cap(socketUser(c, 'rf'))} is in the socket.` : '', rec.rf_place)];
+  } else if (g.key === 'rf') {
+    opts = [placeBtn('rfplace', 'socket', c.rf_place === 'socket', 'Radio socket', 'Seven wires onto the socket\'s pins.', 'Keeps J7 free for wired zones.', 'Nothing else can use the socket then.', socketUser(c, 'rf') ? `${cap(socketUser(c, 'rf'))} is in the socket.` : '', rec.rf_place),
+      placeBtn('rfplace', 'j7', c.rf_place === 'j7', 'J7 header', 'Seven wires onto J7.', 'Leaves the radio socket free.', 'Uses five pins wired zones could use (IO5, IO49 to IO52).', '', rec.rf_place)];
+  } else if (g.key === 'clock') {
+    // J7's IO27 and IO28 are the clock's only J7 pins, and the Z-Wave radio's J7 pins too: choosing
+    // J7 for the clock moves the radio to the socket, when the socket is free.
+    const zw = c.zwave && c.zwave_place === 'j7';
+    const busy = socketUser(c, 'zwave');
+    opts = [placeBtn('clockplace', 'j7', c.clock_place === 'j7', 'J7 header, IO27 and IO28',
+      zw && !busy ? 'Four wires onto J7. The Z-Wave radio moves to the radio socket to make room.' : 'Four wires onto J7.',
+      'Its own wiring, away from the touch screen. No wired zone lost.', '',
+      zw && busy ? `The Z-Wave radio is on these pins, and ${busy} is in the radio socket, so the radio can't move there.` : '', rec.clock_place),
+      placeBtn('clockplace', 'j13', c.clock_place === 'j13', 'I2C connector (J13)', 'A ready-made 4-wire lead plugs into it.', 'No loose wires on J7.', 'Shares the touch screen\'s wiring: keep the lead short.', '', rec.clock_place)];
+  } else if (g.key === 'zwave') {
+    opts = [placeBtn('zwplace', 'socket', c.zwave_place === 'socket', 'Radio socket', 'Four wires onto the socket\'s pins.', 'No J7 pins used.', 'Nothing else can use the socket then.', socketUser(c, 'zwave') ? `${cap(socketUser(c, 'zwave'))} is in the socket.` : '', rec.zwave_place),
+      placeBtn('zwplace', 'j7', c.zwave_place === 'j7', 'J7 header, IO27 and IO28', 'Four wires onto J7.', 'Leaves the radio socket free. No wired zone lost.', c.clock ? 'The clock then goes on J13.' : '', '', rec.zwave_place)];
+  }
+  const pick = g.key === 'rf' && c.rf === 'module' && c.rf_place === 'j7'
+    ? BOARD.rfPins.filter((p) => !Object.keys(g.taken).includes(findPin(BOARD.rows, 'IO' + p).join()) && p !== c.rf_pin) : null;
+  return h('section', { class: 'card part' },
+    h('div', { class: 'part-head' }, h('span', { class: 'icon-tile' }, icon(g.ic)),
+      h('div', {}, h('h2', { text: g.title }), h('p', { class: 'muted small', text: 'Goes on ' + g.place })),
+      h('span', {})),
+    opts.length ? h('div', { class: 'part-pick' }, h('div', { class: 'places', role: 'radiogroup', 'aria-label': 'Where it plugs in' }, opts)) : null,
+    h('div', { class: 'part-body' },
+      M.moved[g.key] ? note('info', 'info', '', M.moved[g.key]) : null,
+      h('b', { class: 'small', text: 'How it plugs in' }),
+      partDrawing(g, pick),
+      g.notes.filter((n) => n[0] === 'warn').map(([k, ic, b, t]) => note(k, ic, b, t))));
+}
+/* Where the places are, in plain words: only the ones the chosen parts use. */
+function connGuide(gs, all) {
+  const uses = (conn) => gs.filter((g) => g.conn === conn || (conn === 'socket' && g.conn === 'plug'));
+  const connCard = (title, art, find, good, conn) => h('div', { class: 'card conn' + (conn === 'j7' ? ' wide' : '') }, h('b', { text: title }), art, h('p', { text: find }), good ? h('p', { text: good }) : null,
+    h('div', { class: 'chips' }, uses(conn).map((g) => h('span', { class: 'chip good' }, h('span', { class: 'num-badge', text: String(g.num || '') }), g.chip))));
+  const cards = [];
+  if (all || uses('j7').length) cards.push(connCard('J7 header', miniHeader(BOARD.rows), 'A long double row of 24 pins, with J7 printed beside it. One row is printed 5V, the other 3V3.', all ? 'Most parts can go here. Wired door contacts use some of its pins too.' : '', 'j7'));
+  if (all || uses('j13').length) cards.push(connCard('I2C connector (J13)', miniHeader([['SCL', 'SDA', '3V3', 'GND']]), 'A small 4-pin plug, printed I2C1, next to J13.', all ? 'Only for the clock. A ready-made lead plugs straight in.' : '', 'j13'));
+  if (all || uses('socket').length) cards.push(connCard('Radio socket', miniSocket(), 'Two short rows of seven holes, made for Elecrow\'s plug-in radio module, with their labels printed beside them.', all ? 'Holds one radio: the Zigbee module plugs in, or another radio is wired onto its pins.' : '', 'socket'));
+  return [h('div', { class: 'grid2' }, cards),
+    mk('A picture of the back of the V1.1 board with these places circled goes here once the real board is photographed (BL-033). The Flasher shouldn\'t guess where they are.')];
+}
+function glossary() {
+  return h('details', { class: 'more', 'data-key': 'gloss', open: !!M.open.gloss }, h('summary', {}, icon('book'), 'New to wiring? The words you\'ll see'),
+    h('dl', { class: 'gloss' },
+      [['Pin', 'A small metal post on a board. A wire\'s plug slides onto it.'], ['Header', 'A row of pins. J7 is a double row of 24.'],
+        ['Jumper wire', 'A wire with a small plug on each end. "Female" plugs have a hole and slide onto a pin.'],
+        ['3V3', '3.3 volts: the low power these parts run on.'], ['5V', '5 volts. Never wire a part\'s VCC to 5V: it can damage the panel.'],
+        ['GND', 'Ground: the return path. Every part needs one GND wire.'], ['VCC', 'A part\'s power input. It always goes to 3V3 here.'],
+        ['DATA, SDA, SCL, RX, TX…', 'Signal wires. The drawings show where each one goes; you don\'t need to know what they do.']]
+        .map(([term, d]) => [h('dt', { text: term }), h('dd', { text: d })])));
+}
+const isRecommended = () => JSON.stringify(recommend(M.choice)) === JSON.stringify(Object.assign(defaultChoice(), M.choice));
+
+/* ---- advanced, off the steps: choose where each part goes --------------------------------- */
+/* For someone whose parts are already wired somewhere else, or who wants another place. The
+ * guided steps never ask: the Flasher's own choice (recommend) fits every combination. */
+function pPlaces() {
+  const c = M.choice;
+  const gs = groups(c);
+  const rec = recommend(c);
+  const issues = problems(c);
+  const usedIO = new Set(gs.flatMap((g) => g.conn === 'j7' ? g.wires.map((w) => w.to) : []));
+  const zones = BOARD.rfPins.filter((p) => !usedIO.has('J7 IO' + p));
+  return frame(0, [
+    h('p', { class: 'eyebrow', text: 'Advanced · Plan' }), h('h1', { id: 'page-title', tabindex: -1, text: 'Choose where each part goes' }),
+    h('p', { class: 'lead', text: 'Only if a part is already wired somewhere else, or you want another place. The Flasher\'s own choice is marked Recommended, and the next steps follow whatever you pick.' }),
+    h('div', { class: 'wire-top' }, h('span', { class: 'spacer' }),
+      btn('Use the recommended places', 'recommend', '', 'small', { disabled: isRecommended() })),
+    gs.map((g) => placeCard(g, rec)),
+    h('section', { class: 'card pincheck' },
+      issues.length ? note('bad', 'triangle', issues.length === 1 ? 'One thing to change' : issues.length + ' things to change', issues.join(' '))
+        : h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small' }, icon('circleCheck')), h('div', {}, h('b', { text: 'Everything fits' }), h('small', { text: 'No pin is used twice, and each part is in a place the panel accepts.' }))),
+      h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small plain' }, icon('door')),
+        h('div', {}, h('b', { text: `Pins left for wired door contacts: ${zones.length}` }), h('small', { text: zones.map((n) => 'IO' + n).join(', ') + ' on J7. A wired zone is a door or window contact wired between one of these and GND.' })))),
+  ], [h('span', { class: 'spacer' }), issues.length ? h('span', { class: 'why', text: 'Change what the check marks' }) : null, btn([icon('check'), 'Done'], 'go', 'parts', 'primary', { disabled: issues.length > 0 })], true);
+}
+
+/* ---- step 2: get ready ------------------------------------------------------------------- */
+/* Each row is a label: clicking its words ticks or unticks the box, not only the box itself. */
+function tickList(list, store, act) {
+  return h('ul', { class: 'need' }, list.map((it) => h('li', { class: it.danger ? 'danger' : null }, h('label', {},
+    h('input', { type: 'checkbox', 'data-act': act, 'data-v': it.id, checked: !!store[it.id] }),
+    h('span', {}, h('b', { text: it.text }), it.sub ? h('small', { text: it.sub }) : null),
+    it.art ? artJumper() : it.danger ? icon('triangle') : h('span', {})))));
+}
+function pReady() {
+  const gs = assembly(groups(M.choice));
+  const j7 = gs.some((g) => g.conn === 'j7');
+  return frame(1, [
+    ...head(1, 'Get ready to wire', 'Gather these, find the places on your panel, then get the panel ready. Tick each one off as you go: nothing here is checked by the Flasher.'),
+    h('section', { class: 'card' }, h('h2', { text: 'What you need' }), tickList(needs(), M.ready, 'ready')),
+    h('h2', { class: 'section', text: gs.length > 1 ? 'Find the places your parts go' : 'Find the place your part goes' }),
+    ...connGuide(gs, false),
+    glossary(),
+    h('details', { class: 'more', 'data-key': 'fit', open: M.open.fit ?? true }, h('summary', {}, icon('book'), 'How to fit a jumper wire'),
+      h('div', { class: 'howto' }, artFit(), h('ul', {},
+        h('li', { text: 'Hold the plug, not the wire, and push it straight down onto the pin until it stops.' }),
+        h('li', { text: 'One wire per pin. If a plug feels loose, use another wire.' }),
+        h('li', { text: 'Don\'t bend the pins. If a plug won\'t go on, check you have the right pin.' }),
+        h('li', { text: 'The colours in the drawings are only a guide. Red for VCC and black for GND help, if you have them.' })))),
+    j7 ? h('details', { class: 'more', 'data-key': 'meter', open: !!M.open.meter }, h('summary', {}, icon('info'), 'Can\'t read the 5V and 3V3 labels beside J7?'),
+      h('p', { class: 'muted', text: 'Find the 5V row with a multimeter before you get the panel ready:' }),
+      h('ol', {}, h('li', { text: 'Nothing wired to J7 yet. Plug the panel in and switch it on.' }), h('li', { text: 'Set the meter to DC volts. Black probe on a pin printed GND.' }),
+        h('li', { text: 'Red probe on the end pin of each row: one reads about 5 V, the other about 3.3 V.' }), h('li', { text: 'Switch the panel off and unplug it again.' })),
+      mk('Only until the V1.1 board\'s printed labels are confirmed (BL-033); then this box goes.')) : null,
+    h('section', { class: 'card' }, h('h2', { text: 'Get the panel ready' }), tickList(PREP.map(([id, text]) => ({ id, text })), M.ready, 'ready')),
+    note('warn', 'power', 'Keep the panel switched off and unplugged', 'until the check in step 4. Wiring it while it is on can damage it.'),
+  ], [back('parts'), h('span', { class: 'spacer' }), btn([icon('printer'), 'Print the wiring'], 'go', 'print', ''), next('Next: see the full wiring', 'full')]);
+}
+
+/* ---- step 3: the full wiring --------------------------------------------------------------- */
+function pinRows(gs) {
+  const rows = [];
+  for (const g of gs) {
+    for (const w of g.wires) {
+      if (g.conn === 'j7') rows.push({ k: [0, w.rc[0], w.rc[1]], where: `J7, ${BOARD.rows[w.rc[0]][0]} row, ${ordinal(w.rc[1] + 1)} pin`, printed: BOARD.rows[w.rc[0]][w.rc[1]], g, w });
+      else if (g.conn === 'j13') rows.push({ k: [1, 0, w.rc[1]], where: 'J13', printed: w.to.replace('J13 ', ''), g, w });
+      else rows.push({ k: [2, 0, rows.length], where: 'Radio socket', printed: w.to.replace('socket ', ''), g, w });
+    }
+  }
+  return rows.sort((a, b) => a.k[0] - b.k[0] || a.k[1] - b.k[1] || a.k[2] - b.k[2]);
+}
+function pinTable(gs, focus) {
+  return h('table', { class: 'wires' },
+    h('thead', {}, h('tr', {}, ['Where', 'Printed', 'Part', 'Its pin'].map((t) => h('th', { text: t })))),
+    h('tbody', {}, pinRows(gs).map((r) => h('tr', { class: focus && r.g.key !== focus ? 'dimcard' : null },
+      h('td', { text: r.where }), h('td', { class: 'mono', text: r.printed }), h('td', {}, numbered(r.g)),
+      h('td', {}, h('i', { class: 'sw s-' + r.w.colour }), h('b', { text: r.w.pin }), r.w.from ? h('small', { class: 'muted', text: ' (' + r.w.from + ')' }) : null)))));
+}
+/* Connector by connector, in assembly order (gs is already in it). With a part picked (focus),
+ * only the cards for that part's connector are shown; on J7 every part stays drawn, the others
+ * faded, so it is clear which pins they take. clickable: a part's board picks it. */
+function fullDrawings(gs, focus, paper, clickable, loupe = clickable, act = 'fullfocus') {
+  const out = [];
+  const fg = focus ? gs.find((g) => g.key === focus) : null;
+  const want = (conn) => !fg || fg.conn === conn || (conn === 'socket' && fg.conn === 'plug');
+  const list = (gg) => gg.map((g) => `${g.num} ${g.title}`).join(', ');
+  const j7 = gs.filter((g) => g.conn === 'j7');
+  if (j7.length && want('j7')) {
+    const caption = fg && j7.length > 1 ? 'Your other parts on J7 are faded. Each pin\'s number says which part it belongs to.'
+      : !fg && j7.length > 1 && clickable ? 'The numbers beside the pins say which part each wire belongs to. Click a part, or pick it above, to show only its wiring.' : '';
+    out.push(h('section', { class: 'card fullmap' }, h('div', { class: 'fm-head' }, h('h2', { text: 'J7 header' }), h('span', { class: 'muted small', text: list(j7) })),
+      h('div', { class: 'wiring big' }, wiringAll(BOARD.rows, j7, { title: 'J7 header, labels as printed', focus: fg ? fg.key : '', pick: clickable, pickAct: act, loupe, label: 'On J7: ' + list(j7) })),
+      caption ? h('p', { class: 'pin-caption', text: caption }) : null));
+  }
+  const j13 = gs.find((g) => g.conn === 'j13');
+  if (j13 && want('j13')) {
+    out.push(h('section', { class: 'card fullmap' }, h('div', { class: 'fm-head' }, h('h2', { text: 'I2C connector (J13)' }), h('span', { class: 'muted small', text: list([j13]) })),
+      h('div', { class: 'wiring' }, wiring({ title: 'I2C connector (J13), as printed', rows: j13.rows }, j13.wires, { kind: 'clock', name: j13.name, short: j13.short, key: j13.key, label: 'The clock on J13' }))));
+  }
+  const sock = gs.filter((g) => (g.conn === 'socket' || g.conn === 'plug') && (!fg || g.key === fg.key));
+  if (sock.length && want('socket')) {
+    out.push(h('section', { class: 'card fullmap' }, h('div', { class: 'fm-head' }, h('h2', { text: 'Radio socket' }), h('span', { class: 'muted small', text: list(sock) })),
+      sock.map((g) => h('div', { class: 'sock-part' }, h('b', {}, numbered(g)), partDrawing(g, null, true))),
+      paper || !sock.some((g) => g.conn === 'socket') ? null : mk('A wired part on the socket has a table, not a drawing yet: the socket\'s rows as printed on the V1.1 board are still to be read (BL-033).')));
+  }
+  return out;
+}
+/* The filter in assembly order, each part under the connector it goes on. */
+function partFilter(gs, f, act = 'fullfocus') {
+  const kids = [h('button', { type: 'button', 'aria-pressed': String(f === ''), 'data-act': act, 'data-v': '' }, 'All parts')];
+  let last = '';
+  for (const g of gs) {
+    if (CONN_RANK[g.conn] !== CONN_RANK[last]) { last = g.conn; kids.push(h('span', { class: 'seg-sep', 'aria-hidden': 'true' })); }
+    kids.push(h('button', { type: 'button', 'aria-pressed': String(f === g.key), 'data-act': act, 'data-v': g.key, title: `${g.title}, on ${g.place}`, 'aria-label': `${g.num}: ${g.title}, on ${g.place}` },
+      h('span', { class: 'num-badge', text: String(g.num) }), g.chip));
+  }
+  return h('div', { class: 'seg parts-seg', role: 'group', 'aria-label': 'Show' }, kids);
+}
+function pFull() {
+  const gs = assembly(groups(M.choice));
+  const f = gs.some((g) => g.key === M.fullFocus) ? M.fullFocus : '';
+  const shown = f ? gs.filter((g) => g.key === f) : gs;
+  const wires = shown.reduce((n, g) => n + g.wires.length, 0);
+  return frame(2, [
+    ...head(2, 'Your full wiring', 'Everything you chose, on the panel at once, numbered in the order to fit them. Wire from the pictures, and tick each wire off below as it goes on.'),
+    h('div', { class: 'wire-top' }, partFilter(gs, f), h('span', { class: 'spacer' }), btn([icon('printer'), 'Print or save'], 'go', 'print', 'small')),
+    ...fullDrawings(gs, f, false, true),
+    shown.length ? tickSection(shown) : null,
+  ], [back('ready'), h('span', { class: 'spacer' }), next('Next: check before power', 'check')], true);
+}
+/* The wires to fit, part by part in assembly order, ticked off as they go on. */
+function tickSection(shown) {
+  const tot = shown.reduce((n, g) => n + items(g).length, 0);
+  const done = shown.reduce((n, g) => n + doneOf(g), 0);
+  return h('details', { class: 'more ticks', 'data-key': 'ticks', open: M.open.ticks ?? true },
+    h('summary', {}, icon('listChecks'), `Tick off each wire as you fit it: ${done} of ${tot}`),
+    bar(tot ? done / tot : 0),
+    shown.map((g) => h('div', { class: 'tick-part' },
+      h('div', { class: 'tick-head' }, h('b', {}, numbered(g)), h('span', { class: 'muted small', text: `on ${g.place} · ${doneOf(g)} of ${items(g).length}` })),
+      h('ul', { class: 'ticklist' }, items(g).map((it) => {
+        const k = tickKey(g, it.id);
+        const on = !!M.tick[k];
+        return h('li', { class: on ? 'done' : null },
+          h('label', {},
+            h('input', { type: 'checkbox', 'data-act': 'tick', 'data-v': k, checked: on }),
+            it.kind === 'wire' ? h('i', { class: 'sw s-' + it.colour }) : h('span', { class: 'wl-ic' }, icon('info')),
+            it.kind === 'wire'
+              ? h('span', {}, h('b', { text: it.pin }), it.from ? ` (${it.from})` : '', ' to ', h('b', { text: it.to }), h('small', { text: cap(it.where) }))
+              : h('span', { text: it.text })));
+      })),
+      g.notes.filter((n) => n[0] === 'warn').map(([kind, ic, b, tx]) => note(kind, ic, b, tx)))));
+}
+
+/* ---- step 4: check before power ------------------------------------------------------------ */
+function pCheck() {
+  const gs = assembly(groups(M.choice));
+  const all = CHECKS.every(([id]) => M.checks[id]);
+  const j7 = gs.some((g) => g.conn === 'j7');
+  const cf = gs.some((g) => g.key === M.checkFocus) ? M.checkFocus : '';
+  return frame(3, [
+    ...head(3, 'Check before you switch it on', 'A last look, with the panel still off. Compare your board with the pictures. The checks are there to tick if they help.'),
+    gs.length ? h('h2', { class: 'section', text: 'Your panel should look like this' }) : null,
+    j7 ? h('p', { class: 'muted small', text: 'On J7, the amber pins are 5V: nothing of yours goes there.' }) : null,
+    gs.length > 1 ? h('div', { class: 'wire-top' }, partFilter(gs, cf, 'checkfocus')) : null,
+    ...fullDrawings(gs, cf, true, true, true, 'checkfocus'),
+    h('section', { class: 'card' }, h('h2', { text: 'Checks' }), tickList(CHECKS.map(([id, text, sub, danger]) => ({ id, text, sub, danger })), M.checks, 'check')),
+    all ? note('good', 'shield', 'All checked.', 'Now you can plug the panel in and switch it on.')
+      : note('info', 'info', '', 'Found something? Fix it with the panel still off, before you plug it in.'),
+  ], [back('full'), h('span', { class: 'spacer' }), next('Next: plug the panel in', 'connect')], true);
+}
+
+/* ---- step 5: connect ----------------------------------------------------------------------- */
+function artConnect(conn) {
+  const end = 292, y = 76;
+  return s('svg', { class: 'art', viewBox: '0 0 560 200', role: 'img', 'aria-label': `This computer on the panel's ${conn.port} port and a phone charger on its ${conn.power_port} port` },
+    s('rect', { class: 'laptop', x: 40, y: 26, width: 170, height: 108, rx: 10 }), s('rect', { class: 'laptop-screen', x: 52, y: 38, width: 146, height: 84, rx: 4 }),
+    s('path', { class: 'laptop', d: 'M22 136 h206 l-10 14 h-186 z' }), s('rect', { class: 'plug', x: 210, y: 104, width: 10, height: 14, rx: 2 }),
+    s('path', { class: 'cable', d: `M220 111 C 262 111, ${end - 40} ${y}, ${end} ${y}` }), s('rect', { class: 'plug', x: end, y: y - 7, width: 16, height: 14, rx: 3 }),
+    s('rect', { class: 'frame', x: 348, y: 20, width: 190, height: 130, rx: 14 }), s('rect', { class: 'screen', x: 360, y: 32, width: 166, height: 106, rx: 6 }),
+    s('path', { class: 'mark', d: 'M443 60 l22 17 v28 h-44 v-28 z' }), s('text', { class: 'caption', x: 443, y: 172, 'text-anchor': 'middle', text: 'The panel' }),
+    s('rect', { class: 'plug', x: 236, y: 157, width: 10, height: 5, rx: 1 }), s('rect', { class: 'plug', x: 236, y: 168, width: 10, height: 5, rx: 1 }),
+    s('rect', { class: 'laptop', x: 246, y: 150, width: 40, height: 30, rx: 6 }), s('path', { class: 'cable', d: `M266 150 C 266 118, ${end - 40} 112, ${end} 112` }),
+    s('rect', { class: 'plug', x: end, y: 105, width: 16, height: 14, rx: 3 }),
+    s('text', { class: 'port-tag', x: end + 14, y: 63, 'text-anchor': 'end', text: conn.port }), s('text', { class: 'port-tag', x: end + 14, y: 133, 'text-anchor': 'end', text: conn.power_port }),
+    s('text', { class: 'caption', x: 266, y: 196, 'text-anchor': 'middle', text: 'Phone charger' }));
+}
+function pConnect() {
+  const gs = groups(M.choice);
+  return frame(4, [
+    ...head(4, 'Plug the panel into this computer', 'Use a USB-C cable that carries data, not a charge-only one. The Flasher finds the panel by itself and won\'t change anything on it yet.'),
+    h('div', { class: 'hero' }, artConnect(BOARD.connect)),
+    h('div', { class: 'card' }, h('div', { class: 'status-row' }, h('span', { class: 'icon-tile plain' }, icon('usb')),
+      h('div', {}, h('b', { text: 'Looking for a panel…' }), h('p', { class: 'muted', text: 'Plug it in. It shows up here within a few seconds.' })))),
+    h('div', { class: 'note info' }, icon('plug'), h('div', {}, h('b', { text: 'How to connect it' }),
+      h('ul', { class: 'tight' }, BOARD.connect.steps.map(([d, w]) => h('li', {}, h('b', { text: d }), w ? ' ' + w : ''))))),
+    gs.length ? note('good', 'circleCheck', 'Wired and checked.', 'After installing, the Flasher sets the panel up for your parts, and you test each one at the end.') : null,
+    mk('Unplugging the panel from here on (to fix a wire, say) keeps this step and your parts: the Flasher waits, and checks the same panel comes back.'),
+  ], [back(gs.length ? 'check' : 'parts'), h('span', { class: 'spacer' }), next('Next: check the panel', 'connect', { disabled: true })]);
+}
+
+/* ---- the printed sheet --------------------------------------------------------------------- */
+function pPrint() {
+  const gs = assembly(groups(M.choice));
+  const sheet = h('article', { class: 'sheet' },
+    h('header', { class: 'sheet-head' }, h('div', {}, h('b', { text: 'Wiring sheet' }), h('span', { class: 'muted', text: BOARD.long })),
+      h('span', { class: 'muted', text: 'RoboAlarms Flasher · 29 September 2026' })),
+    h('div', { class: 'sheet-warn' }, h('b', { text: 'Before you start: ' }), 'POWER switch off and every cable out. Every VCC goes to 3V3, never 5V. Match the labels printed on the board and on each part, not the wire colours.'),
+    gs.length ? [
+      h('section', { class: 'sheet-part' }, h('h2', { text: 'What you need' }), h('ul', {}, needs().map((n) => h('li', {}, h('span', { class: 'box' }), n.text)))),
+      h('section', { class: 'sheet-part' }, h('h2', { text: 'The full wiring' }), fullDrawings(gs, '', true), pinTable(gs, '')),
+      h('h2', { text: 'Part by part: tick each wire as you fit it' }),
+      gs.map((g) => h('section', { class: 'sheet-part' },
+        h('h2', { text: `${g.title}, on ${g.place}` }),
+        h('table', { class: 'wires' }, h('thead', {}, h('tr', {}, ['', 'On the part', 'Goes to', 'Where'].map((t) => h('th', { text: t })))),
+          h('tbody', {}, items(g).map((it) => h('tr', {}, h('td', {}, h('span', { class: 'box' })),
+            it.kind === 'wire' ? [h('td', {}, h('i', { class: 'sw s-' + it.colour }), h('b', { text: it.pin }), it.from ? ' (' + it.from + ')' : ''), h('td', { text: it.to }), h('td', { class: 'muted', text: cap(it.where) })]
+              : h('td', { colspan: 3, text: it.text }))))))),
+      h('section', { class: 'sheet-part' }, h('h2', { text: 'Before you switch it on' }), h('ul', {}, CHECKS.map(([, t, why, danger]) => h('li', { class: danger ? 'danger' : null }, h('span', { class: 'box' }), danger ? h('b', { text: t }) : t, why ? ' ' + why : '')))),
+    ] : h('p', { text: 'No extra parts chosen: nothing to wire.' }),
+    h('footer', { class: 'sheet-foot', text: 'Then plug the panel in and carry on in the Flasher: it installs RoboAlarms, sets the panel up for these parts, and you test each one at the end.' }));
+  return frame(null, [
+    h('div', { class: 'no-print', style: 'display:flex;flex-direction:column;gap:18px' },
+      h('p', { class: 'eyebrow', text: 'Print or save' }), h('h1', { text: 'Wiring sheet' }),
+      h('p', { class: 'lead', text: 'Print it for the bench, or save it as a PDF (Microsoft Print to PDF on Windows). It follows the parts and places you chose.' }),
+      h('div', { class: 'row-actions' }, btn([icon('printer'), 'Print or save as PDF'], 'print', '', 'primary'), btn([icon('left'), 'Back'], 'go', M.back, ''))),
+    sheet,
+  ], null, true);
+}
+
+/* ---- overview ------------------------------------------------------------------------------ */
+function strip(steps) {
+  return h('div', { class: 'flow' }, steps.map((x, i) => typeof x === 'string'
+    ? h('b', { class: 'phase', text: x })
+    : [i && typeof steps[i - 1] !== 'string' ? h('i', { text: '›' }) : null, h('span', { class: x[1] || '' }, x[0], x[2] ? h('small', { text: x[2] }) : null)]));
+}
+function pOverview() {
+  const mini = (ic, t, d, go) => h('div', { class: 'card mini' }, h('span', { class: 'icon-tile small' }, icon(ic)), h('b', { text: t }), h('p', { text: d }), go ? h('div', {}, btn('See it', 'go', go, 'small')) : null);
+  return frame(null, [
+    h('p', { class: 'eyebrow', text: 'Mockup · BL-117' }),
+    h('h1', { text: 'Guided wiring, before the panel is plugged in' }),
+    h('p', { class: 'lead', text: 'For someone with no electronics background: from "what have I got" to a wired, checked panel ready to install, without the panel plugged in until the end.' }),
+    h('section', { class: 'card mini' }, h('b', { text: 'Today' }),
+      strip([['Connect'], ['Check the panel'], ['Connected parts', 'bad', 'wiring is here'], ['Install'], ['Test and finish']]),
+      h('p', { text: 'The wiring shows only once the panel is found, so it is plugged in and on while you look at it; unplugging it to wire starts the setup again. It also assumes you know what a header or 3V3 is.' })),
+    h('section', { class: 'card mini' }, h('b', { text: 'Proposed' }),
+      strip(['Plan', ['Panel and parts', 'hl'], 'Wire', ['Get ready', 'hl'], ['Full wiring', 'hl'], ['Check before power', 'hl'], 'Install', ['Connect'], ['Check the panel'], ['Install'], ['Test and finish']]),
+      h('p', { text: 'Plan and Wire need no panel. Nothing extra to connect? Plan goes straight to Install. Unplugging the panel later never loses your place.' }),
+      h('div', {}, btn(['Walk through it', icon('right')], 'go', 'parts', 'small primary'))),
+    h('h2', { class: 'section', text: 'Made for a first-timer' }),
+    h('div', { class: 'grid3' },
+      mini('radio', 'Parts, not places', 'Step 1: pick the panel, then tick what you have. Nothing about pins.', 'parts'),
+      mini('plug', 'Places picked for you', 'The Flasher puts each part in the best place for the others: no pin questions for a beginner. Advanced, folded on step 1: choose yourself.', 'places'),
+      mini('package', 'Get ready', 'Step 2: what you need (how many jumper wires, the coin cell, the antenna), where the places are on your panel, the words you\'ll see, how to fit a jumper wire.', 'ready'),
+      mini('listChecks', 'Wire from the pictures', 'Step 3: every part numbered in the order to fit it, and a tick list of every wire in words.', 'full'),
+      mini('shield', 'Check before power', 'Step 4: no wire on 5V, one wire per pin, nothing touching: checks to tick if they help.', 'check'),
+      mini('printer', 'Print or save', 'One sheet: what you need, the full wiring, each part\'s wires to tick, and the checks.', 'print')),
+    mk('Found while drawing this: today each part\'s drawing chooses its own power pins, so a receiver and a clock both on J7 are both drawn on 3V3 pin 1. Here every wire gets a pin of its own.'),
+    h('h2', { class: 'section', text: 'Tell me' }),
+    h('ol', { class: 'todo' },
+      h('li', { text: 'Eight steps in three parts: right?' }),
+      h('li', { text: 'Choosing places yourself: folded on step 1 as drawn, or only in Advanced tools?' }),
+      h('li', { text: 'What would a first-timer still get stuck on?' })),
+  ], null, true);
+}
+
+/* ---- the mockup's bar, rendering and events ----------------------------------------------- */
+function mkBar() {
+  const b = (v, t) => h('button', { type: 'button', 'data-act': 'go', 'data-v': v, 'aria-pressed': String(M.screen === v) }, t);
+  const barEl = clear($('mk-bar'));
+  barEl.append(h('b', { text: 'Mockup · BL-117' }),
+    h('div', { class: 'mk-group' }, b('overview', 'Overview')),
+    h('div', { class: 'mk-group' }, h('span', { text: 'Plan:' }), b('parts', '1 Panel and parts'), b('places', 'Advanced: places')),
+    h('div', { class: 'mk-group' }, h('span', { text: 'Wire:' }), b('ready', '2 Get ready'), b('full', '3 Full wiring'), b('check', '4 Check')),
+    h('div', { class: 'mk-group' }, h('span', { text: 'Install:' }), b('connect', '5 Connect')),
+    h('div', { class: 'mk-group' }, b('print', 'Print sheet')));
+}
+const SCREENS = { overview: pOverview, parts: pParts, places: pPlaces, ready: pReady, full: pFull, check: pCheck, connect: pConnect, print: pPrint };
+function render(moved) {
+  const old = $('page');
+  const keep = old ? old.scrollTop : 0;
+  mkBar();
+  const app = clear($('app'));
+  append(app, [SCREENS[M.screen]()]);
+  const page = $('page');
+  if (page) page.scrollTop = moved ? 0 : keep;
+  const dark = document.documentElement.dataset.theme === 'dark';
+  clear($('theme-toggle')).append(icon(dark ? 'sun' : 'moon'));
+  try { history.replaceState(null, '', '#' + M.screen); } catch (e) { /* file: */ }
+}
+function go(v) {
+  if (!SCREENS[v]) return;
+  if (v === 'print' && M.screen !== 'print') M.back = M.screen;
+  M.screen = v;
+  render(true);
+}
+/* Parts are ticked on step 1 without places; a new part gets its recommended place, and the
+ * others keep theirs unless that no longer fits. */
+function setParts(c) {
+  const kept = Object.assign({}, c);
+  const rec = recommend(c);
+  for (const [on, place] of [[c.rf !== 'none' && M.choice.rf === c.rf, 'rf_place'], [c.clock && M.choice.clock, 'clock_place'], [c.zwave && M.choice.zwave, 'zwave_place']]) {
+    kept[place] = on ? M.choice[place] : rec[place];
+  }
+  M.choice = problems(kept).length ? rec : kept;
+  M.tab = 0;
+}
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-act]');
+  if (!t || t.disabled || t.getAttribute('aria-disabled') === 'true' || t.tagName === 'INPUT') return;
+  const v = t.dataset.v;
+  const c = Object.assign({}, M.choice);
+  M.moved = {};
+  switch (t.dataset.act) {
+    case 'go': go(v); return;
+    case 'theme': document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'; break;
+    case 'part':
+      if (v === 'rf') c.rf = c.rf === 'none' ? 'cc1101' : 'none';
+      else c[v] = !c[v];
+      setParts(c); break;
+    case 'rfkind': c.rf = v; setParts(c); break;
+    case 'rfplace': M.choice.rf_place = v; M.tab = 0; break;
+    case 'clockplace':
+      M.choice.clock_place = v;
+      M.tab = 0;
+      if (v === 'j7' && M.choice.zwave && M.choice.zwave_place === 'j7') { M.choice.zwave_place = 'socket'; M.moved.zwave = 'Moved to the radio socket: the clock now uses J7 IO27 and IO28.'; }
+      break;
+    case 'zwplace':
+      M.choice.zwave_place = v;
+      M.tab = 0;
+      if (v === 'j7' && M.choice.clock && M.choice.clock_place === 'j7') { M.choice.clock_place = 'j13'; M.moved.clock = 'Moved to the I2C connector (J13): the Z-Wave radio now uses J7 IO27 and IO28.'; }
+      break;
+    case 'pin': M.choice.rf_pin = Number(v); break;
+    case 'recommend': M.choice = recommend(M.choice); M.tab = 0; break;
+    case 'fullfocus': M.fullFocus = t.tagName === 'g' && M.fullFocus === v ? '' : v; break;
+    case 'checkfocus': M.checkFocus = t.tagName === 'g' && M.checkFocus === v ? '' : v; break;
+    case 'print': window.print(); return;
+    default: return;
+  }
+  render(false);
+});
+document.addEventListener('keydown', (e) => {
+  const t = e.target.closest && e.target.closest('svg g[role=button]');
+  if (t && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); t.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
+});
+document.addEventListener('change', (e) => {
+  const t = e.target;
+  switch (t.dataset.act) {
+    case 'tick': M.tick[t.dataset.v] = t.checked; break;
+    case 'ready': M.ready[t.dataset.v] = t.checked; break;
+    case 'check': M.checks[t.dataset.v] = t.checked; break;
+    default: return;
+  }
+  render(false);
+});
+/* A fold-out stays as the person left it when the page is drawn again. */
+document.addEventListener('toggle', (e) => { const k = e.target.dataset && e.target.dataset.key; if (k) M.open[k] = e.target.open; }, true);
+window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (SCREENS[v] && v !== M.screen) go(v); });
+M.screen = SCREENS[location.hash.slice(1)] ? location.hash.slice(1) : 'overview';
+render(true);
+</script>
+</body>
+</html>

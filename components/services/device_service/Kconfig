@@ -1,0 +1,15 @@
+menu "Devices (device_service)"
+
+    config ALARM_HOME_CONTROL
+        bool "Devices screen: lights, locks, climate from the panel"
+        default y
+        depends on SPIRAM && (ALARM_FEATURE_HA || ALARM_ZSRC_ZWAVE)
+        help
+            The home_control registry (docs/features/24, HCTL-010): devices the paired Home
+            Assistant allows for control, and the panel's own Z-Wave switches, dimmers and
+            garage doors (docs/features/41 phase B), for automations; unlock and open ask for
+            a user code first, checked by the engine. Needs PSRAM and a device source (Home
+            Assistant or Z-Wave: Z-Wave alone needs no Home Assistant link); off for small
+            boards.
+
+endmenu

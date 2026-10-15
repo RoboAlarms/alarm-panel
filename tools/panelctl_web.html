@@ -1,0 +1,29 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>RoboAlarms development panel</title>
+<style>body{background:#111a25;color:#eaf0f8;font:16px system-ui;margin:24px}main{max-width:1100px;margin:auto}button{padding:10px 18px;margin:0 8px 16px 0;border:0;border-radius:6px;background:#bdd8ed;color:#102133;cursor:pointer}canvas{width:100%;max-width:1024px;background:#000;touch-action:none;border:1px solid #647387}#status{min-height:28px;color:#bfd0e0}.stale{border-color:#d6b468}small{display:block;margin:12px 0;color:#bdc9d8}</style>
+<main><h1>RoboAlarms development panel</h1><p id="identity">Connecting…</p>
+<button id="take">Take control</button><button id="release">Release control</button>
+<span id="mode">View only</span><p id="status" role="status"></p><canvas id="screen"></canvas>
+<small>Local touch takes priority. Every screen is shown, as on the panel. Closing this page releases control after the short lease expires.</small></main>
+<script>
+const token=location.hash.slice(1)||sessionStorage.getItem('panel-session')||'';if(token)sessionStorage.setItem('panel-session',token);history.replaceState(null,'',location.pathname);
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d'),status=document.querySelector('#status');
+let info,owned=false,lease='',seq=0,down=false,position=[0,0],chain=Promise.resolve(),queued=0,lastFrame=0;
+async function request(path,data){let r=await fetch(path,{method:data===undefined?'GET':'POST',headers:{'X-Session':token},body:data});if(!r.ok){const e=Error(await r.text());e.status=r.status;throw e}return r}
+function mode(on){owned=on;document.querySelector('#mode').textContent=on?'Controlling':'View only';if(!on)down=false}
+function control(text){if(!info)throw Error('Wait for the first frame');return request('/control',`${info.boot} ${text==='acquire'?'':lease+' '}${text}`)}
+document.querySelector('#take').onclick=async()=>{try{lease=await(await control('acquire')).text();seq=0;mode(true);status.textContent='Control acquired';send()}catch(e){status.textContent=e.message;mode(false)}};
+document.querySelector('#release').onclick=async()=>{mode(false);try{await control('release')}catch(e){status.textContent=e.message}};
+function send(move=false){if(!owned||(move&&queued>0))return;if(queued>=8){mode(false);control('release').catch(()=>{});status.textContent='Input paused: connection too slow';return}const savedLease=lease,payload=`${info.boot} ${lease} input ${++seq} ${position[0]} ${position[1]} ${down?1:0}`;queued++;chain=chain.then(()=>{if(owned&&lease===savedLease)return request('/control',payload)}).catch(e=>{mode(false);status.textContent=e.message}).finally(()=>queued--)}
+function point(e){const r=canvas.getBoundingClientRect();position=[Math.max(0,Math.min(info.width-1,Math.floor((e.clientX-r.left)*info.width/r.width))),Math.max(0,Math.min(info.height-1,Math.floor((e.clientY-r.top)*info.height/r.height)))]}
+canvas.onpointerdown=e=>{if(!owned)return;canvas.setPointerCapture(e.pointerId);point(e);down=true;send()};
+canvas.onpointermove=e=>{if(!owned||!down)return;point(e);send(true)};
+canvas.onpointerup=e=>{if(!owned)return;point(e);down=false;send()};canvas.onpointercancel=()=>{down=false;send()};
+window.onblur=()=>{down=false;send()};
+setInterval(()=>{if(owned)send()},750);
+async function refresh(){try{const next=await(await request('/info')).json();if(info&&next.boot!==info.boot){mode(false);seq=0}info=next;document.querySelector('#identity').textContent=`${info.board} · ${info.id} · firmware ${info.version} · development`;
+ const raw=await(await request('/frame')).arrayBuffer(),p=new DataView(raw),w=info.capture_width,h=info.capture_height;
+ if(raw.byteLength!==w*h*2)throw Error('Incomplete frame');if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h}
+ const image=ctx.createImageData(w,h);for(let i=0;i<w*h;i++){let v=p.getUint16(i*2,true);image.data.set([((v>>11)&31)*255/31,((v>>5)&63)*255/63,(v&31)*255/31,255],i*4)}ctx.putImageData(image,0,0);lastFrame=Date.now();canvas.classList.remove('stale');status.textContent=info.display.forced_off?'Connected · physical backlight forced off for testing':'Connected';
+ }catch(e){mode(false);canvas.classList.add('stale');status.textContent='Input disabled · '+e.message}setTimeout(refresh,1000)}refresh();
+</script></html>

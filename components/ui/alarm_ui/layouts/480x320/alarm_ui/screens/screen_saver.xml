@@ -1,0 +1,41 @@
+<screen permanent="true">
+	<!-- Screen saver: the clock and the state of the alarm on a dark screen, dimmed backlight
+	     (the 4" board has no photo saver; the picture element stays for layouts that share the
+	     UI code, and is empty here). Any touch wakes the panel; entry time, alarms and troubles
+	     wake it on their own. Nothing here moves or blinks (docs/features/07 UI-020). -->
+	<view extends="lv_obj" scrollable="false">
+		<style name="style_saver" />
+		<event_cb callback="ui_on_wake" trigger="clicked" />
+		<lv_image name="saver_bg" width="100%" height="100%" />
+		<box name="saver_shade" width="100%" height="100%" style_bg_color="0x000000" style_bg_opa="100%" style_bg_grad_color="0x000000" style_bg_grad_dir="hor" style_bg_main_opa="82%" style_bg_grad_opa="0%" style_bg_main_stop="0" style_bg_grad_stop="150" />
+
+		<box name="saver_clock" x="24" y="14" width="content" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="0">
+			<box width="content" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="end" style_pad_column="#space_sm">
+				<lv_label name="saver_time" bind_text="subject_time" style_text_font="font_digits" style_text_color="#color_text" />
+				<lv_label bind_text="subject_ampm" style_text_font="font_label" style_text_color="0xCBD5E1" style_pad_bottom="10" />
+			</box>
+			<lv_label name="saver_date" bind_text="subject_date" style_text_font="font_label" style_text_color="0xCBD5E1" />
+		</box>
+
+		<box name="saver_state" align="bottom_left" x="16" y="-16" width="content" height="content" style_max_width="448" style_bg_color="0x0B0F14" style_bg_opa="74%" style_radius="#radius_xl" style_border_width="1" style_border_color="0xFFFFFF" style_border_opa="14%" style_pad_all="#space_xl" style_pad_right="#space_xxl" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_pad_column="#space_xl">
+			<box name="saver_disk" width="56" height="56" style_radius="#radius_full" style_bg_opa="22%">
+				<bind_style_prop prop="bg_color" subject="subject_tone_color" />
+				<lv_label name="saver_icon" align="center" bind_text="subject_hero_icon" style_text_font="icons_28">
+					<bind_style_prop prop="text_color" subject="subject_tone_color" />
+				</lv_label>
+			</box>
+			<box name="saver_words" width="content" height="content" style_max_width="340" style_layout="flex" style_flex_flow="column" style_pad_row="0">
+				<lv_label name="saver_headline" bind_text="subject_headline" style_text_font="font_headline">
+					<bind_style_prop prop="text_color" subject="subject_tone_color" />
+				</lv_label>
+				<lv_label name="saver_detail" bind_text="subject_detail" long_mode="wrap" style_max_width="340" style_text_font="font_label" style_text_color="#color_text" />
+				<lv_label name="saver_note" bind_text="subject_hero_note" long_mode="wrap" style_max_width="340" style_text_font="font_body" style_text_color="0xCBD5E1" />
+				<box name="saver_trouble" width="content" height="content" style_margin_top="#space_sm" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_pad_column="#space_sm" style_text_color="#color_amber">
+					<bind_flag_if_eq subject="subject_trouble_count" flag="hidden" ref_value="0" />
+					<lv_label text="&#xE193;" style_text_font="icons_20" />
+					<lv_label bind_text="subject_trouble_text" long_mode="dots" style_max_width="300" style_text_font="font_label" />
+				</box>
+			</box>
+		</box>
+	</view>
+</screen>

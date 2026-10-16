@@ -437,7 +437,7 @@ static bool k_seal(fk_t *k, uint8_t type, const uint8_t *p, size_t n)
 static void k_hello(fk_t *k)
 {
     TEST_ASSERT_TRUE(plink_hs_hello(&k->c, k->rec.k_pair, k->rec.net_id, k->rec.device, &k->cap,
-                                    &k->hs));
+                                    0u, &k->hs));
     k_send(k, k->hs.hello, k->hs.hello_len);
 }
 
@@ -641,7 +641,7 @@ static fk_t *kp_add(void)
     plink_test_port_init(&k->tp, 0x4B000000u + R.nkp);
     k->c = plink_test_port(&k->tp);
     k->cap = CAP;
-    plink_pk_init(&k->pk, &k->c, PLINK_KIND_PANEL, &CAP, name, "1.0.0");
+    plink_pk_init(&k->pk, &k->c, PLINK_KIND_PANEL, &CAP, 0u, name, "1.0.0");
     k->node = plink_net_node(&R.net, ip, k, k_input, k_tick, k_next);
     k->via = k->node;
     k->alt = -1;
@@ -834,7 +834,7 @@ void setUp(void)
     R.port.lockout_left = p_lockout;
     R.port.events_after = p_events_after;
     R.port.note = p_note;
-    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", NOW);
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", 0u, NOW);
     R.mnode = plink_net_node(&R.net, IP_M, NULL, m_input, m_tick, m_next);
     R.xnode = plink_net_node(&R.net, IP_X, NULL, x_input, NULL, NULL);
     R.run_mode = RUN_NOW;
@@ -996,7 +996,7 @@ static void test_hello_with_a_bad_mac_is_not_answered(void)
     memcpy(wrong, k->rec.k_pair, sizeof wrong);
     wrong[0] ^= 0x01u;
     plink_hs_k_t hs;
-    TEST_ASSERT_TRUE(plink_hs_hello(&k->c, wrong, k->rec.net_id, k->rec.device, &CAP, &hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&k->c, wrong, k->rec.net_id, k->rec.device, &CAP, 0u, &hs));
     k_send(k, hs.hello, hs.hello_len);
     run(100);
     TEST_ASSERT_EQUAL_UINT(w0, welcomes());
@@ -1066,7 +1066,7 @@ static void fresh_hellos(fk_t *k, int n)
     for (int i = 0; i < n; i++) {
         plink_hs_k_t hs;
         TEST_ASSERT_TRUE(plink_hs_hello(&k->c, k->rec.k_pair, k->rec.net_id, k->rec.device, &CAP,
-                                        &hs));
+                                        0u, &hs));
         k_send(k, hs.hello, hs.hello_len);
     }
 }
@@ -1218,7 +1218,7 @@ static void test_master_restart_and_rekey(void)
     pair(k);
     run(3000);
     const plink_master_rec_t rec = R.stored;
-    plink_master_init(&R.m, &R.cm, &R.port, &rec, "Harbor House", "a1b2c3", NOW);
+    plink_master_init(&R.m, &R.cm, &R.port, &rec, "Harbor House", "a1b2c3", 0u, NOW);
     plink_master_config(&R.m, R.cfg_blob, R.cfg_len, R.cfg_crc);
     TEST_ASSERT_EQUAL_UINT16(rec.net_id, plink_master_net_id(&R.m));
     TEST_ASSERT_EQUAL_UINT32(1u << (k->rec.device - 1u), plink_master_held(&R.m));
@@ -1239,7 +1239,7 @@ static void test_not_paired_hint(void)
     uint8_t key[PLINK_KEY_LEN];
     memset(key, 0x42, sizeof key);
     plink_hs_k_t hs;
-    TEST_ASSERT_TRUE(plink_hs_hello(&k->c, key, k->rec.net_id, 6u, &CAP, &hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&k->c, key, k->rec.net_id, 6u, &CAP, 0u, &hs));
     k_send(k, hs.hello, hs.hello_len);
     run(10);
     TEST_ASSERT_EQUAL_UINT(1u, k->count[PLINK_T_NOT_PAIRED]);
@@ -1248,7 +1248,7 @@ static void test_not_paired_hint(void)
     TEST_ASSERT_EQUAL_UINT(1u, k->count[PLINK_T_NOT_PAIRED]);
     run(600);
     const uint16_t other = (uint16_t)(k->rec.net_id ^ 0x5555u);
-    TEST_ASSERT_TRUE(plink_hs_hello(&k->c, key, other, 6u, &CAP, &hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&k->c, key, other, 6u, &CAP, 0u, &hs));
     k_send(k, hs.hello, hs.hello_len);
     run(10);
     TEST_ASSERT_EQUAL_UINT(2u, k->count[PLINK_T_NOT_PAIRED]);

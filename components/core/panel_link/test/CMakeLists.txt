@@ -12,6 +12,11 @@ foreach(suite plink_crypto plink_frame plink_msg plink_view plink_store plink_pa
                        INCLUDES ${PLINK_TEST_INC} STRICT)
     endif()
 endforeach()
+# The codecs' numbers that copy another component's (DEV_ACK's results are ui_dev_result_t's,
+# DEV_ACT's modes device_source.h's) are asserted against its header.
+if(TARGET test_plink_msg)
+    target_link_libraries(test_plink_msg PRIVATE home_control ui_backend)
+endif()
 # The managers, alone and together over a pretend network; the master side drives the real engine
 # (alarm_sim, components/core/alarm_core/test).
 foreach(suite plink_master plink_keypad)

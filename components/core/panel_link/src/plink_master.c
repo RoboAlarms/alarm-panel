@@ -1087,8 +1087,8 @@ static void on_hello(plink_master_t *m, uint64_t now, const plink_addr_t *from,
     plink_session_t s;
     plink_hello_t in;
     size_t wl = 0u;
-    if (!plink_hs_answer(m->c, p->rec.k_pair, h, frame, len, &s, &in, m->out, sizeof m->out,
-                         &wl) ||
+    if (!plink_hs_answer(m->c, p->rec.k_pair, h, frame, len, m->caps, &s, &in, m->out,
+                         sizeof m->out, &wl) ||
         wl > sizeof p->welcome || (p->live.valid && s.sid == p->live.sid)) {
         plink_session_wipe(&s);
         return;
@@ -1311,7 +1311,8 @@ bool plink_master_pairing(const plink_master_t *m)
 
 void plink_master_init(plink_master_t *m, const plink_crypto_t *c, const plink_master_port_t *port,
                        const plink_master_rec_t *rec, const char *name,
-                       const char panel_id[PLINK_PANEL_ID_LEN + 1], uint64_t now_ms)
+                       const char panel_id[PLINK_PANEL_ID_LEN + 1], uint16_t caps,
+                       uint64_t now_ms)
 {
     if (m == NULL) {
         return;
@@ -1326,7 +1327,8 @@ void plink_master_init(plink_master_t *m, const plink_crypto_t *c, const plink_m
                      sizeof m->panel_id);
     m->net_up = true;
     m->net_up_since_ms = now_ms;
-    plink_pm_init(&m->pair, c);
+    m->caps = (uint16_t)(caps & PLINK_CAPS_KNOWN);
+    plink_pm_init(&m->pair, c, m->caps);
     if (rec != NULL && rec->net_id != 0u) {
         m->rec.net_id = rec->net_id;
         for (size_t i = 0; i < rec->count && i < PLINK_KEYPADS_MAX; i++) {
@@ -1681,6 +1683,7 @@ size_t plink_master_peers(const plink_master_t *m, uint64_t now_ms, plink_peer_i
                                  ? period_ms(p)
                                  : (uint64_t)PLINK_SUPERVISION_DEFAULT_S * 1000u;
         o->online = is_live(p) && p->live_heard_ms != 0u && now_ms - p->live_heard_ms < per;
+        o->caps = is_live(p) ? p->live.caps : 0u;
         o->down = p->down;
         o->heard_ago_s = UINT32_MAX; /* never, since this master started */
         if (p->live_heard_ms != 0u) {

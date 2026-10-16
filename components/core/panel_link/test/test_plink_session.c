@@ -12,7 +12,8 @@
  * direction refused), LINK-015 (a handshake per connection: ephemeral X25519 keyed by the pairing
  * key, fresh keys and a session id, mac1 checked before any X25519, no seq >= 2^31 sent),
  * LINK-017 (the lower protocol version and the common capabilities; fields a newer side appends
- * before the MAC are skipped but covered by it).
+ * before the MAC are skipped but covered by it), LINK-043 (capabilities offered at run time, the
+ * session keeping those both sides offer).
  */
 #include <string.h>
 
@@ -34,6 +35,7 @@ typedef struct {
     plink_session_t m;       /* the master's session for the keypad */
     plink_session_t k;       /* the keypad's */
     plink_hello_t hello;     /* the HELLO as the master decoded it */
+    uint16_t m_caps;         /* what the master offers */
     uint8_t welcome[128];
     size_t welcome_len;
 } rig_t;
@@ -95,8 +97,8 @@ static plink_hdr_t hdr_of(const uint8_t *f, size_t len)
 static bool answer(const uint8_t k_pair[PLINK_KEY_LEN])
 {
     const plink_hdr_t h = hdr_of(R.hs.hello, R.hs.hello_len);
-    return plink_hs_answer(&R.cm, k_pair, &h, R.hs.hello, R.hs.hello_len, &R.m, &R.hello,
-                           R.welcome, sizeof R.welcome, &R.welcome_len);
+    return plink_hs_answer(&R.cm, k_pair, &h, R.hs.hello, R.hs.hello_len, R.m_caps, &R.m,
+                           &R.hello, R.welcome, sizeof R.welcome, &R.welcome_len);
 }
 
 /* The WELCOME in R.welcome taken by the keypad. */
@@ -109,7 +111,7 @@ static bool finish(const uint8_t k_pair[PLINK_KEY_LEN])
 /* One whole handshake with R.k_pair. */
 static void handshake(void)
 {
-    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
     TEST_ASSERT_TRUE(answer(R.k_pair));
     TEST_ASSERT_TRUE(finish(R.k_pair));
     TEST_ASSERT_EQUAL_UINT32(R.m.sid, R.k.sid);
@@ -277,7 +279,7 @@ static void test_golden_handshake(void)
     R.ck = script_port(&ks, &R.tpk, kb, sizeof kb);
     R.cm = script_port(&ms, &R.tpm, mb, sizeof mb);
 
-    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
     TEST_ASSERT_EQUAL_size_t(sizeof GOLD_HELLO, R.hs.hello_len);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(GOLD_HELLO, R.hs.hello, sizeof GOLD_HELLO);
     TEST_ASSERT_TRUE(R.hs.waiting);
@@ -378,7 +380,7 @@ static void test_wrong_k_pair(void)
     uint8_t other[PLINK_KEY_LEN];
     memcpy(other, R.k_pair, sizeof other);
     other[0] ^= 0x01u;
-    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
     TEST_ASSERT_FALSE(plink_hs_hello_valid(other, R.hs.hello, R.hs.hello_len));
     memset(&R.m, 0xA5, sizeof R.m);
     const uint32_t calls = R.tpm.hc.calls;
@@ -404,7 +406,7 @@ static void test_wrong_k_pair(void)
  * device in the middle, mac1 kept, fails. */
 static void test_hello_tampered_or_stripped(void)
 {
-    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
     uint8_t f[128];
     memcpy(f, R.hs.hello, R.hs.hello_len);
     for (size_t i = 0; i < R.hs.hello_len; i++) {
@@ -423,7 +425,7 @@ static void test_hello_tampered_or_stripped(void)
     plink_hello_t m;
     memset(&m, 0, sizeof m);
     m.proto = PLINK_PROTO;
-    m.caps = PLINK_CAPS;
+    m.caps = 0u;
     m.cap = CAP;
     plink_hs_k_wipe(&R.hs);
     TEST_ASSERT_TRUE(plink_x25519_keypair(&R.ck, R.hs.e, m.e));
@@ -448,7 +450,7 @@ static void test_hello_tampered_or_stripped(void)
     TEST_ASSERT_FALSE(plink_hs_hello_valid(R.k_pair, s, len - 3u));
     const plink_hdr_t h = hdr_of(s, len - 3u);
     plink_session_t pending;
-    TEST_ASSERT_FALSE(plink_hs_answer(&R.cm, R.k_pair, &h, s, len - 3u, &pending, &R.hello,
+    TEST_ASSERT_FALSE(plink_hs_answer(&R.cm, R.k_pair, &h, s, len - 3u, 0u, &pending, &R.hello,
                                       R.welcome, sizeof R.welcome, &R.welcome_len));
 }
 
@@ -468,7 +470,7 @@ static void test_replayed_welcome(void)
     TEST_ASSERT_EQUAL_HEX8_ARRAY(first.k_tx, R.k.k_tx, 16u);
     TEST_ASSERT_EQUAL_HEX8_ARRAY(first.k_rx, R.k.k_rx, 16u);
 
-    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
     plink_hdr_t h = hdr_of(old, old_len);
     TEST_ASSERT_FALSE(plink_hs_finish(&R.ck, R.k_pair, &R.hs, &h, old, old_len, &R.k));
     TEST_ASSERT_TRUE(R.hs.waiting);
@@ -515,12 +517,13 @@ static void mac2_fill(uint8_t *w, size_t len, const uint8_t n_m[16], const uint8
     plink_mac_fill(&okm[32], w, len);
 }
 
-static size_t hand_welcome(uint8_t proto, const uint8_t e_m[32], const uint8_t dh[32],
-                           uint8_t *out, size_t cap)
+static size_t hand_welcome(uint8_t proto, uint16_t caps, const uint8_t e_m[32],
+                           const uint8_t dh[32], uint8_t *out, size_t cap)
 {
     plink_hello_t w;
     memset(&w, 0, sizeof w);
     w.proto = proto;
+    w.caps = caps;
     fill(w.n, sizeof w.n, 5u, 0x31u);
     memcpy(w.e, e_m, 32u);
     size_t plen = 0, len = 0;
@@ -538,7 +541,7 @@ static size_t hand_welcome(uint8_t proto, const uint8_t e_m[32], const uint8_t d
  * honest WELCOME made the same way is taken. */
 static void test_finish_refusals_with_a_valid_mac2(void)
 {
-    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
     /* HELLO: proto, caps, capacities section (6), n_k (16), then e_k */
     const uint8_t *e_k = &R.hs.hello[PLINK_HDR_LEN + 25u];
     uint8_t sk_m[32], e_m[32], dh[32], zero[32], w[128];
@@ -548,24 +551,77 @@ static void test_finish_refusals_with_a_valid_mac2(void)
     plink_session_t s;
     memset(&s, 0, sizeof s);
 
-    size_t len = hand_welcome(PLINK_PROTO, zero, zero, w, sizeof w);
+    size_t len = hand_welcome(PLINK_PROTO, 0u, zero, zero, w, sizeof w);
     plink_hdr_t h = hdr_of(w, len);
     TEST_ASSERT_FALSE(plink_hs_finish(&R.ck, R.k_pair, &R.hs, &h, w, len, &s));
     TEST_ASSERT_TRUE(R.hs.waiting);
     TEST_ASSERT_FALSE(s.valid);
 
-    len = hand_welcome(0u, e_m, dh, w, sizeof w);
+    len = hand_welcome(0u, 0u, e_m, dh, w, sizeof w);
     h = hdr_of(w, len);
     TEST_ASSERT_FALSE(plink_hs_finish(&R.ck, R.k_pair, &R.hs, &h, w, len, &s));
     TEST_ASSERT_TRUE(R.hs.waiting);
     TEST_ASSERT_FALSE(s.valid);
 
-    len = hand_welcome(PLINK_PROTO, e_m, dh, w, sizeof w);
+    len = hand_welcome(PLINK_PROTO, 0u, e_m, dh, w, sizeof w);
     h = hdr_of(w, len);
     TEST_ASSERT_TRUE(plink_hs_finish(&R.ck, R.k_pair, &R.hs, &h, w, len, &s));
     TEST_ASSERT_TRUE(s.valid);
     TEST_ASSERT_FALSE(R.hs.waiting);
     plink_session_wipe(&s);
+}
+
+/* LINK-043: each side offers its capabilities at run time and both sessions keep the bits both
+ * offered: a keypad offering FW and PREFS, a master offering FW and HOME, share FW. Neither puts
+ * a bit its codecs don't know in its HELLO or WELCOME (0x8000 asked for, never sent); a newer
+ * master's WELCOME offering every bit leaves the keypad's session with its own offer; a side
+ * offering nothing shares nothing. */
+static void test_caps_meet_in_the_and(void)
+{
+    R.m_caps = PLINK_CAP_FW | PLINK_CAP_HOME | 0x8000u;
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP,
+                                    PLINK_CAP_FW | PLINK_CAP_PREFS | 0x8000u, &R.hs));
+    plink_hello_t got;
+    TEST_ASSERT_TRUE(plink_dec_hello(&R.hs.hello[PLINK_HDR_LEN], R.hs.hello_len - PLINK_HDR_LEN,
+                                     true, &got));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW | PLINK_CAP_PREFS, got.caps);
+    TEST_ASSERT_TRUE(answer(R.k_pair));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW | PLINK_CAP_PREFS, R.hello.caps);
+    TEST_ASSERT_TRUE(plink_dec_hello(&R.welcome[PLINK_HDR_LEN], R.welcome_len - PLINK_HDR_LEN,
+                                     false, &got));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW | PLINK_CAP_HOME, got.caps);
+    TEST_ASSERT_TRUE(finish(R.k_pair));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW, R.m.caps);
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW, R.k.caps);
+
+    /* A newer master's WELCOME offering every bit: the keypad keeps its own offer. */
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP,
+                                    PLINK_CAP_FW | PLINK_CAP_PREFS, &R.hs));
+    const uint8_t *e_k = &R.hs.hello[PLINK_HDR_LEN + 25u];
+    uint8_t sk_m[32], e_m[32], dh[32], w[128];
+    TEST_ASSERT_TRUE(plink_x25519_keypair(&R.cx, sk_m, e_m));
+    TEST_ASSERT_TRUE(plink_x25519_shared(&R.cx, sk_m, e_k, dh));
+    const size_t len = hand_welcome(PLINK_PROTO, 0xFFFFu, e_m, dh, w, sizeof w);
+    const plink_hdr_t h = hdr_of(w, len);
+    plink_session_t s;
+    memset(&s, 0, sizeof s);
+    TEST_ASSERT_TRUE(plink_hs_finish(&R.ck, R.k_pair, &R.hs, &h, w, len, &s));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW | PLINK_CAP_PREFS, s.caps);
+    plink_session_wipe(&s);
+
+    /* The master offering nothing, then the keypad offering nothing. */
+    R.m_caps = 0u;
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, PLINK_CAPS_KNOWN, &R.hs));
+    TEST_ASSERT_TRUE(answer(R.k_pair));
+    TEST_ASSERT_TRUE(finish(R.k_pair));
+    TEST_ASSERT_EQUAL_HEX16(0u, R.m.caps);
+    TEST_ASSERT_EQUAL_HEX16(0u, R.k.caps);
+    R.m_caps = PLINK_CAPS_KNOWN;
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
+    TEST_ASSERT_TRUE(answer(R.k_pair));
+    TEST_ASSERT_TRUE(finish(R.k_pair));
+    TEST_ASSERT_EQUAL_HEX16(0u, R.m.caps);
+    TEST_ASSERT_EQUAL_HEX16(0u, R.k.caps);
 }
 
 /* ---- the replay window -------------------------------------------------------------------- */
@@ -774,9 +830,10 @@ static void test_no_key_nonce_reused(void)
     TEST_ASSERT_TRUE(R.tpk.reused);
 }
 
-/* LINK-017: the session takes the lower protocol version and the common capabilities: a HELLO
- * from a newer keypad (proto 3, capabilities 0xFFFF) makes a v1 session with v1's capabilities; a
- * HELLO with proto 0 (no version in common) is refused. */
+/* LINK-017, LINK-043: the session takes the lower protocol version and the common capabilities:
+ * a HELLO from a newer keypad (proto 3, capabilities 0xFFFF) to a master offering every bit it
+ * knows and one it doesn't makes a v1 session with the bits this firmware knows - an unknown bit
+ * a peer offers is never common; a HELLO with proto 0 (no version in common) is refused. */
 static void test_proto_and_caps(void)
 {
     plink_hello_t m;
@@ -788,13 +845,17 @@ static void test_proto_and_caps(void)
     TEST_ASSERT_TRUE(plink_random(&R.ck, R.hs.n_k, 16u));
     memcpy(m.n, R.hs.n_k, 16u);
     R.hs.hello_len = hand_hello(&m, 0u, R.hs.hello, sizeof R.hs.hello);
+    R.hs.caps = PLINK_CAP_FW; /* what this (hand-made) keypad's side keeps as its offer */
     R.hs.waiting = true;
+    R.m_caps = 0xFFFFu;
     TEST_ASSERT_TRUE(answer(R.k_pair));
     TEST_ASSERT_EQUAL_UINT8(PLINK_PROTO, R.m.proto);
-    TEST_ASSERT_EQUAL_HEX16(PLINK_CAPS, R.m.caps);
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAPS_KNOWN, R.m.caps);
     TEST_ASSERT_EQUAL_UINT8(3u, R.hello.proto);
+    TEST_ASSERT_EQUAL_HEX16(0xFFFFu, R.hello.caps);
     TEST_ASSERT_TRUE(finish(R.k_pair));
     TEST_ASSERT_EQUAL_UINT8(PLINK_PROTO, R.k.proto);
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW, R.k.caps);
 
     m.proto = 0u;
     R.hs.hello_len = hand_hello(&m, 0u, R.hs.hello, sizeof R.hs.hello);
@@ -809,14 +870,14 @@ static void test_proto_and_caps(void)
  * everything. */
 static void test_handshake_hygiene(void)
 {
-    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
     plink_hs_k_t first = R.hs;
-    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
     TEST_ASSERT_NOT_EQUAL(0, memcmp(first.e, R.hs.e, 32u));
     TEST_ASSERT_NOT_EQUAL(0, memcmp(first.n_k, R.hs.n_k, 16u));
     /* The master answers the first HELLO: the keypad, now waiting on the second, refuses it. */
     const plink_hdr_t h1 = hdr_of(first.hello, first.hello_len);
-    TEST_ASSERT_TRUE(plink_hs_answer(&R.cm, R.k_pair, &h1, first.hello, first.hello_len, &R.m,
+    TEST_ASSERT_TRUE(plink_hs_answer(&R.cm, R.k_pair, &h1, first.hello, first.hello_len, 0u, &R.m,
                                      &R.hello, R.welcome, sizeof R.welcome, &R.welcome_len));
     TEST_ASSERT_FALSE(finish(R.k_pair));
     TEST_ASSERT_TRUE(answer(R.k_pair));
@@ -826,10 +887,10 @@ static void test_handshake_hygiene(void)
     TEST_ASSERT_FALSE(R.hs.waiting);
     plink_hs_k_wipe(&first);
 
-    TEST_ASSERT_FALSE(plink_hs_hello(&R.ck, R.k_pair, NET, 0u, &CAP, &R.hs));
+    TEST_ASSERT_FALSE(plink_hs_hello(&R.ck, R.k_pair, NET, 0u, &CAP, 0u, &R.hs));
     TEST_ASSERT_TRUE(all_zero(&R.hs, sizeof R.hs));
-    TEST_ASSERT_FALSE(plink_hs_hello(&R.ck, R.k_pair, NET, 9u, &CAP, &R.hs));
-    TEST_ASSERT_FALSE(plink_hs_hello(&R.ck, R.k_pair, 0u, DEV, &CAP, &R.hs));
+    TEST_ASSERT_FALSE(plink_hs_hello(&R.ck, R.k_pair, NET, 9u, &CAP, 0u, &R.hs));
+    TEST_ASSERT_FALSE(plink_hs_hello(&R.ck, R.k_pair, 0u, DEV, &CAP, 0u, &R.hs));
     TEST_ASSERT_FALSE(R.hs.waiting);
 
     plink_hello_t m;
@@ -841,7 +902,7 @@ static void test_handshake_hygiene(void)
     plink_session_t pending;
     memset(&pending, 0, sizeof pending);
     memset(R.welcome, 0xCC, sizeof R.welcome);
-    TEST_ASSERT_FALSE(plink_hs_answer(&R.cm, R.k_pair, &h, R.hs.hello, len, &pending, &R.hello,
+    TEST_ASSERT_FALSE(plink_hs_answer(&R.cm, R.k_pair, &h, R.hs.hello, len, 0u, &pending, &R.hello,
                                       R.welcome, sizeof R.welcome, &R.welcome_len));
     TEST_ASSERT_FALSE(pending.valid);
     TEST_ASSERT_TRUE(all_zero(R.welcome, sizeof R.welcome));
@@ -850,17 +911,17 @@ static void test_handshake_hygiene(void)
     m.e[0] = 9u; /* the base point: a good key */
     const size_t len2 = hand_hello(&m, 0u, R.hs.hello, sizeof R.hs.hello);
     plink_hdr_t h2 = hdr_of(R.hs.hello, len2);
-    TEST_ASSERT_FALSE(plink_hs_answer(&R.cm, R.k_pair, &h2, R.hs.hello, len2, &pending, &R.hello,
-                                      R.welcome, PLINK_HDR_LEN - 1u, &R.welcome_len));
-    TEST_ASSERT_FALSE(plink_hs_answer(&R.cm, R.k_pair, &h2, R.hs.hello, len2, &pending, &R.hello,
-                                      R.welcome, 40u, &R.welcome_len));
+    TEST_ASSERT_FALSE(plink_hs_answer(&R.cm, R.k_pair, &h2, R.hs.hello, len2, 0u, &pending,
+                                      &R.hello, R.welcome, PLINK_HDR_LEN - 1u, &R.welcome_len));
+    TEST_ASSERT_FALSE(plink_hs_answer(&R.cm, R.k_pair, &h2, R.hs.hello, len2, 0u, &pending,
+                                      &R.hello, R.welcome, 40u, &R.welcome_len));
     h2.type = PLINK_T_WELCOME;
-    TEST_ASSERT_FALSE(plink_hs_answer(&R.cm, R.k_pair, &h2, R.hs.hello, len2, &pending, &R.hello,
-                                      R.welcome, sizeof R.welcome, &R.welcome_len));
+    TEST_ASSERT_FALSE(plink_hs_answer(&R.cm, R.k_pair, &h2, R.hs.hello, len2, 0u, &pending,
+                                      &R.hello, R.welcome, sizeof R.welcome, &R.welcome_len));
     TEST_ASSERT_FALSE(pending.valid);
     h2.type = PLINK_T_HELLO;
-    TEST_ASSERT_TRUE(plink_hs_answer(&R.cm, R.k_pair, &h2, R.hs.hello, len2, &pending, &R.hello,
-                                     R.welcome, sizeof R.welcome, &R.welcome_len));
+    TEST_ASSERT_TRUE(plink_hs_answer(&R.cm, R.k_pair, &h2, R.hs.hello, len2, 0u, &pending,
+                                     &R.hello, R.welcome, sizeof R.welcome, &R.welcome_len));
     TEST_ASSERT_TRUE(pending.valid);
 
     handshake();
@@ -875,9 +936,9 @@ static void test_handshake_hygiene(void)
 static void test_port_failures(void)
 {
     plink_test_port_fail_at(&R.tpk, 0u);
-    TEST_ASSERT_FALSE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    TEST_ASSERT_FALSE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
     TEST_ASSERT_TRUE(all_zero(&R.hs, sizeof R.hs));
-    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
     for (uint32_t call = 0; call < 4u; call++) { /* the key pair (2 calls), n_m, the agreement */
         plink_test_port_fail_at(&R.tpm, call);
         memset(&R.m, 0, sizeof R.m);
@@ -984,7 +1045,7 @@ static void test_fuzz_handshake(void)
     RNG = 0x5E5510Bu;
     unsigned answered = 0u, finished = 0u;
     for (uint32_t iter = 0; iter < 600u; iter++) {
-        TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+        TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, 0u, &R.hs));
         size_t len = R.hs.hello_len;
         memcpy(f, R.hs.hello, len);
         mutate_fields(f, &len, sizeof f);
@@ -996,7 +1057,7 @@ static void test_fuzz_handshake(void)
         plink_session_t pend;
         plink_hello_t hello;
         size_t wl = 0u;
-        if (plink_hs_answer(&R.cm, R.k_pair, &h, p, len, &pend, &hello, w, sizeof w, &wl)) {
+        if (plink_hs_answer(&R.cm, R.k_pair, &h, p, len, 0u, &pend, &hello, w, sizeof w, &wl)) {
             answered++;
             TEST_ASSERT_TRUE(pend.valid);
             TEST_ASSERT_TRUE(hello.proto != 0u);
@@ -1053,6 +1114,7 @@ int main(void)
     RUN_TEST(test_directions_use_different_keys);
     RUN_TEST(test_no_key_nonce_reused);
     RUN_TEST(test_proto_and_caps);
+    RUN_TEST(test_caps_meet_in_the_and);
     RUN_TEST(test_handshake_hygiene);
     RUN_TEST(test_port_failures);
     RUN_TEST(test_fuzz_handshake);

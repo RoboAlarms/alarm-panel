@@ -66,7 +66,7 @@
 #define RAN_MAX       2048u
 #define PEND_MAX      64u
 #define REACH_MAX     512u
-#define TYPES         0x30u
+#define TYPES         0x40u
 #define PUMP_EVERY_MS 1000u /* the alarm task's snapshots when nothing changed */
 /* A countdown on a keypad against the master's: the network's delay and UI-023's hold of a
  * reading that rose by less than a second. */
@@ -136,6 +136,7 @@ typedef struct {
     uint8_t blob[ALARM_CONFIG_BLOB_MAX];
     alarm_config_t cfg;
     const char *name;
+    uint16_t caps; /* the capability bits it offers at its next boot (0: none) */
     bool reused; /* an earlier boot's port saw a key and nonce twice */
     /* its NVS */
     bool have_rec;
@@ -205,6 +206,8 @@ typedef struct {
     bool m_reused;
     plink_master_port_t port;
     plink_master_t m;
+    uint16_t m_caps; /* the capability bits the master offers at its next start (0: none) */
+    unsigned m_got[TYPES]; /* frames delivered to the master, by type */
     int mnode, xnode;
     kp_t kp[KP_MAX];
     unsigned nkp;
@@ -832,6 +835,9 @@ static unsigned ran_dev(uint8_t device)
 static void m_input(void *ctx, uint64_t now, const plink_addr_t *from, const uint8_t *f, size_t len)
 {
     (void)ctx;
+    if (len > 3u && f[3] < TYPES) {
+        R.m_got[f[3]]++;
+    }
     plink_master_input(&R.m, clock_of(now, R.m_off), from, f, len);
 }
 
@@ -1098,7 +1104,7 @@ static void kp_boot(kp_t *k)
     k->port.store = kp_store;
     k->port.resolve = kp_resolve;
     plink_keypad_init(&k->k, &k->c, &k->port, k->have_rec ? &k->rec : NULL, k->blob, sizeof k->blob,
-                      &k->cfg, PLINK_KIND_PANEL, &CAP, k->name, "1.4.0", know(k));
+                      &k->cfg, PLINK_KIND_PANEL, &CAP, k->caps, k->name, "1.4.0", know(k));
     k->resolve_due = false;
     plink_keypad_info_t in;
     plink_keypad_info(&k->k, know(k), &in);
@@ -1449,7 +1455,8 @@ static void master_restart(void)
     plink_test_port_init(&R.tpm, (0x3A570000ull + NOW) ^ SEED);
     R.tpm.only_dir = R.damaged ? PLINK_DIR_MASTER : 0u;
     R.cm = plink_test_port(&R.tpm);
-    plink_master_init(&R.m, &R.cm, &R.port, &R.stored, "Harbor House", "a1b2c3", mnow());
+    plink_master_init(&R.m, &R.cm, &R.port, &R.stored, "Harbor House", "a1b2c3", R.m_caps,
+                      mnow());
     plink_master_config(&R.m, R.blob, R.blob_len, R.blob_crc);
     plink_master_time(&R.m, mnow(), epoch_now(), "UTC0");
     pump(mnow());
@@ -1528,7 +1535,7 @@ static void x_tick(void *ctx, uint64_t now)
     TEST_ASSERT_TRUE(plink_enc_zones_req(&zq, PBUF, sizeof PBUF, &n));
     h_seal(PLINK_T_ZONES_REQ, PBUF, n);
     if (h->hellos && (h->bursts & 1u) != 0u &&
-        plink_hs_hello(h->c, h->rec.k_pair, h->rec.net_id, h->rec.device, &CAP, &h->hs)) {
+        plink_hs_hello(h->c, h->rec.k_pair, h->rec.net_id, h->rec.device, &CAP, 0u, &h->hs)) {
         (void)plink_net_send(&R.net, R.xnode, maddr(), h->hs.hello, h->hs.hello_len);
     }
 }
@@ -1575,7 +1582,7 @@ void setUp(void)
     R.port.lockout_left = p_lockout;
     R.port.events_after = p_events_after;
     R.port.note = p_note;
-    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", mnow());
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
     R.mnode = plink_net_node(&R.net, IP_M, NULL, m_input, m_tick, m_next);
     R.xnode = plink_net_node(&R.net, IP_X, NULL, x_input, x_tick, x_next);
     R.run_mode = RUN_NOW;
@@ -2207,6 +2214,67 @@ static void test_master_restart_keypads_back_within_15_s(void)
     TEST_ASSERT_EQUAL_UINT(0u, R.n_reach);
 }
 
+/* The caps the master holds for keypad k's live session, and k's own (0: none). */
+static uint16_t m_caps_of(const kp_t *k)
+{
+    plink_peer_info_t info[PLINK_KEYPADS_MAX];
+    const size_t n = plink_master_peers(&R.m, mnow(), info, PLINK_KEYPADS_MAX);
+    for (size_t i = 0; i < n; i++) {
+        if (info[i].device == dev(k)) {
+            return info[i].caps;
+        }
+    }
+    TEST_FAIL_MESSAGE("no such keypad at the master");
+    return 0u;
+}
+
+static uint16_t k_caps_of(const kp_t *k)
+{
+    plink_keypad_info_t in;
+    plink_keypad_info(&k->k, know(k), &in);
+    return in.caps;
+}
+
+/* LINK-043, LINK-017: the capability bits are chosen at run time and every session holds those
+ * both sides offer. A master offering FW and HOME, a keypad offering FW and PREFS: both hold FW;
+ * a keypad offering nothing: nothing in common. The master restarts offering PREFS too: the
+ * first keypad's new session holds FW and PREFS, the other still nothing. A bit no codec here
+ * knows (0x8000, 0x4000) is never offered, so never common. */
+static void test_capabilities_offered_meet_in_the_and(void)
+{
+    R.m_caps = PLINK_CAP_FW | PLINK_CAP_HOME | 0x8000u;
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
+    remake_blob();
+    plink_master_time(&R.m, mnow(), epoch_now(), "UTC0");
+    pump(mnow());
+    kp_t *a = kp_add();
+    a->caps = PLINK_CAP_FW | PLINK_CAP_PREFS | 0x4000u;
+    kp_boot(a);
+    pair_kp(a);
+    kp_t *b = kp_new();
+    pair_kp(b);
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW, m_caps_of(a));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW, k_caps_of(a));
+    TEST_ASSERT_EQUAL_HEX16(0u, m_caps_of(b));
+    TEST_ASSERT_EQUAL_HEX16(0u, k_caps_of(b));
+
+    R.m_caps = PLINK_CAPS_KNOWN;
+    master_restart();
+    TEST_ASSERT_TRUE(run_until(15000u, c_all_synced, NULL));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW | PLINK_CAP_PREFS, m_caps_of(a));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW | PLINK_CAP_PREFS, k_caps_of(a));
+    TEST_ASSERT_EQUAL_HEX16(0u, m_caps_of(b));
+    TEST_ASSERT_EQUAL_HEX16(0u, k_caps_of(b));
+    /* Nothing of a capability goes yet (that comes with its code): no frame of 0x2D and up
+     * either way. */
+    TEST_ASSERT_EQUAL_UINT8(PLINK_LINK_ONLINE, kstate(a));
+    for (unsigned t = PLINK_T_FW_INFO; t < TYPES; t++) {
+        TEST_ASSERT_EQUAL_UINT(0u, R.m_got[t]);
+        TEST_ASSERT_EQUAL_UINT(0u, a->got[t]);
+        TEST_ASSERT_EQUAL_UINT(0u, b->got[t]);
+    }
+}
+
 /* LINK-018: a keypad's command runs once though its answers are lost and it gives up; the keypad
  * restarts (a new plink_keypad_t from its stored record) within the master's 90 s result cache
  * and sends another command: its request ids start from a new random base, so the new command
@@ -2557,7 +2625,7 @@ static void test_removal_says_bye_and_refuses_the_keypad(void)
     plink_test_port_init(&tp, 0x0DDBA11ull);
     const plink_crypto_t c = plink_test_port(&tp);
     plink_hs_k_t hs;
-    TEST_ASSERT_TRUE(plink_hs_hello(&c, old.k_pair, old.net_id, old.device, &CAP, &hs));
+    TEST_ASSERT_TRUE(plink_hs_hello(&c, old.k_pair, old.net_id, old.device, &CAP, 0u, &hs));
     plink_net_inject(&R.net, a->node, maddr(), hs.hello, hs.hello_len);
     run_ms(500u);
     TEST_ASSERT_EQUAL_UINT(1u, m_sent_to(a->node, PLINK_T_NOT_PAIRED));
@@ -3417,6 +3485,7 @@ int main(void)
     RUN_TEST(test_a_new_keypad_gets_the_newest_50_events);
     RUN_TEST(test_a_change_shows_on_every_keypad_within_a_second);
     RUN_TEST(test_master_restart_keypads_back_within_15_s);
+    RUN_TEST(test_capabilities_offered_meet_in_the_and);
     RUN_TEST(test_keypad_restart_within_the_cache_runs_each_command_once);
     RUN_TEST(test_master_to_keypad_cut_lost_at_30_s_and_trouble_by_status_age);
     RUN_TEST(test_keypad_to_master_cut_trouble_after_the_supervision_time);

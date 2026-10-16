@@ -46,7 +46,8 @@
 #define ZONES_GAP_MAX_MS  30000u  /* ... the gap doubling while the CRC still differs */
 #define NOT_PAIRED_RUN_MS 120000u /* NOT_PAIRED hints further apart start a new run */
 #define STORE_RETRY_MS    5000u
-#define OWN_PAYLOAD_MAX   64u /* the keypad's own payloads: HEARTBEAT, CMD, the requests */
+#define OWN_PAYLOAD_MAX   225u /* the keypad's own payloads (HEARTBEAT, CMD, the requests, FW_INFO,
+                                * FW_STATE, DEV_ACT, PREFS): PLINK_PAYLOAD_SMALL */
 #define EV_FILL_TRIES     4u  /* EV_REQs for one hole in the events before it is let be */
 
 enum { STORE_NONE = 0, STORE_WRITE = 1, STORE_ERASE = 2 };
@@ -209,7 +210,8 @@ static void hs_send(plink_keypad_t *k, uint64_t now)
     }
     k->hs_backoff_ms = base * 2u < PLINK_BACKOFF_MAX_MS ? base * 2u : PLINK_BACKOFF_MAX_MS;
     k->hs_due_ms = now + wait;
-    if (plink_hs_hello(k->c, k->rec.k_pair, k->rec.net_id, k->rec.device, &k->cap, &k->hs)) {
+    if (plink_hs_hello(k->c, k->rec.k_pair, k->rec.net_id, k->rec.device, &k->cap, k->caps,
+                       &k->hs)) {
         k->hs_to = *to;
         k->hs_bcast = to == &k->disc ? k->disc_bcast : plink_addr_is_broadcast(to);
         k->hs_checks = 0u;
@@ -1164,8 +1166,8 @@ static void on_sealed(plink_keypad_t *k, uint64_t now, const plink_addr_t *from,
 
 void plink_keypad_init(plink_keypad_t *k, const plink_crypto_t *c, const plink_keypad_port_t *port,
                        const plink_keypad_rec_t *rec, uint8_t *cfg_buf, size_t cfg_cap,
-                       alarm_config_t *cfg, uint8_t kind, const plink_caps_t *cap, const char *name,
-                       const char *fw, uint64_t now_ms)
+                       alarm_config_t *cfg, uint8_t kind, const plink_caps_t *cap, uint16_t caps,
+                       const char *name, const char *fw, uint64_t now_ms)
 {
     if (k == NULL) {
         return;
@@ -1182,9 +1184,10 @@ void plink_keypad_init(plink_keypad_t *k, const plink_crypto_t *c, const plink_k
     if (cap != NULL) {
         k->cap = *cap;
     }
+    k->caps = (uint16_t)(caps & PLINK_CAPS_KNOWN);
     plink_clean_text(name, bounded_len(name, PLINK_NAME_MAX), k->name, sizeof k->name);
     plink_clean_text(fw, bounded_len(fw, PLINK_FW_MAX), k->fw, sizeof k->fw);
-    plink_pk_init(&k->pair, c, kind, cap, name, fw);
+    plink_pk_init(&k->pair, c, kind, cap, k->caps, name, fw);
     k->started_ms = now_ms;
     forget_data(k, now_ms);
     k->seq = 0u;
@@ -1439,6 +1442,7 @@ void plink_keypad_info(const plink_keypad_t *k, uint64_t now_ms, plink_keypad_in
     if (k->have_master) {
         out->master = k->master;
     }
+    out->caps = k->live.valid ? k->live.caps : 0u;
     /* Only while the latest status still names it: the master may have moved on (a newer
      * configuration being pulled is no reason to update). */
     const bool named = k->view.have_status && k->view.cfg_crc == k->cfg_bad_crc;

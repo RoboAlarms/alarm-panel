@@ -32,7 +32,7 @@ typedef struct {
     uint32_t tx_seq;    /* the last seq sent (the next is tx_seq + 1) */
     plink_window_t rx;  /* the peer's seq seen */
     uint8_t proto;      /* the lower of the two sides' */
-    uint16_t caps;      /* the common capabilities */
+    uint16_t caps;      /* the common capabilities: this side's offer AND the peer's */
     plink_caps_t peer_cap; /* the keypad's capacities (master side) */
 } plink_session_t;
 
@@ -60,16 +60,18 @@ typedef struct {
     uint8_t n_k[PLINK_NONCE_LEN];
     uint8_t hello[128];           /* the HELLO frame, for the transcript and resending */
     size_t hello_len;
+    uint16_t caps;                /* what the HELLO offered */
 } plink_hs_k_t;
 
-/* A fresh HELLO (new e_k and n_k, never reused) from keypad `device` of net_id into hs->hello;
- * the frame to send is hs->hello. */
+/* A fresh HELLO (new e_k and n_k, never reused) from keypad `device` of net_id into hs->hello,
+ * offering caps (masked with PLINK_CAPS_KNOWN); the frame to send is hs->hello. */
 PLINK_MUST_CHECK
 bool plink_hs_hello(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN], uint16_t net_id,
-                    uint16_t device, const plink_caps_t *cap, plink_hs_k_t *hs);
+                    uint16_t device, const plink_caps_t *cap, uint16_t caps, plink_hs_k_t *hs);
 
-/* A WELCOME for the HELLO in hs: mac2 checked, the session derived into *out, e_k and n_k wiped,
- * hs->waiting cleared. false (out untouched): not an answer to this HELLO, or a bad MAC. */
+/* A WELCOME for the HELLO in hs: mac2 checked, the session derived into *out (its caps the
+ * HELLO's offer AND the WELCOME's), e_k and n_k wiped, hs->waiting cleared. false (out
+ * untouched): not an answer to this HELLO, or a bad MAC. */
 PLINK_MUST_CHECK
 bool plink_hs_finish(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN],
                      plink_hs_k_t *hs, const plink_hdr_t *h, const uint8_t *frame, size_t len,
@@ -80,13 +82,14 @@ void plink_hs_k_wipe(plink_hs_k_t *hs);
 /* ---- the master's answer ------------------------------------------------------------------- */
 
 /* Checks a HELLO from a paired keypad (mac1 under its K_pair; the header's sender and net_id are
- * the caller's to match with the keypad first), then makes the WELCOME into welcome (cap bytes)
- * and the pending session. *hello receives the HELLO's decoded fields: its nonce hello->n (the
- * caller drops HELLOs whose n_k it has seen) and the capacities. false: drop the HELLO, nothing
- * made (the WELCOME buffer is wiped). */
+ * the caller's to match with the keypad first), then makes the WELCOME (offering caps, masked
+ * with PLINK_CAPS_KNOWN) into welcome (cap bytes) and the pending session (its caps that offer
+ * AND the HELLO's). *hello receives the HELLO's decoded fields: its nonce hello->n (the caller
+ * drops HELLOs whose n_k it has seen) and the capacities. false: drop the HELLO, nothing made
+ * (the WELCOME buffer is wiped). */
 PLINK_MUST_CHECK
 bool plink_hs_answer(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN],
-                     const plink_hdr_t *h, const uint8_t *frame, size_t len,
+                     const plink_hdr_t *h, const uint8_t *frame, size_t len, uint16_t caps,
                      plink_session_t *pending, plink_hello_t *hello, uint8_t *welcome,
                      size_t cap, size_t *welcome_len);
 

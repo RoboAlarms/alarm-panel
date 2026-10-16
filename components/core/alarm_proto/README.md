@@ -1,7 +1,7 @@
 # alarm_proto
 
 **Tier:** core (portable C11) · **Features:** [10 MQTT and Home Assistant](../../../docs/features/10-MQTT-and-Home-Assistant/README.md), [13 OTA updates](../../../docs/features/13-OTA-Updates/README.md), [23 Home Assistant integration](../../../docs/features/23-Home-Assistant-Integration/README.md) ·
-**Tests:** [`test/`](test/) (5 suites: `proto`, `report`, `link`, `pair`, `fw`)
+**Tests:** [`test/`](test/) (8 suites: `proto`, `report`, `link`, `pair`, `fw`, `fwsrv`, `zwdev`, `prefs`)
 
 The panel's messages to the outside world, as functions over caller-owned buffers: MQTT topics
 and JSON payloads (partition status, zones, troubles, events, heartbeat), command parsing and
@@ -26,6 +26,7 @@ transport, TLS, clocks and randomness. No heap, no globals, no RTOS.
 | `include/alarm_proto/proto_zw.h` | The Z-Wave devices the panel switches, as Home Assistant switch, light and cover entities (MQTT-018..020) |
 | `include/alarm_proto/proto_zb.h` | The Zigbee network's diagnostics: `~/zigbee/state`, its Home Assistant sensor, and a zone's device battery and signal (MQTT-021, MQTT-022) |
 | `include/alarm_proto/proto_pair.h` | The panel's pairing state machine: 2-minute window, commitment check, the code, allow or reject |
+| `include/alarm_proto/proto_prefs.h` | A panel's Screen and sound settings as fields with frozen ids, ranges and JSON keys: the panel link's TLV list (encode, decode with a refusal per field) and its CRC, and the Home Assistant link's `values` object (writer and parser) (docs/features/11 "Settings fields") |
 
 ## Depends on
 - Project components: `alarm_core` (configuration, snapshot, events, `alarm_strings.h`,
@@ -66,3 +67,6 @@ Run all host tests with `pwsh tools/host_test.ps1` (Windows) or
 - `link`, `pair`: SHA-256 against the FIPS vectors, framing, the pairing code (golden vectors
   shared with aioroboalarms), message writers and parser; the pairing state machine. Tags
   `HAI-NNN` (docs/features/23).
+- `prefs`: the settings fields' frozen table, the TLV list (golden bytes and CRC, wrong lengths,
+  unknown ids, ranges), the JSON values and parser, and random input. Tags `LINK-050`..`LINK-052`
+  (docs/features/11), `HAI-017`.

@@ -110,6 +110,7 @@ typedef struct {
 typedef struct {
     /* private */
     const plink_crypto_t *c;
+    uint16_t caps;       /* what the master offers in PAIR_COMMIT */
     uint16_t net_id;
     char name[PLINK_NAME_MAX + 1];
     char panel_id[PLINK_PANEL_ID_LEN + 1];
@@ -151,7 +152,8 @@ typedef struct {
     char name[PLINK_NAME_MAX + 1];
 } plink_pair_new_t;
 
-void plink_pm_init(plink_pair_m_t *pm, const plink_crypto_t *c);
+/* caps: what the master offers in PAIR_COMMIT (masked with PLINK_CAPS_KNOWN). */
+void plink_pm_init(plink_pair_m_t *pm, const plink_crypto_t *c, uint16_t caps);
 /* The master's identity for PAIR_COMMIT, and its zones for the capacity check. */
 void plink_pm_identity(plink_pair_m_t *pm, uint16_t net_id, const char *name,
                        const char panel_id[PLINK_PANEL_ID_LEN + 1], uint16_t zones_used);
@@ -183,6 +185,7 @@ typedef struct {
     const plink_crypto_t *c;
     uint8_t kind;
     plink_caps_t cap;
+    uint16_t caps;                 /* what the keypad offers in PAIR_REQ */
     char name[PLINK_NAME_MAX + 1];
     char fw[PLINK_FW_MAX + 1];
     uint8_t state;
@@ -215,9 +218,10 @@ typedef struct {
     uint8_t device;                /* DONE: the number the master gave */
 } plink_pair_k_t;
 
-/* name: what the keypad calls itself; fw its version; kind and capacities as in PAIR_REQ. */
+/* name: what the keypad calls itself; fw its version; kind, capacities and the capability bits it
+ * offers (masked with PLINK_CAPS_KNOWN) as in PAIR_REQ. */
 void plink_pk_init(plink_pair_k_t *pk, const plink_crypto_t *c, uint8_t kind,
-                   const plink_caps_t *cap, const char *name, const char *fw);
+                   const plink_caps_t *cap, uint16_t caps, const char *name, const char *fw);
 /* A person started pairing with the master at that address (from discovery: its TXT net is
  * net_id, 0 when not known): a new pairing of up to 3 attempts; sends PAIR_REQ. broadcast (the
  * subnet's broadcast when mDNS found nothing, LINK-021; 255.255.255.255 always is one) asks every

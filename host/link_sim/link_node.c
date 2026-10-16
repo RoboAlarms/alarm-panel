@@ -647,7 +647,7 @@ bool link_master_init(link_master_t *v, const plink_crypto_t *c, const link_io_t
     }
     char id[PLINK_PANEL_ID_LEN + 1];
     snprintf(id, sizeof(id), "%s", panel_id != NULL ? panel_id : "0ac5e1");
-    plink_master_init(&v->m, c, &port, have, name != NULL ? name : "PC master", id, now_ms);
+    plink_master_init(&v->m, c, &port, have, name != NULL ? name : "PC master", id, 0u, now_ms);
     const unsigned count = have != NULL ? rec.count : 0u;
     plink_wipe(&rec, sizeof(rec));
     plink_master_net(&v->m, now_ms, true);
@@ -910,7 +910,7 @@ void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t
         .devices = ALARM_MAX_DEVICES,
     };
     plink_keypad_init(&v->k, c, &port, have, v->cfg_buf, sizeof(v->cfg_buf), &v->cfg,
-                      PLINK_KIND_PC, &cap, name != NULL ? name : "PC keypad", LINK_FW, now_ms);
+                      PLINK_KIND_PC, &cap, 0u, name != NULL ? name : "PC keypad", LINK_FW, now_ms);
     plink_wipe(&rec, sizeof(rec));
     if (master != NULL) {
         plink_keypad_master_addr(&v->k, now_ms, master, plink_addr_is_broadcast(master));

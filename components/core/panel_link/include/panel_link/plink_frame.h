@@ -27,6 +27,9 @@ extern "C" {
 #define PLINK_FRAME_ESPNOW 250u /* LINK-005: ESP-NOW v1 */
 #define PLINK_SEALED_OVERHEAD (PLINK_HDR_LEN + PLINK_TAG_LEN)
 #define PLINK_PAYLOAD_MAX (PLINK_FRAME_MAX - PLINK_SEALED_OVERHEAD)
+/* 225: a sealed payload in a 250-byte frame. Every payload but FW_PAGE and DEV_LIST_PAGE fits it
+ * at its longest (LINK-043; plink_msg.h's PLINK_*_MAX). */
+#define PLINK_PAYLOAD_SMALL (PLINK_FRAME_ESPNOW - PLINK_SEALED_OVERHEAD)
 
 #define PLINK_FLAG_SEALED      0x01u
 #define PLINK_FLAG_FROM_MASTER 0x02u
@@ -73,6 +76,23 @@ typedef enum {
     PLINK_T_HEARTBEAT = 0x2A,
     PLINK_T_TIME = 0x2B,
     PLINK_T_BYE = 0x2C,
+    /* Updates through the link (PLINK_CAP_FW). */
+    PLINK_T_FW_INFO = 0x2D,
+    PLINK_T_FW_ORDER = 0x2E,
+    PLINK_T_FW_STATE = 0x2F,
+    PLINK_T_FW_REQ = 0x30,
+    PLINK_T_FW_PAGE = 0x31,
+    /* Smart Home on keypads (PLINK_CAP_HOME). */
+    PLINK_T_DEV_LIST_REQ = 0x32,
+    PLINK_T_DEV_LIST_PAGE = 0x33,
+    PLINK_T_DEV_STATE = 0x34,
+    PLINK_T_DEV_STATE_REQ = 0x35,
+    PLINK_T_DEV_ACT = 0x36,
+    PLINK_T_DEV_ACK = 0x37,
+    /* A keypad's settings (PLINK_CAP_PREFS). */
+    PLINK_T_PREFS = 0x38,
+    PLINK_T_PREFS_REQ = 0x39,
+    PLINK_T_PREFS_SET = 0x3A,
 } plink_type_t;
 
 /* What this firmware knows about a type: known, sealed, and which side sends it. */
@@ -80,8 +100,10 @@ bool plink_type_known(uint8_t type);
 bool plink_type_sealed(uint8_t type);      /* 0x20 and up */
 bool plink_type_from_master(uint8_t type); /* COMMIT, REVEAL, DONE, WELCOME, REKEY, NOT_PAIRED,
                                             * BEACON, STATUS, ZONES, CFG_PAGE, EVENTS, RESULT,
-                                            * SOUND, TIME, BYE; and PAIR_FAIL, which travels
-                                            * either way (plink_hdr_read takes it from both) */
+                                            * SOUND, TIME, BYE, FW_ORDER, FW_PAGE, DEV_LIST_PAGE,
+                                            * DEV_STATE, DEV_ACK, PREFS_REQ, PREFS_SET; and
+                                            * PAIR_FAIL, which travels either way (plink_hdr_read
+                                            * takes it from both) */
 
 typedef struct {
     uint8_t type;

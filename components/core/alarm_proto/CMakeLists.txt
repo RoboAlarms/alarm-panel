@@ -1,6 +1,6 @@
 # alarm_proto - the panel's MQTT messages: JSON writer/reader, status/zone/event payloads,
 # commands, Home Assistant discovery, the store-and-forward reporter and firmware-update helpers
-# (C11, no heap).
+# (C11, no heap), and the settings fields of a panel's Screen and sound page (proto_prefs).
 # Builds as an ESP-IDF component, or as a plain CMake static library for the host tests.
 set(ALARM_PROTO_SRCS
     src/json_write.c
@@ -14,6 +14,7 @@ set(ALARM_PROTO_SRCS
     src/sha256.c
     src/link.c
     src/pair.c
+    src/proto_prefs.c
 )
 
 if(ESP_PLATFORM)

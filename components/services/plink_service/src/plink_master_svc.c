@@ -1047,7 +1047,9 @@ esp_err_t msvc_prepare(uint64_t now)
         .events_after = port_events_after,
         .note = port_note,
     };
-    plink_master_init(s_m, &g_link.crypto, &port, have ? &rec : NULL, s_name, g_link.panel_id, now);
+    /* No capability is offered yet: each comes with the code that uses it (LINK-043). */
+    plink_master_init(s_m, &g_link.crypto, &port, have ? &rec : NULL, s_name, g_link.panel_id, 0u,
+                      now);
     plink_wipe(&rec, sizeof rec);
     /* The manager starts with the network up; the service says how it is now, so supervision
      * pauses at once on a master whose Wi-Fi isn't there yet and resumes one period after it is

@@ -30,7 +30,15 @@ on a panel, `host/link_sim` on a PC) and drives the managers here with frames an
 - Plain C11, no heap, no globals; time comes in as ms. One task owns a manager.
 - The frame (`plink_frame.h`), the message payloads (`plink_msg.h`) and the stored records
   (`plink_store.h`) are contracts between firmware versions: never renumber or reuse, only append
-  (LINK-017); a stored format change adds a frozen fixture next to `test/plink_store_fixture_v1.h`.
+  (LINK-017); a stored format change adds a frozen fixture next to `test/plink_store_fixture_v1.h`,
+  and every v1 payload, with every v1 number of the tables, is frozen in
+  `test/plink_wire_fixture_v1.h` (never edited).
+- A PREFS or PREFS_SET fields body travels as one span, its count first, exactly as
+  `proto_prefs_encode` writes it and `proto_prefs_decode` and `proto_prefs_crc` read it (bytes a
+  later version appends inside the section included).
+- What a panel offers (`PLINK_CAP_*`) is an argument of `plink_master_init` and
+  `plink_keypad_init`; a session keeps the bits both sides offered, masked with
+  `PLINK_CAPS_KNOWN`, and a capability's types go only in a session with its bit (LINK-043).
 - No code, key or nonce is logged; secrets are wiped with `plink_wipe` (LINK-018).
 - Tests name the requirement they prove (`/* LINK-003: ... */`).
 
@@ -46,6 +54,11 @@ one of them with Python's `cryptography`, independently of the C code.
 byte against `test/vectors_plink_pair.py` and `test/vectors_plink_session.py` (random numbers
 scripted through the port), then each state machine against a device in the middle, replays and
 every timer; pairing asked by broadcast, and a newer firmware's longer payloads.
+
+`test_plink_msg.c` holds a golden payload of every message, written by hand from the tables;
+`test/vectors_plink_msg.py` builds the same bytes with Python's `struct` (`--check` compares them,
+and the frozen `test/plink_wire_fixture_v1.h`, which `--fixture` made once). The test reads each
+fixture payload as the values frozen with it and pins every v1 number to the fixture's.
 
 Every parser gets random bytes, each input ending at the end of its buffer: the message decoders
 (`test_plink_msg.c`), the stored records with their CRC made right again (`test_plink_store.c`),

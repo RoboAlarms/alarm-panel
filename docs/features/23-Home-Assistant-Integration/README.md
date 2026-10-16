@@ -91,7 +91,7 @@ re-authenticate and repair from HA's UI; local push; every sensor a device you c
 | HAI-012 | Distribution: its own GitHub repository (HACS allows one integration per repository), brand icon in `brand/` (HA 2026.3+), releases, "Open in HACS" and "Add integration" My Home Assistant buttons in the README; the protocol client is a separate Python package on PyPI so the integration can move to HA core later | review |
 | HAI-013 | Message protocol versioned (`api` number); the integration refuses a panel with an unsupported major version with a clear repair message | integration tests |
 | HAI-016 | The master is the only panel Home Assistant talks to. It relays its link keypads (they run no `ha_link` or its mDNS service, docs/features/11 LINK-020) through the API 1 additions `settings`, `keypads`, `settings_set` and `settings_result`. The integration makes these entities only once the messages arrive, so an older panel or integration is unaffected; `api` stays 1 (designed 2026-10-16, BL-216) | integration tests, `test_link.c` |
-| HAI-017 | Each panel's display, sound and announcement settings (master and keypads) are config entities whose state comes only from the panel's report. A `settings_set` needs the pinned connection and no code (anyone at a panel may change them, `panel_prefs.h:2-4`). It is answered ok, or with each refused key and why. Language, region, a keypad's name, home partition and supervision are not settable (designed, BL-216; the master's own settings and no language or region are the owner's decisions 7 and 5 in docs/features/11 Decisions, decided 2026-10-16) | integration tests |
+| HAI-017 | Each panel's display, sound and announcement settings (master and keypads) are config entities whose state comes only from the panel's report. A `settings_set` needs the pinned connection and no code (anyone at a panel may change them, `panel_prefs.h:2-4`). It is answered ok, or with each refused key and why. A `values` that isn't an object, an empty or over-long key, a known key with a value of the wrong JSON kind (a wrong type, a fraction, null, a number beyond int64) or named twice fails the whole `settings_set` with error `bad`; the six refused words stay, and `bad` is never one of them (protocol.md). Language, region, a keypad's name, home partition and supervision are not settable (designed, BL-216; the master's own settings and no language or region are the owner's decisions 7 and 5 in docs/features/11 Decisions, decided 2026-10-16) | integration tests, `test_prefs.c` |
 | HAI-018 | Each keypad is its own device under the panel, identified by its own panel id, with connectivity, signal and firmware. It is unavailable while not heard for 30 s or while the link is down. It is never removed by itself and can be deleted once unlisted. It has entities only for the keys it accepts (designed, BL-216) | integration tests |
 | HAI-019 | At most 1 `settings_set` a second per target (burst 3), one in flight per target, a queue of 8. `not_found`, `offline` and `unsupported` are answered at once, `timeout` after 7 s. The panel enforces display safety (docs/features/07 UI-046) (designed, BL-216) | `test_link.c`, HIL |
 
@@ -193,14 +193,14 @@ entity and icon translations, entity categories) ([rules](https://developers.hom
 The owner (2026-10-16): "Home Assistant should also be able to control the settings of the
 slave panel as well." Home Assistant still talks only to the master, which relays its link keypads
 (docs/features/11 "Smart Home and Home Assistant on keypads"; the messages are protocol.md "Panel
-settings and keypads"). Nothing of it is built. The owner decided the questions it needs on
-2026-10-16, each as recommended (docs/features/11 Decisions). The integration's 0.2.0 isn't
-released (BL-173), so this goes into 0.3.0.
+settings and keypads"). Only `proto_prefs` is built (below). The owner decided the questions it
+needs on 2026-10-16, each as recommended (docs/features/11 Decisions). The integration's 0.2.0
+isn't released (BL-173), so this goes into 0.3.0.
 
 **On the panel:**
 - `alarm_proto`:
-  - `proto_prefs.h/.c`: the table, the TLV, the JSON values writer, the `settings_set` parser,
-    the CRC;
+  - `proto_prefs.h/.c` (built, host-tested): the table, the TLV, the JSON values writer, the
+    `settings_set` parser, the CRC;
   - `proto_link.h`: `PROTO_LINK_IN_SETTINGS_SET` appended to `proto_link_in_type_t` (`:201-210`);
   - the writers `proto_link_settings`, `proto_link_keypads` and `proto_link_settings_result`, and
     `proto_link_parse_settings_set`.

@@ -9,3 +9,6 @@ endforeach()
 alarm_add_test(fw SOURCES test_fw.c LIBS alarm_proto unity)
 # test_fwsrv: the firmware server - domain, check, languages, signing keys, trust record (OTA-017..OTA-025).
 alarm_add_test(fwsrv SOURCES test_fwsrv.c LIBS alarm_proto unity)
+# test_prefs: the settings fields on the panel link and in the Home Assistant link's JSON
+# (docs/features/11 LINK-050..052, docs/features/23 HAI-017).
+alarm_add_test(prefs SOURCES test_prefs.c LIBS alarm_proto unity)

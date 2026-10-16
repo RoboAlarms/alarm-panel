@@ -53,9 +53,9 @@ static void rig(uint64_t seed)
     R.ak = plink_addr_udp(IP_K, PLINK_UDP_PORT);
     R.ax = plink_addr_udp(IP_X, PLINK_UDP_PORT);
     R.now = 1000000u;
-    plink_pm_init(&R.pm, &R.cm);
+    plink_pm_init(&R.pm, &R.cm, 0u);
     plink_pm_identity(&R.pm, NET, "Harbor House", "a1b2c3", ZONES);
-    plink_pk_init(&R.pk, &R.ck, PLINK_KIND_PANEL, &CAP, "Hall keypad", "1.4.0");
+    plink_pk_init(&R.pk, &R.ck, PLINK_KIND_PANEL, &CAP, 0u, "Hall keypad", "1.4.0");
 }
 
 void setUp(void)
@@ -486,9 +486,9 @@ static void test_golden_pairing(void)
     fill(ms_bytes, sizeof ms_bytes, 0x57u, 0x13u);
     R.ck = script_port(&ks, &R.tpk, kp_bytes, sizeof kp_bytes);
     R.cm = script_port(&ms, &R.tpm, ms_bytes, sizeof ms_bytes);
-    plink_pm_init(&R.pm, &R.cm);
+    plink_pm_init(&R.pm, &R.cm, 0u);
     plink_pm_identity(&R.pm, NET, "Harbor House", "a1b2c3", ZONES);
-    plink_pk_init(&R.pk, &R.ck, PLINK_KIND_PANEL, &CAP, "Hall keypad", "1.4.0");
+    plink_pk_init(&R.pk, &R.ck, PLINK_KIND_PANEL, &CAP, 0u, "Hall keypad", "1.4.0");
 
     plink_pm_open(&R.pm, R.now);
     plink_pk_start(&R.pk, R.now, &R.am, false, 0u, &A);
@@ -634,9 +634,9 @@ static void test_mitm_full_codes_differ(void)
 {
     static plink_pair_m_t xm; /* the device's master side, facing the keypad */
     static plink_pair_k_t xk; /* its keypad side, facing the master */
-    plink_pm_init(&xm, &R.cx);
+    plink_pm_init(&xm, &R.cx, 0u);
     plink_pm_identity(&xm, NET, "Harbor House", "a1b2c3", ZONES);
-    plink_pk_init(&xk, &R.cx, PLINK_KIND_PANEL, &CAP, "Hall keypad", "1.4.0");
+    plink_pk_init(&xk, &R.cx, PLINK_KIND_PANEL, &CAP, 0u, "Hall keypad", "1.4.0");
     plink_pm_open(&R.pm, R.now);
     plink_pm_open(&xm, R.now);
     plink_hdr_t h;
@@ -775,7 +775,7 @@ static void test_forged_confirmations(void)
 static void test_attacker_aborts_after_reveal(void)
 {
     static plink_pair_k_t atk;
-    plink_pk_init(&atk, &R.cx, PLINK_KIND_PC, &CAP, "x", "0");
+    plink_pk_init(&atk, &R.cx, PLINK_KIND_PC, &CAP, 0u, "x", "0");
     plink_pm_open(&R.pm, R.now);
     for (unsigned i = 0; i < 3u; i++) {
         plink_pk_start(&atk, R.now, &R.am, false, 0u, &A); /* a new pairing each time */
@@ -950,7 +950,7 @@ static void test_changed_repeats_end_it(void)
 static void test_overlap_two_keypads(void)
 {
     static plink_pair_k_t other;
-    plink_pk_init(&other, &R.cx, PLINK_KIND_PANEL, &CAP, "Porch keypad", "1.4.0");
+    plink_pk_init(&other, &R.cx, PLINK_KIND_PANEL, &CAP, 0u, "Porch keypad", "1.4.0");
     plink_pm_open(&R.pm, R.now);
     plink_pk_start(&R.pk, R.now, &R.am, false, 0u, &A);
     to_master(&A, &B);
@@ -975,7 +975,7 @@ static void test_overlap_two_keypads(void)
     /* No attempt under way: a refused request (capacity) holds the window's address. */
     rig(0x2468u);
     static const plink_caps_t small = {4u, 8u, 32u, 16u};
-    plink_pk_init(&other, &R.cx, PLINK_KIND_SMALL, &small, "Small", "1.0");
+    plink_pk_init(&other, &R.cx, PLINK_KIND_SMALL, &small, 0u, "Small", "1.0");
     plink_pm_open(&R.pm, R.now);
     plink_pk_start(&other, R.now, &R.am, false, 0u, &A);
     master_gets(&R.ax, A.buf, A.len, &B);
@@ -994,7 +994,7 @@ static void test_overlap_two_keypads(void)
 static void test_overlap_two_masters(void)
 {
     static plink_pair_m_t second;
-    plink_pm_init(&second, &R.cx);
+    plink_pm_init(&second, &R.cx, 0u);
     plink_pm_identity(&second, 0x2222u, "Garage", "ffeedd", 4u);
     plink_pm_open(&R.pm, R.now);
     plink_pm_open(&second, R.now);
@@ -1016,7 +1016,7 @@ static void test_overlap_two_masters(void)
 
     /* The second master's first: nothing disclosed, not counted. */
     rig(0x1357u);
-    plink_pm_init(&second, &R.cx);
+    plink_pm_init(&second, &R.cx, 0u);
     plink_pm_identity(&second, 0x2222u, "Garage", "ffeedd", 4u);
     plink_pm_open(&second, R.now);
     plink_pk_start(&R.pk, R.now, &R.am, false, 0u, &A);
@@ -1226,7 +1226,7 @@ static void test_done_lost_cached(void)
 static void test_capacity_and_refusals(void)
 {
     static const plink_caps_t small = {4u, ZONES - 1u, 32u, 16u};
-    plink_pk_init(&R.pk, &R.ck, PLINK_KIND_SMALL, &small, "Small keypad", "1.0");
+    plink_pk_init(&R.pk, &R.ck, PLINK_KIND_SMALL, &small, 0u, "Small keypad", "1.0");
     plink_pm_open(&R.pm, R.now);
     plink_pk_start(&R.pk, R.now, &R.am, false, 0u, &A);
     to_master(&A, &B);
@@ -1243,7 +1243,7 @@ static void test_capacity_and_refusals(void)
 
     rig(0x61u);
     static const plink_caps_t exact = {4u, ZONES, 32u, 16u};
-    plink_pk_init(&R.pk, &R.ck, PLINK_KIND_SMALL, &exact, "Small keypad", "1.0");
+    plink_pk_init(&R.pk, &R.ck, PLINK_KIND_SMALL, &exact, 0u, "Small keypad", "1.0");
     to_compare();
     plink_pm_decide(&R.pm, R.now, false, &A); /* the installer says no */
     TEST_ASSERT_EQUAL_UINT8(PLINK_FAIL_REFUSED, fail_reason(&A));
@@ -1366,7 +1366,7 @@ static void test_taken_only_when_it_can_be(void)
     TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_COMMIT, type_of(&B));
 
     static plink_pair_k_t idle;
-    plink_pk_init(&idle, &R.cx, PLINK_KIND_PANEL, &CAP, "Idle", "1");
+    plink_pk_init(&idle, &R.cx, PLINK_KIND_PANEL, &CAP, 0u, "Idle", "1");
     keypad_gets(&idle, &R.am, B.buf, B.len, &C);
     TEST_ASSERT_EQUAL_UINT(0u, C.len);
     TEST_ASSERT_EQUAL_UINT8(PLINK_PS_IDLE, idle.state);
@@ -1391,7 +1391,7 @@ static void test_taken_only_when_it_can_be(void)
     TEST_ASSERT_EQUAL_UINT8(PLINK_PS_COMPARE, k_info().state);
 
     static plink_pair_m_t nonet;
-    plink_pm_init(&nonet, &R.cm);
+    plink_pm_init(&nonet, &R.cm, 0u);
     plink_pm_open(&nonet, R.now);
     TEST_ASSERT_EQUAL_UINT8(PLINK_PS_IDLE, nonet.state);
     TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, plink_pm_next(&nonet));
@@ -1599,7 +1599,7 @@ static void test_broadcast_two_masters_overlap(void)
 {
     static plink_pair_m_t second;
     const plink_addr_t bc = plink_addr_udp(IP_BCAST, PLINK_UDP_PORT);
-    plink_pm_init(&second, &R.cx);
+    plink_pm_init(&second, &R.cx, 0u);
     plink_pm_identity(&second, 0x2222u, "Garage", "ffeedd", 4u);
     plink_pm_open(&R.pm, R.now);
     plink_pm_open(&second, R.now);
@@ -1642,7 +1642,7 @@ static void test_broadcast_two_masters_overlap(void)
     /* The second's COMMIT first: it is the one, and the first's ends the attempt before the
      * PAIR_NONCE reaches anyone else. */
     rig(0x2B2Bu);
-    plink_pm_init(&second, &R.cx);
+    plink_pm_init(&second, &R.cx, 0u);
     plink_pm_identity(&second, 0x2222u, "Garage", "ffeedd", 4u);
     plink_pm_open(&R.pm, R.now);
     plink_pm_open(&second, R.now);
@@ -1665,7 +1665,7 @@ static void test_broadcast_refusal_before_commit(void)
 {
     static plink_pair_m_t closed;
     const plink_addr_t bc = plink_addr_udp(IP_BCAST, PLINK_UDP_PORT);
-    plink_pm_init(&closed, &R.cx);
+    plink_pm_init(&closed, &R.cx, 0u);
     plink_pm_identity(&closed, 0x2222u, "Garage", "ffeedd", 4u);
     plink_pm_open(&R.pm, R.now);
     plink_pk_start(&R.pk, R.now, &bc, false, 0u, &A);
@@ -1683,7 +1683,7 @@ static void test_broadcast_refusal_before_commit(void)
 
     /* Only the closed one: TIMEOUT at the step's end, shown as CLOSED, nothing counted. */
     rig(0x3C3Cu);
-    plink_pm_init(&closed, &R.cx);
+    plink_pm_init(&closed, &R.cx, 0u);
     plink_pm_identity(&closed, 0x2222u, "Garage", "ffeedd", 4u);
     const uint64_t t0 = R.now;
     plink_pk_start(&R.pk, R.now, &bc, false, 0u, &A);

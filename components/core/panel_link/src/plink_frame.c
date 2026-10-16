@@ -72,7 +72,21 @@ bool plink_type_known(uint8_t type)
     case PLINK_T_SOUND:
     case PLINK_T_HEARTBEAT:
     case PLINK_T_TIME:
-    case PLINK_T_BYE: return true;
+    case PLINK_T_BYE:
+    case PLINK_T_FW_INFO:
+    case PLINK_T_FW_ORDER:
+    case PLINK_T_FW_STATE:
+    case PLINK_T_FW_REQ:
+    case PLINK_T_FW_PAGE:
+    case PLINK_T_DEV_LIST_REQ:
+    case PLINK_T_DEV_LIST_PAGE:
+    case PLINK_T_DEV_STATE:
+    case PLINK_T_DEV_STATE_REQ:
+    case PLINK_T_DEV_ACT:
+    case PLINK_T_DEV_ACK:
+    case PLINK_T_PREFS:
+    case PLINK_T_PREFS_REQ:
+    case PLINK_T_PREFS_SET: return true;
     default: return false;
     }
 }
@@ -100,7 +114,14 @@ bool plink_type_from_master(uint8_t type)
     case PLINK_T_RESULT:
     case PLINK_T_SOUND:
     case PLINK_T_TIME:
-    case PLINK_T_BYE: return true;
+    case PLINK_T_BYE:
+    case PLINK_T_FW_ORDER:
+    case PLINK_T_FW_PAGE:
+    case PLINK_T_DEV_LIST_PAGE:
+    case PLINK_T_DEV_STATE:
+    case PLINK_T_DEV_ACK:
+    case PLINK_T_PREFS_REQ:
+    case PLINK_T_PREFS_SET: return true;
     default: return false;
     }
 }

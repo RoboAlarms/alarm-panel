@@ -9,7 +9,9 @@ about 0.3 s. A keypad's own voice (LINK-028, decided 2026-10-16) works on the pa
 both speakers muted. Left: the bench cases below that need a person or a network change, ESP-NOW
 through our C6 build, 433 MHz, keypad inputs, GOTO, keypad updates at the master's order (M8,
 designed 2026-10-16: "Updates through the link"). Smart Home and Home Assistant on keypads
-designed 2026-10-16 (BL-216), its decisions and screens approved that day, not built ·
+designed 2026-10-16 (BL-216), its decisions and screens approved that day, not built. The v1 wire
+of both (types 0x2D-0x3A, run-time capabilities, the frozen fixture) is built and host-tested;
+nothing new is sent, as no panel offers a capability yet ·
 **Milestone:** M7 (keypad updates M8) · **Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
@@ -99,7 +101,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-014 | Removing a keypad at the master clears its trouble, sends a sealed BYE (three times), then wipes its keys (RAM first, then NVS); the keypad erases its master record and says it is not paired | unit + HIL |
 | LINK-015 | Each connection starts with a handshake (ephemeral X25519 and the pairing key) giving fresh session keys and a session id; a session's keys are installed once and nothing resets its counters; a replayed or forged HELLO never drops a live session; no side sends with seq ≥ 2^31 | unit |
 | LINK-016 | Pairing: within an attempt each value (pk_k, pk_m and commit, n_k, n_m, mac_k) is set once - only a byte-identical repeat gets the stored answer, a different one ends the attempt; an attempt counts once its secret is disclosed (the master's at PAIR_REVEAL, the keypad's at PAIR_NONCE), whatever ends it; 3 attempts per window, at least 3 s apart; the window lasts 2 min, 30 s per step, 2 min to compare the codes; a keypad starts an attempt only when a person asks; two keypads or two masters at once end the attempt; nothing is stored before both confirmation MACs verify | unit |
-| LINK-017 | Version skew: every payload section carries its length and a receiver takes what it knows and skips the rest; fields are only appended; the session uses the lower protocol version and the common capabilities, and a request the master can't serve is answered UNAVAILABLE; an unknown message type is dropped; v1's header never changes; the rules for later versions are LINK-038..042 | unit |
+| LINK-017 | Version skew: every payload section carries its length and a receiver takes what it knows and skips the rest; fields are only appended; the session uses the lower protocol version and the common capabilities (this side's offer, masked with `PLINK_CAPS_KNOWN`, AND the peer's, so a bit either side doesn't know is never shared), and a request the master can't serve is answered UNAVAILABLE; an unknown message type is dropped; v1's header never changes; the rules for later versions are LINK-038..042 | unit |
 | LINK-018 | Every command carries a request id (a random base drawn at each keypad start, then counted); the master answers a retry from its cache keyed on (keypad, request id) with a digest of the command, kept 90 s after the last copy arrived, and never runs a command twice; the same id with a different command runs as a new one; codes are never stored or logged, and every copy is wiped after use | unit |
 | LINK-019 | The keypad's copy of the configuration holds no code material (each code hash replaced by a filler unique to its slot, the salt zeroed) and shows duress users as standard users | unit |
 | LINK-020 | A panel in the keypad role runs no alarm engine, event log, zone sources, device sources or integrations; it shows and controls its master's devices through the link (LINK-044..049; designed, BL-216); it updates itself only at its master's order (LINK-029) or through LINK-025, only while its link is up and the master's partitions allow it (OTA-004), and its update self-test needs the link | HIL |
@@ -125,7 +127,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-040 | Fields are appended only, and absence is known from a section's length; a configuration field is never widened in place; a link record never raises compat and stays at most 1024 B; new per-keypad facts go in new NVS keys | `test_plink_msg.c`, `test_plink_store.c` |
 | LINK-041 | With keypads, a master's self-test needs one: `PANEL_OTA_OK_KEYPADS` (bit 1 << 6, `PANEL_OTA_HEALTH_COUNT` 7) beats while a keypad that was online in the minute before "installing" (NVS `link/kup`) has a session again and sends heartbeats; with no such keypad it always beats. A newer master that can't talk to its keypads goes back | HIL |
 | LINK-042 | CI runs the frozen v1 message fixture, a future peer and, once released, the frozen v1 binaries in both roles, including a v1 keypad updated on each path | CI |
-| LINK-043 | Capabilities are chosen at run time. `PLINK_CAP_HOME` (0x0002) is offered by a build with home control, and on a keypad only with its mirror allocated. `PLINK_CAP_PREFS` (0x0004) is offered by every build with the UI. Types 0x32-0x3A go only in a session with their bit and only on a transport whose largest frame is 250 B or more, never 433 MHz. Every payload fits 225 B except DEV_LIST_PAGE, which fits the peer's frame (designed, BL-216) | unit, frozen fixture |
+| LINK-043 | Capabilities are chosen at run time: what a panel offers is an argument of `plink_master_init` and `plink_keypad_init`, masked with `PLINK_CAPS_KNOWN` (0x0007), and each session keeps its own offer AND the peer's, so an unknown bit is never shared (built; no panel offers a bit yet). `PLINK_CAP_HOME` (0x0002) is to be offered by a build with home control, and on a keypad only with its mirror allocated. `PLINK_CAP_PREFS` (0x0004) by every build with the UI. Types 0x32-0x3A go only in a session with their bit and only on a transport whose largest frame is 250 B or more, never 433 MHz. Every payload fits 225 B except DEV_LIST_PAGE, which fits the peer's frame (the codecs and the frozen fixture built; offering and sending designed, BL-216) | unit (`test_plink_session.c`, `test_plink_link.c`, `test_plink_msg.c`), frozen fixture |
 | LINK-044 | A keypad mirrors its master's device list: a catalog blob pulled by `list_crc` and paged as the configuration, at most 64 devices (v1; more needs a new bit), decoded leniently. A blob that fails is not pulled again and asks for no update. The old list is kept until a new one installs, with each row's state carried over by ref. RAM only (designed, BL-216) | unit, link |
 | LINK-045 | The master pushes changed device records at most one round per 500 ms per keypad (1 s on frames under 1,200 B), the full set at each new session and on DEV_STATE_REQ, and a summary every 10 s. A keypad whose `states_crc` differs asks after 250 ms, then at least 1 s apart, doubling to 30 s. A record applies only under the installed list and from a newer frame of the session for its device (LINK-026). On a working Wi-Fi network a keypad shows a change within 1 s of the master's own screen (designed, BL-216) | unit, link, HIL |
 | LINK-046 | While a keypad isn't ONLINE, or has had no device data for 30 s, every mirrored device reads offline since its last device data, as the master's do when Home Assistant drops (HCTL-006). A tap then sends nothing (designed, BL-216) | unit, preview |
@@ -197,7 +199,7 @@ followed by fields, so later fields can be appended (LINK-017).
 | 0x27 | `CMD` | K->M | sealed | req u32, op u8, op section, code (len u8 + ALARM_CODE_MAX_LEN bytes, zero-padded), new code (the same) |
 | 0x28 | `RESULT` | M->K | sealed | req u32, result u8, user u8, not_ready_zone u16, may_disarm u8 |
 | 0x29 | `SOUND` | M->K | sealed | partition u8, sound u8, zone u16 |
-| 0x2A | `HEARTBEAT` | K->M | sealed | flags u8 (bit 0 mains lost, 1 battery low, 2 battery present), rssi i8, uptime_s u32, status_age_s u16 (0xFFFF none yet), fw (≤ 31); designed (BL-216): in a session with `PLINK_CAP_PREFS`, an appended section with prefs_crc u32, read only when bytes remain |
+| 0x2A | `HEARTBEAT` | K->M | sealed | flags u8 (bit 0 mains lost, 1 battery low, 2 battery present), rssi i8, uptime_s u32, status_age_s u16 (0xFFFF none yet), fw (≤ 31); in a session with `PLINK_CAP_PREFS`, an appended section with prefs_crc u32 (its codec built, not sent yet: BL-216), read only when bytes remain |
 | 0x2B | `TIME` | M->K | sealed | epoch_ms i64, tz (≤ 63, POSIX TZ) |
 | 0x2C | `BYE` | M->K | sealed | reason u8 (removed at the master) |
 | 0x32 | `DEV_LIST_REQ` | K->M | sealed | list_crc u32, offset u32, max u16 (CFG_REQ's layout and codec) |
@@ -210,9 +212,10 @@ followed by fields, so later fields can be appended (LINK-017).
 | 0x39 | `PREFS_REQ` | M->K | sealed | have_crc u32 |
 | 0x3A | `PREFS_SET` | M->K | sealed | req u32 (not 0), origin u8; fields section (count u8, TLVs of the fields to change) |
 
-Types 0x2D-0x31 are in "Updates through the link". Types 0x32-0x3A and the HEARTBEAT section are
-designed, not built (BL-216): their capability bits, sizes, values and rules are in "Smart Home and
-Home Assistant on keypads".
+Types 0x2D-0x31 are in "Updates through the link". Types 0x32-0x3A and the HEARTBEAT section, with
+their capability bits, sizes, values and rules, are in "Smart Home and Home Assistant on keypads".
+Their codecs, goldens and frozen fixture are built (`plink_msg.h`); nothing sends them yet, as no
+panel offers a capability (LINK-043).
 
 **STATUS.** System section: epoch_ms i64, partitions u8 (mask), home u8 (this keypad's home
 partition), sys_troubles u32, sys_restored u32, dev_troubles u32, default_codes u8, flags u8 (bit 0
@@ -386,9 +389,10 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
   every retry after the first failure. It keeps its live session until a WELCOME verifies.
 - `NOT_PAIRED` hints only change what the keypad says, after they repeat for 5 min; the keypad
   keeps its keys until a new pairing completes.
-- HELLO and WELCOME each carry their sender's own proto and caps; both sides take the lower and
-  the common ones, and a proto of 0 is refused. A sealed frame spends its seq even when sealing
-  fails, so no nonce is tried twice; a frame with seq ≥ 2^31 is refused on arrival too.
+- HELLO and WELCOME each carry their sender's own proto and caps; both sides take the lower proto
+  and the common caps (their own offer AND the peer's, LINK-043), and a proto of 0 is refused. A
+  sealed frame spends its seq even when sealing fails, so no nonce is tried twice; a frame with
+  seq ≥ 2^31 is refused on arrival too.
 
 ## Timers
 
@@ -708,19 +712,23 @@ bits that failed.
       `esp_ota_set_boot_partition` would boot it.
 
 ### Messages
-- **Placement.** All five are sealed and appended after BYE (`plink_frame.h:75`). They go into
-  `plink_type_known`, with their directions in `plink_type_from_master` (`plink_frame.c:48-104`).
-- **When sent.** Only in a session whose common caps include `PLINK_CAP_FW` (0x0001). `PLINK_CAPS`
-  (`plink_msg.h:34`) becomes that bit.
-- **Size.** Every payload except FW_PAGE is made of sections and fits 225 B (a 250-byte frame) at
-  its longest. `OWN_PAYLOAD_MAX` (`plink_keypad.c:49`) goes from 64 to 225.
+- **Placement.** All five are sealed and appended after BYE in `plink_frame.h`. They are in
+  `plink_type_known`, with their directions in `plink_type_from_master`.
+- **When sent.** Only in a session whose common caps include `PLINK_CAP_FW` (0x0001), a bit a panel
+  offers at run time (LINK-043). No panel offers it until the keypad's side is built.
+- **Size.** Every payload except FW_PAGE is made of sections and fits 225 B (`PLINK_PAYLOAD_SMALL`,
+  a 250-byte frame) at its longest. `OWN_PAYLOAD_MAX` (`plink_keypad.c:49`) is 225.
+- **Sections.** FW_INFO and FW_REQ are one section each. FW_ORDER and FW_STATE always carry their
+  three sections: a decoder refuses a payload without one, and reads the fields a shorter section
+  lacks as 0.
+- **Refused by both sides:** an order of 0, and a FW_PAGE outside its image (offset + len > total).
 
 | Type | Name | Dir | Payload (v1) | Largest |
 |---|---|---|---|---|
-| 0x2D | `FW_INFO` | K->M | can u8 (bit 0 fetch, 1 relay, 2 key accept, 3 configuration unreadable), device (≤ 31), board_rev (≤ 15), chip_rev (≤ 3), chip_rev_full u16, project (≤ 32), version (≤ 32), slot u32, own_key8[8], accepted_key8[8] (zeros: none), cp_version (≤ 23) | 166 B |
-| 0x2E | `FW_ORDER` | M->K | order section: order u32 (not 0), op u8, kind u8, version (≤ 32), size u32, sha256[32], key[32] (zeros: not known); fetch section: server (≤ 95), channel (≤ 7); relay section: page u16, count u8, gap_ms u16 | 219 B |
+| 0x2D | `FW_INFO` | K->M | one section: can u8 (bit 0 fetch, 1 relay, 2 key accept, 3 configuration unreadable), device (≤ 31), board_rev (≤ 15), chip_rev (≤ 3), chip_rev_full u16, project (≤ 32), version (≤ 32), slot u32, own_key8[8], accepted_key8[8] (zeros: none), cp_version (≤ 23) | 166 B |
+| 0x2E | `FW_ORDER` | M->K | order section: order u32 (not 0: both sides refuse it), op u8, kind u8, version (≤ 32), size u32, sha256[32], key[32] (zeros: not known); fetch section: server (≤ 95), channel (≤ 7); relay section: page u16, count u8, gap_ms u16 | 219 B |
 | 0x2F | `FW_STATE` | K->M | run section: order u32, op u8, state u8, flags u8, why u8, bytes u32, size u32, id8[8], target (≤ 32); last section: probation u8, last u8, last_version (≤ 32), failed_mask u8; probe section: asked u8, why u8, age_s u32, offered (≤ 32), offered_key8[8], key_trusted u8 | 144 B |
-| 0x30 | `FW_REQ` | K->M | id8[8], offset u32, page u16, count u8 | 16 B |
+| 0x30 | `FW_REQ` | K->M | one section: id8[8], offset u32, page u16, count u8 | 16 B |
 | 0x31 | `FW_PAGE` | M->K | id8[8], total u32, offset u32, len u16, len bytes (fixed, like CFG_PAGE; bytes after the data are ignored) | 18 B + data: 1,157 B on UDP, 207 B in 250 B |
 
 **When each is sent:**
@@ -748,10 +756,11 @@ bits that failed.
 | 30-49 | refused: no retry | KEY 30, CHIP 31, PROJECT 32, NOT_NEWER 33, SIGNATURE 34, TOO_BIG 35, UNKNOWN_KIND 36, UNKNOWN_OP 37, BUDGET 38, BAD_ORDER 40, WRONG_VERSION 41 |
 | 50-59 | waiting | MASTER_BUSY 50, NOT_QUIET 51, PANIC_PENDING 52, KEPT_TONE 53, NO_STATUS 54, BUSY 55 |
 | 60-69 | stopped | STOPPED 60 (a person at the keypad), CANCELLED 61 (the master) |
+| 70 and up | unknown class: a later firmware's | |
 
-**STATUS flags.** New bits in the existing flags byte, so no byte is added. Defined next to
-`plink_msg.h:145`, encoded at `plink_view.c:157` from the master's whole snapshot, decoded at
-`:312`:
+**STATUS flags.** New bits in the existing flags byte, so no byte is added. Defined in
+`plink_msg.h` (`PLINK_SF_*`, frozen in the fixture); not yet set at `plink_view.c:157` from the
+master's whole snapshot, nor read at `:312`:
 - 0x04 UPDATING: the master runs an update or is on its self-test.
 - 0x08 HOLD: `proto_fw_install_allowed()` says no on the master's snapshot.
 - 0x10 FIRE / 0x20 CO: fire or CO sounds on any of the master's partitions.
@@ -876,7 +885,8 @@ touching keypads. It still ships in v1, because the same firmware runs both role
 ## Smart Home and Home Assistant on keypads
 The owner (2026-10-16): "we need to make sure that the Smart Home controls work on the Slave as
 they do on the Master. Home Assistant should also be able to control the settings of the slave
-panel as well." Designed 2026-10-16 (BL-216). Nothing of it is built.
+panel as well." Designed 2026-10-16 (BL-216). Only its wire is built: the codecs, the run-time
+capabilities, `proto_prefs` and the frozen fixture. Nothing sends it yet.
 
 The owner decided the 13 questions this design needs on 2026-10-16 ("Approve P1, recommendations
 OK"): each as recommended, listed in Decisions. The keypad's Smart Home screens are proposal P1
@@ -915,13 +925,19 @@ day.
 
 ### Capabilities
 
-- `PLINK_CAPS` (`plink_msg.h:34`) becomes `PLINK_CAPS_KNOWN` = FW | HOME | PREFS: what this
-  firmware's codecs know.
-- What a panel offers becomes an argument of `plink_master_init` and `plink_keypad_init`. It is
-  passed down to the handshake and pairing builders (`plink_session.c:152, 212, 265, 292`;
-  `plink_pair.c:362, 841`).
-- The session keeps the bits both sides share (`plink_session.h:35`).
-- This argument goes into BL-048's "Wire" box, so v1 ships with it.
+Built with BL-048's wire, so v1 ships with it:
+- `PLINK_CAPS` is gone. `PLINK_CAPS_KNOWN` (0x0007) = FW | HOME | PREFS: the bits this firmware's
+  codecs know.
+- What a panel offers is an argument of `plink_master_init` (after `panel_id`) and
+  `plink_keypad_init` (after `cap`), passed down to `plink_pm_init`, `plink_pk_init`,
+  `plink_hs_hello` and `plink_hs_answer`. Each masks it with `PLINK_CAPS_KNOWN`.
+- Each session keeps its own offer AND the peer's (`plink_session_t.caps`), so a bit either side
+  doesn't know is never shared. `plink_master_peers` and `plink_keypad_info` give a live session's
+  caps.
+- Every panel offers 0 for now (both services and `host/link_sim`): a bit is offered only with the
+  code that uses it.
+
+Who offers each bit (designed):
 
 | Bit | Name | Offered by the master | Offered by a keypad |
 |---|---|---|---|
@@ -938,12 +954,12 @@ Next free: bit 0x0008 and type 0x3B.
 | 0x33 | `DEV_LIST_PAGE` | M->K | HOME | list_crc u32, total u32, offset u32, len u16, len bytes (CFG_PAGE's layout and codec) | 14 B + data: 1,161 B on UDP, 211 B in a 250 B frame |
 | 0x34 | `DEV_STATE` | M->K | HOME | Head section (list_crc u32, states_crc u32, count u8), then count × (index u8, record section) | 225 B: 4 records at their longest, about 8 typical. On UDP, 25 and about 48. |
 | 0x35 | `DEV_STATE_REQ` | K->M | HOME | list_crc u32, first u8, count u8 (0 = all) | 6 B |
-| 0x36 | `DEV_ACT` | K->M | HOME | req u32; act section (action u8, value i32, mode u8, flags u8 = 0); ref (len u8 + 95 B, zero-padded); code (len u8 + `ALARM_CODE_MAX_LEN` 10 B, zero-padded) | 119 B, always (144 B frame) |
-| 0x37 | `DEV_ACK` | M->K | HOME | req u32, result u8, why u8; optional section (list_crc u32, index u8, record section) | 56 B |
-| 0x38 | `PREFS` | K->M | PREFS | Answer section (req u32, 0 = unsolicited); info section (panel id ≤ 6, voice u8, accepts u32); refusals section (count u8, count × (id u8, why u8)); fields section (count u8, TLVs) | 128 B |
+| 0x36 | `DEV_ACT` | K->M | HOME | req u32; act section (action u8, value i32, mode u8, flags u8 = 0); ref (len u8 + 95 B, zero-padded); code (len u8 + `ALARM_CODE_MAX_LEN` 10 B, zero-padded). Both codecs refuse a ref longer than 95 B or one that text cleaning would change, never cut (it could name another device), and a code that isn't digits only | 119 B, always (144 B frame) |
+| 0x37 | `DEV_ACK` | M->K | HOME | req u32, result u8, why u8; optional section (list_crc u32, index u8, record section). An empty section means no record, and a later section may follow it; a non-empty one must hold list_crc, the index and a whole record section, or the payload is refused | 56 B |
+| 0x38 | `PREFS` | K->M | PREFS | Always four sections: answer section (req u32, 0 = unsolicited); info section (panel id ≤ 6, voice u8, accepts u32); refusals section (count u8, count × (id u8, why u8)); fields section ("Settings fields") | 128 B |
 | 0x39 | `PREFS_REQ` | M->K | PREFS | have_crc u32 | 4 B |
-| 0x3A | `PREFS_SET` | M->K | PREFS | req u32 (not 0), origin u8; fields section (count u8, TLVs of the fields to change) | 75 B |
-| 0x2A | `HEARTBEAT` (+) | K->M | PREFS | Appended section: prefs_crc u32 | +5 B, 45 B in all |
+| 0x3A | `PREFS_SET` | M->K | PREFS | req u32 (not 0: both sides refuse it), origin u8; fields section (the fields to change, "Settings fields") | 75 B |
+| 0x2A | `HEARTBEAT` (+) | K->M | PREFS | Appended section: prefs_crc u32. It counts only when it holds prefs_crc whole; an empty or shorter one carries no CRC and never drops the heartbeat | +5 B, 45 B in all |
 
 **Record section** (43 B at most, 45 B with its index and length):
 
@@ -961,21 +977,29 @@ These are the registry's `dev_values_t` (`device_source.h:105-115`), whose value
 "append, never renumber" (`:8-10`). `ui_dev_t` and the UI enums never go on the wire.
 
 **Catalog record section:** kind u8, source u8, ref (≤ 95), name (≤ 47), area (≤ 47). Later fields
-are appended inside the section, such as a cover's class (BL-171).
+are appended inside the section, such as a cover's class (BL-171). A ref is refused as DEV_ACT's
+is, never cut: the encoder doesn't write it, and the decoder refuses that record but gives its
+length, so a list steps over the device. A name or an area is cut on a whole character.
 
 **Frozen values:**
 
 | Value | Meaning |
 |---|---|
-| `plink_dev_result_t` | 0 OK, 1 NEED_CODE, 2 CODE_REFUSED, 3 BUSY, 4 UNREACHABLE, 5 REFUSED, 6 UNAVAILABLE (this master serves no devices). Numbers 0-5 equal `ui_dev_result_t`, asserted in a test. An unknown value reads as REFUSED. |
+| `plink_dev_result_t` | 0 OK, 1 NEED_CODE, 2 CODE_REFUSED, 3 BUSY, 4 UNREACHABLE, 5 REFUSED, 6 UNAVAILABLE (this master serves no devices). Numbers 0-5 equal `ui_dev_result_t`, asserted in `test_plink_msg.c`. An unknown value reads as REFUSED. |
 | DEV_ACK `why` | The `alarm_result_t` when the code was refused |
-| `mode` | A `DEV_MODE_*` bit: OFF 0x01, HEAT 0x02, COOL 0x04, AUTO 0x08. Any other value is REFUSED. |
-| Settings `why` | 1 NOT_ALLOWED, 2 RANGE, 3 IN_USE, 4 HELD, 5 VOICE_NOT_READY, 6 BAD, 7 BUSY. An unknown value reads as NOT_ALLOWED. |
+| `mode` | A `DEV_MODE_*` bit: OFF 0x01, HEAT 0x02, COOL 0x04, AUTO 0x08, equal to `device_source.h`'s, asserted in `test_plink_msg.c`. Any other value is REFUSED. |
+| Settings `why` | 1 NOT_ALLOWED, 2 RANGE, 3 IN_USE, 4 HELD, 5 VOICE_NOT_READY, 6 BAD, 7 BUSY: `proto_prefs.h`'s numbers. 6 BAD means a TLV of the wrong length or an id named twice; it has no word of its own in `settings_result`'s `refused` and reads as `not_allowed` there. An unknown value reads as NOT_ALLOWED. |
 | `voice` | 0 not known, 1 ready, 2 loading, 3 none |
 | `origin` | 1 Home Assistant, 2 the master's console. An unknown value means "elsewhere". |
 
+Every v1 number of the link's messages (capability and flag bits, and the values above and in
+"Updates through the link") is frozen in `test/plink_wire_fixture_v1.h` (`PLINK_WIRE_V1_NUMBERS`,
+125 values), and `test_wire_numbers_v1` pins `plink_msg.h`'s to them. The fixture also freezes a
+payload of every v1 type that carries one, which `test_wire_fixture_v1` reads as its frozen values
+and encodes again to the same bytes.
+
 ### Rules
-v1, frozen once released, and added to `test/plink_wire_fixture_v1.h`:
+v1, frozen once released, and in `test/plink_wire_fixture_v1.h`:
 - All nine types are sealed and appended after FW_PAGE 0x31 in `plink_frame.h`, and listed in
   `plink_type_known`. Types 0x33, 0x34, 0x37, 0x39 and 0x3A are also listed in
   `plink_type_from_master`, so `plink_hdr_read` enforces the direction.
@@ -985,7 +1009,7 @@ v1, frozen once released, and added to `test/plink_wire_fixture_v1.h`:
   each send, so a failover is safe. They never go over 433 MHz.
 - Every payload except DEV_LIST_PAGE fits in 225 B. Fields sit in sections and are appended only
   (LINK-040). Strings are read with `plink_r_str`.
-- `OWN_PAYLOAD_MAX` (`plink_keypad.c:49`) must be at least 128. The FW design's 225 covers it.
+- `OWN_PAYLOAD_MAX` (`plink_keypad.c:49`) is 225 (`PLINK_PAYLOAD_SMALL`), so PREFS's 128 B fit.
 - The HEARTBEAT section is sent only in a session with PREFS. A master reads it only when bytes
   remain: `plink_r_section` on a reader with nothing left fails the whole decode, because
   `plink_r_u8` on a reader that isn't padded clears `ok`, so it is read only when
@@ -1127,13 +1151,17 @@ The TLV is: id u8, len u8, value little-endian. Ranges follow `panel_prefs.c:66-
 | 18 | voice_status | u8 | 0/1 | `voice_stat` | switch | |
 | 19 | voice_chime | u8 | 0/1 | `voice_chime` | switch | |
 
+- **The fields section.** Its body is the count u8, exactly count well-formed TLVs (each whole
+  within the body), then any bytes a later version appends, which are kept. An empty body holds no
+  fields. Both codecs refuse a TLV that runs past the body. `plink_msg` carries the body as one
+  span: `proto_prefs_encode` writes it, in id order, and `proto_prefs_decode` reads it.
 - **Sizes.** All 19 fields take 68 B, so the fields section is 70 B.
 - **Unknown and wrong-size ids.** An unknown id is skipped by its length. A known id with the
-  wrong length is refused (BAD) for that field alone.
+  wrong length, or named twice, is refused (BAD) for that field alone, and no copy is taken.
 - **`accepts`** has bit id-1 set for each field the keypad takes.
-- **prefs_crc** is the CRC-32 of the fields section's bytes, all fields in id order, as the
-  keypad encodes them. The master computes it over the bytes it received, so it holds across
-  versions.
+- **prefs_crc** is the CRC-32 of the fields section's whole body (count, TLVs and appended bytes),
+  without the section's length byte, as the keypad encodes it (`proto_prefs_crc`). The master
+  takes it over the body it received, so it holds across versions.
 - **Never a settings field:** codes, role, pairing, home partition, name, supervision, Wi-Fi and
   IP, time and time zone, language and region (v1, decision 5, decided 2026-10-16), updates,
   factory reset, the setup, the Panel Manager, developer access.
@@ -1240,7 +1268,8 @@ entry time or exit time (decision 4, decided 2026-10-16).
 
 | Area | Change |
 |---|---|
-| `panel_link` (portable) | Run-time caps. New `plink_home.h/.c` (catalog, records, CRCs, `plink_dev_act_digest`). Codecs in `plink_msg.h/.c` (DEV_LIST_* reuse `plink_enc/dec_cfg_req/_page`). Per-peer `plink_home_peer_t` (about 600 B, in `s_m`, PSRAM). `on_sealed` cases gated by caps. `home_service` in `plink_master_tick` (`:1406`) with its deadlines in `plink_master_next` (`:1442`). On the keypad: `plink_pull_t`, `plink_keypad_home_attach`, apply, freshness, slots and overlay, the PREFS report and answer cache, the HEARTBEAT section. |
+| `panel_link` (portable) | Built: run-time caps; the codecs in `plink_msg.h/.c` (DEV_LIST_* reuse `plink_enc/dec_cfg_req/_page`), with the device record and catalog record codecs and `plink_dev_act_digest`. Still to come: a new `plink_home.h/.c` with the device-list blob and its CRCs. Per-peer `plink_home_peer_t` (about 600 B, in `s_m`, PSRAM). `on_sealed` cases gated by caps. `home_service` in `plink_master_tick` (`:1406`) with its deadlines in `plink_master_next` (`:1442`). On the keypad: `plink_pull_t`, `plink_keypad_home_attach`, apply, freshness, slots and overlay, the PREFS report and answer cache, the HEARTBEAT section. |
+| `alarm_proto` | Built: `proto_prefs.h/.c`, the settings fields' table, the TLV list and its CRC, and Home Assistant's `values` writer and parser (docs/features/23 HAI-017). |
 | `plink_service` | New `plink_home_svc.c`: the `plink_dev` task via `alarm_mem_task_create` (4 KB PSRAM stack), builds into `s_dblob[2]` and records, device jobs (8 slots), RES_DEVICES and RES_DEV_ACK. `plink_service_prefs_set()` (non-blocking, a 4-deep queue to the link task). `plink_service_keypads()` under `link_pub_lock`. `g_pub` gains rssi, caps and each peer's report. Console: `plink dev [n]` and `plink prefs <n> [set <key> <v>]` (`set` in development builds only). |
 | Keypad service | Mirror (blob 12.5 KB, raw records 2.9 KB, `ui_dev_t[64]` 14.3 KB, all PSRAM) under its own `s_dev_lock`, never `link_pub_lock`. `ksvc_dev_act`, modelled on `command()` (`:592-634`). PREFS report on `panel_prefs_seq()`. Mailbox hand-over. |
 | `plink_backend.c` | `be->dev_list = kp_dev_list` and `be->dev_act = kp_dev_act` replace the NULLs at `:314-315`. Lines `:316-317` are deleted, so `ui_port_esp`'s layout entries stay (Arrange per panel). These are set before `ui_app_start` (`panel_app.c:1584` < `:1627`), which matters because `ui_devices_init` returns early without `dev_list` (`ui_devices.c:2498`). |
@@ -1274,7 +1303,7 @@ estimates, not measured. A keypad unlock's code check holds the alarm task for a
 any keypad code does: a disarm at that moment waits for it, within LINK-024's 1 s. During packet
 loss a keypad's screen waits up to 1 s on a tap (3 s with a code); commands already wait up to
 3 s (`CMD_WAIT_MS`, `plink_keypad_svc.c:68`). This design and "Updates through the link" freeze
-together: `OWN_PAYLOAD_MAX` and the v1 fixture are agreed for both before the first release.
+together: `OWN_PAYLOAD_MAX` (225) and the v1 fixture serve both, and freeze at the first release.
 Home Assistant's changes to how a screen looks are rate-limited on the panel, never trusted to
 Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
 
@@ -1338,13 +1367,25 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   `voice` counters and the development build's `says` lines on both panels: arm, disarm, entry,
   not ready, a chime, a walk test; the keypad's own switches and Voice volume; a keypad restart in
   an exit time and a cut over 30 s saying nothing old).
+- The v1 wire of updates, Smart Home and settings (built, on the PC; nothing sends it yet):
+  - `test_plink_msg.c` and `vectors_plink_msg.py`: goldens for the 14 types 0x2D-0x3A and both
+    record sections; every new section grown with appended bytes, and cut short; each payload's
+    longest size (static asserts and `test_longest_payloads`); HEARTBEAT with and without its
+    section, read by both the old and the new decoder (`test_heartbeat_section`); DEV_ACK's
+    optional record; DEV_ACT the same size for every ref and code, and its digest's known answer;
+    what the new codecs refuse; random round trips and random bytes into every decoder; the frozen
+    fixture read as its values and encoded again (`test_wire_fixture_v1`) and every v1 number
+    pinned (`test_wire_numbers_v1`); a fields body's CRC the same on both sides
+    (`test_prefs_body_crc`).
+  - `test_plink_frame.c` `test_new_types_one_way`: the new types are known and sealed, each one way
+    only (a PREFS_SET without FROM_MASTER, or a DEV_ACT with it, is refused).
+  - `test_plink_session.c` `test_caps_meet_in_the_and` and `test_plink_link.c`
+    `test_capabilities_offered_meet_in_the_and`: each session keeps the bits both sides offered,
+    never one either side doesn't know.
+  - `alarm_proto`'s `prefs` suite (`test_prefs.c`): the frozen ids, ranges and keys (each 11 bytes
+    or less), the TLV golden and its CRC, wrong lengths, unknown ids, ranges, the JSON values and
+    their parser (a request refused whole as `bad`), random input.
 - Smart Home and Home Assistant on keypads (designed, BL-216), on the PC:
-  - `test_plink_msg.c` and `vectors_plink_msg.py`: goldens for 0x32-0x3A; each payload's largest
-    fits 225 B (a static assert and a test); every section with bytes appended still decodes;
-    DEV_ACT is the same size for every ref and code; HEARTBEAT with and without its section, read
-    by both the old and the new decoder.
-  - `test_plink_frame.c`: the new types are known and sealed, with their directions (a PREFS_SET
-    without FROM_MASTER, or a DEV_ACT with it, is refused).
   - `test_plink_master.c` and `test_plink_keypad.c`: nothing new goes to or from a session
     without the bit; the buckets and one action in flight; the cache (the same req and digest
     gets the cached answer, another ref is a new action, entries are kept 90 s); DEV_ACK's record
@@ -1367,8 +1408,7 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
     "Versions" (in "Smart Home and Home Assistant on keypads") says.
   - `home_control/test`: `hc_mode_word`. `ui_backend/test`: `ui_dev_from_parts` gives
     byte-identical output to today's conversion on a fixture table (no regression on the
-    master); `ui_prefs_merge`. `alarm_proto` `test_prefs.c` (new): frozen ids and ranges, the TLV
-    round trip, wrong lengths, unknown ids, the CRC, every key 11 bytes or less.
+    master); `ui_prefs_merge`.
   - The real `ui_app` through the loopback link backend: the IN_USE, HELD and look-wait paths.
   - Preview: `host_link_demo` with devices in the keypad role (live, link lost, "Not
     confirmed"); `ui_preview.ps1` passes with no cut-off text. CI: `link_smoke` with a fake
@@ -1520,9 +1560,11 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
 - [x] The engine's device supervision trouble for a silent keypad (LINK-007's engine side,
   CORE-TRBL-008): `test_troubles.c` test_device_supervision, `alarm_engine_device_checkin`
 - [ ] ESP-NOW <-> LAN failover (LINK-009) (M7) (BL-048)
-- [ ] Wire: types 0x2D-0x31, `PLINK_CAP_FW`, the STATUS bits UPDATING, HOLD, FIRE and CO, the codecs
-  and Python goldens; every v1 payload moved into a frozen `test/plink_wire_fixture_v1.h` (LINK-032,
-  -037, -038, -040) (BL-048)
+- [x] Wire: types 0x2D-0x31, `PLINK_CAP_FW`, the STATUS bits UPDATING, HOLD, FIRE and CO defined,
+  the codecs and Python goldens; every v1 payload and number in a frozen
+  `test/plink_wire_fixture_v1.h` (LINK-032, -037, -038, -040) (BL-048, WIRECOMMIT)
+- [ ] The STATUS bits UPDATING, HOLD, FIRE and CO in `plink_view.c`: set from the master's
+  snapshot, read on the keypad (LINK-030, -034, -039) (BL-048)
 - [ ] Keypad fail-safes in `plink_view.c`, FIRE/CO sounding in `continuous_of`, and UNAVAILABLE for
   an unknown command type (LINK-039) (BL-048)
 - [ ] Keypad gate: master flags, panic pending, kept tone, the INSTALL hold (LINK-034) (BL-048)
@@ -1545,10 +1587,11 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   pulled mid-relay and mid-write; a master restart during a keypad's self-test; a v1.x image ordered
   to a v3 keypad (refused before any write); `display watch` and touch on the keypad while it writes
   (BL-048)
-- [ ] Run-time caps, for BL-216 but done with the Wire box above so v1 ships with them: the
-  offered caps as an init argument, `PLINK_CAPS_KNOWN` (LINK-043) (BL-048)
-- [ ] Wire: 0x32-0x3A, the HEARTBEAT section, codecs and Python goldens, added to the frozen v1
-  fixture; `proto_prefs` (LINK-043, -050, -051, -052) (BL-216)
+- [x] Run-time caps: the offered caps an argument of `plink_master_init` and `plink_keypad_init`,
+  each session keeping both offers ANDed under `PLINK_CAPS_KNOWN`; no panel offers a bit yet
+  (LINK-043) (BL-048, WIRECOMMIT)
+- [x] Wire: 0x32-0x3A, the HEARTBEAT section, the codecs and Python goldens, in the frozen v1
+  fixture; `proto_prefs` (LINK-043, -050, -051, -052; HAI-017) (BL-216, WIRECOMMIT)
 - [ ] Master core: list, pushes, summary, catch-up, DEV_ACT cache and buckets, PREFS report and
   PREFS_REQ, PREFS_SET, send order (LINK-044..051) (BL-216)
 - [ ] Keypad core: `plink_pull_t` from the configuration pull, mirror and catch-up, freshness,
@@ -1566,8 +1609,9 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   devices; preview shots compared (HCTL-013, UI-044) (BL-216)
 - [ ] `host/link_sim`: a fake registry on the virtual master, `devices` and `prefs` on the virtual
   keypad; `link_smoke` extended (LINK-013) (BL-216)
-- [ ] Home Assistant: `alarm_proto`, `ha_link`, `panel_app` wiring (docs/features/23
-  HAI-016..019); ha-addon 0.3.0 (BL-216)
+- [ ] Home Assistant: `alarm_proto`'s four JSON messages (`proto_link`; `proto_prefs` is in the
+  Wire box), `ha_link`, `panel_app` wiring (docs/features/23 HAI-016..019); ha-addon 0.3.0
+  (BL-216)
 - [ ] On the panels: the Smart Home and settings list in Test and acceptance (BL-216)
 - [ ] Docs: the 11, 23, 24, 07 and 15 status lines; docs/features/README "Current status"; the
   pull request notes for the documentation repository's `UPDATING.md` (BL-216)

@@ -359,7 +359,7 @@ static void m_start(plink_pair_m_t *pm, uint64_t now, const plink_addr_t *from,
         memset(&cm, 0, sizeof cm);
         cm.attempt = pm->attempt;
         cm.proto = PLINK_PROTO;
-        cm.caps = PLINK_CAPS;
+        cm.caps = pm->caps;
         memcpy(cm.pk, pm->pk_m, PLINK_X25519_LEN);
         plink_pair_commitment(pm->pk_m, pm->pk_k, pm->n_m, cm.commit);
         memcpy(cm.name, pm->name, sizeof cm.name);
@@ -518,13 +518,14 @@ static void m_fail(plink_pair_m_t *pm, uint64_t now, const plink_addr_t *from,
     m_end(pm, now, msg.reason != PLINK_FAIL_NONE ? msg.reason : PLINK_FAIL_CANCELLED, false, NULL);
 }
 
-void plink_pm_init(plink_pair_m_t *pm, const plink_crypto_t *c)
+void plink_pm_init(plink_pair_m_t *pm, const plink_crypto_t *c, uint16_t caps)
 {
     if (pm == NULL) {
         return;
     }
     plink_wipe(pm, sizeof *pm);
     pm->c = c;
+    pm->caps = (uint16_t)(caps & PLINK_CAPS_KNOWN);
     pm->state = PLINK_PS_IDLE;
 }
 
@@ -838,7 +839,7 @@ static void k_attempt(plink_pair_k_t *pk, uint64_t now, plink_out_t *out)
         memset(&req, 0, sizeof req);
         req.attempt = pk->attempt;
         req.proto = PLINK_PROTO;
-        req.caps = PLINK_CAPS;
+        req.caps = pk->caps;
         req.kind = pk->kind;
         req.cap = pk->cap;
         memcpy(req.pk, pk->pk_k, PLINK_X25519_LEN);
@@ -1028,7 +1029,7 @@ static void k_fail(plink_pair_k_t *pk, uint64_t now, const plink_addr_t *from,
 }
 
 void plink_pk_init(plink_pair_k_t *pk, const plink_crypto_t *c, uint8_t kind,
-                   const plink_caps_t *cap, const char *name, const char *fw)
+                   const plink_caps_t *cap, uint16_t caps, const char *name, const char *fw)
 {
     if (pk == NULL) {
         return;
@@ -1036,6 +1037,7 @@ void plink_pk_init(plink_pair_k_t *pk, const plink_crypto_t *c, uint8_t kind,
     plink_wipe(pk, sizeof *pk);
     pk->c = c;
     pk->kind = kind;
+    pk->caps = (uint16_t)(caps & PLINK_CAPS_KNOWN);
     if (cap != NULL) {
         pk->cap = *cap;
     }

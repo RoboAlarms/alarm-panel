@@ -125,6 +125,7 @@ typedef struct {
     bool pairing;
     uint8_t kind;
     plink_caps_t cap;
+    uint16_t caps;               /* what this keypad offers (PLINK_CAPS_KNOWN at most) */
     char name[PLINK_NAME_MAX + 1];
     char fw[PLINK_FW_MAX + 1];
     bool have_master;
@@ -201,10 +202,11 @@ typedef struct {
 
 /* rec: the stored record, or NULL when not paired. cfg_buf (ALARM_CONFIG_BLOB_MAX bytes) and cfg
  * (an alarm_config_t) are the caller's memory (PSRAM on a panel). name, fw, kind and cap describe
- * this keypad for pairing and HELLO. */
+ * this keypad for pairing and HELLO; caps are the capability bits it offers there (PLINK_CAP_*,
+ * masked with PLINK_CAPS_KNOWN; LINK-043): each session keeps those its master offers too. */
 void plink_keypad_init(plink_keypad_t *k, const plink_crypto_t *c, const plink_keypad_port_t *port,
                        const plink_keypad_rec_t *rec, uint8_t *cfg_buf, size_t cfg_cap,
-                       alarm_config_t *cfg, uint8_t kind, const plink_caps_t *cap,
+                       alarm_config_t *cfg, uint8_t kind, const plink_caps_t *cap, uint16_t caps,
                        const char *name, const char *fw, uint64_t now_ms);
 
 /* Where the master is now (discovery: mDNS, set by hand, or the subnet's broadcast when mDNS
@@ -245,6 +247,7 @@ typedef struct {
     uint8_t home;
     char master_name[PLINK_NAME_MAX + 1];
     plink_addr_t master;
+    uint16_t caps;            /* the live session's common capabilities (0: none, or no session) */
     /* The configuration the latest status names, when this firmware couldn't read it (0 none):
      * the keypad needs an update. Forgotten once another configuration installs or the master
      * names the installed one again. */

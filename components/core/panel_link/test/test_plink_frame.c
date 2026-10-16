@@ -10,7 +10,8 @@
  * Requirements: LINK-003 (data frames sealed with AES-128-CCM, the nonce, the replay window
  * updated only after the tag, frames of another session or net refused), LINK-005 (1200 bytes at
  * most), LINK-017 (v1's header never changes: unknown types and flag bits dropped), LINK-021 (UDP
- * peer addresses on port 6056).
+ * peer addresses on port 6056), LINK-043 and LINK-052 (the update, Smart Home and settings types,
+ * each one way only: PREFS_SET and PREFS_REQ from the master alone).
  */
 #include <string.h>
 
@@ -199,7 +200,10 @@ static const struct {
     {0x20, true, 'M'},  {0x21, true, 'M'},  {0x22, true, 'K'},  {0x23, true, 'K'},
     {0x24, true, 'M'},  {0x25, true, 'K'},  {0x26, true, 'M'},  {0x27, true, 'K'},
     {0x28, true, 'M'},  {0x29, true, 'M'},  {0x2A, true, 'K'},  {0x2B, true, 'M'},
-    {0x2C, true, 'M'},
+    {0x2C, true, 'M'},  {0x2D, true, 'K'},  {0x2E, true, 'M'},  {0x2F, true, 'K'},
+    {0x30, true, 'K'},  {0x31, true, 'M'},  {0x32, true, 'K'},  {0x33, true, 'M'},
+    {0x34, true, 'M'},  {0x35, true, 'K'},  {0x36, true, 'K'},  {0x37, true, 'M'},
+    {0x38, true, 'K'},  {0x39, true, 'M'},  {0x3A, true, 'M'},
 };
 #define TYPE_COUNT (sizeof TYPES / sizeof TYPES[0])
 
@@ -213,7 +217,7 @@ static int type_index(unsigned t)
     return -1;
 }
 
-/* LINK-017: the type table for all 256 values - known exactly for the document's 25 types,
+/* LINK-017: the type table for all 256 values - known exactly for the document's 39 types,
  * sealed from 0x20 up, sent by the master for the master's types and PAIR_FAIL (either way). */
 static void test_type_table(void)
 {
@@ -339,6 +343,49 @@ static void test_hdr_read_rules(void)
             }
         }
     }
+}
+
+/* LINK-043, LINK-052: the types of updates, Smart Home and settings go one way only, the
+ * directions written from the document here once more: a keypad's PREFS_SET or PREFS_REQ (a keypad
+ * never sets another panel's settings), a master's DEV_ACT or PREFS, a keypad's FW_ORDER, FW_PAGE,
+ * DEV_STATE, DEV_ACK or DEV_LIST_PAGE, a master's FW_INFO, FW_STATE, FW_REQ, DEV_LIST_REQ or
+ * DEV_STATE_REQ: each dropped, its right way read. 0x3B, the next free type, is unknown. */
+static void test_new_types_one_way(void)
+{
+    static const uint8_t from_master[] = {
+        PLINK_T_FW_ORDER, PLINK_T_FW_PAGE,  PLINK_T_DEV_LIST_PAGE, PLINK_T_DEV_STATE,
+        PLINK_T_DEV_ACK,  PLINK_T_PREFS_REQ, PLINK_T_PREFS_SET,
+    };
+    static const uint8_t from_keypad[] = {
+        PLINK_T_FW_INFO,       PLINK_T_FW_STATE, PLINK_T_FW_REQ, PLINK_T_DEV_LIST_REQ,
+        PLINK_T_DEV_STATE_REQ, PLINK_T_DEV_ACT,  PLINK_T_PREFS,
+    };
+    const uint8_t sm = PLINK_FLAG_SEALED | PLINK_FLAG_FROM_MASTER;
+    const size_t len = PLINK_SEALED_OVERHEAD + 4u;
+    for (size_t i = 0; i < sizeof from_master; i++) {
+        const plink_hdr_t ok = hdr(from_master[i], sm, 0x1234u, PLINK_SENDER_MASTER, 7u, 1u);
+        const plink_hdr_t no = hdr(from_master[i], PLINK_FLAG_SEALED, 0x1234u, 3u, 7u, 1u);
+        TEST_ASSERT_TRUE(plink_type_known(from_master[i]));
+        TEST_ASSERT_TRUE(plink_type_sealed(from_master[i]));
+        TEST_ASSERT_TRUE(reads(&ok, len));
+        TEST_ASSERT_FALSE(reads(&no, len));
+    }
+    for (size_t i = 0; i < sizeof from_keypad; i++) {
+        const plink_hdr_t ok = hdr(from_keypad[i], PLINK_FLAG_SEALED, 0x1234u, 3u, 7u, 1u);
+        const plink_hdr_t no = hdr(from_keypad[i], sm, 0x1234u, PLINK_SENDER_MASTER, 7u, 1u);
+        TEST_ASSERT_TRUE(plink_type_known(from_keypad[i]));
+        TEST_ASSERT_TRUE(plink_type_sealed(from_keypad[i]));
+        TEST_ASSERT_TRUE(reads(&ok, len));
+        TEST_ASSERT_FALSE(reads(&no, len));
+    }
+    /* Named once more: a keypad's PREFS_SET, and a DEV_ACT sent as the master's. */
+    const plink_hdr_t set_k = hdr(PLINK_T_PREFS_SET, PLINK_FLAG_SEALED, 0x1234u, 3u, 7u, 1u);
+    TEST_ASSERT_FALSE(reads(&set_k, len));
+    const plink_hdr_t act_m = hdr(PLINK_T_DEV_ACT, sm, 0x1234u, PLINK_SENDER_MASTER, 7u, 1u);
+    TEST_ASSERT_FALSE(reads(&act_m, len));
+    const plink_hdr_t next = hdr(0x3Bu, sm, 0x1234u, PLINK_SENDER_MASTER, 7u, 1u);
+    TEST_ASSERT_FALSE(plink_type_known(0x3Bu));
+    TEST_ASSERT_FALSE(reads(&next, len));
 }
 
 /* LINK-017: a header that is not v1's - either magic byte wrong, a version other than 1 - and an
@@ -592,7 +639,7 @@ static void test_seal_refusals(void)
         hdr(PLINK_T_HEARTBEAT, 0x03u, 9u, 0u, 5u, 6u),             /* the master's heartbeat */
         hdr(PLINK_T_STATUS, PLINK_FLAG_SEALED, 9u, 2u, 5u, 6u),    /* a keypad's STATUS */
         hdr(PLINK_T_HEARTBEAT, PLINK_FLAG_SEALED | 0x80u, 9u, 2u, 5u, 6u), /* unknown flag */
-        hdr(0x2Du, PLINK_FLAG_SEALED, 9u, 2u, 5u, 6u),                     /* unknown type */
+        hdr(0x3Bu, PLINK_FLAG_SEALED, 9u, 2u, 5u, 6u),                     /* unknown type */
     };
     for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
         len = 99u;
@@ -938,6 +985,7 @@ int main(void)
     RUN_TEST(test_type_table);
     RUN_TEST(test_hdr_read_rules);
     RUN_TEST(test_hdr_read_not_v1);
+    RUN_TEST(test_new_types_one_way);
     RUN_TEST(test_nonce_layout);
     RUN_TEST(test_sealed_golden);
     RUN_TEST(test_sealed_every_byte_flip);

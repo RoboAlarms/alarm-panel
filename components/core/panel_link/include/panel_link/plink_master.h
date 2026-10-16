@@ -168,6 +168,7 @@ typedef struct {
     /* private */
     const plink_crypto_t *c;
     plink_master_port_t port;
+    uint16_t caps;                  /* what this master offers (PLINK_CAPS_KNOWN at most) */
     plink_master_rec_t rec;
     plink_peer_t peer[PLINK_KEYPADS_MAX];
     plink_pair_m_t pair;
@@ -204,10 +205,13 @@ typedef struct {
 
 /* rec: the stored record (NULL or a zero net_id: none yet; a net id is chosen at the first
  * pairing). name: the master's name for keypads (the installation's name); panel_id: six hex
- * characters. Every stored keypad starts as heard at now (the engine's grace at start-up). */
+ * characters. caps: the capability bits this master offers (PLINK_CAP_*, masked with
+ * PLINK_CAPS_KNOWN; LINK-043): each session keeps those its keypad offers too. Every stored
+ * keypad starts as heard at now (the engine's grace at start-up). */
 void plink_master_init(plink_master_t *m, const plink_crypto_t *c, const plink_master_port_t *port,
                        const plink_master_rec_t *rec, const char *name,
-                       const char panel_id[PLINK_PANEL_ID_LEN + 1], uint64_t now_ms);
+                       const char panel_id[PLINK_PANEL_ID_LEN + 1], uint16_t caps,
+                       uint64_t now_ms);
 
 /* A frame from the network (any transport) with its source. */
 void plink_master_input(plink_master_t *m, uint64_t now_ms, const plink_addr_t *from,
@@ -258,6 +262,7 @@ typedef struct {
     uint16_t supervision_s;
     bool provisional;
     bool online;          /* a live session heard within its supervision time */
+    uint16_t caps;        /* the live session's common capabilities (0: none, or no session) */
     bool down;            /* the trouble is raised */
     uint32_t heard_ago_s; /* UINT32_MAX never */
     plink_addr_t addr;

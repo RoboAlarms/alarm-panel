@@ -135,7 +135,7 @@ bool plink_session_open(const plink_crypto_t *c, plink_session_t *s, const plink
 /* ---- the keypad's handshake --------------------------------------------------------------- */
 
 bool plink_hs_hello(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN], uint16_t net_id,
-                    uint16_t device, const plink_caps_t *cap, plink_hs_k_t *hs)
+                    uint16_t device, const plink_caps_t *cap, uint16_t caps, plink_hs_k_t *hs)
 {
     if (hs == NULL) {
         return false;
@@ -149,7 +149,7 @@ bool plink_hs_hello(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN]
     plink_hello_t m;
     memset(&m, 0, sizeof m);
     m.proto = PLINK_PROTO;
-    m.caps = PLINK_CAPS;
+    m.caps = (uint16_t)(caps & PLINK_CAPS_KNOWN);
     m.cap = *cap;
     uint8_t k_hs[PLINK_KEY_LEN];
     size_t plen = 0u;
@@ -169,6 +169,7 @@ bool plink_hs_hello(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN]
     }
     if (ok) {
         plink_mac_fill(k_hs, hs->hello, hs->hello_len); /* mac1 */
+        hs->caps = m.caps;
         hs->waiting = true;
     } else {
         plink_hs_k_wipe(hs);
@@ -209,7 +210,7 @@ bool plink_hs_finish(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN
         memcpy(s.k_tx, k.k2m, PLINK_AES_LEN);
         memcpy(s.k_rx, k.m2k, PLINK_AES_LEN);
         s.proto = lower(PLINK_PROTO, w.proto);
-        s.caps = (uint16_t)(PLINK_CAPS & w.caps);
+        s.caps = (uint16_t)(hs->caps & PLINK_CAPS_KNOWN & w.caps);
         *out = s;
         plink_wipe(&s, sizeof s);
         plink_wipe(hs->e, sizeof hs->e);
@@ -240,7 +241,7 @@ bool plink_hs_hello_valid(const uint8_t k_pair[PLINK_KEY_LEN], const uint8_t *fr
 }
 
 bool plink_hs_answer(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN],
-                     const plink_hdr_t *h, const uint8_t *frame, size_t len,
+                     const plink_hdr_t *h, const uint8_t *frame, size_t len, uint16_t caps,
                      plink_session_t *pending, plink_hello_t *hello, uint8_t *welcome,
                      size_t cap, size_t *welcome_len)
 {
@@ -262,7 +263,7 @@ bool plink_hs_answer(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN
     plink_hello_t m;
     memset(&m, 0, sizeof m);
     m.proto = PLINK_PROTO;
-    m.caps = PLINK_CAPS;
+    m.caps = (uint16_t)(caps & PLINK_CAPS_KNOWN);
     uint8_t e[PLINK_X25519_LEN], dh[PLINK_X25519_LEN];
     hs_keys_t k;
     memset(&k, 0, sizeof k);
@@ -289,7 +290,7 @@ bool plink_hs_answer(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN
         memcpy(s.k_tx, k.m2k, PLINK_AES_LEN);
         memcpy(s.k_rx, k.k2m, PLINK_AES_LEN);
         s.proto = lower(PLINK_PROTO, in.proto);
-        s.caps = (uint16_t)(PLINK_CAPS & in.caps);
+        s.caps = (uint16_t)(m.caps & in.caps); /* an unknown bit is never common */
         s.peer_cap = in.cap;
         *pending = s;
         plink_wipe(&s, sizeof s);

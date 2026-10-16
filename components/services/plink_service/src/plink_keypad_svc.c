@@ -1445,8 +1445,10 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     snprintf(name, sizeof name, "Keypad %s", g_link.panel_id);
     static const plink_keypad_port_t port = {
         .ctx = NULL, .send = port_send, .mtu = NULL, .store = port_store, .resolve = port_resolve};
+    /* No capability is offered yet: each comes with the code that uses it (LINK-043). */
     plink_keypad_init(k, &g_link.crypto, &port, have ? &rec : NULL, K.cfg_buf,
-                      ALARM_CONFIG_BLOB_MAX, K.cfg, PLINK_KIND_PANEL, &caps, name, g_link.fw, now);
+                      ALARM_CONFIG_BLOB_MAX, K.cfg, PLINK_KIND_PANEL, &caps, 0u, name, g_link.fw,
+                      now);
     plink_wipe(&rec, sizeof rec);
     K.k = k;
     K.next_search_at = now;

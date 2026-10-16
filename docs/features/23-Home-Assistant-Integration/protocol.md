@@ -198,7 +198,8 @@ it arrived. Suggested entities on the integration's side: `switch`, `light` (bri
 
 ### Panel settings and keypads (API 1 addition, 2026-10-16; docs/features/11, BL-216)
 
-Designed, not built on either side yet. Paired connections only. A client that doesn't know these
+Designed. Built so far: only the panel's `values` writer and parser (`proto_prefs.h`); neither
+side sends or reads these messages yet. Paired connections only. A client that doesn't know these
 types ignores them. One that knows them makes entities only once they arrive, so an older panel
 gets none and is never sent a `settings_set`. The panel's link keypads run no connection of their
 own: the master relays them (docs/features/11 "Smart Home and Home Assistant on keypads").
@@ -213,9 +214,15 @@ own: the master relays them (docs/features/11 "Smart Home and Home Assistant on 
 Keys and units are those in docs/features/11 "Settings fields". Delays are in seconds (0 = never;
 the panel's 9 choices). Night times are minutes after midnight (0..1439). Levels and volumes are
 percent. Every key is 11 bytes or less (the parser rule in "Two-way: the Devices screen"). An
-unknown key in `values` is refused as `not_allowed`. The panel answers within 7 s, inside the
-client's 15 s. A `settings_set` names its target by panel id, never by device number: a device
-number is reused after a removal (docs/features/11 LINK-001), so it could reach another keypad.
+unknown key in `values` is refused as `not_allowed`. The whole `settings_set` fails with `error`
+`"bad"`, and nothing is applied, when `values` isn't an object, a key is empty or longer than 11
+bytes, a known key's value is of the wrong JSON kind (a switch takes only `true` or `false`, the
+others only whole numbers: a string, a fraction, `null`, an array, an object or a number beyond
+int64 is wrong), or a known key is named twice. A whole number outside a key's range is
+`out_of_range` for that key alone. The six words of `refused` stay; `"bad"` is never one of them.
+The panel answers within 7 s, inside the client's 15 s. A `settings_set` names its target by panel
+id, never by device number: a device number is reused after a removal (docs/features/11 LINK-001),
+so it could reach another keypad.
 
 Example (fictional ids): `{"t":"settings_set","id":"3f9a1c2e","target":"a1b2c3",
 "values":{"brightness":40}}` gets `{"t":"settings_result","id":"3f9a1c2e","ok":false,"error":"",

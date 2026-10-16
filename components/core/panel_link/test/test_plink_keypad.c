@@ -437,7 +437,7 @@ static void fm_hello(const plink_addr_t *from, const plink_hdr_t *h, const uint8
     }
     plink_session_t pend;
     plink_hello_t hello;
-    if (!plink_hs_answer(&M.c, M.k_pair, h, f, len, &pend, &hello, M.welcome, sizeof M.welcome,
+    if (!plink_hs_answer(&M.c, M.k_pair, h, f, len, 0u, &pend, &hello, M.welcome, sizeof M.welcome,
                          &M.welcome_len)) {
         return;
     }
@@ -651,7 +651,7 @@ static void kp_init_at(bool paired, const plink_addr_t *at, bool bcast)
     const plink_keypad_port_t port = {
         .ctx = NULL, .send = k_send, .mtu = NULL, .store = k_store, .resolve = k_resolve};
     plink_keypad_init(&K, &CK, &port, paired ? &REC : NULL, KBUF, sizeof KBUF, &KCFG,
-                      PLINK_KIND_PANEL, &CAP, "Hall keypad", "1.2.3", NET.now_ms);
+                      PLINK_KIND_PANEL, &CAP, 0u, "Hall keypad", "1.2.3", NET.now_ms);
     if (paired) {
         plink_keypad_master_addr(&K, NET.now_ms, at, bcast);
     }
@@ -801,7 +801,7 @@ static void test_pairing_stores_the_record(void)
 {
     M.paired = false;
     memset(M.k_pair, 0, sizeof M.k_pair);
-    plink_pm_init(&M.pm, &M.c);
+    plink_pm_init(&M.pm, &M.c, 0u);
     plink_pm_identity(&M.pm, NET_ID, "Harbor House", "A1B2C3", ZONES);
     kp_init(false);
     TEST_ASSERT_EQUAL_UINT8(PLINK_LINK_NOT_PAIRED, info().state);

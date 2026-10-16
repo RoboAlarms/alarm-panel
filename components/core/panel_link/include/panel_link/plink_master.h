@@ -46,7 +46,7 @@ extern "C" {
 #define PLINK_STATUS_MIN_GAP_MS  100u
 #define PLINK_PENDING_MS         20000u /* a pending handshake */
 #define PLINK_RESULT_KEEP_MS     90000u /* LINK-018 */
-#define PLINK_RESULTS_PER_KEYPAD 4u
+#define PLINK_RESULTS_PER_KEYPAD 8u     /* answers kept per keypad (bitmasks below: at most 8) */
 #define PLINK_PROVISIONAL_MS     600000u
 #define PLINK_HELLO_SEEN         4u     /* n_k remembered per keypad */
 #define PLINK_X25519_PER_S       4u     /* handshakes answered per second, all keypads */
@@ -140,6 +140,18 @@ typedef struct {
     uint32_t addr_flips;        /* clone detection */
     uint64_t requests_at;       /* CFG/ZONES/EV request rate limit */
     uint8_t requests;
+    bool removing;              /* removed: only its BYEs still go (used is false) */
+    uint64_t provisional_until; /* a provisional keypad is dropped then */
+    uint8_t live_nk[PLINK_NONCE_LEN];    /* n_k of the live session's HELLO */
+    uint8_t pending_nk[PLINK_NONCE_LEN]; /* ... and of the pending one's */
+    uint8_t seen_next;          /* the next seen_nk slot */
+    uint64_t rekey_at;          /* the last REKEY sent (0 none) */
+    uint64_t change_ms;         /* a changed STATUS waits since then (0 none) */
+    uint16_t zones_lo, zones_hi; /* zones changed since the last STATUS (0 none) */
+    uint32_t ev_sent_seq;       /* the newest event this session has been sent */
+    uint8_t result_due;         /* bit i: cache[i] answered, its RESULT not sent yet */
+    uint8_t cache_panic;        /* bit i: cache[i] is a panic (resent for 60 s, not 3 s) */
+    uint32_t cmd_ticket, panic_ticket; /* the commands in flight */
 } plink_peer_t;
 
 typedef struct {
@@ -170,6 +182,14 @@ typedef struct {
     uint8_t out[PLINK_FRAME_MAX];   /* frame scratch */
     uint8_t pt[PLINK_FRAME_MAX];    /* payload scratch */
     alarm_event_t ev[32];           /* event scratch */
+    uint64_t time_at_ms;            /* time.epoch_ms was the wall clock then */
+    uint32_t zones_crc;             /* of the snapshot's zones 1..zones_used */
+    uint64_t not_paired_at;         /* the last NOT_PAIRED sent (0 none) */
+    bool store_due;                 /* the record must be written again */
+    uint64_t store_at;
+    bool in_run;                    /* inside port.run: answers wait until it returns */
+    plink_out_t pout;               /* the pairing's answer */
+    plink_status_t st_a, st_b;      /* status scratch */
 } plink_master_t;
 
 /* rec: the stored record (NULL or a zero net_id: none yet; a net id is chosen at the first
@@ -234,7 +254,8 @@ typedef struct {
     plink_heartbeat_t hb;
 } plink_peer_info_t;
 
-/* The keypads, by number; returns how many. */
+/* The keypads, by number: returns how many there are and fills the first max into out (out may
+ * be NULL with max 0, to count them). */
 size_t plink_master_peers(const plink_master_t *m, uint64_t now_ms, plink_peer_info_t *out,
                           size_t max);
 /* Removes keypad device (LINK-014): its trouble cleared, BYE sealed and sent (three times over

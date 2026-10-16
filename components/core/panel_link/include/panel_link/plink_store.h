@@ -28,7 +28,7 @@
 extern "C" {
 #endif
 
-#define PLINK_SUPERVISION_DEFAULT_S 60u /* LINK-007 */
+#define PLINK_SUPERVISION_DEFAULT_S 300u /* LINK-007: 5 min (decided 2026-10-15) */
 
 #define PLINK_PEER_PROVISIONAL 0x01u /* paired, no handshake yet: not supervised (LINK-016) */
 

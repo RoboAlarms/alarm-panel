@@ -35,7 +35,7 @@ static void fixture_master(plink_master_rec_t *m)
     p->device = 1u;
     p->home = 1u;
     p->kind = PLINK_KIND_PANEL;
-    p->supervision_s = PLINK_SUPERVISION_DEFAULT_S;
+    p->supervision_s = 60u; /* frozen in the fixture (not the default, which may change) */
     for (unsigned i = 0; i < PLINK_KEY_LEN; i++) {
         p->k_pair[i] = (uint8_t)i;
     }

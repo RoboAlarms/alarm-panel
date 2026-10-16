@@ -45,3 +45,11 @@ one of them with Python's `cryptography`, independently of the C code.
 byte against `test/vectors_plink_pair.py` and `test/vectors_plink_session.py` (random numbers
 scripted through the port), then each state machine against a device in the middle, replays and
 every timer.
+
+`test_plink_master.c` runs the master's manager over the pretend network against scripted
+keypads built from the real pairing, handshake, session and message codecs, with the real engine
+(`alarm_sim`) behind it as the platform wires it (port.run answering from inside the call or
+later, a snapshot after every engine call). Every vector it needs comes from those codecs, which
+have their own known answers. A test of a network that damages frames watches only its own side's
+seals (`plink_test_port_t.only_dir`): a frame whose tag fails may be opened again under the same
+nonce, which is harmless.

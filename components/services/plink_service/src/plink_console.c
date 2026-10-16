@@ -10,7 +10,8 @@
  *           super <n> <seconds>        (force: without installer mode, development builds only)
  *   keypad: plink find, master <ip>|off, pair [<ip>], yes, no, forget
  *   a master whose setup isn't done (the setup's keypad branch, Option C): plink kp pair [<ip>],
- *           kp yes, kp no, kp stop, kp done (stores the keypad role, keeps Wi-Fi, restarts)
+ *           kp yes, kp no, kp stop, kp done (stores the keypad role, keeps Wi-Fi, restarts);
+ *           kp force first lets a bench panel whose setup is done do it (development builds)
  */
 #include "plink_internal.h"
 
@@ -239,6 +240,8 @@ static int cmd_plink(int argc, char **argv)
             req.kind = UI_LINK_REQ_KP_PAIR_STOP;
         } else if (strcmp(step, "done") == 0) {
             req.kind = UI_LINK_REQ_KP_DONE;
+        } else if (strcmp(step, "force") == 0) {
+            req.kind = LINK_REQ_KP_FORCE; /* development builds: the setup's pairing anyway */
         } else {
             printf("plink kp pair [<ip>] | yes | no | stop | done\n");
             return 1;

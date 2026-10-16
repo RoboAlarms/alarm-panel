@@ -120,6 +120,8 @@ enum {
     LINK_REQ_KP_PAIR_AT,       /* keypad, `plink pair <ip>`: ask that master, no discovery */
     LINK_REQ_KP_STATIC,        /* keypad, `plink master <ip>|off`: its master by hand (stored) */
     LINK_REQ_KP_FORGET,        /* keypad, `plink forget` */
+    LINK_REQ_KP_FORCE,         /* master, `plink kp force`: the setup's keypad pairing although the
+                                * setup is done (dev builds; a bench panel keeps its Wi-Fi) */
 };
 typedef struct {
     uint8_t kind;

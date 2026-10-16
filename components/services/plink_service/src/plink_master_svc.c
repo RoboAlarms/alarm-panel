@@ -96,6 +96,7 @@ static bool s_mdns_on, s_mdns_pair;
 static uint16_t s_mdns_net;
 static bool s_holding;     /* NET_WIFI_REQ_LINK and the low-latency hold */
 static bool s_pair_forced; /* `plink pair force`: not closed with installer mode */
+static bool s_kp_forced;   /* `plink kp force`: Option C on a bench although the setup is done */
 static uint32_t s_dropped_told;
 
 /* ---- the worker's ---------------------------------------------------------------------------- */
@@ -862,7 +863,8 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         /* The setup making this panel a keypad (Option C): it stays the master until the pairing
          * is done, with a keypad manager of its own for the pairing on the same socket. Only a
          * panel whose setup isn't done and that has no keypads. */
-        if (panel_setup_done() || plink_master_held(s_m) != 0u || plink_master_pairing(s_m)) {
+        if ((panel_setup_done() && !s_kp_forced) || plink_master_held(s_m) != 0u ||
+            plink_master_pairing(s_m)) {
             return UI_LINK_REQ_REFUSED;
         }
         if (req->kind == UI_LINK_REQ_KP_DONE) {
@@ -873,6 +875,13 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         }
         r = ksvc_request(now, req);
         break;
+    case LINK_REQ_KP_FORCE:
+#if CONFIG_ALARM_BUILD_DEV
+        s_kp_forced = true; /* a bench shortcut: development builds only */
+        break;
+#else
+        return UI_LINK_REQ_REFUSED;
+#endif
     default: return UI_LINK_REQ_REFUSED;
     }
     publish(now);

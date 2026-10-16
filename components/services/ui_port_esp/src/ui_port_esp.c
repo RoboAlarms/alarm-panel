@@ -18,6 +18,7 @@
 
 #include "alarm/alarm_keyseq.h"
 #include "alarm_proto/proto_fwsrv.h"
+#include "alarm_proto/proto_prefs.h"
 #include "alarm_service.h"
 #include "esp_attr.h"
 #include "ha_link.h"
@@ -34,6 +35,7 @@
 #include "panel_system.h"
 #include "panel_voice.h"
 #include "sounder.h"
+#include "ui_backend/ui_prefs.h"
 #include "zigbee_service.h"
 #include "zone_service.h"
 #include "zwave_service.h"
@@ -556,6 +558,65 @@ static void save_options(void *ctx, const ui_options_t *opt)
     };
     panel_voice_set_prefs(&vp);
 #endif
+}
+
+/* A change from elsewhere (docs/features/07 UI-046; docs/features/11 "The keypad's path to its
+ * screen"): the screen takes it from panel_prefs' mailbox and answers there, in both roles -
+ * whoever submits it (a keypad's link service for PREFS_SET, the master's Home Assistant link for
+ * its own settings). The UI's field and why numbers are the wire's: */
+_Static_assert(UI_PREFS_F_LAST == PROTO_PREFS_F_LAST && UI_PREFS_KNOWN == PROTO_PREFS_KNOWN &&
+                   UI_PREFS_LOOK == PROTO_PREFS_LOOK,
+               "ui_prefs.h's fields are proto_prefs.h's");
+_Static_assert((int)UI_PREFS_F_BRIGHTNESS == (int)PROTO_PREFS_F_BRIGHTNESS &&
+                   (int)UI_PREFS_F_SAVER_BRIGHTNESS == (int)PROTO_PREFS_F_SAVER_BRIGHTNESS &&
+                   (int)UI_PREFS_F_SAVER_AFTER == (int)PROTO_PREFS_F_SAVER_AFTER &&
+                   (int)UI_PREFS_F_OFF_AFTER == (int)PROTO_PREFS_F_OFF_AFTER &&
+                   (int)UI_PREFS_F_NIGHT_ON == (int)PROTO_PREFS_F_NIGHT_ON &&
+                   (int)UI_PREFS_F_NIGHT_START == (int)PROTO_PREFS_F_NIGHT_START &&
+                   (int)UI_PREFS_F_NIGHT_END == (int)PROTO_PREFS_F_NIGHT_END &&
+                   (int)UI_PREFS_F_NIGHT_BRIGHTNESS == (int)PROTO_PREFS_F_NIGHT_BRIGHTNESS &&
+                   (int)UI_PREFS_F_NIGHT_OFF_AFTER == (int)PROTO_PREFS_F_NIGHT_OFF_AFTER &&
+                   (int)UI_PREFS_F_CLOCK_MODE == (int)PROTO_PREFS_F_CLOCK_MODE &&
+                   (int)UI_PREFS_F_APPEARANCE == (int)PROTO_PREFS_F_APPEARANCE &&
+                   (int)UI_PREFS_F_HIGH_CONTRAST == (int)PROTO_PREFS_F_HIGH_CONTRAST &&
+                   (int)UI_PREFS_F_VOLUME == (int)PROTO_PREFS_F_VOLUME &&
+                   (int)UI_PREFS_F_CHIME_VOLUME == (int)PROTO_PREFS_F_CHIME_VOLUME &&
+                   (int)UI_PREFS_F_VOICE_VOLUME == (int)PROTO_PREFS_F_VOICE_VOLUME &&
+                   (int)UI_PREFS_F_KEY_CLICK == (int)PROTO_PREFS_F_KEY_CLICK &&
+                   (int)UI_PREFS_F_VOICE_ENABLED == (int)PROTO_PREFS_F_VOICE_ENABLED &&
+                   (int)UI_PREFS_F_VOICE_STATUS == (int)PROTO_PREFS_F_VOICE_STATUS &&
+                   (int)UI_PREFS_F_VOICE_CHIME == (int)PROTO_PREFS_F_VOICE_CHIME,
+               "ui_prefs.h's ids are proto_prefs.h's");
+_Static_assert((int)UI_PREFS_WHY_NOT_ALLOWED == (int)PROTO_PREFS_WHY_NOT_ALLOWED &&
+                   (int)UI_PREFS_WHY_RANGE == (int)PROTO_PREFS_WHY_RANGE &&
+                   (int)UI_PREFS_WHY_IN_USE == (int)PROTO_PREFS_WHY_IN_USE &&
+                   (int)UI_PREFS_WHY_HELD == (int)PROTO_PREFS_WHY_HELD &&
+                   (int)UI_PREFS_WHY_VOICE_NOT_READY == (int)PROTO_PREFS_WHY_VOICE_NOT_READY &&
+                   (int)UI_PREFS_WHY_BAD == (int)PROTO_PREFS_WHY_BAD &&
+                   (int)UI_PREFS_WHY_BUSY == (int)PROTO_PREFS_WHY_BUSY,
+               "ui_prefs.h's why numbers are proto_prefs.h's");
+
+static bool prefs_remote_take(void *ctx, ui_prefs_patch_t *out, uint32_t *ticket)
+{
+    (void)ctx;
+    proto_prefs_values_t v;
+    if (!panel_prefs_remote_take(&v, ticket)) {
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    for (unsigned id = 1u; id <= UI_PREFS_F_LAST; id++) {
+        uint32_t x = 0u;
+        if (proto_prefs_get(&v, id, &x)) {
+            (void)ui_prefs_put(out, id, x);
+        }
+    }
+    return true;
+}
+
+static void prefs_remote_done(void *ctx, uint32_t ticket, const uint8_t why[UI_PREFS_F_LAST])
+{
+    (void)ctx;
+    panel_prefs_remote_done(ticket, why);
 }
 
 static void set_volume(void *ctx, uint8_t percent)
@@ -1225,87 +1286,40 @@ static size_t dev_list(void *ctx, ui_dev_t *out, size_t max)
     const size_t rows = device_service_list(s_dev_rows, HC_MAX_DEVICES);
     size_t n = 0u;
     for (size_t i = 0; i < rows && n < max; i++) {
-        const hc_device_t *d = &s_dev_rows[i];
-        ui_dev_t *u = &out[n++];
-        memset(u, 0, sizeof(*u));
-        u->kind = d->info.kind;
-        u->source = d->info.source;
-        u->state = ui_dev_state_parse(d->info.kind, d->info.state);
-        u->status = !d->info.online ? UI_DEV_OFFLINE
-                    : d->pending != 0u ? UI_DEV_PENDING
-                    : d->failed        ? UI_DEV_FAILED
-                                       : UI_DEV_IDLE;
-        /* The registry names the action under way or failed whoever started it - this screen,
-         * the console, an automation - so the tile says "Didn't unlock", not "Didn't respond". */
-        u->action = u->status == UI_DEV_PENDING || u->status == UI_DEV_FAILED
-                        ? d->action
-                        : (uint8_t)ACT_NONE;
-        /* HCTL-012: "didn't" only for a source's refusal; no answer in time or a dropped link
-         * (the registry's own failures, by origin) is "couldn't confirm" (BL-171) */
-        u->unsure = u->status == UI_DEV_FAILED && hc_outcome_unknown(d) ? 1u : 0u;
-        /* Brightness, fan speed, position, a thermostat's setpoint, temperature, modes and what
-         * it is doing, what a cover or a fan can do and since when, as far as the source knows
-         * them (BL-171, BL-174); a cover's class isn't sent yet (no garage colours for a Home
-         * Assistant cover). u->kind is set above: the fill reads it. */
-        ui_dev_values_fill(u, &d->info.values);
-        snprintf(u->ref, sizeof(u->ref), "%s", d->info.ref);
-        snprintf(u->name, sizeof(u->name), "%s", d->info.name);
-        snprintf(u->area, sizeof(u->area), "%s", d->info.area);
+        /* The one conversion both screens use (ui_dev_model.h; a link keypad's from the link's
+         * records, docs/features/11 BL-216): the state, the status and the action under way or
+         * failed whoever started it, "couldn't confirm" by origin (HCTL-012, BL-171), and the
+         * values as far as the source knows them (BL-171, BL-174); a cover's class isn't sent
+         * yet (no garage colours for a Home Assistant cover). */
+        const ui_dev_parts_t p = ui_dev_parts_hc(&s_dev_rows[i]);
+        ui_dev_from_parts(&out[n++], &p);
     }
     return n;
 }
 
+/* The numbers ui_devices.c reads are the judge's (device_service.h, docs/features/11 LINK-048). */
+_Static_assert(UI_DEV_OK == (int)DS_PERSON_OK && UI_DEV_NEED_CODE == (int)DS_PERSON_NEED_CODE &&
+                   UI_DEV_CODE_REFUSED == (int)DS_PERSON_CODE_REFUSED &&
+                   UI_DEV_BUSY == (int)DS_PERSON_BUSY &&
+                   UI_DEV_UNREACHABLE == (int)DS_PERSON_UNREACHABLE &&
+                   UI_DEV_REFUSED == (int)DS_PERSON_REFUSED,
+               "ui_dev_result_t and ds_person_t");
+
+/* The master's own screen: keypad 0 ({KEYPAD, ALARM_KEYPAD_LOCAL}) and a code of any partition
+ * (0), judged by device_service_person_act - the same judge as a link keypad's (LINK-048). A
+ * thermostat's mode comes as a ui_dev_state_t (ui_backend.h) and goes on as its DEV_MODE_* bit. */
 static ui_dev_result_t dev_act(void *ctx, const char *ref, uint8_t action, int32_t value,
                                const char *code, alarm_result_t *code_result)
 {
     (void)ctx;
-    hc_device_t d;
-    if (ref == NULL || !device_service_get(ref, &d) || d.info.source == (uint8_t)DSRC_ZWAVE ||
-        !hc_action_valid((dev_kind_t)d.info.kind, (dev_action_t)action)) {
-        return UI_DEV_REFUSED;
+    alarm_result_t why = ALARM_OK;
+    const uint8_t mode_bit = action == (uint8_t)ACT_SET_MODE ? ui_dev_mode_bit(value) : 0u;
+    const ds_person_t r =
+        device_service_person_act(&SRC, 0, ref, action, value, mode_bit, code, &why);
+    if (r == DS_PERSON_CODE_REFUSED && code_result != NULL) {
+        *code_result = why;
     }
-    /* HCTL-005, judged here and not by the screen: an unlock or an opening needs a code the
-     * engine accepts, a wrong one counting toward the keypad's lockout like any other. */
-    if (hc_needs_code((dev_kind_t)d.info.kind, (dev_action_t)action, value)) {
-        if (code == NULL || code[0] == '\0') {
-            return UI_DEV_NEED_CODE;
-        }
-        uint8_t user = 0;
-        alarm_authority_t authority = ALARM_AUTH_NONE;
-        alarm_result_t r = alarm_service_authenticate_as(&SRC, code, 0, &user, &authority);
-        /* Until the owner rules otherwise (BL-045), the codes that may disarm at will may
-         * unlock: an arm-only or a guest code may not. A duress code unlocks as asked, without
-         * the silent duress report disarming sends (decided in BL-045). */
-        if (r == ALARM_OK && (authority == ALARM_AUTH_ARM_ONLY || authority == ALARM_AUTH_GUEST)) {
-            r = ALARM_ERR_NOT_AUTHORIZED;
-        }
-        if (r != ALARM_OK) {
-            if (code_result != NULL) {
-                *code_result = r;
-            }
-            return UI_DEV_CODE_REFUSED;
-        }
-        /* The event with who did it is HCTL-007's (docs/features/24 Tasks): not logged yet. */
-        (void)user;
-    }
-    /* A thermostat's mode comes as a ui_dev_state_t (ui_backend.h): the source gets its word. */
-    const char *mode = NULL;
-    if (action == ACT_SET_MODE) {
-        mode = value == UI_DEV_ST_OFF    ? "off"
-               : value == UI_DEV_ST_HEAT ? "heat"
-               : value == UI_DEV_ST_COOL ? "cool"
-               : value == UI_DEV_ST_AUTO ? "auto"
-                                         : NULL;
-        if (mode == NULL) {
-            return UI_DEV_REFUSED;
-        }
-    }
-    switch (device_service_act(ref, (dev_action_t)action, value, mode)) {
-    case HC_OK: return UI_DEV_OK;
-    case HC_ERR_BUSY: return UI_DEV_BUSY;
-    case HC_ERR_OFFLINE: return UI_DEV_UNREACHABLE;
-    default: return UI_DEV_REFUSED;
-    }
+    return (ui_dev_result_t)r;
 }
 
 /* The layout is one blob in the "ui" namespace (ui_dev_model.h describes it). */
@@ -1602,6 +1616,8 @@ void ui_port_esp_backend(ui_backend_t *out)
     out->asset_letters_match = asset_letters_match;
 #endif
     out->save_options = save_options;
+    out->prefs_remote_take = prefs_remote_take; /* both roles: a keypad keeps them (UI-046) */
+    out->prefs_remote_done = prefs_remote_done;
     out->set_volume = set_volume;
     out->set_chime_volume = set_chime_volume;
     out->set_voice_volume = set_voice_volume;

@@ -15,6 +15,7 @@
 #include <stdint.h>
 
 #include "alarm_proto/proto.h"
+#include "alarm_proto/proto_prefs.h"
 #include "alarm_proto/proto_zw.h"
 
 #ifdef __cplusplus
@@ -208,6 +209,8 @@ typedef enum {
     PROTO_LINK_IN_STATE,   /* hand the whole frame to proto_link_parse_state */
     PROTO_LINK_IN_CALL_RESULT, /* hand the whole frame to proto_link_parse_call_result */
     PROTO_LINK_IN_ZWAVE_SET,   /* hand the whole frame to proto_link_parse_zwave_set (ZW-036) */
+    PROTO_LINK_IN_SETTINGS_SET, /* hand the whole frame to proto_link_parse_settings_set
+                                 * (HAI-017) */
 } proto_link_in_type_t;
 
 typedef struct {
@@ -235,6 +238,153 @@ bool proto_link_parse_zwave_set(const char *json, size_t len, char id[PROTO_LINK
 /* {"t":"zwave_result","id","ok","error"} - error "" when ok; "not_allowed" (a garage's open),
  * "not_taken" (unknown, busy, too old, the radio away). */
 void proto_link_zwave_result(pj_writer_t *w, const char *id, bool ok, const char *error);
+
+/* ---- panel settings and keypads (protocol.md "Panel settings and keypads"; docs/features/11
+ * "Smart Home and Home Assistant on keypads"; HAI-016..019). The master's own Screen and sound
+ * settings and its link keypads', relayed by the master: a keypad runs no link of its own. The
+ * keys and units are proto_prefs.h's. ---------------------------------------------------------- */
+
+/* settings_result's error for the whole request (external contract; "" when none). */
+#define PROTO_LINK_SET_E_NOT_FOUND   "not_found"   /* no panel with that id: the master or a keypad */
+#define PROTO_LINK_SET_E_OFFLINE     "offline"     /* the keypad isn't heard now */
+#define PROTO_LINK_SET_E_UNSUPPORTED "unsupported" /* the keypad takes no settings (no PREFS) */
+#define PROTO_LINK_SET_E_BUSY        "busy"        /* no room or no turn: nothing was applied */
+#define PROTO_LINK_SET_E_TIMEOUT     "timeout"     /* sent, never answered: not known */
+#define PROTO_LINK_SET_E_BAD         "bad"         /* the request itself (proto_prefs_json_parse) */
+
+/* A panel's voice: the panel link's PREFS numbers (docs/features/11 "Frozen values"). JSON
+ * "ready", "loading", "none"; null for one not known (and any other number). */
+#define PROTO_LINK_VOICE_UNKNOWN 0u
+#define PROTO_LINK_VOICE_READY   1u
+#define PROTO_LINK_VOICE_LOADING 2u
+#define PROTO_LINK_VOICE_NONE    3u
+
+#define PROTO_LINK_KEYPADS_MAX      8u    /* link keypads: device numbers 1..8 (docs/features/11
+                                           * LINK-001) */
+#define PROTO_LINK_NAME_LEN         48u   /* a keypad's name: 47 bytes + NUL (PLINK_NAME_MAX) */
+#define PROTO_LINK_FW_LEN           32u   /* a keypad's firmware: 31 bytes + NUL (PLINK_FW_MAX) */
+#define PROTO_LINK_KEYPADS_JSON_MAX 8192u /* proto_link_keypads, 8 keypads at their longest
+                                           * (host-tested) */
+
+/* One link keypad as the master knows it. */
+typedef struct {
+    uint8_t device;                 /* 1..8 */
+    char id[PROTO_PANEL_ID_LEN];    /* its own panel id, 6 lowercase hex; "" until it reports one
+                                     * (null) */
+    char name[PROTO_LINK_NAME_LEN]; /* the master's name for it */
+    uint8_t home;                   /* its home partition 1..8; 0 = not known (null) */
+    bool online;                    /* a live session heard in the last 30 s */
+    char fw[PROTO_LINK_FW_LEN];     /* its firmware version, "" = not known */
+    int8_t rssi;                    /* dBm; 0 or more = not known (null) */
+    bool reported;                  /* its settings report came (PREFS): settings, can and voice
+                                     * below; until then settings null, can [] and voice null */
+    proto_prefs_values_t settings;  /* what it reported (settings.have: the fields it sent) */
+    proto_prefs_mask_t can;         /* the fields it accepts */
+    uint8_t voice;                  /* PROTO_LINK_VOICE_* */
+} proto_link_keypad_t;
+
+/* {"t":"settings","values":{...},"can":[...],"voice":...}: the master's own, whole every time.
+ * values: values->have's fields (proto_prefs_json_values); can: its keys in id order. */
+void proto_link_settings(pj_writer_t *w, const proto_prefs_values_t *values,
+                         proto_prefs_mask_t can, uint8_t voice);
+
+/* {"t":"keypads","keypads":[{"device","id","name","home","online","fw","rssi","settings","can",
+ * "voice"}, ...]}: the whole list, every time, in the order given. Fits
+ * PROTO_LINK_KEYPADS_JSON_MAX with n <= PROTO_LINK_KEYPADS_MAX. */
+void proto_link_keypads(pj_writer_t *w, const proto_link_keypad_t *k, size_t n);
+
+/* Before a list is published or searched: an id that isn't 6 lowercase hex characters, the
+ * master's own (own_id) or one a lower device number already reports is cleared (published as
+ * null, never a settings_set's target; docs/features/11 "Settings over the link"). Returns how
+ * many were cleared, for a log line. */
+size_t proto_link_keypads_tidy(proto_link_keypad_t *k, size_t n, const char *own_id);
+
+/* A settings_set: {"t":"settings_set","id","target","values":{...}}. */
+typedef struct {
+    char id[PROTO_LINK_CALL_ID_LEN]; /* echoed in the answer */
+    char target[PROTO_PANEL_ID_LEN]; /* a panel id; "" when longer than any (matches none) */
+    bool bad;                        /* the whole request is refused "bad", nothing applied:
+                                      * "values" missing, named twice, or refused whole by
+                                      * proto_prefs_json_parse (then p is empty) */
+    proto_prefs_parsed_t p;          /* the fields taken (p.values.have), refused alone (RANGE),
+                                      * and the unknown keys (refused "not_allowed") */
+} proto_link_settings_set_t;
+
+/* false (close the connection, as for any message missing a required key): damaged JSON, no
+ * "id" or one longer than PROTO_LINK_CALL_ID_LEN - 1 bytes, no "target" string. Otherwise true,
+ * with out->bad for a request answered "bad". The values are read against every known key; the
+ * target's own keys are applied with proto_link_settings_set_accept. */
+bool proto_link_parse_settings_set(const char *json, size_t len, proto_link_settings_set_t *out);
+
+/* The target takes only the keys of accept (its "can"): any other field taken is dropped and
+ * refused NOT_ALLOWED, as is any other field refused for its range (the target would refuse it
+ * first). */
+void proto_link_settings_set_accept(proto_link_settings_set_t *s, proto_prefs_mask_t accept);
+
+/* {"t":"settings_result","id","ok","error","refused":{key: word}}. error NULL or "" means none:
+ * then refused names req's own refusals (proto_prefs_why_word; its unknown keys "not_allowed")
+ * and, for the fields it sent (req->p.values.have), the target's answer why[id - 1] (NULL: none),
+ * and ok is true only when nothing is refused. With an error, ok is false and refused is {}. */
+void proto_link_settings_result(pj_writer_t *w, const proto_link_settings_set_t *req,
+                                const char *error, const uint8_t *why);
+
+/* ---- settings_set's queue on the panel (HAI-019) ------------------------------------------------
+ * Every settings_set taken is answered within 7 s: at once when it can't go (bad, not_found,
+ * offline, unsupported, busy), else when its target answers, or busy (never sent) or timeout
+ * (sent, no answer) once PROTO_LINK_SET_ANSWER_MS have passed. At most PROTO_LINK_SET_QUEUE wait
+ * or are in flight, one in flight per target, each target sent at most one a second after a burst
+ * of PROTO_LINK_SET_BURST, in the order they came. The caller owns the clock, the sending and the
+ * answers; the queue keeps the order, the turns and the deadlines. */
+#define PROTO_LINK_SET_TARGETS   9u    /* 0 = the master itself, 1..8 = a link keypad's device */
+#define PROTO_LINK_SET_QUEUE     8u    /* requests waiting or in flight, all targets */
+#define PROTO_LINK_SET_BURST     3u    /* per target */
+#define PROTO_LINK_SET_EVERY_MS  1000u /* per target, after the burst */
+#define PROTO_LINK_SET_ANSWER_MS 6500u /* from its arrival: with the link task's 500 ms pass,
+                                        * answered within 7 s (protocol.md), inside the client's
+                                        * 15 s; past a keypad's own 6 s give-up (LINK-051) */
+
+typedef enum {
+    PROTO_LINK_SET_FREE = 0,
+    PROTO_LINK_SET_QUEUED, /* waiting for its target's turn */
+    PROTO_LINK_SET_FLIGHT, /* handed to its target: its answer comes by ticket */
+} proto_link_set_state_t;
+
+typedef struct {
+    uint8_t state;        /* proto_link_set_state_t */
+    uint8_t target;       /* 0..8 */
+    bool withdrawn;       /* the caller's own (ha_link: the master's mailbox was given up on) */
+    uint32_t ticket;      /* the request's own: never 0, never reused while it could answer */
+    uint32_t handle;      /* the caller's own (ha_link: the master's mailbox ticket) */
+    uint64_t received_ms; /* when it came */
+    uint64_t sent_ms;     /* when it went to its target (FLIGHT) */
+    proto_link_settings_set_t req; /* the id, the fields to send (req.p.values), refusals so far */
+} proto_link_set_slot_t;
+
+typedef struct {
+    proto_link_set_slot_t slot[PROTO_LINK_SET_QUEUE];
+    uint64_t tat[PROTO_LINK_SET_TARGETS]; /* each target's turn: one is due when tat <= now +
+                                           * (BURST - 1) * EVERY_MS (a token bucket, as GCRA) */
+    uint32_t next_ticket;
+} proto_link_setq_t;
+
+void proto_link_setq_init(proto_link_setq_t *q);
+/* Drops every request (a new connection: their answers have nowhere to go). The turns and the
+ * tickets go on, so a reconnect doesn't buy a new burst and a late answer matches nothing. */
+void proto_link_setq_clear(proto_link_setq_t *q);
+/* Queues a request for target (0..8): NULL when the queue is full (answer busy at once) or the
+ * target is out of range. */
+proto_link_set_slot_t *proto_link_setq_add(proto_link_setq_t *q, uint64_t now, uint8_t target,
+                                           const proto_link_settings_set_t *req);
+/* The oldest request whose target has none in flight and a turn due: now in flight (its turn
+ * taken, sent_ms = now). The caller sends it, or answers and frees it when it can't go. NULL
+ * when none may go now. */
+proto_link_set_slot_t *proto_link_setq_next(proto_link_setq_t *q, uint64_t now);
+/* The request in flight with that ticket; NULL for a late or unknown answer (drop it). */
+proto_link_set_slot_t *proto_link_setq_find(proto_link_setq_t *q, uint32_t ticket);
+/* The oldest request PROTO_LINK_SET_ANSWER_MS old or more: answer it busy when QUEUED (it never
+ * went), timeout when in FLIGHT, and free it. NULL when none. */
+proto_link_set_slot_t *proto_link_setq_expired(proto_link_setq_t *q, uint64_t now);
+void proto_link_setq_free(proto_link_setq_t *q, proto_link_set_slot_t *s);
 
 #ifdef __cplusplus
 }

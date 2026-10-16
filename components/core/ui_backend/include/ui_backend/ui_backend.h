@@ -1466,6 +1466,17 @@ typedef struct {
     bool voice_chime;         /* the zone's spoken name after the chime (default true) */
 } ui_options_t;
 
+/* A change of these preferences from elsewhere (docs/features/07 UI-046; docs/features/11
+ * "Settings fields", "Applying a change from elsewhere"): Home Assistant through the master, or
+ * the master's console over the panel link. Each field by its frozen settings id (ui_prefs.h
+ * UI_PREFS_F_*, alarm_proto's PROTO_PREFS_F_* numbers), its value in the wire's units: a delay
+ * in ms, a switch 0 or 1. ui_backend_t.prefs_remote_take hands one to the screen. */
+#define UI_PREFS_F_LAST 19u /* the highest settings id this firmware knows */
+typedef struct {
+    uint32_t have;                   /* bit id - 1: value[id - 1] holds that field's new value */
+    uint32_t value[UI_PREFS_F_LAST]; /* index id - 1 */
+} ui_prefs_patch_t;
+
 /* The voice (docs/features/08 voice-first-build.md D03, D06, D09): ui_backend_t.voice_info. */
 typedef enum {
     UI_VOICE_OFF = 0,     /* no voice in this build: no Spoken name row, no Announcements page */
@@ -1805,6 +1816,16 @@ typedef struct {
 
     /* ---- this keypad and the panel ---- */
     void (*save_options)(void *ctx, const ui_options_t *opt);
+    /* A change of the preferences from elsewhere (UI-046; ui_prefs.h). Optional as a pair: NULL =
+     * nothing from elsewhere is applied. Polled on every tick of the screen's task (ui_settings.c
+     * prefs_remote_tick). take: true when a patch was waiting, now the screen's, with its ticket;
+     * a patch that waited longer than UI_PREFS_TAKE_MS is never handed out (the backend answers
+     * it BUSY itself). The screen answers each ticket taken exactly once, with done, on the same
+     * task, in the same tick or a later one (at most 2 s later: UI_PREFS_LOOK_MS): why[id - 1] a
+     * UI_PREFS_WHY_* for each field refused, 0 for the rest. A field applied went through
+     * save_options before done. */
+    bool (*prefs_remote_take)(void *ctx, ui_prefs_patch_t *out, uint32_t *ticket);
+    void (*prefs_remote_done)(void *ctx, uint32_t ticket, const uint8_t why[UI_PREFS_F_LAST]);
     void (*remote_get)(void *ctx, bool *web, bool *developer);
     bool (*remote_set)(void *ctx, bool web, bool developer);
     void (*remote_info)(void *ctx, char *out, size_t capacity);

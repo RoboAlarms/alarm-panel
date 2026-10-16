@@ -4,7 +4,8 @@
  * or a cover position that isn't fully closed), one action at a time per device with a bounded
  * lifetime and its result, and Home Assistant as a device source (the domain and action tables
  * of docs/features/23 protocol.md, "the Devices screen").
- * Requirements: HCTL-001, HCTL-002, HCTL-004, HCTL-005, HCTL-006, HCTL-011, HCTL-012, AUT-002, AUT-015
+ * Requirements: HCTL-001, HCTL-002, HCTL-004, HCTL-005, HCTL-006, HCTL-011, HCTL-012, HCTL-013,
+ * AUT-002, AUT-015, LINK-048
  * No alarm engine is involved: home_control never touches alarm_core.
  */
 #include <stdio.h>
@@ -1557,6 +1558,40 @@ static void test_ha_auto_mode_word(void)
     TEST_ASSERT_EQUAL_STRING("auto", SEND.mode);
 }
 
+/* HCTL-004, HCTL-013, LINK-048 (docs/features/11, BL-216): a thermostat's mode travels as one
+ * DEV_MODE_* bit (the screen's mode keys, a link keypad's DEV_ACT) and becomes the word hc_act
+ * takes - the four the screen and the console have always sent. Any other byte has no word, so
+ * the judge refuses it: no bit, Home Assistant's heat_cool asked for by name, two bits, an
+ * unknown one. */
+static void test_mode_word(void)
+{
+    TEST_ASSERT_EQUAL_STRING("off", hc_mode_word(DEV_MODE_OFF));
+    TEST_ASSERT_EQUAL_STRING("heat", hc_mode_word(DEV_MODE_HEAT));
+    TEST_ASSERT_EQUAL_STRING("cool", hc_mode_word(DEV_MODE_COOL));
+    TEST_ASSERT_EQUAL_STRING("auto", hc_mode_word(DEV_MODE_AUTO));
+    unsigned words = 0;
+    for (unsigned b = 0; b <= 0xFFu; b++) {
+        if (hc_mode_word((uint8_t)b) != NULL) {
+            words++;
+            TEST_ASSERT_TRUE(b == DEV_MODE_OFF || b == DEV_MODE_HEAT || b == DEV_MODE_COOL ||
+                             b == DEV_MODE_AUTO);
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT(4, words);
+    TEST_ASSERT_NULL(hc_mode_word(0u));
+    TEST_ASSERT_NULL(hc_mode_word(DEV_MODE_HEAT_COOL));
+    TEST_ASSERT_NULL(hc_mode_word(DEV_MODE_HEAT | DEV_MODE_COOL));
+    TEST_ASSERT_NULL(hc_mode_word(0x20u));
+
+    /* Auto's word still reaches a heat_cool-only thermostat as the word it has */
+    dsrc_ha_link(&HA, true);
+    const dev_values_t hc_only = values(0, 0, DEV_MODE_OFF | DEV_MODE_HEAT_COOL, 0, 0);
+    dsrc_ha_catalog_add(&HA, "climate.hall", "Hall", "Hall", "climate", "off", &hc_only);
+    TEST_ASSERT_TRUE(dsrc_ha_ops()->act(&HA, "climate.hall", ACT_SET_MODE, 0,
+                                        hc_mode_word(DEV_MODE_AUTO), 1));
+    TEST_ASSERT_EQUAL_STRING("heat_cool", SEND.mode);
+}
+
 /* HCTL-006 (BL-171): the row names the action under way or failed whoever started it - the
  * console's hc_act or an automation's hc_act_auto - so the screen says "Didn't turn on", not
  * "Didn't respond"; a success clears it, a send that never left names nothing, and a refresh
@@ -1654,6 +1689,72 @@ static void assert_cleared(const char *ref)
     TEST_ASSERT_EQUAL_UINT8(ACT_NONE, d->action);
     TEST_ASSERT_EQUAL_STRING("", d->error);
     TEST_ASSERT_EQUAL_UINT32(0, d->pending);
+}
+
+/* HCTL-006, BL-216 (docs/features/11 "Device state"): a send the source refuses at once clears
+ * the failure its row showed - "Didn't" or "Couldn't confirm" - as it always has, and now says so
+ * through port.changed, so a reader that copies the list only when it changes (device_service_seq,
+ * the panel link's device builds) doesn't keep the stale words on a keypad. A refused send with
+ * nothing to clear, a refusal before anything is tried and a send that goes out change nothing
+ * the port has to hear of (an HC_OK's pending row the caller knows of). */
+static void test_refused_send_clearing_a_failure_is_a_change(void)
+{
+    with_two_fake_devices();
+
+    /* nothing shown: a refused send changes nothing */
+    FAKE.act_returns = false;
+    unsigned changes = CHANGES;
+    TEST_ASSERT_EQUAL(HC_ERR_OFFLINE, hc_act(&HC, "zb/porch", ACT_ON, -1, NULL));
+    assert_cleared("zb/porch");
+    TEST_ASSERT_EQUAL_UINT(changes, CHANGES);
+    FAKE.act_returns = true;
+
+    /* "Didn't unlock", then the source refuses the next try at once */
+    fail_action("zb/front", ACT_UNLOCK, 0);
+    changes = CHANGES;
+    FAKE.act_returns = false;
+    TEST_ASSERT_EQUAL(HC_ERR_OFFLINE, hc_act(&HC, "zb/front", ACT_UNLOCK, 0, NULL));
+    assert_cleared("zb/front");
+    TEST_ASSERT_EQUAL_UINT(changes + 1u, CHANGES);
+    /* and again, now with nothing left to clear */
+    TEST_ASSERT_EQUAL(HC_ERR_OFFLINE, hc_act(&HC, "zb/front", ACT_UNLOCK, 0, NULL));
+    TEST_ASSERT_EQUAL_UINT(changes + 1u, CHANGES);
+    FAKE.act_returns = true;
+
+    /* "Couldn't confirm" (no answer by the deadline), then an automation's send refused at once */
+    TEST_ASSERT_EQUAL(HC_OK, hc_act(&HC, "zb/porch", ACT_OFF, 0, NULL));
+    hc_tick(&HC, 1);
+    hc_tick(&HC, 1u + HC_ACT_TIMEOUT_MS);
+    TEST_ASSERT_TRUE(hc_outcome_unknown(hc_get(&HC, "zb/porch")));
+    changes = CHANGES;
+    FAKE.act_returns = false;
+    uint32_t id = 7u;
+    TEST_ASSERT_EQUAL(HC_ERR_OFFLINE, hc_act_auto(&HC, "zb/porch", ACT_OFF, 0, NULL, false, &id));
+    TEST_ASSERT_EQUAL_UINT32(0, id);
+    assert_cleared("zb/porch");
+    TEST_ASSERT_FALSE(hc_outcome_unknown(hc_get(&HC, "zb/porch")));
+    TEST_ASSERT_EQUAL_UINT(changes + 1u, CHANGES);
+    FAKE.act_returns = true;
+
+    /* a failure shown, and refusals made before anything is tried: the row keeps it, no change */
+    fail_action("zb/front", ACT_UNLOCK, 0);
+    changes = CHANGES;
+    TEST_ASSERT_EQUAL(HC_ERR_ARG, hc_act(&HC, "zb/front", ACT_ON, -1, NULL));
+    TEST_ASSERT_EQUAL(HC_ERR_NOT_ALLOWED,
+                      hc_act_auto(&HC, "zb/front", ACT_UNLOCK, 0, NULL, false, NULL));
+    FAKE.online = false;
+    TEST_ASSERT_EQUAL(HC_ERR_OFFLINE, hc_act(&HC, "zb/front", ACT_UNLOCK, 0, NULL));
+    FAKE.online = true;
+    assert_failed("zb/front", ACT_UNLOCK, "failed");
+    TEST_ASSERT_EQUAL_UINT(changes, CHANGES);
+
+    /* a send that goes out: pending, no port.changed (the caller knows: HC_OK) */
+    const unsigned results = RESULTS;
+    TEST_ASSERT_EQUAL(HC_OK, hc_act(&HC, "zb/front", ACT_UNLOCK, 0, NULL));
+    TEST_ASSERT_NOT_EQUAL(0, hc_get(&HC, "zb/front")->pending);
+    TEST_ASSERT_FALSE(hc_get(&HC, "zb/front")->failed);
+    TEST_ASSERT_EQUAL_UINT(changes, CHANGES);
+    TEST_ASSERT_EQUAL_UINT(results, RESULTS);
 }
 
 /* HCTL-006, BL-175: a failed action's words stay while the source reports what the device showed
@@ -2100,7 +2201,9 @@ int main(void)
     RUN_TEST(test_ha_values_from_state_pushes);
     RUN_TEST(test_ha_dimmable_survives_a_new_catalog);
     RUN_TEST(test_ha_auto_mode_word);
+    RUN_TEST(test_mode_word);
     RUN_TEST(test_failed_action_is_kept_for_any_caller);
+    RUN_TEST(test_refused_send_clearing_a_failure_is_a_change);
     RUN_TEST(test_failure_cleared_by_a_newer_state);
     RUN_TEST(test_failure_cleared_by_a_newer_value);
     RUN_TEST(test_failure_kept_on_the_same_report);

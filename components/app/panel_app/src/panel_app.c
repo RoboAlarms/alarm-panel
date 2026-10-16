@@ -2061,6 +2061,13 @@ void panel_app_run(const panel_app_config_t *cfg)
                                           .command = zw_ha_command};
     ha_link_set_zwave(&ha_zw_port);
 #endif
+    /* Panel settings (docs/features/23 HAI-016..019): the master's own need nothing here (ha_link
+     * reports them and hands a change to the screen's mailbox, panel_prefs). The link keypads'
+     * come through a port; until it is set the keypads list is empty and a keypad target is
+     * not_found.
+     * TODO(BL-216 S2b): with CONFIG_ALARM_LINK, ha_link_set_settings() with plink_service's
+     * keypads and set (a port: plink_service already depends on ha_link), and plink_service
+     * answering through ha_link_settings_done / _failed. */
     if (ha_link_start() != ESP_OK) {
         ESP_LOGE(TAG, "Home Assistant link failed to start");
     }

@@ -14,6 +14,7 @@
 #include "notify/notify_auto.h"
 #include "ui_backend/ui_check_words.h"
 #include "ui_backend/ui_dev_model.h"
+#include "ui_backend/ui_prefs.h"
 #include "ui_backend/ui_voice.h"
 #include "annunciator/annunciator.h"
 #include "sounder/sounder_mix.h"
@@ -2564,9 +2565,12 @@ static void ha_link_up(bool up);
 static bool host_panel_ha_paired_and_on(void);
 static void zb_demo_hooks(void);
 
+static void prefs_remote_reset(void);
+
 void host_panel_init(int64_t epoch_ms_at_start)
 {
     memset(&H, 0, sizeof(H));
+    prefs_remote_reset(); /* no change from elsewhere waiting */
     storage_reset();
     devices_reset(epoch_ms_at_start);
     H.epoch_at_start = epoch_ms_at_start;
@@ -3315,6 +3319,7 @@ static bool be_clock_set(void *ctx, int64_t epoch_ms, uint8_t user, char *why, s
  * outlives host_panel_init(), as the panel's store outlives the engine restarting. */
 static ui_options_t s_saved_options;
 static bool s_options_saved;
+static unsigned s_options_saves;
 static void VP_set_options(const ui_options_t *opt); /* the voice's, below */
 
 static void be_save_options(void *ctx, const ui_options_t *opt)
@@ -3322,6 +3327,7 @@ static void be_save_options(void *ctx, const ui_options_t *opt)
     (void)ctx;
     s_saved_options = *opt;
     s_options_saved = true;
+    s_options_saves++;
     VP_set_options(opt);
 }
 
@@ -3331,6 +3337,88 @@ bool host_panel_saved_options(ui_options_t *out)
         *out = s_saved_options;
     }
     return s_options_saved;
+}
+
+unsigned host_panel_options_saves(void)
+{
+    return s_options_saves;
+}
+
+/* A change of the settings from elsewhere (docs/features/07 UI-046): the panel's mailbox
+ * (platform_esp's panel_prefs_remote_*) on one thread and the simulated clock - the same
+ * bookkeeping (ui_prefs.h's box), the same conversion to the screen's patch (ui_port_esp's
+ * prefs_remote_take), the same BUSY for a patch not taken within 3 s. Emptied by
+ * host_panel_init(). */
+static struct {
+    ui_prefs_box_t box;
+    proto_prefs_values_t patch;
+    host_panel_prefs_done_fn done;
+    void *ctx;
+} s_prefs_remote;
+
+uint32_t host_panel_prefs_submit(const proto_prefs_values_t *patch, host_panel_prefs_done_fn done,
+                                 void *ctx)
+{
+    if (patch == NULL || done == NULL) {
+        return 0u;
+    }
+    const uint32_t ticket = ui_prefs_box_submit(&s_prefs_remote.box, (uint32_t)H.now);
+    if (ticket != 0u) {
+        s_prefs_remote.patch = *patch;
+        s_prefs_remote.done = done;
+        s_prefs_remote.ctx = ctx;
+    }
+    return ticket;
+}
+
+bool host_panel_prefs_cancel(uint32_t ticket)
+{
+    return ui_prefs_box_cancel(&s_prefs_remote.box, ticket);
+}
+
+static bool be_prefs_remote_take(void *ctx, ui_prefs_patch_t *out, uint32_t *ticket)
+{
+    (void)ctx;
+    uint32_t t = 0u;
+    const ui_prefs_take_t r = ui_prefs_box_take(&s_prefs_remote.box, (uint32_t)H.now, &t);
+    if (r == UI_PREFS_TAKE_EXPIRED) {
+        uint8_t why[PROTO_PREFS_F_LAST];
+        memset(why, 0, sizeof(why));
+        for (unsigned id = 1u; id <= PROTO_PREFS_F_LAST; id++) {
+            if ((s_prefs_remote.patch.have & PROTO_PREFS_BIT(id)) != 0u) {
+                why[id - 1u] = (uint8_t)PROTO_PREFS_WHY_BUSY;
+            }
+        }
+        s_prefs_remote.done(s_prefs_remote.ctx, t, why);
+        return false;
+    }
+    if (r != UI_PREFS_TAKE_OK) {
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    for (unsigned id = 1u; id <= UI_PREFS_F_LAST; id++) {
+        uint32_t x = 0u;
+        if (proto_prefs_get(&s_prefs_remote.patch, id, &x)) {
+            (void)ui_prefs_put(out, id, x);
+        }
+    }
+    *ticket = t;
+    return true;
+}
+
+static void be_prefs_remote_done(void *ctx, uint32_t ticket, const uint8_t why[UI_PREFS_F_LAST])
+{
+    (void)ctx;
+    if (ui_prefs_box_done(&s_prefs_remote.box, ticket)) {
+        s_prefs_remote.done(s_prefs_remote.ctx, ticket, why);
+    }
+}
+
+static void prefs_remote_reset(void)
+{
+    const uint32_t last = s_prefs_remote.box.last; /* tickets go on counting */
+    memset(&s_prefs_remote, 0, sizeof(s_prefs_remote));
+    s_prefs_remote.box.last = last;
 }
 
 /* The backlight the UI asked for (UI-009, UI-043): the panel's PWM here is just a number, which
@@ -7612,6 +7700,8 @@ void host_panel_backend(ui_backend_t *out)
     out->clock_info = be_clock_info;
     out->clock_set = be_clock_set;
     out->save_options = be_save_options;
+    out->prefs_remote_take = be_prefs_remote_take; /* as ui_port_esp_backend, in both roles */
+    out->prefs_remote_done = be_prefs_remote_done;
     out->backlight = be_backlight;
     /* The rest follows the board's options (host_features.h), as the firmware's backend
      * does: remote access and browser sign-in come with the Panel Manager

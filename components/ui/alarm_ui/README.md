@@ -1,7 +1,7 @@
 # alarm_ui
 
 **Tier:** ui (portable LVGL logic) · **Features:** [07 UI with LVGL Pro](../../../docs/features/07-UI-LVGL-Pro/README.md), [14 Configuration and installer programming](../../../docs/features/14-Configuration-and-Installer-Programming/README.md#who-can-change-what) (who can change what) ·
-**Tests:** the PC builds compile the same logic against the real engine: `pwsh tools/ui_preview.ps1` ([host/ui_preview](../../../host/ui_preview)) renders every screen to `build/ui_preview/shots` and fails when the scripted walk gets stuck or a check reports the wrong thing (it carries `UI-NNN` checks and runs in CI); `ui_words_test` (same folder) reads Home's headline, detail and note and checks `ui_text.c`'s tones, glyphs and zone card (`KPD-004`); `pwsh tools/ui_sim.ps1` ([host/ui_sim](../../../host/ui_sim)) is the interactive simulator. CI also runs `lvpro_gen.py --check`, `embed_image.py --check` and `embed_logo.py --check`. On a panel: the `display` / `display watch <s>` console commands and `tools/panelctl.py screen`.
+**Tests:** the PC builds compile the same logic against the real engine: `pwsh tools/ui_preview.ps1` ([host/ui_preview](../../../host/ui_preview)) renders every screen to `build/ui_preview/shots` and fails when the scripted walk gets stuck or a check reports the wrong thing (it carries `UI-NNN` checks and runs in CI); `ui_words_test` (same folder) reads Home's headline, detail and note and checks `ui_text.c`'s tones, glyphs and zone card (`KPD-004`); `prefs_smoke` (same folder) hands the running UI changes of its settings from elsewhere (`UI-046`); `pwsh tools/ui_sim.ps1` ([host/ui_sim](../../../host/ui_sim)) is the interactive simulator. CI also runs `lvpro_gen.py --check`, `embed_image.py --check` and `embed_logo.py --check`. On a panel: the `display` / `display watch <s>` console commands and `tools/panelctl.py screen`.
 
 The panel's touch UI: Home, the code pad, the zone, activity and trouble lists, the emergency
 buttons, the screen saver, Settings, installer mode and the first-boot setup. The logic in
@@ -18,7 +18,7 @@ and simulator. The contract is `components/core/ui_backend`; its ESP-IDF impleme
 |---|---|
 | `ui_app.c` | Start-up, the tick, snapshots, Home, the code pad, the lists, emergency buttons, the screen saver |
 | `ui_forms.c` | Settings rows, sheets (text entry with the on-screen keyboard, choices, confirmation) |
-| `ui_settings.c` | Settings sections and who may open them, the page stack, display and sound, users, About |
+| `ui_settings.c` | Settings sections and who may open them, the page stack, display and sound (and a change of them from elsewhere: `prefs_remote_tick`, docs/features/07 UI-046 - in use, held, the voice's readiness, what the screen shows - the look, the screen-off and saver delays, the clock's format - at most once per 2 s), users, About |
 | `ui_installer.c` | Installer mode: options, zones, system name, installer and master codes, setup, factory reset |
 | `ui_sources.c` | Where a zone's sensor is: source picker, live terminal / learn list, source rows |
 | `ui_net.c` | Wi-Fi, address settings and the connection check, date and time; the setup's network steps |

@@ -135,6 +135,18 @@ target_compile_definitions(ui_words_test PRIVATE ${screen})
 target_compile_options(ui_words_test PRIVATE -Wall -Wextra -Werror)
 alarm_host_voice_pack(ui_words_test)
 
+# A change of the Screen and sound settings from elsewhere (docs/features/07 UI-046, BL-216): the
+# real touch UI judges and applies patches handed in as the panel's mailbox hands them
+# (prefs_smoke.c: in use, held, the voice, ranges, the look and the backlight at most once per 2 s,
+# the mailbox's BUSY). Windowless; exits non-zero when a check fails. Needs ui_internal.h, the UI's
+# own header.
+add_executable(prefs_smoke prefs_smoke.c host_panel.c ${ZB_HOST})
+target_link_libraries(prefs_smoke PRIVATE alarm_ui alarm_proto automation zigbee_zones_fake)
+target_include_directories(prefs_smoke PRIVATE ${ALARM_COMPONENTS_DIR}/ui/alarm_ui/src)
+target_compile_definitions(prefs_smoke PRIVATE ${screen})
+target_compile_options(prefs_smoke PRIVATE -Wall -Wextra -Werror)
+alarm_host_voice_pack(prefs_smoke)
+
 # The automations core in the simulator (docs/features/41 U12, BL-168): the real engine, observer
 # and runner on the simulator's devices, with Harbor House's seeded automations (auto_smoke.c).
 # Windowless; exits non-zero when a check fails.
@@ -145,6 +157,7 @@ target_compile_options(auto_smoke PRIVATE -Wall -Wextra -Werror)
 alarm_host_voice_pack(auto_smoke)
 enable_testing()
 add_test(NAME auto_smoke COMMAND auto_smoke)
+add_test(NAME prefs_smoke COMMAND prefs_smoke)
 
 # The voice backend (docs/features/08 voice-first-build.md, BL-202 U13a): the five voice hooks
 # over the packed en-US voice and the host engine (voice_smoke.c). Windowless; skipped (77)

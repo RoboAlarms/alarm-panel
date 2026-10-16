@@ -1668,9 +1668,9 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   fixture; `proto_prefs` (LINK-043, -050, -051, -052; HAI-017) (BL-216, a97a745)
 - [x] Master core: list, pushes, summary, catch-up, DEV_ACT cache and buckets, PREFS report and
   PREFS_REQ, PREFS_SET, send order; `plink_home`; the link tests and the storm (LINK-044..051)
-  (BL-216, S1COMMIT)
+  (BL-216, ed58b12)
 - [x] Keypad core: `plink_pull_t` from the configuration pull, mirror and catch-up, freshness,
-  DEV_ACT slots and overlay, PREFS report and set answers (LINK-044..051) (BL-216, S1COMMIT)
+  DEV_ACT slots and overlay, PREFS report and set answers (LINK-044..051) (BL-216, ed58b12)
 - [ ] One judge and one converter: `device_service_person_act`, `device_service_seq`,
   `hc_mode_word`, `ui_dev_from_parts`; `ui_port_esp` moved onto them with the master's screen
   unchanged (LINK-048; HCTL-005, -006, -012) (BL-216)

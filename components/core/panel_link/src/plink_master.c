@@ -461,11 +461,20 @@ static void events_catch_up(plink_master_t *m, plink_peer_t *p)
     p->ev_sent_seq = newest;
 }
 
-/* ZONES for zones first..last of the snapshot (clipped to zones_used), in as many frames as the
- * transport needs. */
-static void send_zones(plink_master_t *m, plink_peer_t *p, uint16_t first, uint16_t last)
+/* The zones keypad p can hold: its HELLO's capacity (0: not known, all), at most zones_used. */
+static uint16_t zones_for(const plink_master_t *m, const plink_peer_t *p)
 {
     const uint16_t used = zones_used(&m->snap);
+    const uint16_t cap = p->live.peer_cap.zones;
+    return cap != 0u && cap < used ? cap : used;
+}
+
+/* ZONES for zones first..last of the snapshot (clipped to the zones p can hold), in as many
+ * frames as the transport needs; their zones_crc is the one p's STATUS carries. */
+static void send_zones(plink_master_t *m, plink_peer_t *p, uint16_t first, uint16_t last)
+{
+    const uint16_t used = zones_for(m, p);
+    const uint32_t crc = plink_zones_crc(m->snap.zone, used);
     if (first == 0u) {
         first = 1u;
     }
@@ -476,7 +485,7 @@ static void send_zones(plink_master_t *m, plink_peer_t *p, uint16_t first, uint1
     while (first <= last) {
         size_t len = 0u;
         uint16_t written = 0u;
-        if (!plink_enc_zones(m->zones_crc, first, &m->snap.zone[first - 1u],
+        if (!plink_enc_zones(crc, first, &m->snap.zone[first - 1u],
                              (uint16_t)(last - first + 1u), m->pt, cap, &len, &written) ||
             written == 0u || !send_sealed(m, p, PLINK_T_ZONES, len)) {
             return;
@@ -500,6 +509,7 @@ static void status_extra(const plink_master_t *m, const plink_peer_t *p, uint64_
         x->cfg_crc = m->cfg_crc;
         x->cfg_len = (uint32_t)m->cfg_len;
     }
+    x->zones_cap = p->live.peer_cap.zones; /* zones_crc over the zones it can hold */
 }
 
 /* p's STATUS now: first the events it carries and the zones that changed, then the status in
@@ -517,6 +527,12 @@ static void send_status(plink_master_t *m, plink_peer_t *p, uint64_t now)
     plink_status_extra_t x;
     status_extra(m, p, now, &x);
     plink_status_build(&m->snap, now, &x, &m->st_a);
+    /* Events pushed ahead of the snapshot that carries them (the platform hands them in as they
+     * come): the STATUS says at least as much, or the keypad would read a log started again and
+     * drop its events. */
+    if (m->st_a.last_event_seq < p->ev_sent_seq) {
+        m->st_a.last_event_seq = p->ev_sent_seq;
+    }
     const size_t cap = pt_cap(m, p);
     uint8_t first = 0u, written = 0u;
     do {
@@ -638,26 +654,55 @@ static size_t cache_find(const plink_peer_t *p, uint32_t req)
 }
 
 /* A slot for a new command: a free one, else the answer its keypad stopped resending the longest
- * ago. A command is resent for 3 s and a panic for 60 s (plink_keypad.h): an answer that may
- * still be asked for is never given up for another, so nothing runs twice (LINK-018).
- * CACHE_NONE: none now (the new command's own resend comes back). */
-static size_t cache_slot(const plink_peer_t *p, uint64_t now)
+ * ago. A command is resent for 3 s from its last copy, a panic for 60 s from keying - its first
+ * copy - (plink_keypad.h): an answer that may still be asked for is never given up for another,
+ * so nothing runs twice (LINK-018). Panics never hold the last PLINK_PANIC_FREE_SLOTS answers:
+ * a panic beyond that waits for one of theirs to go (its keypad resends it every second). And
+ * a command (a disarm!) that finds nothing else takes the oldest answered panic whose keypad
+ * hasn't sent it for 3 s - a panic is resent every second until its answer arrives, so that
+ * one has its answer. CACHE_NONE: none now (the new command's own resend comes back). */
+static size_t cache_slot(const plink_peer_t *p, uint64_t now, bool panic)
 {
-    size_t best = CACHE_NONE;
+    size_t free_slot = CACHE_NONE, best = CACHE_NONE, best_panic = CACHE_NONE;
+    size_t answered_panic = CACHE_NONE;
+    unsigned panics = 0u;
     for (size_t i = 0; i < PLINK_RESULTS_PER_KEYPAD; i++) {
         const plink_cached_t *e = &p->cache[i];
         if (!cache_used(e)) {
-            return i;
+            free_slot = free_slot == CACHE_NONE ? i : free_slot;
+            continue;
         }
         const uint8_t bit = (uint8_t)(1u << i);
-        const uint64_t resent =
-            (p->cache_panic & bit) != 0u ? PLINK_PANIC_KEEP_MS : PLINK_CMD_GIVE_UP_MS;
-        if (!e->pending && (p->result_due & bit) == 0u && now >= e->last_ms + resent &&
-            (best == CACHE_NONE || e->last_ms < p->cache[best].last_ms)) {
+        const bool is_panic = (p->cache_panic & bit) != 0u;
+        panics += is_panic ? 1u : 0u;
+        if (e->pending || (p->result_due & bit) != 0u) {
+            continue;
+        }
+        const bool gone = is_panic ? now >= e->first_ms + PLINK_PANIC_KEEP_MS
+                                   : now >= e->last_ms + PLINK_CMD_GIVE_UP_MS;
+        if (gone && (best == CACHE_NONE || e->last_ms < p->cache[best].last_ms)) {
             best = i;
         }
+        if (gone && is_panic &&
+            (best_panic == CACHE_NONE || e->last_ms < p->cache[best_panic].last_ms)) {
+            best_panic = i;
+        }
+        if (!gone && is_panic && now >= e->last_ms + PLINK_CMD_GIVE_UP_MS &&
+            (answered_panic == CACHE_NONE ||
+             e->first_ms < p->cache[answered_panic].first_ms)) {
+            answered_panic = i;
+        }
     }
-    return best;
+    if (panic && panics >= PLINK_RESULTS_PER_KEYPAD - PLINK_PANIC_FREE_SLOTS) {
+        return best_panic; /* the commands' slots stay theirs */
+    }
+    if (free_slot != CACHE_NONE) {
+        return free_slot;
+    }
+    if (best != CACHE_NONE || panic) {
+        return best;
+    }
+    return answered_panic;
 }
 
 static void send_result(plink_master_t *m, plink_peer_t *p, const plink_result_t *r)
@@ -727,6 +772,7 @@ static void cmd_run(plink_master_t *m, plink_peer_t *p, uint64_t now, size_t i,
     e->pending = true;
     e->ticket = ticket;
     e->last_ms = now;
+    e->first_ms = now;
     if (panic) {
         p->cache_panic = (uint8_t)(p->cache_panic | (1u << i));
         p->panic_running = true;
@@ -776,7 +822,7 @@ static void cmd_take(plink_master_t *m, plink_peer_t *p, uint64_t now, const pli
     }
     /* LINK-027: over these limits the request is dropped here, before anything reaches the
      * alarm task; the keypad's resend comes back. */
-    const size_t slot = cache_slot(p, now);
+    const size_t slot = cache_slot(p, now, panic);
     if (m->port.run == NULL || slot == CACHE_NONE ||
         (panic ? p->panic_running
                : p->cmd_running || !bucket_take(&p->cmd_tokens, &p->cmd_tokens_at, now,
@@ -883,32 +929,34 @@ static void on_zones_req(plink_master_t *m, plink_peer_t *p, size_t n)
     send_zones(m, p, first, (uint16_t)(last > UINT16_MAX ? UINT16_MAX : last));
 }
 
-/* An EV_REQ: the newest `max` events after after_seq, as many as one frame holds (the keypad
- * asks again for the rest). */
+/* An EV_REQ: the newest `max` events after after_seq, up to what a keypad keeps
+ * (PLINK_EV_ANSWER_MAX), in as many EVENTS as the transport needs, oldest first (the flag on the
+ * first); none is one EVENTS with none. */
 static void on_ev_req(plink_master_t *m, plink_peer_t *p, size_t n)
 {
     plink_ev_req_t r;
     if (!plink_dec_ev_req(m->pt, n, &r) || r.max == 0u) {
         return;
     }
-    const size_t cap = pt_cap(m, p);
-    size_t k = cap > EVENTS_HDR ? (cap - EVENTS_HDR) / PLINK_EVENT_REC_LEN : 0u;
+    size_t k = r.max;
     if (k > sizeof m->ev / sizeof m->ev[0]) {
         k = sizeof m->ev / sizeof m->ev[0];
     }
-    if (k > r.max) {
-        k = r.max;
-    }
     bool gap = false;
     size_t got = 0u;
-    if (m->port.events_after != NULL && k > 0u) {
+    if (m->port.events_after != NULL) {
         got = m->port.events_after(m->port.ctx, r.after_seq, m->ev, k, &gap);
         if (got > k) {
             got = k;
         }
     }
+    if (got > 0u) {
+        send_events(m, p, m->ev, got, gap ? PLINK_EVF_GAP : 0u);
+        return;
+    }
     size_t len = 0u, written = 0u;
-    if (plink_enc_events(m->ev, got, gap ? PLINK_EVF_GAP : 0u, m->pt, cap, &len, &written)) {
+    if (plink_enc_events(m->ev, 0u, gap ? PLINK_EVF_GAP : 0u, m->pt, pt_cap(m, p), &len,
+                         &written)) {
         (void)send_sealed(m, p, PLINK_T_EVENTS, len);
     }
 }
@@ -929,7 +977,10 @@ static void on_heartbeat(plink_master_t *m, plink_peer_t *p, uint64_t now, size_
     } else {
         p->stale_since_ms = 0u;
     }
-    if (m->port.checkin != NULL) {
+    /* A check-in says both directions work: the engine's check-in clears a device trouble, so a
+     * keypad that is down, or reports a stale status (LINK-007's second condition), isn't checked
+     * in - its trouble clears through supervise once both directions are fresh again. */
+    if (m->port.checkin != NULL && !p->down && p->stale_since_ms == 0u) {
         m->port.checkin(m->port.ctx, dev_of(m, p));
     }
 }
@@ -1173,7 +1224,9 @@ static void pair_take(plink_master_t *m, uint64_t now)
     p->rec.supervision_s = PLINK_SUPERVISION_DEFAULT_S;
     memcpy(p->rec.k_pair, nw.k_pair, PLINK_KEY_LEN);
     p->rec.paired_epoch_ms = epoch_at(m->epoch_ms, m->epoch_at_ms, now);
-    memcpy(p->rec.name, nw.name, sizeof p->rec.name);
+    /* No name: a new keypad is "Keypad N" until renamed on the alarm panel (decided 2026-10-15).
+     * The name it gave itself was shown only while pairing, next to the code. */
+    memset(p->rec.name, 0, sizeof p->rec.name);
     plink_wipe(&nw, sizeof nw);
     peer_start(p, now);
     if (!store_rec(m)) {
@@ -1463,6 +1516,14 @@ void plink_master_snapshot(plink_master_t *m, uint64_t now_ms, const alarm_snaps
         }
     }
     const bool zones_moved = first || zones_used(&m->snap) != zones_used(snap);
+    if (!first && snap->last_event_seq < m->snap.last_event_seq) {
+        /* The engine's log started again: what was pushed is no floor for its STATUS. */
+        for (size_t i = 0; i < PLINK_KEYPADS_MAX; i++) {
+            if (m->peer[i].ev_sent_seq > snap->last_event_seq) {
+                m->peer[i].ev_sent_seq = snap->last_event_seq;
+            }
+        }
+    }
     m->snap = *snap;
     m->have_snap = true;
     m->epoch_ms = epoch_ms;

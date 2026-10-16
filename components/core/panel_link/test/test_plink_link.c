@@ -480,6 +480,10 @@ static void p_checkin(void *ctx, uint8_t device)
     if (device <= PLINK_DEVICE_LAST) {
         R.checkins[device]++;
     }
+    /* alarm_service_device_checkin: the engine's check-in, which clears a device trouble */
+    sync_engine(mnow());
+    alarm_engine_device_checkin(&R.sim.eng, device, R.sim.now);
+    R.pump_due = true;
 }
 
 static uint32_t p_taken(void *ctx)
@@ -1381,7 +1385,7 @@ static void test_pairing_from_scratch_reaches_online(void)
     TEST_ASSERT_EQUAL_UINT8(2u, R.stored.peer[0].device);
     TEST_ASSERT_EQUAL_UINT8(0u, R.stored.peer[0].flags & PLINK_PEER_PROVISIONAL);
     TEST_ASSERT_EQUAL_UINT8(PLINK_KIND_PANEL, R.stored.peer[0].kind);
-    TEST_ASSERT_EQUAL_STRING("Hall keypad", R.stored.peer[0].name);
+    TEST_ASSERT_EQUAL_STRING("", R.stored.peer[0].name); /* "Keypad 2" until renamed */
     TEST_ASSERT_EQUAL_MEMORY(a->rec.k_pair, R.stored.peer[0].k_pair, PLINK_KEY_LEN);
     plink_peer_info_t pi[PLINK_KEYPADS_MAX];
     TEST_ASSERT_EQUAL_size_t(1u, plink_master_peers(&R.m, mnow(), pi, PLINK_KEYPADS_MAX));
@@ -1666,6 +1670,23 @@ static void test_a_lost_event_push_is_filled_in(void)
     check_events(a);
 }
 
+/* docs/features/11 "Event record": a keypad that pairs with a master holding more than 100
+ * events ends with the newest 50 - the master answers an EV_REQ with up to 50, in as many EVENTS
+ * as the transport needs - and they are the master's. */
+static void test_a_new_keypad_gets_the_newest_50_events(void)
+{
+    for (unsigned i = 0; i < 60u; i++) {
+        EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_MASTER));
+        EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_MASTER));
+    }
+    TEST_ASSERT_TRUE(R.n_ev > 100u);
+    kp_t *a = kp_new();
+    pair_kp(a);
+    run_ms(3000u);
+    TEST_ASSERT_EQUAL_size_t(PLINK_EVENTS_KEPT, a->k.ev_count);
+    check_events(a);
+}
+
 /* ---- status reaching the keypads ------------------------------------------------------------- */
 
 typedef struct {
@@ -1878,37 +1899,56 @@ static void test_keypad_restart_within_the_cache_runs_each_command_once(void)
 
 /* LINK-008, LINK-007 both ways: the master's frames stop reaching a keypad. The keypad shows LOST
  * 30 s after its last status; the master still hears it, but its heartbeats say the status they
- * have is old, and once that has lasted the supervision time the master raises the trouble. Back
- * together: the keypad is ONLINE again (no sooner than 3 s after LOST) and the trouble clears once
- * both directions are fresh. */
+ * have is old, and once that has lasted the supervision time the master raises the trouble. The
+ * heartbeats keep coming, but none that reports a stale status checks the keypad in (the
+ * engine's check-in, wired here as on a panel, would clear the trouble): the trouble stays raised
+ * in the engine while they come. Back together: the keypad is ONLINE again (no sooner than 3 s
+ * after LOST), the trouble clears once both directions are fresh, and check-ins resume. */
 static void test_master_to_keypad_cut_lost_at_30_s_and_trouble_by_status_age(void)
 {
     kp_t *a = kp_new();
     pair_kp(a);
     const uint8_t d = dev(a);
+    const uint32_t bit = 1u << (d - 1u);
     TEST_ASSERT_TRUE(plink_master_set_supervision(&R.m, mnow(), d, ONE_MINUTE_S));
     run_ms(5000u);
     R.net.cut_to = a->node;
+    R.net.log_count = 0u;
     const unsigned heard0 = R.checkins[d];
     want_t w = {a, (uint8_t)PLINK_LINK_LOST};
     TEST_ASSERT_TRUE(run_until(40000u, c_state, &w));
     const uint64_t last_status = net_of(a->k.status_ms, a->off);
     TEST_ASSERT_UINT64_WITHIN(60u, last_status + PLINK_LOST_MS, a->lost_at);
     TEST_ASSERT_EQUAL_UINT(0u, edges(d, false));
-    /* The master hears its heartbeats all along: down only by the status age they report. */
+    /* The master hears its heartbeats all along: down only by the status age they report. Only
+     * those of the first 30 s (a fresh status) checked it in. */
     edge_t e = {d, false};
     TEST_ASSERT_TRUE(run_until(150000u, c_edge, &e));
-    TEST_ASSERT_TRUE(R.checkins[d] >= heard0 + 8u);
+    TEST_ASSERT_TRUE(plink_net_count(&R.net, a->node, PLINK_T_HEARTBEAT) >= 8u);
+    TEST_ASSERT_TRUE(R.checkins[d] <= heard0 + 4u);
     TEST_ASSERT_EQUAL_UINT(1u, edges(d, false));
     const uint64_t down = edge_at(d, false);
     TEST_ASSERT_TRUE(down >= last_status + PLINK_STATUS_STALE_S * 1000u + ONE_MINUTE_S * 1000u);
     TEST_ASSERT_TRUE(down <=
                      last_status + PLINK_STATUS_STALE_S * 1000u + 12000u + ONE_MINUTE_S * 1000u);
     run_ms(300u);
-    TEST_ASSERT_TRUE((R.snap.dev_troubles & (1u << (d - 1u))) != 0u);
+    TEST_ASSERT_TRUE((R.snap.dev_troubles & bit) != 0u);
     plink_peer_info_t pi;
     TEST_ASSERT_EQUAL_size_t(1u, plink_master_peers(&R.m, mnow(), &pi, 1u));
     TEST_ASSERT_TRUE(pi.down);
+    /* A minute more of heartbeats reporting the stale status: no check-in, the engine's trouble
+     * stays raised, told once. */
+    const unsigned heard1 = R.checkins[d];
+    R.net.log_count = 0u;
+    run_ms(60000u);
+    TEST_ASSERT_TRUE(plink_net_count(&R.net, a->node, PLINK_T_HEARTBEAT) >= 5u);
+    TEST_ASSERT_EQUAL_UINT(heard1, R.checkins[d]);
+    TEST_ASSERT_TRUE((R.snap.dev_troubles & bit) != 0u);
+    alarm_snapshot_t now_snap;
+    alarm_engine_snapshot(&R.sim.eng, &now_snap);
+    TEST_ASSERT_TRUE((now_snap.dev_troubles & bit) != 0u);
+    TEST_ASSERT_EQUAL_UINT(1u, edges(d, false));
+    TEST_ASSERT_EQUAL_UINT(0u, edges(d, true));
     /* Back together. */
     const uint64_t t_back = NOW;
     R.net.cut_to = -1;
@@ -1917,7 +1957,11 @@ static void test_master_to_keypad_cut_lost_at_30_s_and_trouble_by_status_age(voi
     run_ms(15000u);
     TEST_ASSERT_EQUAL_UINT(1u, edges(d, true));
     TEST_ASSERT_TRUE(edge_at(d, true) >= t_back);
-    TEST_ASSERT_EQUAL_UINT32(0u, R.snap.dev_troubles & (1u << (d - 1u)));
+    TEST_ASSERT_EQUAL_UINT32(0u, R.snap.dev_troubles & bit);
+    /* (the heartbeat that brought it up cleared the trouble; the next one checks it in) */
+    run_ms(PLINK_HEARTBEAT_MS + 1500u);
+    TEST_ASSERT_TRUE(R.checkins[d] > heard1);
+    TEST_ASSERT_EQUAL_UINT32(0u, R.snap.dev_troubles & bit);
     TEST_ASSERT_TRUE(synced(a));
 }
 
@@ -2561,11 +2605,12 @@ static void test_six_hours_on_a_damaged_network(void)
     TEST_ASSERT_TRUE(edge_at(d3, false) <= t_off + PLINK_SUPERVISION_DEFAULT_S * 1000u + 400u);
     TEST_ASSERT_TRUE(edge_at(d3, true) >= t_on);
     TEST_ASSERT_TRUE(edge_at(d3, true) <= t_on + 120000u);
-    /* Sessions keep. A keypad shows "No system communication" only when the network lost every
-     * STATUS of 30 s - at 11 % lost or damaged, three in a row come about 3 times per keypad in
-     * six hours - and keeps its session through it; it is ONLINE all but seconds of the six
-     * hours. A keypad starts a handshake after 15 s without a frame (one STATUS lost and nothing
-     * else heard), so new sessions come every minute or two, never in a storm. */
+    /* Sessions keep. A keypad would show "No system communication" only when the network lost
+     * every STATUS of 30 s, and keeps its session through it; it is ONLINE all but seconds of the
+     * six hours. A keypad starts a handshake after 15 s without a STATUS (one lost), whatever
+     * else got through, and the new session brings a STATUS at once - so three lost in a row no
+     * longer make it LOST (none in 84 runs: seeds 0..20, four keypads each) - and new sessions
+     * come about every two minutes, never in a storm. */
     for (unsigned i = 0; i < N; i++) {
         TEST_ASSERT_EQUAL_UINT(0u, k[i]->lost_unexplained);
         TEST_ASSERT_EQUAL_UINT(0u, k[i]->lost_session);
@@ -2595,6 +2640,7 @@ int main(void)
     RUN_TEST(test_command_for_another_partition_is_refused);
     RUN_TEST(test_home_partition_moves_and_sounds_follow_it);
     RUN_TEST(test_a_lost_event_push_is_filled_in);
+    RUN_TEST(test_a_new_keypad_gets_the_newest_50_events);
     RUN_TEST(test_a_change_shows_on_every_keypad_within_a_second);
     RUN_TEST(test_master_restart_keypads_back_within_15_s);
     RUN_TEST(test_keypad_restart_within_the_cache_runs_each_command_once);

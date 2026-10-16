@@ -662,6 +662,10 @@ typedef enum {
     FAULT_X25519,       /* X25519 wrong for any point but the base point */
     FAULT_X25519_BASE,  /* X25519 wrong for the base point (public keys) alone */
     FAULT_RANDOM_STUCK, /* the same bytes every draw */
+    /* Faults zwave_host's own check can't see (its vectors use other keys and points), so only
+     * the panel link's known answers after it catch them: */
+    FAULT_X25519_BOB, /* X25519 wrong for RFC 7748 6.1's Bob alone (the agreement) */
+    FAULT_AES_CCM_KEY, /* AES wrong for RFC 3610's key c0..cf alone (CCM) */
 } fault_t;
 
 static fault_t fault;
@@ -670,7 +674,11 @@ static bool faulty_aes(void *ctx, const uint8_t key[16], const uint8_t in[16], u
 {
     (void)ctx;
     const bool ok = port.aes128_encrypt(port.ctx, key, in, out);
-    if (fault == FAULT_AES) {
+    bool ccm_key = true;
+    for (size_t i = 0; i < 16u; i++) {
+        ccm_key = ccm_key && key[i] == (uint8_t)(0xC0u + i);
+    }
+    if (fault == FAULT_AES || (fault == FAULT_AES_CCM_KEY && ccm_key)) {
         out[15] ^= 0x01u;
     }
     return ok;
@@ -682,7 +690,11 @@ static bool faulty_x25519(void *ctx, uint8_t out[32], const uint8_t scalar[32],
     (void)ctx;
     const bool ok = port.x25519(port.ctx, out, scalar, point);
     const bool base = point[0] == 9u && all_zero(&point[1], 31u);
-    if ((fault == FAULT_X25519 && !base) || (fault == FAULT_X25519_BASE && base)) {
+    uint8_t bob[32];
+    unhex(BOB_PUB, bob, sizeof bob);
+    const bool is_bob = memcmp(point, bob, sizeof bob) == 0;
+    if ((fault == FAULT_X25519 && !base) || (fault == FAULT_X25519_BASE && base) ||
+        (fault == FAULT_X25519_BOB && is_bob)) {
         out[0] ^= 0x40u;
     }
     return ok;
@@ -735,6 +747,16 @@ static void test_crypto_check(void)
         fault = FAULTS[i].fault;
         TEST_ASSERT_FALSE_MESSAGE(plink_crypto_check(&faulty), FAULTS[i].name);
     }
+    /* Faults that pass zwave_host's check (its 5 calls) are caught by the link's own known
+     * answers: the agreement (call 6) and CCM (calls 7 on). */
+    fault = FAULT_X25519_BOB;
+    plink_test_port_fail_at(&tp, ZW_HOST_NEVER); /* (counts the calls from 0) */
+    TEST_ASSERT_FALSE_MESSAGE(plink_crypto_check(&faulty), "an X25519 wrong for Bob alone");
+    TEST_ASSERT_EQUAL_UINT32(6u, tp.hc.calls);
+    fault = FAULT_AES_CCM_KEY;
+    plink_test_port_fail_at(&tp, ZW_HOST_NEVER);
+    TEST_ASSERT_FALSE_MESSAGE(plink_crypto_check(&faulty), "an AES wrong for c0..cf alone");
+    TEST_ASSERT_EQUAL_UINT32(13u, tp.hc.calls); /* the seal ran whole: its output was compared */
     fault = FAULT_NONE;
 
     plink_crypto_t missing = port;

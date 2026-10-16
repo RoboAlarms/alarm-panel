@@ -813,6 +813,12 @@ void link_master_say_keypads(link_master_t *v, uint64_t now_ms)
         } else {
             snprintf(heard, sizeof(heard), "%u s ago", (unsigned)p->heard_ago_s);
         }
+        char name[PLINK_NAME_MAX + 3];
+        if (p->name[0] != '\0') {
+            snprintf(name, sizeof(name), "\"%s\"", p->name);
+        } else {
+            snprintf(name, sizeof(name), "\"Keypad %u\"", (unsigned)p->device); /* not renamed */
+        }
         char sup[16];
         if (p->supervision_s == 0u) {
             snprintf(sup, sizeof(sup), "off");
@@ -820,9 +826,9 @@ void link_master_say_keypads(link_master_t *v, uint64_t now_ms)
             snprintf(sup, sizeof(sup), "%u s", (unsigned)p->supervision_s);
         }
         say(&v->io,
-            "keypad %u \"%s\" (%s): home partition %u, %s%s%s, supervision %s, heard %s at %s, "
+            "keypad %u %s (%s): home partition %u, %s%s%s, supervision %s, heard %s at %s, "
             "fw %s, up %u s",
-            (unsigned)p->device, p->name, kind_name(p->kind), (unsigned)p->home,
+            (unsigned)p->device, name, kind_name(p->kind), (unsigned)p->home,
             p->online ? "online" : "offline", p->provisional ? ", not yet connected" : "",
             p->down ? ", TROUBLE" : "", sup, heard, addr, p->hb.fw[0] != '\0' ? p->hb.fw : "-",
             (unsigned)p->hb.uptime_s);
@@ -862,12 +868,6 @@ static void k_resolve(void *ctx)
     if (v->have_find) {
         plink_keypad_master_addr(&v->k, v->now, &v->find);
     }
-}
-
-static bool is_broadcast(const plink_addr_t *a)
-{
-    return a->tp == PLINK_TP_UDP && a->len >= 4u && a->a[0] == 255u && a->a[1] == 255u &&
-           a->a[2] == 255u && a->a[3] == 255u;
 }
 
 void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t *io,
@@ -925,64 +925,19 @@ void link_keypad_master(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *m
     plink_keypad_master_addr(&v->k, now_ms, master);
 }
 
+/* An address, or the broadcast address when there is no mDNS on the PC: the keypad's pairing
+ * then asks every panel on the subnet and pairs with the first master that answers (LINK-021;
+ * a second one answering ends the attempt, as two masters open for pairing must). */
 void link_keypad_pair(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *master)
 {
     v->now = now_ms;
-    v->pair_asked = is_broadcast(master);
-    v->pair_found = false;
     plink_keypad_pair_start(&v->k, now_ms, master, 0u);
-}
-
-/* Pairing asked by broadcast (no mDNS on the PC). The keypad's pairing takes PAIR_COMMIT only
- * from the address it asked - a master that answers from elsewhere ends the attempt as a second
- * master - so the first master to answer is where the pairing starts again, addressed to it.
- * Asking ends at the masters that answered (PAIR_FAIL by broadcast), and a second master that
- * answers stops it all, as two masters open for pairing must (docs/features/11 "Pairing" 2).
- * true: the frame was taken here. */
-static bool pair_discovery(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *from,
-                           const uint8_t *frame, size_t len)
-{
-    plink_hdr_t h;
-    if ((!v->pair_asked && !v->pair_found) || !plink_hdr_read(frame, len, &h) ||
-        h.type != PLINK_T_PAIR_COMMIT) {
-        return false;
-    }
-    plink_pair_info_t pi;
-    plink_keypad_pair_info(&v->k, now_ms, &pi);
-    if (pi.state == PLINK_PS_IDLE || pi.state == PLINK_PS_DONE || pi.state == PLINK_PS_FAILED) {
-        v->pair_asked = v->pair_found = false;
-        return false;
-    }
-    char addr[24];
-    plink_addr_text(from, addr);
-    if (v->pair_asked) {
-        v->pair_asked = false;
-        v->pair_found = true;
-        v->found = *from;
-        say(&v->io, "a master answered from %s: pairing with it", addr);
-        plink_keypad_pair_cancel(&v->k, now_ms);
-        plink_keypad_pair_start(&v->k, now_ms, from, h.net_id);
-        return true;
-    }
-    if (!plink_addr_equal(from, &v->found)) {
-        v->pair_found = false;
-        say(&v->io,
-            "a second master answered from %s: more than one alarm panel is open for pairing - "
-            "pairing stopped (give the address: pair IP)",
-            addr);
-        plink_keypad_pair_cancel(&v->k, now_ms);
-        return true;
-    }
-    return false;
 }
 
 void link_keypad_input(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *from,
                        const uint8_t *frame, size_t len)
 {
     v->now = now_ms;
-    if (pair_discovery(v, now_ms, from, frame, len)) {
-        return;
-    }
     plink_keypad_input(&v->k, now_ms, from, frame, len);
 }
 

@@ -494,6 +494,80 @@ static void test_replayed_welcome(void)
     TEST_ASSERT_EQUAL_UINT32(R.m.sid, R.k.sid);
 }
 
+/* A WELCOME made by hand for the HELLO waiting in R.hs: proto, e_m and the DH the master's side
+ * would hold, its mac2 under the K_fin derived as docs/features/11 "Sessions" says (TH_s over the
+ * HELLO and the WELCOME up to mac2; PRK_s from n_k || n_m and K_pair || DH; K_fin the third
+ * part of the 68 bytes). Returns its length. */
+/* mac2 of the WELCOME w (len bytes, its MAC the last 16) for the HELLO waiting in R.hs, with the
+ * master's n_m and the DH its side would hold. */
+static void mac2_fill(uint8_t *w, size_t len, const uint8_t n_m[16], const uint8_t dh[32])
+{
+    static const char label[] = "plink v1 session";
+    uint8_t th[32], prk[32], okm[68], salt[32];
+    const plink_iov_t tr[] = {{R.hs.hello, R.hs.hello_len}, {w, len - PLINK_MAC_LEN}};
+    plink_sha256(tr, 2u, th);
+    memcpy(salt, R.hs.n_k, 16u);
+    memcpy(&salt[16], n_m, 16u);
+    const plink_iov_t ikm[] = {{R.k_pair, PLINK_KEY_LEN}, {dh, 32u}};
+    plink_hkdf_extract(salt, sizeof salt, ikm, 2u, prk);
+    const plink_iov_t info[] = {{label, sizeof label - 1u}, {th, sizeof th}};
+    TEST_ASSERT_TRUE(plink_hkdf_expand(prk, info, 2u, okm, sizeof okm));
+    plink_mac_fill(&okm[32], w, len);
+}
+
+static size_t hand_welcome(uint8_t proto, const uint8_t e_m[32], const uint8_t dh[32],
+                           uint8_t *out, size_t cap)
+{
+    plink_hello_t w;
+    memset(&w, 0, sizeof w);
+    w.proto = proto;
+    fill(w.n, sizeof w.n, 5u, 0x31u);
+    memcpy(w.e, e_m, 32u);
+    size_t plen = 0, len = 0;
+    TEST_ASSERT_TRUE(plink_enc_hello(&w, false, &out[PLINK_HDR_LEN], cap - PLINK_HDR_LEN, &plen));
+    const plink_hdr_t h = {PLINK_T_WELCOME, PLINK_FLAG_FROM_MASTER, NET, PLINK_SENDER_MASTER, 0u,
+                           0u};
+    TEST_ASSERT_TRUE(plink_frame_plain(&h, &out[PLINK_HDR_LEN], plen, out, cap, &len));
+    mac2_fill(out, len, w.n, dh);
+    return len;
+}
+
+/* LINK-015, LINK-017: the keypad's own refusals, each proved with a WELCOME whose mac2 is valid -
+ * so it is the refusal that stops it, not the MAC: an e_m of small order (0, whose DH is 0) and a
+ * protocol version of 0 (with an honest e_m and DH) are refused, the HELLO still waiting; the
+ * honest WELCOME made the same way is taken. */
+static void test_finish_refusals_with_a_valid_mac2(void)
+{
+    TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+    /* HELLO: proto, caps, capacities section (6), n_k (16), then e_k */
+    const uint8_t *e_k = &R.hs.hello[PLINK_HDR_LEN + 25u];
+    uint8_t sk_m[32], e_m[32], dh[32], zero[32], w[128];
+    memset(zero, 0, sizeof zero);
+    TEST_ASSERT_TRUE(plink_x25519_keypair(&R.cx, sk_m, e_m));
+    TEST_ASSERT_TRUE(plink_x25519_shared(&R.cx, sk_m, e_k, dh));
+    plink_session_t s;
+    memset(&s, 0, sizeof s);
+
+    size_t len = hand_welcome(PLINK_PROTO, zero, zero, w, sizeof w);
+    plink_hdr_t h = hdr_of(w, len);
+    TEST_ASSERT_FALSE(plink_hs_finish(&R.ck, R.k_pair, &R.hs, &h, w, len, &s));
+    TEST_ASSERT_TRUE(R.hs.waiting);
+    TEST_ASSERT_FALSE(s.valid);
+
+    len = hand_welcome(0u, e_m, dh, w, sizeof w);
+    h = hdr_of(w, len);
+    TEST_ASSERT_FALSE(plink_hs_finish(&R.ck, R.k_pair, &R.hs, &h, w, len, &s));
+    TEST_ASSERT_TRUE(R.hs.waiting);
+    TEST_ASSERT_FALSE(s.valid);
+
+    len = hand_welcome(PLINK_PROTO, e_m, dh, w, sizeof w);
+    h = hdr_of(w, len);
+    TEST_ASSERT_TRUE(plink_hs_finish(&R.ck, R.k_pair, &R.hs, &h, w, len, &s));
+    TEST_ASSERT_TRUE(s.valid);
+    TEST_ASSERT_FALSE(R.hs.waiting);
+    plink_session_wipe(&s);
+}
+
 /* ---- the replay window -------------------------------------------------------------------- */
 
 /* LINK-003: frames reordered within the 64-frame window are all taken; each replay is refused
@@ -586,6 +660,71 @@ static void test_seq_limit(void)
     TEST_ASSERT_FALSE(plink_session_seal(&R.ck, &none, PLINK_T_HEARTBEAT, NET, DEV, false, p,
                                          sizeof p, frame, sizeof frame, &out_len));
     TEST_ASSERT_EQUAL_UINT32(0u, none.tx_seq);
+}
+
+/* LINK-015, LINK-003: a frame with seq >= 2^31 is refused on arrival though it is genuine - sealed
+ * under the session's own key, sid, net and sender by a peer that ignored the limit - before any
+ * AES call, the window unmoved; the same bytes sealed at 2^31 - 1 open. A frame sealed under the
+ * right key with another sid is refused the same way. */
+static void test_seq_limit_on_arrival(void)
+{
+    handshake();
+    const uint8_t p[5] = {1, 2, 3, 4, 5};
+    plink_hdr_t h;
+    memset(&h, 0, sizeof h);
+    h.type = PLINK_T_HEARTBEAT;
+    h.flags = PLINK_FLAG_SEALED;
+    h.net_id = NET;
+    h.sender = DEV;
+    h.sid = R.k.sid;
+    size_t n = 0, got = 0;
+    const uint32_t refused[] = {PLINK_SEQ_LIMIT, 0xFFFFFFFFu};
+    for (size_t i = 0; i < sizeof refused / sizeof refused[0]; i++) {
+        h.seq = refused[i];
+        TEST_ASSERT_TRUE(plink_frame_seal(&R.ck, R.k.k_tx, &h, p, sizeof p, frame, sizeof frame,
+                                          &n));
+        const uint32_t aes = R.tpm.aes_calls;
+        const plink_window_t before = R.m.rx;
+        TEST_ASSERT_FALSE(m_open(frame, n, &got));
+        TEST_ASSERT_EQUAL_UINT32(aes, R.tpm.aes_calls);
+        TEST_ASSERT_EQUAL_UINT32(before.top, R.m.rx.top);
+        TEST_ASSERT_TRUE(before.bits == R.m.rx.bits);
+    }
+    h.seq = PLINK_SEQ_LIMIT - 1u;
+    TEST_ASSERT_TRUE(plink_frame_seal(&R.ck, R.k.k_tx, &h, p, sizeof p, frame, sizeof frame, &n));
+    TEST_ASSERT_TRUE(m_open(frame, n, &got));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(p, pt, sizeof p);
+
+    h.sid = R.k.sid ^ 0x00010000u;
+    h.seq = 7u;
+    TEST_ASSERT_TRUE(plink_frame_seal(&R.ck, R.k.k_tx, &h, p, sizeof p, frame, sizeof frame, &n));
+    const uint32_t aes = R.tpm.aes_calls;
+    const plink_window_t before = R.m.rx;
+    TEST_ASSERT_FALSE(m_open(frame, n, &got));
+    TEST_ASSERT_EQUAL_UINT32(aes, R.tpm.aes_calls);
+    TEST_ASSERT_TRUE(before.bits == R.m.rx.bits && before.top == R.m.rx.top);
+}
+
+/* LINK-015, docs/features/11 "Sessions": a seal that fails inside the port still spends its seq,
+ * so no nonce is tried twice under the key: the next frame goes with the seq after it (the port's
+ * nonce watch sees no repeat), and the master opens it. */
+static void test_seal_failure_spends_its_seq(void)
+{
+    handshake();
+    const uint8_t p[6] = {9, 8, 7, 6, 5, 4};
+    size_t n = k_seal(p, sizeof p), got = 0;
+    TEST_ASSERT_TRUE(m_open(frame, n, &got));
+    const uint32_t seq0 = R.k.tx_seq;
+    plink_test_port_fail_at(&R.tpk, 1u); /* an AES call inside the seal, after its A_0 */
+    TEST_ASSERT_EQUAL_size_t(0u, k_seal(p, sizeof p));
+    TEST_ASSERT_EQUAL_UINT32(seq0 + 1u, R.k.tx_seq);
+    TEST_ASSERT_TRUE(all_zero(frame, PLINK_SEALED_OVERHEAD + sizeof p)); /* nothing left there */
+    n = k_seal(p, sizeof p);
+    TEST_ASSERT_NOT_EQUAL(0u, n);
+    TEST_ASSERT_EQUAL_HEX32(seq0 + 2u, hdr_of(frame, n).seq);
+    TEST_ASSERT_FALSE(R.tpk.reused);
+    TEST_ASSERT_TRUE(m_open(frame, n, &got));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(p, pt, sizeof p);
 }
 
 /* LINK-003: each direction has its own key: the keypad's frames can't be opened with the keys it
@@ -753,6 +892,151 @@ static void test_port_failures(void)
     TEST_ASSERT_TRUE(finish(R.k_pair));
 }
 
+/* ---- random bytes into the handshake ------------------------------------------------------- */
+
+static uint64_t RNG;
+
+static uint32_t rnd(void)
+{
+    RNG ^= RNG << 13;
+    RNG ^= RNG >> 7;
+    RNG ^= RNG << 17;
+    return (uint32_t)(RNG >> 32);
+}
+
+static size_t rnd_below(size_t n)
+{
+    return n == 0u ? 0u : (size_t)rnd() % n;
+}
+
+/* Random edits of a plain frame's fields - the bytes between its header and its MAC: a bit
+ * flipped, an edge value, a cut, bytes inserted, deleted or appended, now and then all of them
+ * random. The MAC's place (the last 16 bytes) is kept, to be filled in again. */
+static void mutate_fields(uint8_t *f, size_t *len, size_t cap)
+{
+    static const uint8_t edge[] = {0x00, 0x01, 0x02, 0x05, 0x06, 0x10, 0x20, 0x7F, 0x80, 0xFF};
+    uint8_t fields[160];
+    size_t n = *len - PLINK_HDR_LEN - PLINK_MAC_LEN;
+    const size_t room = cap - PLINK_HDR_LEN - PLINK_MAC_LEN < sizeof fields
+                            ? cap - PLINK_HDR_LEN - PLINK_MAC_LEN
+                            : sizeof fields;
+    memcpy(fields, &f[PLINK_HDR_LEN], n);
+    if (rnd_below(8u) == 0u) {
+        n = rnd_below(100u);
+        for (size_t i = 0; i < n; i++) {
+            fields[i] = (uint8_t)rnd();
+        }
+    }
+    const size_t edits = 1u + rnd_below(3u);
+    for (size_t e = 0; e < edits; e++) {
+        const size_t at = rnd_below(n + 1u);
+        switch (rnd_below(6u)) {
+        case 0:
+            if (at < n) {
+                fields[at] = (uint8_t)(fields[at] ^ (1u << rnd_below(8u)));
+            }
+            break;
+        case 1:
+            if (at < n) {
+                fields[at] = edge[rnd_below(sizeof edge)];
+            }
+            break;
+        case 2: n = at; break;
+        case 3:
+            if (n < room) {
+                memmove(&fields[at + 1u], &fields[at], n - at);
+                fields[at] = edge[rnd_below(sizeof edge)];
+                n++;
+            }
+            break;
+        case 4:
+            if (at < n) {
+                memmove(&fields[at], &fields[at + 1u], n - at - 1u);
+                n--;
+            }
+            break;
+        default: {
+            const size_t add = rnd_below(24u);
+            for (size_t i = 0; i < add && n < room; i++) {
+                fields[n++] = (uint8_t)rnd();
+            }
+            break;
+        }
+        }
+    }
+    memcpy(&f[PLINK_HDR_LEN], fields, n);
+    memset(&f[PLINK_HDR_LEN + n], 0, PLINK_MAC_LEN);
+    *len = PLINK_HDR_LEN + n + PLINK_MAC_LEN;
+}
+
+/* LINK-015, LINK-017 (docs/features/11 "Test and acceptance": random bytes into every parser):
+ * 600 rounds of a HELLO and a WELCOME with random edits in their fields, each MAC made right
+ * again - mac1 under K_hs; mac2 under the K_fin of whatever n_m and e_m the edited WELCOME now
+ * carries - so the parsers behind the MACs read them, each frame ending at the end of its buffer.
+ * plink_hs_answer and plink_hs_finish never crash or read outside; what they accept makes a
+ * session (a WELCOME that fits its buffer, a proto of 1 at least), and what finish refuses leaves
+ * the HELLO waiting. */
+static void test_fuzz_handshake(void)
+{
+    static uint8_t arena[256];
+    uint8_t k_hs[PLINK_KEY_LEN], f[192], w[128];
+    hello_key(R.k_pair, k_hs);
+    RNG = 0x5E5510Bu;
+    unsigned answered = 0u, finished = 0u;
+    for (uint32_t iter = 0; iter < 600u; iter++) {
+        TEST_ASSERT_TRUE(plink_hs_hello(&R.ck, R.k_pair, NET, DEV, &CAP, &R.hs));
+        size_t len = R.hs.hello_len;
+        memcpy(f, R.hs.hello, len);
+        mutate_fields(f, &len, sizeof f);
+        plink_mac_fill(k_hs, f, len);
+        uint8_t *p = arena + sizeof arena - len;
+        memcpy(p, f, len);
+        plink_hdr_t h;
+        TEST_ASSERT_TRUE(plink_hdr_read(p, len, &h));
+        plink_session_t pend;
+        plink_hello_t hello;
+        size_t wl = 0u;
+        if (plink_hs_answer(&R.cm, R.k_pair, &h, p, len, &pend, &hello, w, sizeof w, &wl)) {
+            answered++;
+            TEST_ASSERT_TRUE(pend.valid);
+            TEST_ASSERT_TRUE(hello.proto != 0u);
+            TEST_ASSERT_TRUE(wl >= PLINK_HDR_LEN + PLINK_MAC_LEN && wl <= sizeof w);
+        }
+
+        /* The master's answer to the honest HELLO, edited and its mac2 made again. */
+        TEST_ASSERT_TRUE(answer(R.k_pair));
+        len = R.welcome_len;
+        memcpy(f, R.welcome, len);
+        mutate_fields(f, &len, sizeof f);
+        plink_hello_t wm;
+        uint8_t dh[32];
+        memset(dh, 0, sizeof dh);
+        if (plink_dec_hello(&f[PLINK_HDR_LEN], len - PLINK_HDR_LEN, false, &wm)) {
+            if (!plink_x25519_shared(&R.cx, R.hs.e, wm.e, dh)) {
+                memset(dh, 0, sizeof dh); /* a point of small order: the DH is all zero */
+            }
+            mac2_fill(f, len, wm.n, dh);
+        }
+        p = arena + sizeof arena - len;
+        memcpy(p, f, len);
+        TEST_ASSERT_TRUE(plink_hdr_read(p, len, &h));
+        plink_session_t s;
+        memset(&s, 0, sizeof s);
+        if (plink_hs_finish(&R.ck, R.k_pair, &R.hs, &h, p, len, &s)) {
+            finished++;
+            TEST_ASSERT_TRUE(s.valid);
+            TEST_ASSERT_TRUE(s.proto >= 1u);
+            TEST_ASSERT_FALSE(R.hs.waiting);
+        } else {
+            TEST_ASSERT_TRUE(R.hs.waiting);
+            TEST_ASSERT_FALSE(s.valid);
+        }
+    }
+    /* Many edits leave frames that parse, so the checks above ran on real handshakes. */
+    TEST_ASSERT_TRUE(answered > 60u);
+    TEST_ASSERT_TRUE(finished > 60u);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -761,12 +1045,16 @@ int main(void)
     RUN_TEST(test_wrong_k_pair);
     RUN_TEST(test_hello_tampered_or_stripped);
     RUN_TEST(test_replayed_welcome);
+    RUN_TEST(test_finish_refusals_with_a_valid_mac2);
     RUN_TEST(test_replay_window);
     RUN_TEST(test_seq_limit);
+    RUN_TEST(test_seq_limit_on_arrival);
+    RUN_TEST(test_seal_failure_spends_its_seq);
     RUN_TEST(test_directions_use_different_keys);
     RUN_TEST(test_no_key_nonce_reused);
     RUN_TEST(test_proto_and_caps);
     RUN_TEST(test_handshake_hygiene);
     RUN_TEST(test_port_failures);
+    RUN_TEST(test_fuzz_handshake);
     return UNITY_END();
 }

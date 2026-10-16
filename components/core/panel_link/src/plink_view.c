@@ -159,7 +159,13 @@ void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
     out->recovery_left_ms = sat32(left_at(snap->recovery_left_ms, taken, now_ms));
     out->zones_used = snap->zones_used <= ALARM_MAX_ZONES ? snap->zones_used : ALARM_MAX_ZONES;
     out->last_event_seq = snap->last_event_seq;
-    out->zones_crc = plink_zones_crc(snap->zone, out->zones_used);
+    /* Over the zones this keypad can hold: one with fewer slots than the master uses compares
+     * its own zones 1..its slots, and must not ask for the rest forever. */
+    uint16_t crc_zones = out->zones_used;
+    if (x != NULL && x->zones_cap != 0u && x->zones_cap < crc_zones) {
+        crc_zones = x->zones_cap;
+    }
+    out->zones_crc = plink_zones_crc(snap->zone, crc_zones);
     for (uint8_t p = 1u; p <= ALARM_MAX_PARTITIONS && out->count < PLINK_PARTS_MAX; p++) {
         if ((out->partitions & (1u << (p - 1u))) != 0u) {
             part_build(&snap->part[p - 1u], p, taken, now_ms, &out->part[out->count++]);

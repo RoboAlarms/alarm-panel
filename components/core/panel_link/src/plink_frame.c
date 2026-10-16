@@ -311,6 +311,12 @@ bool plink_addr_equal(const plink_addr_t *a, const plink_addr_t *b)
            a->len <= PLINK_ADDR_MAX && memcmp(a->a, b->a, a->len) == 0;
 }
 
+bool plink_addr_is_broadcast(const plink_addr_t *a)
+{
+    /* 255.255.255.255, or a subnet's directed broadcast as a /24 has it (x.y.z.255). */
+    return a != NULL && a->tp == PLINK_TP_UDP && a->len == 6u && a->a[3] == 255u;
+}
+
 /* Appends v in decimal at out[at]; returns the new end. */
 static size_t put_dec(char *out, size_t at, unsigned v)
 {

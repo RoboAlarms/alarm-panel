@@ -44,7 +44,12 @@ one of them with Python's `cryptography`, independently of the C code.
 `test_plink_pair.c` and `test_plink_session.c` check one honest pairing and one handshake byte for
 byte against `test/vectors_plink_pair.py` and `test/vectors_plink_session.py` (random numbers
 scripted through the port), then each state machine against a device in the middle, replays and
-every timer.
+every timer; pairing asked by broadcast, and a newer firmware's longer payloads.
+
+Every parser gets random bytes, each input ending at the end of its buffer: the message decoders
+(`test_plink_msg.c`), the stored records with their CRC made right again (`test_plink_store.c`),
+the keypads' configuration copy (`test_plink_view.c`), HELLO and WELCOME with their MACs made
+right again (`test_plink_session.c`), and both pairing sides at every step (`test_plink_pair.c`).
 
 `test_plink_master.c` runs the master's manager over the pretend network against scripted
 keypads built from the real pairing, handshake, session and message codecs, with the real engine

@@ -11,9 +11,11 @@
  * the first STATUS and a configuration matching its cfg_crc are all in; ONLINE; LOST after 30 s
  * without an authenticated STATUS, back to ONLINE only after a full sync (a STATUS since, and the
  * configuration it names) and no sooner than 3 s after entering LOST. A handshake starts at
- * start-up, after 15 s without an authenticated frame, on a REKEY for the live sid (at most every
- * 5 s), at seq 2^30, every 24 h; failures back off 1, 2, 4 ... 30 s with jitter (2 s at most
- * while a panic waits).
+ * start-up, after 15 s without an authenticated STATUS (counted from the last WELCOME too: a new
+ * session brings a STATUS at once), on a REKEY for the live sid (at most every 5 s), at seq 2^30,
+ * every 24 h; failures back off 1, 2, 4 ... 30 s with jitter (2 s at most while a panic waits).
+ * A WELCOME is worked out only from where its HELLO went (unless that was a broadcast), at most
+ * PLINK_WELCOME_CHECKS per HELLO. Not paired, the no-code maintenance pages are open (LINK-025).
  */
 #ifndef PLINK_KEYPAD_H
 #define PLINK_KEYPAD_H
@@ -55,6 +57,7 @@ extern "C" {
 #define PLINK_MAINTENANCE_MS     600000u /* LINK-025 */
 #define PLINK_NOT_PAIRED_HINT_MS 300000u
 #define PLINK_CMDS_MAX           4u      /* commands in flight (one is panic's) */
+#define PLINK_WELCOME_CHECKS     8u      /* WELCOMEs worked out (X25519) per HELLO, at most */
 
 typedef enum {
     PLINK_LINK_NOT_PAIRED = 0,
@@ -131,8 +134,10 @@ typedef struct {
     bool tentative;              /* the live session waits for its first frame from the master */
     plink_session_t old;         /* still accepted while tentative */
     plink_hs_k_t hs;
+    plink_addr_t hs_to;          /* where the latest HELLO went: its WELCOME comes from there */
+    uint8_t hs_checks;           /* WELCOMEs worked out for it (PLINK_WELCOME_CHECKS at most) */
     uint64_t hs_due_ms, hs_backoff_ms, last_rekey_ms, session_started_ms;
-    uint64_t heard_ms;           /* last authenticated frame from the master */
+    uint64_t status_heard_ms;    /* the last authenticated STATUS or WELCOME (+15 s: handshake) */
     uint64_t status_ms;          /* last STATUS whose system section was applied */
     uint64_t silent_since_ms;    /* LINK-025: the last status, or the start of connecting */
     uint64_t lost_since_ms;
@@ -168,6 +173,8 @@ typedef struct {
     uint32_t ev_frame_seq;       /* the frame that brought the newest kept event */
     uint32_t ev_fill;            /* a hole in the events after this seq is being pulled (0 none) */
     uint8_t ev_fill_tries;
+    bool ev_back;                /* the pull under way is a backfill: the newest 50 again */
+    uint8_t ev_back_tries;       /* backfills since the ring started */
     alarm_event_t events[PLINK_EVENTS_KEPT]; /* oldest first */
     size_t ev_count;
     plink_kcmd_t cmds[PLINK_CMDS_MAX];
@@ -224,7 +231,7 @@ typedef struct {
     bool not_paired_hint;     /* the master has said "not paired" for 5 min */
     uint32_t since_s;         /* seconds in this state */
     uint32_t status_age_s;    /* UINT32_MAX none yet */
-    bool maintenance;         /* LINK-025: 10 min without system communication */
+    bool maintenance;         /* LINK-025: 10 min without system communication, or not paired */
     uint8_t device;
     uint8_t home;
     char master_name[PLINK_NAME_MAX + 1];

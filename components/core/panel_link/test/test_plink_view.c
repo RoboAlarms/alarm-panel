@@ -539,6 +539,47 @@ static void test_zones_and_crc(void)
     TEST_ASSERT_EQUAL_HEX32(0u, plink_view_zones_crc(NULL));
 }
 
+/* LINK-017, docs/features/11 "Zone record": zones_crc covers the zones the keypad can hold -
+ * 1..min(zones_used, zones_cap), all of them when zones_cap is 0 (not known) or no smaller than
+ * zones_used - while zones_used still says how many the master uses; a keypad with that many
+ * slots, holding those zones, computes the same CRC. */
+static void test_zones_crc_over_the_keypads_slots(void)
+{
+    sim_fault(&S, Z_WINDOW);
+    sim_fault(&S, Z_SHED); /* beyond 12 slots */
+    take_snap();
+    plink_status_extra_t x = extra();
+    plink_status_build(&SNAP, S.now, &x, &ST);
+    const uint32_t all = plink_zones_crc(SNAP.zone, SNAP.zones_used);
+    TEST_ASSERT_EQUAL_UINT16(20u, ST.zones_used);
+    TEST_ASSERT_EQUAL_HEX32(all, ST.zones_crc); /* zones_cap 0: all of them */
+    x.zones_cap = 20u;
+    plink_status_build(&SNAP, S.now, &x, &ST);
+    TEST_ASSERT_EQUAL_HEX32(all, ST.zones_crc);
+    x.zones_cap = ALARM_MAX_ZONES;
+    plink_status_build(&SNAP, S.now, &x, &ST);
+    TEST_ASSERT_EQUAL_HEX32(all, ST.zones_crc);
+    x.zones_cap = 12u;
+    plink_status_build(&SNAP, S.now, &x, &ST);
+    TEST_ASSERT_EQUAL_UINT16(20u, ST.zones_used);
+    TEST_ASSERT_EQUAL_HEX32(plink_zones_crc(SNAP.zone, 12u), ST.zones_crc);
+    TEST_ASSERT_NOT_EQUAL(all, ST.zones_crc);
+    /* What a 12-slot keypad holds after the master's ZONES for 1..12. */
+    uint8_t recs[12u * PLINK_ZONE_REC_LEN];
+    for (unsigned z = 0; z < 12u; z++) {
+        zone_rec(&SNAP.zone[z], &recs[z * PLINK_ZONE_REC_LEN]);
+    }
+    plink_view_apply_status(&V, &ST, 5000u);
+    const plink_zones_t zm = {ST.zones_crc, 1u, 12u, PLINK_ZONE_REC_LEN, recs};
+    plink_view_apply_zones(&V, &zm);
+    TEST_ASSERT_EQUAL_HEX32(ST.zones_crc, plink_zones_crc(V.snap.zone, 12u));
+    /* Zone 14 changes at the master: nothing a 12-slot keypad compares. */
+    sim_restore(&S, Z_SHED);
+    take_snap();
+    plink_status_build(&SNAP, S.now, &x, &ST);
+    TEST_ASSERT_EQUAL_HEX32(plink_zones_crc(V.snap.zone, 12u), ST.zones_crc);
+}
+
 /* LINK-002, LINK-017: the zone record and zones_crc against vectors made from the document with
  * Python's zlib (vectors_plink_view.py); a longer record's appended bytes are skipped and a
  * shorter one reads zeros past its end; zones outside 1..ALARM_MAX_ZONES are ignored. */
@@ -780,6 +821,128 @@ static void test_cfg_decode_lenient(void)
     EXPECT_RESULT(ALARM_ERR_BAD_ARG, plink_cfg_decode(NULL, len, &DEC));
 }
 
+/* ---- random bytes into the configuration's decode ------------------------------------------- */
+
+static uint64_t RNG;
+
+static uint32_t rnd(void)
+{
+    RNG ^= RNG << 13;
+    RNG ^= RNG >> 7;
+    RNG ^= RNG << 17;
+    return (uint32_t)(RNG >> 32);
+}
+
+static size_t rnd_below(size_t n)
+{
+    return n == 0u ? 0u : (size_t)rnd() % n;
+}
+
+static bool name_ends(const char *s)
+{
+    return memchr(s, '\0', ALARM_NAME_LEN) != NULL;
+}
+
+/* LINK-019, LINK-017, CORE-CFG-022 (docs/features/11 "Test and acceptance": random bytes into
+ * every parser): 3000 copies of the keypads' configuration with random edits in their items - a
+ * bit flipped, a byte set to an edge value, a cut, bytes inserted, deleted or appended (whole
+ * items too: selectors past this build's capacities, unknown groups and fields) - each with its
+ * length and CRC made right again so the lenient decode reads them, each ending at the end of its
+ * buffer, go into plink_cfg_decode: none crashes or reads outside, and a copy it accepts has every
+ * name ended inside its field. The unedited copy still decodes. */
+static void test_fuzz_cfg_decode(void)
+{
+    static uint8_t seed[ALARM_CONFIG_BLOB_MAX + 256u];
+    static const uint8_t edge[] = {0x00, 0x01, 0x02, 0x08, 0x09, 0x0F, 0x10, 0x1F, 0x20,
+                                   0x40, 0x7F, 0x80, 0xC0, 0xE2, 0xFE, 0xFF};
+    sim_config_basic(&CFG);
+    snprintf(CFG.zones[0].name, ALARM_NAME_LEN, "%s", "Porch door, by the old oak tree");
+    size_t seed_len = 0u;
+    uint32_t crc = 0u;
+    EXPECT_RESULT(ALARM_OK,
+                  plink_cfg_for_keypads(&CFG, &SCRATCH, seed, sizeof(seed), &seed_len, &crc));
+    EXPECT_RESULT(ALARM_OK, plink_cfg_decode(seed, seed_len, &DEC));
+    RNG = 0xC0F1Fu;
+    unsigned took = 0u;
+    const size_t cap = sizeof(BLOB2);
+    for (uint32_t iter = 0; iter < 3000u; iter++) {
+        size_t len = seed_len;
+        memcpy(BLOB, seed, len);
+        const size_t edits = 1u + rnd_below(6u);
+        for (size_t e = 0; e < edits; e++) {
+            const size_t at = 16u + rnd_below(len - 16u + 1u);
+            switch (rnd_below(7u)) {
+            case 0:
+                if (at < len) {
+                    BLOB[at] = (uint8_t)(BLOB[at] ^ (1u << rnd_below(8u)));
+                }
+                break;
+            case 1:
+                if (at < len) {
+                    BLOB[at] = edge[rnd_below(sizeof(edge))];
+                }
+                break;
+            case 2: len = at; break;
+            case 3:
+                if (len < cap - 1u) {
+                    memmove(BLOB + at + 1, BLOB + at, len - at);
+                    BLOB[at] = edge[rnd_below(sizeof(edge))];
+                    len++;
+                }
+                break;
+            case 4:
+                if (at < len) {
+                    memmove(BLOB + at, BLOB + at + 1, len - at - 1u);
+                    len--;
+                }
+                break;
+            case 5: /* an item: field, group, length, value */
+                if (len + 3u + 40u < cap) {
+                    const uint8_t n = (uint8_t)rnd_below(41u);
+                    BLOB[len] = (uint8_t)(rnd_below(4u) == 0u ? 0x00u : rnd());
+                    BLOB[len + 1u] = (uint8_t)rnd_below(8u);
+                    BLOB[len + 2u] = n;
+                    for (uint8_t i = 0; i < n; i++) {
+                        BLOB[len + 3u + i] = (uint8_t)(rnd_below(2u) == 0u
+                                                           ? edge[rnd_below(sizeof(edge))]
+                                                           : rnd());
+                    }
+                    len += 3u + n;
+                }
+                break;
+            default: { /* random bytes after */
+                const size_t add = rnd_below(32u);
+                for (size_t i = 0; i < add && len < cap; i++) {
+                    BLOB[len++] = (uint8_t)rnd();
+                }
+                break;
+            }
+            }
+        }
+        if (len < 16u) {
+            len = 16u;
+        }
+        reseal(len);
+        uint8_t *p = BLOB2 + cap - len;
+        memcpy(p, BLOB, len);
+        if (plink_cfg_decode(p, len, &DEC) != ALARM_OK) {
+            continue;
+        }
+        took++;
+        for (unsigned i = 0; i < ALARM_MAX_PARTITIONS; i++) {
+            TEST_ASSERT_TRUE(name_ends(DEC.partitions[i].name));
+        }
+        for (unsigned i = 0; i < ALARM_MAX_ZONES; i++) {
+            TEST_ASSERT_TRUE(name_ends(DEC.zones[i].name));
+        }
+        for (unsigned i = 0; i < ALARM_MAX_USERS; i++) {
+            TEST_ASSERT_TRUE(name_ends(DEC.users[i].name));
+        }
+    }
+    /* Many edits leave a copy that decodes, so the checks ran on real decodes. */
+    TEST_ASSERT_TRUE(took > 300u);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -790,8 +953,10 @@ int main(void)
     RUN_TEST(test_walk_start_mapped_once);
     RUN_TEST(test_partitions_mask);
     RUN_TEST(test_zones_and_crc);
+    RUN_TEST(test_zones_crc_over_the_keypads_slots);
     RUN_TEST(test_zone_record_vectors);
     RUN_TEST(test_cfg_copy_has_no_code_material);
     RUN_TEST(test_cfg_decode_lenient);
+    RUN_TEST(test_fuzz_cfg_decode);
     return UNITY_END();
 }

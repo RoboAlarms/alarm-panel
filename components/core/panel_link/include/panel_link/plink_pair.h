@@ -18,7 +18,13 @@
  *     pairing started by a person (keypad), at least 3 s apart;
  *   - within one window every attempt comes from one address: another address ends the window
  *     (PLINK_FAIL_OVERLAP);
+ *   - a keypad's attempt has one master: the address it asked, or - asked by broadcast
+ *     (plink_addr_is_broadcast; LINK-021) - the source of the attempt's first PAIR_COMMIT, fixed
+ *     before n_k goes. A PAIR_COMMIT from any other address ends the attempt (OVERLAP);
  *   - PAIR_FAIL is honoured only for the current attempt and from its peer's address.
+ *
+ * Each step's payload is kept as it came, up to a whole frame's (PLINK_PAIR_PAYLOAD_MAX): a newer
+ * firmware's longer payload is taken (LINK-017), only a protocol version of 0 is refused.
  */
 #ifndef PLINK_PAIR_H
 #define PLINK_PAIR_H
@@ -45,6 +51,7 @@ extern "C" {
 #define PLINK_PAIR_RESEND_MS     1000u  /* the keypad's first resend; doubles to ... */
 #define PLINK_PAIR_RESEND_MAX_MS 4000u
 #define PLINK_CODE_LEN 7u                /* six digits and the NUL */
+#define PLINK_PAIR_PAYLOAD_MAX (PLINK_FRAME_MAX - PLINK_HDR_LEN) /* a PAIR_* payload, at most */
 
 /* One frame to send, or none (len 0). */
 typedef struct {
@@ -118,10 +125,10 @@ typedef struct {
     uint8_t sk[PLINK_X25519_LEN], pk_m[PLINK_X25519_LEN], n_m[PLINK_NONCE_LEN];
     uint8_t pk_k[PLINK_X25519_LEN], n_k[PLINK_NONCE_LEN];
     plink_pair_req_t req;
-    uint8_t req_raw[160];    size_t req_len;
-    uint8_t commit_raw[160]; size_t commit_len;
-    uint8_t nonce_raw[32];   size_t nonce_len;
-    uint8_t confirm_raw[32]; size_t confirm_len;
+    uint8_t req_raw[PLINK_PAIR_PAYLOAD_MAX];     size_t req_len;
+    uint8_t commit_raw[PLINK_PAIR_PAYLOAD_MAX];  size_t commit_len;
+    uint8_t nonce_raw[PLINK_PAIR_PAYLOAD_MAX];   size_t nonce_len;
+    uint8_t confirm_raw[PLINK_PAIR_PAYLOAD_MAX]; size_t confirm_len;
     uint8_t k_pair[PLINK_KEY_LEN], k_conf[PLINK_KEY_LEN];
     char code[PLINK_CODE_LEN];
     uint8_t device, home;
@@ -131,7 +138,8 @@ typedef struct {
     bool ended;                    /* the window's last attempt ended: its answer again */
     uint32_t ended_attempt;
     uint8_t ended_fail;            /* plink_fail_t (NONE after PAIR_DONE) */
-    uint8_t done_confirm[32]; size_t done_confirm_len; /* the PAIR_CONFIRM done_frame answers */
+    uint8_t done_confirm[PLINK_PAIR_PAYLOAD_MAX];  /* the PAIR_CONFIRM done_frame answers */
+    size_t done_confirm_len;
 } plink_pair_m_t;
 
 /* A keypad ready to be stored (plink_pm_take). */
@@ -181,15 +189,19 @@ typedef struct {
     uint8_t attempts;
     uint64_t step_until, resend_at, next_attempt_at;
     uint32_t resend_ms;
-    plink_addr_t master;
+    plink_addr_t master;           /* the attempt's master: where everything goes, and comes from */
+    plink_addr_t asked;            /* where plink_pk_start sent the request */
+    bool by_broadcast;             /* asked by broadcast: an attempt's first COMMIT fixes master */
+    bool found;                    /* by_broadcast: this attempt's master is fixed */
+    uint8_t heard_fail;            /* by_broadcast, not found: a PAIR_FAIL reason, for a timeout */
     uint16_t net_id;
     uint32_t attempt;
     uint8_t sk[PLINK_X25519_LEN], pk_k[PLINK_X25519_LEN], n_k[PLINK_NONCE_LEN];
     uint8_t pk_m[PLINK_X25519_LEN], n_m[PLINK_NONCE_LEN];
     uint8_t commit[PLINK_SHA256_LEN];
     plink_pair_commit_t commit_msg;
-    uint8_t req_raw[160];    size_t req_len;
-    uint8_t commit_raw[160]; size_t commit_len;
+    uint8_t req_raw[PLINK_PAIR_PAYLOAD_MAX];    size_t req_len;
+    uint8_t commit_raw[PLINK_PAIR_PAYLOAD_MAX]; size_t commit_len;
     uint8_t last[PLINK_FRAME_MAX]; size_t last_len; /* the frame being resent */
     uint8_t k_pair[PLINK_KEY_LEN], k_conf[PLINK_KEY_LEN];
     char code[PLINK_CODE_LEN];
@@ -197,7 +209,7 @@ typedef struct {
     plink_keypad_rec_t result;
     uint8_t dh[PLINK_X25519_LEN];  /* X25519(sk, pk_m), from PAIR_COMMIT to the keys */
     uint16_t net_hint;             /* plink_pk_start's net_id: each attempt starts from it */
-    uint8_t reveal_raw[32]; size_t reveal_len;
+    uint8_t reveal_raw[PLINK_PAIR_PAYLOAD_MAX]; size_t reveal_len;
     bool have_result;              /* result waits for plink_pk_take */
     uint8_t device;                /* DONE: the number the master gave */
 } plink_pair_k_t;
@@ -206,7 +218,11 @@ typedef struct {
 void plink_pk_init(plink_pair_k_t *pk, const plink_crypto_t *c, uint8_t kind,
                    const plink_caps_t *cap, const char *name, const char *fw);
 /* A person started pairing with the master at that address (from discovery: its TXT net is
- * net_id, 0 when not known): a new pairing of up to 3 attempts; sends PAIR_REQ. */
+ * net_id, 0 when not known): a new pairing of up to 3 attempts; sends PAIR_REQ. A broadcast
+ * address (mDNS found nothing, LINK-021) asks every panel on the subnet: each attempt is asked
+ * by broadcast, and its first PAIR_COMMIT makes its source the attempt's master; a PAIR_FAIL that
+ * comes before any PAIR_COMMIT ends nothing (another master may still answer) but names the
+ * reason when the attempt times out. */
 void plink_pk_start(plink_pair_k_t *pk, uint64_t now_ms, const plink_addr_t *master,
                     uint16_t net_id, plink_out_t *out);
 /* Try again after a failure (counts against the 3 when the last one disclosed n_k). */

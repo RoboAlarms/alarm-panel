@@ -488,6 +488,152 @@ static void test_fixture_v1(void)
     TEST_ASSERT_EQUAL_MEMORY(PLINK_STORE_KEYPAD_V1, B, len);
 }
 
+/* ---- random bytes ------------------------------------------------------------------------- */
+
+static uint64_t RNG;
+
+static uint32_t rnd(void)
+{
+    RNG ^= RNG << 13;
+    RNG ^= RNG >> 7;
+    RNG ^= RNG << 17;
+    return (uint32_t)(RNG >> 32);
+}
+
+static size_t rnd_below(size_t n)
+{
+    return n == 0u ? 0u : (size_t)rnd() % n;
+}
+
+/* A byte a mutation likes: lengths, edges, numbers 1..9 and kinds. */
+static uint8_t interesting(void)
+{
+    static const uint8_t v[] = {0x00, 0x01, 0x02, 0x08, 0x09, 0x0B, 0x2F, 0x30, 0x3A, 0x4B,
+                                0x4D, 0x7F, 0x80, 0xC3, 0xE2, 0xFE, 0xFF};
+    return v[rnd_below(sizeof(v))];
+}
+
+/* One to four random edits of p[from..*len) within cap: a bit flipped, an interesting byte, a
+ * cut, bytes appended, a byte inserted or deleted. */
+static void mutate(uint8_t *p, size_t from, size_t *len, size_t cap)
+{
+    const size_t edits = 1u + rnd_below(4u);
+    for (size_t e = 0; e < edits; e++) {
+        const size_t n = *len;
+        const size_t at = from + rnd_below(n - from + 1u);
+        switch (rnd_below(6u)) {
+        case 0:
+            if (at < n) {
+                p[at] = (uint8_t)(p[at] ^ (1u << rnd_below(8u)));
+            }
+            break;
+        case 1:
+            if (at < n) {
+                p[at] = interesting();
+            }
+            break;
+        case 2: *len = at; break;
+        case 3: {
+            const size_t add = rnd_below(48u);
+            for (size_t i = 0; i < add && *len < cap; i++) {
+                p[(*len)++] = (uint8_t)rnd();
+            }
+            break;
+        }
+        case 4:
+            if (n < cap) {
+                memmove(p + at + 1, p + at, n - at);
+                p[at] = interesting();
+                *len = n + 1u;
+            }
+            break;
+        default:
+            if (at < n) {
+                memmove(p + at, p + at + 1, n - at - 1u);
+                *len = n - 1u;
+            }
+            break;
+        }
+    }
+}
+
+static bool str_ends(const char *s, size_t size)
+{
+    return memchr(s, '\0', size) != NULL;
+}
+
+/* LINK-017, LINK-001 (docs/features/11 "Test and acceptance": random bytes into every parser):
+ * 20000 records - the fixture's master and keypad records with random edits in their payload,
+ * the header's length and CRC made right again so the decoders read the edited bytes (and, one
+ * in ten, the header itself edited) - go into both decoders, each record ending at the end of
+ * its buffer; none crashes or reads outside it, and what one accepts keeps its promises: at most
+ * 8 keypads, numbers 1..8 once each, a keypad record with a network and a number, every string
+ * ended inside its field; and it encodes to a record that decodes to the same. */
+static void test_fuzz_decoders(void)
+{
+    static uint8_t seed_m[PLINK_STORE_MAX], seed_k[PLINK_STORE_MAX], work[PLINK_STORE_MAX];
+    static uint8_t arena[PLINK_STORE_MAX], again[PLINK_STORE_MAX];
+    plink_master_rec_t m, m2;
+    plink_keypad_rec_t k, k2;
+    size_t len_m = 0u, len_k = 0u;
+    fixture_master(&m);
+    fixture_keypad(&k);
+    TEST_ASSERT_TRUE(plink_store_master_encode(&m, seed_m, sizeof(seed_m), &len_m));
+    TEST_ASSERT_TRUE(plink_store_keypad_encode(&k, seed_k, sizeof(seed_k), &len_k));
+    RNG = 0x5704E5EEDull;
+    unsigned took_m = 0u, took_k = 0u;
+    for (uint32_t iter = 0; iter < 20000u; iter++) {
+        const bool master = (iter & 1u) == 0u;
+        size_t len = master ? len_m : len_k;
+        memcpy(work, master ? seed_m : seed_k, len);
+        mutate(work, HDR, &len, sizeof(work));
+        if (len >= HDR) {
+            const size_t payload = len - HDR;
+            work[5] = (uint8_t)payload;
+            work[6] = (uint8_t)(payload >> 8);
+            const uint32_t crc = alarm_crc32(0u, work + HDR, payload);
+            for (unsigned i = 0; i < 4u; i++) {
+                work[7u + i] = (uint8_t)(crc >> (8u * i));
+            }
+        }
+        if (iter % 10u == 9u) {
+            mutate(work, 0u, &len, sizeof(work)); /* the header too */
+        }
+        uint8_t *p = arena + sizeof(arena) - len;
+        memmove(p, work, len);
+        if (plink_store_master_decode(p, len, &m)) {
+            took_m++;
+            TEST_ASSERT_TRUE(m.count <= PLINK_KEYPADS_MAX);
+            uint32_t seen = 0u;
+            for (unsigned i = 0; i < m.count; i++) {
+                const uint8_t d = m.peer[i].device;
+                TEST_ASSERT_TRUE(d >= PLINK_DEVICE_FIRST && d <= PLINK_DEVICE_LAST);
+                TEST_ASSERT_EQUAL_HEX32(0u, seen & (1u << (d - 1u)));
+                seen |= 1u << (d - 1u);
+                TEST_ASSERT_TRUE(str_ends(m.peer[i].name, sizeof(m.peer[i].name)));
+            }
+            size_t n = 0u;
+            TEST_ASSERT_TRUE(plink_store_master_encode(&m, again, sizeof(again), &n));
+            TEST_ASSERT_TRUE(plink_store_master_decode(again, n, &m2));
+            expect_master(&m, &m2);
+        }
+        if (plink_store_keypad_decode(p, len, &k)) {
+            took_k++;
+            TEST_ASSERT_TRUE(k.net_id != 0u);
+            TEST_ASSERT_TRUE(k.device >= PLINK_DEVICE_FIRST && k.device <= PLINK_DEVICE_LAST);
+            TEST_ASSERT_TRUE(str_ends(k.master_name, sizeof(k.master_name)));
+            TEST_ASSERT_TRUE(str_ends(k.panel_id, sizeof(k.panel_id)));
+            size_t n = 0u;
+            TEST_ASSERT_TRUE(plink_store_keypad_encode(&k, again, sizeof(again), &n));
+            TEST_ASSERT_TRUE(plink_store_keypad_decode(again, n, &k2));
+            expect_keypad(&k, &k2);
+        }
+    }
+    /* The edits kept many records readable, so the checks above ran on real decodes. */
+    TEST_ASSERT_TRUE(took_m > 1000u);
+    TEST_ASSERT_TRUE(took_k > 1000u);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -496,5 +642,6 @@ int main(void)
     RUN_TEST(test_damaged_entry_dropped);
     RUN_TEST(test_appended_fields_skipped);
     RUN_TEST(test_fixture_v1);
+    RUN_TEST(test_fuzz_decoders);
     return UNITY_END();
 }

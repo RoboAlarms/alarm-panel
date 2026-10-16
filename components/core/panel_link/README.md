@@ -45,3 +45,10 @@ one of them with Python's `cryptography`, independently of the C code.
 byte against `test/vectors_plink_pair.py` and `test/vectors_plink_session.py` (random numbers
 scripted through the port), then each state machine against a device in the middle, replays and
 every timer.
+
+`test_plink_keypad.c` runs the keypad's manager against a scripted master made of the real pieces
+(pairing, the handshake answer, sessions, the codecs, STATUS from snapshots of the real engine)
+over the pretend network: pairing, the tentative session, the link's states and timers, LINK-026's
+ordering, the configuration pull, zones and events, commands and panic, BYE, REKEY and the
+handshake's back-off, the master moving. The keypad's port has an optional `resolve`: the platform
+looks for the master again before every handshake retry after the first failure.

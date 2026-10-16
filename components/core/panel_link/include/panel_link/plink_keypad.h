@@ -9,10 +9,11 @@
  *
  * Link state (LINK-008): NOT_PAIRED; CONNECTING from start-up (or a new pairing) until a session,
  * the first STATUS and a configuration matching its cfg_crc are all in; ONLINE; LOST after 30 s
- * without an authenticated frame, back to ONLINE only after a full sync and no sooner than 3 s
- * after entering LOST. A handshake starts at start-up, after 15 s without an authenticated frame,
- * on a REKEY for the live sid (at most every 5 s), at seq 2^30, every 24 h; failures back off
- * 1, 2, 4 ... 30 s with jitter (2 s at most while a panic waits).
+ * without an authenticated STATUS, back to ONLINE only after a full sync (a STATUS since, and the
+ * configuration it names) and no sooner than 3 s after entering LOST. A handshake starts at
+ * start-up, after 15 s without an authenticated frame, on a REKEY for the live sid (at most every
+ * 5 s), at seq 2^30, every 24 h; failures back off 1, 2, 4 ... 30 s with jitter (2 s at most
+ * while a panic waits).
  */
 #ifndef PLINK_KEYPAD_H
 #define PLINK_KEYPAD_H
@@ -79,8 +80,13 @@ typedef struct {
     void *ctx;
     bool (*send)(void *ctx, const plink_addr_t *to, const uint8_t *frame, size_t len);
     size_t (*mtu)(void *ctx, uint8_t transport); /* NULL: PLINK_FRAME_MAX */
-    /* Writes (rec) or erases (NULL) the keypad's record now; false when it didn't happen. */
+    /* Writes (rec) or erases (NULL) the keypad's record now; false when it didn't happen (tried
+     * again every 5 s). */
     bool (*store)(void *ctx, const plink_keypad_rec_t *rec);
+    /* Look for the master again (mDNS, then a broadcast) and report it through
+     * plink_keypad_master_addr: called before every handshake retry after the first failure
+     * (docs/features/11 "Sessions"). May be NULL. */
+    void (*resolve)(void *ctx);
 } plink_keypad_port_t;
 
 typedef struct {
@@ -93,6 +99,15 @@ typedef struct {
     plink_result_t res;
 } plink_kcmd_t;
 
+/* One configuration request out (private). */
+typedef struct {
+    bool used;
+    uint32_t off;
+    uint16_t max;
+    uint64_t due_ms;   /* sent again then */
+    uint32_t retry_ms; /* 300 ms, doubling to 2 s */
+} plink_kpull_t;
+
 typedef struct {
     /* private */
     const plink_crypto_t *c;
@@ -100,6 +115,8 @@ typedef struct {
     bool paired;
     uint8_t unpaired_why;
     plink_keypad_rec_t rec;
+    uint8_t store_due;           /* 1: rec to write, 2: the record to erase (retried) */
+    uint64_t store_at_ms;
     plink_pair_k_t pair;
     bool pairing;
     uint8_t kind;
@@ -107,48 +124,67 @@ typedef struct {
     char name[PLINK_NAME_MAX + 1];
     char fw[PLINK_FW_MAX + 1];
     bool have_master;
-    plink_addr_t master;
+    plink_addr_t master;         /* where sealed frames go: moved only by authenticated ones */
+    bool have_disc;
+    plink_addr_t disc;           /* where discovery last found the master: HELLOs go there */
     plink_session_t live;
     bool tentative;              /* the live session waits for its first frame from the master */
     plink_session_t old;         /* still accepted while tentative */
     plink_hs_k_t hs;
     uint64_t hs_due_ms, hs_backoff_ms, last_rekey_ms, session_started_ms;
     uint64_t heard_ms;           /* last authenticated frame from the master */
-    uint64_t status_ms;          /* last STATUS applied */
+    uint64_t status_ms;          /* last STATUS whose system section was applied */
+    uint64_t silent_since_ms;    /* LINK-025: the last status, or the start of connecting */
     uint64_t lost_since_ms;
+    uint64_t state_since_ms;
     uint64_t hb_due_ms;
-    uint64_t not_paired_since_ms;
+    uint64_t not_paired_since_ms, not_paired_last_ms; /* a run of NOT_PAIRED hints */
     uint8_t state;               /* plink_link_state_t */
     plink_view_t view;
     uint32_t seq;                /* snapshot counter for the UI */
     uint32_t config_seq;
+    uint32_t items_sid;          /* LINK-026: the session the frame seqs below count in */
     uint32_t status_frame_seq;   /* LINK-026: the newest frame seq applied per item */
     uint32_t part_frame_seq[ALARM_MAX_PARTITIONS];
-    uint32_t zones_frame_seq;
+    uint32_t zone_frame_seq[ALARM_MAX_ZONES];
     uint32_t time_frame_seq;
     uint8_t *cfg_buf;            /* the blob being pulled (caller's memory) */
     size_t cfg_cap;
-    uint32_t cfg_pull_crc, cfg_total, cfg_have;
+    bool cfg_pulling;
+    uint32_t cfg_pull_crc, cfg_total, cfg_have; /* cfg_have: bytes in from offset 0 */
+    uint32_t cfg_ahead_off, cfg_ahead_len;      /* one page in past the first gap */
+    plink_kpull_t cfg_req[PLINK_PULL_OUTSTANDING];
     uint32_t cfg_bad_crc;        /* a blob that failed to decode: not pulled again */
-    uint64_t cfg_next_ms, cfg_retry_ms;
+    uint64_t cfg_next_ms;        /* the pull's first requests (0-500 ms after the change) */
     uint32_t cfg_installed_crc;
     alarm_config_t *cfg;         /* the decoded configuration (caller's memory) */
     bool have_cfg;
+    bool zones_want;             /* the zones' CRC differs from the master's */
     uint64_t zones_next_ms;
+    uint32_t zones_gap_ms;
+    bool ev_want;                /* the master has events newer than the newest kept */
     uint64_t ev_next_ms;
+    uint32_t ev_retry_ms;
+    uint32_t ev_frame_seq;       /* the frame that brought the newest kept event */
     alarm_event_t events[PLINK_EVENTS_KEPT]; /* oldest first */
     size_t ev_count;
     plink_kcmd_t cmds[PLINK_CMDS_MAX];
+    uint8_t cmd_released;        /* bit i: cmds[i]'s caller stopped waiting */
     uint32_t next_req;
     plink_sound_t sounds[4];
     uint8_t sound_head, sound_count;
     plink_time_t time;
+    uint64_t time_at_ms;
     bool time_changed;
     uint8_t power_flags;
     int8_t rssi;
     uint64_t started_ms;
-    uint8_t out[PLINK_FRAME_MAX];
-    uint8_t pt[PLINK_FRAME_MAX];
+    plink_out_t out;             /* frame scratch: pairing's answers and sealed frames */
+    uint8_t pt[PLINK_FRAME_MAX]; /* an opened frame's payload */
+    union {
+        plink_status_t st;
+        alarm_event_t ev[PLINK_EVENTS_KEPT];
+    } scr;                       /* decode scratch */
 } plink_keypad_t;
 
 /* rec: the stored record, or NULL when not paired. cfg_buf (ALARM_CONFIG_BLOB_MAX bytes) and cfg

@@ -29,12 +29,15 @@ typedef struct {
     uint8_t report;           /* PLINK_REPORT_* */
     uint32_t cfg_crc;
     uint32_t cfg_len;
+    uint16_t zones_cap;       /* the keypad's zone slots (its HELLO's capacities); 0 = not known */
 } plink_status_extra_t;
 
 /* A keypad's STATUS from the master's snapshot at engine time now (the clock of
  * snap->taken_ms): every duration is worked out at now, never below 0 (docs/features/11
  * "STATUS"); walk_id is the raw walk start (0 none; a start whose low 32 bits are 0 reads 1);
- * zones_crc covers zones 1..zones_used; one record per enabled partition. */
+ * zones_crc covers zones 1..min(zones_used, x->zones_cap) - the zones that keypad can hold, all
+ * of them when zones_cap is 0 (docs/features/11 "Zone record"); one record per enabled
+ * partition. */
 void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
                         const plink_status_extra_t *x, plink_status_t *out);
 
@@ -72,7 +75,8 @@ void plink_view_apply_status(plink_view_t *v, const plink_status_t *st, uint64_t
 /* Applies the records of a ZONES message (zones beyond ALARM_MAX_ZONES ignored). */
 void plink_view_apply_zones(plink_view_t *v, const plink_zones_t *z);
 
-/* The CRC of the keypad's zones 1..zones_used, to compare with the master's zones_crc. */
+/* The CRC of the keypad's zones 1..zones_used (as far as this build holds them), to compare with
+ * the master's zones_crc. */
 uint32_t plink_view_zones_crc(const plink_view_t *v);
 
 /* ---- the configuration copy (LINK-019) ------------------------------------------------------ */

@@ -7,12 +7,13 @@
  * plink_keypad_tick, and whatever has to go out goes through the port at once. The pieces:
  *   - pairing (plink_pair_k_t), only while a person pairs; the record it makes is stored and a
  *     handshake starts at once;
- *   - the handshake (plink_hs_*): at start-up, after 15 s without an authenticated frame, on a
- *     REKEY for the live session, at seq 2^30 and every 24 h. An unanswered HELLO is followed by
- *     a fresh one after 1, 2, 4 ... 30 s, jittered (at most 2 s while a panic waits). A WELCOME
- *     makes the new session tentative: the old one is still opened until a frame of the new one
- *     arrives, and HEARTBEATs go every 500 ms until then (the master promotes the new session on
- *     the first of them);
+ *   - the handshake (plink_hs_*): at start-up, after 15 s without an authenticated STATUS (a
+ *     frame of another kind getting through doesn't keep a session whose STATUS doesn't; a new
+ *     session brings one at once), on a REKEY for the live session, at seq 2^30 and every 24 h.
+ *     An unanswered HELLO is followed by a fresh one after 1, 2, 4 ... 30 s, jittered (at most
+ *     2 s while a panic waits). A WELCOME makes the new session tentative: the old one is still
+ *     opened until a frame of the new one arrives, and HEARTBEATs go every 500 ms until then (the
+ *     master promotes the new session on the first of them);
  *   - what the master says, in frame order per item (LINK-026): a STATUS's system section, each
  *     partition record, each zone record and the time are each taken only from a frame newer
  *     than the one they last came in; a new session starts the count again;
@@ -216,8 +217,8 @@ static void hs_send(plink_keypad_t *k, uint64_t now)
 static void hs_tick(plink_keypad_t *k, uint64_t now)
 {
     if ((k->have_disc || k->have_master) && !k->hs.waiting && k->hs_due_ms == NEVER) {
-        if (now >= k->heard_ms + PLINK_REHANDSHAKE_MS) {
-            hs_soon(k, now); /* 15 s without an authenticated frame */
+        if (now >= k->status_heard_ms + PLINK_REHANDSHAKE_MS) {
+            hs_soon(k, now); /* 15 s without an authenticated STATUS */
         }
         if (k->live.valid && now >= k->session_started_ms + PLINK_SESSION_MAX_MS) {
             hs_soon(k, now); /* every 24 h */
@@ -951,7 +952,7 @@ static void forget_data(plink_keypad_t *k, uint64_t now)
     memset(&k->time, 0, sizeof k->time);
     k->time_changed = false;
     k->status_ms = 0u;
-    k->heard_ms = now;
+    k->status_heard_ms = now;
     k->silent_since_ms = now;
     k->not_paired_since_ms = k->not_paired_last_ms = 0u;
     k->hs_due_ms = NEVER;
@@ -1022,7 +1023,7 @@ static void on_welcome(plink_keypad_t *k, uint64_t now, const plink_addr_t *from
     k->tentative = true;
     k->master = *from; /* the WELCOME is authenticated: the master may move (LINK-021) */
     k->have_master = true;
-    k->heard_ms = now;
+    k->status_heard_ms = now; /* the master's STATUS comes once it has the new session */
     k->session_started_ms = now;
     k->hs_due_ms = NEVER;
     k->hs_backoff_ms = HS_FIRST_MS;
@@ -1080,7 +1081,9 @@ static void on_sealed(plink_keypad_t *k, uint64_t now, const plink_addr_t *from,
     }
     k->master = *from; /* authenticated, tag and replay checked (LINK-021) */
     k->have_master = true;
-    k->heard_ms = now;
+    if (h->type == PLINK_T_STATUS) {
+        k->status_heard_ms = now; /* (one LINK-026 won't apply still says the link works) */
+    }
     k->not_paired_since_ms = k->not_paired_last_ms = 0u;
     if (s == &k->live && k->tentative) {
         /* The master has the new session: the old one, and its frames, are done. */
@@ -1246,7 +1249,7 @@ uint64_t plink_keypad_next(const plink_keypad_t *k)
     }
     t = earliest(t, k->hs_due_ms);
     if ((k->have_disc || k->have_master) && !k->hs.waiting && k->hs_due_ms == NEVER) {
-        t = earliest(t, k->heard_ms + PLINK_REHANDSHAKE_MS);
+        t = earliest(t, k->status_heard_ms + PLINK_REHANDSHAKE_MS);
         if (k->live.valid) {
             t = earliest(t, k->session_started_ms + PLINK_SESSION_MAX_MS);
         }

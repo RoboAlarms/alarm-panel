@@ -241,7 +241,8 @@ static size_t fm_status_payload(uint8_t *p, size_t cap)
 {
     alarm_engine_snapshot(&S.eng, &SNAP);
     const plink_status_extra_t x = {M.epoch_ms,          HOME,       0u,
-                                    PLINK_REPORT_ONLINE, M.blob_crc, (uint32_t)M.blob_len};
+                                    PLINK_REPORT_ONLINE, M.blob_crc, (uint32_t)M.blob_len,
+                                    CAP.zones};
     plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
     if (M.edit != NULL) {
         M.edit(&ST);
@@ -1049,7 +1050,8 @@ static size_t status_frame(uint32_t troubles, const plink_part_t *recs, uint8_t 
 {
     alarm_engine_snapshot(&S.eng, &SNAP);
     const plink_status_extra_t x = {M.epoch_ms,          HOME,       0u,
-                                    PLINK_REPORT_ONLINE, M.blob_crc, (uint32_t)M.blob_len};
+                                    PLINK_REPORT_ONLINE, M.blob_crc, (uint32_t)M.blob_len,
+                                    CAP.zones};
     plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
     ST.sys_troubles = troubles;
     ST.partitions = 0x03u;
@@ -1992,6 +1994,41 @@ static void test_rekey_at_seq_2_30(void)
     TEST_ASSERT_EQUAL_UINT8(PLINK_LINK_ONLINE, info().state);
 }
 
+/* LINK-015, docs/features/11 "Sessions": a new handshake starts 15 s after the last authenticated
+ * STATUS, though other sealed frames of the session keep coming (a TIME every 2 s here): a session
+ * whose STATUS doesn't get through is renewed, and the new session brings a STATUS at once, so
+ * the keypad never comes near LOST. The 15 s count from the WELCOME too: no second handshake
+ * follows while the new session's STATUS flows. */
+static void test_handshake_after_15_s_without_status(void)
+{
+    kp_online();
+    M.auto_status = false;
+    fm_status();
+    plink_net_run(&NET, 10);
+    const uint64_t last = K.status_ms;
+    const unsigned hellos = M.hellos;
+    const uint32_t old_sid = K.live.sid;
+    while (NET.now_ms + 2000u < last + PLINK_REHANDSHAKE_MS) {
+        plink_net_run(&NET, 2000);
+        fm_time(M.epoch_ms, "UTC0");
+    }
+    run_to(last + PLINK_REHANDSHAKE_MS - 1u);
+    TEST_ASSERT_EQUAL_UINT(hellos, M.hellos);
+    TEST_ASSERT_TRUE(K.time_frame_seq != 0u); /* the TIME frames were taken */
+    run_to(last + PLINK_REHANDSHAKE_MS + 2u * NET.delay_ms);
+    TEST_ASSERT_EQUAL_UINT(hellos + 1u, M.hellos);
+    /* The new session: promoted on its first HEARTBEAT, its STATUS at once. */
+    plink_net_run(&NET, 1000);
+    TEST_ASSERT_NOT_EQUAL(old_sid, K.live.sid);
+    TEST_ASSERT_EQUAL_UINT32(M.live.sid, K.live.sid);
+    TEST_ASSERT_TRUE(K.status_ms > last + PLINK_REHANDSHAKE_MS);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_LINK_ONLINE, info().state);
+    M.auto_status = true;
+    M.status_due = NET.now_ms + FM_STATUS_EVERY_MS;
+    plink_net_run(&NET, 3u * PLINK_REHANDSHAKE_MS);
+    TEST_ASSERT_EQUAL_UINT(hellos + 1u, M.hellos);
+}
+
 /* ---- addresses, heartbeats and the rest --------------------------------------------------- */
 
 /* LINK-021: the master's address moves only on an authenticated frame - not on a forged or
@@ -2160,6 +2197,7 @@ int main(void)
     RUN_TEST(test_handshake_backoff);
     RUN_TEST(test_master_moves);
     RUN_TEST(test_rekey_at_seq_2_30);
+    RUN_TEST(test_handshake_after_15_s_without_status);
     RUN_TEST(test_addresses_and_heartbeat);
     RUN_TEST(test_sounds_time_and_home);
     RUN_TEST(test_forget);

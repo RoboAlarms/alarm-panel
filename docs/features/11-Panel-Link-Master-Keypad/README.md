@@ -165,8 +165,11 @@ the keypad shows (the network's delay varied) keeps the count. So within one del
 keypad shows never go up (UI-023).
 
 **Zone record** (7 B): flags u16, trouble u8, walk u8, walk_first_s u16, walk_trips u8.
-zones_crc is the CRC-32 of the records of zones 1..zones_used. The master pushes ZONES for the
-range that changed; a keypad whose own CRC differs after a STATUS asks with ZONES_REQ.
+zones_crc is the CRC-32 of the records of zones 1..min(zones_used, the keypad's zone capacity as
+its HELLO states it; all of them when it states 0), the same in its STATUS and its ZONES: a keypad
+with fewer zone slots than the master uses (zones added since it paired) compares the zones it
+holds and is sent only those. The master pushes ZONES for the range that changed; a keypad whose
+own CRC differs after a STATUS asks with ZONES_REQ.
 
 **Event record** (32 B): seq u32, mono_ms u64, epoch_ms i64, type u16, partition u8, zone u16,
 user u8, source kind u8 + id u16, arg u8, arg2 u8, flags u8. The master pushes each new event,
@@ -205,7 +208,9 @@ command is answered at once with ALARM_ERR_UNAVAILABLE; panic is queued and keep
 2. A person on the new panel chooses *Keypad* (setup wizard, or `plink role keypad` on a bench) and
    starts pairing. It finds a master with pairing open (two of them end it: "More than one alarm
    panel is open for pairing") and sends `PAIR_REQ` with a fresh X25519 key pk_k and a random
-   attempt id.
+   attempt id. When mDNS finds nothing it asks by subnet broadcast (LINK-021): the first master
+   to answer an attempt with `PAIR_COMMIT` is the one it pairs with, fixed before n_k goes, and a
+   `PAIR_COMMIT` from any other address ends the attempt.
 3. The master answers `PAIR_COMMIT`: its fresh key pk_m and
    `commit = SHA-256("plink v1 commit" ‖ pk_m ‖ pk_k ‖ n_m)`; n_m stays hidden. A PAIR_REQ from a
    second key or address during the window ends the attempt ("More than one keypad is trying to
@@ -222,7 +227,9 @@ command is answered at once with ALARM_ERR_UNAVAILABLE; panic is queued and keep
 7. The person confirms on the keypad: `PAIR_CONFIRM` carries `mac_k = HMAC(K_conf, frame up to
    mac_k)[0..15]`. The installer allows it on the master. With both, the master picks the device
    number (LINK-001), stores the keypad as provisional (not supervised until its first handshake;
-   dropped and its number freed if not heard within 10 min), and answers `PAIR_DONE` with
+   dropped and its number freed if not heard within 10 min) and with no name: it is "Keypad N"
+   until renamed on the alarm panel (decided 2026-10-15; the name it sent shows only during
+   pairing, next to the code), and answers `PAIR_DONE` with
    `mac_m = HMAC(K_conf, frame up to mac_m)[0..15]` (device and home included). An identical
    PAIR_CONFIRM gets the same PAIR_DONE for 60 s, even after the window closes. The keypad checks
    mac_m, stores the master and its role, and sends HELLO at once.
@@ -243,7 +250,13 @@ ended is dropped unanswered (the keypad's resend comes back), and a keypad's ret
 attempt's PAIR_FAIL again (the first may have been lost); an attempt under way outlives the
 window, which closes when it ends; a new attempt id from the window's keypad ends the attempt
 under way (INTERRUPTED); a port failure answers BUSY (master) or fails locally (keypad), not
-counted.
+counted. Each step's payload is kept whole, up to a frame's (1183 bytes), so a newer firmware's
+longer one is taken (LINK-017); only a protocol version of 0 is refused (VERSION), and a key of
+small order (MISMATCH), both before anything is disclosed. A keypad that asks by broadcast (an
+address ending in .255) asks so in every attempt; a `PAIR_FAIL` that comes before any
+`PAIR_COMMIT` doesn't end the attempt (another master may still answer) but names the reason if
+it times out; the `PAIR_FAIL` of two masters answering goes by broadcast, with net id 0, so both
+end their attempt.
 
 ## Sessions
 
@@ -270,8 +283,10 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
   and has no status in the new one until one arrives).
   A pending session that equals the live sid is refused; a pending session expires after 20 s;
   promotion or expiry discards the cached WELCOME.
-- The keypad starts a handshake at start-up, after 15 s without an authenticated frame, on a
-  `REKEY` hint for its own sid (at most every 5 s), at seq 2^30, and every 24 h; failures back off
+- The keypad starts a handshake at start-up, after 15 s without an authenticated STATUS (counted
+  from its last WELCOME too: a new session brings a STATUS at once; other frames getting through
+  don't keep a session whose STATUS doesn't), on a `REKEY` hint for its own sid (at most every
+  5 s), at seq 2^30, and every 24 h; failures back off
   1, 2, 4 ... 30 s with jitter (2 s at most while a panic waits). It re-resolves the master before
   every retry after the first failure. It keeps its live session until a WELCOME verifies.
 - `NOT_PAIRED` hints only change what the keypad says, after they repeat for 5 min; the keypad
@@ -286,7 +301,7 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
 |---|---|
 | Status from the master | on change (+250 ms, +1 s repeats, ≤ 1 per 100 ms per keypad), and every 10 s |
 | Heartbeat from a keypad | every 10 s, ±1 s jitter; every 500 ms while a new session is tentative |
-| Keypad: new handshake / link lost | 15 s / 30 s without an authenticated frame |
+| Keypad: new handshake / link lost | 15 s / 30 s without an authenticated STATUS |
 | Master: supervision trouble | the keypad's supervision time (5 min default) |
 | Command retry / give up | 500 ms / 3 s |
 | Panic resend / kept | 1 s / 60 s from keying |
@@ -409,11 +424,11 @@ goes to its HELLO's source without moving it). Firmware with the link sets
 - Not taken from the review: a persisted boot counter in HELLO (the seen-n_k list and the X25519
   budget already bound replays); a new `alarm_result_t` for "no link" (UNAVAILABLE says it).
 - For the maintainers, from the six-hour host run (`test_plink_link.c`, 10 % loss and 1 %
-  damaged): a keypad starts a handshake about every two minutes (15 s without any frame, after one
-  lost STATUS) and shows "No system communication" for a few seconds about 3 times in 6 hours
-  (three STATUS in a row lost while some other frame got through; the session is kept). Starting
-  the handshake after 15 s without a STATUS, rather than without any frame, would make the second
-  rarer still, as a new session brings a STATUS at once. On a working network neither is seen.
+  damaged): a keypad starts a handshake about every two minutes (15 s without a STATUS, after one
+  is lost). Since the handshake waits for a STATUS rather than any frame (the end-to-end wave's
+  suggestion, taken), no keypad showed "No system communication" in 84 runs (seeds 0..20, four
+  keypads each), against 5 in 84 before: a new session brings a STATUS at once. On a working
+  network neither is seen.
 - The result cache keeps a command from running twice, but every CMD frame gets a RESULT (a
   refusal, or the cached answer to a copy): a device with a keypad's keys gets one RESULT for each
   CMD it sends, though its commands and requests stay within LINK-027's limits.

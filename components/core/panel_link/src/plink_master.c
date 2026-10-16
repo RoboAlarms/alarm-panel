@@ -461,11 +461,20 @@ static void events_catch_up(plink_master_t *m, plink_peer_t *p)
     p->ev_sent_seq = newest;
 }
 
-/* ZONES for zones first..last of the snapshot (clipped to zones_used), in as many frames as the
- * transport needs. */
-static void send_zones(plink_master_t *m, plink_peer_t *p, uint16_t first, uint16_t last)
+/* The zones keypad p can hold: its HELLO's capacity (0: not known, all), at most zones_used. */
+static uint16_t zones_for(const plink_master_t *m, const plink_peer_t *p)
 {
     const uint16_t used = zones_used(&m->snap);
+    const uint16_t cap = p->live.peer_cap.zones;
+    return cap != 0u && cap < used ? cap : used;
+}
+
+/* ZONES for zones first..last of the snapshot (clipped to the zones p can hold), in as many
+ * frames as the transport needs; their zones_crc is the one p's STATUS carries. */
+static void send_zones(plink_master_t *m, plink_peer_t *p, uint16_t first, uint16_t last)
+{
+    const uint16_t used = zones_for(m, p);
+    const uint32_t crc = plink_zones_crc(m->snap.zone, used);
     if (first == 0u) {
         first = 1u;
     }
@@ -476,7 +485,7 @@ static void send_zones(plink_master_t *m, plink_peer_t *p, uint16_t first, uint1
     while (first <= last) {
         size_t len = 0u;
         uint16_t written = 0u;
-        if (!plink_enc_zones(m->zones_crc, first, &m->snap.zone[first - 1u],
+        if (!plink_enc_zones(crc, first, &m->snap.zone[first - 1u],
                              (uint16_t)(last - first + 1u), m->pt, cap, &len, &written) ||
             written == 0u || !send_sealed(m, p, PLINK_T_ZONES, len)) {
             return;
@@ -500,6 +509,7 @@ static void status_extra(const plink_master_t *m, const plink_peer_t *p, uint64_
         x->cfg_crc = m->cfg_crc;
         x->cfg_len = (uint32_t)m->cfg_len;
     }
+    x->zones_cap = p->live.peer_cap.zones; /* zones_crc over the zones it can hold */
 }
 
 /* p's STATUS now: first the events it carries and the zones that changed, then the status in
@@ -929,7 +939,10 @@ static void on_heartbeat(plink_master_t *m, plink_peer_t *p, uint64_t now, size_
     } else {
         p->stale_since_ms = 0u;
     }
-    if (m->port.checkin != NULL) {
+    /* A check-in says both directions work: the engine's check-in clears a device trouble, so a
+     * keypad that is down, or reports a stale status (LINK-007's second condition), isn't checked
+     * in - its trouble clears through supervise once both directions are fresh again. */
+    if (m->port.checkin != NULL && !p->down && p->stale_since_ms == 0u) {
         m->port.checkin(m->port.ctx, dev_of(m, p));
     }
 }
@@ -1173,7 +1186,9 @@ static void pair_take(plink_master_t *m, uint64_t now)
     p->rec.supervision_s = PLINK_SUPERVISION_DEFAULT_S;
     memcpy(p->rec.k_pair, nw.k_pair, PLINK_KEY_LEN);
     p->rec.paired_epoch_ms = epoch_at(m->epoch_ms, m->epoch_at_ms, now);
-    memcpy(p->rec.name, nw.name, sizeof p->rec.name);
+    /* No name: a new keypad is "Keypad N" until renamed on the alarm panel (decided 2026-10-15).
+     * The name it gave itself was shown only while pairing, next to the code. */
+    memset(p->rec.name, 0, sizeof p->rec.name);
     plink_wipe(&nw, sizeof nw);
     peer_start(p, now);
     if (!store_rec(m)) {

@@ -3,9 +3,10 @@
  * docs/features/11 "Pairing"; LINK-004, LINK-016): the 6-digit code, the commitment, the keys and
  * the MACs that end a plain frame, then the master's and the keypad's state machines.
  *
- * Each side keeps the payloads it took for each step (the *_raw fields): a repeat that is the same
- * byte for byte gets the stored answer again, anything else for the same attempt ends it, so no
- * value is ever set twice (LINK-016); the transcript hashes the two first payloads exactly as they
+ * Each side keeps the payloads it took for each step (the *_raw fields, a whole frame's payload
+ * each, so a newer firmware's longer one is taken: LINK-017): a repeat that is the same byte for
+ * byte gets the stored answer again, anything else for the same attempt ends it, so no value is
+ * ever set twice (LINK-016); the transcript hashes the two first payloads exactly as they
  * travelled. Whenever an attempt ends, its secrets - the X25519 private key and shared secret, the
  * nonces, K_pair, K_conf, the code - are wiped.
  *
@@ -23,7 +24,7 @@
 
 #include "panel_link/plink_wire.h"
 
-#define PAYLOAD_CAP (PLINK_FRAME_MAX - PLINK_HDR_LEN)
+#define PAYLOAD_CAP PLINK_PAIR_PAYLOAD_MAX
 
 /* The labels of docs/features/11 "Pairing", hashed without their NUL. */
 static const char L_COMMIT[] = "plink v1 commit";
@@ -338,8 +339,8 @@ static void m_start(plink_pair_m_t *pm, uint64_t now, const plink_addr_t *from,
     pm->req = *req;
     pm->ended = false;
     uint8_t refuse = PLINK_FAIL_NONE;
-    if (req->proto == 0u || n > sizeof pm->req_raw) {
-        refuse = PLINK_FAIL_VERSION; /* no version in common, or more than v1's room to hash */
+    if (req->proto == 0u) {
+        refuse = PLINK_FAIL_VERSION; /* no version in common */
     } else if (req->cap.zones < pm->zones_used) {
         refuse = PLINK_FAIL_CAPACITY;
     } else {
@@ -440,10 +441,6 @@ static void m_nonce(plink_pair_m_t *pm, uint64_t now, const plink_addr_t *from,
         }
         return;
     }
-    if (n > sizeof pm->nonce_raw) {
-        m_end(pm, now, PLINK_FAIL_VERSION, true, out);
-        return;
-    }
     memcpy(pm->nonce_raw, p, n);
     pm->nonce_len = n;
     memcpy(pm->n_k, msg.n, PLINK_NONCE_LEN);
@@ -496,10 +493,6 @@ static void m_confirm(plink_pair_m_t *pm, uint64_t now, const plink_addr_t *from
         if (!same_bytes(p, n, pm->confirm_raw, pm->confirm_len)) {
             m_end(pm, now, PLINK_FAIL_INTERRUPTED, true, out);
         }
-        return;
-    }
-    if (n > sizeof pm->confirm_raw) {
-        m_end(pm, now, PLINK_FAIL_VERSION, true, out);
         return;
     }
     if (!plink_mac_check(pm->k_conf, frame, len)) {
@@ -595,8 +588,8 @@ void plink_pm_input(plink_pair_m_t *pm, uint64_t now_ms, const plink_addr_t *fro
     }
     out->len = 0u;
     if (pm == NULL || from == NULL || h == NULL || frame == NULL || len < PLINK_HDR_LEN ||
-        pm->net_id == 0u) {
-        return;
+        len > PLINK_FRAME_MAX || pm->net_id == 0u) {
+        return; /* (a frame plink_hdr_read would have dropped: every payload fits a *_raw) */
     }
     /* A keypad pairs as sender 0xFFFF (docs/features/11 "Pairing" 9), whatever it was before. */
     if (h->sender != PLINK_SENDER_UNPAIRED || (h->flags & PLINK_FLAG_FROM_MASTER) != 0u) {
@@ -827,6 +820,12 @@ static void k_attempt(plink_pair_k_t *pk, uint64_t now, plink_out_t *out)
     pk->device = 0u;
     pk->net_id = pk->net_hint; /* a net id learned from a COMMIT never outlives its attempt */
     pk->fail = PLINK_FAIL_NONE;
+    if (pk->by_broadcast) {
+        /* Asked by broadcast: so is every attempt, and its first PAIR_COMMIT names its master. */
+        pk->master = pk->asked;
+        pk->found = false;
+        pk->heard_fail = PLINK_FAIL_NONE;
+    }
     uint8_t a[4];
     bool ok = plink_random(pk->c, a, sizeof a) && plink_x25519_keypair(pk->c, pk->sk, pk->pk_k);
     if (ok) {
@@ -874,8 +873,21 @@ static void k_commit(plink_pair_k_t *pk, uint64_t now, const plink_addr_t *from,
         (pk->net_hint != 0u && h->net_id != pk->net_hint)) {
         return; /* not for this attempt, or another network's master */
     }
-    if (!plink_addr_equal(from, &pk->master)) {
-        k_end(pk, now, PLINK_FAIL_OVERLAP, true, out); /* a second master answered */
+    if (pk->by_broadcast && !pk->found) {
+        /* Asked by broadcast (LINK-021): the first master to answer this attempt is its master,
+         * fixed here, before n_k goes; from now on everything must come from that address. */
+        pk->master = *from;
+        pk->found = true;
+    } else if (!plink_addr_equal(from, &pk->master)) {
+        /* A second master answered: nothing more goes to either. Asked by broadcast, the
+         * PAIR_FAIL goes as the request did - by broadcast, for any network - so both masters
+         * end the attempt. */
+        if (pk->by_broadcast) {
+            k_end(pk, now, PLINK_FAIL_OVERLAP, false, out);
+            send_fail(out, &pk->asked, pk->net_hint, false, pk->attempt, PLINK_FAIL_OVERLAP);
+        } else {
+            k_end(pk, now, PLINK_FAIL_OVERLAP, true, out);
+        }
         return;
     }
     if (pk->commit_len > 0u) {
@@ -889,8 +901,8 @@ static void k_commit(plink_pair_k_t *pk, uint64_t now, const plink_addr_t *from,
         }
         return;
     }
-    if (msg.proto == 0u || n > sizeof pk->commit_raw) {
-        k_end(pk, now, PLINK_FAIL_VERSION, true, out);
+    if (msg.proto == 0u) {
+        k_end(pk, now, PLINK_FAIL_VERSION, true, out); /* no version in common */
         return;
     }
     memcpy(pk->commit_raw, p, n);
@@ -936,10 +948,6 @@ static void k_reveal(plink_pair_k_t *pk, uint64_t now, const plink_addr_t *from,
             out->len = pk->last_len;
             out->to = pk->master;
         }
-        return;
-    }
-    if (n > sizeof pk->reveal_raw) {
-        k_end(pk, now, PLINK_FAIL_VERSION, true, out);
         return;
     }
     /* n_m must be the one the master committed to before it saw n_k. */
@@ -1001,9 +1009,19 @@ static void k_fail(plink_pair_k_t *pk, uint64_t now, const plink_addr_t *from,
                    const plink_hdr_t *h, const uint8_t *p, size_t n)
 {
     plink_pair_fail_t msg;
+    if (!plink_dec_pair_fail(p, n, &msg) || msg.attempt != pk->attempt) {
+        return;
+    }
+    if (pk->by_broadcast && !pk->found) {
+        /* Asked by broadcast, no master yet: one panel's refusal doesn't speak for another that
+         * may still answer. It only names the reason if nobody does. */
+        if (msg.reason != PLINK_FAIL_NONE) {
+            pk->heard_fail = msg.reason;
+        }
+        return;
+    }
     /* Honoured only for the attempt under way, from its master. */
-    if (!plink_dec_pair_fail(p, n, &msg) || msg.attempt != pk->attempt ||
-        !plink_addr_equal(from, &pk->master) || (pk->net_id != 0u && h->net_id != pk->net_id)) {
+    if (!plink_addr_equal(from, &pk->master) || (pk->net_id != 0u && h->net_id != pk->net_id)) {
         return;
     }
     k_end(pk, now, msg.reason != PLINK_FAIL_NONE ? msg.reason : PLINK_FAIL_CANCELLED, false, NULL);
@@ -1039,6 +1057,10 @@ void plink_pk_start(plink_pair_k_t *pk, uint64_t now_ms, const plink_addr_t *mas
     /* A new pairing of up to 3 attempts. One under way is dropped: its PAIR_REQ's successor ends
      * it at the master. */
     pk->master = *master;
+    pk->asked = *master;
+    pk->by_broadcast = plink_addr_is_broadcast(master);
+    pk->found = false;
+    pk->heard_fail = PLINK_FAIL_NONE;
     pk->net_hint = net_id;
     pk->attempts = 0u;
     pk->next_attempt_at = now_ms;
@@ -1070,7 +1092,7 @@ void plink_pk_input(plink_pair_k_t *pk, uint64_t now_ms, const plink_addr_t *fro
     out->len = 0u;
     /* Pairing traffic counts only while a person is pairing (docs/features/11 "Pairing" 9). */
     if (pk == NULL || from == NULL || h == NULL || frame == NULL || len < PLINK_HDR_LEN ||
-        !k_busy(pk) || h->sender != PLINK_SENDER_MASTER ||
+        len > PLINK_FRAME_MAX || !k_busy(pk) || h->sender != PLINK_SENDER_MASTER ||
         (h->flags & PLINK_FLAG_FROM_MASTER) == 0u) {
         return;
     }
@@ -1095,7 +1117,11 @@ void plink_pk_tick(plink_pair_k_t *pk, uint64_t now_ms, plink_out_t *out)
         return;
     }
     if (now_ms >= pk->step_until) {
+        const uint8_t heard = pk->by_broadcast && !pk->found ? pk->heard_fail : PLINK_FAIL_NONE;
         k_end(pk, now_ms, PLINK_FAIL_TIMEOUT, true, out);
+        if (heard != PLINK_FAIL_NONE) {
+            pk->fail = heard; /* no master answered but this one, which said why not */
+        }
         return;
     }
     if (pk->last_len > 0u && now_ms >= pk->resend_at) {

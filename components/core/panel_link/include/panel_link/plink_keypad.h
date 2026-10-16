@@ -11,9 +11,9 @@
  * the first STATUS and a configuration matching its cfg_crc are all in; ONLINE; LOST after 30 s
  * without an authenticated STATUS, back to ONLINE only after a full sync (a STATUS since, and the
  * configuration it names) and no sooner than 3 s after entering LOST. A handshake starts at
- * start-up, after 15 s without an authenticated frame, on a REKEY for the live sid (at most every
- * 5 s), at seq 2^30, every 24 h; failures back off 1, 2, 4 ... 30 s with jitter (2 s at most
- * while a panic waits).
+ * start-up, after 15 s without an authenticated STATUS (counted from the last WELCOME too: a new
+ * session brings a STATUS at once), on a REKEY for the live sid (at most every 5 s), at seq 2^30,
+ * every 24 h; failures back off 1, 2, 4 ... 30 s with jitter (2 s at most while a panic waits).
  */
 #ifndef PLINK_KEYPAD_H
 #define PLINK_KEYPAD_H
@@ -132,7 +132,7 @@ typedef struct {
     plink_session_t old;         /* still accepted while tentative */
     plink_hs_k_t hs;
     uint64_t hs_due_ms, hs_backoff_ms, last_rekey_ms, session_started_ms;
-    uint64_t heard_ms;           /* last authenticated frame from the master */
+    uint64_t status_heard_ms;    /* the last authenticated STATUS or WELCOME (+15 s: handshake) */
     uint64_t status_ms;          /* last STATUS whose system section was applied */
     uint64_t silent_since_ms;    /* LINK-025: the last status, or the start of connecting */
     uint64_t lost_since_ms;

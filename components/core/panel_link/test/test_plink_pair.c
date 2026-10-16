@@ -1453,6 +1453,569 @@ static void test_port_failures(void)
     expect_keypad_wiped(&R.pk);
 }
 
+/* ---- asked by broadcast (LINK-021) ---------------------------------------------------------- */
+
+static const uint8_t IP_BCAST[4] = {255u, 255u, 255u, 255u};
+
+/* LINK-021: which addresses are broadcasts - 255.255.255.255 and a /24's x.y.z.255, on UDP only. */
+static void test_broadcast_addresses(void)
+{
+    static const uint8_t subnet[4] = {192u, 0u, 2u, 255u};
+    const plink_addr_t all = plink_addr_udp(IP_BCAST, PLINK_UDP_PORT);
+    const plink_addr_t sub = plink_addr_udp(subnet, PLINK_UDP_PORT);
+    TEST_ASSERT_TRUE(plink_addr_is_broadcast(&all));
+    TEST_ASSERT_TRUE(plink_addr_is_broadcast(&sub));
+    TEST_ASSERT_FALSE(plink_addr_is_broadcast(&R.am));
+    TEST_ASSERT_FALSE(plink_addr_is_broadcast(NULL));
+    plink_addr_t mac;
+    memset(&mac, 0, sizeof mac);
+    mac.tp = PLINK_TP_ESPNOW;
+    mac.len = 6u;
+    memset(mac.a, 0xFF, 6u);
+    TEST_ASSERT_FALSE(plink_addr_is_broadcast(&mac));
+}
+
+/* LINK-021, LINK-016: a keypad that asks by broadcast (mDNS found nothing) pairs with the master
+ * that answers. Its request, and the request's resends, go by broadcast; the attempt's first
+ * PAIR_COMMIT fixes its master before n_k goes, and from then on everything goes to that address
+ * and is taken only from it (a PAIR_REVEAL from elsewhere changes nothing). Both screens show the
+ * same code, the keypad the master's own address; the record is the master's. */
+static void test_broadcast_pairing_completes(void)
+{
+    const plink_addr_t bc = plink_addr_udp(IP_BCAST, PLINK_UDP_PORT);
+    plink_pm_open(&R.pm, R.now);
+    plink_pk_start(&R.pk, R.now, &bc, 0u, &A);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_REQ, type_of(&A));
+    TEST_ASSERT_TRUE(plink_addr_equal(&A.to, &bc));
+    R.now += PLINK_PAIR_RESEND_MS;
+    plink_pk_tick(&R.pk, R.now, &C); /* no answer yet: asked again, by broadcast */
+    expect_frame(A.buf, A.len, &C);
+    TEST_ASSERT_TRUE(plink_addr_equal(&C.to, &bc));
+    master_gets(&R.ak, A.buf, A.len, &B);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_COMMIT, type_of(&B));
+    to_keypad(&B, &C);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_NONCE, type_of(&C));
+    TEST_ASSERT_TRUE(plink_addr_equal(&C.to, &R.am)); /* n_k to the master that answered */
+    plink_pair_info_t ki = k_info();
+    TEST_ASSERT_TRUE(plink_addr_equal(&ki.peer, &R.am));
+    TEST_ASSERT_EQUAL_UINT8(1u, k_info().attempts);
+    R.now += PLINK_PAIR_RESEND_MS;
+    plink_pk_tick(&R.pk, R.now, &A); /* its resend goes there too */
+    expect_frame(C.buf, C.len, &A);
+    TEST_ASSERT_TRUE(plink_addr_equal(&A.to, &R.am));
+    to_master(&C, &A);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_REVEAL, type_of(&A));
+    keypad_gets(&R.pk, &R.ax, A.buf, A.len, &B); /* the same REVEAL from another address */
+    TEST_ASSERT_EQUAL_UINT(0u, B.len);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PS_WORKING, k_info().state);
+    to_keypad(&A, &B);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PS_COMPARE, k_info().state);
+    TEST_ASSERT_EQUAL_STRING(m_info().code, k_info().code);
+    compare_to_done(2u, 1u);
+    plink_keypad_rec_t rec;
+    TEST_ASSERT_TRUE(plink_pk_take(&R.pk, &rec));
+    TEST_ASSERT_EQUAL_UINT8(2u, rec.device);
+    TEST_ASSERT_EQUAL_HEX16(NET, rec.net_id);
+    TEST_ASSERT_EQUAL_STRING("Harbor House", rec.master_name);
+    ki = k_info();
+    TEST_ASSERT_TRUE(plink_addr_equal(&ki.peer, &R.am));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PS_DONE, m_info().state);
+}
+
+/* LINK-021, LINK-016: two masters answer a broadcast request. The first PAIR_COMMIT fixes the
+ * keypad's master and n_k goes to it alone; the second ends the attempt (OVERLAP), told by
+ * broadcast so that both masters end theirs. Nothing was disclosed to the second: it never got
+ * n_k, never revealed n_m, and counts nothing. A retry asks by broadcast again. */
+static void test_broadcast_two_masters_overlap(void)
+{
+    static plink_pair_m_t second;
+    const plink_addr_t bc = plink_addr_udp(IP_BCAST, PLINK_UDP_PORT);
+    plink_pm_init(&second, &R.cx);
+    plink_pm_identity(&second, 0x2222u, "Garage", "ffeedd", 4u);
+    plink_pm_open(&R.pm, R.now);
+    plink_pm_open(&second, R.now);
+    plink_pk_start(&R.pk, R.now, &bc, 0u, &A);
+    static plink_out_t commit2;
+    master_gets(&R.ak, A.buf, A.len, &B); /* both hear the request */
+    plink_hdr_t h;
+    TEST_ASSERT_TRUE(plink_hdr_read(A.buf, A.len, &h));
+    plink_pm_input(&second, R.now, &R.ak, &h, A.buf, A.len, &commit2);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_COMMIT, type_of(&commit2));
+    to_keypad(&B, &C); /* the first: n_k goes to it */
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_NONCE, type_of(&C));
+    TEST_ASSERT_TRUE(plink_addr_equal(&C.to, &R.am));
+    keypad_gets(&R.pk, &R.ax, commit2.buf, commit2.len, &A); /* the second */
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FAIL_OVERLAP, fail_reason(&A));
+    TEST_ASSERT_TRUE(plink_addr_equal(&A.to, &bc));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PS_FAILED, k_info().state);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FAIL_OVERLAP, k_info().fail);
+    TEST_ASSERT_EQUAL_UINT8(1u, k_info().attempts); /* n_k went to the first */
+    expect_keypad_wiped(&R.pk);
+    /* The PAIR_FAIL reaches both. */
+    master_gets(&R.ak, A.buf, A.len, &B);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FAIL_OVERLAP, m_info().fail);
+    TEST_ASSERT_TRUE(plink_hdr_read(A.buf, A.len, &h));
+    plink_pm_input(&second, R.now, &R.ak, &h, A.buf, A.len, &B);
+    plink_pair_info_t si;
+    plink_pm_info(&second, R.now, &si);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PS_FAILED, si.state);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FAIL_OVERLAP, si.fail);
+    TEST_ASSERT_EQUAL_UINT8(0u, si.attempts);
+    TEST_ASSERT_FALSE(second.revealed);
+    TEST_ASSERT_TRUE(all_zero(second.nonce_raw, sizeof second.nonce_raw));
+    expect_master_wiped(&second);
+    /* The person tries again: by broadcast. */
+    R.now += PLINK_PAIR_GAP_MS;
+    plink_pk_retry(&R.pk, R.now, &A);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_REQ, type_of(&A));
+    TEST_ASSERT_TRUE(plink_addr_equal(&A.to, &bc));
+
+    /* The second's COMMIT first: it is the one, and the first's ends the attempt before the
+     * PAIR_NONCE reaches anyone else. */
+    rig(0x2B2Bu);
+    plink_pm_init(&second, &R.cx);
+    plink_pm_identity(&second, 0x2222u, "Garage", "ffeedd", 4u);
+    plink_pm_open(&R.pm, R.now);
+    plink_pm_open(&second, R.now);
+    plink_pk_start(&R.pk, R.now, &bc, 0u, &A);
+    master_gets(&R.ak, A.buf, A.len, &B);
+    TEST_ASSERT_TRUE(plink_hdr_read(A.buf, A.len, &h));
+    plink_pm_input(&second, R.now, &R.ak, &h, A.buf, A.len, &commit2);
+    keypad_gets(&R.pk, &R.ax, commit2.buf, commit2.len, &C);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_NONCE, type_of(&C));
+    TEST_ASSERT_TRUE(plink_addr_equal(&C.to, &R.ax));
+    to_keypad(&B, &A);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FAIL_OVERLAP, fail_reason(&A));
+    TEST_ASSERT_EQUAL_UINT8(0u, m_info().attempts); /* the first never got n_k */
+}
+
+/* LINK-021: asked by broadcast, a refusal that comes before any PAIR_COMMIT (a master whose
+ * window is closed) doesn't end the attempt - another master may still answer, and then pairing
+ * goes on with it; with nobody else, the attempt times out naming that refusal. */
+static void test_broadcast_refusal_before_commit(void)
+{
+    static plink_pair_m_t closed;
+    const plink_addr_t bc = plink_addr_udp(IP_BCAST, PLINK_UDP_PORT);
+    plink_pm_init(&closed, &R.cx);
+    plink_pm_identity(&closed, 0x2222u, "Garage", "ffeedd", 4u);
+    plink_pm_open(&R.pm, R.now);
+    plink_pk_start(&R.pk, R.now, &bc, 0u, &A);
+    plink_hdr_t h;
+    TEST_ASSERT_TRUE(plink_hdr_read(A.buf, A.len, &h));
+    plink_pm_input(&closed, R.now, &R.ak, &h, A.buf, A.len, &C);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FAIL_CLOSED, fail_reason(&C));
+    keypad_gets(&R.pk, &R.ax, C.buf, C.len, &B);
+    TEST_ASSERT_EQUAL_UINT(0u, B.len);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PS_OPEN, k_info().state);
+    master_gets(&R.ak, A.buf, A.len, &B);
+    to_keypad(&B, &C);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_NONCE, type_of(&C));
+    TEST_ASSERT_TRUE(plink_addr_equal(&C.to, &R.am));
+
+    /* Only the closed one: TIMEOUT at the step's end, shown as CLOSED, nothing counted. */
+    rig(0x3C3Cu);
+    plink_pm_init(&closed, &R.cx);
+    plink_pm_identity(&closed, 0x2222u, "Garage", "ffeedd", 4u);
+    const uint64_t t0 = R.now;
+    plink_pk_start(&R.pk, R.now, &bc, 0u, &A);
+    TEST_ASSERT_TRUE(plink_hdr_read(A.buf, A.len, &h));
+    plink_pm_input(&closed, R.now, &R.ak, &h, A.buf, A.len, &C);
+    keypad_gets(&R.pk, &R.ax, C.buf, C.len, &B);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PS_OPEN, k_info().state);
+    R.now = t0 + PLINK_PAIR_STEP_MS;
+    plink_pk_tick(&R.pk, R.now, &B);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FAIL_TIMEOUT, fail_reason(&B));
+    TEST_ASSERT_TRUE(plink_addr_equal(&B.to, &bc));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PS_FAILED, k_info().state);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FAIL_CLOSED, k_info().fail);
+    TEST_ASSERT_EQUAL_UINT8(0u, k_info().attempts);
+}
+
+/* ---- payloads of a newer version (LINK-017) ------------------------------------------------- */
+
+static void put32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+    p[2] = (uint8_t)(v >> 16);
+    p[3] = (uint8_t)(v >> 24);
+}
+
+/* The longest name and firmware version on the wire (PLINK_NAME_MAX, PLINK_FW_MAX). */
+#define LONG_NAME "Keypad in the hall, by the door to the garage 1"
+#define LONG_FW   "2.0.0-rc.1+build.20261015.12345"
+
+/* A plain PAIR_* frame with payload p (n bytes) into o, to `to`. */
+static void plain(plink_out_t *o, uint8_t type, bool from_master, const uint8_t *p, size_t n,
+                  const plink_addr_t *to)
+{
+    const plink_hdr_t h = {type, from_master ? PLINK_FLAG_FROM_MASTER : 0u,
+                           (uint16_t)(type == PLINK_T_PAIR_REQ ? 0u : NET),
+                           from_master ? PLINK_SENDER_MASTER : PLINK_SENDER_UNPAIRED, 0u, 0u};
+    TEST_ASSERT_TRUE(n <= PLINK_PAIR_PAYLOAD_MAX);
+    memcpy(&o->buf[PLINK_HDR_LEN], p, n);
+    TEST_ASSERT_TRUE(
+        plink_frame_plain(&h, &o->buf[PLINK_HDR_LEN], n, o->buf, sizeof o->buf, &o->len));
+    o->to = *to;
+}
+
+/* LINK-017, LINK-016: a newer keypad's longer payloads are taken whole and hashed into the
+ * transcript as they travelled - a PAIR_REQ whose capacities section carries 40 bytes more and
+ * with 40 more after fw (more than v1's 160 bytes of room), a PAIR_NONCE with 16 more, a
+ * PAIR_CONFIRM with 16 more before its MAC: pairing completes, the master holding the K_pair the
+ * keypad computed, and a repeated PAIR_CONFIRM gets the same PAIR_DONE. */
+static void test_newer_keypad_payloads_are_taken(void)
+{
+    static uint8_t req[PLINK_PAIR_PAYLOAD_MAX], commit[PLINK_PAIR_PAYLOAD_MAX];
+    uint8_t sk[32], pk[32], v1[200], n_k[16], np[36], cp[36], dh[32], k_pair[32], k_conf[32];
+    plink_pm_open(&R.pm, R.now);
+    TEST_ASSERT_TRUE(plink_x25519_keypair(&R.cx, sk, pk));
+    plink_pair_req_t rq;
+    memset(&rq, 0, sizeof rq);
+    rq.attempt = 0x0BADCAFEu;
+    rq.proto = 2u; /* a newer version: the session takes the lower */
+    rq.caps = 0x0003u;
+    rq.kind = PLINK_KIND_PANEL;
+    rq.cap = CAP;
+    memcpy(rq.pk, pk, sizeof pk);
+    strcpy(rq.name, LONG_NAME);
+    strcpy(rq.fw, LONG_FW);
+    size_t v1n = 0, rn = 0;
+    TEST_ASSERT_TRUE(plink_enc_pair_req(&rq, v1, sizeof v1, &v1n));
+    /* attempt, proto, caps, kind (8 bytes), then the capacities section: length 5 and 5 bytes */
+    TEST_ASSERT_EQUAL_UINT8(5u, v1[8]);
+    memcpy(req, v1, 14u);
+    req[8] = 45u;
+    fill(&req[14], 40u, 3u, 0x11u);
+    memcpy(&req[54], &v1[14], v1n - 14u);
+    rn = 54u + (v1n - 14u);
+    fill(&req[rn], 40u, 5u, 0x22u);
+    rn += 40u;
+    TEST_ASSERT_TRUE(rn > 160u);
+    plain(&A, PLINK_T_PAIR_REQ, false, req, rn, &R.am);
+    to_master(&A, &B);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_COMMIT, type_of(&B));
+    TEST_ASSERT_EQUAL_UINT16(CAP.zones, R.pm.req.cap.zones);
+    TEST_ASSERT_EQUAL_STRING(LONG_FW, R.pm.req.fw);
+    const size_t cn = B.len - PLINK_HDR_LEN;
+    memcpy(commit, &B.buf[PLINK_HDR_LEN], cn);
+    plink_pair_commit_t cm;
+    TEST_ASSERT_TRUE(plink_dec_pair_commit(commit, cn, &cm));
+    /* PAIR_NONCE: attempt, n_k and 16 bytes more. */
+    fill(n_k, sizeof n_k, 7u, 0x33u);
+    put32(np, rq.attempt);
+    memcpy(&np[4], n_k, sizeof n_k);
+    fill(&np[20], 16u, 9u, 0x44u);
+    plain(&C, PLINK_T_PAIR_NONCE, false, np, sizeof np, &R.am);
+    to_master(&C, &A);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_REVEAL, type_of(&A));
+    plink_pair_nonce_t rv;
+    TEST_ASSERT_TRUE(plink_dec_pair_nonce(&A.buf[PLINK_HDR_LEN], A.len - PLINK_HDR_LEN, &rv));
+    uint8_t c2[32];
+    plink_pair_commitment(cm.pk, pk, rv.n, c2);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(cm.commit, c2, 32u);
+    TEST_ASSERT_EQUAL_UINT8(1u, m_info().attempts);
+    /* The keys over the payloads as they travelled; the same code. */
+    TEST_ASSERT_TRUE(plink_x25519_shared(&R.cx, sk, cm.pk, dh));
+    TEST_ASSERT_TRUE(
+        plink_pair_keys(dh, req, rn, commit, cn, NET, n_k, rv.n, k_pair, k_conf));
+    char code[PLINK_CODE_LEN];
+    plink_pair_code(pk, cm.pk, n_k, rv.n, code);
+    TEST_ASSERT_EQUAL_STRING(code, m_info().code);
+    /* PAIR_CONFIRM: attempt, 16 bytes more, mac_k. */
+    put32(cp, rq.attempt);
+    fill(&cp[4], 16u, 11u, 0x55u);
+    memset(&cp[20], 0, 16u);
+    plain(&C, PLINK_T_PAIR_CONFIRM, false, cp, sizeof cp, &R.am);
+    plink_mac_fill(k_conf, C.buf, C.len);
+    to_master(&C, &A);
+    TEST_ASSERT_EQUAL_UINT(0u, A.len);
+    plink_pm_decide(&R.pm, R.now, true, &A);
+    plink_pair_new_t nw;
+    TEST_ASSERT_TRUE(plink_pm_take(&R.pm, &nw));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(k_pair, nw.k_pair, 32u);
+    plink_pm_stored(&R.pm, R.now, true, PLINK_FAIL_NONE, 2u, 1u, &B);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_DONE, type_of(&B));
+    TEST_ASSERT_TRUE(plink_mac_check(k_conf, B.buf, B.len));
+    to_master(&C, &A); /* PAIR_DONE lost: the same PAIR_CONFIRM again */
+    expect_frame(B.buf, B.len, &A);
+}
+
+/* LINK-017, LINK-016: the keypad takes a newer master's longer payloads the same way - a
+ * PAIR_COMMIT with 40 bytes after the panel id, a PAIR_REVEAL with 16 more, a PAIR_DONE with 16
+ * more before its MAC - and pairs, holding the K_pair the master computed. */
+static void test_newer_master_payloads_are_taken(void)
+{
+    static uint8_t req[PLINK_PAIR_PAYLOAD_MAX], commit[PLINK_PAIR_PAYLOAD_MAX];
+    uint8_t sk[32], pk_m[32], n_m[16], v1[200], rp[36], dp[38], dh[32], k_pair[32], k_conf[32];
+    plink_pk_start(&R.pk, R.now, &R.am, 0u, &A);
+    const size_t rn = A.len - PLINK_HDR_LEN;
+    memcpy(req, &A.buf[PLINK_HDR_LEN], rn);
+    plink_pair_req_t rq;
+    TEST_ASSERT_TRUE(plink_dec_pair_req(req, rn, &rq));
+    TEST_ASSERT_TRUE(plink_x25519_keypair(&R.cx, sk, pk_m));
+    fill(n_m, sizeof n_m, 13u, 0x66u);
+    plink_pair_commit_t cm;
+    memset(&cm, 0, sizeof cm);
+    cm.attempt = rq.attempt;
+    cm.proto = 2u;
+    cm.caps = 0x0001u;
+    memcpy(cm.pk, pk_m, sizeof pk_m);
+    plink_pair_commitment(pk_m, rq.pk, n_m, cm.commit);
+    strcpy(cm.name, LONG_NAME);
+    strcpy(cm.panel_id, "a1b2c3");
+    size_t cn = 0;
+    TEST_ASSERT_TRUE(plink_enc_pair_commit(&cm, v1, sizeof v1, &cn));
+    memcpy(commit, v1, cn);
+    fill(&commit[cn], 40u, 7u, 0x77u);
+    cn += 40u;
+    TEST_ASSERT_TRUE(cn > 160u);
+    plain(&B, PLINK_T_PAIR_COMMIT, true, commit, cn, &R.ak);
+    to_keypad(&B, &C);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_NONCE, type_of(&C));
+    plink_pair_nonce_t nk;
+    TEST_ASSERT_TRUE(plink_dec_pair_nonce(&C.buf[PLINK_HDR_LEN], C.len - PLINK_HDR_LEN, &nk));
+    /* PAIR_REVEAL: attempt, n_m and 16 bytes more. */
+    put32(rp, rq.attempt);
+    memcpy(&rp[4], n_m, sizeof n_m);
+    fill(&rp[20], 16u, 3u, 0x88u);
+    plain(&A, PLINK_T_PAIR_REVEAL, true, rp, sizeof rp, &R.ak);
+    to_keypad(&A, &B);
+    TEST_ASSERT_EQUAL_UINT(0u, B.len);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PS_COMPARE, k_info().state);
+    TEST_ASSERT_TRUE(plink_x25519_shared(&R.cx, sk, rq.pk, dh));
+    TEST_ASSERT_TRUE(plink_pair_keys(dh, req, rn, commit, cn, NET, nk.n, n_m, k_pair, k_conf));
+    char code[PLINK_CODE_LEN];
+    plink_pair_code(rq.pk, pk_m, nk.n, n_m, code);
+    TEST_ASSERT_EQUAL_STRING(code, k_info().code);
+    plink_pk_confirm(&R.pk, R.now, true, &C);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_CONFIRM, type_of(&C));
+    TEST_ASSERT_TRUE(plink_mac_check(k_conf, C.buf, C.len));
+    /* PAIR_DONE: attempt, device 4, home 1, 16 bytes more, mac_m. */
+    put32(dp, rq.attempt);
+    dp[4] = 4u;
+    dp[5] = 1u;
+    fill(&dp[6], 16u, 5u, 0x99u);
+    memset(&dp[22], 0, 16u);
+    plain(&B, PLINK_T_PAIR_DONE, true, dp, sizeof dp, &R.ak);
+    plink_mac_fill(k_conf, B.buf, B.len);
+    to_keypad(&B, &A);
+    TEST_ASSERT_EQUAL_UINT(0u, A.len);
+    plink_keypad_rec_t rec;
+    TEST_ASSERT_TRUE(plink_pk_take(&R.pk, &rec));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(k_pair, rec.k_pair, 32u);
+    TEST_ASSERT_EQUAL_UINT8(4u, rec.device);
+    TEST_ASSERT_EQUAL_STRING(LONG_NAME, rec.master_name);
+}
+
+/* ---- refusals before anything is disclosed (LINK-016, LINK-017) ----------------------------- */
+
+/* A point of order 8 on Curve25519: X25519 of any clamped scalar with it is all zero. */
+static const uint8_t ORDER8[32] = {
+    0xe0, 0xeb, 0x7a, 0x7c, 0x3b, 0x41, 0xb8, 0xae, 0x16, 0x56, 0xe3, 0xfa, 0xf1, 0x9f, 0xc4, 0x6a,
+    0xda, 0x09, 0x8d, 0xeb, 0x9c, 0x32, 0xb1, 0xfd, 0x86, 0x62, 0x05, 0x16, 0x5f, 0x49, 0xb8, 0x00,
+};
+
+/* LINK-017, LINK-016: a PAIR_REQ with protocol version 0 is refused (VERSION), and one whose
+ * pk_k is of small order - zero, or a point of order 8 - is refused (MISMATCH), both before any
+ * PAIR_COMMIT goes: neither side counts an attempt, the master's window stays open, and nothing
+ * of the attempt is kept. The keypad refuses a PAIR_COMMIT the same way - protocol 0 (VERSION),
+ * pk_m zero or of order 8 (MISMATCH) - before its PAIR_NONCE goes, telling its master. */
+static void test_version_0_and_small_order_keys_refused(void)
+{
+    for (unsigned c = 0; c < 3u; c++) {
+        const uint8_t want = c == 0u ? (uint8_t)PLINK_FAIL_VERSION : (uint8_t)PLINK_FAIL_MISMATCH;
+        rig(0xA0u + c);
+        plink_pm_open(&R.pm, R.now);
+        plink_pk_start(&R.pk, R.now, &R.am, 0u, &A);
+        if (c == 0u) {
+            A.buf[PLINK_HDR_LEN + 4u] = 0u; /* proto */
+        } else if (c == 1u) {
+            memset(&A.buf[31], 0, 32u); /* pk_k */
+        } else {
+            memcpy(&A.buf[31], ORDER8, 32u);
+        }
+        to_master(&A, &B);
+        TEST_ASSERT_EQUAL_UINT8(want, fail_reason(&B));
+        const plink_pair_info_t mi = m_info();
+        TEST_ASSERT_EQUAL_UINT8(PLINK_PS_FAILED, mi.state);
+        TEST_ASSERT_EQUAL_UINT8(want, mi.fail);
+        TEST_ASSERT_EQUAL_UINT8(0u, mi.attempts);
+        TEST_ASSERT_NOT_EQUAL(0u, mi.left_s);
+        expect_master_wiped(&R.pm);
+        TEST_ASSERT_EQUAL_size_t(0u, R.pm.req_len);
+        TEST_ASSERT_EQUAL_size_t(0u, R.pm.commit_len);
+        to_keypad(&B, &C);
+        TEST_ASSERT_EQUAL_UINT8(want, k_info().fail);
+        TEST_ASSERT_EQUAL_UINT8(0u, k_info().attempts);
+    }
+    for (unsigned c = 0; c < 3u; c++) {
+        const uint8_t want = c == 0u ? (uint8_t)PLINK_FAIL_VERSION : (uint8_t)PLINK_FAIL_MISMATCH;
+        rig(0xB0u + c);
+        plink_pm_open(&R.pm, R.now);
+        plink_pk_start(&R.pk, R.now, &R.am, 0u, &A);
+        to_master(&A, &B);
+        TEST_ASSERT_EQUAL_HEX8(PLINK_T_PAIR_COMMIT, type_of(&B));
+        /* attempt u32, proto u8, caps u16, then pk_m */
+        if (c == 0u) {
+            B.buf[PLINK_HDR_LEN + 4u] = 0u;
+        } else if (c == 1u) {
+            memset(&B.buf[PLINK_HDR_LEN + 7u], 0, 32u);
+        } else {
+            memcpy(&B.buf[PLINK_HDR_LEN + 7u], ORDER8, 32u);
+        }
+        to_keypad(&B, &C);
+        TEST_ASSERT_EQUAL_UINT8(want, fail_reason(&C)); /* no PAIR_NONCE */
+        TEST_ASSERT_TRUE(plink_addr_equal(&C.to, &R.am));
+        TEST_ASSERT_EQUAL_UINT8(PLINK_PS_FAILED, k_info().state);
+        TEST_ASSERT_EQUAL_UINT8(want, k_info().fail);
+        TEST_ASSERT_EQUAL_UINT8(0u, k_info().attempts);
+        expect_keypad_wiped(&R.pk);
+        to_master(&C, &A);
+        TEST_ASSERT_EQUAL_UINT8(want, m_info().fail);
+        TEST_ASSERT_EQUAL_UINT8(0u, m_info().attempts);
+        expect_master_wiped(&R.pm);
+    }
+}
+
+/* ---- random bytes into both sides ------------------------------------------------------------ */
+
+static uint64_t RNG;
+
+static uint32_t rnd(void)
+{
+    RNG ^= RNG << 13;
+    RNG ^= RNG >> 7;
+    RNG ^= RNG << 17;
+    return (uint32_t)(RNG >> 32);
+}
+
+static size_t rnd_below(size_t n)
+{
+    return n == 0u ? 0u : (size_t)rnd() % n;
+}
+
+/* One honest pairing's six frames (PAIR_REQ .. PAIR_DONE) with rig(seed). */
+static void honest_frames(uint64_t seed, plink_out_t t[6])
+{
+    rig(seed);
+    plink_pm_open(&R.pm, R.now);
+    plink_pk_start(&R.pk, R.now, &R.am, 0u, &t[0]);
+    to_master(&t[0], &t[1]);
+    to_keypad(&t[1], &t[2]);
+    to_master(&t[2], &t[3]);
+    to_keypad(&t[3], &A);
+    plink_pk_confirm(&R.pk, R.now, true, &t[4]);
+    to_master(&t[4], &A);
+    plink_pm_decide(&R.pm, R.now, true, &A);
+    plink_pm_stored(&R.pm, R.now, true, PLINK_FAIL_NONE, 2u, 1u, &t[5]);
+}
+
+/* An answer or a tick's frame: nothing, or a frame the other side's plink_hdr_read takes. */
+static void expect_sane(const plink_out_t *o)
+{
+    if (o->len > 0u) {
+        plink_hdr_t h;
+        TEST_ASSERT_TRUE(o->len <= PLINK_FRAME_MAX);
+        TEST_ASSERT_TRUE(plink_hdr_read(o->buf, o->len, &h));
+    }
+    TEST_ASSERT_TRUE(m_info().attempts <= PLINK_PAIR_ATTEMPTS);
+    TEST_ASSERT_TRUE(k_info().attempts <= PLINK_PAIR_ATTEMPTS);
+}
+
+/* LINK-016, LINK-017 (docs/features/11 "Test and acceptance": random bytes into every parser):
+ * 4000 PAIR_* frames - copies of the attempt's own honest frames (the same seed makes the same
+ * attempt) with random edits in their type, net id and payload, and random payloads - go into
+ * whichever side their FROM_MASTER flag names, at every step of an attempt (window open, request
+ * taken, codes shown, both said yes), from the peer's address or another, with time jumps and
+ * ticks between; each frame ends at the end of its buffer. Neither side crashes or reads outside
+ * it, whatever either answers is a frame plink_hdr_read takes, and no side counts more than 3
+ * attempts. */
+static void test_fuzz_pairing_input(void)
+{
+    static plink_out_t t[6];
+    static uint8_t arena[PLINK_FRAME_MAX];
+    uint8_t work[PLINK_FRAME_MAX];
+    RNG = 0xFA12EDu;
+    unsigned answered = 0u;
+    for (uint32_t block = 0; block < 80u; block++) {
+        const uint64_t seed = 0xF100u + block;
+        honest_frames(seed, t);
+        rig(seed);
+        switch (block % 4u) {
+        case 0:
+            plink_pm_open(&R.pm, R.now);
+            plink_pk_start(&R.pk, R.now, &R.am, 0u, &A);
+            break;
+        case 1:
+            plink_pm_open(&R.pm, R.now);
+            plink_pk_start(&R.pk, R.now, &R.am, 0u, &A);
+            to_master(&A, &B);
+            break;
+        case 2: to_compare(); break;
+        default:
+            to_compare();
+            plink_pk_confirm(&R.pk, R.now, true, &A);
+            to_master(&A, &B);
+            plink_pm_decide(&R.pm, R.now, true, &C);
+            break;
+        }
+        for (uint32_t i = 0; i < 50u; i++) {
+            const plink_out_t *src = &t[rnd_below(6u)];
+            size_t len = src->len;
+            memcpy(work, src->buf, len);
+            if (rnd_below(10u) == 0u) {
+                len = PLINK_HDR_LEN + rnd_below(120u);
+                for (size_t b = PLINK_HDR_LEN; b < len; b++) {
+                    work[b] = (uint8_t)rnd();
+                }
+            }
+            if (rnd_below(8u) == 0u) {
+                work[3] = (uint8_t)(PLINK_T_PAIR_REQ + rnd_below(7u)); /* another step's type */
+            }
+            if (rnd_below(16u) == 0u) {
+                work[5] = (uint8_t)(work[5] ^ (1u << rnd_below(8u))); /* another net id */
+            }
+            const size_t edits = rnd_below(4u);
+            for (size_t e = 0; e < edits && len > PLINK_HDR_LEN; e++) {
+                const size_t at = PLINK_HDR_LEN + rnd_below(len - PLINK_HDR_LEN);
+                switch (rnd_below(4u)) {
+                case 0: work[at] = (uint8_t)(work[at] ^ (1u << rnd_below(8u))); break;
+                case 1: work[at] = (uint8_t)rnd(); break;
+                case 2: len = at; break;
+                default:
+                    for (size_t b = rnd_below(40u); b > 0u && len < sizeof work; b--) {
+                        work[len++] = (uint8_t)rnd();
+                    }
+                    break;
+                }
+            }
+            uint8_t *p = arena + sizeof arena - len;
+            memcpy(p, work, len);
+            plink_hdr_t h;
+            if (!plink_hdr_read(p, len, &h)) {
+                continue;
+            }
+            const bool other = rnd_below(4u) == 0u;
+            if ((h.flags & PLINK_FLAG_FROM_MASTER) != 0u) {
+                plink_pk_input(&R.pk, R.now, other ? &R.ax : &R.am, &h, p, len, &B);
+            } else {
+                plink_pm_input(&R.pm, R.now, other ? &R.ax : &R.ak, &h, p, len, &B);
+            }
+            answered += B.len > 0u;
+            expect_sane(&B);
+            if (rnd_below(10u) == 0u) {
+                R.now += rnd_below(40000u);
+                plink_pm_tick(&R.pm, R.now, &B);
+                expect_sane(&B);
+                plink_pk_tick(&R.pk, R.now, &B);
+                expect_sane(&B);
+            }
+        }
+    }
+    TEST_ASSERT_TRUE(answered > 200u); /* the edits reached the state machines */
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -1482,5 +2045,13 @@ int main(void)
     RUN_TEST(test_taken_only_when_it_can_be);
     RUN_TEST(test_secrets_wiped);
     RUN_TEST(test_port_failures);
+    RUN_TEST(test_broadcast_addresses);
+    RUN_TEST(test_broadcast_pairing_completes);
+    RUN_TEST(test_broadcast_two_masters_overlap);
+    RUN_TEST(test_broadcast_refusal_before_commit);
+    RUN_TEST(test_newer_keypad_payloads_are_taken);
+    RUN_TEST(test_newer_master_payloads_are_taken);
+    RUN_TEST(test_version_0_and_small_order_keys_refused);
+    RUN_TEST(test_fuzz_pairing_input);
     return UNITY_END();
 }

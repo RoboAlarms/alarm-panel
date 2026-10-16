@@ -78,7 +78,8 @@ typedef struct {
     bool (*run)(void *ctx, uint32_t ticket, uint8_t device, const plink_cmd_t *cmd);
     /* Supervision edge (alarm_service_device_reachable): false raises the trouble. */
     void (*reachable)(void *ctx, uint8_t device, bool reachable);
-    /* A keypad was heard (alarm_service_device_checkin). May be NULL. */
+    /* A keypad's HEARTBEAT said both directions are fresh (alarm_service_device_checkin): never
+     * while supervision holds it down or its status is stale. May be NULL. */
     void (*checkin)(void *ctx, uint8_t device);
     /* Numbers 1..8 others hold: Zigbee keypads, enabled device-table entries (bit d-1). Must not
      * block. NULL: none. */

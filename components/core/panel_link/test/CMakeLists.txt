@@ -7,8 +7,8 @@ set(PLINK_TEST_INC ${CMAKE_CURRENT_LIST_DIR}/../../zwave_host/test ${CMAKE_CURRE
 foreach(suite plink_crypto plink_frame plink_msg plink_view plink_store plink_pair plink_session)
     if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/test_${suite}.c)
         alarm_add_test(${suite} SOURCES test_${suite}.c plink_test_port.c ${PLINK_HOST_CRYPTO}
-                       LIBS panel_link alarm_proto zwave_host unity INCLUDES ${PLINK_TEST_INC}
-                       STRICT)
+                       LIBS panel_link alarm_sim alarm_proto zwave_host unity
+                       INCLUDES ${PLINK_TEST_INC} STRICT)
     endif()
 endforeach()
 # The managers, alone and together over a pretend network; the master side drives the real engine

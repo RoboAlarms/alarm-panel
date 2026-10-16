@@ -1092,6 +1092,13 @@ void ksvc_poll(uint64_t now)
 
 uint8_t ksvc_request(uint64_t now, const link_req_t *req)
 {
+    if (K.setup_only && K.pending &&
+        (req->kind == UI_LINK_REQ_KP_PAIR_START || req->kind == LINK_REQ_KP_PAIR_AT ||
+         req->kind == UI_LINK_REQ_KP_PAIR_RETRY)) {
+        /* Option C: a new attempt replaces a pairing that finished but wasn't kept (its STOP
+         * never came): forgotten first, or port_send would drop the new attempt's frames */
+        (void)plink_keypad_forget(K.k, now);
+    }
     switch (req->kind) {
     case UI_LINK_REQ_KP_PAIR_START:
     case LINK_REQ_KP_PAIR_AT:

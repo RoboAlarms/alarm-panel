@@ -288,7 +288,7 @@ lv_obj_t * screen_main_create(void)
         lv_obj_t * bar_settings = alarm_ui_run_0(bar, 44, 44);
         alarm_ui_run_60(bar_settings, LV_OBJ_FLAG_CLICKABLE, true, 8);
         alarm_ui_run_52(bar_settings, &style_bar_round, 0, &style_nav_active, &subject_view, 5);
-        lv_obj_bind_style(bar_settings, &style_disabled, 0, &subject_locked, 1);
+        lv_obj_bind_style(bar_settings, &style_disabled, 0, &subject_settings_locked, 1);
         alarm_ui_run_10(bar_settings, ui_on_settings, "bar_settings");
         lv_obj_t * lv_label_21 = alarm_ui_run_11(bar_settings, "\xEE\x85\x94");
         alarm_ui_run_4(lv_label_21, icons_20, COLOR_TEXT_2);

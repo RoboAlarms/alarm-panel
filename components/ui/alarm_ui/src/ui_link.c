@@ -341,7 +341,8 @@ bool ui_link_silence_words(char *title, size_t tlen, char *note, size_t nlen)
     if (!ui_link_local_alarm()) {
         return false;
     }
-    /* the code pad's Silence during a fire or CO alarm, as one big button */
+    /* TR: Home on a keypad without system communication that keeps sounding a fire or CO alarm:
+     * the large red button that stops it here (the code pad's Silence). At most 47 bytes */
     i18n_utf8_copy(title, tlen, TR("Silence"));
     /* TR: Home on a keypad without system communication that keeps sounding a fire or CO alarm:
      * under Silence. At most 127 bytes */
@@ -1370,6 +1371,7 @@ void ui_link_tick(void)
         return;
     }
     L.polled = lv_tick_get();
+    const bool was_local = ui_link_local_alarm();
     ui_link_info_t now;
     const bool have = read_info(&now);
     const ui_link_info_t *was = &L.info;
@@ -1386,6 +1388,9 @@ void ui_link_tick(void)
     if (changed) {
         subjects_follow();
         ui_refresh(true); /* Home's card, the status bar's banner */
+    }
+    if (ui_link_local_alarm() && !was_local) {
+        ui_app_wake(); /* a fire or CO tone kept here wakes the screen, as an alarm does */
     }
     pages_tick();
 }

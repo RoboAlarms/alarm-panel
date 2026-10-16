@@ -458,6 +458,9 @@ void ui_pad_cancel(void);
 bool ui_app_busy(void);
 /* Wake the screen and show Home, where a walk test's card is (WALK-023). */
 void ui_app_walk_show(void);
+/* Wake the screen from its saver, the idle time counted again from now: as an alarm does
+ * (ui_link.c, when a keypad starts keeping a fire or CO tone through a lost link). */
+void ui_app_wake(void);
 /* The status bar's left side again (a banner came or went). */
 void ui_bar_banner_update(void);
 

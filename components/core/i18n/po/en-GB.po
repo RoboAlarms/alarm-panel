@@ -4682,8 +4682,10 @@ msgstr[1] ""
 msgid "Siren on"
 msgstr ""
 
+#. Home on a keypad without system communication that keeps sounding a fire or CO alarm: the large red button that stops it here (the code pad's Silence). At most 47 bytes
 #. Text from the layout XML, no context.
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/components/pad/code_pad/code_pad.xml
 #: components/ui/alarm_ui/layouts/480x320/alarm_ui/components/pad/code_pad/code_pad.xml
 msgid "Silence"
@@ -15390,6 +15392,12 @@ msgstr ""
 msgid "Chime can be changed once the alarm is silenced"
 msgstr ""
 
+#. a toast after Silence on a keypad without system communication: its own alarm sound stops; the alarm panel goes on as it was
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_app.c
+msgid "Silenced on this keypad"
+msgstr ""
+
 #. a toast after Silence during a fire, CO or medical alarm
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_app.c
@@ -18724,6 +18732,16 @@ msgstr ""
 #. Home on a keypad that isn't paired, the foot of the state card. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Arming is off"
+msgstr ""
+
+#. Home on a keypad that can't read its alarm panel's settings (they are newer than this keypad's software): the foot of the state card, one line (cut with "..." where it runs out), steady: where to update it (About has Software update). At most 47 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Update this keypad: Settings > About"
+msgstr ""
+
+#. Home on a keypad without system communication that keeps sounding a fire or CO alarm: under Silence. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Stops the alarm sound on this keypad"
 msgstr ""
 
 #. Home on a keypad that isn't paired: the large button that pairs it again. At most 47 bytes

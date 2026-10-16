@@ -664,6 +664,7 @@ extern lv_subject_t subject_opt_instant;
 extern lv_subject_t subject_opt_silent;
 extern lv_subject_t subject_opt_silent_avail;
 extern lv_subject_t subject_locked;
+extern lv_subject_t subject_settings_locked;
 extern lv_subject_t subject_opt_bypass;
 extern lv_subject_t subject_opt_bypass_avail;
 extern lv_subject_t subject_toast;

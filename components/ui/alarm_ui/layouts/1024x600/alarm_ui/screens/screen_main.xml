@@ -161,7 +161,7 @@
 			<box name="bar_settings" width="44" height="44" clickable="true" ext_click_area="8">
 				<style name="style_bar_round" />
 				<bind_style name="style_nav_active" subject="subject_view" ref_value="5" />
-				<bind_style name="style_disabled" subject="subject_locked" ref_value="1" />
+				<bind_style name="style_disabled" subject="subject_settings_locked" ref_value="1" />
 				<event_cb callback="ui_on_settings" trigger="clicked" />
 				<lv_label align="center" text="&#xE154;" style_text_font="icons_20" style_text_color="#color_text_2" />
 			</box>

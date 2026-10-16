@@ -10479,16 +10479,36 @@ static void walk_link_keypad(void)
 }
 
 /* What the review of the keypad role added (BL-048): the fire or CO tone a keypad keeps through a
- * lost link and its Silence (decided 2026-10-15), a keypad that needs an update to read its alarm
- * panel's settings, and the no-code pages while the last status said armed (LINK-025). */
-static void walk_link_keypad_kept(void)
+ * lost link and its Silence (decided 2026-10-15) - it wakes the screen from its saver and keeps it
+ * awake and lit as an alarm does, by night too (UI-009, UI-043) - a keypad that needs an update to
+ * read its alarm panel's settings, and the no-code pages while the last status said armed
+ * (LINK-025) with Troubles' Acknowledge still dimmed (UI-022). */
+static void walk_link_keypad_kept(const ui_options_t *start)
 {
     printf("A keypad: its kept fire tone, an update it needs, maintenance while armed (BL-048)\n");
     tap_name("nav_home");
     run(300);
     link_state(HOST_LINK_KEYPAD_LOST);
+    /* Night hours all day long (00:01 to 00:00), dimmed after a minute, dark after five. */
+    ui_options_t o = *start;
+    o.saver_after_ms = 60000u;
+    o.off_after_ms = 300000u;
+    o.night_off_after_ms = 300000u;
+    o.night_on = true;
+    o.night_start = 1u;
+    o.night_end = 0u;
+    ui_app_apply_options(&o);
+    run(1100);
+    expect_light(o.night_brightness, "BL-048: a calm keypad at night isn't at the night's brightness");
+    run(61000);
+    expect_saver(true, "UI-009: a keypad without system communication, untouched for a minute");
     host_link_demo_local_alarm(true);
     run(1100);
+    expect_saver(false, "BL-048: a fire tone kept on a keypad didn't wake the screen from its saver");
+    expect_light(o.brightness, "BL-048: a keypad's kept fire tone isn't lit as an alarm is at night");
+    run(o.off_after_ms + 60000u);
+    expect_saver(false, "BL-048: the screen saver came while a keypad's kept fire tone sounds");
+    expect_light(o.brightness, "BL-048: the screen dimmed while a keypad's kept fire tone sounds");
     expect(lv_subject_get_int(&subject_panel) == 6 && /* Silence */
                find_visible(lv_screen_active(), "panel_silence") != NULL,
            "BL-048: a keypad keeping a fire tone without the alarm panel offers no Silence");
@@ -10506,6 +10526,8 @@ static void walk_link_keypad_kept(void)
     run(1100);
     expect(lv_subject_get_int(&subject_panel) == 0 && link_tile_dimmed(),
            "BL-048: after Silence the dimmed arming tiles don't come back");
+    expect_light(o.night_brightness, "BL-048: after Silence the keypad keeps an alarm's brightness");
+    ui_app_apply_options(start);
     run(4000); /* the toast goes */
 
     link_state(HOST_LINK_KEYPAD_CONNECTING);
@@ -10539,6 +10561,9 @@ static void walk_link_keypad_kept(void)
     link_state(HOST_LINK_KEYPAD_LOST);
     host_link_demo_maintenance(true);
     run(1100);
+    expect(lv_subject_get_int(&subject_settings_locked) == 0 &&
+               lv_subject_get_int(&subject_locked) == 1,
+           "BL-048: the gear isn't lit, or Acknowledge and Chime don't stay dimmed (UI-022)");
     tap_name("bar_settings");
     run(300);
     expect(lv_subject_get_int(&subject_view) == 5, /* Settings */
@@ -10674,7 +10699,7 @@ static void walk_panel_link(const ui_options_t *start)
 {
     walk_link_setup(start);
     walk_link_keypad();
-    walk_link_keypad_kept();
+    walk_link_keypad_kept(start);
     walk_link_master(start);
     host_link_demo_state(HOST_LINK_OFF); /* as without the link, for what follows */
     run(1100);

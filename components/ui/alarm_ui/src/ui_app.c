@@ -634,9 +634,10 @@ static void light_apply(void)
     if (!S.lit) {
         return;
     }
-    /* A walk test is lit as an alarm is: at the day brightness, night hours or not (WALK-022). */
+    /* A walk test is lit as an alarm is: at the day brightness, night hours or not (WALK-022);
+     * so is a keypad keeping a fire or CO tone through a lost link (its Silence must be seen). */
     int pct = ui_light_percent(&S.opt, (ui_light_stage_t)S.light, S.night,
-                               alarm_mode(S.mode) || ui_walk_running());
+                               alarm_mode(S.mode) || ui_walk_running() || ui_link_local_alarm());
     if (S.light_preview >= 0) {
         if (!S.saver_on && lv_tick_elaps(S.light_preview_at) < LIGHT_PREVIEW_MS) {
             pct = S.light_preview;
@@ -1134,6 +1135,12 @@ bool ui_app_busy(void)
            lv_subject_get_int(&subject_sheet) != SHEET_NONE;
 }
 
+void ui_app_wake(void)
+{
+    saver_exit();
+    lv_display_trigger_activity(S.disp);
+}
+
 void ui_app_walk_show(void)
 {
     saver_exit();
@@ -1600,7 +1607,9 @@ static void mode_entered(ui_mode_t m, ui_mode_t prev, bool first)
  * subject_link_home). The real state comes back with the link (apply_mode's mode_entered). */
 static void apply_link_home(const ui_link_home_t *lh)
 {
-    S.mode = MODE_READY; /* calm: the screen saver may come, as on a quiet Home */
+    /* calm: the screen saver may come, as on a quiet Home - unless a fire or CO tone is kept
+     * here (ui_link_local_alarm: lit and awake as an alarm, ui_app_wake when it starts) */
+    S.mode = MODE_READY;
     S.mode_valid = true;
     if (S.pad != PAD_NONE && S.pad_host == HOST_HOME) {
         pad_close();
@@ -2883,7 +2892,8 @@ void ui_refresh(bool force)
     ui_set_int(&subject_default_codes, S.snap.default_codes);
     const bool locked = compute_locked();
     const bool waived = locked && ui_link_settings_waived();
-    ui_set_int(&subject_locked, locked && !waived ? 1 : 0); /* the gear looks as it works */
+    ui_set_int(&subject_locked, locked ? 1 : 0); /* chime, Acknowledge: still locked */
+    ui_set_int(&subject_settings_locked, locked && !waived ? 1 : 0); /* the gear as it works */
     bar_banner(locked);
     if (!S.snap.program && S.program) {
         S.program = false; /* timed out or left elsewhere */
@@ -3917,7 +3927,8 @@ static void tick(lv_timer_t *t)
                        S.mode == MODE_PROGRAM) &&
                       !ui_app_busy() && /* the same test a walk test started elsewhere waits on */
                       !S.remote.active && /* someone at the panel sees a remote session */
-                      !ui_walk_running(); /* awake for the whole test, any partition (WALK-022) */
+                      !ui_walk_running() && /* awake for the whole test, any partition (WALK-022) */
+                      !ui_link_local_alarm(); /* a keypad's kept fire or CO tone: as an alarm */
     /* Dimmed, then dark (UI-009, UI-043): only while nothing else needs the screen. Night hours
      * that begin or end, or new times, move it on from where it is; only a touch or the panel
      * itself (a change of state, an alarm) wakes it. */

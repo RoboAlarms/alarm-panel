@@ -156,6 +156,7 @@
 		<int name="subject_opt_silent" value="0" help="Silent exit" />
 		<int name="subject_opt_silent_avail" value="1" help="1 = offer silent exit (Away only: Stay and Night exit time is silent anyway)" />
 		<int name="subject_locked" value="0" help="1 = armed or in alarm: Settings, chime, codes and acknowledging troubles are locked" />
+		<int name="subject_settings_locked" value="0" help="1 = the Settings gear is dimmed: subject_locked, except on a keypad whose Settings open without a code all the same (LINK-025, an update it needs)" />
 		<int name="subject_opt_bypass" value="0" help="Bypass open zones and arm" />
 		<int name="subject_opt_bypass_avail" value="0" help="1 = zones are open, offer the bypass option" />
 		<string name="subject_toast" value="" help="Toast text" />

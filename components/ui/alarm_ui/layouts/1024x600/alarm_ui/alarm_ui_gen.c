@@ -147,6 +147,7 @@ lv_subject_t subject_opt_instant;
 lv_subject_t subject_opt_silent;
 lv_subject_t subject_opt_silent_avail;
 lv_subject_t subject_locked;
+lv_subject_t subject_settings_locked;
 lv_subject_t subject_opt_bypass;
 lv_subject_t subject_opt_bypass_avail;
 lv_subject_t subject_toast;
@@ -883,6 +884,7 @@ void alarm_ui_init_gen(const char * asset_path)
     lv_subject_init_int(&subject_opt_silent, 0);
     lv_subject_init_int(&subject_opt_silent_avail, 1);
     lv_subject_init_int(&subject_locked, 0);
+    lv_subject_init_int(&subject_settings_locked, 0);
     lv_subject_init_int(&subject_opt_bypass, 0);
     lv_subject_init_int(&subject_opt_bypass_avail, 0);
     static char subject_toast_buf[UI_SUBJECT_STRING_LENGTH];
@@ -1216,6 +1218,7 @@ void alarm_ui_init_gen(const char * asset_path)
     lv_xml_register_subject(NULL, "subject_opt_silent", &subject_opt_silent);
     lv_xml_register_subject(NULL, "subject_opt_silent_avail", &subject_opt_silent_avail);
     lv_xml_register_subject(NULL, "subject_locked", &subject_locked);
+    lv_xml_register_subject(NULL, "subject_settings_locked", &subject_settings_locked);
     lv_xml_register_subject(NULL, "subject_opt_bypass", &subject_opt_bypass);
     lv_xml_register_subject(NULL, "subject_opt_bypass_avail", &subject_opt_bypass_avail);
     lv_xml_register_subject(NULL, "subject_toast", &subject_toast);

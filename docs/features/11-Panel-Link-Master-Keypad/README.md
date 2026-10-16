@@ -377,7 +377,12 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   link returns (decided 2026-10-15), and shows the steady "No system communication" state
   (LINK-008). OFF is a Disarm or Silence the master didn't run (no link, or no answer within 3 s,
   also in the 30 s before the loss); while the tone is kept, Home offers Silence in the dimmed
-  tiles' place (`ui_link_info_t.local_alarm`).
+  tiles' place (`ui_link_info_t.local_alarm`), and the screen is as during an alarm: woken from
+  its saver when the tone is kept, never dimmed or dark while it sounds, lit by day's brightness
+  at night too.
+- **Settings while armed**: when LINK-025's maintenance or a needed update opens Settings though
+  the last status said armed, only the gear looks usable (`subject_settings_locked`); Chime and
+  Troubles' Acknowledge stay dimmed, as they stay locked.
 - **Needs an update**: a keypad that hears its master but can't read its configuration (newer than
   its firmware reads) never gets ONLINE; Home says to update it, Software update opens without a
   code, and the update gate decides on the master's newest status as for ONLINE.

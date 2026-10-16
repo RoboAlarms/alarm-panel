@@ -1,7 +1,7 @@
 # 00 · Architecture and roadmap
 
 **Status:** Living document - the goal, principles, component tiers, build options and the decision
-log (ADR-001 to ADR-053; ADR-051 is a draft in docs/features/13), kept in step with the code; no open work of its own: what is left is in
+log (ADR-001 to ADR-054; ADR-051 is a draft in docs/features/13), kept in step with the code; no open work of its own: what is left is in
 the [backlog](../../BACKLOG.md) · **Milestone:** all · **Depends on:** -
 
 ## Goal
@@ -164,7 +164,7 @@ component.
 | ADR-002 | **ESP-IDF v6.1** (released 2026-08-27), pinned | Latest stable. Supports older ESP32-P4 silicon through `CONFIG_ESP32P4_SELECTS_REV_LESS_V3`. Ships mbedTLS 4, so all crypto uses the PSA API |
 | ADR-003 | **LVGL 9 + LVGL Pro** (Editor 2.x) | XML UI in git, data binding through subjects, plain C export, free for open source |
 | ADR-004 | **Keypads are thin terminals**; the master validates every code | Mirrors a wired keypad bus: keypads send keystrokes and show what the master says; one source of truth |
-| ADR-005 | Keypad link: **ESP-NOW primary, LAN UDP fallback**, our own AEAD | Keeps working when the router is down (like a wired keypad bus); LAN gives speed and PC tooling |
+| ADR-005 | Keypad link: **ESP-NOW primary, LAN UDP fallback**, our own AEAD (order revised by ADR-054: Wi-Fi first) | Keeps working when the router is down (like a wired keypad bus); LAN gives speed and PC tooling |
 | ADR-006 | **MQTT over TLS** with our own JSON; **Home Assistant** via discovery; server optional | Standard, debuggable, HA works on day one; no Contact ID or other legacy formats |
 | ADR-007 | ESP32-H2 is reserved for **sensors** | Every CYD would need an H2 for keypad duty, and 802.15.4 is too slow for OTA relay |
 | ADR-008 | **Signed OTA with rollback**, applied only while disarmed and idle | An update must never weaken protection |
@@ -428,6 +428,24 @@ default (docs/features/08 D06), so a release without its voice would leave the p
 update server never changes a published release's files, so a release published without its
 voice is withdrawn and replaced by a new version, not patched.
 
+**ADR-054 (2026-10-15; docs/features/11): The panel link is one protocol over pluggable
+transports, Wi-Fi first, with a session handshake.** Context: ADR-005 made ESP-NOW the keypads'
+primary link and LAN UDP the fallback, but ESP-NOW on the P4 needs our own C6 build first, and
+most homes have Wi-Fi; a keypad link over 433 MHz was also asked for. The planned frame used a
+per-keypad key with sequence numbers, which would have had to be written to flash to stay unique
+across restarts. Decision: one frame format, pairing and session layer for every transport; the
+core sends through a port with an opaque address and a largest frame per transport. LAN UDP over
+Wi-Fi is built first (mDNS `_roboalarms-link._udp`, port 6056); ESP-NOW and 433 MHz follow as
+transports. Pairing is commit-then-reveal with a 6-digit code confirmed on both screens; every
+connection starts with a handshake (ephemeral X25519 keyed by the pairing key) giving fresh
+per-direction AES-128-CCM keys, so counters live in RAM. A P4 panel is a master or a keypad, chosen
+once; a keypad runs no engine. Why: Wi-Fi reaches most homes now; one protocol keeps every
+transport equally secure and testable on a PC; the handshake avoids flash writes per frame, survives
+either side restarting and keeps codes typed on a keypad secret even if its key is later stolen.
+Consequences: until ESP-NOW exists a keypad depends on the router (backup power for it is the
+installer's advice); ADR-005's order is revised, not its aim - ESP-NOW stays the path that works
+without a router.
+
 ## Build profiles and feature flags
 
 **ADR-033 (2026-09-22, revised; docs/features/31): Normal firmware includes
@@ -470,7 +488,7 @@ hides whatever the backend doesn't provide (ADR-012).
 | `ALARM_ZSRC_HA` (needs `ALARM_FEATURE_HA`, which is for boards with PSRAM) | `zsrc_ha`, two-way catalog (docs/features/22, 23) | yes | no | no |
 | `ALARM_HOME_CONTROL` (needs `SPIRAM`, `ALARM_FEATURE_HA`) | `home_control`, `device_service` (docs/features/24) | yes | no | no |
 | `ALARM_FEATURE_AUTOMATIONS` (needs `ALARM_HOME_CONTROL`) | `automation`, `automation_service` (docs/features/41) | yes | no | no |
-| `ALARM_LINK` (planned, M7) | panel link (docs/features/11, BL-048) | yes | yes | yes |
+| `ALARM_LINK` (in progress, M7) | `panel_link`, `plink_service`: the panel link (docs/features/11, BL-048) | yes | yes | yes |
 
 The options the table leaves out - notifications, the Panel Manager, developer access, storage,
 the clock module (`ALARM_FEATURE_RTC`) and the photo screen saver - and their defaults are in

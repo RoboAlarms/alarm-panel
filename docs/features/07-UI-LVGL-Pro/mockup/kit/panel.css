@@ -425,6 +425,8 @@
 /* Proposal marks: a dashed outline an agent puts around what a proposal changes (M.changed). */
 .changed { outline: 2px dashed var(--color_violet); outline-offset: 3px; }
 .pane > .changed, .settings_page > .changed { height: 100%; }
+/* Several rows marked at once keep the page's gap between them */
+.page_body > .changed { display: flex; flex-direction: column; gap: var(--space_sm); }
 
 /* big_value, action_pair */
 .big_value { background: var(--color_surface); border-radius: var(--radius_md); padding: var(--space_lg); display: flex; flex-direction: column; align-items: center; gap: var(--space_xs); }

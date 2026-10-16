@@ -127,18 +127,19 @@ const M = (() => {
       ${note ? text(note, 'caption', 'text_3', 'note dots') : ''}
     </div>`;
   }
-  const arm_tile = ({glyph, title, subtitle, color: c, goTo}) => `<div class="arm_tile"${go(goTo)}>
+  /** disabled (BL-048 proposal): dimmed and not tappable (LV_STATE_DISABLED), as a keypad shows them without the alarm panel. */
+  const arm_tile = ({glyph, title, subtitle, color: c, goTo, disabled = false}) => `<div class="arm_tile${disabled ? ' disabled' : ''}"${disabled ? '' : go(goTo)}>
     ${icon_chip({glyph, size: 76, font: 40, color: c})}
     <div class="words">${text(title, 'title')}${text(subtitle, 'body', 'text_2')}</div>${icon('chevron-right', 28, 'text_3')}</div>`;
   /**
    * The three arming tiles of Home (panel_arm). above (D19): something drawn over
    * the tiles in the same pane (the arming warning's strip); the tiles share what height is left and
-   * are otherwise exactly as they are.
+   * are otherwise exactly as they are. disabled (BL-048 proposal): the three tiles dimmed, not what is above them.
    */
-  const panel_arm = (above) => (above ? `<div class="pane_stack">${above}` : '') + `<div class="panel_arm">
-    ${arm_tile({glyph: 'log-out', title: 'Away', subtitle: 'Everyone is leaving', color: 'rose', goTo: 'pad-arm-away'})}
-    ${arm_tile({glyph: 'house', title: 'Stay', subtitle: 'Someone is home', color: 'blue', goTo: 'pad-arm-away'})}
-    ${arm_tile({glyph: 'moon', title: 'Night', subtitle: 'Going to bed', color: 'violet', goTo: 'pad-arm-away'})}</div>` + (above ? '</div>' : '');
+  const panel_arm = (above, {disabled = false} = {}) => (above ? `<div class="pane_stack">${above}` : '') + `<div class="panel_arm">
+    ${arm_tile({glyph: 'log-out', title: 'Away', subtitle: 'Everyone is leaving', color: 'rose', goTo: 'pad-arm-away', disabled})}
+    ${arm_tile({glyph: 'house', title: 'Stay', subtitle: 'Someone is home', color: 'blue', goTo: 'pad-arm-away', disabled})}
+    ${arm_tile({glyph: 'moon', title: 'Night', subtitle: 'Going to bed', color: 'violet', goTo: 'pad-arm-away', disabled})}</div>` + (above ? '</div>' : '');
   /**
    * arm_levels (components/forms/arm_levels): Away, Stay and Night as one 64 px row of three keys, each with the
    * arming tile's glyph; the chosen one tinted in its level's tone. active: 0..2
@@ -479,14 +480,19 @@ const M = (() => {
     <div class="saver_state"><div class="saver_disk" style="color:${color(tone)}">${icon(glyph, 40)}</div>
       <div class="col" style="gap:2px;max-width:400px">${text(headline, 'headline', tone)}${text(detail, 'label')}<span class="font_body soft">${esc(note)}</span>
         ${trouble ? `<div class="row warn" style="gap:var(--space_sm);margin-top:var(--space_sm)">${icon('triangle-alert', 20)}${text(trouble, 'label')}</div>` : ''}</div></div></div>`;
-  /** The first-boot setup (screen_wizard.xml). step 0..5; body: rows; pad: a code_pad in its place. */
-  function wizard({step = 0, glyph = 'sparkles', title, note, body = '', pad, next = 'Start', back = false, exit = false, toast: t, leaveSide = false}) {
+  /**
+   * The first-boot setup (screen_wizard.xml). step 0..steps; body: rows; pad: a code_pad in its place.
+   * steps (BL-048 proposal): how many progress dots, 5 today; a branch of the setup (the alarm panel's,
+   * a keypad's) has its own count. nextDisabled (BL-048 proposal): Next dimmed until the step is done.
+   */
+  function wizard({step = 0, steps = 5, glyph = 'sparkles', title, note, body = '', pad, next = 'Start', nextDisabled = false,
+    back = false, exit = false, toast: t, leaveSide = false}) {
     // leaveSide (mockup-next): "Leave setup" is a quiet link under the step's words, away from Back and Next.
     const footer = pad ? '' : `<div class="wiz_footer">${exit && !leaveSide ? button('Leave setup', '', 'log-out') : ''}${back ? button('Back', '', 'chevron-left') : ''}
-      <div class="grow"></div>${button(next, 'primary', null, 'chevron-right')}</div>`;
+      <div class="grow"></div>${button(next, nextDisabled ? 'primary disabled' : 'primary', null, 'chevron-right')}</div>`;
     const leave = exit && leaveSide ? `<div class="grow"></div><div class="row wiz_leave">${icon('log-out', 20)}${text('Leave setup', 'label')}</div>` : '';
     return `<div class="screen">
-      <div class="wiz_side"><div class="wiz_steps">${[1, 2, 3, 4, 5].map((i) => `<i class="${step >= i ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="wiz_side"><div class="wiz_steps">${Array.from({length: steps}, (_, k) => k + 1).map((i) => `<i class="${step >= i ? 'on' : ''}"></i>`).join('')}</div>
         ${icon_chip({glyph, size: 168, font: 96, color: 'blue'}).replace('class="icon_chip"', 'class="icon_chip wiz_disk"')}
         ${text(title, 'headline', null, '')}${text(note, 'body', 'text_2')}${leave}</div>
       <div class="wiz_main">${pad ? `<div class="col grow" style="align-items:center">${pad}</div>` : `<div class="page_body scroll">${body}</div>`}${footer}</div>

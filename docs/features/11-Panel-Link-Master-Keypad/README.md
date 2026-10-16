@@ -169,7 +169,8 @@ dates an event without the wall clock, LINK-028). Then one record per
 enabled partition: number u8, length u8 (the bytes after it), then the fields of
 `alarm_partition_status_t` one by one
 (state, level, arm_flags, armed_by, arm_source kind u8 + id u16, ready_levels, a flags byte for
-ready, chime, walk_test, triggered, exit_error, trouble_unack, sounder, bell, delay_left_ms u32,
+ready, chime, walk_test, triggered, exit_error, trouble_unack and quick_exit (bit 6: the exit time
+running is a quick exit from the armed state, not an arming; LINK-028), sounder, bell, delay_left_ms u32,
 memory, faults, bypassed, alarms, troubles u16 each, walk_left_ms u32, walk_age_ms u32, walk_id
 u32, walk_seq u32, walk_tested u16, walk_total u16, walk_flags, walk_started_by, walk_ended_by,
 walk_end_how, walk_started_src kind u8 + id u16). A transport whose frame is too small gets several
@@ -420,12 +421,14 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   baseline instead; the commit waits up to 300 ms for events pushed ahead of their STATUS or a
   hole being pulled, and a batch with events but no sound yet, or a sound alone (a chime), waits
   100 ms for the rest; the bell's test pulse is fed before a walk test's start, as the engine
-  emits it. A keypad's baseline in an exit time joins that arming (`ann_join_exit`; its silent
-  exit from the snapshot's flags), so a keypad that restarts or comes back during an exit time
-  says its end as the master does (found on the panels 2026-10-16: the keypad was silent).
-  The master hands a keypad an engine call's events only with the snapshot that covers them
-  (`take_engine_news` holds newer ones, 1 s at most), so no STATUS covers an event with the state
-  from before it. One-shot sounds play tracked while the voice is fed. A zone's
+  emits it. A keypad's baseline in an arming's exit time joins that arming (`ann_join_exit`; its
+  silent exit from the snapshot's flags; never a quick exit's time, which the STATUS flags), and
+  so does a move from disarmed into an exit time whose arm came too late to say, so a keypad that
+  restarts or comes back during an exit time says its end as the master does (found on the
+  panels 2026-10-16: the keypad was silent). The master hands a keypad an engine call's events
+  only with the snapshot that covers them (`take_engine_news` holds a newer one, each 1 s at most,
+  with its call's sounds behind it), so no STATUS covers an event with the state from before it.
+  One-shot sounds play tracked while the voice is fed. A zone's
   words speak only with the pack revision they were approved with (the master's installer
   approves them; a keypad has no editor), and the master's D07 settling isn't on the wire, so for
   that moment a keypad may still say a zone's old approved name. Development builds log

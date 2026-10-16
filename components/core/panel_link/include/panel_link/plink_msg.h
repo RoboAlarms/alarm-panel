@@ -141,6 +141,7 @@ typedef struct {
 #define PLINK_PF_TRIGGERED     0x08u
 #define PLINK_PF_EXIT_ERROR    0x10u
 #define PLINK_PF_TROUBLE_UNACK 0x20u
+#define PLINK_PF_QUICK_EXIT    0x40u /* the exit time is a quick exit, not an arming (LINK-028) */
 
 #define PLINK_SF_PROGRAM     0x01u
 #define PLINK_SF_EXIT_SOUNDS 0x02u

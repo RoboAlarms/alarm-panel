@@ -127,6 +127,7 @@ typedef struct {
     uint8_t state;           /* alarm_arm_state_t of the keypad partition */
     uint8_t level;           /* alarm_arm_level_t */
     uint8_t arm_flags;       /* ALARM_ARM_* */
+    bool quick_exit;         /* the exit time is a quick exit, not an arming */
     bool exit_sounds;        /* the configuration's exit_sounds option */
     bool walk_test;          /* a walk test runs on the keypad partition */
     uint16_t walk_tested;
@@ -241,10 +242,12 @@ void ann_rebaseline(ann_t *a);
 void ann_set_keypad(ann_t *a, uint8_t keypad_partition);
 
 /* A link keypad (docs/features/11 LINK-028): its baseline comes whenever its link does, often in
- * the middle of an arming its master accepted - so a baseline taken in the exit time joins that
- * cycle, and its end says the armed mode as the master's voice does. The silent exit is latched
- * from the baseline's flags (auto-stay clears it only at the end). Nothing of the arming itself is
- * said. Off on an alarm panel: a restored exit time that ends is no known cycle (D05). */
+ * the middle of an arming its master accepted - so a baseline taken in an arming's exit time
+ * joins that cycle, and its end says the armed mode as the master's voice does; so does a move
+ * from disarmed into an exit time whose arm it didn't hear (its event came too late to say). The
+ * silent exit is latched from the state's flags (auto-stay clears it only at the end). Nothing of
+ * the arming itself is said, and a quick exit's time (no arming) is never joined. Off on an alarm
+ * panel: a restored exit time that ends is no known cycle (D05). */
 void ann_join_exit(ann_t *a, bool on);
 
 /* Preferences and pack. A change that forbids speech cancels it (AUD-015); a new or lost pack

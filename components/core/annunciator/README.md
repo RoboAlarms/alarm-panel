@@ -23,8 +23,10 @@ How the platform drives it, on the one thread that owns it:
    first commit (and the first after `ann_rebaseline()`) is a silent baseline. A panel-link
    keypad speaks for its home partition, which its master may move: `ann_set_keypad()` sets it
    and rebaselines (docs/features/11 LINK-028); with `ann_join_exit()` on (a link keypad), a
-   baseline taken in an exit time joins that arming, so its end says the armed mode as the
-   master's voice does; an alarm panel leaves it off (a restored exit time is no known cycle).
+   baseline taken in an arming's exit time (not a quick exit's, `ann_state_t.quick_exit`) joins
+   that arming, and so does a move from disarmed into an exit time without its arm, so its end
+   says the armed mode as the master's voice does; an alarm panel leaves it off (a restored exit
+   time is no known cycle).
 3. `ann_ticket()` for each tracked tone's PLAYED / CANCELED, `ann_bell_test_done()` when the bell
    test pulse has ended.
 4. The worker: `ann_next()` for the next utterance, `ann_current()` (or `ann_generation()` against

@@ -100,7 +100,8 @@ static void part_build(const alarm_partition_status_t *s, uint8_t number, uint64
                          (s->walk_test ? PLINK_PF_WALK_TEST : 0u) |
                          (s->triggered ? PLINK_PF_TRIGGERED : 0u) |
                          (s->exit_error ? PLINK_PF_EXIT_ERROR : 0u) |
-                         (s->trouble_unack ? PLINK_PF_TROUBLE_UNACK : 0u));
+                         (s->trouble_unack ? PLINK_PF_TROUBLE_UNACK : 0u) |
+                         (s->quick_exit ? PLINK_PF_QUICK_EXIT : 0u));
     r->sounder = (uint8_t)s->sounder;
     r->bell = (uint8_t)s->bell;
     r->delay_left_ms = sat32(left_at(s->delay_remaining_ms, taken, now));
@@ -217,6 +218,7 @@ static void part_apply(plink_view_t *v, const plink_part_t *r, uint64_t now)
     s->triggered = (r->flags & PLINK_PF_TRIGGERED) != 0u;
     s->exit_error = (r->flags & PLINK_PF_EXIT_ERROR) != 0u;
     s->trouble_unack = (r->flags & PLINK_PF_TROUBLE_UNACK) != 0u;
+    s->quick_exit = (r->flags & PLINK_PF_QUICK_EXIT) != 0u;
     s->sounder = (alarm_sound_t)r->sounder;
     s->bell = (alarm_pattern_t)r->bell;
     s->delay_remaining_ms =

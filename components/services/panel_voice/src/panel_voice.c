@@ -1350,11 +1350,13 @@ static void q_check_drops(void)
         s_q_overflows_seen = over;
         ESP_LOGW(TAG, "voice: the engine's facts overflowed; silent until a new baseline");
     }
-    s_q_resync = true;
     /* A source's own baseline or pause brings, or leads to, the baseline it needs: the source is
      * asked only after an overflow (asking at every drop raced with a baseline on its way, and
-     * its second baseline cut what came between). The alarm task is asked every time. */
-    s_q_asked = s_have_src && !overflow;
+     * its second baseline cut what came between). The alarm task is asked every time. An ask
+     * not sent yet stays due: an overflow's two counts can be seen one look apart. */
+    const bool ask_due = s_q_resync && !s_q_asked;
+    s_q_resync = true;
+    s_q_asked = s_have_src && !overflow && !ask_due;
 }
 
 static void q_apply(const pv_item_t *it)

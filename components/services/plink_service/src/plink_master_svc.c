@@ -67,6 +67,7 @@ typedef struct {
     uint8_t partition;
     uint8_t sound;
     uint16_t zone;
+    uint32_t after_seq; /* the newest event handed over before it: its engine call's */
 } sound_t;
 
 /* ---- the alarm listener's hand-overs (alarm task -> link task) ------------------------------ */
@@ -74,12 +75,15 @@ static atomic_bool s_snap_news;
 static QueueHandle_t s_ev_q;
 static QueueHandle_t s_sound_q;
 static atomic_uint s_dropped;
+static atomic_uint s_ev_handed; /* the newest event seq on_event saw (the alarm task's order) */
 
 /* ---- the link task's ------------------------------------------------------------------------- */
 static plink_master_t *s_m;      /* PSRAM */
 static alarm_snapshot_t *s_snap; /* the newest snapshot copy, PSRAM */
 static bool s_have_snap;
 static uint64_t s_ev_held_since; /* an event newer than s_snap waits (take_engine_news); 0: none */
+static uint32_t s_ev_held_seq;   /* ... this one */
+static uint32_t s_ev_pushed;     /* the newest event handed to the manager */
 static alarm_event_t *s_ring;   /* events_after's copy of the engine's ring, PSRAM */
 static uint32_t s_cfg_seq_done; /* the engine's config_seq the keypads' copy was made for */
 static bool s_cfg_done;
@@ -161,13 +165,17 @@ static void on_event(void *ctx, const alarm_event_t *ev)
     if (q != NULL && xQueueSend(q, ev, 0) != pdTRUE) {
         atomic_fetch_add(&s_dropped, 1u); /* the keypads fill the gap with EV_REQ */
     }
+    atomic_store(&s_ev_handed, ev->seq);
 }
 
 static void on_sound(void *ctx, uint8_t partition, alarm_sound_t sound, uint16_t zone)
 {
     (void)ctx;
     QueueHandle_t q = __atomic_load_n(&s_sound_q, __ATOMIC_ACQUIRE);
-    const sound_t s = {.partition = partition, .sound = (uint8_t)sound, .zone = zone};
+    const sound_t s = {.partition = partition,
+                       .sound = (uint8_t)sound,
+                       .zone = zone,
+                       .after_seq = atomic_load(&s_ev_handed)};
     if (q != NULL && xQueueSend(q, &s, 0) != pdTRUE) {
         atomic_fetch_add(&s_dropped, 1u);
     }
@@ -615,17 +623,19 @@ static void take_engine_news(uint64_t now)
         s_have_snap = true;
     }
     /* An engine call hands its events over as it runs and its snapshot only after its store
-     * flush: an event newer than the snapshot copied waits for the turn whose news covers it,
-     * with the sounds behind it, so no STATUS covers an event with the state from before it (a
-     * keypad's voice would decide on that state; LINK-028). Every call that makes events ends
-     * with a new snapshot; EV_HOLD_MS bounds the wait all the same. */
+     * flush: an event newer than the snapshot copied waits for the turn whose news covers it, so
+     * no STATUS covers an event with the state from before it (a keypad's voice would decide on
+     * that state; LINK-028). Every call that makes events ends with a new snapshot; EV_HOLD_MS
+     * bounds each event's wait all the same. A sound goes with its call's events: once the event
+     * handed over before it has gone, or at once when none waits. */
     QueueHandle_t evq = __atomic_load_n(&s_ev_q, __ATOMIC_ACQUIRE);
     alarm_event_t ev;
     bool held = false;
     while (evq != NULL && xQueuePeek(evq, &ev, 0) == pdTRUE) {
         if (s_have_snap && ev.seq > s_snap->last_event_seq) {
-            if (s_ev_held_since == 0u) {
+            if (s_ev_held_since == 0u || s_ev_held_seq != ev.seq) {
                 s_ev_held_since = now;
+                s_ev_held_seq = ev.seq;
             }
             if (now - s_ev_held_since < EV_HOLD_MS) {
                 held = true;
@@ -636,14 +646,21 @@ static void take_engine_news(uint64_t now)
             break;
         }
         plink_master_event(s_m, now, &ev);
+        s_ev_pushed = ev.seq;
     }
     if (!held) {
         s_ev_held_since = 0u;
-        QueueHandle_t sq = __atomic_load_n(&s_sound_q, __ATOMIC_ACQUIRE);
-        sound_t s;
-        while (sq != NULL && xQueueReceive(sq, &s, 0) == pdTRUE) {
-            plink_master_sound(s_m, now, s.partition, s.sound, s.zone);
+    }
+    QueueHandle_t sq = __atomic_load_n(&s_sound_q, __ATOMIC_ACQUIRE);
+    sound_t s;
+    while (sq != NULL && xQueuePeek(sq, &s, 0) == pdTRUE) {
+        if (held && (int32_t)(s.after_seq - s_ev_pushed) > 0) {
+            break; /* a later call's: it waits with its events */
         }
+        if (xQueueReceive(sq, &s, 0) != pdTRUE) {
+            break;
+        }
+        plink_master_sound(s_m, now, s.partition, s.sound, s.zone);
     }
     if (news) {
         plink_master_snapshot(s_m, now, s_snap, link_epoch_ms(), s_report);

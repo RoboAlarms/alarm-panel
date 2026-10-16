@@ -566,9 +566,33 @@ static void test_keypad_joins_an_exit_time(void)
     commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
     expect_nothing();
 
-    /* an alarm panel: a restored exit time's end is no known cycle (test_baseline_silent) */
+    /* a quick exit's time (no arming): not joined, its end says nothing, as on the master */
+    ann_rebaseline(&A);
+    ann_state_t q = S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_STAY, 0u);
+    q.quick_exit = true;
+    commit(q);
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_STAY, 0u));
+    expect_nothing();
+
+    /* an arming whose event came too late to say: disarmed, then an exit time - joined */
+    ann_rebaseline(&A);
+    commit(DISARMED_ST());
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    expect_nothing();
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
+    const uint16_t away[2] = {VP_ID_ARMED, VP_ID_AWAY};
+    u = expect_phrase(ANN_KIND_ARMED, away, 2u, 2u);
+    play(&u);
+
+    /* an alarm panel: a restored exit time's end is no known cycle (test_baseline_silent), nor
+     * an exit time without its arm */
     ann_join_exit(&A, false);
     ann_rebaseline(&A);
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
+    expect_nothing();
+    ann_rebaseline(&A);
+    commit(DISARMED_ST());
     commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
     commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
     expect_nothing();

@@ -1073,6 +1073,8 @@ static void part_rec(plink_part_t *r, uint8_t number, uint8_t state)
 
 /* A STATUS frame (sealed now, not sent) from the engine's snapshot with these system troubles,
  * partitions 1 and 2 enabled, and the records given. */
+static uint64_t FRAME_MONO; /* status_frame's master engine time (0: the snapshot's) */
+
 static size_t status_frame(uint32_t troubles, const plink_part_t *recs, uint8_t count, uint8_t *f)
 {
     alarm_engine_snapshot(&S.eng, &SNAP);
@@ -1081,6 +1083,9 @@ static size_t status_frame(uint32_t troubles, const plink_part_t *recs, uint8_t 
                                     CAP.zones};
     plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
     ST.sys_troubles = troubles;
+    if (FRAME_MONO != 0u) {
+        ST.mono_ms = FRAME_MONO;
+    }
     ST.partitions = 0x03u;
     ST.count = count;
     memcpy(ST.part, recs, count * sizeof recs[0]);
@@ -1133,6 +1138,30 @@ static bool promoted_twice(void *ctx)
 {
     (void)ctx;
     return M.promotions >= 2u && K.view.snap.taken_ms >= M.promoted_at;
+}
+
+/* LINK-028: the master's engine time comes only from the newest system section: an older frame
+ * whose partition record is still taken never sets it back (a keypad's voice dates events by it). */
+static void test_master_engine_time_never_steps_back(void)
+{
+    kp_online();
+    M.auto_status = false;
+    plink_part_t r;
+    static uint8_t fa[PLINK_FRAME_MAX], fb[PLINK_FRAME_MAX];
+    part_rec(&r, 1u, ALARM_STATE_EXIT_DELAY);
+    FRAME_MONO = 40000u;
+    const size_t na = status_frame(0x04u, &r, 1u, fa); /* partition 1, sealed first */
+    part_rec(&r, 2u, ALARM_STATE_ARMED);
+    FRAME_MONO = 50000u;
+    const size_t nb = status_frame(0x08u, &r, 1u, fb); /* the newest system section */
+    FRAME_MONO = 0u;
+    deliver(fb, nb);
+    TEST_ASSERT_EQUAL_UINT64(50000u, plink_keypad_mono_ms(&K, NET.now_ms));
+    deliver(fa, na);
+    TEST_ASSERT_EQUAL_INT(ALARM_STATE_EXIT_DELAY, plink_keypad_snapshot(&K)->part[0].state);
+    TEST_ASSERT_EQUAL_UINT64(50000u, plink_keypad_mono_ms(&K, NET.now_ms));
+    NET.now_ms += 1500u;
+    TEST_ASSERT_EQUAL_UINT64(51500u, plink_keypad_mono_ms(&K, NET.now_ms));
 }
 
 /* LINK-026: a status block, partition record, zone record or time is applied only from a frame
@@ -2423,6 +2452,7 @@ int main(void)
     RUN_TEST(test_maintenance_after_10_min);
     RUN_TEST(test_maintenance_when_not_paired);
     RUN_TEST(test_reordered_frames);
+    RUN_TEST(test_master_engine_time_never_steps_back);
     RUN_TEST(test_config_pull_requests);
     RUN_TEST(test_config_pull_through_loss);
     RUN_TEST(test_config_changes_mid_transfer);

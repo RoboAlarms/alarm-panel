@@ -608,15 +608,24 @@ static void test_stale_events_are_never_said(void)
     poll();
     TEST_ASSERT_EQUAL_UINT32(4u, F.stale);
     TEST_ASSERT_EQUAL_UINT(2u, count(C_EVENT));
-    /* neither: no way to tell */
-    CLOCK = false;
-    MONO = false;
-    got_aged(17u, ALARM_EV_ARMED, 1u, 60000u);
+    /* both: the engine time decides - a fresh event with a wall clock gone wrong is said */
+    CLOCK = true;
+    got_aged(17u, ALARM_EV_DISARMED, 1u, 0u);
+    RING[NR - 1u].epoch_ms = epoch_now() - 60000;
     status(17u);
     T += PLINK_VFEED_SETTLE_MS;
     poll();
+    TEST_ASSERT_EQUAL_UINT32(4u, F.stale);
     TEST_ASSERT_EQUAL_UINT(3u, count(C_EVENT));
-    expect_event(N - 1u, 17u);
+    /* neither: no way to tell */
+    CLOCK = false;
+    MONO = false;
+    got_aged(18u, ALARM_EV_ARMED, 1u, 60000u);
+    status(18u);
+    T += PLINK_VFEED_SETTLE_MS;
+    poll();
+    TEST_ASSERT_EQUAL_UINT(4u, count(C_EVENT));
+    expect_event(N - 1u, 18u);
 }
 
 /* LINK-028: the end of an exit time has no event; the commit that brings it more than 5 s after
@@ -664,6 +673,60 @@ static void test_an_exit_end_long_after_is_a_silent_baseline(void)
     expect_calls(2u);
     TEST_ASSERT_EQUAL_UINT8(C_SNAPSHOT, LOG[1].call);
     TEST_ASSERT_EQUAL_UINT32(1u, F.late);
+
+    /* an exit time restarted (CP-01: in again while it runs): the commit that brings its longer
+     * countdown moves the end, so Armed at the new end is in time */
+    N = 0u;
+    SNAP.part[0].state = ALARM_STATE_EXIT_DELAY;
+    SNAP.part[0].delay_remaining_ms = 30000u;
+    status(10u);
+    T += PLINK_VFEED_SETTLE_MS;
+    poll();
+    T += 25000u;
+    SNAP.part[0].delay_remaining_ms = 60000u;
+    status(10u);
+    poll();
+    T += 60000u + 200u;
+    SNAP.part[0].state = ALARM_STATE_ARMED;
+    SNAP.part[0].delay_remaining_ms = 0u;
+    status(10u);
+    poll();
+    TEST_ASSERT_EQUAL_UINT8(C_SNAPSHOT, LOG[N - 1u].call);
+    TEST_ASSERT_EQUAL_UINT32(1u, F.late);
+
+    /* at the edge: 4.9 s after the countdown's end it commits, 5.1 s after it is a baseline */
+    for (int late = 0; late <= 1; late++) {
+        SNAP.part[0].state = ALARM_STATE_EXIT_DELAY;
+        SNAP.part[0].delay_remaining_ms = 10000u;
+        status(10u);
+        T += PLINK_VFEED_SETTLE_MS;
+        poll();
+        T += 10000u + (late ? PLINK_VFEED_STALE_MS + 100u : PLINK_VFEED_STALE_MS - 100u);
+        SNAP.part[0].state = ALARM_STATE_ARMED;
+        SNAP.part[0].delay_remaining_ms = 0u;
+        status(10u);
+        poll();
+        TEST_ASSERT_EQUAL_UINT8(late ? C_BASELINE : C_SNAPSHOT, LOG[N - 1u].call);
+        TEST_ASSERT_EQUAL_UINT32(1u + (uint32_t)late, F.late);
+    }
+
+    /* disarmed in the exit time, then armed at once long after: no exit time ends, a commit */
+    SNAP.part[0].state = ALARM_STATE_EXIT_DELAY;
+    SNAP.part[0].delay_remaining_ms = 10000u;
+    status(10u);
+    T += PLINK_VFEED_SETTLE_MS;
+    poll();
+    SNAP.part[0].state = ALARM_STATE_DISARMED;
+    SNAP.part[0].delay_remaining_ms = 0u;
+    status(10u);
+    T += PLINK_VFEED_SETTLE_MS;
+    poll();
+    T += 60000u;
+    SNAP.part[0].state = ALARM_STATE_ARMED;
+    status(10u);
+    poll();
+    TEST_ASSERT_EQUAL_UINT8(C_SNAPSHOT, LOG[N - 1u].call);
+    TEST_ASSERT_EQUAL_UINT32(2u, F.late);
 }
 
 /* LINK-028: plink_vfeed_next says when a hold or a settle ends, nothing otherwise. */

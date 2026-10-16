@@ -44,6 +44,8 @@ typedef struct {
     bool walk_test;
     bool triggered;                /* audible/visible alarm active or occurred this armed period */
     bool exit_error;               /* current entry time follows an exit error */
+    bool quick_exit;               /* the exit time running restarted an armed partition's (quick
+                                    * exit, a momentary-exit zone): no arming of its own */
     bool trouble_unack;            /* trouble beeps pending acknowledgement */
     alarm_sound_t sounder;         /* continuous keypad pattern */
     alarm_pattern_t bell;          /* current bell pattern */
@@ -112,6 +114,7 @@ typedef struct {
     bool exit_fast_done;        /* status updated for the last 10 s of exit time */
     uint8_t exit_restarts;
     uint8_t exit_door;          /* 0 = untouched, 1 = open, 2 = opened and closed */
+    bool quick_exit;            /* this exit time restarted an armed partition's, not an arming */
     bool entry_exit_error;
     uint16_t entry_zone;
     uint8_t followers[ALARM_ZONE_BITMAP_BYTES]; /* zones that faulted during entry time */

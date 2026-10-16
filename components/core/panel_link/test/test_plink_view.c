@@ -179,6 +179,32 @@ static void test_status_build_works_out_durations(void)
     plink_status_build(&SNAP, SNAP.taken_ms, &x, NULL); /* nothing to fill: no crash */
 }
 
+/* LINK-028: a quick exit's time goes to the keypad as PLINK_PF_QUICK_EXIT and comes back into its
+ * snapshot; an arming's exit time doesn't; every STATUS carries the engine time it was sealed at. */
+static void test_quick_exit_and_engine_time_reach_the_keypad(void)
+{
+    const plink_status_extra_t x = extra();
+    sim_arm_stay_settled(&S, CODE_USER);
+    EXPECT_RESULT(ALARM_OK, sim_simple(&S, ALARM_CMD_EXIT_RESTART, 1, ""));
+    take_snap();
+    TEST_ASSERT_TRUE(SNAP.part[0].quick_exit);
+    plink_status_build(&SNAP, SNAP.taken_ms + 7u, &x, &ST);
+    TEST_ASSERT_EQUAL_UINT64(SNAP.taken_ms + 7u, ST.mono_ms);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_PF_QUICK_EXIT, ST.part[0].flags & PLINK_PF_QUICK_EXIT);
+    plink_view_apply_status(&V, &ST, KP_CLOCK);
+    TEST_ASSERT_TRUE(V.snap.part[0].quick_exit);
+    TEST_ASSERT_EQUAL_UINT64(SNAP.taken_ms + 7u, V.mono_ms);
+    TEST_ASSERT_EQUAL_UINT64(KP_CLOCK, V.mono_at_ms);
+
+    EXPECT_RESULT(ALARM_OK, sim_disarm(&S, 1, CODE_USER));
+    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, CODE_USER, ALARM_LEVEL_AWAY, 0));
+    take_snap();
+    plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
+    TEST_ASSERT_EQUAL_HEX8(0u, ST.part[0].flags & PLINK_PF_QUICK_EXIT);
+    plink_view_apply_status(&V, &ST, KP_CLOCK + 1000u);
+    TEST_ASSERT_FALSE(V.snap.part[0].quick_exit);
+}
+
 /* ---- the keypad's view --------------------------------------------------------------------- */
 
 /* LINK-002, UI-023: an entry delay as the keypad shows it. The master seals STATUS frames from
@@ -947,6 +973,7 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_status_build_works_out_durations);
+    RUN_TEST(test_quick_exit_and_engine_time_reach_the_keypad);
     RUN_TEST(test_keypad_countdown_never_goes_up);
     RUN_TEST(test_countdown_rises_only_for_real);
     RUN_TEST(test_keypad_lockout);

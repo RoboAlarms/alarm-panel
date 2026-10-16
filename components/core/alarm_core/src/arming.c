@@ -229,6 +229,7 @@ alarm_result_t eng_arm(alarm_engine_t *e, uint8_t p, alarm_arm_level_t level, ui
     }
 
     const alarm_ms_t exit_ms = exit_time_ms(e, p, mode_flags);
+    pr->quick_exit = false;
     if (exit_ms > 0u) {
         pr->state = ALARM_STATE_EXIT_DELAY;
         pr->deadline = ms_add(e->now, exit_ms);
@@ -370,6 +371,8 @@ void eng_exit_restart(alarm_engine_t *e, uint8_t p, bool automatic, uint8_t user
                       const alarm_source_t *src)
 {
     alarm_partition_rt_t *pr = eng_part(e, p);
+    /* from the armed state a quick exit; within an arming's exit time it stays that arming's */
+    pr->quick_exit = pr->state != ALARM_STATE_EXIT_DELAY || pr->quick_exit;
     pr->state = ALARM_STATE_EXIT_DELAY;
     pr->deadline = ms_add(e->now, exit_time_ms(e, p, pr->flags));
     pr->exit_fast_done = false;

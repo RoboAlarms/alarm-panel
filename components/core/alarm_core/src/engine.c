@@ -631,6 +631,7 @@ void alarm_engine_partition_status(const alarm_engine_t *e, uint8_t p,
     out->walk_end_how = pr->walk_end_how;
     out->trouble_unack = pr->trouble_unack;
     out->exit_error = pr->state == ALARM_STATE_ENTRY_DELAY && pr->entry_exit_error;
+    out->quick_exit = pr->state == ALARM_STATE_EXIT_DELAY && pr->quick_exit;
     out->sounder = eng_sounder(e, p);
     out->bell = eng_bell_pattern(pr);
     if ((pr->state == ALARM_STATE_EXIT_DELAY || pr->state == ALARM_STATE_ENTRY_DELAY) &&

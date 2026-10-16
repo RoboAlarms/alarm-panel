@@ -778,6 +778,10 @@ static void system_now(const plink_keypad_t *k, uint64_t now, plink_status_t *st
     st->cfg_crc = v->cfg_crc;
     st->cfg_len = v->cfg_len;
     st->zones_crc = v->zones_crc;
+    st->mono_ms = 0u; /* the master's engine time carried on, never the older frame's */
+    if (v->mono_ms != 0u) {
+        st->mono_ms = v->mono_ms + (now > v->mono_at_ms ? now - v->mono_at_ms : 0u);
+    }
 }
 
 /* The master moved this keypad to another home partition: kept in its record. */

@@ -1,6 +1,6 @@
 /*
  * test_codec.c - the versioned configuration blob (storage and backups).
- * Requirements: CORE-CFG-012..017, CORE-CFG-020, CORE-CFG-021; names in any script: I18N-009, I18N-010 (docs/features/37)
+ * Requirements: CORE-CFG-012..017, CORE-CFG-020..022; names in any script: I18N-009, I18N-010 (docs/features/37)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -532,6 +532,101 @@ static void test_auto_less_secure_option(void)
     TEST_ASSERT_TRUE(D.opt.auto_less_secure);
 }
 
+/* Appends an item (group, field, value) to B[0..*len) and reseals the header. */
+static void append_item(size_t *len, uint8_t group, uint8_t field, const void *val, uint8_t n)
+{
+    B[*len] = field;
+    B[*len + 1] = group;
+    B[*len + 2] = n;
+    memcpy(B + *len + 3, val, n);
+    *len += 3u + n;
+    reseal(*len);
+}
+
+/* CORE-CFG-022: the lenient decode (a keypad's copy of a newer master's configuration,
+ * docs/features/11 LINK-019) takes what a strict decode refuses for this build - values the check
+ * refuses or doesn't know, entries beyond its capacities (skipped with their fields, up to the
+ * group's next selector) - and still refuses a damaged or incompatible blob. */
+static void test_lenient_decode(void)
+{
+    /* A valid blob reads the same either way. */
+    size_t len = encode();
+    EXPECT_RESULT(ALARM_OK, alarm_config_decode_lenient(B, len, &D));
+    TEST_ASSERT_EQUAL_MEMORY(&C, &D, sizeof(C));
+
+    /* What alarm_config_validate() refuses or doesn't know: zone 1 in a disabled partition, a
+     * zone type and an authority from a newer firmware. Kept as they came, nothing checked. */
+    C.zones[0].partition = 2;
+    C.zones[1].type = (alarm_zone_type_t)99;
+    C.users[2].authority = (alarm_authority_t)0x20;
+    len = encode();
+    alarm_config_t strict;
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_config_decode(B, len, &strict));
+    memset(&D, 0xEE, sizeof(D));
+    EXPECT_RESULT(ALARM_OK, alarm_config_decode_lenient(B, len, &D));
+    TEST_ASSERT_EQUAL_MEMORY(&C, &D, sizeof(C));
+    TEST_ASSERT_EQUAL_INT(99, (int)D.zones[1].type);
+    TEST_ASSERT_EQUAL_INT(0x20, (int)D.users[2].authority);
+
+    /* A bigger master: one entry of every group beyond this build's capacities, each with
+     * fields, then a zone this build has (21, unused in C), so the skip ends at the selector. */
+    const uint16_t big_zone = ALARM_MAX_ZONES + 1;
+    const uint8_t zone_sel[2] = {(uint8_t)big_zone, (uint8_t)(big_zone >> 8)};
+    const uint8_t perim = ALARM_ZT_PERIMETER, one = 1, two = 2;
+    const uint8_t big_part = ALARM_MAX_PARTITIONS + 1, big_user = ALARM_MAX_USERS + 1;
+    const uint8_t big_dev = ALARM_MAX_DEVICES + 1;
+    const uint8_t hash[ALARM_CODE_HASH_LEN] = {0x42};
+    append_item(&len, 0x01, 0x00, &big_part, 1);
+    append_item(&len, 0x01, 0x01, &one, 1);
+    append_item(&len, 0x01, 0x02, "Annex", 5);
+    append_item(&len, 0x02, 0x00, zone_sel, 2);
+    append_item(&len, 0x02, 0x01, &perim, 1);
+    append_item(&len, 0x02, 0x02, &two, 1);
+    append_item(&len, 0x02, 0x09, "Annex door", 10);
+    append_item(&len, 0x03, 0x00, &big_user, 1);
+    append_item(&len, 0x03, 0x01, &two, 1);
+    append_item(&len, 0x03, 0x03, hash, sizeof(hash));
+    append_item(&len, 0x04, 0x00, &big_dev, 1);
+    append_item(&len, 0x04, 0x01, &one, 1);
+    const uint8_t zone21[2] = {21, 0};
+    append_item(&len, 0x02, 0x00, zone21, 2);
+    append_item(&len, 0x02, 0x01, &perim, 1);
+    append_item(&len, 0x02, 0x02, &one, 1);
+    append_item(&len, 0x02, 0x09, "Shed window", 11);
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_config_decode(B, len, &strict));
+    memset(&D, 0xEE, sizeof(D));
+    EXPECT_RESULT(ALARM_OK, alarm_config_decode_lenient(B, len, &D));
+    TEST_ASSERT_EQUAL_INT(ALARM_ZT_PERIMETER, (int)D.zones[20].type);
+    TEST_ASSERT_EQUAL_UINT8(1, D.zones[20].partition);
+    TEST_ASSERT_EQUAL_STRING("Shed window", D.zones[20].name);
+    memset(&D.zones[20], 0, sizeof(D.zones[20]));
+    TEST_ASSERT_EQUAL_MEMORY(&C, &D, sizeof(C)); /* nothing of the skipped entries landed */
+    const size_t grown = len;
+
+    /* Still refused: damage, a newer compat, a cut blob, an index of 0, a value too wide. */
+    B[40] ^= 0x01;
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_config_decode_lenient(B, len, &D));
+    B[40] ^= 0x01;
+    B[5] = ALARM_CONFIG_BLOB_COMPAT + 1;
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_config_decode_lenient(B, len, &D));
+    B[5] = 1;
+    EXPECT_RESULT(ALARM_OK, alarm_config_decode_lenient(B, len, &D));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_config_decode_lenient(B, len - 1, &D));
+    reseal(len - 1); /* the last item cut short, under a good CRC */
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_config_decode_lenient(B, len - 1, &D));
+    reseal(len);
+    const uint8_t zero_sel[2] = {0, 0};
+    append_item(&len, 0x02, 0x00, zero_sel, 2);
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_config_decode_lenient(B, len, &D));
+    len = grown;
+    reseal(len);
+    const uint8_t wide[2] = {0x01, 0x01}; /* zone 21's partition in two bytes: 257 */
+    append_item(&len, 0x02, 0x02, wide, 2);
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_config_decode_lenient(B, len, &D));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_config_decode_lenient(NULL, len, &D));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_config_decode_lenient(B, len, NULL));
+}
+
 /* CORE-CFG-017: CRC-32 is the standard one (zlib), and chains. */
 static void test_crc32(void)
 {
@@ -556,6 +651,7 @@ int main(void)
     RUN_TEST(test_voice_fixture);
     RUN_TEST(test_voice_fields_rejected);
     RUN_TEST(test_auto_less_secure_option);
+    RUN_TEST(test_lenient_decode);
     RUN_TEST(test_crc32);
     return UNITY_END();
 }

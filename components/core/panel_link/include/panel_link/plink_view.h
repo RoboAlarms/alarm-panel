@@ -62,7 +62,11 @@ void plink_view_init(plink_view_t *v);
  * left as sent; the keypad's own lockout as local_lockout_until = now + left (0 when not locked);
  * each partition's walk start mapped once per distinct walk_id to now - walk_age_ms (at least 1);
  * partitions not in the mask zeroed; zones beyond zones_used zeroed. Records for partitions this
- * build doesn't have are ignored. Does not touch seq or config_seq. */
+ * build doesn't have, or not in the mask, are ignored; a partition in the mask whose record this
+ * frame doesn't carry keeps its last one, counted down to now. Within one countdown (the same
+ * delay state, a walk test still running, a lockout not yet over) a frame that reads less than a
+ * second longer than what is showing - the network's delay varied - keeps the count, so what the
+ * keypad shows never goes up (UI-023). Does not touch seq or config_seq. */
 void plink_view_apply_status(plink_view_t *v, const plink_status_t *st, uint64_t now_ms);
 
 /* Applies the records of a ZONES message (zones beyond ALARM_MAX_ZONES ignored). */

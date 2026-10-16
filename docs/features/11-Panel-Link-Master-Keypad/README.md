@@ -158,8 +158,10 @@ Every duration is worked out when the frame is sealed: left = max(0, field - (no
 snap.taken_ms)) for the delay, walk-test time and recovery; lockout_left_ms is
 `alarm_engine_lockout_left({KEYPAD, n})` at that moment. The walk test's start goes as its age and
 its raw engine time as an opaque id; the keypad maps local start = arrival - age once per distinct
-id (at least 1: 0 means none). taken_ms = arrival. So within one delay the seconds a keypad shows
-never go up (UI-023).
+id (at least 1: 0 means none). taken_ms = arrival; a record a frame doesn't carry keeps its last
+one, counted down; and within one countdown a frame that reads less than a second longer than what
+the keypad shows (the network's delay varied) keeps the count. So within one delay the seconds a
+keypad shows never go up (UI-023).
 
 **Zone record** (7 B): flags u16, trouble u8, walk u8, walk_first_s u16, walk_trips u8.
 zones_crc is the CRC-32 of the records of zones 1..zones_used. The master pushes ZONES for the

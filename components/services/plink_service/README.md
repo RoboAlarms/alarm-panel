@@ -9,7 +9,8 @@ owns a UDP socket on port 6056 and the role's link manager from `panel_link`, wh
 protocol; this component gives it the network, NVS, PSA, the engine and the screen.
 
 - **On a master** the alarm listener hands the engine's news to the link task (a snapshot flag,
-  events and one-shot sounds in queues that never wait); a worker task runs the keypads' commands,
+  events and one-shot sounds in queues that never wait; sent as EVENTS, then SOUND, then the
+  STATUS, so a keypad's voice has a batch's tone before its STATUS); a worker task runs the keypads' commands,
   code checks and code changes on the alarm task as `{ALARM_SRC_KEYPAD, n}`, reads each keypad's
   lockout after its command, rebuilds the keypads' copy of the configuration (no code material,
   LINK-019) and tells the engine about silent keypads (`alarm_service_device_reachable`, LINK-007;
@@ -36,6 +37,15 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   configuration says it needs an update (`needs_update`), and the gate lets that update in under
   the rule a connected keypad has. `panel_app` starts the link before the screen, so the UI's
   first look finds the keypad role.
+  Its voice (LINK-028): with `plink_service_set_voice` (the six `panel_voice_engine_*` entries,
+  set by `panel_app` before the start) the link task hands the keypad's voice what its master
+  sends, through `plink_vfeed` after each turn's sounds and copies - a baseline at each ONLINE, a
+  pause when the link isn't, covered events once, commits - and plays the master's one-shot
+  sounds tracked while the voice is fed. `plink_service_voice_resync` (the voice wants a
+  baseline) and `plink_service_keypad_config` (the configuration copy and its generation, for the
+  zones' words) serve its source. The voice's Announcements, Voice volume and Preview stay in the
+  keypad backend; the spoken-name editor's entries are off (the alarm panel's installer approves
+  the words).
 - **The setup** of a panel that becomes a keypad pairs while it is still a master (Option C): a
   keypad manager of its own on the same socket; the setup's Done stores the record and the keypad
   role and restarts. Paired, it sends nothing more until Done (the other master keeps the keypad

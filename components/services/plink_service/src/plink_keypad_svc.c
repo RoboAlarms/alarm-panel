@@ -12,6 +12,9 @@
  *     from any partition; on a lost link only fire and CO keep sounding, until OFF is pressed here
  *     or the link is back (decided 2026-10-15): OFF is a DISARM or SILENCE the master didn't run
  *     (no link, or no answer), and link_info.local_alarm asks Home for its Silence meanwhile;
+ *   - the voice (LINK-028): the master's events, sounds and status handed to the keypad's own
+ *     voice through plink_vfeed (covered events only, nothing older than its last baseline,
+ *     nothing while the link isn't ONLINE), as the alarm task hands an alarm panel's;
  *   - the time: the master's clock and zone, and no time server of its own while paired;
  *   - the update gate and the link's heartbeat for the update's self-test (LINK-020).
  * A master whose setup makes it a keypad uses the same manager for that pairing only (Option C):
@@ -40,6 +43,7 @@
 #include "i18n/i18n.h"
 #include "mdns.h"
 #include "net_wifi.h"
+#include "panel_link/plink_vfeed.h"
 #include "panel_link/plink_view.h"
 #include "panel_ota.h"
 #include "panel_prefs.h"
@@ -110,6 +114,9 @@ static struct {
     /* sounds */
     uint8_t cont;   /* the continuous pattern sounding (alarm_sound_t) */
     bool local_off; /* OFF pressed here while the link is down: fire or CO stopped */
+    /* the voice (LINK-028; only with a voice set, the keypad role) */
+    bool voiced;
+    plink_vfeed_t vf;
     /* the rest */
     uint64_t clock_at, net_at, publish_at, beat_at, events_at;
     char ip[16]; /* the last address it had: kept across a drop, so a new one is told at once */
@@ -134,7 +141,12 @@ static alarm_event_t *s_ui_ev;
 static alarm_event_t *s_ev_tmp; /* the link task's */
 static uint32_t s_ui_seq;
 static bool s_ui_have_cfg;
+static uint32_t s_ui_cfg_seq; /* the copy's config_seq (the voice's words follow it) */
 static size_t s_ui_ev_n;
+
+/* The keypad's voice (LINK-028): its producer entries, set before the link starts. */
+static const plink_service_voice_t *s_voice;
+static atomic_bool s_voice_resync;
 
 /* The UI's commands (ksvc_command): one at a time, the codes wiped once handed over. */
 static SemaphoreHandle_t s_cmd_mutex;
@@ -648,7 +660,13 @@ static void sounds(uint64_t now, const plink_keypad_info_t *info)
 {
     plink_sound_t s;
     while (plink_keypad_take_sound(K.k, &s)) {
-        sounder_play((alarm_sound_t)s.sound);
+        if (K.voiced && plink_vfeed_live(&K.vf)) {
+            /* tracked, so words that follow the tone wait for its end (D04), then handed on */
+            const uint32_t ticket = sounder_play_tracked((alarm_sound_t)s.sound);
+            plink_vfeed_sound(&K.vf, now, &s, ticket);
+        } else {
+            sounder_play((alarm_sound_t)s.sound); /* no ticket nobody would read */
+        }
     }
     const bool online = info->state == PLINK_LINK_ONLINE;
     bool off = false;
@@ -675,6 +693,81 @@ static void sounds(uint64_t now, const plink_keypad_info_t *info)
         K.cont = want;
         sounder_set_continuous((alarm_sound_t)want);
     }
+}
+
+/* ---- the voice (LINK-028) -------------------------------------------------------------------- */
+
+static void vf_baseline(void *ctx, uint8_t partition, const alarm_snapshot_t *snap)
+{
+    (void)ctx;
+    s_voice->baseline(partition, snap);
+}
+
+static void vf_pause(void *ctx)
+{
+    (void)ctx;
+    s_voice->pause();
+}
+
+static void vf_event(void *ctx, const alarm_event_t *ev)
+{
+    (void)ctx;
+    s_voice->event(ev);
+}
+
+static void vf_sound(void *ctx, uint8_t partition, alarm_sound_t sound, uint16_t zone,
+                     uint32_t ticket)
+{
+    (void)ctx;
+    s_voice->sound(partition, sound, zone, ticket);
+}
+
+static void vf_output(void *ctx, alarm_output_t output, uint8_t partition, alarm_pattern_t pattern)
+{
+    (void)ctx;
+    s_voice->output(output, partition, pattern);
+}
+
+static void vf_snapshot(void *ctx, const alarm_snapshot_t *snap)
+{
+    (void)ctx;
+    s_voice->snapshot(snap);
+}
+
+void plink_service_set_voice(const plink_service_voice_t *v)
+{
+    const bool whole = v != NULL && v->baseline != NULL && v->pause != NULL && v->event != NULL &&
+                       v->sound != NULL && v->output != NULL && v->snapshot != NULL;
+    s_voice = whole ? v : NULL;
+}
+
+void plink_service_voice_resync(void)
+{
+    atomic_store(&s_voice_resync, true);
+}
+
+/* After sounds() and copy_for_ui() (the configuration copy the voice reads is the one the
+ * snapshot's config_seq names): what the keypad holds goes to plink_vfeed, which pauses,
+ * baselines, feeds the covered events and commits. The events are read only while ONLINE. */
+static void voice_feed(uint64_t now, const plink_keypad_info_t *info)
+{
+    if (!K.voiced) {
+        return;
+    }
+    const bool online = info->state == PLINK_LINK_ONLINE;
+    const bool resync = atomic_exchange(&s_voice_resync, false); /* offline: ONLINE gives one */
+    size_t n = 0u;
+    if (online) {
+        n = plink_keypad_events(K.k, s_ev_tmp, PLINK_EVENTS_KEPT);
+    }
+    const plink_vfeed_view_t v = {.online = online,
+                                  .home = info->home,
+                                  .snap = plink_keypad_snapshot(K.k),
+                                  .ev = s_ev_tmp,
+                                  .n_ev = n,
+                                  .epoch_ms = plink_keypad_epoch_ms(K.k, now),
+                                  .resync = resync};
+    plink_vfeed_poll(&K.vf, now, &v);
 }
 
 static void follow_time(uint64_t now)
@@ -928,6 +1021,7 @@ static void copy_for_ui(uint64_t now)
     link_pub_lock();
     if (cfg_new) {
         memcpy(s_ui_cfg, cfg, sizeof *s_ui_cfg);
+        s_ui_cfg_seq = cfg_seq;
         s_ui_have_cfg = true;
     }
     if (snap_new) {
@@ -975,6 +1069,23 @@ bool ksvc_ui_config(alarm_config_t *out)
     const bool have = s_ui_have_cfg && !g_pub.setup_keypad;
     if (have) {
         memcpy(out, s_ui_cfg, sizeof *out);
+    }
+    link_pub_unlock();
+    return have;
+}
+
+bool plink_service_keypad_config(alarm_config_t *out, uint32_t *config_seq)
+{
+    if (s_ui_cfg == NULL || out == NULL) {
+        return false;
+    }
+    link_pub_lock();
+    const bool have = s_ui_have_cfg && !g_pub.setup_keypad; /* as ksvc_ui_config */
+    if (have) {
+        memcpy(out, s_ui_cfg, sizeof *out);
+        if (config_seq != NULL) {
+            *config_seq = s_ui_cfg_seq;
+        }
     }
     link_pub_unlock();
     return have;
@@ -1051,7 +1162,12 @@ static bool setup_resting(void)
 uint64_t ksvc_next(void)
 {
     /* resting, the link task's own 50 ms turn is enough for its publishing */
-    return K.k != NULL && !setup_resting() ? plink_keypad_next(K.k) : UINT64_MAX;
+    if (K.k == NULL || setup_resting()) {
+        return UINT64_MAX;
+    }
+    const uint64_t k = plink_keypad_next(K.k);
+    const uint64_t v = K.voiced ? plink_vfeed_next(&K.vf) : UINT64_MAX; /* a hold or settle ends */
+    return k < v ? k : v;
 }
 
 void ksvc_poll(uint64_t now)
@@ -1078,6 +1194,7 @@ void ksvc_poll(uint64_t now)
         maintenance_mark(now, &info);
     }
     copy_for_ui(now);
+    voice_feed(now, &info); /* after the copy: the words its snapshot's config_seq names */
     if (now >= K.publish_at) {
         K.publish_at = now + PUBLISH_MS;
         publish(now, &info);
@@ -1235,6 +1352,7 @@ void ksvc_setup_end(uint64_t now)
     g_pub.pair_valid = false;
     memset(&g_pub.pair, 0, sizeof g_pub.pair);
     s_ui_have_cfg = false;
+    s_ui_cfg_seq = 0u;
     s_ui_ev_n = 0u;
     s_ui_seq = 0u;
     plink_wipe(s_ui_cfg, sizeof *s_ui_cfg);
@@ -1279,6 +1397,18 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     }
     memset(&K, 0, sizeof K);
     K.setup_only = setup_only;
+    if (!setup_only && s_voice != NULL) {
+        /* LINK-028: the keypad's voice hears its master from the first ONLINE on */
+        static const plink_vfeed_port_t vport = {.ctx = NULL,
+                                                 .baseline = vf_baseline,
+                                                 .pause = vf_pause,
+                                                 .event = vf_event,
+                                                 .sound = vf_sound,
+                                                 .output = vf_output,
+                                                 .snapshot = vf_snapshot};
+        plink_vfeed_init(&K.vf, &vport);
+        K.voiced = true;
+    }
     plink_keypad_t *k = s_kmem;
     K.cfg_buf = s_cfg_buf_mem;
     K.cfg = s_cfg_mem;

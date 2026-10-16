@@ -20,6 +20,7 @@ on a panel, `host/link_sim` on a PC) and drives the managers here with frames an
 | `plink_session.h` | the handshake and the sessions it makes |
 | `plink_master.h` | the master's link manager: keypads, sessions, pairing, status, commands, supervision |
 | `plink_keypad.h` | a keypad's link manager: its master, the handshake, status, configuration, events, commands and panic |
+| `plink_vfeed.h` | what a keypad's voice hears (LINK-028): the keypad's events, sounds and snapshot turned into the voice's baseline, pause, facts and commits - covered events only, never older than its baseline, held for a STATUS on its way, settled for a late tone |
 
 ## Depends on
 `alarm_core` (types, snapshot, configuration codec); privately `alarm_proto` (SHA-256) and
@@ -76,3 +77,14 @@ valid keys, addresses moving, and six hours on a damaged network. After every te
 no side used a key and nonce twice and no command ran twice. Its random numbers all come from
 seeds: `PLINK_LINK_SEED=<n>` in the environment runs it on other ones (a change to the managers
 is worth a few dozen).
+
+A keypad's voice (LINK-028): `test_plink_vfeed.c` drives `plink_vfeed` over a fake keypad (its
+link state, snapshot and event ring) and a recording port: nothing before the first ONLINE, the
+baseline's floor, covered events only and once, the hold and the settle, LOST, a new home, a log
+started again, the walk test's bell, stale events, the deadlines. `test_plink_link.c` puts the
+real policy (`annunciator`) behind a keypad's `plink_vfeed` and another fed straight from the
+engine as `panel_app` feeds a master's, and compares what each decides: the same on a working
+network (arming, armed, entry, disarmed, not ready, a chime's words, a walk test); nothing old
+after a keypad restart, a master restart, a cut over 30 s or one under it; a moved home; under
+loss never a kind the master didn't decide then, nor one twice. `PLINK_VOICE_SHOW=1` prints the
+loss test's utterances.

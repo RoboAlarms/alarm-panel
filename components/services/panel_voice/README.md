@@ -14,7 +14,7 @@ the service answers with stubs (status `off`, installs `unavailable`).
 ## Public API
 | Header | What it offers |
 |---|---|
-| `panel_voice.h` | `panel_voice_start`, `_status`, `_ready`; the preferences `_set_prefs`, `_set_volume`, `_set_power_saving`; the engine's facts `_engine_event/_sound/_output/_snapshot` (panel_app's sounder listener); leases `_pack_acquire/_release`; `_preview`, `_preview_stop`; `_bench_play`, `_bench_say` (dev builds); `_install`, `_install_name`; `_console_register` |
+| `panel_voice.h` | `panel_voice_set_source` (a link keypad's), `_start`, `_status`, `_ready`; the preferences `_set_prefs`, `_set_volume`, `_set_power_saving`; the engine's facts `_engine_event/_sound/_output/_snapshot` (panel_app's sounder listener, or a link keypad's link task) and a source producer's `_engine_baseline/_pause`; leases `_pack_acquire/_release`; `_preview`, `_preview_stop`; `_bench_play`, `_bench_say` (dev builds); `_install`, `_install_name`; `_console_register` |
 | `voice_render.h` | the utterance renderer: `vr_begin`, `vr_pull`, `vr_total_samples_32k`, and the upsampler `vr_up_*` |
 | `voice_codec.h` | `vc_state_bytes`, `vc_init`, `vc_reset`, `vc_packet_check`, `vc_decode_20ms`, and the clip trim `vc_trim_begin` / `vc_trim_take` / `vc_trim_done` |
 
@@ -50,6 +50,19 @@ next one.
   into a preallocated queue with a zero-tick send - no lock, never an engine call - and the worker
   applies them in order. The silent baseline is taken on the alarm task by `panel_voice_start`
   before the listeners copy anything; a full queue silences the voice until the next snapshot.
+- **On a link keypad** (docs/features/11 LINK-028): no engine, so `panel_app` sets a source
+  before the start (`panel_voice_set_source`): a baseline is asked of the link
+  (`plink_service_voice_resync`), the zones' words come from the master's configuration copy
+  (`plink_service_keypad_config`, with its generation: a copy older than the snapshots' never
+  speaks), an install answers locked (no install path reaches a keypad until BL-205), and the D07
+  settling check is skipped (the master's isn't on the wire). The link task is the one producer:
+  `plink_vfeed` decides what it hands on, `panel_voice_engine_baseline(home, snap)` makes the next
+  item the silent baseline of that partition (`ann_set_keypad` when the home moved) and
+  `panel_voice_engine_pause()` stops speech and collects nothing until the next one. The keypad's
+  own Announcements switches and Voice volume apply, as on any panel.
+- **Development builds** log one line per utterance as it starts, `says <kind>[, zone <n>]
+  (partition <p>, Voice <v> %)`, and `voice` names the partition it speaks for: what a muted
+  bench reads.
 - **The audio bench** (`panel_voice_bench_play`, dev builds only, AUD-030): 16 kHz PCM from the
   dev link's `PUT /dev/v1/play`, upsampled by D11's rule (`vr_up`), through the Voice volume's
   boost (`speech_boost`, AUD-033) and written to the speech ring by the worker between
@@ -82,12 +95,13 @@ next one.
   install task, committed before the store's table) and keeps every record through replacement,
   removal and reboot. Refused as `bad_pack`: a known identity with other audio (approved spoken
   names would change sound silently) or a key holding another identity; as `no_space`: a 17th
-  identity; as `failed`: an NVS error. At boot a pack with no record (one installed before the
-  records existed) or a different digest is `unavailable` ("reinstall the pack"): only an install
-  records a pack.
-- **Console** `voice`: the state, the pack, the counters and the ring's underruns;
-  `voice preview <zone>` (the zone's saved words, as the editor's Preview); `voice say
-  <clip-id>...` (raw IDs, hex or decimal, status and walk clips too).
+  identity; as `failed`: an NVS error. At boot a pack with no record (one the Flasher wrote over
+  USB, or one installed before the records existed), signed for this panel and accepted, has its
+  identity recorded then, as an install records it; one whose identity is known with a different
+  digest is `unavailable` ("reinstall the pack").
+- **Console** `voice` (alarm panels and link keypads): the state, the pack, the partition, the
+  counters and the ring's underruns; `voice preview <zone>` (the zone's saved words, as the
+  editor's Preview); `voice say <clip-id>...` (raw IDs, hex or decimal, status and walk clips too).
 
 ## The decoder
 esphome/micro-opus **0.4.1** (`idf_component.yml`, exact; `firmware/*/dependencies.lock`),

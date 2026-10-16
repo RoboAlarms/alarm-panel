@@ -38,10 +38,11 @@ typedef struct {
     uint8_t appearance;       /* UI_APPEARANCE_*: 0 Dark (default), 1 Light, 2 Automatic */
     bool high_contrast;       /* default false */
     /* Announcements (docs/features/08 voice-first-build.md D06): keys "voice", "voice_st",
-     * "voice_ch", absent before them. The main switch is off by default (tones only, AUD-015);
-     * the two kinds keep their choice while it is off. The walk test has no switch: it always
-     * speaks (WALK-016); a "voice_wk" an older firmware stored is no longer read. */
-    bool voice_enabled;       /* default false: switched on only by a person, never by an install */
+     * "voice_ch", absent before them. The main switch is on by default (decided 2026-10-12; an
+     * absent key reads as on); the two kinds keep their choice while it is off. The walk test has
+     * no switch: it always speaks (WALK-016); a "voice_wk" an older firmware stored is no longer
+     * read. Each panel's own: a link keypad's too (docs/features/11 LINK-028). */
+    bool voice_enabled;       /* default true; an install never changes it */
     bool voice_status;        /* arming, armed, disarmed, entry, not ready (default true) */
     bool voice_chime;         /* the zone's spoken name after the chime (default true) */
 } panel_prefs_t;

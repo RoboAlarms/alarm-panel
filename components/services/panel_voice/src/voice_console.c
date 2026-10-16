@@ -33,8 +33,9 @@ static void print_status(void)
         printf("  pack:     %s %s, revision %u, %u clips, %u bytes%s\n", st.locale, st.voice_id,
                (unsigned)st.pack_revision, (unsigned)st.clips, (unsigned)st.file_bytes, st.draft ? ", DRAFT" : "");
     }
-    printf("  speaks:   Voice %u %%, %u ms between words, announcements %s\n", (unsigned)st.volume,
-           (unsigned)st.word_gap_ms, st.enabled ? "on" : "off");
+    printf("  speaks:   Voice %u %%, %u ms between words, announcements %s, for partition %u\n",
+           (unsigned)st.volume, (unsigned)st.word_gap_ms, st.enabled ? "on" : "off",
+           (unsigned)st.partition);
     printf("  spoken:   %u started, %u completed, %u cancelled, %u underruns, %u decode errors\n",
            (unsigned)st.utterances, (unsigned)st.completed, (unsigned)st.cancelled, (unsigned)st.underruns,
            (unsigned)st.decode_errors);
@@ -53,7 +54,7 @@ static int preview_zone(const char *arg)
         return 1;
     }
     alarm_config_t *cfg = alarm_mem_slow_malloc(sizeof(*cfg));
-    if (cfg == NULL || alarm_service_get_config(cfg) != ESP_OK) {
+    if (cfg == NULL || !pv_config(cfg)) { /* the engine's, or a link keypad's copy */
         free(cfg);
         printf("The configuration could not be read\n");
         return 1;

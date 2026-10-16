@@ -107,7 +107,7 @@ typedef struct {
 /* The keypad's announcement preferences (D06) and the existing sound policy. The walk test has no
  * switch: it speaks whenever a voice is ready, Announcements off too (WALK-016). */
 typedef struct {
-    bool voice_enabled;   /* Announcements (default false) */
+    bool voice_enabled;   /* Announcements (default true, D06) */
     bool voice_status;    /* Status messages (default true) */
     bool voice_chime;     /* Zone chime (default true) */
     uint8_t volume;       /* the user volume; 0 = no speech at all */
@@ -205,7 +205,7 @@ typedef struct {
 /* The policy. Caller-owned; all state lives here. */
 typedef struct {
     ann_ports_t ports;
-    uint8_t keypad;          /* the local keypad's partition (1) */
+    uint8_t keypad;          /* the partition it speaks for (1; a link keypad's home) */
     ann_prefs_t prefs;
     ann_pack_t pack;
     ann_state_t st;          /* the state after the last commit */
@@ -233,6 +233,11 @@ void ann_init(ann_t *a, const ann_ports_t *ports, uint8_t keypad_partition);
 
 /* The next commit is a silent baseline again (restore, reconnection). Cancels all speech. */
 void ann_rebaseline(ann_t *a);
+
+/* The partition it speaks for (D05: an alarm panel's keypad partition; a link keypad's home,
+ * which its master may move): set, then a rebaseline - the next commit is silent, and nothing of
+ * the old partition is said after it. */
+void ann_set_keypad(ann_t *a, uint8_t keypad_partition);
 
 /* Preferences and pack. A change that forbids speech cancels it (AUD-015); a new or lost pack
  * cancels everything (its generation). */

@@ -602,7 +602,9 @@ static uint8_t report_now(void)
 }
 
 /* The engine's news: the newest snapshot is copied first and the events drained after it, so every
- * event the snapshot counts is pushed before the STATUS that carries its seq (docs/features/11). */
+ * event the snapshot counts is pushed before the STATUS that carries its seq (docs/features/11);
+ * then the one-shot sounds, then the STATUS: a keypad's voice closes the batch at the STATUS that
+ * covers its events, its acknowledgement or error tone already in (LINK-028). */
 static void take_engine_news(uint64_t now)
 {
     const bool news = atomic_exchange(&s_snap_news, false);
@@ -615,6 +617,11 @@ static void take_engine_news(uint64_t now)
     while (evq != NULL && xQueueReceive(evq, &ev, 0) == pdTRUE) {
         plink_master_event(s_m, now, &ev);
     }
+    QueueHandle_t sq = __atomic_load_n(&s_sound_q, __ATOMIC_ACQUIRE);
+    sound_t s;
+    while (sq != NULL && xQueueReceive(sq, &s, 0) == pdTRUE) {
+        plink_master_sound(s_m, now, s.partition, s.sound, s.zone);
+    }
     if (news) {
         plink_master_snapshot(s_m, now, s_snap, link_epoch_ms(), s_report);
         if (s_pair_forced || !plink_master_pairing(s_m)) {
@@ -624,11 +631,6 @@ static void take_engine_news(uint64_t now)
              * arming, ends it */
             plink_master_pair_cancel(s_m, now);
         }
-    }
-    QueueHandle_t sq = __atomic_load_n(&s_sound_q, __ATOMIC_ACQUIRE);
-    sound_t s;
-    while (sq != NULL && xQueueReceive(sq, &s, 0) == pdTRUE) {
-        plink_master_sound(s_m, now, s.partition, s.sound, s.zone);
     }
     const uint32_t dropped = atomic_load(&s_dropped);
     if (dropped != s_dropped_told) {

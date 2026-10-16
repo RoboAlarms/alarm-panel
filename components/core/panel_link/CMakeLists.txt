@@ -1,8 +1,9 @@
 # panel_link - the panel link between a master panel and its keypads (docs/features/11): the
 # crypto helpers on a three-primitive port, the v1 frame and replay window, the message codecs,
 # pairing and the session handshake, the master's and the keypad's link managers, the stored
-# records, the keypads' status and configuration copy. Portable C11, no heap, no globals; the
-# sockets, NVS and PSA are the platform's (components/services/plink_service, host/link_sim).
+# records, the keypads' status and configuration copy, and what a keypad's voice hears
+# (plink_vfeed). Portable C11, no heap, no globals; the sockets, NVS and PSA are the platform's
+# (components/services/plink_service, host/link_sim).
 # Builds as an ESP-IDF component, or as a plain CMake static library for the host tests.
 set(PANEL_LINK_SRCS
     src/plink_crypto.c
@@ -15,6 +16,7 @@ set(PANEL_LINK_SRCS
     src/plink_session.c
     src/plink_master.c
     src/plink_keypad.c
+    src/plink_vfeed.c
 )
 
 if(ESP_PLATFORM)

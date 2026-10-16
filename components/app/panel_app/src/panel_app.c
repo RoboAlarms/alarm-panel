@@ -19,7 +19,7 @@
  *
  * A panel stored in the panel link's keypad role (docs/features/11, ALARM_LINK) takes another
  * path, run_keypad(): no engine, event log, zone sources or integrations - the screen shows its
- * master's status through the link.
+ * master's status through the link, and its voice speaks what the link hears (LINK-028).
  */
 #include "panel_app.h"
 
@@ -1691,6 +1691,17 @@ static void load_prefs(panel_prefs_t *prefs)
     sounder_set_voice_volume(prefs->voice_volume);
 }
 
+/* This panel's own Announcements switches and Voice volume to its voice (both roles: a keypad's
+ * are its own, D06). */
+static void voice_prefs_apply(const panel_prefs_t *prefs)
+{
+    const panel_voice_prefs_t vp = {.enabled = prefs->voice_enabled,
+                                    .status = prefs->voice_status,
+                                    .chime = prefs->voice_chime,
+                                    .volume = prefs->voice_volume}; /* AUD-032 */
+    panel_voice_set_prefs(&vp);
+}
+
 #if CONFIG_ALARM_LINK && CONFIG_ALARM_FEATURE_UI
 /* ---- the keypad role (docs/features/11 "Roles on a P4 panel") ------------------------------ */
 
@@ -1714,10 +1725,34 @@ static void keypad_health_task(void *arg)
     }
 }
 
-/* A keypad for a master elsewhere: the board, the sounder, the languages and packs, the screen
- * with the link's backend, Wi-Fi, updates (gated by the link) and the console - and nothing that
- * runs the alarm: no engine, event log, zone sources, MQTT, notifications, Home Assistant,
- * devices, automations, voice or Panel Manager (LINK-020). */
+#if CONFIG_ALARM_FEATURE_VOICE
+/* The keypad's voice (LINK-028): no engine to ask, so its source is the link - a baseline is
+ * sent by the link task, the zones' words come from the master's configuration copy, and a pack
+ * install always waits (no install path reaches a keypad yet: BL-205 gives it a real gate). */
+static bool kp_voice_baseline(void *ctx)
+{
+    (void)ctx;
+    plink_service_voice_resync();
+    return true;
+}
+
+static bool kp_voice_config(void *ctx, alarm_config_t *out, uint32_t *config_seq)
+{
+    (void)ctx;
+    return plink_service_keypad_config(out, config_seq);
+}
+
+static bool kp_voice_locked(void *ctx)
+{
+    (void)ctx;
+    return true;
+}
+#endif
+
+/* A keypad for a master elsewhere: the board, the sounder, the languages and packs, its voice, the
+ * screen with the link's backend, Wi-Fi, updates (gated by the link) and the console - and nothing
+ * that runs the alarm: no engine, event log, zone sources, MQTT, notifications, Home Assistant,
+ * devices, automations or Panel Manager (LINK-020). */
 static void run_keypad(const panel_app_config_t *cfg)
 {
     s_keypad = true;
@@ -1740,6 +1775,27 @@ static void run_keypad(const panel_app_config_t *cfg)
     START_OR_LOG(panel_ota_start(cfg->keypad_health_mask));
     START_OR_LOG(lang_packs_start());
     START_OR_LOG(asset_packs_start());
+#if CONFIG_ALARM_FEATURE_VOICE
+    /* Its voice (LINK-028), with its own Announcements switches and Voice volume (D06), fed by
+     * the link task from what the master sends: started before the link, so the first ONLINE
+     * finds it. */
+    {
+        static const panel_voice_source_t source = {.baseline = kp_voice_baseline,
+                                                    .config = kp_voice_config,
+                                                    .install_locked = kp_voice_locked,
+                                                    .ctx = NULL};
+        panel_voice_set_source(&source);
+        START_OR_LOG(panel_voice_start());
+        voice_prefs_apply(&prefs);
+        static const plink_service_voice_t voice = {.baseline = panel_voice_engine_baseline,
+                                                    .pause = panel_voice_engine_pause,
+                                                    .event = panel_voice_engine_event,
+                                                    .sound = panel_voice_engine_sound,
+                                                    .output = panel_voice_engine_output,
+                                                    .snapshot = panel_voice_engine_snapshot};
+        plink_service_set_voice(&voice);
+    }
+#endif
 
     /* The link before the screen, so the UI's first look at link_info finds a keypad (its setup's
      * pairing step, Home's Connecting), and before the network: a paired keypad runs no time
@@ -1762,6 +1818,7 @@ static void run_keypad(const panel_app_config_t *cfg)
     START_OR_LOG(plink_service_console_register());
     START_OR_LOG(panel_ota_console_register());
     START_OR_LOG(lang_packs_console_register());
+    START_OR_LOG(panel_voice_console_register()); /* `voice`: the counters a muted bench reads */
     START_OR_LOG(app_console_register());
     if (cfg->console != NULL) {
         START_OR_LOG(cfg->console());
@@ -1933,13 +1990,7 @@ void panel_app_run(const panel_app_config_t *cfg)
     /* The voice pack (docs/features/08 D12): after the sounder and the engine run, loaded on a
      * task of its own; a bad pack leaves the tones as they are. */
     START_OR_LOG(panel_voice_start());
-    {
-        const panel_voice_prefs_t vp = {.enabled = prefs.voice_enabled,
-                                        .status = prefs.voice_status,
-                                        .chime = prefs.voice_chime,
-                                        .volume = prefs.voice_volume}; /* AUD-032 */
-        panel_voice_set_prefs(&vp);
-    }
+    voice_prefs_apply(&prefs);
 
     const display_state_t disp = start_display(false);
     if (!disp.display) {

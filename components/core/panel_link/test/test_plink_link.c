@@ -33,9 +33,17 @@
  * Every random number here (the network's faults, the crypto ports, the worker's delays) comes
  * from seeds; PLINK_LINK_SEED=<n> in the environment runs the suite on other ones.
  *
+ * A keypad's voice (LINK-028) is the real policy (annunciator) behind plink_vfeed, fed from what
+ * the keypad's manager holds as plink_keypad_svc.c feeds it; the master's is the same policy fed
+ * straight from the engine as panel_app wires it (its own sounds tracked, its outputs, a commit
+ * after every engine call). Both play every tone for 200 ms and every utterance at once, and the
+ * kinds each decides are compared: the same ones on a working network; on a damaged one never a
+ * kind the master did not decide about then, never one twice; after a keypad restart, a master
+ * restart, a cut link and its backfill, nothing from before.
+ *
  * Requirements: LINK-001, LINK-002, LINK-003, LINK-004, LINK-006, LINK-007, LINK-008, LINK-014,
- * LINK-015, LINK-016, LINK-018, LINK-019, LINK-021, LINK-023, LINK-024, LINK-026, LINK-027 (and
- * the keypad rules they serve: KPD-008, UI-023).
+ * LINK-015, LINK-016, LINK-018, LINK-019, LINK-021, LINK-023, LINK-024, LINK-026, LINK-027,
+ * LINK-028 (and the keypad rules they serve: KPD-008, UI-023, D05 of docs/features/08).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,12 +51,15 @@
 
 #include "alarm/alarm_codec.h"
 #include "alarm/alarm_snapshot.h"
+#include "annunciator/annunciator.h"
 #include "panel_link/plink_keypad.h"
 #include "panel_link/plink_master.h"
+#include "panel_link/plink_vfeed.h"
 #include "plink_test_net.h"
 #include "plink_test_port.h"
 #include "sim.h"
 #include "unity.h"
+#include "voice_pack/voice_pack.h"
 
 #define KP_MAX        8u
 #define EV_LOG        8192u
@@ -74,6 +85,44 @@ static const char *const NAMES[KP_MAX] = {"Hall keypad",    "Kitchen keypad", "G
                                           "Cellar keypad",  "Attic keypad"};
 
 /* ---- the rig --------------------------------------------------------------------------------- */
+
+/* A voice: the real policy with a pretend pack (every clip 0.5 s), the zones' words from its
+ * configuration, a pretend sounder (each one-shot tracked, PLAYED after V_TONE_MS) and the bell
+ * test's 2 s; every utterance plays at once, and what it decided is logged. */
+#define V_PACK_REV 3u
+#define V_CLIP     8000u
+#define V_TONE_MS  200u
+#define V_BELL_MS  2000u /* panel_voice's PV_BELL_TEST_MS */
+#define V_SAID_MAX 256u
+#define V_TONES    32u
+
+typedef struct {
+    uint8_t kind;  /* ann_kind_t */
+    uint16_t zone;
+    uint64_t at;   /* the network's clock */
+} said_t;
+
+typedef struct {
+    ann_t a;
+    plink_vfeed_t f;          /* a keypad's */
+    uint64_t now;             /* its own clock at the call under way */
+    uint32_t ticket;
+    struct {
+        uint32_t ticket;
+        uint64_t due;
+    } tone[V_TONES];
+    unsigned n_tone;
+    uint64_t bell_due;        /* 0: no bell test pulse */
+    unsigned baselines, pauses;
+} vstate_t;
+
+typedef struct {
+    bool on;
+    const plink_keypad_t *kk; /* a keypad's manager; NULL: the master's voice, the reference */
+    vstate_t s;               /* started again with the panel */
+    said_t said[V_SAID_MAX];  /* kept across restarts */
+    unsigned n_said;
+} voice_t;
 
 /* A keypad panel: its manager, its crypto port, its NVS, and what its screen would show. */
 typedef struct {
@@ -113,6 +162,7 @@ typedef struct {
     uint8_t cd_state;
     uint64_t cd_shown;
     unsigned cd_rises;
+    voice_t v; /* LINK-028: its voice, when a test turns it on */
 } kp_t;
 
 /* A command port.run took, waiting for its delay. */
@@ -185,7 +235,7 @@ typedef struct {
     unsigned busy; /* two commands of one keypad (panic apart) running at once */
     /* the engine's records, kept past the sim's own */
     alarm_event_t ev[EV_LOG];
-    unsigned n_ev, ev_fwd, snd_fwd;
+    unsigned n_ev, ev_fwd, snd_fwd, out_fwd;
     unsigned snd[ALARM_MAX_PARTITIONS + 1u][32]; /* one-shot sounds by partition and kind */
     alarm_snapshot_t snap;
     uint32_t snap_seq;
@@ -201,6 +251,7 @@ typedef struct {
     bool watch;         /* UI-023: every keypad's countdown watched */
     bool explain;       /* every LOST checked against the network's log */
     hostile_t h;
+    voice_t mv;         /* LINK-028: the master's voice, fed straight from the engine */
 } rig_t;
 
 static rig_t R;
@@ -275,6 +326,183 @@ static bool near(uint64_t a, uint64_t b)
     return (a > b ? a - b : b - a) <= SLACK_MS;
 }
 
+/* ---- the voices (LINK-028) ------------------------------------------------------------------- */
+
+static uint32_t v_clip(void *ctx, uint16_t id)
+{
+    (void)ctx;
+    return id >= VP_ENDING_FIRST ? 0u : V_CLIP; /* no endings: every word as itself */
+}
+
+/* A zone's words from the voice's configuration: the engine's for the master, the keypad's copy
+ * from the link for a keypad (panel_voice reads them the same way). */
+static bool v_words(void *ctx, uint16_t zone, ann_zone_words_t *out)
+{
+    const voice_t *v = ctx;
+    const alarm_config_t *c = v->kk != NULL ? plink_keypad_config(v->kk) : &R.sim.cfg;
+    if (c == NULL || zone == 0u || zone > ALARM_MAX_ZONES) {
+        return false;
+    }
+    const alarm_zone_config_t *zc = &c->zones[zone - 1u];
+    memset(out, 0, sizeof *out);
+    const unsigned n = alarm_zone_word_count(zc);
+    for (unsigned i = 0; i < n && i < ANN_CLIPS_MAX; i++) {
+        out->ids[i] = alarm_zone_word(zc, i);
+    }
+    out->count = (uint8_t)(n < ANN_CLIPS_MAX ? n : ANN_CLIPS_MAX);
+    out->binding_revision = zc->voice_binding_revision;
+    out->approved_revision = zc->voice_approved_revision;
+    out->pack_revision = zc->voice_pack_revision;
+    return out->count != 0u;
+}
+
+/* The voice as it starts with its panel: Announcements on (D06), a ready pack, no baseline yet. */
+static void v_start(voice_t *v, const plink_keypad_t *kk, uint8_t part, uint64_t now)
+{
+    memset(&v->s, 0, sizeof v->s);
+    v->on = true;
+    v->kk = kk;
+    v->s.now = now;
+    const ann_ports_t ports = {v, v_words, v_clip};
+    ann_init(&v->s.a, &ports, part);
+    const ann_prefs_t p = {true, true, true, 70u, false};
+    ann_set_prefs(&v->s.a, &p, now);
+    const ann_pack_t pack = {true, V_PACK_REV, VP_WORD_GAP_MS, VP_PART_GAP_MS};
+    ann_set_pack(&v->s.a, &pack, now);
+}
+
+/* The pretend sounder: a one-shot tracked, its ticket PLAYED V_TONE_MS later. */
+static uint32_t v_tone(voice_t *v, uint8_t sound)
+{
+    if (sound < (uint8_t)ALARM_SOUND_ACK || v->s.n_tone == V_TONES) {
+        return 0u;
+    }
+    v->s.tone[v->s.n_tone].ticket = ++v->s.ticket;
+    v->s.tone[v->s.n_tone].due = v->s.now + V_TONE_MS;
+    v->s.n_tone++;
+    return v->s.ticket;
+}
+
+/* Every utterance it may start now, played at once. */
+static void v_drain(voice_t *v)
+{
+    ann_utt_t u;
+    while (ann_next(&v->s.a, v->s.now, &u)) {
+        if (v->n_said < V_SAID_MAX) {
+            v->said[v->n_said].kind = u.kind;
+            v->said[v->n_said].zone = u.zone;
+            v->said[v->n_said].at = NOW;
+            v->n_said++;
+        }
+        ann_done(&v->s.a, u.id, v->s.now);
+    }
+}
+
+/* Tones that ended, the bell pulse's end, then what may be said. */
+static void v_step(voice_t *v, uint64_t now)
+{
+    v->s.now = now;
+    for (unsigned i = 0; i < v->s.n_tone;) {
+        if (v->s.tone[i].due <= now) {
+            const uint32_t t = v->s.tone[i].ticket;
+            v->s.tone[i] = v->s.tone[--v->s.n_tone];
+            ann_ticket(&v->s.a, t, true, now);
+        } else {
+            i++;
+        }
+    }
+    if (v->s.bell_due != 0u && now >= v->s.bell_due) {
+        v->s.bell_due = 0u;
+        ann_bell_test_done(&v->s.a, now);
+    }
+    v_drain(v);
+}
+
+static uint64_t v_next(const voice_t *v)
+{
+    if (!v->on) {
+        return UINT64_MAX;
+    }
+    uint64_t t = v->s.bell_due != 0u ? v->s.bell_due : UINT64_MAX;
+    for (unsigned i = 0; i < v->s.n_tone; i++) {
+        t = min64(t, v->s.tone[i].due);
+    }
+    return v->kk != NULL ? min64(t, plink_vfeed_next(&v->s.f)) : t;
+}
+
+static void v_output(voice_t *v, alarm_output_t o, uint8_t part, alarm_pattern_t pat)
+{
+    ann_output(&v->s.a, o, part, pat);
+    if (o == ALARM_OUT_BELL && part == v->s.a.keypad && pat == ALARM_PAT_TEST) {
+        v->s.bell_due = v->s.now + V_BELL_MS;
+    }
+}
+
+/* The state after the batch, as panel_voice_engine_snapshot computes it. */
+static void v_commit(voice_t *v, const alarm_snapshot_t *s)
+{
+    ann_state_t st;
+    ann_state_from_snapshot(s, v->s.a.keypad, s->exit_sounds, &st);
+    ann_commit(&v->s.a, &st, v->s.now);
+    v_drain(v);
+}
+
+/* A keypad voice's port, doing what panel_voice does with each call. */
+static void kv_baseline(void *ctx, uint8_t part, const alarm_snapshot_t *s)
+{
+    voice_t *v = ctx;
+    ann_rebaseline(&v->s.a); /* the drop the baseline counts */
+    v->s.bell_due = 0u;
+    if (v->s.a.keypad != part) {
+        ann_set_keypad(&v->s.a, part);
+    }
+    v_commit(v, s); /* silent */
+    v->s.baselines++;
+}
+
+static void kv_pause(void *ctx)
+{
+    voice_t *v = ctx;
+    ann_rebaseline(&v->s.a);
+    v->s.bell_due = 0u;
+    v->s.pauses++;
+}
+
+static void kv_event(void *ctx, const alarm_event_t *ev)
+{
+    ann_event(&((voice_t *)ctx)->s.a, ev);
+}
+
+static void kv_sound(void *ctx, uint8_t part, alarm_sound_t sound, uint16_t zone, uint32_t ticket)
+{
+    ann_sound(&((voice_t *)ctx)->s.a, part, sound, zone, ticket);
+}
+
+static void kv_output(void *ctx, alarm_output_t o, uint8_t part, alarm_pattern_t pat)
+{
+    v_output(ctx, o, part, pat);
+}
+
+static void kv_snapshot(void *ctx, const alarm_snapshot_t *s)
+{
+    v_commit(ctx, s);
+}
+
+/* The master's voice from now on, for partition `part`: its first commit is the baseline. */
+static void ref_start(uint8_t part)
+{
+    v_start(&R.mv, NULL, part, clock_of(NOW, R.m_off));
+    v_commit(&R.mv, &R.snap);
+}
+
+/* The engine's wall clock is the network's (one clock in the house): an event's stamp and the
+ * master's time in its STATUS and TIME agree, as on panels whose clocks are set. */
+static int64_t rig_wall_clock(void *ctx)
+{
+    (void)ctx;
+    return epoch_now();
+}
+
 /* ---- the engine, as the platform drives it --------------------------------------------------- */
 
 static void sync_engine(uint64_t t)
@@ -289,6 +517,10 @@ static void sync_engine(uint64_t t)
  * snapshot (its seq rises every time; the master coalesces). */
 static void pump(uint64_t t)
 {
+    voice_t *ref = R.mv.on ? &R.mv : NULL; /* LINK-028: the master's voice, as panel_app feeds it */
+    if (ref != NULL) {
+        ref->s.now = t;
+    }
     while (R.ev_fwd < R.sim.n_events) {
         const alarm_event_t *e = &R.sim.events[R.ev_fwd++];
         if (R.n_ev > 0u && e->seq <= R.ev[R.n_ev - 1u].seq) {
@@ -297,6 +529,9 @@ static void pump(uint64_t t)
         TEST_ASSERT_TRUE_MESSAGE(R.n_ev < EV_LOG, "the rig's event log is full");
         R.ev[R.n_ev++] = *e;
         plink_master_event(&R.m, t, e);
+        if (ref != NULL) {
+            ann_event(&ref->s.a, e);
+        }
     }
     while (R.snd_fwd < R.sim.n_sounds) {
         const sim_sound_t *s = &R.sim.sounds[R.snd_fwd++];
@@ -304,6 +539,18 @@ static void pump(uint64_t t)
             R.snd[s->partition][s->sound]++;
         }
         plink_master_sound(&R.m, t, s->partition, (uint8_t)s->sound, s->zone);
+        if (ref != NULL) {
+            /* panel_app's on_sound: its own partition's and partition 0's tones, tracked */
+            const bool here = s->partition == 0u || s->partition == ref->s.a.keypad;
+            const uint32_t ticket = here ? v_tone(ref, (uint8_t)s->sound) : 0u;
+            ann_sound(&ref->s.a, s->partition, s->sound, s->zone, ticket);
+        }
+    }
+    while (R.out_fwd < R.sim.n_outputs) {
+        const sim_output_t *o = &R.sim.outputs[R.out_fwd++];
+        if (ref != NULL) {
+            v_output(ref, o->output, o->partition, o->pattern);
+        }
     }
     /* The sim records 512 of each: start its records again once everything was handed in. */
     if (R.sim.n_events > SIM_MAX_RECORDS / 2u) {
@@ -314,6 +561,10 @@ static void pump(uint64_t t)
         R.sim.n_sounds = 0u;
         R.snd_fwd = 0u;
     }
+    if (R.sim.n_outputs > SIM_MAX_RECORDS / 2u) {
+        R.sim.n_outputs = 0u;
+        R.out_fwd = 0u;
+    }
     R.pump_due = false;
     R.pumped_at = t;
     if (R.snap_held) {
@@ -322,6 +573,9 @@ static void pump(uint64_t t)
     alarm_engine_snapshot(&R.sim.eng, &R.snap);
     R.snap.seq = ++R.snap_seq;
     plink_master_snapshot(&R.m, t, &R.snap, epoch_now(), PLINK_REPORT_ONLINE);
+    if (ref != NULL) {
+        v_commit(ref, &R.snap);
+    }
 }
 
 /* A command on the engine as {ALARM_SRC_KEYPAD, device}, logged. */
@@ -591,12 +845,16 @@ static void m_tick(void *ctx, uint64_t now)
         pump(t);
     }
     plink_master_tick(&R.m, t);
+    if (R.mv.on) {
+        v_step(&R.mv, t);
+    }
 }
 
 static uint64_t m_next(void *ctx)
 {
     (void)ctx;
     uint64_t t = min64(plink_master_next(&R.m), alarm_engine_next_deadline(&R.sim.eng));
+    t = min64(t, v_next(&R.mv));
     for (unsigned i = 0; i < R.n_pend; i++) {
         t = min64(t, R.pend[i].due);
     }
@@ -708,12 +966,42 @@ static void observe(kp_t *k)
     plink_sound_t s;
     while (plink_keypad_take_sound(&k->k, &s)) {
         k->snd[s.sound < 32u ? s.sound : 0u]++;
+        if (k->v.on) {
+            /* plink_keypad_svc.c sounds(): tracked while the voice is fed, then handed on */
+            k->v.s.now = t;
+            const uint32_t ticket = plink_vfeed_live(&k->v.s.f) ? v_tone(&k->v, s.sound) : 0u;
+            plink_vfeed_sound(&k->v.s.f, t, &s, ticket);
+        }
     }
     plink_time_t tm;
     (void)plink_keypad_take_time(&k->k, &tm);
     if (R.watch) {
         countdown(k, t, in.home);
     }
+    if (k->v.on) {
+        /* plink_keypad_svc.c voice_feed() */
+        static alarm_event_t evs[PLINK_EVENTS_KEPT];
+        const size_t n = plink_keypad_events(&k->k, evs, PLINK_EVENTS_KEPT);
+        const plink_vfeed_view_t view = {in.state == PLINK_LINK_ONLINE,
+                                         in.home,
+                                         plink_keypad_snapshot(&k->k),
+                                         evs,
+                                         n,
+                                         plink_keypad_epoch_ms(&k->k, t),
+                                         false};
+        k->v.s.now = t;
+        plink_vfeed_poll(&k->v.s.f, t, &view);
+        v_step(&k->v, t);
+    }
+}
+
+/* LINK-028: keypad k's voice from now on (as its panel starts it), fed through plink_vfeed. */
+static void kv_start(kp_t *k)
+{
+    v_start(&k->v, &k->k, k->have_rec ? k->rec.home : 1u, know(k));
+    const plink_vfeed_port_t port = {&k->v,   kv_baseline, kv_pause,   kv_event,
+                                     kv_sound, kv_output,   kv_snapshot};
+    plink_vfeed_init(&k->v.s.f, &port);
 }
 
 static void k_input(void *ctx, uint64_t now, const plink_addr_t *from, const uint8_t *f, size_t len)
@@ -742,7 +1030,7 @@ static void k_tick(void *ctx, uint64_t now)
 static uint64_t k_next(void *ctx)
 {
     const kp_t *k = ctx;
-    uint64_t t = plink_keypad_next(&k->k);
+    uint64_t t = min64(plink_keypad_next(&k->k), v_next(&k->v));
     if (k->resolve_due) {
         t = min64(t, know(k));
     }
@@ -818,6 +1106,9 @@ static void kp_boot(kp_t *k)
     k->path[k->n_path++] = in.state == PLINK_LINK_NOT_PAIRED ? 'N' : 'C';
     k->seen_at = 0u;
     k->cd_have = false;
+    if (k->v.on) {
+        kv_start(k); /* its voice starts again too, knowing nothing */
+    }
     R.net.node[k->node].down = false;
     if (k->have_rec) {
         plink_keypad_master_addr(&k->k, know(k), maddr(), false);
@@ -1146,8 +1437,13 @@ static void master_restart(void)
     const alarm_runtime_state_t st = R.sim.persisted;
     R.n_pend = 0u;
     sim_start(&R.sim, &CFG_TMP, had ? &st : NULL);
-    R.ev_fwd = R.snd_fwd = 0u;
+    R.sim.eng.ports.get_epoch_ms = rig_wall_clock;
+    R.ev_fwd = R.snd_fwd = R.out_fwd = 0u;
     R.m_off = (int64_t)R.sim.now - (int64_t)NOW;
+    if (R.mv.on) {
+        /* its voice starts again with it: the first commit (the pump below) is its baseline */
+        v_start(&R.mv, NULL, R.mv.s.a.keypad, mnow());
+    }
     plink_test_port_init(&R.tpm, (0x3A570000ull + NOW) ^ SEED);
     R.tpm.only_dir = R.damaged ? PLINK_DIR_MASTER : 0u;
     R.cm = plink_test_port(&R.tpm);
@@ -1261,6 +1557,7 @@ void setUp(void)
     plink_net_init(&R.net, 0x11AB5EEDull ^ SEED);
     R.net.now_ms = 50000u;
     sim_start(&R.sim, NULL, NULL);
+    R.sim.eng.ports.get_epoch_ms = rig_wall_clock;
     R.m_off = (int64_t)R.sim.now - (int64_t)NOW;
     R.rng = 0x5EED0001ull ^ SEED;
     plink_test_port_init(&R.tpm, 0x3A57u ^ SEED);
@@ -1574,8 +1871,9 @@ static void two_partitions(void)
     sim_set_zone(&CFG_TMP, Z_P2_DOOR, ALARM_ZT_ENTRY_EXIT_1, 2u);
     sim_set_user(&CFG_TMP, 8u, ALARM_AUTH_STANDARD, 0x02u, CODE_P2);
     sim_start(&R.sim, &CFG_TMP, NULL);
+    R.sim.eng.ports.get_epoch_ms = rig_wall_clock;
     TEST_ASSERT_EQUAL_UINT64(R.sim.now, mnow());
-    R.ev_fwd = R.snd_fwd = 0u;
+    R.ev_fwd = R.snd_fwd = R.out_fwd = 0u;
     R.n_ev = 0u;
     remake_blob();
     pump(mnow());
@@ -2687,6 +2985,391 @@ static void test_six_hours_on_a_damaged_network(void)
     TEST_ASSERT_TRUE(gave_up <= 2u);
 }
 
+/* ---- a keypad's voice (LINK-028) ------------------------------------------------------------- */
+
+static const char *const KIND[] = {"none",     "entry",     "arming",    "armed",
+                                   "disarmed", "walk start", "walk end", "walk warning",
+                                   "not ready", "walk trip", "chime",    "preview"};
+
+static const char *kind_name(uint8_t kind)
+{
+    return kind < sizeof KIND / sizeof KIND[0] ? KIND[kind] : "?";
+}
+
+/* What a voice said from [from] on, for a failure's message. */
+static const char *said_text(const voice_t *v, unsigned from)
+{
+    static char buf[1024];
+    size_t n = 0u;
+    buf[0] = '\0';
+    for (unsigned i = from; i < v->n_said && n + 40u < sizeof buf; i++) {
+        n += (size_t)snprintf(buf + n, sizeof buf - n, "%s%s/%u@%llu", i > from ? ", " : "",
+                              kind_name(v->said[i].kind), (unsigned)v->said[i].zone,
+                              (unsigned long long)v->said[i].at);
+    }
+    return buf;
+}
+
+/* Zone 1, Front Door, has approved words ("Front" "Door", against the pack's revision): its
+ * chime and walk-test trips say them. */
+static void voice_words(void)
+{
+    alarm_zone_config_t *z = &R.sim.cfg.zones[Z_FRONT - 1u];
+    alarm_zone_set_word(z, 0u, 1u);
+    alarm_zone_set_word(z, 1u, 109u);
+    R.sim.cfg.opt.voice_revision_counter = 20u;
+    z->voice_binding_revision = 11u;
+    z->voice_approved_revision = 11u;
+    z->voice_pack_revision = V_PACK_REV;
+    remake_blob();
+}
+
+/* Each of keypad k's utterances from its [from_k] on is one of the master's from [from_r] on, in
+ * the same order (each matched once): the same kind and zone, decided at most late_ms after the
+ * master's - and no sooner, but for the tone a keypad never got (an acknowledgement lost on the
+ * way: its words don't wait for it). Returns how many it said; s_latest is the most any was
+ * late. */
+static uint64_t s_latest;
+
+static unsigned said_as_master(const kp_t *k, unsigned from_k, unsigned from_r, uint64_t late_ms)
+{
+    unsigned j = from_r;
+    unsigned said = 0u;
+    s_latest = 0u;
+    for (unsigned i = from_k; i < k->v.n_said; i++) {
+        const said_t *s = &k->v.said[i];
+        /* the master's utterance of that kind nearest in time (one the keypad missed may come
+         * before it), after the last one matched */
+        unsigned m = R.mv.n_said;
+        for (unsigned c = j; c < R.mv.n_said && R.mv.said[c].at <= s->at + V_TONE_MS; c++) {
+            const said_t *r = &R.mv.said[c];
+            if (r->kind == s->kind && r->zone == s->zone && s->at <= r->at + late_ms) {
+                m = c; /* each later one is nearer */
+            }
+        }
+        if (m == R.mv.n_said) {
+            static char msg[2300];
+            snprintf(msg, sizeof msg,
+                     "%s said %s at %llu, which the master didn't then; it said: %s", k->name,
+                     kind_name(s->kind), (unsigned long long)s->at, said_text(&R.mv, from_r));
+            TEST_FAIL_MESSAGE(msg);
+        }
+        if (s->at > R.mv.said[m].at && s->at - R.mv.said[m].at > s_latest) {
+            s_latest = s->at - R.mv.said[m].at;
+            if (getenv("PLINK_VOICE_SHOW") != NULL && s_latest > 1000u) {
+                printf("late: %s %s at %llu, the master's at %llu\n", k->name, kind_name(s->kind),
+                       (unsigned long long)s->at, (unsigned long long)R.mv.said[m].at);
+            }
+        }
+        j = m + 1u;
+        said++;
+    }
+    return said;
+}
+
+/* The same utterances as the master's from [from_r] on, each within `late_ms`. */
+static void said_same(const kp_t *k, unsigned from_k, unsigned from_r, uint64_t late_ms)
+{
+    static char msg[2300];
+    snprintf(msg, sizeof msg, "the master said: %s", said_text(&R.mv, from_r));
+    const unsigned n = said_as_master(k, from_k, from_r, late_ms);
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(R.mv.n_said - from_r, n, msg);
+}
+
+/* What a voice said from [from] on is exactly these kinds. */
+static void said_kinds(const voice_t *v, unsigned from, const uint8_t *kinds, unsigned n)
+{
+    TEST_ASSERT_EQUAL_UINT_MESSAGE(n, v->n_said - from, said_text(v, from));
+    for (unsigned i = 0; i < n; i++) {
+        TEST_ASSERT_EQUAL_STRING_MESSAGE(kind_name(kinds[i]), kind_name(v->said[from + i].kind),
+                                         said_text(v, from));
+    }
+}
+
+/* LINK-028 (D05 on a keypad): a keypad's voice, fed from the link, decides what the master's
+ * decides, each within a second: Arming after the arm's acknowledgement, Armed at the exit's end,
+ * Entry, Disarmed, Not ready after its error tone, a chime's approved words, and a walk test's
+ * start (after the bell's test pulse), a trip's words and its end. Its pairing and the events it
+ * pulled then said nothing. */
+static void test_a_keypad_says_what_the_master_says(void)
+{
+    voice_words();
+    kp_t *a = kp_new();
+    kv_start(a);
+    pair_kp(a);
+    ref_start(1u);
+    run_ms(2000u);
+    TEST_ASSERT_EQUAL_UINT(0u, a->v.n_said);
+    TEST_ASSERT_EQUAL_UINT(1u, a->v.s.baselines);
+    TEST_ASSERT_EQUAL_UINT(0u, a->v.s.pauses);
+    /* armed away at the keypad, out through the front door */
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_ARM, 1u, ALARM_LEVEL_AWAY, CODE_USER, 1000u, ALARM_OK);
+    run_ms(5000u);
+    m_zone(Z_FRONT, true);
+    run_ms(3000u);
+    m_zone(Z_FRONT, false);
+    want_t w = {a, (uint8_t)ALARM_STATE_ARMED};
+    TEST_ASSERT_TRUE(run_until(65000u, c_shows, &w));
+    run_ms(2000u);
+    /* someone comes in, and disarms at the keypad */
+    m_zone(Z_FRONT, true);
+    run_ms(3000u);
+    m_zone(Z_FRONT, false);
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER, 1000u, ALARM_OK);
+    run_ms(2000u);
+    /* a window open: not ready */
+    m_zone(Z_WINDOW, true);
+    run_ms(1000u);
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_ARM, 1u, ALARM_LEVEL_AWAY, CODE_USER, 1000u,
+        ALARM_ERR_NOT_READY);
+    run_ms(2000u);
+    m_zone(Z_WINDOW, false);
+    run_ms(1000u);
+    /* the chime on: the front door says its words */
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_CHIME, 1u, ALARM_LEVEL_NONE, CODE_USER));
+    run_ms(1000u);
+    m_zone(Z_FRONT, true);
+    run_ms(2000u);
+    m_zone(Z_FRONT, false);
+    run_ms(2000u);
+    /* a walk test: started, the front door tripped, ended */
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_WALK_TEST, 1u, ALARM_LEVEL_NONE, CODE_MASTER));
+    run_ms(4000u);
+    m_zone(Z_FRONT, true);
+    run_ms(2000u);
+    m_zone(Z_FRONT, false);
+    run_ms(2000u);
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_WALK_TEST, 1u, ALARM_LEVEL_NONE, CODE_MASTER));
+    run_ms(3000u);
+    static const uint8_t KINDS[] = {ANN_KIND_ARMING,    ANN_KIND_ARMED,     ANN_KIND_ENTRY,
+                                    ANN_KIND_DISARMED,  ANN_KIND_NOT_READY, ANN_KIND_CHIME,
+                                    ANN_KIND_WALK_START, ANN_KIND_WALK_TRIP, ANN_KIND_WALK_END};
+    said_kinds(&R.mv, 0u, KINDS, sizeof KINDS);
+    TEST_ASSERT_EQUAL_UINT16(Z_FRONT, R.mv.said[5].zone);
+    TEST_ASSERT_EQUAL_UINT16(Z_FRONT, R.mv.said[7].zone);
+    said_same(a, 0u, 0u, 1000u);
+    TEST_ASSERT_EQUAL_UINT(1u, a->v.s.baselines);
+    TEST_ASSERT_TRUE(run_until(2000u, c_synced, a));
+}
+
+/* LINK-028: nothing older than a keypad's last baseline is said - after it restarts in an exit
+ * time (not the arming before it, nor Armed at its end: an arming it never heard, D05), after the
+ * master restarts (its log starts again), after a cut longer than 30 s (LOST: the voice paused;
+ * the catch-up and the backfill after it) - and nothing late after a cut too short for LOST (its
+ * events come in only with the pull, long after the master stamped them). Each time it speaks
+ * again with the next change. */
+static void test_a_keypad_says_nothing_old(void)
+{
+    voice_words();
+    kp_t *a = kp_new();
+    kv_start(a);
+    pair_kp(a);
+    ref_start(1u);
+    run_ms(2000u);
+
+    /* a keypad restart in the exit time */
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_ARM, 1u, ALARM_LEVEL_AWAY, CODE_USER));
+    run_ms(2000u);
+    static const uint8_t ARMING[] = {ANN_KIND_ARMING};
+    said_kinds(&a->v, 0u, ARMING, 1u);
+    unsigned k0 = a->v.n_said, r0 = R.mv.n_said;
+    kp_off(a);
+    run_ms(3000u);
+    kp_boot(a);
+    TEST_ASSERT_TRUE(run_until(15000u, c_synced, a));
+    TEST_ASSERT_EQUAL_UINT(1u, a->v.s.baselines);
+    want_t w = {a, (uint8_t)ALARM_STATE_ARMED};
+    TEST_ASSERT_TRUE(run_until(65000u, c_shows, &w));
+    run_ms(2000u);
+    static const uint8_t ARMED[] = {ANN_KIND_ARMED};
+    said_kinds(&R.mv, r0, ARMED, 1u);
+    said_kinds(&a->v, k0, NULL, 0u);
+    k0 = a->v.n_said;
+    r0 = R.mv.n_said;
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER, 1000u, ALARM_OK);
+    run_ms(2000u);
+    static const uint8_t DISARMED[] = {ANN_KIND_DISARMED};
+    said_kinds(&R.mv, r0, DISARMED, 1u);
+    said_same(a, k0, r0, 1000u);
+
+    /* a master restart: the master's voice starts again too */
+    k0 = a->v.n_said;
+    R.net.node[R.mnode].down = true;
+    run_ms(4000u);
+    master_restart();
+    TEST_ASSERT_TRUE(run_until(15000u, c_synced, a));
+    run_ms(2000u);
+    said_kinds(&a->v, k0, NULL, 0u);
+    r0 = R.mv.n_said;
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_USER, 1000u, ALARM_OK);
+    run_ms(2000u);
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER, 1000u, ALARM_OK);
+    run_ms(2000u);
+    static const uint8_t ARM_DISARM[] = {ANN_KIND_ARMING, ANN_KIND_DISARMED};
+    said_kinds(&R.mv, r0, ARM_DISARM, 2u);
+    said_same(a, k0, r0, 1000u);
+
+    /* a cut longer than 30 s: LOST, the voice paused; back, it says nothing of what it missed */
+    k0 = a->v.n_said;
+    r0 = R.mv.n_said;
+    const unsigned pauses = a->v.s.pauses, baselines = a->v.s.baselines;
+    R.net.cut_to = a->node;
+    w.state = (uint8_t)PLINK_LINK_LOST;
+    TEST_ASSERT_TRUE(run_until(40000u, c_state, &w));
+    TEST_ASSERT_EQUAL_UINT(pauses + 1u, a->v.s.pauses);
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_USER));
+    run_ms(2000u);
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER));
+    run_ms(2000u);
+    R.net.cut_to = -1;
+    TEST_ASSERT_TRUE(run_until(30000u, c_synced, a));
+    run_ms(3000u);
+    said_kinds(&R.mv, r0, ARM_DISARM, 2u);
+    said_kinds(&a->v, k0, NULL, 0u);
+    TEST_ASSERT_EQUAL_UINT(baselines + 1u, a->v.s.baselines);
+
+    /* a cut of 20 s: never LOST; the arm made in it comes in long after, and isn't said - nor
+     * Armed at the end of an exit time it never heard begin */
+    k0 = a->v.n_said;
+    r0 = R.mv.n_said;
+    const unsigned lost = a->lost;
+    R.net.cut_to = a->node;
+    run_ms(2000u);
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_USER));
+    run_ms(18000u);
+    R.net.cut_to = -1;
+    TEST_ASSERT_EQUAL_UINT(lost, a->lost); /* never LOST */
+    w.state = (uint8_t)ALARM_STATE_ARMED;
+    TEST_ASSERT_TRUE(run_until(65000u, c_shows, &w));
+    run_ms(2000u);
+    said_kinds(&R.mv, r0, (const uint8_t[]){ANN_KIND_ARMING, ANN_KIND_ARMED}, 2u);
+    said_kinds(&a->v, k0, NULL, 0u);
+    TEST_ASSERT_TRUE(a->v.s.f.stale >= 1u);
+    /* and with the next change it speaks */
+    k0 = a->v.n_said;
+    r0 = R.mv.n_said;
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER, 1000u, ALARM_OK);
+    run_ms(2000u);
+    said_kinds(&R.mv, r0, DISARMED, 1u);
+    said_same(a, k0, r0, 1000u);
+}
+
+/* LINK-028, D05: a keypad speaks for its home partition: moved from 1 to 2 at the master, it
+ * takes a baseline of partition 2 and from then on says partition 2's arming and disarming, as a
+ * voice of partition 2 fed from the engine does, and nothing of partition 1's. */
+static void test_a_keypad_moved_home_speaks_for_its_new_partition(void)
+{
+    two_partitions();
+    kp_t *a = kp_new();
+    kv_start(a);
+    pair_kp(a);
+    ref_start(2u);
+    run_ms(2000u);
+    /* partition 1's keypad says partition 1's arming; partition 2's voice says nothing of it */
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_USER));
+    run_ms(2000u);
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER));
+    run_ms(2000u);
+    static const uint8_t ARM_DISARM[] = {ANN_KIND_ARMING, ANN_KIND_DISARMED};
+    said_kinds(&a->v, 0u, ARM_DISARM, 2u);
+    said_kinds(&R.mv, 0u, NULL, 0u);
+    /* moved */
+    const unsigned baselines = a->v.s.baselines;
+    TEST_ASSERT_TRUE(plink_master_set_home(&R.m, mnow(), dev(a), 2u));
+    TEST_ASSERT_TRUE(run_until(2000u, c_synced, a));
+    run_ms(500u);
+    TEST_ASSERT_EQUAL_UINT(baselines + 1u, a->v.s.baselines);
+    TEST_ASSERT_EQUAL_UINT8(2u, a->v.s.a.keypad);
+    const unsigned k0 = a->v.n_said;
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_USER));
+    run_ms(2000u);
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_ARM, 2u, ALARM_LEVEL_STAY, CODE_P2, 1000u, ALARM_OK);
+    run_ms(2000u);
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 2u, ALARM_LEVEL_NONE, CODE_P2, 1000u, ALARM_OK);
+    run_ms(2000u);
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER));
+    run_ms(2000u);
+    said_kinds(&R.mv, 0u, ARM_DISARM, 2u);
+    said_same(a, k0, 0u, 1000u);
+}
+
+/* LINK-028 under 10 % loss, duplicates and up to 150 ms of jitter, on two keypads: each says only
+ * what the master decided, in order, each once, and never late - within a second of the stale
+ * guard's 5 s (seen: about 1 s at worst, the STATUS repeated at +1 s); a lost frame costs an
+ * announcement, never a wrong one, and most still speak. */
+static void test_under_loss_a_keypad_never_says_more_than_the_master(void)
+{
+    voice_words();
+    kp_t *k[2];
+    for (unsigned i = 0; i < 2u; i++) {
+        k[i] = kp_new();
+        kv_start(k[i]);
+        pair_kp(k[i]);
+    }
+    ref_start(1u);
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_CHIME, 1u, ALARM_LEVEL_NONE, CODE_USER));
+    run_ms(2000u);
+    const unsigned r0 = R.mv.n_said;
+    unsigned k0[2];
+    for (unsigned i = 0; i < 2u; i++) {
+        k0[i] = k[i]->v.n_said;
+    }
+    R.net.loss_pm = 100u;
+    R.net.dup_pm = 20u;
+    R.net.jitter_ms = 150u;
+    for (unsigned round = 0; round < 32u; round++) {
+        switch (round % 4u) {
+        case 0u: /* armed and disarmed at the master's own screen */
+            (void)master_cmd(ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_USER);
+            run_ms(3000u);
+            (void)master_cmd(ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER);
+            run_ms(3000u);
+            break;
+        case 1u: /* the chime */
+            m_zone(Z_FRONT, true);
+            run_ms(2000u);
+            m_zone(Z_FRONT, false);
+            run_ms(2000u);
+            break;
+        case 2u: /* not ready */
+            m_zone(Z_WINDOW, true);
+            run_ms(1000u);
+            (void)master_cmd(ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_USER);
+            run_ms(2000u);
+            m_zone(Z_WINDOW, false);
+            run_ms(1000u);
+            break;
+        default: { /* armed at a keypad, disarmed at the master */
+            kp_t *who = k[(round / 4u) % 2u];
+            const uint32_t req =
+                kcmd(who, PLINK_OP_COMMAND, ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_USER);
+            if (req != 0u) {
+                (void)kwait(who, req, 3000u, NULL);
+                plink_keypad_command_release(&who->k, req);
+            }
+            run_ms(3000u);
+            (void)master_cmd(ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER);
+            run_ms(3000u);
+            break;
+        }
+        }
+    }
+    R.net.loss_pm = R.net.dup_pm = 0u;
+    R.net.jitter_ms = 0u;
+    run_ms(5000u);
+    /* 8 rounds each: Arming and Disarmed twice, a chime's words, Not ready */
+    const unsigned master = R.mv.n_said - r0;
+    TEST_ASSERT_TRUE_MESSAGE(master >= 44u, said_text(&R.mv, r0));
+    for (unsigned i = 0; i < 2u; i++) {
+        const unsigned said = said_as_master(k[i], k0[i], r0, PLINK_VFEED_STALE_MS + 1000u);
+        if (getenv("PLINK_VOICE_SHOW") != NULL) {
+            printf("master %u, %s %u, at most %llu ms later: %s\n", master, k[i]->name, said,
+                   (unsigned long long)s_latest, said_text(&k[i]->v, k0[i]));
+        }
+        TEST_ASSERT_TRUE_MESSAGE(said * 4u >= master * 3u, said_text(&k[i]->v, k0[i]));
+    }
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -2713,6 +3396,10 @@ int main(void)
     RUN_TEST(test_replays_after_either_side_restarts_are_refused);
     RUN_TEST(test_addresses_move_with_authenticated_frames);
     RUN_TEST(test_hostile_keypad_is_rate_limited_and_the_others_go_on);
+    RUN_TEST(test_a_keypad_says_what_the_master_says);
+    RUN_TEST(test_a_keypad_says_nothing_old);
+    RUN_TEST(test_a_keypad_moved_home_speaks_for_its_new_partition);
+    RUN_TEST(test_under_loss_a_keypad_never_says_more_than_the_master);
     RUN_TEST(test_six_hours_on_a_damaged_network);
     return UNITY_END();
 }

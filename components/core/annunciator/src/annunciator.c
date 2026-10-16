@@ -534,6 +534,12 @@ void ann_rebaseline(ann_t *a)
     memset(&a->batch, 0, sizeof(a->batch));
 }
 
+void ann_set_keypad(ann_t *a, uint8_t keypad_partition)
+{
+    a->keypad = keypad_partition;
+    ann_rebaseline(a); /* the old partition's state and cycle mean nothing for the new one */
+}
+
 void ann_set_prefs(ann_t *a, const ann_prefs_t *prefs, uint64_t now_ms)
 {
     a->prefs = *prefs;

@@ -34,6 +34,8 @@
 #define COUNTDOWN_SLACK_MS 500u   /* two snapshots whose countdowns end this close agree */
 #define EVENTS_HDR         3u     /* EVENTS: flags, count, rec_len */
 #define X25519_WINDOW_MS   1000u
+#define HS_BURST           2u     /* one keypad's fresh handshakes: a burst of 2, then 1 a second, */
+#define HS_EVERY_MS        1000u  /* so one keypad's keys can't use up the budget of all of them */
 
 /* ---- small helpers --------------------------------------------------------------------------- */
 
@@ -246,6 +248,8 @@ static void peer_start(plink_peer_t *p, uint64_t now)
     p->cmd_tokens_at = now;
     p->requests = REQ_BURST;
     p->requests_at = now;
+    p->hs_tokens = HS_BURST;
+    p->hs_tokens_at = now;
     p->provisional_until = is_provisional(p) ? now + PLINK_PROVISIONAL_MS : 0u;
 }
 
@@ -1024,8 +1028,15 @@ static void on_hello(plink_master_t *m, uint64_t now, const plink_addr_t *from,
         send_frame(m, from, p->welcome, p->welcome_len);
         return;
     }
-    /* A replayed HELLO never reaches X25519, and never touches the live session. */
-    if (nk_seen(p, hello.n) || !x25519_budget(m, now)) {
+    /* A replayed HELLO never reaches X25519, and never touches the live session. One keypad's
+     * fresh HELLOs - a device with its keys flooding them - get only its own share of the
+     * budget, so the other keypads' handshakes still go through (LINK-027). */
+    if (nk_seen(p, hello.n) ||
+        !bucket_take(&p->hs_tokens, &p->hs_tokens_at, now, HS_BURST, HS_EVERY_MS)) {
+        return;
+    }
+    if (!x25519_budget(m, now)) {
+        p->hs_tokens++; /* refused for the others' sake, not its own: its token goes back */
         return;
     }
     plink_session_t s;
@@ -1111,7 +1122,10 @@ static void on_sealed(plink_master_t *m, uint64_t now, const plink_addr_t *from,
     }
     plink_wipe(m->pt, n);
     if (promoting && p->used) {
-        /* A new session: STATUS and TIME at once. */
+        /* A new session: STATUS and TIME at once, the STATUS repeated as a change's is (LINK-006):
+         * the keypad has dropped the old session, and until one of them arrives it has no status
+         * (CONNECTING at start-up, or nearer to LOST). */
+        status_changed(p, now);
         send_status(m, p, now);
         send_time(m, p, now);
     }
@@ -1591,9 +1605,13 @@ size_t plink_master_peers(const plink_master_t *m, uint64_t now_ms, plink_peer_i
                           size_t max)
 {
     size_t n = 0u;
-    for (size_t i = 0; m != NULL && out != NULL && i < PLINK_KEYPADS_MAX && n < max; i++) {
+    for (size_t i = 0; m != NULL && i < PLINK_KEYPADS_MAX; i++) {
         const plink_peer_t *p = &m->peer[i];
         if (!p->used) {
+            continue;
+        }
+        if (out == NULL || n >= max) {
+            n++; /* counted, not filled */
             continue;
         }
         plink_peer_info_t *o = &out[n++];

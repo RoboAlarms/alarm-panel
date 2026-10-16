@@ -56,6 +56,7 @@ typedef struct {
     uint8_t type;
     size_t len;
     bool lost;
+    bool corrupted;     /* delivered with a byte flipped */
     uint64_t at_ms;
 } plink_net_seen_t;
 

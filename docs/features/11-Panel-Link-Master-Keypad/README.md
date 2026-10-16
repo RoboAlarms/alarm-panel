@@ -173,7 +173,10 @@ user u8, source kind u8 + id u16, arg u8, arg2 u8, flags u8. The master pushes e
 sealed, before the STATUS that carries its seq (the Home screen reads the entry zone and who armed
 from the events when the state changes); EV_REQ fills gaps: the newest `max` events after
 after_seq. A keypad with nothing asks for the last 50; it keeps 50 and drops its ring on a new
-pairing and when last_event_seq goes below its newest.
+pairing and when last_event_seq goes below its newest. The engine numbers its events one by one,
+so events that don't start right after the newest kept (in a frame without the "left out" flag)
+mean a push was lost: the keypad keeps them and asks again after the newest it had, at most 4
+times.
 
 **Configuration.** The master keeps one encoded copy of its configuration (`alarm_config_encode`)
 made for keypads (LINK-019). cfg_crc is that blob's CRC-32 (it also versions it across master
@@ -251,7 +254,8 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
   mac1)[0..15]`.
 - The master checks mac1 and drops a HELLO whose n_k it has seen in the live session or the last 4
   handshakes. A byte-identical HELLO while its handshake is pending gets the same WELCOME; a new
-  one makes e_m and n_m (X25519 at most about 4 a second over all keypads).
+  one makes e_m and n_m (X25519 at most about 4 a second over all keypads, and for any one keypad
+  a burst of 2, then 1 a second, so a device with one keypad's keys can't use up the others').
 - `TH_s = SHA-256(HELLO frame ‖ WELCOME frame up to mac2)`,
   `PRK_s = HKDF-Extract(n_k ‖ n_m, K_pair ‖ X25519(e, E_peer))`,
   `HKDF-Expand(PRK_s, "plink v1 session" ‖ TH_s, 68)` = K_m2k[16] ‖ K_k2m[16] ‖ K_fin[32] ‖ sid[4]
@@ -261,7 +265,9 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
   tentative: it sends a HEARTBEAT at once and every 500 ms until a sealed frame of the new session
   arrives, and still accepts the old session's frames meanwhile.
 - The master keeps the live session until a sealed frame arrives under the pending one (so a
-  replayed HELLO can't cut off a live keypad), then promotes it and sends STATUS and TIME at once.
+  replayed HELLO can't cut off a live keypad), then promotes it and sends STATUS and TIME at once,
+  the STATUS repeated at +250 ms and +1 s as a change's is (the keypad has dropped the old session
+  and has no status in the new one until one arrives).
   A pending session that equals the live sid is refused; a pending session expires after 20 s;
   promotion or expiry discards the cached WELCOME.
 - The keypad starts a handshake at start-up, after 15 s without an authenticated frame, on a
@@ -402,6 +408,15 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   (LINK-007); the screens as proposed (`BL-048-panel-link.js`, approved).
 - Not taken from the review: a persisted boot counter in HELLO (the seen-n_k list and the X25519
   budget already bound replays); a new `alarm_result_t` for "no link" (UNAVAILABLE says it).
+- For the maintainers, from the six-hour host run (`test_plink_link.c`, 10 % loss and 1 %
+  damaged): a keypad starts a handshake about every two minutes (15 s without any frame, after one
+  lost STATUS) and shows "No system communication" for a few seconds about 3 times in 6 hours
+  (three STATUS in a row lost while some other frame got through; the session is kept). Starting
+  the handshake after 15 s without a STATUS, rather than without any frame, would make the second
+  rarer still, as a new session brings a STATUS at once. On a working network neither is seen.
+- The result cache keeps a command from running twice, but every CMD frame gets a RESULT (a
+  refusal, or the cached answer to a copy): a device with a keypad's keys gets one RESULT for each
+  CMD it sends, though its commands and requests stay within LINK-027's limits.
 
 ## Tasks
 - [ ] `panel_link` core: crypto helpers with known-answer tests, the v1 frame codec and replay

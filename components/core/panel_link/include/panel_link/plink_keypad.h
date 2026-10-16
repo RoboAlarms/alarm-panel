@@ -166,6 +166,8 @@ typedef struct {
     uint64_t ev_next_ms;
     uint32_t ev_retry_ms;
     uint32_t ev_frame_seq;       /* the frame that brought the newest kept event */
+    uint32_t ev_fill;            /* a hole in the events after this seq is being pulled (0 none) */
+    uint8_t ev_fill_tries;
     alarm_event_t events[PLINK_EVENTS_KEPT]; /* oldest first */
     size_t ev_count;
     plink_kcmd_t cmds[PLINK_CMDS_MAX];

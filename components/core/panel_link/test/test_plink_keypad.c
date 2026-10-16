@@ -1472,6 +1472,63 @@ static void test_events_backfill_and_ring(void)
     TEST_ASSERT_EQUAL_UINT32(early_newest, ev[0].seq);
 }
 
+static bool events_all(void *ctx)
+{
+    (void)ctx;
+    return K.ev_count == S.n_events && !K.ev_want;
+}
+
+/* docs/features/11 "Event record" (EV_REQ fills gaps): a pushed event that doesn't follow on from
+ * the newest kept - the push before it was lost - is kept, and what lies between is pulled after
+ * the newest kept before it, so the ring has no hole; a frame that says older events were left
+ * out is taken as it is; a hole the master's answers never fill is asked for 4 times, then let
+ * be - never pulled for good. */
+static void test_events_hole_filled(void)
+{
+    arm_disarm(3);
+    M.pushed = S.events[S.n_events - 1u].seq;
+    kp_init(true);
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 5000, events_all, NULL));
+    const unsigned reqs = M.ev_reqs;
+    uint32_t before = K.events[K.ev_count - 1u].seq;
+    /* Two new events; only the second one's push arrives. */
+    arm_disarm(1);
+    TEST_ASSERT_EQUAL_UINT32(before + 2u, S.events[S.n_events - 1u].seq);
+    fm_send_events(&S.events[S.n_events - 1u], 1u, false);
+    M.pushed = S.events[S.n_events - 1u].seq;
+    plink_net_run(&NET, 1000);
+    TEST_ASSERT_EQUAL_UINT(reqs + 1u, M.ev_reqs);
+    TEST_ASSERT_EQUAL_UINT32(before, M.ev_req.after_seq);
+    TEST_ASSERT_EQUAL_size_t(S.n_events, K.ev_count);
+    for (size_t i = 0; i < K.ev_count; i++) {
+        TEST_ASSERT_EQUAL_UINT32(S.events[i].seq, K.events[i].seq);
+    }
+    TEST_ASSERT_FALSE(K.ev_want);
+
+    /* A frame that says older events were left out: taken as it is, nothing pulled. */
+    arm_disarm(1);
+    fm_send_events(&S.events[S.n_events - 1u], 1u, true);
+    M.pushed = S.events[S.n_events - 1u].seq;
+    plink_net_run(&NET, 11000);
+    TEST_ASSERT_EQUAL_UINT(reqs + 1u, M.ev_reqs);
+    TEST_ASSERT_EQUAL_UINT32(S.events[S.n_events - 1u].seq, K.events[K.ev_count - 1u].seq);
+    TEST_ASSERT_FALSE(K.ev_want);
+
+    /* A hole the master never answers for: asked for 4 times, then let be. */
+    M.serve_events = false;
+    before = K.events[K.ev_count - 1u].seq;
+    arm_disarm(1);
+    fm_send_events(&S.events[S.n_events - 1u], 1u, false);
+    M.pushed = S.events[S.n_events - 1u].seq;
+    plink_net_run(&NET, 30000);
+    TEST_ASSERT_EQUAL_UINT(reqs + 5u, M.ev_reqs);
+    TEST_ASSERT_EQUAL_UINT32(before, M.ev_req.after_seq);
+    TEST_ASSERT_FALSE(K.ev_want);
+    plink_net_run(&NET, 60000);
+    TEST_ASSERT_EQUAL_UINT(reqs + 5u, M.ev_reqs);
+    TEST_ASSERT_EQUAL_UINT32(S.events[S.n_events - 1u].seq, K.events[K.ev_count - 1u].seq);
+}
+
 /* ---- commands ----------------------------------------------------------------------------- */
 
 static bool cmd_done(void *ctx)
@@ -2090,6 +2147,7 @@ int main(void)
     RUN_TEST(test_config_bad_blob);
     RUN_TEST(test_zones_requested_on_crc_mismatch);
     RUN_TEST(test_events_backfill_and_ring);
+    RUN_TEST(test_events_hole_filled);
     RUN_TEST(test_command_and_retries);
     RUN_TEST(test_command_gives_up_at_3s);
     RUN_TEST(test_request_ids_unique_across_restart);

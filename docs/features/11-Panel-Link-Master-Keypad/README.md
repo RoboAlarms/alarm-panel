@@ -131,7 +131,7 @@ followed by fields, so later fields can be appended (LINK-017).
 | 0x21 | `ZONES` | M->K | sealed | zones_crc u32, first u16, count u16, rec_len u8, count x zone record |
 | 0x22 | `ZONES_REQ` | K->M | sealed | first u16, count u16 |
 | 0x23 | `CFG_REQ` | K->M | sealed | cfg_crc u32, offset u32, max u16 |
-| 0x24 | `CFG_PAGE` | M->K | sealed | cfg_crc u32, total u32, offset u32, bytes |
+| 0x24 | `CFG_PAGE` | M->K | sealed | cfg_crc u32, total u32, offset u32, len u16, len bytes |
 | 0x25 | `EV_REQ` | K->M | sealed | after_seq u32, max u8 |
 | 0x26 | `EVENTS` | M->K | sealed | flags u8 (bit 0: older ones were left out), count u8, rec_len u8, count x event record, oldest first |
 | 0x27 | `CMD` | K->M | sealed | req u32, op u8, op section, code (len u8 + ALARM_CODE_MAX_LEN bytes, zero-padded), new code (the same) |
@@ -146,7 +146,8 @@ partition), sys_troubles u32, sys_restored u32, dev_troubles u32, default_codes 
 program, bit 1 exit_sounds), recovery_left_ms u32, lockout_left_ms u32 (this keypad's own), report
 u8 (0 none, 1 offline, 2 online: the master's reporting, for the Emergency words, UI-029),
 zones_used u16, last_event_seq u32, cfg_crc u32, cfg_len u32, zones_crc u32. Then one record per
-enabled partition: number u8, length u8, then the fields of `alarm_partition_status_t` one by one
+enabled partition: number u8, length u8 (the bytes after it), then the fields of
+`alarm_partition_status_t` one by one
 (state, level, arm_flags, armed_by, arm_source kind u8 + id u16, ready_levels, a flags byte for
 ready, chime, walk_test, triggered, exit_error, trouble_unack, sounder, bell, delay_left_ms u32,
 memory, faults, bypassed, alarms, troubles u16 each, walk_left_ms u32, walk_age_ms u32, walk_id
@@ -165,7 +166,7 @@ never go up (UI-023).
 zones_crc is the CRC-32 of the records of zones 1..zones_used. The master pushes ZONES for the
 range that changed; a keypad whose own CRC differs after a STATUS asks with ZONES_REQ.
 
-**Event record** (31 B): seq u32, mono_ms u64, epoch_ms i64, type u16, partition u8, zone u16,
+**Event record** (32 B): seq u32, mono_ms u64, epoch_ms i64, type u16, partition u8, zone u16,
 user u8, source kind u8 + id u16, arg u8, arg2 u8, flags u8. The master pushes each new event,
 sealed, before the STATUS that carries its seq (the Home screen reads the entry zone and who armed
 from the events when the state changes); EV_REQ fills gaps: the newest `max` events after

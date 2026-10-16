@@ -89,6 +89,7 @@ static void enqueue(plink_net_t *net, int from, const plink_addr_t *to, const ui
     d->from_addr = net->node[from].addr;
     d->to = *to;
     d->at_ms = at;
+    d->order = net->q_order++;
     d->len = len;
     memcpy(d->b, frame, len);
 }
@@ -166,14 +167,17 @@ static void deliver(plink_net_t *net, const plink_net_dgram_t *d)
     }
 }
 
-/* Delivers every datagram due by now, earliest first. */
+/* Delivers every datagram due by now, earliest first; those due at the same ms in the order they
+ * were sent (only jitter reorders). */
 static void deliver_due(plink_net_t *net)
 {
     while (!net->hold) {
         size_t best = net->q_count;
         for (size_t i = 0; i < net->q_count; i++) {
-            if (net->q[i].at_ms <= net->now_ms &&
-                (best == net->q_count || net->q[i].at_ms < net->q[best].at_ms)) {
+            const plink_net_dgram_t *d = &net->q[i];
+            if (d->at_ms <= net->now_ms &&
+                (best == net->q_count || d->at_ms < net->q[best].at_ms ||
+                 (d->at_ms == net->q[best].at_ms && d->order < net->q[best].order))) {
                 best = i;
             }
         }

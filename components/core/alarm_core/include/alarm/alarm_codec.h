@@ -46,6 +46,15 @@ alarm_result_t alarm_config_encode(const alarm_config_t *cfg, uint8_t *buf, size
  * build's capacities, or a configuration alarm_config_validate() rejects. */
 alarm_result_t alarm_config_decode(const uint8_t *buf, size_t len, alarm_config_t *out);
 
+/* The same decode for a copy another panel made (CORE-CFG-022; docs/features/11
+ * "Configuration", LINK-019: a newer master's configuration on an older keypad, which must not
+ * be left blank): no alarm_config_validate(), and an entry whose index is beyond this build's
+ * capacities is skipped with its fields instead of refusing the blob. A value this build doesn't
+ * know (a zone type, an authority) is kept as it came. A damaged or incompatible blob - magic,
+ * compat, CRC, a truncated item, an index of 0, a value too wide or malformed for its field - is
+ * still refused. Never for the panel's own configuration: that one is alarm_config_decode()'s. */
+alarm_result_t alarm_config_decode_lenient(const uint8_t *buf, size_t len, alarm_config_t *out);
+
 /* CRC-32 (IEEE 802.3, reflected, as zlib). Chain calls by passing the previous result;
  * start with 0. */
 uint32_t alarm_crc32(uint32_t crc, const void *data, size_t len);

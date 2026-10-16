@@ -39,7 +39,8 @@ extern "C" {
 #define PLINK_PANEL_ID_LEN 6u /* the master's panel id, six hex characters (proto_panel_id) */
 #define PLINK_PARTS_MAX 8u  /* partition records a STATUS can carry (the mask is 8 bits) */
 #define PLINK_ZONE_REC_LEN  7u
-#define PLINK_EVENT_REC_LEN 31u
+#define PLINK_EVENT_REC_LEN 32u /* the record's fields add up to 32 bytes */
+#define PLINK_CFG_PAGE_HDR  14u /* CFG_PAGE's bytes before the page: cfg_crc, total, offset, len */
 
 /* What a keypad is (PAIR_REQ kind). Numbers are stored in the master's records: never renumber. */
 typedef enum {
@@ -210,7 +211,7 @@ typedef struct {
     uint32_t total;
     uint32_t offset;
     const uint8_t *data; /* points into the payload (decode) or the caller's blob (encode) */
-    uint16_t len;
+    uint16_t len;        /* the page's bytes; offset + len <= total (both codecs refuse others) */
 } plink_cfg_page_t;
 
 typedef struct {
@@ -300,6 +301,7 @@ bool plink_dec_status(const uint8_t *p, size_t len, plink_status_t *m);
 /* ZONES: zones first..first+count-1 from z (z[0] is zone first) as fit cap; *written is how many. */
 bool plink_enc_zones(uint32_t zones_crc, uint16_t first, const alarm_zone_status_t *z,
                      uint16_t count, uint8_t *out, size_t cap, size_t *len, uint16_t *written);
+/* Refuses records for zone 0 or past zone 65535 (both codecs), and fewer records than count. */
 bool plink_dec_zones(const uint8_t *p, size_t len, plink_zones_t *m);
 /* Record i of a decoded ZONES (i < m->count) into out. */
 void plink_zones_rec(const plink_zones_t *m, uint16_t i, alarm_zone_status_t *out);
@@ -319,7 +321,8 @@ bool plink_dec_ev_req(const uint8_t *p, size_t len, plink_ev_req_t *m);
  * and the gap flag set); *written is how many. */
 bool plink_enc_events(const alarm_event_t *ev, size_t n, uint8_t flags, uint8_t *out, size_t cap,
                       size_t *len, size_t *written);
-/* Decodes up to max events into out; *n how many, *flags the flags byte. */
+/* Decodes up to max events into out, oldest first (the newest max when there are more: the gap
+ * flag is then set in *flags); *n how many, *flags the flags byte. */
 bool plink_dec_events(const uint8_t *p, size_t len, alarm_event_t *out, size_t max, size_t *n,
                       uint8_t *flags);
 

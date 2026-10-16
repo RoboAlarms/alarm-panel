@@ -37,3 +37,26 @@ on a panel, `host/link_sim` on a PC) and drives the managers here with frames an
 `test/plink_test_port.c` is the PC crypto port (zwave_host's primitives, marked insecure, with a
 check that no AES-CCM key and nonce is ever used twice on one side); `test/plink_test_net.c` is a
 pretend network with loss, repeats, reordering, corruption and one direction cut on a fake clock.
+`test_plink_crypto.c` and `test_plink_frame.c` hold the known answers (RFC 3610, 4231, 5869, 7748)
+and golden frames; `test/vectors_plink_crypto.py` and `test/vectors_plink_frame.py` recompute every
+one of them with Python's `cryptography`, independently of the C code.
+
+`test_plink_pair.c` and `test_plink_session.c` check one honest pairing and one handshake byte for
+byte against `test/vectors_plink_pair.py` and `test/vectors_plink_session.py` (random numbers
+scripted through the port), then each state machine against a device in the middle, replays and
+every timer.
+
+`test_plink_master.c` runs the master's manager over the pretend network against scripted
+keypads built from the real pairing, handshake, session and message codecs, with the real engine
+(`alarm_sim`) behind it as the platform wires it (port.run answering from inside the call or
+later, a snapshot after every engine call). Every vector it needs comes from those codecs, which
+have their own known answers. A test of a network that damages frames watches only its own side's
+seals (`plink_test_port_t.only_dir`): a frame whose tag fails may be opened again under the same
+nonce, which is harmless.
+
+`test_plink_keypad.c` runs the keypad's manager against a scripted master made of the real pieces
+(pairing, the handshake answer, sessions, the codecs, STATUS from snapshots of the real engine)
+over the pretend network: pairing, the tentative session, the link's states and timers, LINK-026's
+ordering, the configuration pull, zones and events, commands and panic, BYE, REKEY and the
+handshake's back-off, the master moving. The keypad's port has an optional `resolve`: the platform
+looks for the master again before every handshake retry after the first failure.

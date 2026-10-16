@@ -71,6 +71,21 @@ static void sha256_block(proto_sha256_ctx_t *s, const uint8_t p[64])
     s->h[5] += f;
     s->h[6] += g;
     s->h[7] += h;
+    /* The schedule holds the block it came from (the panel link hashes keys and shared secrets
+     * through here): cleared through a volatile pointer, so the stores can't be dropped. */
+    volatile uint32_t *vw = w;
+    for (size_t i = 0; i < 64; i++) {
+        vw[i] = 0u;
+    }
+}
+
+/* Clears a context through a volatile pointer (the one-shot hash may be given a secret). */
+static void sha256_wipe(proto_sha256_ctx_t *s)
+{
+    volatile uint8_t *p = (volatile uint8_t *)s;
+    for (size_t i = 0; i < sizeof(*s); i++) {
+        p[i] = 0u;
+    }
 }
 
 void proto_sha256_init(proto_sha256_ctx_t *s)
@@ -142,4 +157,5 @@ void proto_sha256(const void *data, size_t len, uint8_t out[32])
     proto_sha256_init(&s);
     proto_sha256_update(&s, data, len);
     proto_sha256_final(&s, out);
+    sha256_wipe(&s);
 }

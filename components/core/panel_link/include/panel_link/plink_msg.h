@@ -183,6 +183,7 @@ typedef struct {
     uint32_t last_event_seq;
     uint32_t cfg_crc, cfg_len;
     uint32_t zones_crc;
+    uint64_t mono_ms; /* the master's engine time when the frame was sealed (0: not sent) */
     uint8_t count; /* records in part[] */
     plink_part_t part[PLINK_PARTS_MAX];
 } plink_status_t;

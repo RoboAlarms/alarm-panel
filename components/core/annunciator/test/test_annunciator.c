@@ -533,6 +533,47 @@ static void test_silent_exit_latched(void)
     expect_nothing();
 }
 
+/* LINK-028: a link keypad's baseline in an exit time (its link came back, or it started, after the
+ * master accepted the arm) joins that cycle: the arming isn't said, its end is - the actual mode,
+ * as the master's voice says it, once; a silent exit stays silent though auto-stay clears its
+ * flag; a baseline outside an exit time knows no cycle; an alarm panel never joins. */
+static void test_keypad_joins_an_exit_time(void)
+{
+    start(DISARMED_ST());
+    ann_join_exit(&A, true);
+    ann_rebaseline(&A); /* the link came back in the exit time */
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    expect_nothing();
+    ev(ALARM_EV_AUTO_STAY, 1u, ALARM_LEVEL_STAY, 0u);
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_STAY, 0u));
+    const uint16_t c[2] = {VP_ID_ARMED, VP_ID_HOME};
+    ann_utt_t u = expect_phrase(ANN_KIND_ARMED, c, 2u, 2u);
+    play(&u);
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_STAY, 0u));
+    expect_nothing();
+
+    /* a silent exit, latched from the baseline's flags */
+    ann_rebaseline(&A);
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, ALARM_ARM_SILENT_EXIT));
+    ev(ALARM_EV_AUTO_STAY, 1u, ALARM_LEVEL_STAY, 0u);
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_STAY, 0u));
+    expect_nothing();
+
+    /* a baseline already armed: no cycle, so an entry time that ends says nothing */
+    ann_rebaseline(&A);
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
+    commit(S(ALARM_STATE_ENTRY_DELAY, ALARM_LEVEL_AWAY, 0u));
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
+    expect_nothing();
+
+    /* an alarm panel: a restored exit time's end is no known cycle (test_baseline_silent) */
+    ann_join_exit(&A, false);
+    ann_rebaseline(&A);
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
+    expect_nothing();
+}
+
 /* D05: auto-stay is announced as the mode it became. */
 static void test_auto_stay_actual_mode(void)
 {
@@ -1263,6 +1304,7 @@ int main(void)
     RUN_TEST(test_speech_is_due_from_the_arm_to_the_words_end);
     RUN_TEST(test_instant_arm);
     RUN_TEST(test_silent_exit_latched);
+    RUN_TEST(test_keypad_joins_an_exit_time);
     RUN_TEST(test_auto_stay_actual_mode);
     RUN_TEST(test_exit_sounds_off);
     RUN_TEST(test_refused_arm);

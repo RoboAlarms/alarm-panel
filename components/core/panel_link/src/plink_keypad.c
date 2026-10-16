@@ -1511,6 +1511,15 @@ int64_t plink_keypad_epoch_ms(const plink_keypad_t *k, uint64_t now_ms)
     return 0;
 }
 
+uint64_t plink_keypad_mono_ms(const plink_keypad_t *k, uint64_t now_ms)
+{
+    if (k == NULL || !k->view.have_status || k->view.mono_ms == 0u) {
+        return 0u;
+    }
+    const uint64_t gone = now_ms > k->view.mono_at_ms ? now_ms - k->view.mono_at_ms : 0u;
+    return k->view.mono_ms + gone;
+}
+
 uint8_t plink_keypad_report(const plink_keypad_t *k)
 {
     return k != NULL ? k->view.report : (uint8_t)PLINK_REPORT_NONE;

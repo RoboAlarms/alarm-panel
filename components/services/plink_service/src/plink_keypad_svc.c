@@ -766,7 +766,8 @@ static void voice_feed(uint64_t now, const plink_keypad_info_t *info)
                                   .ev = s_ev_tmp,
                                   .n_ev = n,
                                   .epoch_ms = plink_keypad_epoch_ms(K.k, now),
-                                  .resync = resync};
+                                  .resync = resync,
+                                  .mono_ms = plink_keypad_mono_ms(K.k, now)};
     plink_vfeed_poll(&K.vf, now, &v);
 }
 

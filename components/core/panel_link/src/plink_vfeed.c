@@ -67,12 +67,29 @@ static const alarm_event_t *next_after(const plink_vfeed_view_t *v, uint32_t aft
     return best;
 }
 
-/* Stamped by the master long before its time now: a frame of it was held up (a link that lost
- * everything for a while without going LOST), so it is news no longer. */
+/* Made by the master long before its time now: a frame of it was held up (a link that lost
+ * everything for a while without going LOST), so it is news no longer. The master's engine time
+ * decides when the STATUS carries it (one from before the master's restart is ahead of it); its
+ * wall clock otherwise. */
 static bool stale(const plink_vfeed_view_t *v, const alarm_event_t *e)
 {
+    if (v->mono_ms != 0u && e->mono_ms != 0u) {
+        return e->mono_ms + PLINK_VFEED_STALE_MS < v->mono_ms ||
+               e->mono_ms > v->mono_ms + PLINK_VFEED_STALE_MS;
+    }
     return v->epoch_ms > 0 && e->epoch_ms > 0 &&
            e->epoch_ms < v->epoch_ms - (int64_t)PLINK_VFEED_STALE_MS;
+}
+
+/* When the home partition's exit time ends by this snapshot (keypad time; 0: none runs). */
+static uint64_t exit_end(const alarm_snapshot_t *s, uint8_t home)
+{
+    const alarm_partition_status_t *p = &s->part[home - 1u];
+    if ((s->partitions & (1u << (home - 1u))) == 0u || p->state != ALARM_STATE_EXIT_DELAY) {
+        return 0u;
+    }
+    const uint64_t end = (uint64_t)s->taken_ms + p->delay_remaining_ms;
+    return end != 0u ? end : 1u;
 }
 
 static void feed_event(plink_vfeed_t *f, const alarm_event_t *e)
@@ -94,6 +111,7 @@ static void baseline(plink_vfeed_t *f, const plink_vfeed_view_t *v)
     f->home = v->home;
     f->floor = v->snap->last_event_seq;
     f->snap_seq = v->snap->seq;
+    f->exit_until = exit_end(v->snap, v->home);
     batch_reset(f);
     f->baselines++;
     if (f->port.baseline != NULL) {
@@ -180,9 +198,18 @@ void plink_vfeed_poll(plink_vfeed_t *f, uint64_t now_ms, const plink_vfeed_view_
     /* The commit: a new snapshot, or the facts fed, once the batch has settled. */
     const bool snap_new = s->seq != f->snap_seq;
     if ((snap_new || f->batch_events || f->batch_sound) && now_ms >= f->settle_at) {
+        const alarm_partition_status_t *hp = &s->part[f->home - 1u];
+        if (f->exit_until != 0u && hp->state == ALARM_STATE_ARMED &&
+            now_ms > f->exit_until + PLINK_VFEED_STALE_MS) {
+            /* the exit time's end, long after it: news no longer (the header) */
+            f->late++;
+            baseline(f, v);
+            return;
+        }
         if (f->port.snapshot != NULL) {
             f->port.snapshot(f->port.ctx, s);
         }
+        f->exit_until = exit_end(s, f->home);
         f->snap_seq = s->seq;
         f->batch_sound = false;
         f->batch_events = false;

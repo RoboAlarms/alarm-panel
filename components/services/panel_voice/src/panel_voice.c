@@ -1092,6 +1092,7 @@ esp_err_t panel_voice_start(void)
     q_start();
     const ann_ports_t ports = {.ctx = NULL, .zone_words = port_zone_words, .clip_samples = port_clip_samples};
     ann_init(&s_ann, &ports, atomic_load(&s_part));
+    ann_join_exit(&s_ann, s_have_src); /* a link keypad joins an exit time it comes to late */
     apply_prefs_locked(now_ms());
     s_state = PANEL_VOICE_LOADING;
     atomic_store(&s_inited, true);
@@ -1344,12 +1345,16 @@ static void q_check_drops(void)
     unlock();
     /* a link keypad's baselines and pauses count as losses too, but aren't overflows */
     const uint32_t over = atomic_load(&s_q_overflows);
-    if (over != s_q_overflows_seen) {
+    const bool overflow = over != s_q_overflows_seen;
+    if (overflow) {
         s_q_overflows_seen = over;
         ESP_LOGW(TAG, "voice: the engine's facts overflowed; silent until a new baseline");
     }
     s_q_resync = true;
-    s_q_asked = false;
+    /* A source's own baseline or pause brings, or leads to, the baseline it needs: the source is
+     * asked only after an overflow (asking at every drop raced with a baseline on its way, and
+     * its second baseline cut what came between). The alarm task is asked every time. */
+    s_q_asked = s_have_src && !overflow;
 }
 
 static void q_apply(const pv_item_t *it)

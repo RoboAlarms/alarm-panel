@@ -55,6 +55,8 @@ typedef struct {
     uint32_t cfg_crc;     /* what the master has */
     uint32_t cfg_len;
     uint32_t zones_crc;   /* what the master has */
+    uint64_t mono_ms;     /* the master's engine time at the last status (0: not sent) */
+    uint64_t mono_at_ms;  /* local time it arrived */
     uint32_t walk_id[ALARM_MAX_PARTITIONS]; /* the master's walk start last mapped ... */
     alarm_ms_t walk_local[ALARM_MAX_PARTITIONS]; /* ... to this local start (0 none) */
 } plink_view_t;

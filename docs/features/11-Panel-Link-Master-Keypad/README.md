@@ -5,8 +5,8 @@ and the keypad's service (`plink_service`), the keypad role on the P4 panels, th
 2026-10-15) and the PC simulator (`host/link_sim`, `link_smoke` in CI), reviewed three times; on
 the two development panels (2026-10-16) pairing, commands, lockout, supervision, a master restart,
 removal and pairing again, and a PC keypad with a panel worked, a change shown on the keypad in
-about 0.3 s. A keypad's own voice (LINK-028, decided 2026-10-16) is built and host-tested, not yet
-tried on the panels. Left: the bench cases below that need a person or a network change, ESP-NOW
+about 0.3 s. A keypad's own voice (LINK-028, decided 2026-10-16) works on the panels, tried with
+both speakers muted. Left: the bench cases below that need a person or a network change, ESP-NOW
 through our C6 build, 433 MHz, keypad inputs, GOTO, the firmware relay (M8) · **Milestone:** M7 (the
 firmware relay M8) · **Depends on:** 01, 04, 09, 12, 15
 
@@ -77,7 +77,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-025 | After 10 min without system communication a keypad opens Wi-Fi, Software update, Pair again and "Make it a stand-alone panel" without a code: a keypad holds no codes and the master supervises it, so cutting it off is no worse than unplugging it; a keypad that is not paired (removed at the master, or never paired) opens them at once - no master could check a code, and it protects nothing | unit + HIL |
 | LINK-026 | A keypad applies a status block, partition record, zone record or time only when it came in a newer frame of the session than the one it last applied for that item | unit |
 | LINK-027 | The master accepts a keypad's commands for its home partition only (NOT_AUTHORIZED otherwise), one at a time with panic in a slot of its own, at most about 2 a second (a burst of 5); requests over their limits are dropped in the link task, before anything reaches the alarm task | unit |
-| LINK-028 | A keypad speaks its home partition's announcements (docs/features/08 D05) from the master's pushed events, sounds and status, with its own Announcements switches and Voice volume (D06; decided 2026-10-16); nothing older than its last baseline (a reconnect, a backfill, a master restart) is ever spoken, nor an event the master stamped more than 5 s before, and nothing while the link is not ONLINE | unit + HIL |
+| LINK-028 | A keypad speaks its home partition's announcements (docs/features/08 D05) from the master's pushed events, sounds and status, with its own Announcements switches and Voice volume (D06; decided 2026-10-16); nothing older than its last baseline (a reconnect, a backfill, a master restart) is ever spoken, nor an event the master made more than 5 s before its time now (by the engine time every STATUS carries, or its wall clock), nor the end of an exit time learned more than 5 s after the keypad's own countdown ended, and nothing while the link is not ONLINE; a keypad whose baseline falls in an exit time (it started, or its link came back) says that exit time's end as the master does | unit + HIL |
 
 ## Frame format (v1)
 
@@ -148,7 +148,9 @@ followed by fields, so later fields can be appended (LINK-017).
 partition), sys_troubles u32, sys_restored u32, dev_troubles u32, default_codes u8, flags u8 (bit 0
 program, bit 1 exit_sounds), recovery_left_ms u32, lockout_left_ms u32 (this keypad's own), report
 u8 (0 none, 1 offline, 2 online: the master's reporting, for the Emergency words, UI-029),
-zones_used u16, last_event_seq u32, cfg_crc u32, cfg_len u32, zones_crc u32. Then one record per
+zones_used u16, last_event_seq u32, cfg_crc u32, cfg_len u32, zones_crc u32, mono_ms u64 (the
+master's engine time when the frame was sealed, the clock of an event's mono_ms: a keypad's voice
+dates an event without the wall clock, LINK-028). Then one record per
 enabled partition: number u8, length u8 (the bytes after it), then the fields of
 `alarm_partition_status_t` one by one
 (state, level, arm_flags, armed_by, arm_source kind u8 + id u16, ready_levels, a flags byte for
@@ -395,11 +397,19 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   portable `plink_vfeed`: live only while ONLINE (leaving it pauses the voice, entering it gives a
   silent baseline, as do a new home and a master's log that started again); an event is fed only
   once a STATUS covers it (floor < seq <= last_event_seq), in order and once, and the floor moves
-  up, so a backfill, a catch-up or a hole filled late never speaks, nor an event the master
-  stamped more than 5 s before its time now; the commit waits up to 300 ms for events pushed ahead
-  of their STATUS or a hole being pulled, and a batch with events but no sound yet, or a sound
-  alone (a chime), waits 100 ms for the rest; the bell's test pulse is fed before a walk test's
-  start, as the engine emits it. One-shot sounds play tracked while the voice is fed. A zone's
+  up, so a backfill, a catch-up or a hole filled late never speaks, nor an event the master made
+  more than 5 s before its time now (by the master's engine time in every STATUS, `mono_ms`, or
+  else its wall clock); the end of an exit time has no event, so the commit that brings it more
+  than 5 s after the keypad's own countdown ended (that STATUS and both repeats lost) is a silent
+  baseline instead; the commit waits up to 300 ms for events pushed ahead of their STATUS or a
+  hole being pulled, and a batch with events but no sound yet, or a sound alone (a chime), waits
+  100 ms for the rest; the bell's test pulse is fed before a walk test's start, as the engine
+  emits it. A keypad's baseline in an exit time joins that arming (`ann_join_exit`; its silent
+  exit from the snapshot's flags), so a keypad that restarts or comes back during an exit time
+  says its end as the master does (found on the panels 2026-10-16: the keypad was silent).
+  The master hands a keypad an engine call's events only with the snapshot that covers them
+  (`take_engine_news` holds newer ones, 1 s at most), so no STATUS covers an event with the state
+  from before it. One-shot sounds play tracked while the voice is fed. A zone's
   words speak only with the pack revision they were approved with (the master's installer
   approves them; a keypad has no editor), and the master's D07 settling isn't on the wire, so for
   that moment a keypad may still say a zone's old approved name. Development builds log
@@ -556,12 +566,15 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   sounds, the master's SOUND before its STATUS, the keypad's Voice volume and Announcements (the
   role gate split: `ui_voice_editor_present`), the voice compared with the master's in
   `test_plink_link.c`, the preview's `bl-048-kp-announcements` (BL-048, 5720f24, 674a736)
-- [ ] On the panels, the keypad's announcements with both speakers muted (the `voice` counters and
-  the `says` log lines on both): arm away (Arming, then Armed), disarm, entry, not ready, a chime
-  with approved words (the keypad holding the master's pack revision), a walk test; the keypad's
-  Announcements, Status messages and Zone chime off and Voice volume 0 while the master speaks; a
-  keypad restart in an exit time and a link cut over 30 s saying nothing old; the keypad's
-  internal RAM at start-up beside before (LINK-028) (BL-048)
+- [x] On the panels with both speakers muted (2026-10-16; the `voice` counters and the `says` lines
+  on both, the keypad within 0.2 s of the master): arm (Arming, then Armed), disarm, entry, not
+  ready, a chime with approved words (the keypad holding the master's pack revision), a walk test's
+  start and end (its trips, and a chime, on zones without approved words silent on both), a keypad
+  restart in an exit time (Armed at its end once a baseline there joins the arming) (LINK-028)
+  (BL-048, 5720f24, 674a736)
+- [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
+  Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over
+  30 s saying nothing old; its internal RAM at start-up beside before (LINK-028) (BL-048)
 - [ ] ESP-NOW transport: through our C6 bridge on the P4 (docs/features/12 CP-003), native on the
   ESP32; the channel follows the master's access point (LINK-010) (M7) (BL-048)
 - [x] The engine's device supervision trouble for a silent keypad (LINK-007's engine side,

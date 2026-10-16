@@ -540,6 +540,11 @@ void ann_set_keypad(ann_t *a, uint8_t keypad_partition)
     ann_rebaseline(a); /* the old partition's state and cycle mean nothing for the new one */
 }
 
+void ann_join_exit(ann_t *a, bool on)
+{
+    a->join_exit = on;
+}
+
 void ann_set_prefs(ann_t *a, const ann_prefs_t *prefs, uint64_t now_ms)
 {
     a->prefs = *prefs;
@@ -650,10 +655,13 @@ void ann_output(ann_t *a, alarm_output_t output, uint8_t partition, alarm_patter
 void ann_commit(ann_t *a, const ann_state_t *st, uint64_t now_ms)
 {
     if (!a->have_baseline) {
-        /* The silent baseline: whatever the state is, it isn't news. */
+        /* The silent baseline: whatever the state is, it isn't news (a link keypad joins an exit
+         * time's cycle, ann_join_exit). */
         a->st = *st;
         a->have_baseline = true;
-        a->cycle = false;
+        a->cycle = a->join_exit && st->state == ALARM_STATE_EXIT_DELAY;
+        a->cycle_silent = a->cycle && (st->arm_flags & ALARM_ARM_SILENT_EXIT) != 0u;
+        a->cycle_armed_said = false;
         memset(&a->batch, 0, sizeof(a->batch));
         return;
     }

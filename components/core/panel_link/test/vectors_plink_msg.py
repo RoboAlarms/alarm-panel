@@ -92,9 +92,9 @@ def vectors():
     v["G_WELCOME"] = struct.pack("<BH", 1, 0) + seq(0x10, 16) + seq(0x30, 32) + seq(0xF0, 16)
     v["G_REKEY"] = struct.pack("<I", 0x89ABCDEF)
 
-    system = section(struct.pack("<qBBIIIBBIIBHIIII", 0x0102030405060708, 0x05, 1, 9, 2, 4, 3,
+    system = section(struct.pack("<qBBIIIBBIIBHIIIIQ", 0x0102030405060708, 0x05, 1, 9, 2, 4, 3,
                                  0x03, 120000, 30000, 2, 16, 1234, 0xCAFEBABE, 0x1234,
-                                 0x12345678))
+                                 0x12345678, 0x112233445566))
     p1 = dict(state=3, level=1, arm_flags=0x02, armed_by=5, arm_src_kind=1, arm_src_id=3,
               ready_levels=0x0E, flags=0x2D, sounder=4, bell=1, delay_left_ms=31000,
               memory=0x8002, faults=2, bypassed=1, alarms=3, troubles=4, walk_left_ms=60000,

@@ -365,6 +365,7 @@ static void v_start(voice_t *v, const plink_keypad_t *kk, uint8_t part, uint64_t
     v->s.now = now;
     const ann_ports_t ports = {v, v_words, v_clip};
     ann_init(&v->s.a, &ports, part);
+    ann_join_exit(&v->s.a, kk != NULL); /* panel_voice with a source: a link keypad */
     const ann_prefs_t p = {true, true, true, 70u, false};
     ann_set_prefs(&v->s.a, &p, now);
     const ann_pack_t pack = {true, V_PACK_REV, VP_WORD_GAP_MS, VP_PART_GAP_MS};
@@ -988,7 +989,8 @@ static void observe(kp_t *k)
                                          evs,
                                          n,
                                          plink_keypad_epoch_ms(&k->k, t),
-                                         false};
+                                         false,
+                                         plink_keypad_mono_ms(&k->k, t)};
         k->v.s.now = t;
         plink_vfeed_poll(&k->v.s.f, t, &view);
         v_step(&k->v, t);
@@ -3153,11 +3155,13 @@ static void test_a_keypad_says_what_the_master_says(void)
 }
 
 /* LINK-028: nothing older than a keypad's last baseline is said - after it restarts in an exit
- * time (not the arming before it, nor Armed at its end: an arming it never heard, D05), after the
- * master restarts (its log starts again), after a cut longer than 30 s (LOST: the voice paused;
- * the catch-up and the backfill after it) - and nothing late after a cut too short for LOST (its
- * events come in only with the pull, long after the master stamped them). Each time it speaks
- * again with the next change. */
+ * time (not the arming before it; Armed at its end, as the master says it: a baseline in an exit
+ * time joins its cycle), after the master restarts (its log starts again), after a cut longer
+ * than 30 s (LOST: the voice paused; the catch-up and the backfill after it) - and nothing late
+ * after a cut too short for LOST: neither the arm made in it (its events come in only with the
+ * pull, long after the master stamped them) nor Armed when the cut spans the end of an exit time
+ * it heard begin (the STATUS that brings it carries a master snapshot already old). Each time it
+ * speaks again with the next change. */
 static void test_a_keypad_says_nothing_old(void)
 {
     voice_words();
@@ -3183,7 +3187,7 @@ static void test_a_keypad_says_nothing_old(void)
     run_ms(2000u);
     static const uint8_t ARMED[] = {ANN_KIND_ARMED};
     said_kinds(&R.mv, r0, ARMED, 1u);
-    said_kinds(&a->v, k0, NULL, 0u);
+    said_same(a, k0, r0, 1000u);
     k0 = a->v.n_said;
     r0 = R.mv.n_said;
     kdo(a, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER, 1000u, ALARM_OK);
@@ -3243,9 +3247,39 @@ static void test_a_keypad_says_nothing_old(void)
     TEST_ASSERT_TRUE(run_until(65000u, c_shows, &w));
     run_ms(2000u);
     said_kinds(&R.mv, r0, (const uint8_t[]){ANN_KIND_ARMING, ANN_KIND_ARMED}, 2u);
-    said_kinds(&a->v, k0, NULL, 0u);
-    TEST_ASSERT_TRUE(a->v.s.f.stale >= 1u);
+    /* at most Armed at the end, in time with the master's (the late STATUS was a baseline in the
+     * exit time, which joins its cycle) */
+    TEST_ASSERT_TRUE(said_as_master(a, k0, r0, 1000u) <= 1u);
+    for (unsigned i = k0; i < a->v.n_said; i++) {
+        TEST_ASSERT_EQUAL_STRING(kind_name(ANN_KIND_ARMED), kind_name(a->v.said[i].kind));
+    }
+    TEST_ASSERT_TRUE(a->v.s.f.stale + a->v.s.f.late >= 1u);
     /* and with the next change it speaks */
+    k0 = a->v.n_said;
+    r0 = R.mv.n_said;
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER, 1000u, ALARM_OK);
+    run_ms(2000u);
+    said_kinds(&R.mv, r0, DISARMED, 1u);
+    said_same(a, k0, r0, 1000u);
+
+    /* a cut of 20 s across the end of an exit time it heard begin: Armed comes in only with a
+     * STATUS long after the master said it, and isn't said */
+    k0 = a->v.n_said;
+    r0 = R.mv.n_said;
+    kdo(a, PLINK_OP_COMMAND, ALARM_CMD_ARM, 1u, ALARM_LEVEL_AWAY, CODE_USER, 1000u, ALARM_OK);
+    run_ms(2000u);
+    said_kinds(&a->v, k0, ARMING, 1u);
+    const unsigned late = a->v.s.f.late;
+    run_ms(50000u);
+    R.net.cut_to = a->node;
+    run_ms(20000u);
+    R.net.cut_to = -1;
+    TEST_ASSERT_EQUAL_UINT(lost, a->lost); /* never LOST */
+    TEST_ASSERT_TRUE(run_until(15000u, c_synced, a));
+    run_ms(2000u);
+    said_kinds(&R.mv, r0, (const uint8_t[]){ANN_KIND_ARMING, ANN_KIND_ARMED}, 2u);
+    said_kinds(&a->v, k0, ARMING, 1u);
+    TEST_ASSERT_EQUAL_UINT(late + 1u, a->v.s.f.late);
     k0 = a->v.n_said;
     r0 = R.mv.n_said;
     kdo(a, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_USER, 1000u, ALARM_OK);

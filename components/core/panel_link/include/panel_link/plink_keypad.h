@@ -266,6 +266,9 @@ bool plink_keypad_take_sound(plink_keypad_t *k, plink_sound_t *out);
 bool plink_keypad_take_time(plink_keypad_t *k, plink_time_t *out);
 /* The master's epoch now, from the last status (0 not known). */
 int64_t plink_keypad_epoch_ms(const plink_keypad_t *k, uint64_t now_ms);
+/* The master's engine time now (an event's mono_ms clock), from the last status (0 not known:
+ * none yet, or a master that sends none). */
+uint64_t plink_keypad_mono_ms(const plink_keypad_t *k, uint64_t now_ms);
 /* The master's reporting state (PLINK_REPORT_*). */
 uint8_t plink_keypad_report(const plink_keypad_t *k);
 

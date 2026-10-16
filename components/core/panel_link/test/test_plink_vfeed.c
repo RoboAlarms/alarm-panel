@@ -6,7 +6,8 @@
  * backfill, catch-up or late hole fill passes; covered events only, in seq order, once; the hold
  * for events ahead of their STATUS and for a hole, 300 ms at most; the settle that lets an ACK or
  * ERROR join its batch and commits a chime; LOST, a new home, a master's log started again and
- * the voice's own request; the walk test's bell; stale events; the deadlines.
+ * the voice's own request; the walk test's bell; stale events; an exit time's end long after it;
+ * the deadlines.
  * Requirements: LINK-028 (docs/features/11); WALK-003's bell test before the walk-test start
  * (docs/features/40), D05 (docs/features/08 voice-first-build.md).
  */
@@ -18,6 +19,7 @@
 #include "unity.h"
 
 #define EPOCH0 1790000000000ll
+#define MONO0  7000000ull /* the master's engine time when the keypad's clock reads 0 */
 
 /* ---- the recording port ---------------------------------------------------------------------- */
 
@@ -107,6 +109,7 @@ static bool ONLINE;
 static uint8_t HOME;
 static bool RESYNC;
 static bool CLOCK; /* the master's wall clock is known */
+static bool MONO; /* the STATUS carries the master's engine time */
 static alarm_snapshot_t SNAP;
 static alarm_event_t RING[PLINK_EVENTS_KEPT]; /* oldest first, as the keypad keeps them */
 static size_t NR;
@@ -115,6 +118,11 @@ static alarm_event_t VIEW[2u * PLINK_EVENTS_KEPT]; /* newest first */
 static int64_t epoch_now(void)
 {
     return EPOCH0 + (int64_t)T;
+}
+
+static uint64_t mono_now(void)
+{
+    return MONO0 + T;
 }
 
 /* An event the master pushed (or a pull brought), stamped `age_ms` before now. */
@@ -131,6 +139,7 @@ static void got_aged(uint32_t seq, alarm_event_type_t type, uint8_t partition, u
     RING[i].type = type;
     RING[i].partition = partition;
     RING[i].epoch_ms = epoch_now() - (int64_t)age_ms;
+    RING[i].mono_ms = mono_now() - age_ms;
     NR++;
 }
 
@@ -139,11 +148,13 @@ static void got(uint32_t seq, alarm_event_type_t type)
     got_aged(seq, type, 1u, 0u);
 }
 
-/* A STATUS applied: the snapshot's seq rises, its last_event_seq says what it covers. */
+/* A STATUS applied: the snapshot's seq rises, its last_event_seq says what it covers, and it was
+ * taken now (the keypad's clock, as plink_view rebuilds it). */
 static void status(uint32_t last)
 {
     SNAP.last_event_seq = last;
     SNAP.seq++;
+    SNAP.taken_ms = T;
 }
 
 static void poll(void)
@@ -151,7 +162,8 @@ static void poll(void)
     for (size_t i = 0; i < NR; i++) {
         VIEW[i] = RING[NR - 1u - i];
     }
-    const plink_vfeed_view_t v = {ONLINE, HOME, &SNAP, VIEW, NR, CLOCK ? epoch_now() : 0, RESYNC};
+    const plink_vfeed_view_t v = {ONLINE, HOME,   &SNAP, VIEW, NR, CLOCK ? epoch_now() : 0,
+                                  RESYNC, MONO ? mono_now() : 0u};
     RESYNC = false;
     plink_vfeed_poll(&F, T, &v);
 }
@@ -208,6 +220,7 @@ void setUp(void)
     HOME = 1u;
     RESYNC = false;
     CLOCK = true;
+    MONO = true;
     memset(&SNAP, 0, sizeof SNAP);
     SNAP.partitions = 0x01u;
     NR = 0u;
@@ -323,7 +336,7 @@ static void test_covered_events_in_order_once(void)
     VIEW[0] = RING[NR - 2u]; /* 13 */
     VIEW[1] = RING[NR - 1u]; /* 14 */
     VIEW[2] = RING[NR - 2u]; /* 13 again */
-    const plink_vfeed_view_t v = {true, 1u, &SNAP, VIEW, 3u, epoch_now(), false};
+    const plink_vfeed_view_t v = {true, 1u, &SNAP, VIEW, 3u, epoch_now(), false, mono_now()};
     plink_vfeed_poll(&F, T, &v);
     expect_calls(2u);
     expect_event(0u, 13u);
@@ -554,9 +567,11 @@ static void test_walk_test_start_gets_the_bell_first(void)
     expect_event(2u, 12u);
 }
 
-/* LINK-028: an event the master stamped more than 5 s before its time now (every frame lost for a
- * while, the link not LOST) is never said, and the floor moves past it; without the master's
- * time no event counts as stale. */
+/* LINK-028: an event the master made more than 5 s before its time now (every frame lost for a
+ * while, the link not LOST) is never said, and the floor moves past it: by the master's engine
+ * time, which every STATUS carries, the wall clock not needed; by the wall clock when a master
+ * sends no engine time; an event from before the master's restart (ahead of its time now) is no
+ * news either; with neither, the events' age can't be known. */
 static void test_stale_events_are_never_said(void)
 {
     online_at_10();
@@ -567,13 +582,88 @@ static void test_stale_events_are_never_said(void)
     expect_calls(1u);
     expect_event(0u, 12u);
     TEST_ASSERT_EQUAL_UINT32(1u, F.stale);
+    /* the engine time alone */
     CLOCK = false;
     got_aged(13u, ALARM_EV_ARMED, 1u, 60000u);
-    status(13u);
+    got(14u, ALARM_EV_DISARMED);
+    status(14u);
     T += PLINK_VFEED_SETTLE_MS;
     poll();
+    TEST_ASSERT_EQUAL_UINT32(2u, F.stale);
+    expect_event(N - 1u, 14u);
+    /* the wall clock alone */
+    CLOCK = true;
+    MONO = false;
+    got_aged(15u, ALARM_EV_ARMED, 1u, 60000u);
+    status(15u);
+    T += PLINK_VFEED_SETTLE_MS;
+    poll();
+    TEST_ASSERT_EQUAL_UINT32(3u, F.stale);
+    /* from before the master's restart: its engine time is ahead of the master's now */
+    MONO = true;
+    got_aged(16u, ALARM_EV_ARMED, 1u, 0u);
+    RING[NR - 1u].mono_ms = mono_now() + PLINK_VFEED_STALE_MS + 1000u;
+    status(16u);
+    T += PLINK_VFEED_SETTLE_MS;
+    poll();
+    TEST_ASSERT_EQUAL_UINT32(4u, F.stale);
     TEST_ASSERT_EQUAL_UINT(2u, count(C_EVENT));
-    expect_event(N - 1u, 13u);
+    /* neither: no way to tell */
+    CLOCK = false;
+    MONO = false;
+    got_aged(17u, ALARM_EV_ARMED, 1u, 60000u);
+    status(17u);
+    T += PLINK_VFEED_SETTLE_MS;
+    poll();
+    TEST_ASSERT_EQUAL_UINT(3u, count(C_EVENT));
+    expect_event(N - 1u, 17u);
+}
+
+/* LINK-028: the end of an exit time has no event; the commit that brings it more than 5 s after
+ * the keypad's own countdown ended (the STATUS saying so and both its repeats lost) is a silent
+ * baseline. In time, it commits; a baseline taken in the exit time counts down too. */
+static void test_an_exit_end_long_after_is_a_silent_baseline(void)
+{
+    online_at_10();
+    SNAP.part[0].state = ALARM_STATE_EXIT_DELAY;
+    SNAP.part[0].delay_remaining_ms = 30000u;
+    status(10u);
+    poll();
+    expect_calls(1u);
+    TEST_ASSERT_EQUAL_UINT8(C_SNAPSHOT, LOG[0].call);
+    /* the exit time ended 6 s ago by the keypad's countdown */
+    T += 30000u + PLINK_VFEED_STALE_MS + 1000u;
+    SNAP.part[0].state = ALARM_STATE_ARMED;
+    SNAP.part[0].delay_remaining_ms = 0u;
+    status(10u);
+    poll();
+    expect_calls(2u);
+    TEST_ASSERT_EQUAL_UINT8(C_BASELINE, LOG[1].call);
+    TEST_ASSERT_EQUAL_UINT32(1u, F.late);
+    /* a later STATUS of the armed state: a commit */
+    T += 10000u;
+    status(10u);
+    poll();
+    expect_calls(3u);
+    TEST_ASSERT_EQUAL_UINT8(C_SNAPSHOT, LOG[2].call);
+
+    /* in time: a baseline in an exit time, then its end 1 s after the countdown's */
+    N = 0u;
+    SNAP.part[0].state = ALARM_STATE_EXIT_DELAY;
+    SNAP.part[0].delay_remaining_ms = 20000u;
+    status(10u);
+    RESYNC = true;
+    poll();
+    expect_calls(1u);
+    TEST_ASSERT_EQUAL_UINT8(C_BASELINE, LOG[0].call);
+    T += 21000u;
+    SNAP.part[0].state = ALARM_STATE_ARMED;
+    SNAP.part[0].delay_remaining_ms = 0u;
+    status(10u);
+    poll();
+    expect_calls(2u);
+    TEST_ASSERT_EQUAL_UINT8(C_SNAPSHOT, LOG[1].call);
+    TEST_ASSERT_EQUAL_UINT32(1u, F.late);
 }
 
 /* LINK-028: plink_vfeed_next says when a hold or a settle ends, nothing otherwise. */
@@ -613,6 +703,7 @@ int main(void)
     RUN_TEST(test_resync_is_a_baseline_only_while_online);
     RUN_TEST(test_walk_test_start_gets_the_bell_first);
     RUN_TEST(test_stale_events_are_never_said);
+    RUN_TEST(test_an_exit_end_long_after_is_a_silent_baseline);
     RUN_TEST(test_next_is_the_hold_or_the_settle);
     return UNITY_END();
 }

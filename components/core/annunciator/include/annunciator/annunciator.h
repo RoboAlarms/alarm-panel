@@ -214,6 +214,7 @@ typedef struct {
     bool cycle;
     bool cycle_silent;       /* silent exit, latched at acceptance */
     bool cycle_armed_said;
+    bool join_exit;          /* a baseline in the exit time joins its cycle (a link keypad) */
     uint32_t walk_gen;
     uint32_t warn_gen;
     /* Bumped before deciding each accepted arm, state-changing disarm and entry start: status
@@ -238,6 +239,13 @@ void ann_rebaseline(ann_t *a);
  * which its master may move): set, then a rebaseline - the next commit is silent, and nothing of
  * the old partition is said after it. */
 void ann_set_keypad(ann_t *a, uint8_t keypad_partition);
+
+/* A link keypad (docs/features/11 LINK-028): its baseline comes whenever its link does, often in
+ * the middle of an arming its master accepted - so a baseline taken in the exit time joins that
+ * cycle, and its end says the armed mode as the master's voice does. The silent exit is latched
+ * from the baseline's flags (auto-stay clears it only at the end). Nothing of the arming itself is
+ * said. Off on an alarm panel: a restored exit time that ends is no known cycle (D05). */
+void ann_join_exit(ann_t *a, bool on);
 
 /* Preferences and pack. A change that forbids speech cancels it (AUD-015); a new or lost pack
  * cancels everything (its generation). */

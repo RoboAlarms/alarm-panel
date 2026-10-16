@@ -15,9 +15,13 @@
  *   - An event is fed only once a snapshot covers it (floor < seq <= last_event_seq), in seq
  *     order and once; then the floor moves to last_event_seq. A backfill, a catch-up or a hole
  *     filled after its batch is at or below the floor and never speaks, and neither does an event
- *     the master stamped more than PLINK_VFEED_STALE_MS before the master's time now (a link that
- *     dropped every frame for a while without going LOST): loss means a missing announcement,
- *     never a late one.
+ *     the master made more than PLINK_VFEED_STALE_MS before its time now (a link that dropped
+ *     every frame for a while without going LOST): by the master's engine time, which every
+ *     STATUS carries, or else by its wall clock. Loss means a missing announcement, never a late
+ *     one.
+ *   - The end of an exit time has no event: the commit that brings it (EXIT_DELAY to ARMED) more
+ *     than PLINK_VFEED_STALE_MS after the exit time's end by the keypad's own countdown (its
+ *     STATUS and both repeats were lost) is a silent baseline instead.
  *   - The commit is held, PLINK_VFEED_HOLD_MS at most, while pushed events are ahead of the
  *     snapshot (the STATUS that covers them is on its way) or covered ones are missing from the
  *     ring (a pull is under way).
@@ -75,6 +79,7 @@ typedef struct {
     size_t n_ev;
     int64_t epoch_ms;             /* the master's clock now (plink_keypad_epoch_ms), 0 unknown */
     bool resync;                  /* the voice asked for a baseline */
+    uint64_t mono_ms;             /* the master's engine time now (plink_keypad_mono_ms), 0 unknown */
 } plink_vfeed_view_t;
 
 typedef struct {
@@ -84,6 +89,7 @@ typedef struct {
     uint8_t home;        /* the baseline's partition */
     uint32_t floor;      /* the newest event seq accounted for */
     uint32_t snap_seq;   /* the snapshot last committed (or the baseline's) */
+    uint64_t exit_until; /* the home partition's exit time ends then, by it (0: none running) */
     bool batch_sound;    /* a sound was fed since the last commit */
     bool batch_events;   /* events were fed since the last commit */
     uint64_t settle_at;  /* the open batch commits no sooner */
@@ -91,7 +97,7 @@ typedef struct {
     bool hold_spent;     /* the hold ran out: none again until its cause is gone */
     uint64_t hold_since;
     /* counters (tests, the console) */
-    uint32_t baselines, pauses, events, sounds, commits, stale;
+    uint32_t baselines, pauses, events, sounds, commits, stale, late;
 } plink_vfeed_t;
 
 void plink_vfeed_init(plink_vfeed_t *f, const plink_vfeed_port_t *port);

@@ -22,7 +22,9 @@ How the platform drives it, on the one thread that owns it:
    bell, then `ann_commit()` with `ann_state_from_snapshot()` of the snapshot after the call. The
    first commit (and the first after `ann_rebaseline()`) is a silent baseline. A panel-link
    keypad speaks for its home partition, which its master may move: `ann_set_keypad()` sets it
-   and rebaselines (docs/features/11 LINK-028).
+   and rebaselines (docs/features/11 LINK-028); with `ann_join_exit()` on (a link keypad), a
+   baseline taken in an exit time joins that arming, so its end says the armed mode as the
+   master's voice does; an alarm panel leaves it off (a restored exit time is no known cycle).
 3. `ann_ticket()` for each tracked tone's PLAYED / CANCELED, `ann_bell_test_done()` when the bell
    test pulse has ended.
 4. The worker: `ann_next()` for the next utterance, `ann_current()` (or `ann_generation()` against
@@ -38,7 +40,7 @@ and the active pack speaks. Clip lengths come through `ann_ports_t.clip_samples`
 ## Public API
 | Header | What it offers |
 |---|---|
-| `include/annunciator/annunciator.h` | `ann_init()`, `ann_rebaseline()`, `ann_set_keypad()`, `ann_set_prefs()`, `ann_set_pack()`, `ann_event()`, `ann_sound()`, `ann_output()`, `ann_commit()`, `ann_ticket()`, `ann_bell_test_done()`, `ann_preview()`, `ann_next()`, `ann_current()`, `ann_done()`, `ann_cancel_all()`, `ann_generation()`, `ann_waiting()`, `ann_due()`, `ann_priority()`, `ann_state_from_snapshot()`, `ann_pack_clip_samples()`; `ann_t`, `ann_utt_t`, `ann_ports_t`, `ann_prefs_t`, `ann_pack_t`, `ann_state_t`, `ann_zone_words_t`, the limits (`ANN_*`) |
+| `include/annunciator/annunciator.h` | `ann_init()`, `ann_rebaseline()`, `ann_set_keypad()`, `ann_join_exit()`, `ann_set_prefs()`, `ann_set_pack()`, `ann_event()`, `ann_sound()`, `ann_output()`, `ann_commit()`, `ann_ticket()`, `ann_bell_test_done()`, `ann_preview()`, `ann_next()`, `ann_current()`, `ann_done()`, `ann_cancel_all()`, `ann_generation()`, `ann_waiting()`, `ann_due()`, `ann_priority()`, `ann_state_from_snapshot()`, `ann_pack_clip_samples()`; `ann_t`, `ann_utt_t`, `ann_ports_t`, `ann_prefs_t`, `ann_pack_t`, `ann_state_t`, `ann_zone_words_t`, the limits (`ANN_*`) |
 
 ## Depends on
 - Project components: `alarm_core` (event, sound and snapshot types), `voice_pack` (clip IDs, `vp_find`)

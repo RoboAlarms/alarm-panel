@@ -61,6 +61,7 @@ static const char *TAG = "plink";
 #define PUBLISH_MS      500u
 #define CFG_RETRY_MS    1000u
 #define CLOCK_STEP_MS   2000
+#define EV_HOLD_MS      1000u /* the longest an event waits for the snapshot that covers it */
 
 typedef struct {
     uint8_t partition;
@@ -78,6 +79,7 @@ static atomic_uint s_dropped;
 static plink_master_t *s_m;      /* PSRAM */
 static alarm_snapshot_t *s_snap; /* the newest snapshot copy, PSRAM */
 static bool s_have_snap;
+static uint64_t s_ev_held_since; /* an event newer than s_snap waits (take_engine_news); 0: none */
 static alarm_event_t *s_ring;   /* events_after's copy of the engine's ring, PSRAM */
 static uint32_t s_cfg_seq_done; /* the engine's config_seq the keypads' copy was made for */
 static bool s_cfg_done;
@@ -612,15 +614,36 @@ static void take_engine_news(uint64_t now)
         alarm_service_get_snapshot(s_snap);
         s_have_snap = true;
     }
+    /* An engine call hands its events over as it runs and its snapshot only after its store
+     * flush: an event newer than the snapshot copied waits for the turn whose news covers it,
+     * with the sounds behind it, so no STATUS covers an event with the state from before it (a
+     * keypad's voice would decide on that state; LINK-028). Every call that makes events ends
+     * with a new snapshot; EV_HOLD_MS bounds the wait all the same. */
     QueueHandle_t evq = __atomic_load_n(&s_ev_q, __ATOMIC_ACQUIRE);
     alarm_event_t ev;
-    while (evq != NULL && xQueueReceive(evq, &ev, 0) == pdTRUE) {
+    bool held = false;
+    while (evq != NULL && xQueuePeek(evq, &ev, 0) == pdTRUE) {
+        if (s_have_snap && ev.seq > s_snap->last_event_seq) {
+            if (s_ev_held_since == 0u) {
+                s_ev_held_since = now;
+            }
+            if (now - s_ev_held_since < EV_HOLD_MS) {
+                held = true;
+                break;
+            }
+        }
+        if (xQueueReceive(evq, &ev, 0) != pdTRUE) {
+            break;
+        }
         plink_master_event(s_m, now, &ev);
     }
-    QueueHandle_t sq = __atomic_load_n(&s_sound_q, __ATOMIC_ACQUIRE);
-    sound_t s;
-    while (sq != NULL && xQueueReceive(sq, &s, 0) == pdTRUE) {
-        plink_master_sound(s_m, now, s.partition, s.sound, s.zone);
+    if (!held) {
+        s_ev_held_since = 0u;
+        QueueHandle_t sq = __atomic_load_n(&s_sound_q, __ATOMIC_ACQUIRE);
+        sound_t s;
+        while (sq != NULL && xQueueReceive(sq, &s, 0) == pdTRUE) {
+            plink_master_sound(s_m, now, s.partition, s.sound, s.zone);
+        }
     }
     if (news) {
         plink_master_snapshot(s_m, now, s_snap, link_epoch_ms(), s_report);

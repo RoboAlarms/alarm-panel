@@ -166,6 +166,7 @@ void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
         crc_zones = x->zones_cap;
     }
     out->zones_crc = plink_zones_crc(snap->zone, crc_zones);
+    out->mono_ms = now_ms; /* a keypad's voice tells an old event without the wall clock */
     for (uint8_t p = 1u; p <= ALARM_MAX_PARTITIONS && out->count < PLINK_PARTS_MAX; p++) {
         if ((out->partitions & (1u << (p - 1u))) != 0u) {
             part_build(&snap->part[p - 1u], p, taken, now_ms, &out->part[out->count++]);
@@ -324,6 +325,8 @@ void plink_view_apply_status(plink_view_t *v, const plink_status_t *st, uint64_t
     v->cfg_crc = st->cfg_crc;
     v->cfg_len = st->cfg_len;
     v->zones_crc = st->zones_crc;
+    v->mono_ms = st->mono_ms;
+    v->mono_at_ms = now_ms;
 }
 
 void plink_view_apply_zones(plink_view_t *v, const plink_zones_t *z)

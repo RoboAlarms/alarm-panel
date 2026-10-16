@@ -351,6 +351,7 @@ static void w_status_system(plink_w_t *w, const plink_status_t *m)
     plink_w_u32(w, m->cfg_crc);
     plink_w_u32(w, m->cfg_len);
     plink_w_u32(w, m->zones_crc);
+    plink_w_u64(w, m->mono_ms);
     plink_w_section_end(w, at);
 }
 
@@ -373,6 +374,7 @@ static void r_status_system(plink_r_t *r, plink_status_t *m)
     m->cfg_crc = plink_r_u32(&s);
     m->cfg_len = plink_r_u32(&s);
     m->zones_crc = plink_r_u32(&s);
+    m->mono_ms = plink_r_u64(&s);
 }
 
 /* A partition record: its number, then its fields as a section (docs/features/11 "STATUS"). */

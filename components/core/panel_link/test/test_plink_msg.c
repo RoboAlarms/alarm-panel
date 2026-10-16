@@ -106,8 +106,8 @@ static const uint8_t G_WELCOME[] = {
 static const uint8_t G_REKEY[] = {0xEF, 0xCD, 0xAB, 0x89}; /* sid 0x89ABCDEF */
 
 static const uint8_t G_STATUS[] = {
-    /* system section: 51 bytes */
-    0x33,
+    /* system section: 59 bytes */
+    0x3B,
     0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, /* epoch_ms 0x0102030405060708 */
     0x05,                   /* partitions 1 and 3 */
     0x01,                   /* home 1 */
@@ -124,6 +124,7 @@ static const uint8_t G_STATUS[] = {
     0xBE, 0xBA, 0xFE, 0xCA, /* cfg_crc */
     0x34, 0x12, 0x00, 0x00, /* cfg_len */
     0x78, 0x56, 0x34, 0x12, /* zones_crc */
+    0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0x00, 0x00, /* mono_ms 0x112233445566 */
     /* partition 1: 52 bytes */
     0x01, 0x34,
     0x03,                   /* state: entry delay */
@@ -953,6 +954,7 @@ static void golden_status(plink_status_t *st)
     st->cfg_crc = 0xCAFEBABEu;
     st->cfg_len = 0x1234;
     st->zones_crc = 0x12345678u;
+    st->mono_ms = 0x112233445566ull;
     st->count = 2;
     plink_part_t *p = &st->part[0];
     p->number = 1;
@@ -1039,6 +1041,7 @@ static void expect_system(const plink_status_t *e, const plink_status_t *g)
     TEST_ASSERT_EQUAL_HEX32(e->cfg_crc, g->cfg_crc);
     TEST_ASSERT_EQUAL_UINT32(e->cfg_len, g->cfg_len);
     TEST_ASSERT_EQUAL_HEX32(e->zones_crc, g->zones_crc);
+    TEST_ASSERT_EQUAL_UINT64(e->mono_ms, g->mono_ms);
 }
 
 static void expect_status(const plink_status_t *e, const plink_status_t *g)
@@ -1371,6 +1374,7 @@ static void test_random_round_trips(void)
         st.cfg_crc = rnd32();
         st.cfg_len = rnd32();
         st.zones_crc = rnd32();
+        st.mono_ms = ((uint64_t)rnd32() << 32) | rnd32();
         /* Some of the partitions 1..8, in a random order. */
         uint8_t numbers[PLINK_PARTS_MAX];
         for (uint8_t i = 0; i < PLINK_PARTS_MAX; i++) {
@@ -1390,7 +1394,7 @@ static void test_random_round_trips(void)
         uint8_t written = 0;
         TEST_ASSERT_TRUE(plink_enc_status(&st, 0, OUT, sizeof(OUT), &n, &written));
         TEST_ASSERT_EQUAL_UINT8(st.count, written);
-        TEST_ASSERT_EQUAL_size_t(52u + 54u * st.count, n);
+        TEST_ASSERT_EQUAL_size_t(60u + 54u * st.count, n);
         TEST_ASSERT_TRUE(plink_dec_status(OUT, n, &st2));
         expect_status(&st, &st2);
     }
@@ -1550,13 +1554,13 @@ static void test_appended_bytes_skipped(void)
 
     /* STATUS: the system section, then each partition record, grow; a record of a number this
      * firmware doesn't hold (0) is skipped, and so is a second record of the same partition. */
-    n = splice(buf, G_STATUS, sizeof(G_STATUS), 52, extra, 5);
-    buf[0] = 51 + 5;
+    n = splice(buf, G_STATUS, sizeof(G_STATUS), 60, extra, 5);
+    buf[0] = 59 + 5;
     uint8_t buf2[PLINK_FRAME_MAX];
-    size_t n2 = splice(buf2, buf, n, 52 + 5 + 54, extra, 7); /* the first record's end */
-    buf2[52 + 5 + 1] = 52 + 7;
+    size_t n2 = splice(buf2, buf, n, 60 + 5 + 54, extra, 7); /* the first record's end */
+    buf2[60 + 5 + 1] = 52 + 7;
     n = splice(buf, buf2, n2, n2, extra, 16); /* the second record's end: 16 more */
-    buf[52 + 5 + 54 + 7 + 1] = 52 + 16;
+    buf[60 + 5 + 54 + 7 + 1] = 52 + 16;
     static const uint8_t unknown[] = {0x00, 0x03, 0x11, 0x22, 0x33, /* partition 0 */
                                       0x01, 0x01, 0x07};            /* partition 1 again */
     n = splice(buf2, buf, n, n, unknown, sizeof(unknown));
@@ -1615,7 +1619,7 @@ static void test_short_sections_read_zero(void)
 
     /* STATUS with only epoch_ms in its system section, a first record with only its first four
      * fields and an empty second one. */
-    n = cut(buf, G_STATUS, sizeof(G_STATUS), 9, 43);
+    n = cut(buf, G_STATUS, sizeof(G_STATUS), 9, 51);
     buf[0] = 8;
     uint8_t buf2[PLINK_FRAME_MAX];
     size_t n2 = cut(buf2, buf, n, 9 + 2 + 4, 48);
@@ -1670,13 +1674,13 @@ static void test_truncated_refused(void)
         for (size_t len = 0; len < c->golden_len; len++) {
             const bool ok = c->dec(c->golden, len, &M1);
             /* STATUS ends after any whole record: the system section alone, or with record 1. */
-            const bool whole = c->dec == d_status && (len == 52u || len == 52u + 54u);
+            const bool whole = c->dec == d_status && (len == 60u || len == 60u + 54u);
             TEST_ASSERT_EQUAL_MESSAGE(whole, ok, c->name);
         }
         TEST_ASSERT_FALSE_MESSAGE(c->dec(NULL, 0, &M1), c->name);
     }
     plink_status_t *st = &M1.status;
-    TEST_ASSERT_TRUE(plink_dec_status(G_STATUS, 52 + 54, st));
+    TEST_ASSERT_TRUE(plink_dec_status(G_STATUS, 60 + 54, st));
     TEST_ASSERT_EQUAL_UINT8(1, st->count);
     TEST_ASSERT_EQUAL_UINT8(1, st->part[0].number);
 
@@ -1688,7 +1692,7 @@ static void test_truncated_refused(void)
     buf[sizeof(G_PAIR_REQ) - 6] = 6; /* fw "1.2.3" says 6 bytes */
     TEST_ASSERT_FALSE(plink_dec_pair_req(buf, sizeof(G_PAIR_REQ), &M1.pair_req));
     memcpy(buf, G_STATUS, sizeof(G_STATUS));
-    buf[52 + 54 + 1] = 53; /* the last record one byte longer than the payload */
+    buf[60 + 54 + 1] = 53; /* the last record one byte longer than the payload */
     TEST_ASSERT_FALSE(plink_dec_status(buf, sizeof(G_STATUS), &M1.status));
     memcpy(buf, G_ZONES, sizeof(G_ZONES));
     buf[6] = 3; /* three records, two sent */
@@ -1933,17 +1937,17 @@ static void test_status_split(void)
     /* One record per frame at the smallest cap that holds one; none fits below it. */
     size_t n = 0;
     uint8_t written = 9;
-    TEST_ASSERT_TRUE(plink_enc_status(&st, 5, OUT, 52 + 54, &n, &written));
+    TEST_ASSERT_TRUE(plink_enc_status(&st, 5, OUT, 60 + 54, &n, &written));
     TEST_ASSERT_EQUAL_UINT8(1, written);
-    TEST_ASSERT_EQUAL_size_t(52 + 54, n);
-    TEST_ASSERT_FALSE(plink_enc_status(&st, 5, OUT, 52 + 53, &n, &written));
+    TEST_ASSERT_EQUAL_size_t(60 + 54, n);
+    TEST_ASSERT_FALSE(plink_enc_status(&st, 5, OUT, 60 + 53, &n, &written));
     TEST_ASSERT_EQUAL_UINT8(0, written);
     TEST_ASSERT_EQUAL_size_t(0, n);
     /* Nothing left to send: the system section alone; past the records, refused. */
-    TEST_ASSERT_TRUE(plink_enc_status(&st, st.count, OUT, 52, &n, &written));
+    TEST_ASSERT_TRUE(plink_enc_status(&st, st.count, OUT, 60, &n, &written));
     TEST_ASSERT_EQUAL_UINT8(0, written);
-    TEST_ASSERT_EQUAL_size_t(52, n);
-    TEST_ASSERT_FALSE(plink_enc_status(&st, st.count, OUT, 51, &n, &written));
+    TEST_ASSERT_EQUAL_size_t(60, n);
+    TEST_ASSERT_FALSE(plink_enc_status(&st, st.count, OUT, 59, &n, &written));
     TEST_ASSERT_FALSE(plink_enc_status(&st, (uint8_t)(st.count + 1u), OUT, sizeof(OUT), &n,
                                        &written));
     st.count = PLINK_PARTS_MAX + 1u;

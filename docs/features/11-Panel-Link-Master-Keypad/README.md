@@ -5,8 +5,9 @@ and the keypad's service (`plink_service`), the keypad role on the P4 panels, th
 2026-10-15) and the PC simulator (`host/link_sim`, `link_smoke` in CI), reviewed three times; on
 the two development panels (2026-10-16) pairing, commands, lockout, supervision, a master restart,
 removal and pairing again, and a PC keypad with a panel worked, a change shown on the keypad in
-about 0.3 s. Left: the bench cases below that need a person or a network change, ESP-NOW through
-our C6 build, 433 MHz, keypad inputs, GOTO, the firmware relay (M8) · **Milestone:** M7 (the
+about 0.3 s. A keypad's own voice (LINK-028, decided 2026-10-16) is built and host-tested, not yet
+tried on the panels. Left: the bench cases below that need a person or a network change, ESP-NOW
+through our C6 build, 433 MHz, keypad inputs, GOTO, the firmware relay (M8) · **Milestone:** M7 (the
 firmware relay M8) · **Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
@@ -76,6 +77,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-025 | After 10 min without system communication a keypad opens Wi-Fi, Software update, Pair again and "Make it a stand-alone panel" without a code: a keypad holds no codes and the master supervises it, so cutting it off is no worse than unplugging it; a keypad that is not paired (removed at the master, or never paired) opens them at once - no master could check a code, and it protects nothing | unit + HIL |
 | LINK-026 | A keypad applies a status block, partition record, zone record or time only when it came in a newer frame of the session than the one it last applied for that item | unit |
 | LINK-027 | The master accepts a keypad's commands for its home partition only (NOT_AUTHORIZED otherwise), one at a time with panic in a slot of its own, at most about 2 a second (a burst of 5); requests over their limits are dropped in the link task, before anything reaches the alarm task | unit |
+| LINK-028 | A keypad speaks its home partition's announcements (docs/features/08 D05) from the master's pushed events, sounds and status, with its own Announcements switches and Voice volume (D06; decided 2026-10-16); nothing older than its last baseline (a reconnect, a backfill, a master restart) is ever spoken, nor an event the master stamped more than 5 s before, and nothing while the link is not ONLINE | unit + HIL |
 
 ## Frame format (v1)
 
@@ -175,9 +177,11 @@ own CRC differs after a STATUS asks with ZONES_REQ.
 **Event record** (32 B): seq u32, mono_ms u64, epoch_ms i64, type u16, partition u8, zone u16,
 user u8, source kind u8 + id u16, arg u8, arg2 u8, flags u8. The master pushes each new event,
 sealed, before the STATUS that carries its seq (the Home screen reads the entry zone and who armed
-from the events when the state changes), and a STATUS never carries a last_event_seq below an
-event already pushed to that keypad, under this session or the one before (only a log that started
-again lowers it); EV_REQ fills gaps: the newest `max` events after after_seq,
+from the events when the state changes), the engine call's one-shot SOUNDs between them (a
+keypad's voice then has a batch's tone before its STATUS, LINK-028; a keypad takes either order),
+and a STATUS never carries a last_event_seq below an event already pushed to that keypad, under
+this session or the one before (only a log that started again lowers it); EV_REQ fills gaps: the
+newest `max` events after after_seq,
 up to 50, in as many EVENTS as the transport needs (the "left out" flag on the first). A keypad
 with nothing asks for the last 50; it keeps 50 and drops its ring on a new pairing and when
 last_event_seq goes below its newest. The engine numbers its events one by one, so events that
@@ -349,21 +353,22 @@ goes to its HELLO's source without moving it). Firmware with the link sets
 
 - **Master** (the default, and every panel before this feature): runs everything it runs today,
   plus the link's master side when the feature is in the build (`ALARM_LINK`).
-- **Keypad**: `panel_app` starts the board, the sounder, the language and asset packs, Wi-Fi,
-  updates, the console, power monitoring (on the health task) and the touch UI with the link's
-  keypad backend, and nothing that runs the alarm: no engine (`alarm_service` drops posts instead
-  of queueing them), event log, zone sources, MQTT, notifications, Home Assistant, devices,
-  automations, voice or Panel Manager.
+- **Keypad**: `panel_app` starts the board, the sounder, the language and asset packs, its voice
+  (fed from the link, LINK-028), Wi-Fi, updates, the console, power monitoring (on the health task)
+  and the touch UI with the link's keypad backend, and nothing that runs the alarm: no engine
+  (`alarm_service` drops posts instead of queueing them), event log, zone sources, MQTT,
+  notifications, Home Assistant, devices, automations or Panel Manager.
 - **Updates on a keypad**: the update gate is the link's (`panel_ota_set_idle_gate`): an update or
   a C6 update starts only while the link is up and the newest status, under 15 s old, passes
   `proto_fw_install_allowed()`; refused while the link is lost, except through LINK-025. The
   self-test mask is UI + TOUCH + LINK (`PANEL_OTA_OK_LINK`, beaten on authenticated frames).
   Keypads update after the master has confirmed its own update.
 - **The keypad backend** serves from the link: snapshot, configuration, recent events, commands,
-  code checks and code changes; locally: Wi-Fi, screen, sound, language, updates, About. The
-  master-only pages (installer mode, users, zone sources, integrations, event log, devices,
-  automations, voice) are hidden by a role gate the UI reads (proposal); until it is built,
-  `program_enter` and `user_*` answer UNAVAILABLE. User editing never goes over the link.
+  code checks and code changes; locally: Wi-Fi, screen, sound (its Voice volume and Announcements
+  too, LINK-028), language, updates, About. The master-only pages (installer mode, users, zone
+  sources, integrations, event log, devices, automations, the zones' spoken-name editor) are hidden
+  by a role gate the UI reads (`ui_link_keypad`, `ui_voice_editor_present`); `program_enter` and
+  `user_*` answer UNAVAILABLE. User editing never goes over the link.
 - **Counters the UI relies on**: snap.seq rises with every status or zone record applied and
   equals `snapshot_seq()`; config_seq rises only when a newly decoded configuration is installed;
   `get_config` is true once one is.
@@ -380,6 +385,26 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   tiles' place (`ui_link_info_t.local_alarm`), and the screen is as during an alarm: woken from
   its saver when the tone is kept, never dimmed or dark while it sounds, lit by day's brightness
   at night too.
+- **The voice** (LINK-028; decided 2026-10-16: "It should have its own audio settings for that as
+  well to turn it on or off and control the volume like the master panel"): the keypad runs
+  `panel_voice` with its own Announcements switches and Voice volume (`panel_prefs`, on as shipped,
+  D06) and its own pack, and speaks what the master's voice says for the keypad's home partition
+  (D05), the walk test included (WALK-016, every keypad of the partition). Its link task is the
+  voice's producer (`panel_voice_set_source`: a baseline is asked of the link, the zones' words
+  come from the configuration copy, a pack install answers locked until BL-205), through the
+  portable `plink_vfeed`: live only while ONLINE (leaving it pauses the voice, entering it gives a
+  silent baseline, as do a new home and a master's log that started again); an event is fed only
+  once a STATUS covers it (floor < seq <= last_event_seq), in order and once, and the floor moves
+  up, so a backfill, a catch-up or a hole filled late never speaks, nor an event the master
+  stamped more than 5 s before its time now; the commit waits up to 300 ms for events pushed ahead
+  of their STATUS or a hole being pulled, and a batch with events but no sound yet, or a sound
+  alone (a chime), waits 100 ms for the rest; the bell's test pulse is fed before a walk test's
+  start, as the engine emits it. One-shot sounds play tracked while the voice is fed. A zone's
+  words speak only with the pack revision they were approved with (the master's installer
+  approves them; a keypad has no editor), and the master's D07 settling isn't on the wire, so for
+  that moment a keypad may still say a zone's old approved name. Development builds log
+  `voice: says <kind> (partition <n>, Voice <v> %)` for each utterance; the `voice` console
+  command counts them (both work with the speaker muted).
 - **Settings while armed**: when LINK-025's maintenance or a needed update opens Settings though
   the last status said armed, only the gear looks usable (`subject_settings_locked`); Chime and
   Troubles' Acknowledge stay dimmed, as they stay locked.
@@ -397,12 +422,14 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   on a port of three primitives), the frame codec and replay window, the message codecs, pairing
   and handshake, the master's and the keypad's link managers (time in, frames out through ports;
   no sockets), the stored records with frozen fixtures, the keypad configuration copy and the
-  keypad's snapshot rebuild. No heap, no globals.
+  keypad's snapshot rebuild, and what a keypad's voice hears (`plink_vfeed`, LINK-028). No heap,
+  no globals.
 - **`components/services/plink_service`** (ESP-IDF, `ALARM_LINK`): the role, one task (internal
   stack: it writes NVS at pairing and removal) that owns a UDP socket, the managers and a PSA
   crypto port, and a worker for the alarm task's calls; mDNS; NVS `link`; on the master an alarm
   listener (snapshot mailbox, events, sounds); on a keypad the `ui_backend_t` overrides, the
-  sounder and the update gate; the `plink` console command.
+  sounder, the voice's feed (`plink_service_set_voice`) and the update gate; the `plink` console
+  command.
 - **`host/link_sim`**: the PC virtual master (the real engine) and virtual keypad over UDP with the
   OS's random numbers, and `link_smoke`, the two in one process over 127.0.0.1 for CI (LINK-013);
   the seeded test port is refused for peers not on loopback.
@@ -429,7 +456,9 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   10 s, link lost 30 s, supervision 60 s both ways, commands and their cache across keypad
   restarts and sessions, panic for 60 s, configuration and events, a hostile keypad); random bytes
   into every parser; frozen fixtures of the stored records; the real `ui_app` through a loopback
-  link backend.
+  link backend; a keypad's voice (`test_plink_vfeed.c`, and in `test_plink_link.c` the real
+  policy behind it against the master's fed from the engine: the same decisions, nothing old after
+  restarts and cuts, never a wrong or late one under loss) (LINK-028).
 - CI: `link_smoke` over UDP on 127.0.0.1.
 - Panels (HIL): pair the 10.1" as a keypad of the 7"; arm, disarm and a wrong code from the keypad;
   power the keypad off (trouble after its supervision time, cleared when back); restart the master (keypad back
@@ -437,7 +466,10 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   dropped; both addresses changed across a router restart; mDNS blocked; the access point's password
   changed and the keypad recovered from its own screen; the master factory-reset and the keypad
   paired again; an update refused during an entry delay; the PC virtual keypad with the 7" and the
-  PC virtual master with the 10.1".
+  PC virtual master with the 10.1"; the keypad's announcements with both speakers muted (the
+  `voice` counters and the development build's `says` lines on both panels: arm, disarm, entry,
+  not ready, a chime, a walk test; the keypad's own switches and Voice volume; a keypad restart in
+  an exit time and a cut over 30 s saying nothing old).
 
 ## Open questions
 - Keypad-attached inputs (LINK-011), cross-partition GOTO (KPD-006) and partitions beyond home:
@@ -519,6 +551,17 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   the master factory-reset and the keypad paired again, an update refused during an entry delay,
   the PC virtual master with a panel keypad (needs the PC's firewall to let UDP 6056 in)
   (LINK-008, -021, -025) (M7) (BL-048)
+- [x] A keypad's own voice (LINK-028; decided 2026-10-16): `plink_vfeed` and its tests,
+  `ann_set_keypad`, `panel_voice`'s source, baseline and pause, the keypad's feed and tracked
+  sounds, the master's SOUND before its STATUS, the keypad's Voice volume and Announcements (the
+  role gate split: `ui_voice_editor_present`), the voice compared with the master's in
+  `test_plink_link.c`, the preview's `bl-048-kp-announcements` (BL-048, 5720f24)
+- [ ] On the panels, the keypad's announcements with both speakers muted (the `voice` counters and
+  the `says` log lines on both): arm away (Arming, then Armed), disarm, entry, not ready, a chime
+  with approved words (the keypad holding the master's pack revision), a walk test; the keypad's
+  Announcements, Status messages and Zone chime off and Voice volume 0 while the master speaks; a
+  keypad restart in an exit time and a link cut over 30 s saying nothing old; the keypad's
+  internal RAM at start-up beside before (LINK-028) (BL-048)
 - [ ] ESP-NOW transport: through our C6 bridge on the P4 (docs/features/12 CP-003), native on the
   ESP32; the channel follows the master's access point (LINK-010) (M7) (BL-048)
 - [x] The engine's device supervision trouble for a silent keypad (LINK-007's engine side,

@@ -667,9 +667,13 @@ void ui_settings_remember(uint8_t user, const char *code);
 void ui_settings_unlock_row(lv_obj_t *body, ui_access_t access, const char *title);
 
 /* ---- ui_voice.c (docs/features/08 voice-first-build.md D03, D06, D09; UI-045) --------------- */
-/* The build has a voice: every voice function of the backend, and voice_info not UI_VOICE_OFF.
- * Without one there is no Spoken name row and no Announcements page. */
+/* The build has a voice: the backend's voice_info, the pack's lease and Preview, and voice_info
+ * not UI_VOICE_OFF - on an alarm panel and on a link keypad (LINK-028). Without one there is no
+ * Voice volume, no Announcements page and no Spoken name row. */
 bool ui_voice_present(void);
+/* ... and this panel approves zones' words: voice_seen and voice_apply_approve too, and not a link
+ * keypad (its alarm panel's installer approves them). Without it, no Spoken name row or editor. */
+bool ui_voice_editor_present(void);
 void ui_voice_info(ui_voice_info_t *out); /* zeros (UI_VOICE_OFF) without a backend */
 /* The voice's language in the interface's language ("English (United States)"); locale "" is the
  * one this build's words are for. Translated: pass it on, never wrap it in TR() again. */

@@ -707,7 +707,8 @@ static void open_announcements(void *ctx)
     ui_page_open(PAGE_ANNOUNCEMENTS, 0);
 }
 
-/* The main switch: off as shipped, on only by a person and only while the voice is ready; a
+/* The main switch: on as shipped (D06), on again only by a person and only while the voice is
+ * ready (on a link keypad too: its own voice, LINK-028); a
  * refusal says why in a line (no toast). The page is built again: the three kinds below follow it. */
 static void on_voice_toggle(bool on, void *ctx)
 {

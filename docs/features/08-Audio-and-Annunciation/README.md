@@ -170,7 +170,9 @@ build. Changing a timing or a tone here means changing that test in the same com
   [storage contract](audio-storage.md); the library's clips are Opus 32 kbps, mono 16 kHz
   (decided by ear 2026-10-08, over Opus 24 kbps and LC3 32 kbps), decoded on the panel by a
   portable decode-only libopus; see the [production comparison](voice-library.md).
-- **Keypad role**: identical; the pattern comes from the master's status snapshot.
+- **Keypad role**: identical; the pattern comes from the master's status snapshot, and the
+  voice speaks the home partition's announcements from what the master sends, with the keypad's
+  own Announcements switches and Voice volume (docs/features/11 LINK-028).
 
 ## Two ways to create an announcement
 

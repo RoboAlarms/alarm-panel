@@ -282,7 +282,8 @@ static void keypad_backend(ui_backend_t *be)
     be->user_update = kp_user_update;
     be->user_delete = kp_user_delete;
     be->set_config = NULL;
-    /* the master's: its event log, sensors, integrations, devices, automations, voice */
+    /* the master's: its event log, sensors, integrations, devices, automations, the zones' spoken
+     * names (the keypad's own voice, its Announcements and Voice volume stay: LINK-028) */
     be->log_read = NULL;
     be->boot_id = NULL;
     be->log_loss = NULL;
@@ -339,13 +340,11 @@ static void keypad_backend(ui_backend_t *be)
     be->zb_request = NULL;
     be->zb_progress = NULL;
     be->zb_codes = NULL;
-    be->voice_info = NULL;
-    be->voice_pack_acquire = NULL;
-    be->voice_pack_release = NULL;
-    be->voice_preview = NULL;
+    /* the voice: voice_info, the pack's lease, Preview and its stop are this keypad's own
+     * (ui_port_esp's, kept); approving a zone's words is the installer's at the alarm panel, so
+     * the spoken-name editor isn't offered here (ui_voice_editor_present) */
     be->voice_seen = NULL;
     be->voice_apply_approve = NULL;
-    be->voice_preview_stop = NULL;
     be->remote_get = NULL;
     be->remote_set = NULL;
     be->remote_info = NULL;

@@ -1458,10 +1458,10 @@ typedef struct {
     uint8_t appearance;
     bool high_contrast;       /* default false */
     /* Announcements (docs/features/08 voice-first-build.md D06; Settings > Screen and sound >
-     * Announcements): the main switch is off as shipped and is switched on only by a person,
-     * and only while the voice is ready (ui_voice_info_t.state UI_VOICE_READY); the three kinds
-     * keep their choice while it is off. The volume above is the voice's too. */
-    bool voice_enabled;       /* default false */
+     * Announcements): the main switch is on as shipped (decided 2026-10-12) and a person switches
+     * it on again only while the voice is ready (ui_voice_info_t.state UI_VOICE_READY); the kinds
+     * keep their choice while it is off. Each panel's own, a link keypad's too (LINK-028). */
+    bool voice_enabled;       /* default true */
     bool voice_status;        /* arming, armed, disarmed, entry, not ready (default true) */
     bool voice_chime;         /* the zone's spoken name after the chime (default true) */
 } ui_options_t;
@@ -1960,9 +1960,12 @@ typedef struct {
     auto_put_off_t (*auto_put_off)(void *ctx, uint16_t uid, uint8_t choice, const char *code,
                                    alarm_result_t *code_result);
 
-    /* ---- the voice (docs/features/08 voice-first-build.md D03, D06, D09). Each NULL = no
-     * voice in this build: the UI hides the zone's Spoken name row and the Announcements
-     * page. The panel's panel_voice_*, the simulator's and the preview's own. ---- */
+    /* ---- the voice (docs/features/08 voice-first-build.md D03, D06, D09). voice_info, the
+     * lease and voice_preview NULL = no voice in this build: the UI hides Voice volume, the
+     * Announcements page and the zone's Spoken name row. voice_seen and voice_apply_approve NULL
+     * = no spoken-name editor here (a link keypad: its alarm panel's installer approves the words,
+     * docs/features/11 LINK-028). The panel's panel_voice_*, the simulator's and the preview's
+     * own. ---- */
     void (*voice_info)(void *ctx, ui_voice_info_t *out);
     /* A lease on the active pack's index, for the word lists and Use zone name
      * (voice_pack/vp_words.h) and the words' display texts (vp_find): valid until released,

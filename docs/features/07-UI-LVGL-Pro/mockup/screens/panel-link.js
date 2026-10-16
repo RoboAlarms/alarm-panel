@@ -305,18 +305,50 @@ const KP_SECTIONS = M.settings_sections({drop: ['users', 'integrations', 'automa
 const kpSet = (meta, notes, page) => kp(meta, notes,
   () => ({view: 'settings', bar: ONLINE_BAR, content: M.settings({sections: KP_SECTIONS, ...page})}));
 
+// The keypad's voice (docs/features/11 LINK-028). Decided 2026-10-16, the owner: "The slave panel is
+// not doing the announcements like the main panel does. It should have its own audio settings for
+// that as well to turn it on or off and control the volume like the master panel." So a keypad shows
+// the alarm panel's Voice volume and Announcements as they are (no new words), its own settings
+// (stored on the keypad, on as shipped like the alarm panel's, D06), and speaks its home partition's
+// announcements from what Harbor House sends. The zones' spoken names stay Harbor House's: its
+// installer approves them, so a keypad has no Spoken name row (and no Installer). Each screen file
+// has its own scope: the Announcements rows are copied from settings.js (annBody).
+const KP_ANN = ({on = true, voice = 'ready', refused = ''} = {}) => {
+  const ready = voice === 'ready';
+  return [
+    M.row_toggle({glyph: 'megaphone', title: 'Announcements', detail: ready ? 'The panel says what is happening, in words' : voice === 'none' ? 'Needs a voice pack' : 'Needs working voice', on}),
+    refused ? M.paragraph(refused, 'amber') : '',
+    M.row_toggle({title: 'Status messages', detail: 'Says arming, armed, disarmed, entry and not ready messages.', on: true, disabled: !on}),
+    M.row_toggle({title: 'Zone chime', detail: 'Says the zone’s spoken name after the chime.', on: true, disabled: !on}),
+    voice === 'unavailable' ? M.paragraph('Voice is unavailable.', 'amber') : '',
+    M.row_action({glyph: 'volume-2', text: 'Preview', color: 'blue', disabled: !ready}),
+    M.paragraph('Uses the Voice volume in Screen and sound. Alarms, fire and CO always sound at full volume.'),
+  ].join('');
+};
+
 kpSet({id: 'kp-settings', shot: 'bl-048-kp-settings', title: 'Keypad: Settings, Screen and sound'},
-  'A keypad\'s settings-display: no Voice volume and no Announcements (a keypad has no voice); the chime and beeps play what Harbor House says, at this keypad\'s volumes. Like today, Screen and sound needs no code. After 10 minutes without system communication (LINK-025), Wi-Fi and Software update open without a code, and Settings opens even if the last status said armed or in alarm (it closes once Harbor House answers armed).',
+  'A keypad\'s settings-display: the alarm panel\'s rows, its Voice volume and Announcements included (decided 2026-10-16, LINK-028): the chime and beeps play what Harbor House says, and the keypad says its home partition\'s announcements with its own voice, each at this keypad\'s volumes and with its own switches. Announcements says On as shipped (D06). Like today, Screen and sound needs no code. After 10 minutes without system communication (LINK-025), Wi-Fi and Software update open without a code, and Settings opens even if the last status said armed or in alarm (it closes once Harbor House answers armed).',
   {section: 'display', title: 'Screen and sound', note: '', body: [
     M.section('Sound'),
     M.row_level({glyph: 'bell', title: 'Chime volume', value: 70}),
+    M.row_level({glyph: 'megaphone', title: 'Voice volume', value: 70}),
     M.row_level({glyph: 'volume-2', title: 'Beeps volume', value: 70}),
     M.paragraph('Alarms, fire and CO always sound at full volume.'),
     M.row_toggle({title: 'Key clicks', detail: 'A short click for every touch', on: true}),
+    M.row_link({glyph: 'megaphone', title: 'Announcements', value: 'On', goTo: 'kp-announcements'}),
     M.section('Screen'),
     M.row_link({glyph: 'sun-moon', title: 'Appearance', value: 'Dark'}),
     M.row_toggle({glyph: 'contrast', title: 'High contrast', detail: 'Stronger colors, every button outlined'}),
   ].join('')});
+
+kpSet({id: 'kp-announcements', shot: 'bl-048-kp-announcements', title: 'Keypad: Screen and sound > Announcements'},
+  'The alarm panel\'s Announcements page (settings-announcements-on), on the keypad and for the keypad (decided 2026-10-16, LINK-028): its own switches, saved on the keypad. It says Harbor House\'s arming, armed, disarmed, entry and not ready for its home partition, the chime\'s and the walk test\'s spoken names Harbor House\'s installer approved (only when its voice pack is the one they were approved with; otherwise the tone alone), and the walk test whenever its voice is ready, Announcements off too (WALK-016). Never anything from before the keypad connected, nor while there is no system communication. Preview plays a sample name with the keypad\'s own voice. Back returns to Screen and sound.',
+  {section: 'display', title: 'Announcements', note: 'Screen and sound', back: 'kp-settings', body: KP_ANN()});
+
+kpSet({id: 'kp-announcements-no-pack', shot: null, title: 'Keypad: Announcements without a voice pack'},
+  'No voice pack in the keypad\'s own store (it has no Panel Manager or developer link to install one; BL-205 brings voices with updates): turning Announcements on is refused with the alarm panel\'s line, as there (settings-announcements-refused), and Preview is dimmed. Its tones are unchanged.',
+  {section: 'display', title: 'Announcements', note: 'Screen and sound', back: 'kp-settings',
+    body: KP_ANN({on: false, voice: 'none', refused: 'Announcements cannot be turned on because the voice pack is not installed.'})});
 
 kpSet({id: 'kp-time', shot: 'bl-048-kp-time', title: 'Keypad: Settings, Time and language'},
   'A keypad\'s settings-time, opened with a master code (checked by Harbor House). The clock and the time zone come from Harbor House, so they are read-only here and say so; no Time server. The 12/24-hour clock, the language and the region are this keypad\'s. Without a code: the clock rows, Clock and "Enter a master or installer code", with the line "A master or installer code changes the language".',

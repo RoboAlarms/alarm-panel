@@ -2,7 +2,9 @@
  * ui_voice.c - the voice at the touchscreen (docs/features/08 voice-first-build.md D03, D06, D09;
  * docs/features/07 UI-045): a zone's Spoken name row and its editor (Installer > Zones > zone), and
  * the words the Announcements page of Screen and sound shares with it (the voice's language, the
- * pack, the sample Preview plays).
+ * pack, the sample Preview plays). A link keypad has its own voice, Announcements and Voice volume
+ * (docs/features/11 LINK-028), but no Spoken name editor: the alarm panel's installer approves the
+ * words (ui_voice_editor_present).
  *
  * The editor is a form sheet (ui_form_sheet_open) with Cancel and Done over the zone page; a word's
  * actions, Add word, a group of words and Find a word's matches are pick sheets in its place, one
@@ -97,15 +99,20 @@ static void editor_show(void);
 bool ui_voice_present(void)
 {
     if (S.be.voice_info == NULL || S.be.voice_pack_acquire == NULL || S.be.voice_pack_release == NULL ||
-        S.be.voice_preview == NULL || S.be.voice_seen == NULL || S.be.voice_apply_approve == NULL) {
+        S.be.voice_preview == NULL) {
         return false;
-    }
-    if (ui_link_keypad()) {
-        return false; /* a keypad has no voice: the alarm panel speaks (BL-048) */
     }
     ui_voice_info_t info;
     S.be.voice_info(S.be.ctx, &info);
     return info.state != UI_VOICE_OFF;
+}
+
+bool ui_voice_editor_present(void)
+{
+    /* A link keypad speaks with its own voice, but a zone's words are approved at the alarm panel
+     * (its installer, D07): no seen/approve entries there, and its Installer is gated anyway. */
+    return ui_voice_present() && S.be.voice_seen != NULL && S.be.voice_apply_approve != NULL &&
+           !ui_link_keypad();
 }
 
 void ui_voice_info(ui_voice_info_t *out)
@@ -243,7 +250,7 @@ static void open_editor(void *ctx);
 void ui_voice_zone_row(lv_obj_t *body, uint16_t zone, const alarm_zone_config_t *draft,
                        const alarm_zone_config_t *stored, bool pending)
 {
-    if (!ui_voice_present() || draft == NULL) {
+    if (!ui_voice_editor_present() || draft == NULL) {
         return;
     }
     ui_voice_info_t info;
@@ -902,7 +909,7 @@ static void open_editor(void *ctx)
 {
     const uint16_t zone = (uint16_t)(uintptr_t)ctx;
     const alarm_zone_config_t *zc = ui_installer_zone_draft(zone);
-    if (zc == NULL || !ui_voice_present()) {
+    if (zc == NULL || !ui_voice_editor_present()) {
         return;
     }
     editor_end();

@@ -10417,9 +10417,24 @@ static void walk_link_keypad(void)
                find_visible(lv_screen_active(), "set_walk") == NULL &&
                find_visible(lv_screen_active(), "set_automations") == NULL,
            "BL-048: a keypad's Settings list the alarm panel's sections");
-    expect(find_label(by_name("page_body"), "Voice volume") == NULL,
-           "BL-048: a keypad offers Voice volume");
+    /* LINK-028 (decided 2026-10-16): a keypad speaks with its own voice - its Voice volume and
+     * Announcements, as on the alarm panel; the zones' spoken names stay the alarm panel's */
+    expect(find_label(by_name("page_body"), "Voice volume") != NULL &&
+               find_label(by_name("page_body"), "Announcements") != NULL,
+           "BL-048: a keypad's Screen and sound has no Voice volume or Announcements (LINK-028)");
     shot("bl-048-kp-settings");
+    tap_link("Announcements");
+    run(300);
+    expect(find_label(by_name("page_body"), "Status messages") != NULL &&
+               find_label(by_name("page_body"), "Zone chime") != NULL &&
+               find_label(by_name("page_body"), "Uses the Voice volume in Screen and sound. Alarms, "
+                                                "fire and CO always sound at full volume.") != NULL,
+           "BL-048: a keypad's Announcements page isn't the alarm panel's (LINK-028)");
+    lv_obj_scroll_to_y(by_name("page_body"), 0, LV_ANIM_OFF);
+    run(50);
+    shot("bl-048-kp-announcements");
+    tap_name("page_back");
+    run(300);
     tap_name("set_time");
     run(300);
     link_has("From Harbor House", "BL-048: a keypad's clock doesn't say where it comes from");

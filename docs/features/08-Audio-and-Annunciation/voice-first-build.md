@@ -89,7 +89,7 @@ Explicit silent exit suppresses the arming and resulting armed confirmations for
 
 Automatic speech requires voice_enabled, its relevant sub-switch, valid audio, nonzero user volume and no power saving; the walk test's needs only the last three. No automatic speech for startup, restored state, history replay, reconnection, wrong codes, troubles, alarm loops, walk extension or hidden events. The first snapshot establishes a silent baseline.
 
-Speak only for the local keypad partition, currently partition 1. Additional enabled partitions do not globally disable voice; their events are not spoken and no partition prefix is added. Currently audible fire, CO, burglary or auxiliary sounders cancel optional speech, including when another partition is sounding. Ignore silent-event flags and hidden reports rather than creating a distinctive cancellation. A duress arm/disarm produces exactly the ordinary confirmation for the same accepted action.
+Speak only for the local keypad partition: partition 1 on an alarm panel; on a panel-link keypad, its home partition, from what its master sends, with its own Announcements switches and Voice volume (docs/features/11 LINK-028, decided 2026-10-16). Additional enabled partitions do not globally disable voice; their events are not spoken and no partition prefix is added. Currently audible fire, CO, burglary or auxiliary sounders cancel optional speech, including when another partition is sounding. Ignore silent-event flags and hidden reports rather than creating a distinctive cancellation. A duress arm/disarm produces exactly the ordinary confirmation for the same accepted action.
 
 ## Settings
 

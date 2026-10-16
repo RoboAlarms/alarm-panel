@@ -8,7 +8,8 @@
  *   plink role keypad|master confirm   factory reset into that role (everything stored is erased)
  *   master: plink pair [force], allow, reject, stop, list, remove <n>, home <n> <p>,
  *           super <n> <seconds>        (force: without installer mode, development builds only)
- *   keypad: plink find, master <ip>|off, pair [<ip>], yes, no, forget
+ *   keypad: plink find, master <ip>|off, pair [<ip>], yes, no, forget, cmd away|stay|night|off|
+ *           chime|panic [<code>] (as the touchscreen sends it; the status also shows what it shows)
  *   a master whose setup isn't done (the setup's keypad branch, Option C): plink kp pair [<ip>],
  *           kp yes, kp no, kp stop, kp done (stores the keypad role, keeps Wi-Fi, restarts);
  *           kp force first lets a bench panel whose setup is done do it (development builds)
@@ -22,8 +23,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "alarm/alarm_strings.h"
+#include "esp_attr.h"
 #include "esp_console.h"
 #include "esp_netif.h"
+#include "esp_timer.h"
 #include "mdns.h"
 
 static const char *const LINK_STATE[] = {"not paired", "connecting", "online",
@@ -47,7 +51,14 @@ static const char *result_word(uint8_t r)
 
 static int ask(const link_req_t *req)
 {
-    const uint8_t r = link_request(req);
+    link_req_t r_req = *req;
+#if CONFIG_ALARM_BUILD_DEV
+    /* the service console of a development build is the bench: it may change the keypads
+     * without installer mode, as `plink pair force` opens pairing (the console can factory-reset
+     * the panel anyway) */
+    r_req.bench = true;
+#endif
+    const uint8_t r = link_request(&r_req);
     printf("%s\n", result_word(r));
     return r == UI_LINK_REQ_OK ? 0 : 1;
 }
@@ -103,6 +114,94 @@ static const link_pub_t *published(void)
     return &s_pub;
 }
 
+/* What a keypad's screen shows now (the snapshot rebuilt from the master's status), for a bench
+ * without the touchscreen: each partition and the troubles. */
+static alarm_snapshot_t s_view EXT_RAM_BSS_ATTR;
+
+static void print_keypad_view(void)
+{
+    ksvc_ui_snapshot(&s_view);
+    for (unsigned p = 0; p < ALARM_MAX_PARTITIONS; p++) {
+        if ((s_view.partitions & (1u << p)) == 0u) {
+            continue;
+        }
+        const alarm_partition_status_t *ps = &s_view.part[p];
+        printf("  shows partition %u: %s", p + 1u, alarm_state_name(ps->state));
+        if (ps->level != ALARM_LEVEL_NONE) {
+            printf(" %s", alarm_level_name(ps->level));
+        }
+        printf("%s, %u faulted, %u bypassed, %u troubles", ps->ready ? ", ready" : ", not ready",
+               (unsigned)ps->faults, (unsigned)ps->bypassed, (unsigned)ps->troubles);
+        if (ps->delay_remaining_ms != 0u) {
+            /* as the screen counts it down: from when the status arrived (taken_ms, the
+             * keypad's own clock, the backend's now_ms) */
+            const uint64_t now = (uint64_t)(esp_timer_get_time() / 1000);
+            const uint64_t gone = now > s_view.taken_ms ? now - s_view.taken_ms : 0u;
+            const uint64_t left = ps->delay_remaining_ms > gone ? ps->delay_remaining_ms - gone : 0u;
+            printf(", %u s left", (unsigned)((left + 999u) / 1000u));
+        }
+        if (ps->sounder != ALARM_SOUND_NONE) {
+            printf(", sounding %s", alarm_sound_name(ps->sounder));
+        }
+        printf("\n");
+    }
+    if (s_view.local_lockout_until != 0u) {
+        const uint64_t now = (uint64_t)(esp_timer_get_time() / 1000);
+        if (s_view.local_lockout_until > now) {
+            printf("  this keypad is locked out for %u s more\n",
+                   (unsigned)((s_view.local_lockout_until - now + 999u) / 1000u));
+        }
+    }
+    printf("  system troubles 0x%08" PRIx32 ", keypads missing 0x%08" PRIx32
+           ", zones used %u, newest event #%" PRIu32 "\n",
+           s_view.sys_troubles, s_view.dev_troubles, (unsigned)s_view.zones_used,
+           s_view.last_event_seq);
+}
+
+/* `plink cmd ...` on a keypad: a command through the same path as the touchscreen's (the
+ * master runs it as this keypad, LINK-002); the code is wiped after. */
+static int keypad_cmd(int argc, char **argv)
+{
+    if (argc < 3) {
+        printf("plink cmd away|stay|night|off|chime|panic [<code>]\n");
+        return 1;
+    }
+    plink_cmd_t c;
+    memset(&c, 0, sizeof c);
+    c.op = PLINK_OP_COMMAND;
+    link_pub_lock();
+    c.cmd.partition = g_pub.kinfo.home >= 1u ? g_pub.kinfo.home : 1u;
+    link_pub_unlock();
+    const char *what = argv[2];
+    if (strcmp(what, "away") == 0 || strcmp(what, "stay") == 0 || strcmp(what, "night") == 0) {
+        c.cmd.type = ALARM_CMD_ARM;
+        c.cmd.level = what[0] == 'a' ? ALARM_LEVEL_AWAY
+                      : what[0] == 's' ? ALARM_LEVEL_STAY : ALARM_LEVEL_NIGHT;
+    } else if (strcmp(what, "off") == 0) {
+        c.cmd.type = ALARM_CMD_DISARM;
+    } else if (strcmp(what, "chime") == 0) {
+        c.cmd.type = ALARM_CMD_CHIME;
+    } else if (strcmp(what, "panic") == 0) {
+        c.cmd.type = ALARM_CMD_PANIC;
+        c.cmd.panic = ALARM_PANIC_POLICE;
+    } else {
+        printf("plink cmd away|stay|night|off|chime|panic [<code>]\n");
+        return 1;
+    }
+    if (argc >= 4) {
+        snprintf(c.cmd.code, sizeof c.cmd.code, "%s", argv[3]);
+    }
+    plink_result_t res;
+    memset(&res, 0, sizeof res);
+    const int64_t t0 = esp_timer_get_time();
+    const alarm_result_t r = ksvc_command(&c, &res);
+    const int64_t t1 = esp_timer_get_time();
+    plink_wipe(&c, sizeof c);
+    printf("%s (user %u, not ready zone %u) in %u ms\n", alarm_result_name(r), (unsigned)res.user,
+           (unsigned)res.not_ready_zone, (unsigned)((t1 - t0) / 1000));
+    return r == ALARM_OK ? 0 : 1;
+}
+
 static void print_status(void)
 {
     const link_pub_t *pub = published();
@@ -134,6 +233,7 @@ static void print_status(void)
         } else if (i->unpaired_why == PLINK_UNPAIRED_REMOVED) {
             printf("  removed at the alarm panel: pair again\n");
         }
+        print_keypad_view();
     } else {
         printf("  net %04x, %u keypad(s), %u not responding, pairing %s\n", (unsigned)pub->net_id,
                (unsigned)pub->keypads, (unsigned)pub->keypads_down,
@@ -337,6 +437,9 @@ static int cmd_plink(int argc, char **argv)
             req.kind = LINK_REQ_KP_FORGET;
             return ask(&req);
         }
+        if (strcmp(what, "cmd") == 0) {
+            return keypad_cmd(argc, argv);
+        }
     }
     printf("plink: see `help plink`\n");
     return 1;
@@ -349,8 +452,9 @@ esp_err_t plink_service_console_register(void)
         .help = "Panel link (docs/features/11): status; role keypad|master confirm (a factory "
                 "reset); master: pair [force], allow, reject, stop, list, remove <n>, "
                 "home <n> <p>, super <n> <s>; keypad: find, master <ip>|off, pair [<ip>], yes, "
-                "no, forget; a master in its setup: kp pair [<ip>]|yes|no|stop|done",
-        .hint = "[role|pair|allow|reject|stop|list|remove|home|super|find|master|yes|no|forget|kp]",
+                "no, forget, cmd away|stay|night|off|chime|panic [<code>]; a master in its setup: "
+                "kp pair [<ip>]|yes|no|stop|done|force",
+        .hint = "[role|pair|allow|reject|stop|list|remove|home|super|find|master|yes|no|forget|cmd|kp]",
         .func = cmd_plink,
     };
     return esp_console_cmd_register(&cmd);

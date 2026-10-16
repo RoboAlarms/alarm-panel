@@ -7,5 +7,5 @@ idf_component_register(SRCS "src/plink_service.c" "src/plink_psa.c" "src/plink_m
                        INCLUDE_DIRS "include"
                        REQUIRES platform_esp ui_backend
                        PRIV_REQUIRES alarm_core alarm_mem alarm_proto console esp_app_format
-                                     esp_netif ha_link i18n lwip mbedtls net_mqtt nvs_flash
+                                     esp_netif esp_timer ha_link i18n lwip mbedtls net_mqtt nvs_flash
                                      panel_link panel_ota)

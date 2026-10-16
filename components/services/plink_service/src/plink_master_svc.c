@@ -823,7 +823,7 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         break;
     }
     case UI_LINK_REQ_PAIR_DECIDE:
-        if (!s_pair_forced && !installer_ok()) {
+        if (!s_pair_forced && !req->bench && !installer_ok()) {
             return UI_LINK_REQ_NOT_ALLOWED;
         }
         plink_master_pair_decide(s_m, now, req->allow);
@@ -833,7 +833,7 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         s_pair_forced = false;
         break;
     case UI_LINK_REQ_KEYPAD_SET: {
-        if (!installer_ok()) {
+        if (!req->bench && !installer_ok()) {
             return UI_LINK_REQ_NOT_ALLOWED;
         }
         if (req->home < 1u || req->home > ALARM_MAX_PARTITIONS ||
@@ -849,7 +849,7 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         break;
     }
     case UI_LINK_REQ_KEYPAD_REMOVE:
-        if (!installer_ok()) {
+        if (!req->bench && !installer_ok()) {
             return UI_LINK_REQ_NOT_ALLOWED;
         }
         r = plink_master_remove(s_m, now, req->device) ? UI_LINK_REQ_OK : UI_LINK_REQ_FAILED;

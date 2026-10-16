@@ -40,7 +40,7 @@ lv_obj_t * device_sheet_create(lv_obj_t * parent)
 
         alarm_ui_run_19(&style_dsheet_switch, 64, 36, RADIUS_FULL);
         alarm_ui_run_6(&style_dsheet_switch, COLOR_PRESSED, (255 * 100 / 100));
-        alarm_ui_run_62(&style_dsheet_switch_indicator, RADIUS_FULL, (255 * 0 / 100));
+        alarm_ui_run_63(&style_dsheet_switch_indicator, RADIUS_FULL, (255 * 0 / 100));
         alarm_ui_run_6(&style_dsheet_switch_on, COLOR_GREEN, (255 * 100 / 100));
         lv_style_set_radius(&style_dsheet_switch_knob, RADIUS_FULL);
         alarm_ui_run_6(&style_dsheet_switch_knob, COLOR_TEXT, (255 * 100 / 100));
@@ -97,7 +97,7 @@ lv_obj_t * device_sheet_create(lv_obj_t * parent)
         lv_obj_set_name(sheet_switch, "sheet_switch");
 
         lv_obj_t * device_close = alarm_ui_run_0(box_1, 44, 44);
-        alarm_ui_run_59(device_close, LV_OBJ_FLAG_CLICKABLE, true, 10);
+        alarm_ui_run_60(device_close, LV_OBJ_FLAG_CLICKABLE, true, 10);
         lv_obj_set_style_margin_top(device_close, 2, 0);
         alarm_ui_run_21(device_close, RADIUS_FULL, COLOR_RAISED, (255 * 100 / 100));
         alarm_ui_run_10(device_close, ui_on_sheet_cancel, "device_close");

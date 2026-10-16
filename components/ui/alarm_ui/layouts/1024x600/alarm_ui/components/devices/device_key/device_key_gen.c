@@ -28,7 +28,7 @@ lv_obj_t * device_key_create(lv_obj_t * parent, const char * glyph, const char *
         lv_style_init(&style_device_key);
         lv_style_init(&style_device_key_pressed);
 
-        alarm_ui_run_63(&style_device_key, lv_pct(100), RADIUS_MD);
+        alarm_ui_run_64(&style_device_key, lv_pct(100), RADIUS_MD);
         alarm_ui_run_6(&style_device_key, COLOR_RAISED, (255 * 100 / 100));
         alarm_ui_run_17(&style_device_key, LV_FLEX_FLOW_ROW);
         lv_style_set_pad_column(&style_device_key, SPACE_XS);

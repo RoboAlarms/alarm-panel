@@ -148,7 +148,7 @@ lv_obj_t * screen_wizard_create(void)
         alarm_ui_run_54(wiz_next, &style_button, 0, &style_button_primary, 0);
         alarm_ui_run_52(wiz_next, &style_button_tone_pressed, LV_STATE_PRESSED, &style_disabled, &subject_wiz_next_on, 0);
         alarm_ui_run_10(wiz_next, ui_on_wizard_next, "wiz_next");
-        alarm_ui_run_61(wiz_next, &subject_wiz_next);
+        alarm_ui_run_62(wiz_next, &subject_wiz_next);
 
         lv_obj_t * lv_label_5 = alarm_ui_run_23(wiz_next, "\xEE\x81\xAF");
         lv_obj_set_style_text_font(lv_label_5, icons_20, 0);
@@ -164,7 +164,7 @@ lv_obj_t * screen_wizard_create(void)
 
         lv_obj_t * wiz_toast = alarm_ui_run_0(lv_obj_0, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_min_height(wiz_toast, 52, 0);
-        alarm_ui_run_55(wiz_toast, LV_ALIGN_BOTTOM_MID, -312, -28);
+        alarm_ui_run_56(wiz_toast, LV_ALIGN_BOTTOM_MID, -312, -28);
         alarm_ui_run_9(wiz_toast, COLOR_PRESSED, 0, (255 * 100 / 100), RADIUS_FULL);
         alarm_ui_run_40(wiz_toast, COLOR_TOAST_LINE);
         alarm_ui_run_26(wiz_toast, SPACE_XL, SPACE_XL);
@@ -172,7 +172,7 @@ lv_obj_t * screen_wizard_create(void)
         alarm_ui_run_1(wiz_toast, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(wiz_toast);
         lv_obj_bind_flag_if_eq(wiz_toast, &subject_toast_visible, LV_OBJ_FLAG_HIDDEN, 0);
-        lv_obj_t * lv_label_6 = alarm_ui_run_66(wiz_toast, 320);
+        lv_obj_t * lv_label_6 = alarm_ui_run_55(wiz_toast, 320);
         lv_obj_set_style_text_align(lv_label_6, LV_TEXT_ALIGN_CENTER, 0);
         alarm_ui_run_12(lv_label_6, font_label, &subject_toast);
 

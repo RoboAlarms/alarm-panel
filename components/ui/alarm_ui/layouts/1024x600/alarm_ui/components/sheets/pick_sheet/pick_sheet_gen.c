@@ -42,7 +42,7 @@ lv_obj_t * pick_sheet_create(lv_obj_t * parent)
         alarm_ui_run_29(lv_label_1, COLOR_TEXT_2, &subject_sheet_note);
 
         lv_obj_t * pick_close = alarm_ui_run_0(box_1, 44, 44);
-        alarm_ui_run_59(pick_close, LV_OBJ_FLAG_CLICKABLE, true, 10);
+        alarm_ui_run_60(pick_close, LV_OBJ_FLAG_CLICKABLE, true, 10);
         alarm_ui_run_21(pick_close, RADIUS_FULL, COLOR_RAISED, (255 * 100 / 100));
         alarm_ui_run_10(pick_close, ui_on_sheet_cancel, "pick_close");
         lv_obj_t * lv_label_2 = alarm_ui_run_11(pick_close, "\xEE\x86\xB2");

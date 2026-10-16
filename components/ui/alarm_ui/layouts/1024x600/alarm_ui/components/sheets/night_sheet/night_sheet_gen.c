@@ -57,7 +57,7 @@ lv_obj_t * night_sheet_create(lv_obj_t * parent)
         lv_obj_set_style_pad_top(box_3, SPACE_SM, 0);
         lv_obj_t * box_4 = alarm_ui_run_0(box_3, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_4, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_56(box_4, SPACE_SM);
+        alarm_ui_run_57(box_4, SPACE_SM);
         lv_obj_t * lv_label_4 = alarm_ui_run_14(box_4, alarm_ui_tr_c("night hours", "Starts"));
         lv_obj_set_style_text_font(lv_label_4, font_label, 0);
 
@@ -65,7 +65,7 @@ lv_obj_t * night_sheet_create(lv_obj_t * parent)
 
         lv_obj_t * box_5 = alarm_ui_run_0(box_3, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_5, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_56(box_5, SPACE_SM);
+        alarm_ui_run_57(box_5, SPACE_SM);
         lv_obj_t * lv_label_5 = alarm_ui_run_14(box_5, alarm_ui_tr_c("night hours", "Ends"));
         lv_obj_set_style_text_font(lv_label_5, font_label, 0);
 
@@ -81,7 +81,7 @@ lv_obj_t * night_sheet_create(lv_obj_t * parent)
 
         lv_obj_t * night_result = alarm_ui_run_44(box_6, LV_LABEL_LONG_MODE_DOTS);
         lv_label_set_text(night_result, "");
-        alarm_ui_run_57(night_result, LV_TEXT_ALIGN_RIGHT, "night_result");
+        alarm_ui_run_58(night_result, LV_TEXT_ALIGN_RIGHT, "night_result");
 
         the_root = box_0;
     }

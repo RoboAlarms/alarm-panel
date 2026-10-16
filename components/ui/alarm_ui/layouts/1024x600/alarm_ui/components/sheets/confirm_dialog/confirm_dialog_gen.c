@@ -42,21 +42,21 @@ lv_obj_t * confirm_dialog_create(lv_obj_t * parent)
         lv_obj_t * dialog_cancel = alarm_ui_run_22(box_1, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
         alarm_ui_run_54(dialog_cancel, &style_button, 0, &style_button_pressed, LV_STATE_PRESSED);
         alarm_ui_run_10(dialog_cancel, ui_on_sheet_cancel, "dialog_cancel");
-        alarm_ui_run_61(dialog_cancel, &subject_sheet_cancel);
+        alarm_ui_run_62(dialog_cancel, &subject_sheet_cancel);
 
         lv_obj_t * dialog_ok = alarm_ui_run_22(box_1, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_bind_flag_if_not_eq(dialog_ok, &subject_sheet_tone, LV_OBJ_FLAG_HIDDEN, 0);
         alarm_ui_run_54(dialog_ok, &style_button, 0, &style_button_danger, 0);
         lv_obj_add_style(dialog_ok, &style_button_tone_pressed, LV_STATE_PRESSED);
         alarm_ui_run_10(dialog_ok, ui_on_sheet_done, "dialog_ok");
-        alarm_ui_run_61(dialog_ok, &subject_sheet_ok);
+        alarm_ui_run_62(dialog_ok, &subject_sheet_ok);
 
         lv_obj_t * dialog_ok_primary = alarm_ui_run_22(box_1, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_bind_flag_if_not_eq(dialog_ok_primary, &subject_sheet_tone, LV_OBJ_FLAG_HIDDEN, 1);
         alarm_ui_run_54(dialog_ok_primary, &style_button, 0, &style_button_primary, 0);
         lv_obj_add_style(dialog_ok_primary, &style_button_tone_pressed, LV_STATE_PRESSED);
         alarm_ui_run_10(dialog_ok_primary, ui_on_sheet_done, "dialog_ok_primary");
-        alarm_ui_run_61(dialog_ok_primary, &subject_sheet_ok);
+        alarm_ui_run_62(dialog_ok_primary, &subject_sheet_ok);
 
         the_root = box_0;
     }

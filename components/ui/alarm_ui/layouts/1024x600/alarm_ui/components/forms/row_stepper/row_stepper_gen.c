@@ -86,7 +86,7 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
         lv_obj_t * value_label = lv_label_create(box_0);
         lv_obj_set_width(value_label, 112);
         lv_label_set_text(value_label, value);
-        alarm_ui_run_57(value_label, LV_TEXT_ALIGN_CENTER, "value_label");
+        alarm_ui_run_58(value_label, LV_TEXT_ALIGN_CENTER, "value_label");
 
         lv_obj_t * plus = alarm_ui_run_20(box_0);
         lv_obj_set_ext_click_area(plus, 8);

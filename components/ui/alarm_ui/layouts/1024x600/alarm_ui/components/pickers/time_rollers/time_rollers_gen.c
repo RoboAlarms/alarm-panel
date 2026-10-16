@@ -25,12 +25,12 @@ lv_obj_t * time_rollers_create(lv_obj_t * parent, int32_t roll_w, int32_t ampm_w
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_0(parent, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_0, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_65(box_0, LV_FLEX_ALIGN_END, SPACE_SM);
+        alarm_ui_run_66(box_0, LV_FLEX_ALIGN_END, SPACE_SM);
         lv_obj_t * box_1 = box_create(box_0);
         lv_obj_set_width(box_1, roll_w);
         lv_obj_set_height(box_1, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_1, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_56(box_1, SPACE_XS);
+        alarm_ui_run_57(box_1, SPACE_XS);
         lv_obj_t * lv_label_0 = alarm_ui_run_14(box_1, alarm_ui_tr_c("set the clock", "Hour"));
         alarm_ui_run_4(lv_label_0, font_caption, COLOR_TEXT_2);
 
@@ -40,7 +40,7 @@ lv_obj_t * time_rollers_create(lv_obj_t * parent, int32_t roll_w, int32_t ampm_w
         lv_obj_set_width(box_2, roll_w);
         lv_obj_set_height(box_2, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_2, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_56(box_2, SPACE_XS);
+        alarm_ui_run_57(box_2, SPACE_XS);
         lv_obj_t * lv_label_1 = alarm_ui_run_14(box_2, alarm_ui_tr_c("set the clock", "Minute"));
         alarm_ui_run_4(lv_label_1, font_caption, COLOR_TEXT_2);
 

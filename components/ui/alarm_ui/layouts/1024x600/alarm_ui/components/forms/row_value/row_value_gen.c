@@ -29,7 +29,7 @@ lv_obj_t * row_value_create(lv_obj_t * parent, const char * title, const char * 
         alarm_ui_run_38(&style_row_value);
         lv_style_set_min_height(&style_row_value, 52);
         lv_style_set_border_side(&style_row_value, LV_BORDER_SIDE_BOTTOM);
-        alarm_ui_run_64(&style_row_value, 1, COLOR_LINE);
+        alarm_ui_run_65(&style_row_value, 1, COLOR_LINE);
         alarm_ui_run_7(&style_row_value, SPACE_XS, SPACE_XS, 12, 13, SPACE_LG);
 
         alarm_ui_style_track(&style_row_value, ALARM_UI_STYLE_ROW_VALUE_ROW_VALUE);
@@ -49,7 +49,7 @@ lv_obj_t * row_value_create(lv_obj_t * parent, const char * title, const char * 
 
         lv_obj_t * value_label = alarm_ui_run_44(box_0, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(value_label, value);
-        alarm_ui_run_57(value_label, LV_TEXT_ALIGN_RIGHT, "value_label");
+        alarm_ui_run_58(value_label, LV_TEXT_ALIGN_RIGHT, "value_label");
 
         the_root = box_0;
     }

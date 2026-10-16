@@ -49,7 +49,7 @@ lv_obj_t * trouble_row_create(lv_obj_t * parent, const char * glyph, const char 
         lv_obj_t * box_1 = alarm_ui_run_8(box_0);
         lv_obj_set_style_min_height(box_1, 62, 0);
         alarm_ui_run_1(box_1, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_58(box_1);
+        alarm_ui_run_59(box_1);
         lv_obj_t * title_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(title_label, title);
         alarm_ui_run_37(title_label, font_label, "title_label");

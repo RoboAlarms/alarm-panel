@@ -42,7 +42,7 @@ lv_obj_t * zone_card_create(lv_obj_t * parent, const char * glyph, const char * 
         alarm_ui_run_6(&style_zone_card, COLOR_SURFACE, (255 * 100 / 100));
         alarm_ui_run_24(&style_zone_card, RADIUS_LG);
         alarm_ui_run_7(&style_zone_card, SPACE_LG, SPACE_LG, SPACE_SM, SPACE_SM, SPACE_LG);
-        alarm_ui_run_63(&style_zone_bypass, 44, RADIUS_FULL);
+        alarm_ui_run_64(&style_zone_bypass, 44, RADIUS_FULL);
         alarm_ui_run_6(&style_zone_bypass, COLOR_RAISED, (255 * 100 / 100));
         alarm_ui_run_15(&style_zone_bypass, SPACE_LG, SPACE_LG);
         lv_style_set_text_font(&style_zone_bypass, font_label);
@@ -72,7 +72,7 @@ lv_obj_t * zone_card_create(lv_obj_t * parent, const char * glyph, const char * 
         lv_obj_t * box_1 = alarm_ui_run_8(box_0);
         lv_obj_set_style_min_height(box_1, 70, 0);
         alarm_ui_run_1(box_1, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_58(box_1);
+        alarm_ui_run_59(box_1);
         lv_obj_t * title_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_DOTS);
         lv_obj_set_style_max_height(title_label, 52, 0);
         lv_label_set_text(title_label, title);

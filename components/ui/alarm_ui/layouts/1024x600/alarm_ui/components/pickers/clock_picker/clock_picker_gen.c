@@ -48,7 +48,7 @@ lv_obj_t * clock_picker_create(lv_obj_t * parent, int32_t cal_w, int32_t day_h, 
 
         lv_obj_t * clock_result = alarm_ui_run_44(box_3, LV_LABEL_LONG_MODE_DOTS);
         lv_label_set_text(clock_result, "");
-        alarm_ui_run_57(clock_result, LV_TEXT_ALIGN_RIGHT, "clock_result");
+        alarm_ui_run_58(clock_result, LV_TEXT_ALIGN_RIGHT, "clock_result");
 
         the_root = box_0;
     }

@@ -40,8 +40,8 @@ lv_obj_t * hold_button_create(lv_obj_t * parent, const char * text, lv_color_t c
         lv_style_set_bg_opa(&style_hold_button, (255 * 14 / 100));
         lv_style_set_border_width(&style_hold_button, 1);
         lv_style_set_clip_corner(&style_hold_button, true);
-        alarm_ui_run_62(&style_hold_fill, 0, (255 * 0 / 100));
-        alarm_ui_run_62(&style_hold_fill_indicator, 0, (255 * 45 / 100));
+        alarm_ui_run_63(&style_hold_fill, 0, (255 * 0 / 100));
+        alarm_ui_run_63(&style_hold_fill_indicator, 0, (255 * 45 / 100));
 
         static const uint16_t style_ids[] = {
             ALARM_UI_STYLE_HOLD_BUTTON_HOLD_BUTTON,

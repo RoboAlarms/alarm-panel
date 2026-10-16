@@ -49,7 +49,7 @@ lv_obj_t * row_switch_create(lv_obj_t * parent, const char * title, const char *
         alarm_ui_run_7(&style_row_setting, SPACE_LG, SPACE_LG, SPACE_MD, SPACE_MD, SPACE_LG);
         alarm_ui_run_19(&style_switch, 64, 36, RADIUS_FULL);
         alarm_ui_run_6(&style_switch, COLOR_PRESSED, (255 * 100 / 100));
-        alarm_ui_run_62(&style_switch_indicator, RADIUS_FULL, (255 * 0 / 100));
+        alarm_ui_run_63(&style_switch_indicator, RADIUS_FULL, (255 * 0 / 100));
         alarm_ui_run_6(&style_switch_on, COLOR_GREEN, (255 * 100 / 100));
         lv_style_set_radius(&style_switch_knob, RADIUS_FULL);
         alarm_ui_run_6(&style_switch_knob, COLOR_KNOB, (255 * 100 / 100));

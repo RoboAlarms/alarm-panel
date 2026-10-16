@@ -50,7 +50,7 @@ lv_obj_t * window_sheet_create(lv_obj_t * parent)
         lv_obj_set_style_pad_top(box_2, SPACE_SM, 0);
         lv_obj_t * box_3 = alarm_ui_run_0(box_2, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_3, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_56(box_3, SPACE_SM);
+        alarm_ui_run_57(box_3, SPACE_SM);
         lv_obj_t * lv_label_3 = alarm_ui_run_14(box_3, alarm_ui_tr_c("a window of time", "From"));
         lv_obj_set_style_text_font(lv_label_3, font_label, 0);
 
@@ -58,7 +58,7 @@ lv_obj_t * window_sheet_create(lv_obj_t * parent)
 
         lv_obj_t * box_4 = alarm_ui_run_0(box_2, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_4, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_56(box_4, SPACE_SM);
+        alarm_ui_run_57(box_4, SPACE_SM);
         lv_obj_t * lv_label_4 = alarm_ui_run_14(box_4, alarm_ui_tr_c("a window of time", "To"));
         lv_obj_set_style_text_font(lv_label_4, font_label, 0);
 

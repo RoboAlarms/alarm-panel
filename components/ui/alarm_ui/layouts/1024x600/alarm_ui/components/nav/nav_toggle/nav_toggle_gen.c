@@ -33,7 +33,7 @@ lv_obj_t * nav_toggle_create(lv_obj_t * parent, lv_subject_t * icon, const char 
         lv_label_set_text(lv_label_1, text);
         lv_obj_set_width(lv_label_1, lv_pct(100));
         alarm_ui_run_35(lv_label_1, 36);
-        alarm_ui_run_60(lv_label_1);
+        alarm_ui_run_61(lv_label_1);
 
         the_root = box_0;
     }

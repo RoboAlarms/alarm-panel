@@ -445,8 +445,8 @@
 					<lv_label text="Hold a button for 2 seconds to set off the alarm on this panel" style_text_color="#color_text_2">
 						<bind_flag_if_eq subject="subject_link_role" flag="hidden" ref_value="1" />
 					</lv_label>
-					<!-- a keypad (BL-048): the alarm panel it sets off, by name -->
-					<lv_label bind_text="subject_panic_hint" style_text_color="#color_text_2">
+					<!-- a keypad (BL-048): the alarm panel it sets off, by name (a long one wraps) -->
+					<lv_label bind_text="subject_panic_hint" long_mode="wrap" style_max_width="860" style_text_align="center" style_text_color="#color_text_2">
 						<bind_flag_if_eq subject="subject_link_role" flag="hidden" ref_value="0" />
 					</lv_label>
 					<lv_label name="panic_report" bind_text="subject_panic_report" style_text_font="font_caption" style_text_color="#color_text_3">

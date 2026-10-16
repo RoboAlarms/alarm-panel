@@ -78,7 +78,7 @@ lv_obj_t * device_tile_create(lv_obj_t * parent, const char * glyph, const char 
         alarm_ui_run_47(detail_label, "detail_label");
 
         lv_obj_t * more = alarm_ui_run_0(box_0, 64, 72);
-        alarm_ui_run_55(more, LV_ALIGN_TOP_RIGHT, 16, -12);
+        alarm_ui_run_56(more, LV_ALIGN_TOP_RIGHT, 16, -12);
         lv_obj_set_flag(more, LV_OBJ_FLAG_FLOATING, true);
         lv_obj_set_flag(more, LV_OBJ_FLAG_CLICKABLE, true);
         lv_obj_set_name(more, "more");

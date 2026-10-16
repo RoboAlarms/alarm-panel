@@ -406,82 +406,82 @@ void alarm_ui_run_54(lv_obj_t * o, lv_style_t * a0, int32_t a1, lv_style_t * a2,
     lv_obj_add_style(o, a2, a3);
 }
 
-void alarm_ui_run_55(lv_obj_t * o, int32_t a0, int32_t a1, int32_t a2)
+lv_obj_t * alarm_ui_run_55(lv_obj_t * parent, int32_t a0)
+{
+    lv_obj_t * o = lv_label_create(parent);
+    lv_label_set_long_mode(o, LV_LABEL_LONG_MODE_WRAP);
+    lv_obj_set_style_max_width(o, a0, 0);
+    return o;
+}
+
+void alarm_ui_run_56(lv_obj_t * o, int32_t a0, int32_t a1, int32_t a2)
 {
     lv_obj_set_align(o, a0);
     lv_obj_set_x(o, a1);
     lv_obj_set_y(o, a2);
 }
 
-void alarm_ui_run_56(lv_obj_t * o, int32_t a0)
+void alarm_ui_run_57(lv_obj_t * o, int32_t a0)
 {
     lv_obj_set_style_flex_cross_place(o, LV_FLEX_ALIGN_CENTER, 0);
     lv_obj_set_style_pad_row(o, a0, 0);
 }
 
-void alarm_ui_run_57(lv_obj_t * o, int32_t a0, const char * a1)
+void alarm_ui_run_58(lv_obj_t * o, int32_t a0, const char * a1)
 {
     lv_obj_set_style_text_font(o, font_label, 0);
     lv_obj_set_style_text_align(o, a0, 0);
     lv_obj_set_name(o, a1);
 }
 
-void alarm_ui_run_58(lv_obj_t * o)
+void alarm_ui_run_59(lv_obj_t * o)
 {
     lv_obj_set_style_flex_main_place(o, LV_FLEX_ALIGN_CENTER, 0);
     lv_obj_set_style_pad_row(o, 2, 0);
 }
 
-void alarm_ui_run_59(lv_obj_t * o, int32_t a0, int32_t a1, int32_t a2)
+void alarm_ui_run_60(lv_obj_t * o, int32_t a0, int32_t a1, int32_t a2)
 {
     lv_obj_set_flag(o, a0, a1);
     lv_obj_set_ext_click_area(o, a2);
 }
 
-void alarm_ui_run_60(lv_obj_t * o)
+void alarm_ui_run_61(lv_obj_t * o)
 {
     lv_obj_set_style_text_line_space(o, -2, 0);
     lv_obj_set_style_text_align(o, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(o, font_caption, 0);
 }
 
-lv_obj_t * alarm_ui_run_61(lv_obj_t * parent, lv_subject_t * a0)
+lv_obj_t * alarm_ui_run_62(lv_obj_t * parent, lv_subject_t * a0)
 {
     lv_obj_t * o = lv_label_create(parent);
     lv_label_bind_text(o, a0, NULL);
     return o;
 }
 
-void alarm_ui_run_62(lv_style_t * o, int32_t a0, int32_t a1)
+void alarm_ui_run_63(lv_style_t * o, int32_t a0, int32_t a1)
 {
     lv_style_set_radius(o, a0);
     lv_style_set_bg_opa(o, a1);
 }
 
-void alarm_ui_run_63(lv_style_t * o, int32_t a0, int32_t a1)
+void alarm_ui_run_64(lv_style_t * o, int32_t a0, int32_t a1)
 {
     lv_style_set_height(o, a0);
     lv_style_set_radius(o, a1);
 }
 
-void alarm_ui_run_64(lv_style_t * o, int32_t a0, lv_color_t a1)
+void alarm_ui_run_65(lv_style_t * o, int32_t a0, lv_color_t a1)
 {
     lv_style_set_border_width(o, a0);
     lv_style_set_border_color(o, a1);
 }
 
-void alarm_ui_run_65(lv_obj_t * o, int32_t a0, int32_t a1)
+void alarm_ui_run_66(lv_obj_t * o, int32_t a0, int32_t a1)
 {
     lv_obj_set_style_flex_cross_place(o, a0, 0);
     lv_obj_set_style_pad_column(o, a1, 0);
-}
-
-lv_obj_t * alarm_ui_run_66(lv_obj_t * parent, int32_t a0)
-{
-    lv_obj_t * o = lv_label_create(parent);
-    lv_label_set_long_mode(o, LV_LABEL_LONG_MODE_WRAP);
-    lv_obj_set_style_max_width(o, a0, 0);
-    return o;
 }
 
 void alarm_ui_run_67(lv_obj_t * o, lv_style_t * a0, int32_t a1, const char * a2)

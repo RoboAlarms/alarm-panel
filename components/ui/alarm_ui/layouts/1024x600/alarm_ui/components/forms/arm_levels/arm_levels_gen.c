@@ -41,20 +41,20 @@ lv_obj_t * arm_levels_create(lv_obj_t * parent)
         }
 
         lv_style_set_flex_grow(&style_arm_level, 1);
-        alarm_ui_run_63(&style_arm_level, lv_pct(100), RADIUS_MD);
+        alarm_ui_run_64(&style_arm_level, lv_pct(100), RADIUS_MD);
         alarm_ui_run_6(&style_arm_level, COLOR_RAISED, (255 * 100 / 100));
         lv_style_set_text_color(&style_arm_level, COLOR_TEXT);
         alarm_ui_run_17(&style_arm_level, LV_FLEX_FLOW_ROW);
         lv_style_set_pad_column(&style_arm_level, SPACE_SM);
         lv_style_set_bg_color(&style_arm_level_pressed, COLOR_PRESSED);
         alarm_ui_run_6(&style_arm_level_away, COLOR_ROSE, (255 * 20 / 100));
-        alarm_ui_run_64(&style_arm_level_away, 2, COLOR_ROSE);
+        alarm_ui_run_65(&style_arm_level_away, 2, COLOR_ROSE);
         lv_style_set_text_color(&style_arm_level_away, COLOR_ROSE);
         alarm_ui_run_6(&style_arm_level_stay, COLOR_BLUE, (255 * 20 / 100));
-        alarm_ui_run_64(&style_arm_level_stay, 2, COLOR_BLUE);
+        alarm_ui_run_65(&style_arm_level_stay, 2, COLOR_BLUE);
         lv_style_set_text_color(&style_arm_level_stay, COLOR_BLUE);
         alarm_ui_run_6(&style_arm_level_night, COLOR_VIOLET, (255 * 20 / 100));
-        alarm_ui_run_64(&style_arm_level_night, 2, COLOR_VIOLET);
+        alarm_ui_run_65(&style_arm_level_night, 2, COLOR_VIOLET);
         lv_style_set_text_color(&style_arm_level_night, COLOR_VIOLET);
 
         static const uint16_t style_ids[] = {

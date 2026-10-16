@@ -47,7 +47,7 @@ lv_obj_t * screen_saver_create(void)
         lv_obj_set_style_pad_row(saver_clock, 0, 0);
         lv_obj_t * box_0 = alarm_ui_run_0(saver_clock, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_0, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_65(box_0, LV_FLEX_ALIGN_END, SPACE_SM);
+        alarm_ui_run_66(box_0, LV_FLEX_ALIGN_END, SPACE_SM);
         lv_obj_t * saver_time = lv_label_create(box_0);
         alarm_ui_run_4(saver_time, font_digits, COLOR_TEXT);
         lv_label_bind_text(saver_time, &subject_time, NULL);
@@ -62,7 +62,7 @@ lv_obj_t * screen_saver_create(void)
         lv_label_bind_text(saver_date, &subject_date, NULL);
 
         lv_obj_t * saver_state = box_create(lv_obj_0);
-        alarm_ui_run_55(saver_state, LV_ALIGN_BOTTOM_LEFT, 48, -48);
+        alarm_ui_run_56(saver_state, LV_ALIGN_BOTTOM_LEFT, 48, -48);
         alarm_ui_run_31(saver_state, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_max_width(saver_state, 560, 0);
         alarm_ui_run_9(saver_state, COLOR_BG, 0, (255 * 74 / 100), RADIUS_XL);
@@ -71,7 +71,7 @@ lv_obj_t * screen_saver_create(void)
         lv_obj_set_style_pad_all(saver_state, SPACE_XL, 0);
         lv_obj_set_style_pad_right(saver_state, SPACE_XXL, 0);
         alarm_ui_run_1(saver_state, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_65(saver_state, LV_FLEX_ALIGN_CENTER, SPACE_XL);
+        alarm_ui_run_66(saver_state, LV_FLEX_ALIGN_CENTER, SPACE_XL);
         lv_obj_t * saver_disk = alarm_ui_run_0(saver_state, 84, 84);
         lv_obj_set_style_radius(saver_disk, RADIUS_FULL, 0);
         lv_obj_set_style_bg_opa(saver_disk, (255 * 22 / 100), 0);
@@ -88,18 +88,18 @@ lv_obj_t * screen_saver_create(void)
         alarm_ui_run_12(saver_headline, font_headline, &subject_headline);
         lv_obj_bind_style_prop(saver_headline, LV_STYLE_TEXT_COLOR, 0, &subject_tone_color);
 
-        lv_obj_t * saver_detail = alarm_ui_run_66(saver_words, 400);
+        lv_obj_t * saver_detail = alarm_ui_run_55(saver_words, 400);
         alarm_ui_run_4(saver_detail, font_label, COLOR_TEXT);
         lv_label_bind_text(saver_detail, &subject_detail, NULL);
 
-        lv_obj_t * saver_note = alarm_ui_run_66(saver_words, 400);
+        lv_obj_t * saver_note = alarm_ui_run_55(saver_words, 400);
         alarm_ui_run_4(saver_note, font_body, lv_color_hex(0xCBD5E1));
         lv_label_bind_text(saver_note, &subject_hero_note, NULL);
 
         lv_obj_t * saver_trouble = alarm_ui_run_0(saver_words, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_margin_top(saver_trouble, SPACE_SM, 0);
         alarm_ui_run_1(saver_trouble, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_65(saver_trouble, LV_FLEX_ALIGN_CENTER, SPACE_SM);
+        alarm_ui_run_66(saver_trouble, LV_FLEX_ALIGN_CENTER, SPACE_SM);
         lv_obj_set_style_text_color(saver_trouble, COLOR_AMBER, 0);
         lv_obj_bind_flag_if_eq(saver_trouble, &subject_trouble_count, LV_OBJ_FLAG_HIDDEN, 0);
         lv_obj_t * lv_label_1 = alarm_ui_run_23(saver_trouble, "\xEE\x86\x93");

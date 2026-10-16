@@ -854,6 +854,7 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         r = plink_master_remove(s_m, now, req->device) ? UI_LINK_REQ_OK : UI_LINK_REQ_FAILED;
         break;
     case UI_LINK_REQ_KP_PAIR_START:
+    case LINK_REQ_KP_PAIR_AT: /* `plink kp pair <ip>` on a bench */
     case UI_LINK_REQ_KP_PAIR_CONFIRM:
     case UI_LINK_REQ_KP_PAIR_RETRY:
     case UI_LINK_REQ_KP_PAIR_STOP:

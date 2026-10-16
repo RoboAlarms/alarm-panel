@@ -9,6 +9,8 @@
  *   master: plink pair [force], allow, reject, stop, list, remove <n>, home <n> <p>,
  *           super <n> <seconds>        (force: without installer mode, development builds only)
  *   keypad: plink find, master <ip>|off, pair [<ip>], yes, no, forget
+ *   a master whose setup isn't done (the setup's keypad branch, Option C): plink kp pair [<ip>],
+ *           kp yes, kp no, kp stop, kp done (stores the keypad role, keeps Wi-Fi, restarts)
  */
 #include "plink_internal.h"
 
@@ -218,6 +220,31 @@ static int cmd_plink(int argc, char **argv)
                                                        : PLINK_SERVICE_MASTER); /* restarts */
         return 0;
     }
+    if (!keypad && strcmp(what, "kp") == 0 && argc >= 3) {
+        /* the setup's keypad branch from a bench (Option C): as the wizard's requests */
+        const char *step = argv[2];
+        if (strcmp(step, "pair") == 0) {
+            req.kind = UI_LINK_REQ_KP_PAIR_START;
+            if (argc >= 4) {
+                req.kind = LINK_REQ_KP_PAIR_AT;
+                if (!parse_ip(argv[3], &req.ip)) {
+                    printf("an IPv4 address, e.g. 192.0.2.10\n");
+                    return 1;
+                }
+            }
+        } else if (strcmp(step, "yes") == 0 || strcmp(step, "no") == 0) {
+            req.kind = UI_LINK_REQ_KP_PAIR_CONFIRM;
+            req.allow = step[0] == 'y';
+        } else if (strcmp(step, "stop") == 0) {
+            req.kind = UI_LINK_REQ_KP_PAIR_STOP;
+        } else if (strcmp(step, "done") == 0) {
+            req.kind = UI_LINK_REQ_KP_DONE;
+        } else {
+            printf("plink kp pair [<ip>] | yes | no | stop | done\n");
+            return 1;
+        }
+        return ask(&req);
+    }
     if (!keypad) {
         unsigned long n = 0;
         unsigned long v = 0;
@@ -319,8 +346,8 @@ esp_err_t plink_service_console_register(void)
         .help = "Panel link (docs/features/11): status; role keypad|master confirm (a factory "
                 "reset); master: pair [force], allow, reject, stop, list, remove <n>, "
                 "home <n> <p>, super <n> <s>; keypad: find, master <ip>|off, pair [<ip>], yes, "
-                "no, forget",
-        .hint = "[role|pair|allow|reject|stop|list|remove|home|super|find|master|yes|no|forget]",
+                "no, forget; a master in its setup: kp pair [<ip>]|yes|no|stop|done",
+        .hint = "[role|pair|allow|reject|stop|list|remove|home|super|find|master|yes|no|forget|kp]",
         .func = cmd_plink,
     };
     return esp_console_cmd_register(&cmd);

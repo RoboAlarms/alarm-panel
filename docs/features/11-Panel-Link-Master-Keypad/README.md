@@ -209,8 +209,9 @@ length; link traffic still shows when a command is sent. Retries: every 500 ms w
 up to 3 s; panic every 1 s for 60 s (LINK-023). While the link is down or still connecting a
 command is answered at once with ALARM_ERR_UNAVAILABLE; panic is queued and keeps being sent. The
 master keeps 8 answers per keypad: a command's for 3 s after its last copy, a panic's for 60 s
-after its first, and panics never hold the last 2, so a disarm after a run of panics is not
-dropped (a command that finds nothing else free takes the oldest answered panic not sent for 3 s).
+after its first (an answer that may still be asked for is never given up, so nothing runs twice),
+and panics never hold the last 2, so a disarm after a run of panics runs. With all 8 held, a new
+command is dropped and its keypad's resend gets it once a command's answer is 3 s old.
 
 ## Pairing
 

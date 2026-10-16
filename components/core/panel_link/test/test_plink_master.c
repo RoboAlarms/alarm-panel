@@ -1926,14 +1926,15 @@ static void test_cache_keeps_answers_still_wanted(void)
  * keypad's commands. Eight panics keyed a second apart, each answered at once: six run and are
  * answered - each answer kept 60 s from its first copy, as long as the keypad may resend it - and
  * the seventh and eighth wait, the last 2 answers being the commands'. A disarm then runs and is
- * answered at once; two code checks after it run too, the second taking the oldest answered
- * panic (not sent for 3 s: it has its answer); and the seventh panic's resend runs once a
- * command's answer may go. */
+ * answered at once, and a code check after it; a third command finds every answer still wanted
+ * and is dropped, and its resend runs once the disarm's answer is 3 s old. The seventh panic's
+ * resend runs once the first panic's answer is 60 s old. */
 static void test_answered_panics_leave_room_for_commands(void)
 {
     fk_t *k = kp_add();
     pair(k);
     run(3000);
+    const uint64_t first = NOW; /* the first panic's first copy */
     for (uint32_t i = 0; i < 8u; i++) {
         k_cmd(k, 7100u + i, PLINK_OP_COMMAND, ALARM_CMD_PANIC, 1u, "");
         run(1000);
@@ -1952,13 +1953,24 @@ static void test_answered_panics_leave_room_for_commands(void)
     TEST_ASSERT_EQUAL_INT(ALARM_OK, (int)k_result(k, 7200u)->result);
     k_cmd(k, 7201u, PLINK_OP_AUTH, ALARM_CMD_CODE_CHECK, 1u, CODE_USER);
     run(10);
+    TEST_ASSERT_EQUAL_UINT(8u, R.n_runs);
+    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7201u));
     k_cmd(k, 7202u, PLINK_OP_AUTH, ALARM_CMD_CODE_CHECK, 1u, CODE_USER);
     run(10);
-    TEST_ASSERT_EQUAL_UINT(9u, R.n_runs);
-    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7201u));
-    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7202u));
+    TEST_ASSERT_EQUAL_UINT(8u, R.n_runs); /* all 8 answers still wanted: dropped */
+    TEST_ASSERT_EQUAL_UINT(0u, k_results(k, 7202u));
     run(PLINK_CMD_GIVE_UP_MS);
-    k_cmd(k, 7106u, PLINK_OP_COMMAND, ALARM_CMD_PANIC, 1u, ""); /* its resend */
+    k_cmd(k, 7202u, PLINK_OP_AUTH, ALARM_CMD_CODE_CHECK, 1u, CODE_USER); /* its resend */
+    run(10);
+    TEST_ASSERT_EQUAL_UINT(9u, R.n_runs);
+    TEST_ASSERT_EQUAL_UINT32(7202u, R.runs[8].cmd.req);
+    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7202u));
+    k_cmd(k, 7106u, PLINK_OP_COMMAND, ALARM_CMD_PANIC, 1u, ""); /* its resend: still 6 panics */
+    run(10);
+    TEST_ASSERT_EQUAL_UINT(9u, R.n_runs);
+    TEST_ASSERT_EQUAL_UINT(0u, k_results(k, 7106u));
+    run(first + PLINK_PANIC_KEEP_MS + 100u - NOW); /* the first panic's answer is 60 s old */
+    k_cmd(k, 7106u, PLINK_OP_COMMAND, ALARM_CMD_PANIC, 1u, "");
     run(10);
     TEST_ASSERT_EQUAL_UINT(10u, R.n_runs);
     TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7106u));
@@ -1966,6 +1978,51 @@ static void test_answered_panics_leave_room_for_commands(void)
     run(10);
     TEST_ASSERT_EQUAL_UINT(10u, R.n_runs); /* answered from the cache, not run again */
     TEST_ASSERT_EQUAL_UINT(2u, k_results(k, 7106u));
+}
+
+/* LINK-018, LINK-023: a panic whose answer was lost is never run twice. Six panics answered, the
+ * first one's RESULT lost (and, as far as the master knows, its next copies too: it hears nothing
+ * of it for over 3 s). Commands fill the commands' answers and more come: none takes the lost
+ * one's place - each is dropped until a command's answer is 3 s old - so the panic's late copy is
+ * answered from the cache, not run again. */
+static void test_panic_with_a_lost_answer_never_runs_twice(void)
+{
+    fk_t *k = kp_add();
+    pair(k);
+    run(3000);
+    R.net.lose_type = PLINK_T_RESULT;
+    R.net.lose_type_count = 1u;
+    for (uint32_t i = 0; i < 6u; i++) {
+        k_cmd(k, 7300u + i, PLINK_OP_COMMAND, ALARM_CMD_PANIC, 1u, "");
+        run(1000);
+    }
+    TEST_ASSERT_EQUAL_UINT(6u, R.n_runs);
+    TEST_ASSERT_EQUAL_UINT(0u, k_results(k, 7300u)); /* its answer was lost */
+    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7305u));
+    k_cmd(k, 7400u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, CODE_USER);
+    run(10);
+    k_cmd(k, 7401u, PLINK_OP_AUTH, ALARM_CMD_CODE_CHECK, 1u, CODE_USER);
+    run(10);
+    TEST_ASSERT_EQUAL_UINT(8u, R.n_runs);
+    run(PLINK_CMD_GIVE_UP_MS + 100u);
+    for (uint32_t i = 0; i < 3u; i++) {
+        k_cmd(k, 7402u + i, PLINK_OP_AUTH, ALARM_CMD_CODE_CHECK, 1u, CODE_USER);
+        run(10);
+    }
+    TEST_ASSERT_EQUAL_UINT(10u, R.n_runs); /* two took the commands' answers, the third waits */
+    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7402u));
+    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7403u));
+    TEST_ASSERT_EQUAL_UINT(0u, k_results(k, 7404u));
+    k_cmd(k, 7300u, PLINK_OP_COMMAND, ALARM_CMD_PANIC, 1u, ""); /* the panic's late copy */
+    run(10);
+    TEST_ASSERT_EQUAL_UINT(10u, R.n_runs);
+    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7300u));
+    TEST_ASSERT_EQUAL_INT(ALARM_OK, (int)k_result(k, 7300u)->result);
+    unsigned panics = 0u;
+    for (size_t i = 0; i < R.n_runs; i++) {
+        panics += R.runs[i].cmd.req == 7300u ? 1u : 0u;
+    }
+    TEST_ASSERT_EQUAL_UINT(1u, panics);
 }
 
 /* LINK-018: port.run with no room: the command is forgotten, so its retry runs it (once). */
@@ -2511,6 +2568,7 @@ int main(void)
     RUN_TEST(test_command_rate_limit);
     RUN_TEST(test_cache_keeps_answers_still_wanted);
     RUN_TEST(test_answered_panics_leave_room_for_commands);
+    RUN_TEST(test_panic_with_a_lost_answer_never_runs_twice);
     RUN_TEST(test_command_refused_by_the_platform_runs_on_retry);
     RUN_TEST(test_codes_are_not_kept);
     RUN_TEST(test_supervision_not_heard);

@@ -656,15 +656,14 @@ static size_t cache_find(const plink_peer_t *p, uint32_t req)
 /* A slot for a new command: a free one, else the answer its keypad stopped resending the longest
  * ago. A command is resent for 3 s from its last copy, a panic for 60 s from keying - its first
  * copy - (plink_keypad.h): an answer that may still be asked for is never given up for another,
- * so nothing runs twice (LINK-018). Panics never hold the last PLINK_PANIC_FREE_SLOTS answers:
- * a panic beyond that waits for one of theirs to go (its keypad resends it every second). And
- * a command (a disarm!) that finds nothing else takes the oldest answered panic whose keypad
- * hasn't sent it for 3 s - a panic is resent every second until its answer arrives, so that
- * one has its answer. CACHE_NONE: none now (the new command's own resend comes back). */
+ * so nothing runs twice (LINK-018) - not even a panic not heard for 3 s, whose answer may have
+ * been lost with its next copies. Panics never hold the last PLINK_PANIC_FREE_SLOTS answers: a
+ * panic beyond that waits for one of theirs to go (its keypad resends it every second), and a
+ * command finds one of those once its answer there is 3 s old. CACHE_NONE: none now (the new
+ * command is dropped; its keypad's resend comes back). */
 static size_t cache_slot(const plink_peer_t *p, uint64_t now, bool panic)
 {
     size_t free_slot = CACHE_NONE, best = CACHE_NONE, best_panic = CACHE_NONE;
-    size_t answered_panic = CACHE_NONE;
     unsigned panics = 0u;
     for (size_t i = 0; i < PLINK_RESULTS_PER_KEYPAD; i++) {
         const plink_cached_t *e = &p->cache[i];
@@ -687,22 +686,11 @@ static size_t cache_slot(const plink_peer_t *p, uint64_t now, bool panic)
             (best_panic == CACHE_NONE || e->last_ms < p->cache[best_panic].last_ms)) {
             best_panic = i;
         }
-        if (!gone && is_panic && now >= e->last_ms + PLINK_CMD_GIVE_UP_MS &&
-            (answered_panic == CACHE_NONE ||
-             e->first_ms < p->cache[answered_panic].first_ms)) {
-            answered_panic = i;
-        }
     }
     if (panic && panics >= PLINK_RESULTS_PER_KEYPAD - PLINK_PANIC_FREE_SLOTS) {
         return best_panic; /* the commands' slots stay theirs */
     }
-    if (free_slot != CACHE_NONE) {
-        return free_slot;
-    }
-    if (best != CACHE_NONE || panic) {
-        return best;
-    }
-    return answered_panic;
+    return free_slot != CACHE_NONE ? free_slot : best;
 }
 
 static void send_result(plink_master_t *m, plink_peer_t *p, const plink_result_t *r)

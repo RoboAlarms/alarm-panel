@@ -100,6 +100,9 @@ bool ui_voice_present(void)
         S.be.voice_preview == NULL || S.be.voice_seen == NULL || S.be.voice_apply_approve == NULL) {
         return false;
     }
+    if (ui_link_keypad()) {
+        return false; /* a keypad has no voice: the alarm panel speaks (BL-048) */
+    }
     ui_voice_info_t info;
     S.be.voice_info(S.be.ctx, &info);
     return info.state != UI_VOICE_OFF;

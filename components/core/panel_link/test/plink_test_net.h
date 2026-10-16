@@ -44,6 +44,7 @@ typedef struct {
     plink_addr_t from_addr;
     plink_addr_t to;
     uint64_t at_ms;     /* delivery time */
+    uint64_t order;     /* datagrams due at the same ms go in the order they were sent */
     size_t len;
     uint8_t b[PLINK_FRAME_MAX];
 } plink_net_dgram_t;
@@ -65,6 +66,7 @@ typedef struct {
     int nodes;
     plink_net_dgram_t q[PLINK_NET_QUEUE];
     size_t q_count;
+    uint64_t q_order;   /* the next datagram's order */
     plink_net_seen_t log[PLINK_NET_LOG];
     size_t log_count;
     plink_net_dgram_t recent[PLINK_NET_RECENT]; /* the newest datagrams sent, for replays */

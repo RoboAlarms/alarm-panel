@@ -25,6 +25,11 @@ typedef struct {
     uint32_t seen_count;
     bool reused;      /* a (key, A_0) came twice */
     uint32_t aes_calls;
+    /* 0: every CCM operation is watched. Else only those whose nonce starts with this direction
+     * byte (PLINK_DIR_MASTER or PLINK_DIR_KEYPAD: this side's seals). On a network that damages
+     * frames a side may open a frame whose tag fails, and open the same nonce again later (the
+     * window moves only on a verified tag): harmless, but the same (key, A_0). */
+    uint8_t only_dir;
 } plink_test_port_t;
 
 /* Ready, random numbers from seed. */

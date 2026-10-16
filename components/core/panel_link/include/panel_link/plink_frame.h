@@ -80,7 +80,8 @@ bool plink_type_known(uint8_t type);
 bool plink_type_sealed(uint8_t type);      /* 0x20 and up */
 bool plink_type_from_master(uint8_t type); /* COMMIT, REVEAL, DONE, WELCOME, REKEY, NOT_PAIRED,
                                             * BEACON, STATUS, ZONES, CFG_PAGE, EVENTS, RESULT,
-                                            * SOUND, TIME, BYE; PAIR_FAIL either way */
+                                            * SOUND, TIME, BYE; and PAIR_FAIL, which travels
+                                            * either way (plink_hdr_read takes it from both) */
 
 typedef struct {
     uint8_t type;
@@ -106,12 +107,14 @@ bool plink_hdr_read(const uint8_t *frame, size_t len, plink_hdr_t *out);
 void plink_nonce(const plink_hdr_t *h, uint8_t out[PLINK_CCM_NONCE_LEN]);
 
 /* A plain frame: header + payload into out (cap bytes). false when it doesn't fit or h is not a
- * plain type; *out_len is the frame's length. */
+ * plain type; *out_len is the frame's length. Both builders refuse a header plink_hdr_read would
+ * drop, and take a payload that already lies at out + PLINK_HDR_LEN. */
 bool plink_frame_plain(const plink_hdr_t *h, const uint8_t *payload, size_t len, uint8_t *out,
                        size_t cap, size_t *out_len);
 
 /* A sealed frame: header, the payload encrypted under key (16 bytes) and its tag. h->flags must
- * carry SEALED and the right FROM_MASTER; sid and seq not 0. */
+ * carry SEALED and the right FROM_MASTER; sid and seq not 0. false: a bad header, no room, or a
+ * port call failed (then the frame's bytes in out are wiped: no plaintext is left there). */
 PLINK_MUST_CHECK
 bool plink_frame_seal(const plink_crypto_t *c, const uint8_t key[PLINK_AES_LEN],
                       const plink_hdr_t *h, const uint8_t *payload, size_t len, uint8_t *out,

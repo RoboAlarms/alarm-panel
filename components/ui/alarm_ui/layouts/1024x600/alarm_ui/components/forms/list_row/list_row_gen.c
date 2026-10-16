@@ -38,7 +38,7 @@ lv_obj_t * list_row_create(lv_obj_t * parent, const char * glyph, lv_color_t col
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_36(&style_list_row);
+        alarm_ui_run_38(&style_list_row);
         lv_style_set_min_height(&style_list_row, 72);
         alarm_ui_run_6(&style_list_row, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_list_row, RADIUS_MD);
@@ -47,7 +47,7 @@ lv_obj_t * list_row_create(lv_obj_t * parent, const char * glyph, lv_color_t col
         alarm_ui_run_19(&style_list_row_level, lv_pct(100), 8, RADIUS_FULL);
         alarm_ui_run_6(&style_list_row_level, COLOR_PRESSED, (255 * 100 / 100));
         lv_style_set_margin_top(&style_list_row_level, SPACE_SM);
-        alarm_ui_run_59(&style_list_row_level_indicator, RADIUS_FULL, (255 * 100 / 100));
+        alarm_ui_run_63(&style_list_row_level_indicator, RADIUS_FULL, (255 * 100 / 100));
 
         static const uint16_t style_ids[] = {
             ALARM_UI_STYLE_LIST_ROW_LIST_ROW,
@@ -68,17 +68,17 @@ lv_obj_t * list_row_create(lv_obj_t * parent, const char * glyph, lv_color_t col
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_20(parent);
-        alarm_ui_run_15(box_0, &style_list_row, 0, &style_list_row_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(box_0, &style_list_row, 0, &style_list_row_pressed, LV_STATE_PRESSED);
         lv_obj_t * chip = icon_chip_create(box_0, glyph, 44, icons_20, color);
         lv_obj_set_name(chip, "chip");
 
         lv_obj_t * box_1 = alarm_ui_run_8(box_0);
         lv_obj_set_style_min_height(box_1, 56, 0);
         alarm_ui_run_1(box_1, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_55(box_1);
+        alarm_ui_run_59(box_1);
         lv_obj_t * title_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(title_label, title);
-        alarm_ui_run_35(title_label, font_label, "title_label");
+        alarm_ui_run_37(title_label, font_label, "title_label");
 
         lv_obj_t * detail_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(detail_label, detail);
@@ -90,7 +90,7 @@ lv_obj_t * list_row_create(lv_obj_t * parent, const char * glyph, lv_color_t col
         lv_bar_set_max_value(level, 100);
         lv_bar_set_value(level, 0, LV_ANIM_OFF);
         lv_obj_set_flag(level, LV_OBJ_FLAG_CLICKABLE, false);
-        alarm_ui_run_15(level, &style_list_row_level, 0, &style_list_row_level_indicator, LV_PART_INDICATOR);
+        alarm_ui_run_16(level, &style_list_row_level, 0, &style_list_row_level_indicator, LV_PART_INDICATOR);
         lv_obj_set_name(level, "level");
 
         lv_obj_t * value_label = lv_label_create(box_0);

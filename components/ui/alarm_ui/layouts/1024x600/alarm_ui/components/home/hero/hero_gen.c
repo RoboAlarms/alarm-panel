@@ -41,7 +41,7 @@ lv_obj_t * hero_create(lv_obj_t * parent)
         }
 
         alarm_ui_run_6(&style_hero, COLOR_SURFACE, (255 * 100 / 100));
-        alarm_ui_run_23(&style_hero, RADIUS_XL);
+        alarm_ui_run_24(&style_hero, RADIUS_XL);
         lv_style_set_pad_all(&style_hero, SPACE_XL);
         alarm_ui_run_17(&style_hero, LV_FLEX_FLOW_COLUMN);
         lv_style_set_pad_row(&style_hero, SPACE_SM);
@@ -50,7 +50,7 @@ lv_obj_t * hero_create(lv_obj_t * parent)
         lv_style_set_arc_opa(&style_ring_track, (255 * 8 / 100));
         lv_style_set_arc_width(&style_ring_indicator, 12);
         lv_style_set_arc_rounded(&style_ring_indicator, true);
-        alarm_ui_run_59(&style_disk, RADIUS_FULL, (255 * 12 / 100));
+        alarm_ui_run_63(&style_disk, RADIUS_FULL, (255 * 12 / 100));
         lv_style_set_shadow_width(&style_disk, 72);
         lv_style_set_shadow_opa(&style_disk, (255 * 30 / 100));
         lv_style_set_bg_color(&style_hero_alarm, COLOR_ALARM_CARD);
@@ -89,7 +89,7 @@ lv_obj_t * hero_create(lv_obj_t * parent)
         lv_arc_set_max_value(ring, 1000);
         lv_arc_bind_value(ring, &subject_countdown_pct);
         lv_obj_set_flag(ring, LV_OBJ_FLAG_CLICKABLE, false);
-        alarm_ui_run_15(ring, &style_ring_track, 0, &style_ring_indicator, LV_PART_INDICATOR);
+        alarm_ui_run_16(ring, &style_ring_track, 0, &style_ring_indicator, LV_PART_INDICATOR);
         lv_obj_add_style(ring, &style_knob_off, LV_PART_KNOB);
         lv_obj_bind_style_prop(ring, LV_STYLE_ARC_COLOR, LV_PART_INDICATOR, &subject_tone_color);
         lv_obj_set_name(ring, "ring");
@@ -110,7 +110,8 @@ lv_obj_t * hero_create(lv_obj_t * parent)
         lv_label_bind_text(hero_count, &subject_countdown, "%d");
         lv_obj_bind_flag_if_eq(hero_count, &subject_countdown, LV_OBJ_FLAG_HIDDEN, 0);
 
-        lv_obj_t * hero_headline = lv_label_create(box_0);
+        lv_obj_t * hero_headline = alarm_ui_run_2(box_0, LV_LABEL_LONG_MODE_WRAP);
+        lv_obj_set_style_text_align(hero_headline, LV_TEXT_ALIGN_CENTER, 0);
         alarm_ui_run_12(hero_headline, font_headline, &subject_headline);
 
         lv_obj_t * hero_detail = alarm_ui_run_2(box_0, LV_LABEL_LONG_MODE_WRAP);

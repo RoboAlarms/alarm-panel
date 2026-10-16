@@ -7,6 +7,7 @@
  * components/core/event_log ring on a RAM flash; Wi-Fi, time zone and preferences are simulated.
  */
 #include "host_panel.h"
+#include "host_link_demo.h"
 #include "host_zigbee_demo.h"
 #include "host_zigbee_real.h"
 #include "i18n/i18n.h"
@@ -2552,6 +2553,12 @@ static bool zb_demo_allowed(void)
     return alarm_engine_program_active(&H.eng) && all_disarmed();
 }
 
+/* The panel link's demo backend (host_link_demo.h): the pretend panel's clock. */
+static int64_t link_demo_epoch(void)
+{
+    return H.epoch_at_start == 0 ? 0 : H.epoch_at_start + (int64_t)H.now;
+}
+
 static void storage_reset(void);
 static void ha_link_up(bool up);
 static bool host_panel_ha_paired_and_on(void);
@@ -2565,6 +2572,7 @@ void host_panel_init(int64_t epoch_ms_at_start)
     H.epoch_at_start = epoch_ms_at_start;
     vx_init();
     host_zigbee_demo_init(zb_demo_allowed); /* Installer > Zigbee (BL-144), interim */
+    host_link_demo_init(zb_demo_allowed, link_demo_epoch); /* the panel link (BL-048), off */
     zb_demo_hooks();
     H.now = 5000;
     H.config_seq = 1;
@@ -2858,6 +2866,7 @@ static void mqtt_step(void)
 void host_panel_advance(alarm_ms_t ms)
 {
     host_zigbee_demo_advance((uint32_t)ms);
+    host_link_demo_advance((uint32_t)ms);
     const alarm_ms_t end = H.now + ms;
     while (H.now < end) { /* the hub's deadlines (wired polling, grace times) in order */
         uint64_t next = zone_hub_next_deadline(&H.hub, H.now);
@@ -7684,6 +7693,9 @@ void host_panel_backend(ui_backend_t *out)
     if (CONFIG_ALARM_FEATURE_VOICE) {
         voice_load(); /* its log line once, at start */
     }
+    /* link_*: the panel link's demo model (BL-048), off (answering as a firmware that hasn't said)
+     * until the walk turns it on */
+    host_link_demo_backend(out);
     /* zb_*: the real Zigbee or the demo model, as host_panel_zigbee_use_real() chose */
     host_zigbee_demo_backend(&s_zb_demo_be);
     host_zigbee_real_backend(&s_zb_real_be);

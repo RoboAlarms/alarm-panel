@@ -40,8 +40,8 @@ lv_obj_t * hold_button_create(lv_obj_t * parent, const char * text, lv_color_t c
         lv_style_set_bg_opa(&style_hold_button, (255 * 14 / 100));
         lv_style_set_border_width(&style_hold_button, 1);
         lv_style_set_clip_corner(&style_hold_button, true);
-        alarm_ui_run_59(&style_hold_fill, 0, (255 * 0 / 100));
-        alarm_ui_run_59(&style_hold_fill_indicator, 0, (255 * 45 / 100));
+        alarm_ui_run_63(&style_hold_fill, 0, (255 * 0 / 100));
+        alarm_ui_run_63(&style_hold_fill_indicator, 0, (255 * 45 / 100));
 
         static const uint16_t style_ids[] = {
             ALARM_UI_STYLE_HOLD_BUTTON_HOLD_BUTTON,
@@ -71,7 +71,7 @@ lv_obj_t * hold_button_create(lv_obj_t * parent, const char * text, lv_color_t c
         lv_bar_set_value(fill, 0, LV_ANIM_OFF);
         lv_obj_set_flag(fill, LV_OBJ_FLAG_CLICKABLE, false);
         lv_obj_set_style_bg_color(fill, color, LV_PART_INDICATOR);
-        alarm_ui_run_15(fill, &style_hold_fill, 0, &style_hold_fill_indicator, LV_PART_INDICATOR);
+        alarm_ui_run_16(fill, &style_hold_fill, 0, &style_hold_fill_indicator, LV_PART_INDICATOR);
         lv_obj_set_name(fill, "fill");
 
         lv_obj_t * lv_label_0 = alarm_ui_run_33(box_0);

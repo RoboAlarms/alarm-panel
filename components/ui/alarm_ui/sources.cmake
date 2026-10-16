@@ -18,6 +18,7 @@ set(ALARM_UI_LOGIC_SRCS
     src/ui_forms.c
     src/ui_installer.c
     src/ui_lang.c
+    src/ui_link.c
     src/ui_net.c
     src/ui_settings.c
     src/ui_sources.c

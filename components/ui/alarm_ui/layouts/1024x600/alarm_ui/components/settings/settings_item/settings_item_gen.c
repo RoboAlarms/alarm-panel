@@ -29,7 +29,7 @@ lv_obj_t * settings_item_create(lv_obj_t * parent, const char * glyph, const cha
         lv_style_init(&style_settings_item_pressed);
 
         alarm_ui_run_19(&style_settings_item, lv_pct(100), 52, RADIUS_LG);
-        alarm_ui_run_14(&style_settings_item, SPACE_MD, SPACE_MD);
+        alarm_ui_run_15(&style_settings_item, SPACE_MD, SPACE_MD);
         lv_style_set_pad_column(&style_settings_item, SPACE_MD);
         lv_style_set_text_color(&style_settings_item, COLOR_TEXT_2);
         alarm_ui_run_6(&style_settings_item_pressed, COLOR_PRESSED, (255 * 100 / 100));
@@ -46,14 +46,14 @@ lv_obj_t * settings_item_create(lv_obj_t * parent, const char * glyph, const cha
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_20(parent);
-        alarm_ui_run_15(box_0, &style_settings_item, 0, &style_settings_item_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(box_0, &style_settings_item, 0, &style_settings_item_pressed, LV_STATE_PRESSED);
         lv_obj_t * lv_label_0 = lv_label_create(box_0);
         lv_obj_set_width(lv_label_0, 28);
         lv_label_set_text(lv_label_0, glyph);
         lv_obj_set_style_text_font(lv_label_0, icons_20, 0);
         lv_obj_set_style_text_align(lv_label_0, LV_TEXT_ALIGN_CENTER, 0);
 
-        lv_obj_t * lv_label_1 = alarm_ui_run_41(box_0, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_t * lv_label_1 = alarm_ui_run_44(box_0, LV_LABEL_LONG_MODE_DOTS);
         lv_label_set_text(lv_label_1, title);
         alarm_ui_run_4(lv_label_1, font_label, COLOR_TEXT);
 

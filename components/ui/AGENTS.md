@@ -44,7 +44,10 @@ as CONTRIBUTING.md "Rules for the UI". Display safety (nothing flashes) is in th
   Announcements, docs/features/08 voice-first-build.md; hidden without a voice),
   `ui_update.c` (About > Software update), `ui_saver.c` (screen saver
   picture), `ui_theme.c` (the appearance: switches the layout's themes.xml palettes
-  at run time), `ui_wizard.c`, `ui_tz.c`, `ui_text.c`, `ui_status.c` (the status screen a board shows
+  at run time), `ui_wizard.c` (the setup; with the panel link its role and a keypad's pairing steps),
+  `ui_link.c` (the panel link, docs/features/11: Installer > Keypads and devices' keypads on Wi-Fi, a
+  keypad's Home, Emergency words, About and stand-alone page; nothing without `ui_backend_t.link_*`),
+  `ui_tz.c`, `ui_text.c`, `ui_status.c` (the status screen a board shows
   when the full UI doesn't fit in its RAM); shared state in `ui_internal.h`. User-facing
   strings live in these modules, **except the event sentences** ("Burglary alarm" / "Front Door",
   "Armed Away" / "By Master"), whose single copy is `components/core/notify/src/notify_words.c`: the

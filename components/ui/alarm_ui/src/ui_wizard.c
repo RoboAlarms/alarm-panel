@@ -4,6 +4,12 @@
  * set here can be changed later in Settings. An alarm takes the main screen over and the
  * setup continues afterwards. Run again from the installer menu, on a panel that is already
  * set up, every step also offers "Leave setup" (ui_wizard_exit).
+ *
+ * The panel link (docs/features/11, BL-048): on a first start, in a firmware with the link, the
+ * role comes after Welcome - the alarm panel (the steps above) or a keypad for one, whose setup is
+ * Wi-Fi (not skippable), pairing with the alarm panel (the code compared on both screens,
+ * LINK-004, LINK-016) and Done, which stores the role and restarts it as a keypad. Each branch
+ * counts its own dots. A keypad that isn't paired comes back to the pairing step (Pair again).
  */
 #include <stdio.h>
 #include <string.h>
@@ -11,11 +17,26 @@
 #include "ui_internal.h"
 
 /* The language comes first when the firmware has more than one (docs/features/37 I18N-012);
- * the dots at the top count from Wi-Fi. */
-enum { STEP_LANGUAGE = 0, STEP_WELCOME, STEP_WIFI, STEP_TIME, STEP_CLOCK, STEP_CODES, STEP_NAME, STEP_DONE };
+ * the dots at the top count from the role (BL-048), or from Wi-Fi without it. A keypad's branch is
+ * the role, Wi-Fi, the pairing and its own Done. */
+enum {
+    STEP_LANGUAGE = 0,
+    STEP_WELCOME,
+    STEP_ROLE,
+    STEP_WIFI,
+    STEP_TIME,
+    STEP_CLOCK,
+    STEP_CODES,
+    STEP_NAME,
+    STEP_DONE,
+    STEP_PAIR,
+    STEP_KP_DONE
+};
 
 static int32_t s_step;
 static bool s_can_exit; /* the panel is already set up: every step offers "Leave setup" */
+static bool s_role;     /* a first start with the panel link: the role step after Welcome */
+static bool s_keypad;   /* the keypad's branch (chosen on the role step, or Pair again) */
 static uint8_t s_code_user;
 static alarm_config_t *s_scratch;
 
@@ -79,6 +100,11 @@ static void build_welcome(lv_obj_t *b)
     side(UI_ICON_SPARKLES, TR("Welcome"),
          TR("Let's get your alarm panel ready. It takes about two minutes, and you can change "
             "everything later in Settings."));
+    if (s_role) {
+        /* TR: the setup's Welcome on a panel's first start, the row of the role step (BL-048) */
+        ui_row_link(b, UI_ICON_SHIELD, ui_tone_violet(), TR("Choose its role"),
+                    TR("The alarm panel, or a keypad for one"), NULL, NULL, NULL, NULL);
+    }
     ui_row_link(b, UI_ICON_WIFI, ui_tone_blue(), TR("Join Wi-Fi"),
                 TR("For the clock and updates"), NULL, NULL, NULL, NULL);
     ui_row_link(b, UI_ICON_GLOBE, ui_tone_blue(), TR("Choose your time zone"),
@@ -102,6 +128,389 @@ static void build_language(lv_obj_t *b)
          TR("The language of this screen. You can change it later in Settings."));
     ui_lang_setup_build(b, build_step);
     footer(TR("Next"), false);
+}
+
+/* ---- the role (BL-048) ---------------------------------------------------------------------- */
+
+static void role_chosen(void *ctx)
+{
+    s_keypad = (uintptr_t)ctx != 0u;
+    build_step(); /* the dots count the branch's steps at once (not animated) */
+}
+
+/* A choice's row, its check in blue when chosen (as the time zones). */
+static void role_row(lv_obj_t *b, const char *glyph, lv_color_t tone, const char *title,
+                     const char *detail, bool chosen, uintptr_t keypad)
+{
+    lv_obj_t *row = ui_row_link(b, glyph, tone, title, detail, NULL, chosen ? UI_ICON_CHECK : NULL,
+                                role_chosen, (void *)keypad);
+    if (chosen) {
+        lv_obj_set_style_text_color(ui_find(row, "trail_label"), ui_tone_blue(), 0);
+    }
+}
+
+static void build_role(lv_obj_t *b)
+{
+    side(UI_ICON_SHIELD, TR("How will this panel be used?"),
+         TR("Each home has one alarm panel. More panels can be keypads for it."));
+    /* TR: the setup's role step, the alarm panel's row (the default) */
+    role_row(b, UI_ICON_SHIELD_CHECK, ui_tone_green(), TR("The alarm panel"),
+             TR("Sensors and the alarm live here"), !s_keypad, 0u);
+    /* TR: the setup's role step, a keypad's row */
+    role_row(b, UI_ICON_KEYBOARD, ui_tone_blue(), TR("A keypad"),
+             TR("For an alarm panel elsewhere in the house"), s_keypad, 1u);
+    ui_paragraph(b, TR("To change this later, the panel must be reset to its factory settings."),
+                 ui_tone_gray());
+    footer(TR("Next"), true);
+}
+
+/* A keypad reaches the alarm panel over Wi-Fi: its step can't be skipped, Next waits for it. */
+static void build_keypad_wifi(lv_obj_t *b)
+{
+    side(UI_ICON_WIFI, TR("Join Wi-Fi"),
+         TR("A keypad reaches the alarm panel over Wi-Fi, so this step can't be skipped."));
+    const bool connected = ui_net_connected();
+    if (!connected) {
+        ui_paragraph(b, TR("Join the network the alarm panel uses."), ui_tone_gray());
+    }
+    ui_net_build(b, true);
+    footer(TR("Next"), true);
+    ui_set_int(&subject_wiz_next_on, connected ? 1 : 0);
+}
+
+/* ---- pairing with the alarm panel (BL-048, LINK-004, LINK-016) ------------------------------- */
+
+/* What the pairing step shows, from the keypad side's pairing (ui_link_pair_t). */
+typedef enum {
+    PAIR_LOOKING = 0,
+    PAIR_NOT_FOUND, /* 30 s with no alarm panel open for pairing: what to check; it keeps looking */
+    PAIR_FOUND,     /* the two exchange keys */
+    PAIR_COMPARE,   /* the code, Yes or No */
+    PAIR_WAITING,   /* Yes here: the installer allows it at the alarm panel */
+    PAIR_DONE,
+    PAIR_FAILED, /* why: s_pair.p.fail; Try again */
+} pair_view_t;
+
+#define PAIR_NOT_FOUND_S 30u
+
+static struct {
+    ui_link_pair_t p;
+    uint32_t polled;
+    uint32_t shown; /* the view and words on the step, to build it again only when they change */
+} s_pair;
+
+static uint8_t pair_ask(uint8_t kind, bool allow)
+{
+    if (S.be.link_request == NULL) {
+        return UI_LINK_REQ_REFUSED;
+    }
+    ui_link_req_t req;
+    memset(&req, 0, sizeof(req));
+    req.kind = kind;
+    req.allow = allow;
+    return S.be.link_request(S.be.ctx, &req);
+}
+
+static void pair_read(void)
+{
+    memset(&s_pair.p, 0, sizeof(s_pair.p));
+    if (S.be.link_pair_status == NULL || !S.be.link_pair_status(S.be.ctx, &s_pair.p)) {
+        memset(&s_pair.p, 0, sizeof(s_pair.p));
+    }
+    s_pair.p.code[sizeof(s_pair.p.code) - 1u] = '\0';
+    s_pair.p.peer_name[sizeof(s_pair.p.peer_name) - 1u] = '\0';
+    s_pair.p.peer_addr[sizeof(s_pair.p.peer_addr) - 1u] = '\0';
+    s_pair.polled = lv_tick_get();
+}
+
+/* A person asks: looking starts (LINK-016: a keypad starts an attempt only when a person asks). */
+static void pair_start(void)
+{
+    (void)pair_ask(UI_LINK_REQ_KP_PAIR_START, false);
+    pair_read();
+}
+
+static pair_view_t pair_view(const ui_link_pair_t *p)
+{
+    switch (p->state) {
+    case UI_LINK_PAIR_WORKING: return PAIR_FOUND;
+    case UI_LINK_PAIR_COMPARE: return PAIR_COMPARE;
+    case UI_LINK_PAIR_WAITING: return PAIR_WAITING;
+    case UI_LINK_PAIR_DONE: return PAIR_DONE;
+    case UI_LINK_PAIR_FAILED:
+        /* 3 failed attempts close the alarm panel's window: then the looking screen says what to
+         * check (as nothing found) */
+        return p->fail == UI_LINK_FAIL_NOT_FOUND || p->fail == UI_LINK_FAIL_LIMIT ? PAIR_NOT_FOUND
+                                                                                  : PAIR_FAILED;
+    default: return p->left_s >= PAIR_NOT_FOUND_S ? PAIR_NOT_FOUND : PAIR_LOOKING;
+    }
+}
+
+static uint32_t pair_sig(const ui_link_pair_t *p)
+{
+    uint32_t h = 2166136261u;
+    const uint32_t v[] = {(uint32_t)pair_view(p), p->fail,
+                          p->state == UI_LINK_PAIR_FAILED ? 1u : 0u};
+    for (size_t i = 0; i < sizeof(v) / sizeof(v[0]); i++) {
+        h = (h ^ v[i]) * 16777619u;
+    }
+    for (const char *c = p->code; *c != '\0'; c++) {
+        h = (h ^ (uint8_t)*c) * 16777619u;
+    }
+    for (const char *c = p->peer_name; *c != '\0'; c++) {
+        h = (h ^ (uint8_t)*c) * 16777619u;
+    }
+    return h;
+}
+
+/* "588 460": two groups of three are easier to compare (as the Home Assistant page). */
+static void pair_code(char *out, size_t len)
+{
+    size_t n = 0;
+    out[0] = '\0';
+    for (size_t i = 0; s_pair.p.code[i] != '\0' && n + 2u < len; i++) {
+        if (i == 3u) {
+            out[n++] = ' ';
+        }
+        out[n++] = s_pair.p.code[i];
+        out[n] = '\0';
+    }
+}
+
+static void pair_confirm(bool allow)
+{
+    (void)pair_ask(UI_LINK_REQ_KP_PAIR_CONFIRM, allow);
+    pair_read();
+    if (pair_view(&s_pair.p) == PAIR_DONE) {
+        s_step = STEP_KP_DONE;
+    }
+    build_step();
+}
+
+static void pair_no(void *ctx)
+{
+    (void)ctx;
+    pair_confirm(false);
+}
+
+static void pair_yes(void *ctx)
+{
+    (void)ctx;
+    pair_confirm(true);
+}
+
+/* What to do on the alarm panel, under the looking row. */
+static void on_the_alarm_panel(lv_obj_t *b)
+{
+    /* TR: the setup's pairing step on a keypad: the heading over what the installer does there */
+    ui_section(b, TR("On the alarm panel"));
+    ui_row_link(b, UI_ICON_WRENCH, ui_tone_blue(), TR("Open Installer"),
+                TR("Settings > About > Installer, with the installer code"), NULL, NULL, NULL,
+                NULL);
+    ui_row_link(b, UI_ICON_CPU, ui_tone_blue(), TR("Keypads and devices"),
+                TR("In the Installer menu"), NULL, NULL, NULL, NULL);
+    ui_row_link(b, UI_ICON_PLUS, ui_tone_green(), TR("Add a keypad"),
+                TR("This keypad then finds it by itself"), NULL, NULL, NULL, NULL);
+}
+
+/* "Found Harbor House", the alarm panel's address under it. */
+static void found_row(lv_obj_t *b)
+{
+    char title[96];
+    char detail[96];
+    /* TR: the setup's pairing step: an alarm panel open for pairing was found; {0} is its name.
+     * At most 60 bytes */
+    I18N_FORMAT(title, sizeof(title), TR("Found {0}"),
+                s_pair.p.peer_name[0] != '\0' ? s_pair.p.peer_name : ui_link_master_name());
+    /* TR: the setup's pairing step: what was found (its address follows). At most 47 bytes */
+    const char *what = TR("The alarm panel");
+    i18n_utf8_copy(detail, sizeof(detail), what);
+    if (s_pair.p.peer_addr[0] != '\0') {
+        const size_t n = strlen(detail);
+        /* two facts, " · " between them (the same in every language) */
+        i18n_utf8_copy(detail + n, sizeof(detail) - n, " \xC2\xB7 ");
+        const size_t m = strlen(detail);
+        i18n_utf8_copy(detail + m, sizeof(detail) - m, s_pair.p.peer_addr);
+    }
+    ui_row_link(b, UI_ICON_HOUSE, ui_tone_green(), title, detail, NULL, NULL, NULL, NULL);
+}
+
+/* The ways pairing ends without a keypad: the row says what happened, the line what to do. */
+static void pair_failed(lv_obj_t *b)
+{
+    const char *glyph = UI_ICON_CIRCLE_X;
+    lv_color_t tone = ui_tone_red();
+    const char *title;
+    const char *words;
+    lv_color_t words_tone = ui_tone_gray();
+    switch (s_pair.p.fail) {
+    case UI_LINK_FAIL_MISMATCH:
+        /* TR: the setup's pairing step after No on either screen. At most 63 bytes */
+        title = TR("Not paired: the codes didn't match");
+        words = TR("If they differ again, don't pair: something on your network is in between.");
+        words_tone = ui_tone_amber();
+        break;
+    case UI_LINK_FAIL_REFUSED:
+    case UI_LINK_FAIL_CANCELLED:
+        /* TR: the setup's pairing step: the installer tapped No, reject at the alarm panel. At most
+         * 63 bytes */
+        title = TR("Not paired: rejected at the alarm panel");
+        words = TR("Ask the installer to allow it there, then try again.");
+        break;
+    case UI_LINK_FAIL_TIMEOUT:
+    case UI_LINK_FAIL_CLOSED:
+    case UI_LINK_FAIL_INTERRUPTED:
+        glyph = UI_ICON_CLOCK_ALERT;
+        tone = ui_tone_amber();
+        /* TR: the setup's pairing step: either side waited too long (LINK-016). At most 63 bytes */
+        title = TR("Not paired: no answer in time");
+        words = TR("Both screens must answer within 2 minutes. Open Add a keypad on the alarm "
+                   "panel again, "
+                   "then try again.");
+        break;
+    case UI_LINK_FAIL_FULL:
+        /* TR: the setup's pairing step: the alarm panel has no keypad number free (LINK-001). At
+         * most 63 bytes */
+        title = TR("Not paired: no keypad number is free");
+        words = TR(
+            "Keypad numbers 1 to 8 are all in use on the alarm panel. Remove one there first, then "
+            "try again.");
+        break;
+    case UI_LINK_FAIL_TWO_MASTERS:
+        /* TR: the setup's pairing step: two alarm panels were open for pairing at once. At most 63
+         * bytes */
+        title = TR("Not paired: two alarm panels are open");
+        words = TR("Close Add a keypad on the one this keypad isn't for, then try again.");
+        break;
+    case UI_LINK_FAIL_OVERLAP:
+        /* TR: the setup's pairing step: another keypad was pairing at the same time. At most 63
+         * bytes */
+        title = TR("Not paired: another keypad was pairing too");
+        words = TR("Pair one keypad at a time, then try again.");
+        break;
+    default:
+        /* TR: the setup's pairing step: it ended for another reason. At most 63 bytes */
+        title = TR("Not paired");
+        words = TR("Open Add a keypad on the alarm panel again, then try again.");
+        break;
+    }
+    /* TR: the setup's pairing step: nothing was stored on either side. At most 63 bytes */
+    ui_row_link(b, glyph, tone, title, TR("Nothing was saved"), NULL, NULL, NULL, NULL);
+    ui_paragraph(b, words, words_tone);
+}
+
+static void build_pair(lv_obj_t *b)
+{
+    side(UI_ICON_HOUSE, TR("Pair with the alarm panel"),
+         TR("It finds the alarm panel on your Wi-Fi. The installer allows it there."));
+    footer(TR("Next"), true);
+    ui_set_int(&subject_wiz_next_on, 0); /* the step goes on by itself */
+    s_pair.shown = pair_sig(&s_pair.p);
+    char code[16];
+    pair_code(code, sizeof(code));
+    switch (pair_view(&s_pair.p)) {
+    case PAIR_NOT_FOUND: {
+        ui_row_link(b, UI_ICON_SEARCH, ui_tone_amber(), TR("Still looking"),
+                    TR("No alarm panel with pairing open yet"), NULL, NULL, NULL, NULL);
+        /* TR: the setup's pairing step after 30 s with nothing found: the heading over what to
+         * check */
+        ui_section(b, TR("Check"));
+        ui_wifi_info_t w;
+        memset(&w, 0, sizeof(w));
+        if (S.be.wifi_info != NULL) {
+            S.be.wifi_info(S.be.ctx, &w);
+        }
+        char detail[128];
+        /* TR: the setup's pairing step: what to check; {0} is the Wi-Fi network's name. At most 90
+         * bytes */
+        I18N_FORMAT(detail, sizeof(detail),
+                    TR("This keypad is on {0}: the alarm panel must be too"),
+                    w.ssid[0] != '\0' ? w.ssid : NOTR("-"));
+        ui_row_link(b, UI_ICON_WIFI, ui_tone_blue(), TR("The same Wi-Fi"), detail, NULL, NULL, NULL,
+                    NULL);
+        ui_row_link(b, UI_ICON_PLUS, ui_tone_blue(), TR("Pairing open on the alarm panel"),
+                    TR("Installer > Keypads and devices > Add a keypad, for 2 minutes"), NULL, NULL,
+                    NULL, NULL);
+        ui_row_link(b, UI_ICON_SHIELD, ui_tone_blue(), TR("Not a guest network"),
+                    TR("A guest network keeps devices apart"), NULL, NULL, NULL, NULL);
+        if (s_pair.p.state == UI_LINK_PAIR_FAILED) {
+            footer(TR("Try again"), true); /* it stopped looking: a person starts it again */
+        }
+        break;
+    }
+    case PAIR_FOUND: found_row(b); break;
+    case PAIR_COMPARE:
+        found_row(b);
+        ui_big_value(b, TR("Does the alarm panel show this code?"), code);
+        ui_action_pair(b, UI_ICON_CIRCLE_X, TR("No, cancel"), ui_tone_red(), pair_no,
+                       UI_ICON_CIRCLE_CHECK, TR("Yes, pair"), ui_tone_green(), pair_yes, NULL);
+        ui_paragraph(b, TR("If the codes differ, something on your network is in between: tap No."),
+                     ui_tone_amber());
+        break;
+    case PAIR_WAITING:
+    case PAIR_DONE:
+        ui_row_link(b, UI_ICON_CIRCLE_CHECK, ui_tone_green(), TR("The codes match"),
+                    TR("Now allow it on the alarm panel"), NULL, NULL, NULL, NULL);
+        ui_big_value(b, TR("The code on both screens"), code);
+        ui_paragraph(b, TR("The installer has 2 minutes to allow it."), ui_tone_gray());
+        break;
+    case PAIR_FAILED:
+        pair_failed(b);
+        footer(TR("Try again"), true);
+        break;
+    default:
+        /* TR: the setup's pairing step while it looks (nothing moves: no spinner) */
+        ui_row_link(b, UI_ICON_SEARCH, ui_tone_blue(), TR("Looking for the alarm panel"),
+                    TR("On your Wi-Fi"), NULL, NULL, NULL, NULL);
+        on_the_alarm_panel(b);
+        break;
+    }
+}
+
+/* The keypad branch's last step: both sides checked each other before anything was stored
+ * (LINK-016). Done stores the role and restarts the panel as a keypad. */
+static void build_kp_done(lv_obj_t *b)
+{
+    side(UI_ICON_PARTY, TR("You're all set"),
+         TR("This panel is now a keypad. The alarm, zones and codes live on the alarm panel."));
+    const char *master = s_pair.p.peer_name[0] != '\0' ? s_pair.p.peer_name : ui_link_master_name();
+    char title[96];
+    char detail[128];
+    ui_link_keypad_title(title, sizeof(title), s_pair.p.device, master);
+    const uint8_t p = S.opt.partition;
+    char part[ALARM_NAME_LEN + 16];
+    if (S.cfg->partitions[p - 1u].name[0] != '\0') {
+        i18n_utf8_copy(part, sizeof(part), S.cfg->partitions[p - 1u].name);
+    } else {
+        I18N_FORMAT(part, sizeof(part), TR_C("default partition name", "Partition {0}"),
+                    (unsigned)p);
+    }
+    /* TR: the setup's last step on a keypad; {0} is the partition it shows and arms. At most 90
+     * bytes */
+    I18N_FORMAT(detail, sizeof(detail), TR("Shows and arms {0}"), part);
+    ui_row_link(b, UI_ICON_KEYBOARD, ui_tone_green(), title, detail, NULL, NULL, NULL, NULL);
+    ui_wifi_info_t w;
+    memset(&w, 0, sizeof(w));
+    if (S.be.wifi_info != NULL) {
+        S.be.wifi_info(S.be.ctx, &w);
+    }
+    lv_obj_t *row = ui_row_link(b, UI_ICON_WIFI, ui_tone_green(), TR("Wi-Fi"), w.ssid, NULL,
+                                UI_ICON_CHECK, NULL, NULL);
+    lv_obj_set_style_text_color(ui_find(row, "trail_label"), ui_tone_green(), 0);
+    char tz[64] = "UTC0";
+    if (S.be.get_timezone != NULL) {
+        S.be.get_timezone(S.be.ctx, tz, sizeof(tz));
+    }
+    const int zone = ui_tz_find(tz);
+    /* TR: the setup's last step on a keypad: its time zone {0}, taken from the alarm panel named
+     * {1}. At most 90 bytes */
+    I18N_FORMAT(detail, sizeof(detail), TR("{0}, from {1}"),
+                zone >= 0 ? TR_C("time zone", UI_TIMEZONES[zone].name) : tz, master);
+    row = ui_row_link(b, UI_ICON_GLOBE, ui_tone_green(), TR("Time zone"), detail, NULL,
+                      UI_ICON_CHECK, NULL, NULL);
+    lv_obj_set_style_text_color(ui_find(row, "trail_label"), ui_tone_green(), 0);
+    footer(TR("Done"),
+           false); /* undoing a pairing is done at the alarm panel, or by a factory reset */
 }
 
 static void build_wifi(lv_obj_t *b)
@@ -314,19 +723,48 @@ static void build_done(lv_obj_t *b)
     footer(TR("Done"), true);
 }
 
+/* The dot a step lights: five for the alarm panel (the date and time shares the time zone's), six
+ * with the role first; a keypad's four (BL-048: the role step is a counted dot). */
+static int32_t dot_of(int32_t step)
+{
+    if (s_keypad) {
+        switch (step) {
+        case STEP_ROLE: return 1;
+        case STEP_WIFI: return 2;
+        case STEP_PAIR: return 3;
+        case STEP_KP_DONE: return 4;
+        default: return 0;
+        }
+    }
+    const int32_t role = s_role ? 1 : 0;
+    switch (step) {
+    case STEP_ROLE: return 1;
+    case STEP_WIFI: return 1 + role;
+    case STEP_TIME:
+    case STEP_CLOCK: return 2 + role;
+    case STEP_CODES: return 3 + role;
+    case STEP_NAME: return 4 + role;
+    case STEP_DONE: return 5 + role;
+    default: return 0;
+    }
+}
+
 static void build_step(void)
 {
     ui_rows_reset();
     ui_set_int(&subject_busy, 0);
-    /* five dots: the date and time step shares the time zone's, the later steps count past it */
-    const int32_t dot = s_step == STEP_CLOCK ? STEP_TIME : s_step > STEP_CLOCK ? s_step - 1 : s_step;
-    ui_set_int(&subject_wiz_step, dot > STEP_WELCOME ? dot - STEP_WELCOME : 0);
+    ui_set_int(&subject_wiz_steps, s_keypad ? 4 : s_role ? 6 : 5);
+    ui_set_int(&subject_wiz_step, dot_of(s_step));
     /* "Leave setup" is gone from the last step: Done ends the setup */
-    ui_set_int(&subject_wiz_exit, s_can_exit && s_step != STEP_DONE ? 1 : 0);
+    ui_set_int(&subject_wiz_exit,
+               s_can_exit && s_step != STEP_DONE && s_step != STEP_KP_DONE ? 1 : 0);
     lv_obj_t *b = body();
     switch (s_step) {
     case STEP_LANGUAGE: build_language(b); break;
-    case STEP_WIFI: build_wifi(b); break;
+    case STEP_ROLE: build_role(b); break;
+    case STEP_WIFI: s_keypad ? build_keypad_wifi(b) : build_wifi(b); break;
+    case STEP_PAIR: build_pair(b); break;
+    case STEP_KP_DONE: build_kp_done(b); break;
     case STEP_TIME: build_time(b); break;
     case STEP_CLOCK: build_clock(b); break;
     case STEP_CODES: build_codes(b); break;
@@ -354,6 +792,8 @@ void ui_wizard_init(void)
 {
     s_step = STEP_WELCOME;
     s_can_exit = false;
+    s_role = false;
+    s_keypad = false;
     ui_set_int(&subject_wiz_exit, 0);
     lv_obj_add_event_cb(body(), on_body_scroll, LV_EVENT_SCROLL, NULL);
 }
@@ -368,10 +808,48 @@ void ui_wizard_start(bool can_exit)
     S.wizard_on = true;
     S.wizard_paused = false;
     s_can_exit = can_exit;
+    /* The role is chosen once, on a first start (changing it is a factory reset): run again from
+     * Installer, the alarm panel's setup is as it was (BL-048). */
+    s_role = !can_exit && ui_link_master();
+    s_keypad = false;
     ui_set_int(&subject_wiz_exit, can_exit ? 1 : 0);
     s_step = ui_lang_offered() ? STEP_LANGUAGE : STEP_WELCOME;
     build_step();
     lv_screen_load(S.wizard);
+}
+
+void ui_wizard_pair_again(void)
+{
+    ui_pad_cancel();
+    ui_sheet_close();
+    if (lv_subject_get_int(&subject_view) == VIEW_SETTINGS) {
+        ui_set_int(&subject_view, VIEW_HOME);
+    }
+    S.wizard_on = true;
+    S.wizard_paused = false;
+    s_can_exit = true; /* Leave setup goes back to Home, still a keypad */
+    s_role = false;
+    s_keypad = true;
+    ui_set_int(&subject_wiz_exit, 1);
+    s_step = STEP_PAIR;
+    pair_start();
+    build_step();
+    lv_screen_load(S.wizard);
+}
+
+static void finish(void);
+
+/* The keypad's Done (BL-048): the role is stored and the panel restarts as a keypad. */
+static void finish_keypad(void)
+{
+    const uint8_t r = pair_ask(UI_LINK_REQ_KP_DONE, false);
+    if (r != UI_LINK_REQ_OK) {
+        ui_beep(UI_BEEP_ERROR);
+        /* TR: a toast when the keypad's setup can't store its role; the step stays */
+        ui_toast(TR("Not saved: try Done again"));
+        return;
+    }
+    finish();
 }
 
 static void finish(void)
@@ -387,15 +865,53 @@ static void finish(void)
     ui_show_main(); /* no toast: Home itself shows the setup is done (BL-131, rule 7) */
 }
 
+/* The step after this one, on the branch the setup is on: the role only on a first start with the
+ * link, the date and time only where nothing else sets the clock (RTC-015). */
+static int32_t next_step(int32_t step)
+{
+    switch (step) {
+    case STEP_LANGUAGE: return STEP_WELCOME;
+    case STEP_WELCOME: return s_role ? STEP_ROLE : STEP_WIFI;
+    case STEP_ROLE: return STEP_WIFI;
+    case STEP_WIFI: return s_keypad ? STEP_PAIR : STEP_TIME;
+    case STEP_TIME: return ui_clock_setup_needed() ? STEP_CLOCK : STEP_CODES;
+    case STEP_CLOCK: return STEP_CODES;
+    case STEP_CODES: return STEP_NAME;
+    case STEP_NAME: return STEP_DONE;
+    case STEP_PAIR: return STEP_KP_DONE;
+    default: return step;
+    }
+}
+
+static int32_t prev_step(int32_t step)
+{
+    switch (step) {
+    case STEP_WELCOME: return STEP_LANGUAGE;
+    case STEP_ROLE: return STEP_WELCOME;
+    case STEP_WIFI: return s_role ? STEP_ROLE : STEP_WELCOME;
+    case STEP_TIME: return STEP_WIFI;
+    case STEP_CLOCK: return STEP_TIME;
+    case STEP_CODES: return ui_clock_setup_needed() ? STEP_CLOCK : STEP_TIME;
+    case STEP_NAME: return STEP_CODES;
+    case STEP_DONE: return STEP_NAME;
+    case STEP_PAIR: return STEP_WIFI;
+    default: return step; /* the keypad's Done has no Back */
+    }
+}
+
 /* Moves one step on or back, passing the date and time step when it isn't offered. */
 static void go(int32_t dir)
 {
-    s_step += dir;
-    if (s_step == STEP_CLOCK && !ui_clock_setup_needed()) {
-        s_step += dir;
-    }
+    const int32_t from = s_step;
+    s_step = dir > 0 ? next_step(s_step) : prev_step(s_step);
     if (s_step == STEP_CLOCK) {
         ui_clock_fields_start();
+    }
+    if (from == STEP_PAIR && s_step == STEP_WIFI) {
+        (void)pair_ask(UI_LINK_REQ_KP_PAIR_STOP, false); /* Back stops looking */
+    }
+    if (s_step == STEP_PAIR && from != STEP_PAIR) {
+        pair_start();
     }
     build_step();
 }
@@ -405,8 +921,19 @@ void ui_wizard_next(void)
     if (!S.wizard_on || lv_subject_get_int(&subject_wiz_next_on) == 0) {
         return;
     }
-    if (s_step >= STEP_DONE) {
+    if (s_step == STEP_DONE) {
         finish();
+        return;
+    }
+    if (s_step == STEP_KP_DONE) {
+        finish_keypad();
+        return;
+    }
+    if (s_step == STEP_PAIR) {
+        /* Next is lit only on a failure: Try again (the step goes on by itself otherwise) */
+        (void)pair_ask(UI_LINK_REQ_KP_PAIR_RETRY, false);
+        pair_read();
+        build_step();
         return;
     }
     if (s_step == STEP_CLOCK && !ui_clock_set_chosen()) {
@@ -417,7 +944,8 @@ void ui_wizard_next(void)
 
 void ui_wizard_back(void)
 {
-    if (S.wizard_on && s_step > (ui_lang_offered() ? STEP_LANGUAGE : STEP_WELCOME)) {
+    if (S.wizard_on && s_step != STEP_KP_DONE &&
+        s_step > (ui_lang_offered() ? STEP_LANGUAGE : STEP_WELCOME)) {
         go(-1);
     }
 }
@@ -432,9 +960,13 @@ void ui_wizard_exit(void)
     ui_pad_cancel();
     ui_sheet_close();
     ui_rows_reset();
+    if (s_step == STEP_PAIR) {
+        (void)pair_ask(UI_LINK_REQ_KP_PAIR_STOP, false); /* Pair again left: it stops looking */
+    }
     S.wizard_on = false;
     S.wizard_paused = false;
     s_can_exit = false;
+    s_keypad = false;
     s_step = STEP_WELCOME;
     ui_set_int(&subject_wiz_exit, 0);
     ui_show_main();
@@ -442,8 +974,24 @@ void ui_wizard_exit(void)
 
 void ui_wizard_tick(void)
 {
-    if (S.wizard_on && !S.wizard_paused && s_step == STEP_WIFI) {
+    if (!S.wizard_on || S.wizard_paused) {
+        return;
+    }
+    if (s_step == STEP_WIFI && s_keypad) {
+        ui_set_int(&subject_wiz_next_on, ui_net_connected() ? 1 : 0); /* no skipping on a keypad */
+    } else if (s_step == STEP_WIFI) {
         ui_set_str(&subject_wiz_next, ui_net_connected() ? TR("Next") : TR("Skip for now"));
+    }
+    /* The pairing, at most once a second (UI-020): the step changes only when what it shows does */
+    if (s_step == STEP_PAIR && lv_tick_elaps(s_pair.polled) >= 1000u) {
+        pair_read();
+        if (pair_view(&s_pair.p) == PAIR_DONE) {
+            s_step = STEP_KP_DONE;
+            build_step();
+        } else if (pair_sig(&s_pair.p) != s_pair.shown &&
+                   lv_subject_get_int(&subject_sheet) == SHEET_NONE) {
+            build_step();
+        }
     }
 }
 

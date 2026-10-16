@@ -43,12 +43,12 @@ lv_obj_t * clock_picker_create(lv_obj_t * parent, int32_t cal_w, int32_t day_h, 
         alarm_ui_run_1(box_3, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(box_3);
         lv_obj_set_style_pad_column(box_3, SPACE_LG, 0);
-        lv_obj_t * lv_label_0 = alarm_ui_run_16(box_3, alarm_ui_tr("The clock will say"));
+        lv_obj_t * lv_label_0 = alarm_ui_run_14(box_3, alarm_ui_tr("The clock will say"));
         lv_obj_set_style_text_color(lv_label_0, COLOR_TEXT_2, 0);
 
-        lv_obj_t * clock_result = alarm_ui_run_41(box_3, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_t * clock_result = alarm_ui_run_44(box_3, LV_LABEL_LONG_MODE_DOTS);
         lv_label_set_text(clock_result, "");
-        alarm_ui_run_54(clock_result, LV_TEXT_ALIGN_RIGHT, "clock_result");
+        alarm_ui_run_58(clock_result, LV_TEXT_ALIGN_RIGHT, "clock_result");
 
         the_root = box_0;
     }

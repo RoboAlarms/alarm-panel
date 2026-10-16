@@ -4,8 +4,8 @@
 four sides (security, protocol, fit with the code, safety) before building; the portable protocol,
 the master's and the keypad's services, the keypad role and the PC simulator are being built. Built
 before this work: the master's own UI through `ui_backend_t` and the engine's device supervision
-(CORE-TRBL-008). Screens: proposal `BL-048-panel-link.js`, approved
-2026-10-15. Left after Wi-Fi: ESP-NOW through our C6 build, 433 MHz, the firmware relay (M8) · **Milestone:** M7 (the
+(CORE-TRBL-008). Screens: approved 2026-10-15 and built (`ui_link.c`, the setup's role and
+pairing steps), walked in the PC preview over a demo backend. Left after Wi-Fi: ESP-NOW through our C6 build, 433 MHz, the firmware relay (M8) · **Milestone:** M7 (the
 firmware relay M8) · **Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
@@ -131,7 +131,7 @@ followed by fields, so later fields can be appended (LINK-017).
 | 0x21 | `ZONES` | M->K | sealed | zones_crc u32, first u16, count u16, rec_len u8, count x zone record |
 | 0x22 | `ZONES_REQ` | K->M | sealed | first u16, count u16 |
 | 0x23 | `CFG_REQ` | K->M | sealed | cfg_crc u32, offset u32, max u16 |
-| 0x24 | `CFG_PAGE` | M->K | sealed | cfg_crc u32, total u32, offset u32, bytes |
+| 0x24 | `CFG_PAGE` | M->K | sealed | cfg_crc u32, total u32, offset u32, len u16, len bytes |
 | 0x25 | `EV_REQ` | K->M | sealed | after_seq u32, max u8 |
 | 0x26 | `EVENTS` | M->K | sealed | flags u8 (bit 0: older ones were left out), count u8, rec_len u8, count x event record, oldest first |
 | 0x27 | `CMD` | K->M | sealed | req u32, op u8, op section, code (len u8 + ALARM_CODE_MAX_LEN bytes, zero-padded), new code (the same) |
@@ -146,7 +146,8 @@ partition), sys_troubles u32, sys_restored u32, dev_troubles u32, default_codes 
 program, bit 1 exit_sounds), recovery_left_ms u32, lockout_left_ms u32 (this keypad's own), report
 u8 (0 none, 1 offline, 2 online: the master's reporting, for the Emergency words, UI-029),
 zones_used u16, last_event_seq u32, cfg_crc u32, cfg_len u32, zones_crc u32. Then one record per
-enabled partition: number u8, length u8, then the fields of `alarm_partition_status_t` one by one
+enabled partition: number u8, length u8 (the bytes after it), then the fields of
+`alarm_partition_status_t` one by one
 (state, level, arm_flags, armed_by, arm_source kind u8 + id u16, ready_levels, a flags byte for
 ready, chime, walk_test, triggered, exit_error, trouble_unack, sounder, bell, delay_left_ms u32,
 memory, faults, bypassed, alarms, troubles u16 each, walk_left_ms u32, walk_age_ms u32, walk_id
@@ -158,14 +159,16 @@ Every duration is worked out when the frame is sealed: left = max(0, field - (no
 snap.taken_ms)) for the delay, walk-test time and recovery; lockout_left_ms is
 `alarm_engine_lockout_left({KEYPAD, n})` at that moment. The walk test's start goes as its age and
 its raw engine time as an opaque id; the keypad maps local start = arrival - age once per distinct
-id (at least 1: 0 means none). taken_ms = arrival. So within one delay the seconds a keypad shows
-never go up (UI-023).
+id (at least 1: 0 means none). taken_ms = arrival; a record a frame doesn't carry keeps its last
+one, counted down; and within one countdown a frame that reads less than a second longer than what
+the keypad shows (the network's delay varied) keeps the count. So within one delay the seconds a
+keypad shows never go up (UI-023).
 
 **Zone record** (7 B): flags u16, trouble u8, walk u8, walk_first_s u16, walk_trips u8.
 zones_crc is the CRC-32 of the records of zones 1..zones_used. The master pushes ZONES for the
 range that changed; a keypad whose own CRC differs after a STATUS asks with ZONES_REQ.
 
-**Event record** (31 B): seq u32, mono_ms u64, epoch_ms i64, type u16, partition u8, zone u16,
+**Event record** (32 B): seq u32, mono_ms u64, epoch_ms i64, type u16, partition u8, zone u16,
 user u8, source kind u8 + id u16, arg u8, arg2 u8, flags u8. The master pushes each new event,
 sealed, before the STATUS that carries its seq (the Home screen reads the entry zone and who armed
 from the events when the state changes); EV_REQ fills gaps: the newest `max` events after
@@ -228,6 +231,17 @@ command is answered at once with ALARM_ERR_UNAVAILABLE; panic is queued and keep
 9. Limits: LINK-016. A paired keypad ignores pairing traffic unless a person started Pair again;
    the master takes PAIR_REQ only while its window is open and only from sender 0xFFFF.
 
+Settled in the code (`plink_pair.c`): u16 lengths, the net id and the attempt id are little-endian
+like the rest of the link; a PAIR_REQ for another master (net id neither 0 nor the master's) is
+dropped, one to a closed window answered CLOSED; the first address to send a request owns the
+window, even one refused for capacity or version; a request less than 3 s after the last attempt
+ended is dropped unanswered (the keypad's resend comes back), and a keypad's retry within those
+3 s goes when they are up; any message of the attempt that just failed, from its keypad, gets that
+attempt's PAIR_FAIL again (the first may have been lost); an attempt under way outlives the
+window, which closes when it ends; a new attempt id from the window's keypad ends the attempt
+under way (INTERRUPTED); a port failure answers BUSY (master) or fails locally (keypad), not
+counted.
+
 ## Sessions
 
 After pairing, and at every (re)connection, the keypad starts a handshake:
@@ -256,6 +270,9 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
   every retry after the first failure. It keeps its live session until a WELCOME verifies.
 - `NOT_PAIRED` hints only change what the keypad says, after they repeat for 5 min; the keypad
   keeps its keys until a new pairing completes.
+- HELLO and WELCOME each carry their sender's own proto and caps; both sides take the lower and
+  the common ones, and a proto of 0 is refused. A sealed frame spends its seq even when sealing
+  fails, so no nonce is tried twice; a frame with seq ≥ 2^31 is refused on arrival too.
 
 ## Timers
 
@@ -404,11 +421,11 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   backend for `ui_backend_t` rendering the master's status and sending its commands (LINK-002,
   LINK-020), sounds from the master, the update gate and `PANEL_OTA_OK_LINK`; the 4" board's side
   is docs/features/19 CYD-015 (M7) (BL-048)
-- [ ] Pairing screens and the keypads' section in installer mode, the setup's role step, the
+- [x] Pairing screens and the keypads' section in installer mode, the setup's role step, the
   keypad's Connecting, "No system communication", removed and no-code maintenance states, the role
-  gate in Settings and About (LINK-004, -008, -014, -025; UI-011, UI-012): proposal
-  `docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-048-panel-link.js` approved first (M7)
-  (BL-048)
+  gate in Settings and About (LINK-004, -008, -014, -025; UI-011, UI-012): `ui_link.c`,
+  `ui_wizard.c`, walked in the preview over `host/ui_preview/host_link_demo.c`; the mockup's
+  `screens/panel-link.js` (BL-048, 18cc635)
 - [ ] On the two development panels: pairing, commands, supervision, master restart, removal,
   latency and the other HIL cases above (LINK-004, -006, -007, -008, -014, -021, -024, -025) (M7)
   (BL-048)

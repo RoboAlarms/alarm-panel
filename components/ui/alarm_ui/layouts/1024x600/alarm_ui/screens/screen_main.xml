@@ -43,8 +43,10 @@
 				<subject_set_int_event subject="subject_view" trigger="clicked" value="2" />
 			</nav_item>
 			<box name="rail_fill" width="8" flex_grow="1" />
+			<!-- not on a keypad the alarm panel removed: there is nothing to send it to (BL-048) -->
 			<nav_item name="nav_panic" glyph="&#xE2EF;" text="Panic" style_text_color="#color_red">
 				<bind_style name="style_nav_active" subject="subject_view" ref_value="4" />
+				<bind_flag_if_eq subject="subject_link_home" flag="hidden" ref_value="3" />
 				<subject_set_int_event subject="subject_view" trigger="clicked" value="4" />
 			</nav_item>
 		</box>
@@ -67,6 +69,12 @@
 				<event_cb callback="ui_on_change_code" trigger="clicked" />
 				<lv_label text="&#xE4A3;" style_text_font="icons_20" style_text_color="#color_amber" />
 				<lv_label text="Factory codes · Tap to change" long_mode="dots" style_max_height="26" style_text_font="font_label" style_text_color="#color_amber" />
+			</box>
+			<!-- A keypad (BL-048): the same reminder, pointing to the alarm panel, where codes change -->
+			<box name="codes_banner_link" width="content" height="40" style_bg_color="#color_amber" style_bg_opa="16%" style_radius="#radius_full" style_pad_left="#space_lg" style_pad_right="#space_lg" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_sm">
+				<bind_flag_if_not_eq subject="subject_bar_banner" flag="hidden" ref_value="8" />
+				<lv_label text="&#xE4A3;" style_text_font="icons_20" style_text_color="#color_amber" />
+				<lv_label text="Factory codes · Change them on the alarm panel" long_mode="dots" style_max_height="26" style_text_font="font_label" style_text_color="#color_amber" />
 			</box>
 			<!-- The walk test (docs/features/40): a test started elsewhere while someone is busy here
 			     (WALK-023), its end warning while Home's card is out of sight (WALK-004), the summary
@@ -145,6 +153,8 @@
 				<style name="style_bar_round" />
 				<bind_style name="style_nav_on" subject="subject_chime" ref_value="1" />
 				<bind_style name="style_disabled" subject="subject_locked" ref_value="1" />
+				<style name="style_disabled" selector="disabled" />
+				<bind_state_if_ge subject="subject_link_home" state="disabled" ref_value="1" />
 				<event_cb callback="ui_on_chime" trigger="clicked" />
 				<lv_label align="center" bind_text="subject_chime_icon" style_text_font="icons_20" />
 			</box>
@@ -171,18 +181,36 @@
 					<arm_strip name="arm_strip">
 						<bind_flag_if_eq subject="subject_arm_strip" flag="hidden" ref_value="0" />
 					</arm_strip>
+					<!-- A keypad without system communication (BL-048, LINK-008): what to check, above
+					     the dimmed tiles, in the arming warning's card. Steady. -->
+					<box name="link_strip" width="100%" height="content" style_bg_color="#color_surface" style_bg_opa="100%" style_radius="#radius_lg" style_border_width="1" style_border_color="#color_line" style_pad_top="#space_md" style_pad_bottom="#space_md" style_pad_left="#space_lg" style_pad_right="#space_lg" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
+						<bind_flag_if_not_eq subject="subject_link_home" flag="hidden" ref_value="2" />
+						<box width="48" height="48" style_radius="#radius_full" style_bg_color="#color_amber" style_bg_opa="#opa_tint">
+							<lv_label align="center" text="&#xE1AF;" style_text_font="icons_28" style_text_color="#color_amber" />
+						</box>
+						<box flex_grow="1" height="content" style_layout="flex" style_flex_flow="column" style_pad_row="2">
+							<lv_label width="100%" long_mode="wrap" text="Check the alarm panel" style_text_font="font_title" />
+							<lv_label width="100%" long_mode="wrap" text="Is it on, and on the same Wi-Fi?" style_text_color="#color_text_2" />
+						</box>
+					</box>
 					<box name="panel_arm" width="100%" height="100%" flex_grow="1" style_layout="flex" style_flex_flow="column" style_pad_row="#space_lg">
 						<bind_flag_if_not_eq subject="subject_panel" flag="hidden" ref_value="0" />
 						<!-- tr-context: arming mode -->
 						<arm_tile glyph="&#xE10E;" title="Away" subtitle="Everyone is leaving" color="#color_rose" width="100%" flex_grow="1">
+							<style name="style_disabled" selector="disabled" />
+							<bind_state_if_ge subject="subject_link_home" state="disabled" ref_value="1" />
 							<event_cb callback="ui_on_arm" trigger="clicked" user_data="away" />
 						</arm_tile>
 						<!-- tr-context: arming mode -->
 						<arm_tile glyph="&#xE0F5;" title="Stay" subtitle="Someone is home" color="#color_blue" width="100%" flex_grow="1">
+							<style name="style_disabled" selector="disabled" />
+							<bind_state_if_ge subject="subject_link_home" state="disabled" ref_value="1" />
 							<event_cb callback="ui_on_arm" trigger="clicked" user_data="stay" />
 						</arm_tile>
 						<!-- tr-context: arming mode -->
 						<arm_tile glyph="&#xE11E;" title="Night" subtitle="Going to bed" color="#color_violet" width="100%" flex_grow="1">
+							<style name="style_disabled" selector="disabled" />
+							<bind_state_if_ge subject="subject_link_home" state="disabled" ref_value="1" />
 							<event_cb callback="ui_on_arm" trigger="clicked" user_data="night" />
 						</arm_tile>
 					</box>
@@ -230,6 +258,14 @@
 								<event_cb callback="ui_on_end_walk_test" trigger="clicked" user_data="end" />
 							</row_button>
 						</box>
+					</box>
+					<!-- A keypad that isn't paired (BL-048, LINK-014): the way back, to the setup's
+					     pairing step. -->
+					<box name="panel_link" width="100%" height="100%">
+						<bind_flag_if_not_eq subject="subject_panel" flag="hidden" ref_value="5" />
+						<action_tile name="pair_tile" glyph="&#xE0F5;" title="subject_disarm_title" subtitle="subject_disarm_note" color="#color_blue" width="100%" height="100%">
+							<event_cb callback="ui_on_end_walk_test" trigger="clicked" user_data="pair" />
+						</action_tile>
 					</box>
 				</box>
 			</box>
@@ -406,8 +442,20 @@
 					<!-- Say what the panel does, not what it can't promise (UI-029): holding a
 					     button sets the alarm off here. Whether anything carries it further is
 					     the line below, written by ui_app.c. -->
-					<lv_label text="Hold a button for 2 seconds to set off the alarm on this panel" style_text_color="#color_text_2" />
-					<lv_label name="panic_report" bind_text="subject_panic_report" style_text_font="font_caption" style_text_color="#color_text_3" />
+					<lv_label text="Hold a button for 2 seconds to set off the alarm on this panel" style_text_color="#color_text_2">
+						<bind_flag_if_eq subject="subject_link_role" flag="hidden" ref_value="1" />
+					</lv_label>
+					<!-- a keypad (BL-048): the alarm panel it sets off, by name (a long one wraps) -->
+					<lv_label bind_text="subject_panic_hint" long_mode="wrap" style_max_width="860" style_text_align="center" style_text_color="#color_text_2">
+						<bind_flag_if_eq subject="subject_link_role" flag="hidden" ref_value="0" />
+					</lv_label>
+					<lv_label name="panic_report" bind_text="subject_panic_report" style_text_font="font_caption" style_text_color="#color_text_3">
+						<bind_flag_if_eq subject="subject_panic_link" flag="hidden" ref_value="1" />
+					</lv_label>
+					<!-- a keypad without system communication: a panic is still sent (LINK-023) -->
+					<lv_label text="No system communication · This keypad keeps trying for 1 minute" style_text_font="font_caption" style_text_color="#color_amber">
+						<bind_flag_if_eq subject="subject_panic_link" flag="hidden" ref_value="0" />
+					</lv_label>
 				</box>
 				<box width="content" height="content" style_layout="flex" style_flex_flow="row" style_pad_column="56">
 					<panic_button name="panic_police" glyph="&#xE2EF;" text="Police" color="#color_red">

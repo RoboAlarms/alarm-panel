@@ -21,6 +21,7 @@ without making DIY development painful. Be honest about the limits of hobby hard
 | Attacker on the home LAN | Sniff codes, spoof commands, fake status | MQTT over TLS with CA pinning + auth; link frames encrypted and replay-protected; commands need user codes; lockout for remote sources |
 | RF attacker | Jam or replay keypad/sensor traffic | AEAD with sequence numbers; supervision (missing check-ins -> CHECK); jam detection on the sensor radio (M10) |
 | Malicious firmware | Backdoor | Signed OTA; pinned dependencies; reproducible CI builds; optional Secure Boot v2 |
+| A faulty or compromised master | Push a wrong, older or unsigned image to its keypads, or keep them busy | A keypad checks every image itself: the header before any flash write, then length, SHA-256, its own signing keys and the version named; nothing forced or older; no trust change without a person at the keypad; at most 3 failed runs a day (docs/features/11 LINK-033, LINK-035, LINK-036) |
 | Thief with the panel | Read codes, Wi-Fi password, keys | Codes hashed; flash + NVS encryption in production builds |
 | Curious household member | Read the event log / duress events | Silent events visible to master/installer only |
 

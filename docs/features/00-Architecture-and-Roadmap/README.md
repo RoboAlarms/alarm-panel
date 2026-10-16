@@ -1,7 +1,7 @@
 # 00 · Architecture and roadmap
 
 **Status:** Living document - the goal, principles, component tiers, build options and the decision
-log (ADR-001 to ADR-054; ADR-051 is a draft in docs/features/13), kept in step with the code; no open work of its own: what is left is in
+log (ADR-001 to ADR-055; ADR-051 is a draft in docs/features/13), kept in step with the code; no open work of its own: what is left is in
 the [backlog](../../BACKLOG.md) · **Milestone:** all · **Depends on:** -
 
 ## Goal
@@ -445,6 +445,26 @@ either side restarting and keeps codes typed on a keypad secret even if its key 
 Consequences: until ESP-NOW exists a keypad depends on the router (backup power for it is the
 installer's advice); ADR-005's order is revised, not its aim - ESP-NOW stays the path that works
 without a router.
+
+**ADR-055 (2026-10-16; docs/features/11, 13): Keypads update at their master's order; a keypad
+with internet fetches its own image, the master relays it only to one without, and the keypad
+checks every image itself.** Context: a keypad runs the same firmware as its master and must not
+fall behind it, and a newer panel must keep working with an older one (the owner, 2026-10-16);
+the owner decided: "a slave keypad [should] fetch over the internet when available at the
+command of the master ... Only in instances of no internet at the slave panel then the master
+should push the update to it." Decision: the master orders each keypad to the version it runs,
+after its own update passed its self-test and while every partition is quiet; a keypad that
+reaches the update server downloads its own board's image through its release run; only one
+that can't pulls it from the master over the link, by image digest and offset, into its own
+writer; one keypad installs at a time; the keypad checks the header before any flash write, then
+length, SHA-256, its own signing keys and the version named, and restarts only at the master's
+INSTALL. Nothing new goes to a peer without its capability bit, and a master serves the v1
+messages to a protocol-1 keypad for as long as one may be paired. Why: most homes have internet,
+so the master isn't a bottleneck and no partition change is needed (the relay reads the master's
+running slot, or a copy in PSRAM for another board); a master can't push a wrong or older image.
+Consequences: what a keypad needs to be updated later (the messages, the pull, the gate, the
+fail-safe decoding) must ship in v1; never firmware over 433 MHz; `fw_cache` isn't used for
+keypad images.
 
 ## Build profiles and feature flags
 

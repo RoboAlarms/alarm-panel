@@ -7,8 +7,9 @@ the two development panels (2026-10-16) pairing, commands, lockout, supervision,
 removal and pairing again, and a PC keypad with a panel worked, a change shown on the keypad in
 about 0.3 s. A keypad's own voice (LINK-028, decided 2026-10-16) works on the panels, tried with
 both speakers muted. Left: the bench cases below that need a person or a network change, ESP-NOW
-through our C6 build, 433 MHz, keypad inputs, GOTO, the firmware relay (M8) · **Milestone:** M7 (the
-firmware relay M8) · **Depends on:** 01, 04, 09, 12, 15
+through our C6 build, 433 MHz, keypad inputs, GOTO, keypad updates at the master's order (M8,
+designed 2026-10-16: "Updates through the link") · **Milestone:** M7 (keypad updates M8) ·
+**Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
 Let another panel act as a remote keypad for a master panel, like the keypads on a classic panel's
@@ -61,15 +62,15 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-009 | Automatic failover ESP-NOW <-> LAN within 15 s; duplicates suppressed by sequence number | HIL (ESP-NOW) |
 | LINK-010 | The master's ESP-NOW channel follows its Wi-Fi AP; beacons carry the channel; keypads rescan channels 1-13 when lost | HIL (ESP-NOW) |
 | LINK-011 | Keypad-attached inputs are reported as zone events (zone expander role) | M7 |
-| LINK-012 | Firmware relay to keypads ([13](../13-OTA-Updates/README.md)) | M8 |
+| LINK-012 | Keypad updates at the master's order: a keypad that reaches the update server fetches its own image, otherwise the master relays it over the link (LINK-029..037; [13](../13-OTA-Updates/README.md)) | unit + link + HIL |
 | LINK-013 | A PC "virtual keypad" and "virtual master" (host build, UDP, the OS's random numbers) interoperate with each other in CI and with panels | CI + manual |
 | LINK-014 | Removing a keypad at the master clears its trouble, sends a sealed BYE (three times), then wipes its keys (RAM first, then NVS); the keypad erases its master record and says it is not paired | unit + HIL |
 | LINK-015 | Each connection starts with a handshake (ephemeral X25519 and the pairing key) giving fresh session keys and a session id; a session's keys are installed once and nothing resets its counters; a replayed or forged HELLO never drops a live session; no side sends with seq ≥ 2^31 | unit |
 | LINK-016 | Pairing: within an attempt each value (pk_k, pk_m and commit, n_k, n_m, mac_k) is set once - only a byte-identical repeat gets the stored answer, a different one ends the attempt; an attempt counts once its secret is disclosed (the master's at PAIR_REVEAL, the keypad's at PAIR_NONCE), whatever ends it; 3 attempts per window, at least 3 s apart; the window lasts 2 min, 30 s per step, 2 min to compare the codes; a keypad starts an attempt only when a person asks; two keypads or two masters at once end the attempt; nothing is stored before both confirmation MACs verify | unit |
-| LINK-017 | Version skew: every payload section carries its length and a receiver takes what it knows and skips the rest; fields are only appended; the session uses the lower protocol version and the common capabilities, and a request the master can't serve is answered UNAVAILABLE; an unknown message type is dropped; v1's header never changes | unit |
+| LINK-017 | Version skew: every payload section carries its length and a receiver takes what it knows and skips the rest; fields are only appended; the session uses the lower protocol version and the common capabilities, and a request the master can't serve is answered UNAVAILABLE; an unknown message type is dropped; v1's header never changes; the rules for later versions are LINK-038..042 | unit |
 | LINK-018 | Every command carries a request id (a random base drawn at each keypad start, then counted); the master answers a retry from its cache keyed on (keypad, request id) with a digest of the command, kept 90 s after the last copy arrived, and never runs a command twice; the same id with a different command runs as a new one; codes are never stored or logged, and every copy is wiped after use | unit |
 | LINK-019 | The keypad's copy of the configuration holds no code material (each code hash replaced by a filler unique to its slot, the salt zeroed) and shows duress users as standard users | unit |
-| LINK-020 | A panel in the keypad role runs no alarm engine, event log, zone sources or integrations; it updates itself only while its link is up and the master's partitions allow it (OTA-004), and its update self-test needs the link | HIL |
+| LINK-020 | A panel in the keypad role runs no alarm engine, event log, zone sources or integrations; it updates itself only at its master's order (LINK-029) or through LINK-025, only while its link is up and the master's partitions allow it (OTA-004), and its update self-test needs the link | HIL |
 | LINK-021 | On Wi-Fi the master is found by mDNS `_roboalarms-link._udp` on UDP port 6056, announced only while it has a keypad or pairing is open (NET-007), and by a subnet broadcast when mDNS finds nothing; a peer's address moves only on a sealed frame that passes the tag and replay checks | HIL |
 | LINK-022 | The link keys are never in a backup (the `link` namespace is not in the backup policy); a factory reset erases them | unit |
 | LINK-023 | Panic keyed on a keypad is resent with the same request id every 1 s until answered or 60 s have passed, whatever the link state, and runs once (KPD-007) | unit |
@@ -78,6 +79,20 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-026 | A keypad applies a status block, partition record, zone record or time only when it came in a newer frame of the session than the one it last applied for that item | unit |
 | LINK-027 | The master accepts a keypad's commands for its home partition only (NOT_AUTHORIZED otherwise), one at a time with panic in a slot of its own, at most about 2 a second (a burst of 5); requests over their limits are dropped in the link task, before anything reaches the alarm task | unit |
 | LINK-028 | A keypad speaks its home partition's announcements (docs/features/08 D05) from the master's pushed events, sounds and status, with its own Announcements switches and Voice volume (D06; decided 2026-10-16); nothing older than its last baseline (a reconnect, a backfill, a master restart) is ever spoken, nor an event the master made more than 5 s before its time now (by the engine time every STATUS carries, or its wall clock), nor the end of an exit time learned more than 5 s after the keypad's own countdown ended, and nothing while the link is not ONLINE; a keypad whose baseline falls in an exit time (it started, or its link came back) says that exit time's end as the master does | unit + HIL |
+| LINK-029 | A keypad whose session has `PLINK_CAP_FW` installs firmware only at its master's order, for the version the master names, never older or equal; it runs no update check of its own and offers no Install. Its own Install stays for LINK-025's maintenance, the needs-update state and a master without the bit; the console isn't held back; Stop stays (OTA-027) | unit (`test_plink_fw.c`), HIL |
+| LINK-030 | The master orders keypads only after its own update is confirmed, while it runs no update and `proto_fw_install_allowed()` passes on its snapshot; STATUS carries UPDATING and HOLD, and a keypad's gate refuses while either is set; one keypad installs or self-tests at a time, in device-number order; a rollback, or no return within 10 min, stops the rollout for that device and chip revision; meanwhile the master puts off its own restart and doesn't raise that keypad's supervision trouble (up to 10 min) | unit, link |
+| LINK-031 | PROBE comes first. FETCH when the keypad's server offers exactly the target. RELAY when the keypad can't reach the server or is offered another version: from the master's running image (same device, chip range, accepted project) or a copy fetched with the keypad's facts. A refusal by the server for that keypad, or of the image itself, is never relayed. A fetch that fails for a reach or transfer reason falls back to the relay once | unit (planner table) |
+| LINK-032 | The keypad pulls bytes by image digest (`id8`) and offset, never by session, in order into its writer, within the order's page, count and gap and a 16 KB window, with flash busy at most half the time; it continues across a new session and a master restart with the same image. The master answers statelessly, only to the keypad holding the relay, from a bucket of its own; LINK-024 holds while it runs | link (lossy) |
+| LINK-033 | A keypad checks every image itself: the header (chip, revision range, project, newer) before the first flash write, then length, SHA-256, the signature with its own keys, and the version named. Nothing is forced or older. An order's server and channel serve that run only; nothing the master sends becomes trust, except a key a person accepts (LINK-036) | unit; HIL |
+| LINK-034 | A READY keypad restarts only after an INSTALL for that version and when its gate passes, asked twice: a live session with a status under 15 s old (ONLINE or needs-update), the master's UPDATING and HOLD clear, `proto_fw_install_allowed()`, no panic still being resent, no kept fire or CO tone. The relay pauses under the same conditions. The panic and tone checks apply in maintenance too | unit; HIL |
+| LINK-035 | A relay fails after 60 s without a byte while not paused, or after 30 min paused. A READY image is discarded after 24 h without INSTALL, on CANCEL, on another image's order, or on removal. After 3 failed runs in 24 h a keypad answers BUDGET. Orders are resent after 300 ms, doubling to 2 s; the keypad counts as away after 30 s | unit |
+| LINK-036 | An image signed with a key the keypad doesn't trust stops before the download and shows the key's fingerprint; a hold and the installer's code (checked by the master) accept it, never while the factory installer code is in use; accepting stores the order's server and that key as the keypad's trust record | unit; preview |
+| LINK-037 | FW_* messages go only on transports whose largest frame is 250 B or more, never on 433 MHz; FW_INFO, FW_ORDER and FW_STATE fit 225 B at their longest; FW_PAGE fits the peer's frame | unit |
+| LINK-038 | The floor: a master serves every v1 message above to a protocol-1 keypad for as long as one may be paired, and a later keypad works with a v1 master; neither refuses a peer at protocol 1 or above; a HELLO stays at most 128 B | frozen fixture, frozen peer |
+| LINK-039 | New types, ops, kinds and values go only to a peer with their capability bit; the master maps values a protocol-1 peer doesn't know to the nearest v1 one and answers an unknown command type UNAVAILABLE; a keypad decodes an unknown arm state as armed and an unknown sounder as the alarm, sounds fire and CO from STATUS FIRE/CO, and reads an unknown `why` by its decade | future peer, `test_plink_view.c` |
+| LINK-040 | Fields are appended only, and absence is known from a section's length; a configuration field is never widened in place; a link record never raises compat and stays at most 1024 B; new per-keypad facts go in new NVS keys | `test_plink_msg.c`, `test_plink_store.c` |
+| LINK-041 | With keypads, a master's self-test needs one: `PANEL_OTA_OK_KEYPADS` (bit 1 << 6, `PANEL_OTA_HEALTH_COUNT` 7) beats while a keypad that was online in the minute before "installing" (NVS `link/kup`) has a session again and sends heartbeats; with no such keypad it always beats. A newer master that can't talk to its keypads goes back | HIL |
+| LINK-042 | CI runs the frozen v1 message fixture, a future peer and, once released, the frozen v1 binaries in both roles, including a v1 keypad updated on each path | CI |
 
 ## Frame format (v1)
 
@@ -343,7 +358,7 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
 |---|---|---|---|---|
 | UDP over Wi-Fi (LAN) | IPv4 + port | 1200 B (no IP fragments: lwIP reassembly is off) | mDNS `_roboalarms-link._udp`, port 6056, TXT `v`, `net`, `pair`, `id`; subnet broadcast to 6056 when mDNS finds nothing | built first |
 | ESP-NOW (C6 bridge on the P4) | MAC | 250 B (v1) | `BEACON` on the master's channel | later (CP-003) |
-| 433 MHz | radio id | tens of bytes: status and commands only | - | later, an idea (needs a transmitter on both) |
+| 433 MHz | radio id | tens of bytes: status and commands only; never firmware (LINK-037) | - | later, an idea (needs a transmitter on both) |
 
 The core sends through a port (`plink_net_port_t`: an opaque address with its transport, the
 largest frame per transport); the platform hands every received datagram in with its source
@@ -364,7 +379,8 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   a C6 update starts only while the link is up and the newest status, under 15 s old, passes
   `proto_fw_install_allowed()`; refused while the link is lost, except through LINK-025. The
   self-test mask is UI + TOUCH + LINK (`PANEL_OTA_OK_LINK`, beaten on authenticated frames).
-  Keypads update after the master has confirmed its own update.
+  Keypads update at the master's order, after the master has confirmed its own update (LINK-030),
+  and restart only at its INSTALL ("Updates through the link").
 - **The keypad backend** serves from the link: snapshot, configuration, recent events, commands,
   code checks and code changes; locally: Wi-Fi, screen, sound (its Voice volume and Announcements
   too, LINK-028), language, updates, About. The master-only pages (installer mode, users, zone
@@ -425,6 +441,366 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   runs no time server of its own while paired.
 - **Wi-Fi power save** is held off through `net_wifi_hold_low_latency(owner, on)`, one hold per
   reason (link keypads, remote viewing), on a master with keypads and on a keypad.
+
+## Updates through the link
+
+The master decides when its keypads update and to which version. That is always the version it runs,
+and only after its own update has passed its self-test (OTA-005). A keypad that reaches the update
+server downloads its own board's image itself, through its release run (`panel_ota`, OTA-018,
+OTA-026). Only a keypad that can't reach the server gets the image from the master over the link
+(the relay). Both paths end in the keypad's own writer and checks. The keypad restarts only at the
+master's INSTALL, and only when its own gate passes (decided 2026-10-16).
+
+```
+master confirmed on V, every partition quiet (proto_fw_install_allowed)
+  each keypad behind V:  FW_ORDER PROBE{V, server, channel}  ->  FW_STATE{probe: offered, why}
+  the master picks:      FETCH | RELAY | BLOCKED(why)
+    FETCH, all at once:     the keypad's release run: check with want=V, download, verify -> READY
+    RELAY, one at a time:   FW_REQ{id8, offset} / FW_PAGE into the keypad's writer, verify -> READY
+  installs, one at a time, lowest device number first:
+    FW_ORDER INSTALL{V} -> the keypad's gate -> restart -> self-test
+    FW_INFO{version V}, FW_STATE{probation} ... probation over -> UPDATED -> the next keypad
+```
+
+### When a rollout starts and stops
+- **Start.** A rollout starts in one of two ways:
+  - an update that a person asked for on the master is confirmed (that Install covers its keypads);
+  - a person chooses Update keypads (Software update, the Panel Manager, or `plink fw update`).
+
+  Nothing else starts one (OTA-024). A keypad found behind later (newly paired, or back on line)
+  shows "Update keypads" until automatic updates are decided (BL-190).
+- **Persistence.** The target version is kept in NVS `link/fwgo` until the rollout ends, so a master
+  restart carries on.
+- **Who gets orders.** Orders go only to a keypad whose session has `PLINK_CAP_FW`, and only while
+  all of these hold:
+  - the master runs no update of its own;
+  - the master is not on its self-test;
+  - `proto_fw_install_allowed()` passes on the master's snapshot.
+
+  When a master update starts, the master sends CANCEL to every keypad that isn't installing yet.
+- **Never older.** A keypad on V or newer is left alone. The master never orders an older version
+  (OTA-014).
+
+### Choosing the path, per keypad
+
+| The keypad's PROBE says | The master's image for it | Path |
+|---|---|---|
+| the server offers exactly V | - | FETCH |
+| the server refuses this keypad (unknown device, held back, stepping stone; any other 10-12 or 15-19) | - | BLOCKED: never relayed past the server's rules |
+| the server offers another version, or nothing newer (13, 14) | its own slot, or a copy | RELAY |
+| not reached (1-9) | its own slot | RELAY |
+| not reached | a copy, when the master reaches its server for the keypad's facts | RELAY |
+| not reached | none | BLOCKED (NO_IMAGE): "Connect keypad n to the internet, or update it with a cable" |
+
+- **Own slot.** The master's running slot serves a keypad when V is the version the master runs and
+  all of these match:
+  - the same device;
+  - a chip revision within the running image's range;
+  - a project that `ota_profile_accepts()` takes.
+- **Copy.** Any other keypad needs a copy. The master asks its server with the keypad's facts. An
+  image refusal blocks, as above.
+- **Fall-back.** A FETCH that fails for a reach or transfer reason (1-9 or 20-29) falls back to
+  RELAY once per rollout. A refusal of the image (30-49) never does: the same signed image would
+  fail the same way.
+
+### The keypad
+
+**Policy:**
+- While paired with a master whose session has `PLINK_CAP_FW`, a keypad installs only at its
+  master's order:
+  - it runs no scheduled check of its own (`panel_ota_set_checks(false)`); PROBE is its check;
+  - its Software update says "Updates come from <master>" and offers no Install.
+- Its own Install stays in three cases: LINK-025 maintenance, the needs-update state, and a session
+  without the bit. The console is not held back.
+- Stop stays (OTA-027). The installer or the system master can stop a run at the keypad (their code
+  is checked by the master). The master then waits for Update keypads.
+
+**Orders** (`plink_keypad.c`, taken like SOUND with `plink_keypad_take_fw_order`):
+- An order id seen before gets FW_STATE again; nothing runs twice. Every order is answered with
+  FW_STATE at once.
+- The op and kind must be known; otherwise REFUSED with UNKNOWN_OP or UNKNOWN_KIND.
+- RELAY needs a size no larger than the slot, and a SHA-256.
+- A RELAY with the run's `id8` continues the run. Another `id8` ends it and starts over.
+- A FETCH or RELAY ends any run that hasn't started its restart.
+
+**PROBE.** One check (`POST /api/v1/check`) with the keypad's own facts and `want` = V, at the
+server and channel the order names. They are used for this check only. The answer is kept as any
+check's answer is.
+
+**FETCH.** The release run (`do_install`, `panel_ota.c:2574-2716`), with the order's server, channel
+and version for this run only:
+1. A check with `want` = V. The offered version must be V (otherwise OTHER_VERSION).
+2. The download into the other slot, then `panel_ota_end`.
+
+It downloads as any panel does (OTA-003). The master orders a fetch only while the system is quiet.
+
+**RELAY.** A run of a new kind, `PANEL_OTA_KIND_LINK`, through the writer
+(`panel_ota_begin/write/end`, as `ota recv` does):
+- **Requests.** The core asks for bytes from the first one it lacks: FW_REQ {id8, offset, page,
+  count}.
+  - The page and count are no larger than the order's, and the window is at most 16 KB.
+  - Pages ahead of the first missing byte wait in the window buffer; nothing is written out of
+    order.
+  - A request is sent again after 300 ms, doubling to 2 s, for the bytes still missing.
+- **Pages.** A FW_PAGE is taken only when its `id8` and total match the run and it lies inside the
+  range asked for. Everything else is dropped.
+- **Writing.** The link task (internal stack) writes the in-order bytes with `panel_ota_write`:
+  - at most 4 KB a turn, through a 4 KB internal buffer;
+  - the next request goes no sooner than the last write took, so flash is busy at most half the
+    time;
+  - and no sooner than the order's gap.
+- **Pause.** The run pauses (FW_STATE flag PAUSED) with the writer kept open while the session has
+  no STATUS under 15 s old, or while the gate below says no.
+- **Failure.** It fails after 30 min paused (TIMEOUT), or after 60 s without a new byte while not
+  paused (STALLED).
+- **"The link is up"** means a live session with a STATUS under 15 s old, not ONLINE. A keypad that
+  can't read a newer master's configuration never gets ONLINE, and it is the one that most needs the
+  update.
+
+**Checks, in this order, on both paths:**
+1. Only the paired master's sealed frames are taken.
+2. The writer holds the first 288 bytes until the header passes: magic, chip, chip revision range,
+   project (`ota_profile_accepts`), and newer than the running version. `allow_older` is never set.
+   A wrong image is refused before any flash is written.
+3. The length and SHA-256 must match the order (relay) or the server's answer (fetch).
+4. `esp_ota_end` checks the whole image and its signature, with the keypad's own keys: the running
+   image's key, or the one its installer accepted (OTA-020).
+5. The image's version must be V; otherwise WRONG_VERSION, and the image is discarded.
+
+Nothing the master sends replaces a check. The server and channel in an order serve that run only.
+
+**READY.** `panel_ota_apply` runs, and then the keypad's gate holds the restart ("Waiting for the
+alarm panel") until an INSTALL names that version. A READY image is discarded on any of these:
+- CANCEL;
+- an order for another image;
+- removal;
+- 24 h without INSTALL.
+
+**The gate** (`plink_service_update_idle`, `plink_keypad_svc.c:995`) is asked twice before the
+restart (OTA-004, OTA-028). It passes only when all of these hold:
+- a live session with a STATUS under 15 s old (ONLINE, or needs-update), as today;
+- the STATUS flags UPDATING and HOLD are clear;
+- `proto_fw_install_allowed()` passes on the rebuilt snapshot, as today;
+- no panic is still being resent (`plink_keypad_panic_pending`), on every branch, maintenance
+  included;
+- no fire or CO tone is kept (`K.cont`), on every branch;
+- for an image the master ordered, the master's INSTALL for it has arrived.
+
+The panic and kept-tone checks are fixes the keypad needs with or without these updates.
+
+**After the restart.** The self-test is UI, touch and LINK, as today. FW_INFO carries the new
+version. FW_STATE reports probation, then the last result: updated, or rolled back with the health
+bits that failed.
+
+### The master
+- **Planner.** `plink_fw_plan(world, now, steps)` is a pure function in a new
+  `components/core/panel_link/src/plink_fw.c`, run from the master service's poll. It sees:
+  - the master's own update state and its running image;
+  - whether the master reaches its server (a check answered in the last 24 h);
+  - each keypad's FW_INFO and FW_STATE.
+- **Per-keypad states:** UNKNOWN, CURRENT, BEHIND, PROBING, FETCH, RELAY_WAIT, RELAY, KEY_WAIT,
+  READY, INSTALLING, CHECKING, UPDATED, FAILED(why), BLOCKED(why), STOPPED.
+- **Resending orders.** An order is resent after 300 ms, doubling to 2 s, until a FW_STATE echoes
+  its id. After 30 s the keypad counts as away, and the rollout waits for it for up to 24 h.
+- **Concurrency.**
+  - PROBE and FETCH go to every keypad at once.
+  - One RELAY runs at a time.
+  - One INSTALL at a time: the READY keypad with the lowest device number goes next, once the
+    previous one is UPDATED.
+- **Canary.** The first keypad is the canary. A rollback, or no return within 10 min, stops the
+  rollout for keypads of that device and chip revision until Update keypads.
+- **Retries.** A relay that fails in the transfer class is tried again after 2 min, at most 3 times
+  per keypad in 24 h. The keypad refuses a fourth with BUDGET.
+- **While a keypad installs or self-tests:**
+  - its supervision trouble isn't raised, for up to 10 min (`supervise`, `plink_master.c:320`);
+  - the master puts off its own restart (`panel_ota_set_restart_hold`, asked in `restart_allowed`,
+    `panel_ota.c:351`: "A keypad is checking its update"). Without the hold, a master restart
+    silences the keypad's LINK beat for more than 15 s and the keypad rolls back.
+- **Serving FW_REQ.** Stateless, like `on_cfg_req` (`plink_master.c:875`).
+  - Only for the keypad holding the relay, with that `id8`, while the master is quiet.
+  - FW_REQ has its own bucket; it never uses the CFG/ZONES/EV bucket (`REQ_BURST`, `:27`).
+  - A byte budget: 256 KB/s on UDP, 16 KB/s on ESP-NOW. At most 16 pages a turn.
+  - Each page is min(the request's page, the order's page, the frame's room − 18) bytes, read
+    through a port, `fw_read(ctx, id8, offset, out, len)`.
+  - Anything else is dropped; the keypad's retry comes back.
+- **Image sources.** No partition change; `fw_cache` is not used.
+  - **Own slot.** `panel_ota_running_image()` works out, once after confirmation, the slot's exact
+    size (the header walk of `cp_ota.c:53-97`, made for the P4), its SHA-256, version, chip range
+    and key. `fw_read` maps 256 KB windows of the running partition (`esp_partition_mmap`). No flash
+    is written.
+  - **A copy.** `panel_ota_fetch_for(facts, V)` runs on the update task: a check with the keypad's
+    facts and `want`, then `panel_ota_download` (`panel_ota.c:2483`) into PSRAM, at most 4,010,803 B
+    (85 % of the 4,718,592 B slot).
+    - One copy at a time.
+    - Freed when no keypad needs it, after 30 min unused, or when the master's own run starts.
+    - A foreign image never goes into the master's own spare slot, because
+      `esp_ota_set_boot_partition` would boot it.
+
+### Messages
+- **Placement.** All five are sealed and appended after BYE (`plink_frame.h:75`). They go into
+  `plink_type_known`, with their directions in `plink_type_from_master` (`plink_frame.c:48-104`).
+- **When sent.** Only in a session whose common caps include `PLINK_CAP_FW` (0x0001). `PLINK_CAPS`
+  (`plink_msg.h:34`) becomes that bit.
+- **Size.** Every payload except FW_PAGE is made of sections and fits 225 B (a 250-byte frame) at
+  its longest. `OWN_PAYLOAD_MAX` (`plink_keypad.c:49`) goes from 64 to 225.
+
+| Type | Name | Dir | Payload (v1) | Largest |
+|---|---|---|---|---|
+| 0x2D | `FW_INFO` | K->M | can u8 (bit 0 fetch, 1 relay, 2 key accept, 3 configuration unreadable), device (≤ 31), board_rev (≤ 15), chip_rev (≤ 3), chip_rev_full u16, project (≤ 32), version (≤ 32), slot u32, own_key8[8], accepted_key8[8] (zeros: none), cp_version (≤ 23) | 166 B |
+| 0x2E | `FW_ORDER` | M->K | order section: order u32 (not 0), op u8, kind u8, version (≤ 32), size u32, sha256[32], key[32] (zeros: not known); fetch section: server (≤ 95), channel (≤ 7); relay section: page u16, count u8, gap_ms u16 | 219 B |
+| 0x2F | `FW_STATE` | K->M | run section: order u32, op u8, state u8, flags u8, why u8, bytes u32, size u32, id8[8], target (≤ 32); last section: probation u8, last u8, last_version (≤ 32), failed_mask u8; probe section: asked u8, why u8, age_s u32, offered (≤ 32), offered_key8[8], key_trusted u8 | 144 B |
+| 0x30 | `FW_REQ` | K->M | id8[8], offset u32, page u16, count u8 | 16 B |
+| 0x31 | `FW_PAGE` | M->K | id8[8], total u32, offset u32, len u16, len bytes (fixed, like CFG_PAGE; bytes after the data are ignored) | 18 B + data: 1,157 B on UDP, 207 B in 250 B |
+
+**When each is sent:**
+- **FW_INFO:** at the first STATUS of each session, on a change, and on INFO; at most one every 2 s.
+- **FW_STATE:** in answer to every order, on each change of state or `why`, at most once a second
+  for `bytes`, and every 10 s while a run exists.
+
+**Values** (never renumbered):
+- **op:** 1 INFO, 2 PROBE, 3 FETCH, 4 RELAY, 5 INSTALL, 6 CANCEL.
+- **kind:** 0 is the P4 application. 1 (C6), 2 (language pack) and 3 (asset pack) are reserved, and
+  v1 refuses them.
+- **state:** 0 IDLE, 1 PROBING, 2 FETCHING, 3 RECEIVING, 4 KEY_WAIT, 5 VERIFYING, 6 READY, 7
+  INSTALLING, 8 FAILED, 9 STOPPED.
+- **flags:** bit 0 PAUSED.
+- **last:** the `PANEL_OTA_LAST_*` values (0 none, 1 updated, 2 rolled back, 3 stopped, 4 failed).
+- **why:** grouped by decade. A reader takes a value it doesn't know by its decade; an unknown value
+  in 10-19 blocks.
+
+| Values | Class | Known in v1 |
+|---|---|---|
+| 0 | OK | |
+| 1-9 | not reached | NO_NETWORK 1, NO_LOOKUP 2, NO_CONNECT 3, SERVER_ERROR 4, NOT_A_SERVER 5 |
+| 10-19 | the server's answer | UNKNOWN_DEVICE 10, HELD_BACK 11, STEPPING_STONE 12, OTHER_VERSION 13, UP_TO_DATE 14 |
+| 20-29 | transfer: retried, or the relay instead | BROKE_OFF 20, TOO_SLOW 21, BAD_SIZE 22, BAD_SHA 23, STALLED 24, TIMEOUT 25, NO_MEMORY 26, FLASH 27 |
+| 30-49 | refused: no retry | KEY 30, CHIP 31, PROJECT 32, NOT_NEWER 33, SIGNATURE 34, TOO_BIG 35, UNKNOWN_KIND 36, UNKNOWN_OP 37, BUDGET 38, BAD_ORDER 40, WRONG_VERSION 41 |
+| 50-59 | waiting | MASTER_BUSY 50, NOT_QUIET 51, PANIC_PENDING 52, KEPT_TONE 53, NO_STATUS 54, BUSY 55 |
+| 60-69 | stopped | STOPPED 60 (a person at the keypad), CANCELLED 61 (the master) |
+
+**STATUS flags.** New bits in the existing flags byte, so no byte is added. Defined next to
+`plink_msg.h:145`, encoded at `plink_view.c:157` from the master's whole snapshot, decoded at
+`:312`:
+- 0x04 UPDATING: the master runs an update or is on its self-test.
+- 0x08 HOLD: `proto_fw_install_allowed()` says no on the master's snapshot.
+- 0x10 FIRE / 0x20 CO: fire or CO sounds on any of the master's partitions.
+
+A change of any of them sends a STATUS, as a change does (LINK-006).
+
+**Rules** (v1, frozen once released):
+- `id8` is the first 8 bytes of the image's SHA-256. It is never tied to a session, so a relay goes
+  on across a new session, the 24 h rekey and a master restart.
+- Order ids are a random base at each master start, then counted, as LINK-018's are.
+- FW_ORDER is at 219 of 225 B. A later field goes in a new section, sent only where it fits.
+- A relay v2 takes new type numbers.
+
+### Per transport (estimates, not measured)
+
+| Transport | FW_PAGE data | Relay of 3.6 MB |
+|---|---|---|
+| UDP over Wi-Fi | 1,024 B, 16 KB per request | paced by the keypad's flash: about 2 min |
+| ESP-NOW, 250 B frames (later) | 192 B | about 13 KB/s, about a fifth of the air at 1 Mbps: about 5 min |
+| 433 MHz | never | - |
+
+- **v1 keypads never relay over ESP-NOW.** The factory C6 (2.12.3) has no ESP-NOW, so a keypad gets
+  the firmware that brings ESP-NOW over Wi-Fi. Later keypads use these same messages with the page
+  size from the order.
+- **The ESP-NOW bridge** must send control frames before bulk ones (CP-003).
+- **No FW_* frame** goes on a transport whose largest frame is under 250 B.
+
+### What people see
+- **Master's Software update:** a Keypads block, one row per keypad: name, version and state.
+  - States: "Up to date", "Waiting for its turn", "Downloading 45 %", "Receiving from this panel 45
+    %", "Ready", "Waits: the system is armed", "Installing", "Self-test", "Updated", "Accept the new
+    key at keypad n", "Not updated: <reason>".
+  - Buttons: Update keypads and Stop.
+  - It is drawn as a proposal first: the touchscreen per
+    `docs/features/07-UI-LVGL-Pro/mockup/README.md`, the Panel Manager per
+    `docs/features/31-Browser-Panel-Manager/mockup/README.md`.
+  - Bars are stepped and words change at most once a second (UI-020).
+  - `ui_link_keypad_t` (`ui_backend.h:1615-1626`) gains `fw_state`, `fw_why`, `fw_path`,
+    `fw_percent` and `fw_behind`.
+- **Keypad's Software update:** "Updates come from <master>", the run with the existing steps, Stop,
+  and the key screen (below).
+- **Event log, on the master.** `firmware_update` stages are appended after
+  `ALARM_FW_RESTART_PUT_OFF` (`alarm_types.h:636-646`):
+  - `keypad_installing` 9, `keypad_updated` 10, `keypad_rolled_back` 11, `keypad_failed` 12 (arg2 =
+    why);
+  - source {keypad, n};
+  - the master's own stages are not reused, because OTA-029 reads the master's last result from
+    them.
+- **MQTT:** `…/firmware` gains `keypads` [{device, version, state}]. Keys are added only.
+- **Console:**
+  - master: `plink fw`, `plink fw update [n|all]`, `plink fw cancel [n|all]`, `plink fw path <n>
+    auto|fetch|relay` (bench only, RAM only);
+  - keypad: `plink fw`.
+
+### A new signing key (LINK-036)
+- **When.** The order or the server's answer names the image's key. If that key is neither the
+  keypad's own nor its accepted key, the keypad stops before downloading and goes to KEY_WAIT.
+- **What it shows.** "The new software is signed with a key this keypad doesn't know yet", with the
+  fingerprint (the first 16 hex digits, in groups of four; OTA-020), a hold to accept, and the
+  installer's code.
+  - The code is checked by the master (CMD op 2).
+  - The screen is refused while STATUS says `default_codes` (OTA-021).
+- **On accept.** The keypad stores the order's server and that key as its trust record
+  (`ota`/`trust`), as a server change does on a master.
+- **Without this,** a keypad whose master moved to another key needs its service console (`ota
+  server check`, `ota server use`) or a cable.
+
+## Versions and compatibility
+The owner (2026-10-16): a newer panel must still work with an older one. Nothing of the link is
+released yet, so whatever a keypad needs in order to be updated later goes into v1.
+
+- **The floor, both ways.** A master keeps serving all of the following to a keypad that says
+  protocol 1:
+  - the v1 header and pairing;
+  - HELLO (≤ 128 B, `pending_hello`, `plink_master.h:123`) and WELCOME;
+  - STATUS v1 (the system section and partition records);
+  - ZONES (the 7-byte record, with `zones_crc` over it);
+  - CFG paging;
+  - EV_REQ and EVENTS (the 32-byte record);
+  - CMD and RESULT, SOUND, HEARTBEAT and TIME;
+  - BYE, which always means "removed";
+  - FW_* v1.
+
+  So a paired keypad, however old, can always be brought to its master's version. A keypad of any
+  later version works with a v1 master at protocol 1. Neither side refuses a peer at protocol 1 or
+  above.
+- **Additions.**
+  - A new type, op, kind, command type or value goes only to a peer whose session has its capability
+    bit.
+  - For a protocol-1 peer, the master maps a value v1 doesn't know to the nearest v1 value.
+  - Whatever a keypad must show, sound or obey stays expressible in v1.
+- **Fail-safe keypads** (v1, `plink_view.c:206-219`):
+  - An arm state the keypad doesn't know decodes as armed (Away, when the level is unknown too).
+  - A sounder value it doesn't know decodes as the alarm.
+  - Fire and CO sound from the STATUS FIRE and CO bits, so a later master's partitions beyond the
+    keypad's 4 are heard (`ALL_PARTS`, `plink_view.c:27`).
+  - Today the raw value goes through, and `compute_mode` (`ui_app.c:1495`) shows an unknown state as
+    Ready.
+- **Unknown command type.** The master answers it UNAVAILABLE (LINK-017), not BAD_ARG as today
+  (`plink_master.c:729-731`).
+- **Fields.**
+  - Fields are appended only.
+  - Absence is known from a section's length, never from a 0.
+  - An appended field refines its v1 meaning and never changes it.
+  - A configuration field is never widened in place; a wider one gets a new id.
+- **Stored state.**
+  - A link record never raises compat and stays at most 1024 B (`PLINK_STORE_MAX`).
+  - New per-keypad facts go in new NVS keys.
+- **The master's self-test proves its keypads** (LINK-041).
+
+**What a v1 keypad must have** (it can't be added to a keypad later):
+- `PLINK_CAP_FW` and the five messages above;
+- PROBE and FETCH through its release run, with `want`;
+- the in-order pull into the writer;
+- the gate with the new STATUS flags, the panic and kept-tone checks, and the INSTALL hold;
+- the fail-safe decoding, with FIRE and CO;
+- the key screen.
+
+The master's side (planner, sources, buckets, screens) can be finished or improved later without
+touching keypads. It still ships in v1, because the same firmware runs both roles.
 
 ## Design
 - **`components/core/panel_link`** (portable, host-tested, prefix `plink_`): the crypto helpers
@@ -519,6 +895,15 @@ goes to its HELLO's source without moving it). Firmware with the link sets
 - The result cache keeps a command from running twice, but every CMD frame gets a RESULT (a
   refusal, or the cached answer to a copy): a device with a keypad's keys gets one RESULT for each
   CMD it sends, though its commands and requests stay within LINK-027's limits.
+- Keypad updates, for the owner (designed 2026-10-16; built as recommended unless decided
+  otherwise): a keypad accepts a new signing key at its own screen with the installer's code
+  (LINK-036; without it a master moved to another key leaves every keypad needing its console or a
+  cable); a keypad found behind later waits for Update keypads until BL-190 decides automatic
+  updates; a master's self-test needs one of its keypads back (LINK-041; the risk: a master whose
+  only keypad is off during its update goes back to its old version); the update server takes
+  `want` (BL-050; without it a keypad offered a newer version than its master's takes the relay).
+  Estimates, not measured yet: the relay's speed, `esp_partition_mmap` windows of the running
+  slot, the slot's exact length with its signature sector, free PSRAM on a master for a copy.
 
 ## Tasks
 - [x] `panel_link` core: crypto helpers with known-answer tests, the v1 frame codec and replay
@@ -571,7 +956,7 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   ready, a chime with approved words (the keypad holding the master's pack revision), a walk test's
   start and end (its trips, and a chime, on zones without approved words silent on both), a keypad
   restart in an exit time (Armed at its end once a baseline there joins the arming) (LINK-028)
-  (BL-048, 5720f24, 674a736)
+  (BL-048, 5720f24, 674a736, 660b91c)
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over
   30 s saying nothing old; its internal RAM at start-up beside before (LINK-028) (BL-048)
@@ -580,9 +965,33 @@ goes to its HELLO's source without moving it). Firmware with the link sets
 - [x] The engine's device supervision trouble for a silent keypad (LINK-007's engine side,
   CORE-TRBL-008): `test_troubles.c` test_device_supervision, `alarm_engine_device_checkin`
 - [ ] ESP-NOW <-> LAN failover (LINK-009) (M7) (BL-048)
+- [ ] Wire: types 0x2D-0x31, `PLINK_CAP_FW`, the STATUS bits UPDATING, HOLD, FIRE and CO, the codecs
+  and Python goldens; every v1 payload moved into a frozen `test/plink_wire_fixture_v1.h` (LINK-032,
+  -037, -038, -040) (BL-048)
+- [ ] Keypad fail-safes in `plink_view.c`, FIRE/CO sounding in `continuous_of`, and UNAVAILABLE for
+  an unknown command type (LINK-039) (BL-048)
+- [ ] Keypad gate: master flags, panic pending, kept tone, the INSTALL hold (LINK-034) (BL-048)
+- [ ] Keypad core: orders, the in-order pull, FW_INFO and FW_STATE (LINK-029, -032, -035) (BL-048)
+- [ ] `panel_ota`: `want` in `proto_fwsrv_facts_t`; `post_check` taking facts, a server and a
+  channel for one run; the ordered release run (exact version); `PANEL_OTA_KIND_LINK` with Stop;
+  `panel_ota_set_checks`, `panel_ota_set_restart_hold`, `panel_ota_running_image`,
+  `panel_ota_fetch_for`; `PANEL_OTA_OK_KEYPADS` (LINK-031, -033, -041) (BL-048)
+- [ ] Keypad service: dispatch, the own Install refused in the keypad backend, the key screen
+  (LINK-029, -036) (BL-048)
+- [ ] Master: `plink_fw.c` planner, FW_REQ serving and buckets, `fw_read` over mmap or PSRAM,
+  `link/fwgo`, the supervision hold (LINK-030, -031, -032) (BL-048)
+- [ ] Event stages (docs/features/05), MQTT `keypads`, `plink fw` console (BL-048)
+- [ ] Screens: a proposal first, then the master's Keypads block and the keypad's view (BL-048)
+- [ ] `host/link_sim/link_peer.c`, the future peer (`-DPLINK_FUTURE_TEST=1`), `tools/link_compat.py`
+  (LINK-042) (BL-048)
+- [ ] The update server takes `want` (update-server repository, BL-050)
+- [ ] On the panels: the fetch path; the keypad's WAN blocked at the router, so it relays; the 10.1"
+  keypad of the 7" master, from a copy; armed mid-relay; a panic pending; a kept fire tone; power
+  pulled mid-relay and mid-write; a master restart during a keypad's self-test; a v1.x image ordered
+  to a v3 keypad (refused before any write); `display watch` and touch on the keypad while it writes
+  (BL-048)
 
 Covered by boxes in other documents (all BL-048):
 - Keypad-attached inputs as zones (LINK-011): docs/features/02.
-- Firmware relay to keypads (LINK-012, M8): docs/features/13, the keypad relay protocol.
 - The keypads' mDNS announcement (`_roboalarms-link._udp`): docs/features/09.
 - Cross-partition GOTO on the keypads (KPD-006): docs/features/01, "On the keypads".

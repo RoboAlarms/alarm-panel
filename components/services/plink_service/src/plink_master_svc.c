@@ -10,8 +10,8 @@
  *                    alarm task as {ALARM_SRC_KEYPAD, n} (codes wiped after use), each keypad's
  *                    lockout read after its command, the keypads' configuration copy rebuilt when
  *                    the engine's changes (plink_cfg_for_keypads, two blobs: the manager keeps
- *                    using one while the other is made), and the supervision edges and check-ins
- *                    (alarm_service_device_reachable/checkin may wait for the alarm task's queue);
+ *                    using one while the other is made), and the supervision edges
+ *                    (alarm_service_device_reachable may wait for the alarm task's queue);
  *                    the link task itself never waits for the alarm task (LINK-027)
  *   link task        everything else: the manager, mDNS (announced only while in use, LINK-021),
  *                    the time and its zone, the master's reporting for the Emergency words, the
@@ -133,7 +133,6 @@ static alarm_config_t *s_cfg_scratch; /* plink_cfg_for_keypads' scratch, PSRAM, 
 static uint8_t *s_blob[2];            /* the keypads' copies, PSRAM */
 static atomic_uint s_reach_dirty;     /* supervision edges to tell the engine (bit d-1) */
 static atomic_uint s_reach_state;     /* ... and what to tell it (1 reachable) */
-static atomic_uint s_checkins;
 static atomic_uint s_enabled_devices; /* the engine's enabled device-table entries (bit d-1) */
 
 /* Each keypad's lockout, read by the worker after its commands (LINK-027, KPD-008). */
@@ -347,12 +346,6 @@ static void flush_edges(void)
             alarm_service_device_reachable(d, (state & (1u << (d - 1u))) != 0u);
         }
     }
-    const uint32_t seen = atomic_exchange(&s_checkins, 0u);
-    for (uint8_t d = 1; d <= PLINK_KEYPADS_MAX; d++) {
-        if ((seen & (1u << (d - 1u))) != 0u) {
-            alarm_service_device_checkin(d);
-        }
-    }
 }
 
 static void worker_task(void *arg)
@@ -433,15 +426,6 @@ static void port_reachable(void *ctx, uint8_t device, bool reachable)
     atomic_fetch_or(&s_reach_dirty, bit);
     ESP_LOGW(TAG, "keypad %u %s", (unsigned)device, reachable ? "heard again" : "not responding");
     worker_kick();
-}
-
-static void port_checkin(void *ctx, uint8_t device)
-{
-    (void)ctx;
-    if (device >= PLINK_DEVICE_FIRST && device <= PLINK_DEVICE_LAST) {
-        atomic_fetch_or(&s_checkins, 1u << (device - 1u));
-        worker_kick();
-    }
 }
 
 /* The Zigbee keypads' numbers, read under the zone lock outside the manager's calls (its port
@@ -940,7 +924,10 @@ esp_err_t msvc_prepare(uint64_t now)
         .store = port_store,
         .run = port_run,
         .reachable = port_reachable,
-        .checkin = port_checkin,
+        /* No check-ins: the manager reports every heartbeat, also from a keypad its supervision
+         * holds down for a stale status, and the engine's check-in would clear that trouble. The
+         * reachable edges carry LINK-007 alone. */
+        .checkin = NULL,
         .devices_taken = port_devices_taken,
         .held_changed = port_held_changed,
         .lockout_left = port_lockout_left,

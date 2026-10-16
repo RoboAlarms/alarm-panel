@@ -12,13 +12,16 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   events and one-shot sounds in queues that never wait); a worker task runs the keypads' commands,
   code checks and code changes on the alarm task as `{ALARM_SRC_KEYPAD, n}`, reads each keypad's
   lockout after its command, rebuilds the keypads' copy of the configuration (no code material,
-  LINK-019) and tells the engine about silent keypads (`alarm_service_device_reachable`, LINK-007).
+  LINK-019) and tells the engine about silent keypads (`alarm_service_device_reachable`, LINK-007;
+  no check-ins: the manager reports every heartbeat, also from a keypad it holds down for a stale
+  status, and the engine's check-in would clear that trouble).
   The link is announced by mDNS `_roboalarms-link._udp` only while a keypad is paired or pairing is
   open (LINK-021); while keypads are paired a lost network is the network trouble and Wi-Fi power
   save is off (LINK-024). The keypads' device numbers 1-8 are shared with the Zigbee keypads
   (LINK-001).
 - **On a keypad** (`panel_app` starts no engine: `alarm_service_set_dormant()`) the link task
-  finds the master (mDNS, the subnet broadcast, or an address set at the console), keeps the
+  finds the master (mDNS, the subnet broadcast, or an address set at the console; again whenever
+  the manager's handshake goes unanswered, `port.resolve`), keeps the
   copies the touch UI reads, sends its commands (answered within 3 s, refused at once while the
   link is down, panic excepted), plays the master's sounds, follows its clock and time zone (no
   time server of its own while paired), answers the update gate, and tells the Emergency words the
@@ -74,6 +77,10 @@ a burst from eight keypads isn't dropped.
 - One alarm listener (the tenth, `alarm_service.c` `ALARM_LISTENERS_USED`).
 
 ## Follow-ups
+- Pairing by subnet broadcast when mDNS finds no master open for pairing (`PAIR_BROADCAST` in
+  `plink_keypad_svc.c`, off): it waits for the keypad's pairing in `panel_link` to take the
+  master's answer from its own address; today a PAIR_COMMIT from another address than the request
+  went to ends the attempt. Handshakes by broadcast work (a WELCOME is taken from any address).
 - Developer access on a keypad (`dev_remote`: network flashing, diagnostics): a keypad starts neither
   it nor the Panel Manager today (`panel_app` leaves `cfg->started` out).
 - `net_wifi_hold_low_latency` has no unit test: `platform_esp` has no host build.

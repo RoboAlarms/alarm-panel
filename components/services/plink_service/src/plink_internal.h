@@ -75,6 +75,10 @@ typedef struct {
     uint8_t keypads_down;
     bool pairing_open; /* mDNS says pair=1 */
     bool setup_keypad; /* the setup's own pairing as a keypad runs (Option C) */
+    bool setup_paired; /* ... and it paired: */
+    uint8_t setup_device, setup_home;
+    char setup_master[PLINK_NAME_MAX + 1];
+    char setup_master_addr[24];
     /* either side's pairing */
     bool pair_valid;
     ui_link_pair_t pair;
@@ -148,7 +152,7 @@ uint8_t ksvc_request(uint64_t now, const link_req_t *req);
 /* The setup's pairing on a master (Option C): KP_DONE stores the record and the keypad role and
  * restarts; false when nothing was paired. */
 bool ksvc_setup_done(void);
-/* The UI's copies on a keypad (any task). */
+/* The UI's copies on a keypad, and of the setup's pairing on a master (any task). */
 uint32_t ksvc_ui_seq(void);
 void ksvc_ui_snapshot(alarm_snapshot_t *out);
 bool ksvc_ui_config(alarm_config_t *out);

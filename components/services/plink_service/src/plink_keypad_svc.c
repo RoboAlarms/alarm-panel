@@ -47,6 +47,10 @@ static const char *TAG = "plink";
 #define MDNS_RESULTS       4u
 #define PAIR_LOOK_EVERY_MS 3000u
 #define PAIR_LOOK_MS       10000u /* mDNS alone, then the subnet broadcast too */
+/* The broadcast PAIR_REQ waits for the keypad's pairing to take the master's answer from its own
+ * (unicast) address: today plink_pair.c ends the attempt (OVERLAP) when the PAIR_COMMIT comes from
+ * another address than the request went to. Until then pairing finds the master by mDNS only. */
+#define PAIR_BROADCAST     0
 #define PAIR_GIVE_UP_MS    30000u /* no alarm panel answered: UI_LINK_FAIL_NOT_FOUND (E-18) */
 #define CLOCK_CHECK_MS     10000u
 #define CLOCK_STEP_MS      2000
@@ -83,6 +87,7 @@ static struct {
     mdns_search_once_t *search;
     uint8_t search_for; /* find_t */
     uint64_t next_search_at;
+    bool resolve; /* the manager asked to look for the master again (port.resolve) */
     uint8_t misses;
     bool gave_addr;
     plink_addr_t given;
@@ -197,6 +202,14 @@ static bool port_store(void *ctx, const plink_keypad_rec_t *rec)
         ESP_LOGE(TAG, "the master's record could not be stored");
     }
     return ok;
+}
+
+/* The manager's handshake went unanswered: look for the master again before its next try
+ * (docs/features/11 "Sessions"). Called inside the manager: only a flag here. */
+static void port_resolve(void *ctx)
+{
+    (void)ctx;
+    K.resolve = true;
 }
 
 /* ---- finding the master: mDNS, the broadcast, an address set by hand (LINK-021) -------------- */
@@ -380,7 +393,7 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
     }
     switch (K.pair_phase) {
     case PAIR_LOOKING:
-        if (K.search == NULL && now - K.pair_started >= PAIR_LOOK_MS) {
+        if (PAIR_BROADCAST && K.search == NULL && now - K.pair_started >= PAIR_LOOK_MS) {
             plink_addr_t b; /* nothing on mDNS: ask by broadcast (an open master answers) */
             link_subnet_broadcast(&b);
             plink_keypad_pair_start(K.k, now, &b, 0u);
@@ -388,6 +401,9 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
         } else if (K.search == NULL && now >= K.next_search_at && link_wifi_up()) {
             K.next_search_at = now + PAIR_LOOK_EVERY_MS;
             search_start(FIND_PAIRING);
+        }
+        if (PAIR_BROADCAST == 0 && now - K.pair_started >= PAIR_GIVE_UP_MS) {
+            pair_fail(UI_LINK_FAIL_NOT_FOUND); /* no alarm panel open for pairing answered */
         }
         return;
     case PAIR_ASKED: {
@@ -403,7 +419,7 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
     }
     default: break;
     }
-    /* Paired and not online: look again (before the handshake's retries, E-18). */
+    /* Paired and not online: look for it (and again before the handshake's retries, E-18). */
     if (!K.paired || K.setup_only || info->state == PLINK_LINK_ONLINE) {
         K.misses = 0;
         return;
@@ -413,8 +429,11 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
         give_master(now, &addr);
         return;
     }
-    if (K.search == NULL && now >= K.next_search_at && link_wifi_up()) {
+    /* Until a first address is found, every 10 s; after that when the manager asks (resolve) */
+    if (K.search == NULL && (!K.gave_addr || K.resolve) && now >= K.next_search_at &&
+        link_wifi_up()) {
         K.next_search_at = now + DISCOVERY_EVERY_MS;
+        K.resolve = false;
         search_start(FIND_MASTER);
     }
 }
@@ -443,6 +462,7 @@ static void take_command(uint64_t now)
     plink_cmd_t cmd;
     uint32_t gen = 0;
     bool got = false;
+    bool panic = false;
     portENTER_CRITICAL(&s_cmd_mux);
     if (s_box.pending) {
         cmd = s_box.cmd;
@@ -455,10 +475,20 @@ static void take_command(uint64_t now)
     if (!got) {
         return;
     }
+    panic = cmd.op == PLINK_OP_COMMAND && cmd.cmd.type == ALARM_CMD_PANIC;
     const uint32_t req = plink_keypad_command(K.k, now, &cmd);
     plink_wipe(&cmd, sizeof cmd); /* the manager wipes its own once answered (LINK-018) */
     if (req == 0u) {
         answer(gen, ALARM_ERR_UNAVAILABLE, NULL); /* not online (and not a panic), or no slot */
+        return;
+    }
+    plink_keypad_info_t info;
+    plink_keypad_info(K.k, now, &info);
+    if (panic && info.state != PLINK_LINK_ONLINE) {
+        /* LINK-023: queued, resent every second for a minute whatever the link does - the UI
+         * shows it as sent (link_info.panic_pending says it is still going) */
+        answer(gen, ALARM_OK, NULL);
+        plink_keypad_command_release(K.k, req);
         return;
     }
     K.cmd_active = true;
@@ -696,6 +726,7 @@ static void pair_status(uint64_t now, ui_link_pair_t *out, bool *valid)
         *valid = true;
         out->state = UI_LINK_PAIR_FAILED;
         out->fail = K.pair_fail;
+        out->left_s = looking;
         return;
     }
     if (K.pair_phase == PAIR_LOOKING) {
@@ -710,7 +741,7 @@ static void pair_status(uint64_t now, ui_link_pair_t *out, bool *valid)
     out->state = pi.state;
     out->fail = pi.fail;
     out->attempts = pi.attempts;
-    out->left_s = pi.state == PLINK_PS_OPEN ? looking : pi.left_s; /* a keypad: looking this long */
+    out->left_s = looking; /* a keypad: looking for this long (ui_backend.h) */
     snprintf(out->code, sizeof out->code, "%s", pi.code);
     snprintf(out->peer_name, sizeof out->peer_name, "%s", pi.peer_name);
     link_addr_ip(&pi.peer, out->peer_addr);
@@ -723,10 +754,20 @@ static void publish(uint64_t now, const plink_keypad_info_t *info)
     bool pair_valid = false;
     pair_status(now, &pair, &pair_valid);
     if (K.setup_only) {
+        char master_addr[24] = "";
+        if (K.pending && info->master.tp == PLINK_TP_UDP) {
+            link_addr_ip(&info->master, master_addr); /* where the pairing found it */
+        }
         link_pub_lock();
         g_pub.setup_keypad = true;
         g_pub.pair_valid = pair_valid;
         g_pub.pair = pair;
+        g_pub.setup_paired = K.pending;
+        g_pub.setup_device = K.pending ? K.pending_rec.device : 0u;
+        g_pub.setup_home = K.pending ? K.pending_rec.home : 0u;
+        snprintf(g_pub.setup_master, sizeof g_pub.setup_master, "%s",
+                 K.pending ? K.pending_rec.master_name : "");
+        snprintf(g_pub.setup_master_addr, sizeof g_pub.setup_master_addr, "%s", master_addr);
         link_pub_unlock();
         return;
     }
@@ -751,6 +792,9 @@ static void publish(uint64_t now, const plink_keypad_info_t *info)
                             ? epoch - (int64_t)info->status_age_s * 1000
                             : 0;
     snprintf(li.master_name, sizeof li.master_name, "%s", info->master_name);
+    if (info->master.tp == PLINK_TP_UDP) {
+        link_addr_ip(&info->master, li.master_addr); /* About shows it; "" not known */
+    }
     /* The master's reporting for the Emergency words (UI-029): what it said while this keypad can
      * reach it; set up but out of reach otherwise. */
     uint8_t report = plink_keypad_report(K.k);
@@ -832,7 +876,7 @@ bool ksvc_ui_config(alarm_config_t *out)
         return false;
     }
     link_pub_lock();
-    const bool have = s_ui_have_cfg;
+    const bool have = s_ui_have_cfg && (!g_pub.setup_keypad || g_pub.setup_paired);
     if (have) {
         memcpy(out, s_ui_cfg, sizeof *out);
     }
@@ -918,10 +962,10 @@ void ksvc_poll(uint64_t now)
         network(now);
         sounds(&info);
         follow_time(now);
-        copy_for_ui(now);
         beat(now, &info);
         maintenance_mark(now, &info);
     }
+    copy_for_ui(now);
     if (now >= K.publish_at) {
         K.publish_at = now + PUBLISH_MS;
         publish(now, &info);
@@ -952,7 +996,11 @@ uint8_t ksvc_request(uint64_t now, const link_req_t *req)
         if (K.setup_only) {
             return UI_LINK_REQ_REFUSED; /* the master's request handles it (ksvc_setup_done) */
         }
-        break; /* a keypad already: nothing to store */
+        /* a keypad already: nothing to store but the setup's end */
+        if (panel_setup_set_done() != ESP_OK) {
+            return UI_LINK_REQ_FAILED;
+        }
+        break;
     case LINK_REQ_KP_STATIC: {
         if (K.setup_only) {
             return UI_LINK_REQ_REFUSED;
@@ -1047,15 +1095,19 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     if (k == NULL || K.cfg_buf == NULL || K.cfg == NULL) {
         return ESP_ERR_NO_MEM;
     }
+    /* the UI's copies; also for the setup's pairing, whose last step names the home partition
+     * from the master's configuration */
+    s_ui_snap = alarm_mem_slow_calloc(1, sizeof *s_ui_snap);
+    s_ui_cfg = alarm_mem_slow_calloc(1, sizeof *s_ui_cfg);
+    s_ui_ev = alarm_mem_slow_calloc(PLINK_EVENTS_KEPT, sizeof *s_ui_ev);
+    s_ev_tmp = alarm_mem_slow_calloc(PLINK_EVENTS_KEPT, sizeof *s_ev_tmp);
+    if (s_ui_snap == NULL || s_ui_cfg == NULL || s_ui_ev == NULL || s_ev_tmp == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
     if (!setup_only) {
-        s_ui_snap = alarm_mem_slow_calloc(1, sizeof *s_ui_snap);
-        s_ui_cfg = alarm_mem_slow_calloc(1, sizeof *s_ui_cfg);
-        s_ui_ev = alarm_mem_slow_calloc(PLINK_EVENTS_KEPT, sizeof *s_ui_ev);
-        s_ev_tmp = alarm_mem_slow_calloc(PLINK_EVENTS_KEPT, sizeof *s_ev_tmp);
         s_cmd_mutex = xSemaphoreCreateMutex();
         s_cmd_done = xSemaphoreCreateBinary();
-        if (s_ui_snap == NULL || s_ui_cfg == NULL || s_ui_ev == NULL || s_ev_tmp == NULL ||
-            s_cmd_mutex == NULL || s_cmd_done == NULL) {
+        if (s_cmd_mutex == NULL || s_cmd_done == NULL) {
             return ESP_ERR_NO_MEM;
         }
     }
@@ -1080,7 +1132,7 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     char name[PLINK_NAME_MAX + 1];
     snprintf(name, sizeof name, "%.38s %s", g_link.model, g_link.panel_id);
     static const plink_keypad_port_t port = {
-        .ctx = NULL, .send = port_send, .mtu = NULL, .store = port_store};
+        .ctx = NULL, .send = port_send, .mtu = NULL, .store = port_store, .resolve = port_resolve};
     plink_keypad_init(k, &g_link.crypto, &port, have ? &rec : NULL, K.cfg_buf,
                       ALARM_CONFIG_BLOB_MAX, K.cfg, PLINK_KIND_PANEL, &caps, name, g_link.fw, now);
     plink_wipe(&rec, sizeof rec);

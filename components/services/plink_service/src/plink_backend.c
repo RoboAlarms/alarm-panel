@@ -35,6 +35,13 @@ static bool link_info(void *ctx, ui_link_info_t *out)
         out->role = UI_LINK_ROLE_MASTER;
         out->keypads = (uint8_t)g_pub.keypads;
         out->keypads_down = g_pub.keypads_down;
+        if (g_pub.setup_paired) {
+            /* the setup's pairing as a keypad (Option C): what it was given, for its last step */
+            out->device = g_pub.setup_device;
+            out->home = g_pub.setup_home;
+            snprintf(out->master_name, sizeof out->master_name, "%s", g_pub.setup_master);
+            snprintf(out->master_addr, sizeof out->master_addr, "%s", g_pub.setup_master_addr);
+        }
     }
     link_pub_unlock();
     return known;
@@ -355,10 +362,26 @@ static void keypad_backend(ui_backend_t *be)
     be->storage_action = NULL;
 }
 
+/* A master during its setup (Option C): once its own pairing as a keypad is done, the setup's
+ * last step reads that master's configuration (its home partition's name); otherwise this
+ * panel's own. */
+static bool (*s_own_get_config)(void *ctx, alarm_config_t *out);
+
+static bool setup_get_config(void *ctx, alarm_config_t *out)
+{
+    if (ksvc_ui_config(out)) {
+        return true;
+    }
+    return s_own_get_config != NULL && s_own_get_config(ctx, out);
+}
+
 void plink_service_extend_backend(ui_backend_t *be)
 {
     if (plink_service_role() == PLINK_SERVICE_KEYPAD) {
         keypad_backend(be);
+    } else {
+        s_own_get_config = be->get_config;
+        be->get_config = setup_get_config;
     }
     be->link_info = link_info;
     be->link_pair_status = link_pair_status;

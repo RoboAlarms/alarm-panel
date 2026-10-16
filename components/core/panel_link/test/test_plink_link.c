@@ -19,7 +19,8 @@
  * them (vectors_plink_*.py). This suite proves the two managers together: pairing from scratch to
  * a keypad that shows the master as it is; commands with codes, the entry countdown that never
  * goes up, the lockout of one keypad only, another partition refused, a keypad moved to another
- * home partition and the sounds that follow it; a lost event push filled in; a change on every
+ * home partition and the sounds that follow it; a lost event push filled in, and events pushed
+ * ahead of their snapshot kept across a new session; a change on every
  * keypad within a second, with loss and jitter too; a master restart, and a keypad restart with
  * commands run once across it; one direction cut, a keypad switched off, the master's Wi-Fi down;
  * panic through an outage, run once; removal and pairing again; eight keypads pulling the
@@ -190,6 +191,7 @@ typedef struct {
     uint32_t snap_seq;
     bool pump_due;
     uint64_t pumped_at;
+    bool snap_held; /* events and sounds are handed in, the snapshot waits (a store flush) */
     /* the keypads' configuration */
     alarm_config_t scratch;
     uint8_t blob[ALARM_CONFIG_BLOB_MAX];
@@ -312,11 +314,14 @@ static void pump(uint64_t t)
         R.sim.n_sounds = 0u;
         R.snd_fwd = 0u;
     }
+    R.pump_due = false;
+    R.pumped_at = t;
+    if (R.snap_held) {
+        return;
+    }
     alarm_engine_snapshot(&R.sim.eng, &R.snap);
     R.snap.seq = ++R.snap_seq;
     plink_master_snapshot(&R.m, t, &R.snap, epoch_now(), PLINK_REPORT_ONLINE);
-    R.pump_due = false;
-    R.pumped_at = t;
 }
 
 /* A command on the engine as {ALARM_SRC_KEYPAD, device}, logged. */
@@ -1670,6 +1675,57 @@ static void test_a_lost_event_push_is_filled_in(void)
     check_events(a);
 }
 
+typedef struct {
+    const kp_t *k;
+    size_t floor; /* the events the keypad held */
+    bool dropped;
+} ring_watch_t;
+
+static bool c_ring_dropped(void *ctx)
+{
+    ring_watch_t *w = ctx;
+    w->dropped = w->dropped || w->k->k.ev_count < w->floor;
+    return false; /* watched to the end */
+}
+
+/* LINK-015, docs/features/11 "Event record": an event pushed under one session ahead of the
+ * snapshot that carries it (the alarm task hands events in as it makes them; its snapshot comes
+ * after the store's flush), then a new session promoted before that snapshot arrives. The new
+ * session's first STATUS still says at least the pushed event (promotion never lowers what was
+ * pushed), so the keypad keeps its events: it never reads a log started again and empties its
+ * Activity list. */
+static void test_events_pushed_before_a_new_session_are_kept(void)
+{
+    kp_t *a = kp_new();
+    pair_kp(a);
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_MASTER));
+    TEST_ASSERT_TRUE(run_until(2000u, c_synced, a));
+    run_ms(500u);
+    const uint32_t old_sid = a->k.live.sid;
+    /* The disarm's events go to the keypad; the snapshot that carries them waits. */
+    const unsigned n0 = R.n_ev;
+    R.snap_held = true;
+    EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_MASTER));
+    TEST_ASSERT_TRUE(R.n_ev > n0);
+    const uint32_t pushed = R.ev[R.n_ev - 1u].seq;
+    TEST_ASSERT_TRUE(R.snap.last_event_seq < pushed); /* the master's snapshot lags */
+    run_ms(20u);
+    TEST_ASSERT_EQUAL_UINT32(pushed, a->k.events[a->k.ev_count - 1u].seq);
+    /* A new session now (the keypad's seq reached 2^30): HELLO, WELCOME, promotion, STATUS. */
+    ring_watch_t w = {a, a->k.ev_count, false};
+    a->k.live.tx_seq = PLINK_SEQ_REKEY - 1u;
+    plink_keypad_addr_changed(&a->k, know(a));
+    (void)run_until(300u, c_ring_dropped, &w);
+    TEST_ASSERT_NOT_EQUAL(old_sid, a->k.live.sid);
+    TEST_ASSERT_EQUAL_UINT32(a->k.live.sid, a->k.items_sid); /* its STATUS was applied */
+    TEST_ASSERT_TRUE(a->k.view.snap.last_event_seq >= pushed);
+    TEST_ASSERT_FALSE_MESSAGE(w.dropped, "the keypad dropped its events");
+    R.snap_held = false;
+    pump(mnow());
+    TEST_ASSERT_TRUE(run_until(2000u, c_synced, a));
+    check_events(a);
+}
+
 /* docs/features/11 "Event record": a keypad that pairs with a master holding more than 100
  * events ends with the newest 50 - the master answers an EV_REQ with up to 50, in as many EVENTS
  * as the transport needs - and they are the master's. */
@@ -2640,6 +2696,7 @@ int main(void)
     RUN_TEST(test_command_for_another_partition_is_refused);
     RUN_TEST(test_home_partition_moves_and_sounds_follow_it);
     RUN_TEST(test_a_lost_event_push_is_filled_in);
+    RUN_TEST(test_events_pushed_before_a_new_session_are_kept);
     RUN_TEST(test_a_new_keypad_gets_the_newest_50_events);
     RUN_TEST(test_a_change_shows_on_every_keypad_within_a_second);
     RUN_TEST(test_master_restart_keypads_back_within_15_s);

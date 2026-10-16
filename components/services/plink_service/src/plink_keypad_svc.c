@@ -119,8 +119,6 @@ static struct {
     uint32_t home_gen;
     bool copied;
     uint32_t seq_copied, cfg_seq_copied;
-    uint32_t bad_crc;     /* the configuration it couldn't read, as last seen */
-    uint32_t bad_cfg_seq; /* ... and the configuration count then: a later install outdates it */
 } K;
 
 /* The manager and its buffers (PSRAM): allocated at the first prepare and kept, so the setup's
@@ -824,20 +822,12 @@ static void setup_home_name(const plink_keypad_rec_t *rec, char *out, size_t len
     }
 }
 
-/* needs_update (ui_link_info_t): a configuration this keypad couldn't read is the master's
- * current one. The manager keeps the failed CRC after a later configuration installs, so one seen
- * before the latest install no longer counts while the link is up. */
+/* needs_update (ui_link_info_t): the configuration the master's latest status names is one this
+ * keypad couldn't read. The manager forgets a failed one once another installs or the master
+ * names the installed one again, so a link lost later says only that. */
 static bool needs_update(const plink_keypad_info_t *info)
 {
-    const uint32_t cfg_seq = plink_keypad_config_seq(K.k);
-    if (info->cfg_bad_crc != K.bad_crc) {
-        K.bad_crc = info->cfg_bad_crc;
-        K.bad_cfg_seq = cfg_seq;
-    }
-    if (K.bad_crc == 0u) {
-        return false;
-    }
-    return info->state != PLINK_LINK_ONLINE || cfg_seq == K.bad_cfg_seq;
+    return info->cfg_bad_crc != 0u;
 }
 
 static void publish(uint64_t now, const plink_keypad_info_t *info)

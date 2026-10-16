@@ -1348,6 +1348,58 @@ static void test_config_bad_blob(void)
     TEST_ASSERT_EQUAL_UINT8(PLINK_LINK_ONLINE, info().state);
 }
 
+static bool lost(void *ctx)
+{
+    (void)ctx;
+    return info().state == PLINK_LINK_LOST;
+}
+
+/* LINK-017, LINK-008: a configuration this keypad couldn't read says "update this keypad" only
+ * while the master's latest status names it. Another configuration that installs, or the master
+ * going back to the installed one (its release rolled back, a configuration shrunk again), ends
+ * it for good: a link lost days later is only a lost link, not a reason to update. */
+static void test_config_bad_forgotten_when_another_installs(void)
+{
+    /* Unreadable first, then a readable one installs. */
+    M.bad_blob = true;
+    fm_blob();
+    const uint32_t bad = M.blob_crc;
+    kp_init(true);
+    plink_net_run(&NET, 5000);
+    TEST_ASSERT_EQUAL_HEX32(bad, info().cfg_bad_crc);
+    M.bad_blob = false;
+    fm_blob();
+    fm_status();
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 3000, online, NULL));
+    TEST_ASSERT_EQUAL_HEX32(0u, info().cfg_bad_crc);
+    TEST_ASSERT_EQUAL_HEX32(0u, K.cfg_bad_crc);
+    NET.cut_from = MN;
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, PLINK_LOST_MS + 2000u, lost, NULL));
+    TEST_ASSERT_EQUAL_HEX32(0u, info().cfg_bad_crc);
+    NET.cut_from = -1;
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, PLINK_REHANDSHAKE_MS + 10000u, online, NULL));
+
+    /* Readable and installed, then an unreadable one, then the installed one named again. */
+    const uint32_t good = M.blob_crc;
+    M.bad_blob = true;
+    snprintf(S.cfg.zones[0].name, ALARM_NAME_LEN, "Front door, new name");
+    fm_blob();
+    fm_status();
+    plink_net_run(&NET, 3000);
+    TEST_ASSERT_EQUAL_HEX32(M.blob_crc, info().cfg_bad_crc); /* the master's: update */
+    M.bad_blob = false;
+    snprintf(S.cfg.zones[0].name, ALARM_NAME_LEN, "Zone 1, north garden window");
+    fm_blob();
+    TEST_ASSERT_EQUAL_HEX32(good, M.blob_crc);
+    fm_status();
+    plink_net_run(&NET, 1000);
+    TEST_ASSERT_EQUAL_HEX32(0u, info().cfg_bad_crc);
+    TEST_ASSERT_EQUAL_HEX32(0u, K.cfg_bad_crc);
+    NET.cut_from = MN;
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, PLINK_LOST_MS + 2000u, lost, NULL));
+    TEST_ASSERT_EQUAL_HEX32(0u, info().cfg_bad_crc);
+}
+
 /* ---- zones and events --------------------------------------------------------------------- */
 
 /* docs/features/11 "Zone record": the keypad asks for the zones when its CRC differs from the
@@ -2375,6 +2427,7 @@ int main(void)
     RUN_TEST(test_config_pull_through_loss);
     RUN_TEST(test_config_changes_mid_transfer);
     RUN_TEST(test_config_bad_blob);
+    RUN_TEST(test_config_bad_forgotten_when_another_installs);
     RUN_TEST(test_zones_requested_on_crc_mismatch);
     RUN_TEST(test_events_backfill_and_ring);
     RUN_TEST(test_events_hole_filled);

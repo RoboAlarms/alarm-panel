@@ -176,7 +176,8 @@ own CRC differs after a STATUS asks with ZONES_REQ.
 user u8, source kind u8 + id u16, arg u8, arg2 u8, flags u8. The master pushes each new event,
 sealed, before the STATUS that carries its seq (the Home screen reads the entry zone and who armed
 from the events when the state changes), and a STATUS never carries a last_event_seq below an
-event already pushed to that keypad; EV_REQ fills gaps: the newest `max` events after after_seq,
+event already pushed to that keypad, under this session or the one before (only a log that started
+again lowers it); EV_REQ fills gaps: the newest `max` events after after_seq,
 up to 50, in as many EVENTS as the transport needs (the "left out" flag on the first). A keypad
 with nothing asks for the last 50; it keeps 50 and drops its ring on a new pairing and when
 last_event_seq goes below its newest. The engine numbers its events one by one, so events that
@@ -191,7 +192,10 @@ restarts). A keypad whose cfg_crc differs waits 0-500 ms, then pulls it page by 
 outstanding, retried after 300 ms doubling to 2 s), checks the CRC and decodes it leniently: an
 index beyond its capacities is skipped, an unknown value reads as unknown, no validation (a newer
 master must not leave older keypads blank). A blob that fails is remembered and not pulled again,
-and the keypad says it needs an update. The keypad states its capacities in PAIR_REQ and HELLO;
+and the keypad says it needs an update while the master's latest status names it; it is
+forgotten once another configuration installs or the master names the installed one again (a
+release rolled back), so a link lost later never asks for an update. The keypad states its
+capacities in PAIR_REQ and HELLO;
 the master refuses to pair one that can't hold its zones.
 
 **Commands.** `CMD` op 1 is an `alarm_cmd_t` (op section: type, partition, level, arm_flags, zone
@@ -452,10 +456,6 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   keypad then says it isn't paired: pair again). Its last step names the home partition from the
   master's name (a master is named after partition 1), "Partition 2" otherwise: PAIR_DONE carrying
   the home partition's name (an appended field, LINK-017) would name every partition.
-- A keypad that couldn't read a configuration keeps that CRC (`cfg_bad_crc`) after a later one
-  installs; the service treats it as current only while the link isn't ONLINE or no configuration
-  installed since. The core clearing it on a successful install, or reporting the status's
-  configuration CRC, would make `needs_update` exact.
 - For the maintainers: should panic be resent longer than 60 s; do a keypad's mains and battery
   flags become device troubles (an engine change) or stay in the keypads list. Decided 2026-10-15:
   fire and CO keep sounding on a keypad that lost the link (Roles); 5 min default supervision

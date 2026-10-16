@@ -364,11 +364,15 @@ static void cfg_stop(plink_keypad_t *k)
 }
 
 /* After a STATUS: pull the configuration it names unless it is the one installed, the one being
- * pulled, or one that failed before. */
+ * pulled, or one that failed before. The master back on the installed one (a release rolled
+ * back, a configuration shrunk again): the one that failed is forgotten. */
 static void cfg_check(plink_keypad_t *k, uint64_t now)
 {
     const uint32_t crc = k->view.cfg_crc;
     const uint32_t len = k->view.cfg_len;
+    if (len != 0u && k->have_cfg && crc == k->cfg_installed_crc) {
+        k->cfg_bad_crc = 0u;
+    }
     if (len == 0u || (k->have_cfg && crc == k->cfg_installed_crc) ||
         (k->cfg_bad_crc != 0u && crc == k->cfg_bad_crc)) {
         cfg_stop(k);
@@ -469,7 +473,7 @@ static void cfg_pump(plink_keypad_t *k, uint64_t now)
 
 /* The whole blob is in: its CRC checked, then decoded leniently into the caller's configuration
  * (LINK-017, LINK-019). One that fails is remembered and not pulled again; the keypad says it
- * needs an update (plink_keypad_info cfg_bad_crc). */
+ * needs an update (plink_keypad_info cfg_bad_crc) until another one installs. */
 static void cfg_finish(plink_keypad_t *k)
 {
     const uint32_t crc = k->cfg_pull_crc;
@@ -489,6 +493,7 @@ static void cfg_finish(plink_keypad_t *k)
     }
     k->have_cfg = true;
     k->cfg_installed_crc = crc;
+    k->cfg_bad_crc = 0u; /* the master's configuration is read: no update is needed for it */
     k->config_seq++;
     k->view.snap.config_seq = k->config_seq;
 }
@@ -1430,7 +1435,10 @@ void plink_keypad_info(const plink_keypad_t *k, uint64_t now_ms, plink_keypad_in
     if (k->have_master) {
         out->master = k->master;
     }
-    out->cfg_bad_crc = k->cfg_bad_crc;
+    /* Only while the latest status still names it: the master may have moved on (a newer
+     * configuration being pulled is no reason to update). */
+    const bool named = k->view.have_status && k->view.cfg_crc == k->cfg_bad_crc;
+    out->cfg_bad_crc = named ? k->cfg_bad_crc : 0u;
 }
 
 const alarm_snapshot_t *plink_keypad_snapshot(const plink_keypad_t *k)

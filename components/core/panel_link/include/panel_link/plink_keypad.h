@@ -245,7 +245,10 @@ typedef struct {
     uint8_t home;
     char master_name[PLINK_NAME_MAX + 1];
     plink_addr_t master;
-    uint32_t cfg_bad_crc;     /* a configuration this firmware couldn't read (0 none) */
+    /* The configuration the latest status names, when this firmware couldn't read it (0 none):
+     * the keypad needs an update. Forgotten once another configuration installs or the master
+     * names the installed one again. */
+    uint32_t cfg_bad_crc;
 } plink_keypad_info_t;
 
 void plink_keypad_info(const plink_keypad_t *k, uint64_t now_ms, plink_keypad_info_t *out);

@@ -1003,7 +1003,13 @@ static void promote(plink_master_t *m, plink_peer_t *p, uint64_t now, const plin
     pending_drop(p);
     p->addr = *from;
     p->have_addr = true;
-    p->ev_sent_seq = m->have_snap ? m->snap.last_event_seq : 0u;
+    /* Never lower: an event pushed under the old session ahead of its snapshot stays the floor of
+     * the new session's STATUS, or the keypad would read a log started again and drop its events
+     * (a log that really started again lowers it in plink_master_snapshot). */
+    const uint32_t snap_ev = m->have_snap ? m->snap.last_event_seq : 0u;
+    if (snap_ev > p->ev_sent_seq) {
+        p->ev_sent_seq = snap_ev;
+    }
     p->zones_lo = p->zones_hi = 0u;
     p->change_ms = p->repeat1_ms = p->repeat2_ms = 0u;
     p->last_status_ms = 0u;

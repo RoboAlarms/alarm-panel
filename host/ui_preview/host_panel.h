@@ -6,6 +6,7 @@
 #pragma once
 
 #include "alarm/alarm_engine.h"
+#include "alarm_proto/proto_prefs.h"
 #include "host_features.h"
 #include "alarm/alarm_snapshot.h"
 #include "ui_app.h"
@@ -42,6 +43,21 @@ int host_panel_backlight(void);
 /* The keypad's preferences as the touch UI last saved them (backend.save_options): false before
  * it saved any. The preview's stand-in for the panel's NVS "ui" store (BL-132). */
 bool host_panel_saved_options(ui_options_t *out);
+/* How many times the touch UI saved them since the program started. */
+unsigned host_panel_options_saves(void);
+
+/* A change of the Screen and sound settings from elsewhere (docs/features/07 UI-046): Home
+ * Assistant or the master's link, as the panel's panel_prefs_remote_submit / _cancel hand it to
+ * the screen (the same mailbox, ui_prefs.h, on the simulated clock). patch->have names the fields.
+ * Returns the ticket, 0 while another is under way (BUSY). done runs inside lv_timer_handler (the
+ * screen's task) at most once per ticket: why[id - 1] a PROTO_PREFS_WHY_*, 0 = applied; a patch
+ * not taken within 3 s is answered BUSY when the screen next looks. cancel: true when withdrawn
+ * before the screen took it (no done will come). */
+typedef void (*host_panel_prefs_done_fn)(void *ctx, uint32_t ticket,
+                                         const uint8_t why[PROTO_PREFS_F_LAST]);
+uint32_t host_panel_prefs_submit(const proto_prefs_values_t *patch, host_panel_prefs_done_fn done,
+                                 void *ctx);
+bool host_panel_prefs_cancel(uint32_t ticket);
 
 /* Forget the saved network (the setup starts from scratch). */
 void host_panel_forget_wifi(void);

@@ -3,6 +3,7 @@
  * needs LVGL, ESP-IDF or a service, this stops compiling on the PC. */
 #include "ui_backend/ui_backend.h"
 #include "ui_backend/ui_light.h"
+#include "ui_backend/ui_prefs.h"
 #include "ui_backend/ui_why_words.h"
 #include "unity.h"
 
@@ -221,6 +222,8 @@ static void test_an_empty_backend_is_all_null(void)
     TEST_ASSERT_NULL(be.link_pair_status);
     TEST_ASSERT_NULL(be.link_keypads);
     TEST_ASSERT_NULL(be.link_request);
+    TEST_ASSERT_NULL(be.prefs_remote_take); /* UI-046: nothing from elsewhere is applied */
+    TEST_ASSERT_NULL(be.prefs_remote_done);
 }
 
 /* The panel link's pages' contract (docs/features/11): a zeroed info is the alarm panel itself,

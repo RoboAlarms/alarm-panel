@@ -425,6 +425,19 @@ bool hc_action_valid(dev_kind_t kind, dev_action_t action)
     }
 }
 
+const char *hc_mode_word(uint8_t bit)
+{
+    /* One bit, one word: the screen's four mode keys. Home Assistant's own "heat_cool" is never
+     * asked for by name - "auto" is, and dsrc_ha picks the word the thermostat has. */
+    switch (bit) {
+    case DEV_MODE_OFF: return "off";
+    case DEV_MODE_HEAT: return "heat";
+    case DEV_MODE_COOL: return "cool";
+    case DEV_MODE_AUTO: return "auto";
+    default: return NULL;
+    }
+}
+
 bool hc_auto_less_secure(dev_kind_t kind, dev_action_t action, int32_t value)
 {
     /* AUT-015 / D25: what the installer option decides - everything that asks a person for a
@@ -555,6 +568,10 @@ static hc_result_t act(hc_t *hc, const char *ref, dev_action_t action, int32_t v
         return HC_ERR_NOT_ALLOWED; /* HCTL-011: the live kind, before anything is sent */
     }
 
+    /* The row says something now (a failed action's "Didn't" or "Couldn't confirm"): the clearing
+     * below is a change the port hears of if the source refuses the send at once. */
+    const bool said = d->failed || d->unsure || d->error[0] != '\0' ||
+                      d->action != (uint8_t)ACT_NONE;
     uint32_t id = hc->next_request + 1u;
     if (id == 0) {
         id = 1u; /* 0 means "nothing under way" */
@@ -571,6 +588,11 @@ static hc_result_t act(hc_t *hc, const char *ref, dev_action_t action, int32_t v
         d->pending = 0;
         d->pending_gen = 0;
         d->action = (uint8_t)ACT_NONE; /* nothing went out: nothing to say on the tile */
+        if (said) {
+            /* the failure it showed is gone: a reader that copies the list only when it changes
+             * (device_service_seq, the panel link's device builds) must not keep showing it */
+            notify_changed(hc);
+        }
         return HC_ERR_OFFLINE;
     }
     if (request_id != NULL) {

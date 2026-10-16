@@ -1,7 +1,8 @@
 /*
  * ui_settings.c - the Settings view: the sections in the left column, who may open them
  * (docs/features/14, "Who can change what"), a stack of pages on the right, and the pages that
- * don't need installer mode: display and sound (anyone), users (a master code) and about. The
+ * don't need installer mode: display and sound (anyone; a change of them from elsewhere comes
+ * through here too, UI-046), users (a master code) and about. The
  * event log is Activity's (ui_app.c, BL-131 finding 7). Wi-Fi and date and time live in ui_net.c,
  * integrations in ui_integrations.c, installer pages in ui_installer.c.
  *
@@ -12,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "ui_backend/ui_prefs.h"
 #include "ui_internal.h"
 
 #define SAVE_AFTER_MS 1500u
@@ -235,6 +237,7 @@ void ui_settings_leave(void)
 }
 
 static void announcements_tick(void);
+static void prefs_remote_tick(void);
 
 void ui_settings_tick(void)
 {
@@ -244,6 +247,7 @@ void ui_settings_tick(void)
     if (s_opts_dirty && lv_tick_elaps(s_opts_changed) >= SAVE_AFTER_MS) {
         save_options_now();
     }
+    prefs_remote_tick();
     if (S.program && S.be.program_keepalive != NULL &&
         lv_display_get_inactive_time(S.disp) < 5000u && lv_tick_elaps(S.keepalive_at) >= 30000u) {
         S.keepalive_at = lv_tick_get();
@@ -991,6 +995,111 @@ static void build_night(lv_obj_t *body, char *title, size_t tlen, char *note, si
     ui_paragraph(body, TR("A touch, a change of state or an alarm wakes the screen. An alarm shows at "
                           "the normal brightness, at night too."),
                  ui_tone_gray());
+}
+
+/* ---- a change from elsewhere (docs/features/07 UI-046; docs/features/11 "Applying a change from
+ * elsewhere") -------------------------------------------------------------------------------------
+ * Home Assistant (through the master) or the master's console changes this panel's Screen and
+ * sound settings, field by field. The patch comes through the backend's mailbox and goes through
+ * the screen's own copy (S.opt) and its normal save (ui_app_apply_options), on this task: what the
+ * screen shows and what is stored never part, and the voice follows as after a change made here.
+ * It is refused whole while a person is changing these settings here (the setup, a page that shows
+ * them, a change not saved yet: in use) and while an alarm, entry time or exit time is on the
+ * screen (held). What the screen shows changes from elsewhere at most once per UI_PREFS_LOOK_MS -
+ * the look, and the screen-off and saver delays and the clock's format, whose change shows at once
+ * too (UI_PREFS_SHOWN: a new delay takes a screen nobody touches from the saver to dark and back):
+ * a patch that would change one sooner waits, whole, and is judged again then, so no flood of
+ * changes can make the screen or its backlight flicker (WCAG 2.3.1). Nothing on the screen says it
+ * happened: no word, no toast (the owner's decision 10, BL-216). */
+static struct {
+    bool held;         /* a patch taken, waiting for the 2 s */
+    uint32_t ticket;   /* its ticket, answered with prefs_remote_done */
+    ui_prefs_patch_t patch;
+    bool shown_recent; /* shown_at is less than UI_PREFS_LOOK_MS ago */
+    uint32_t shown_at; /* when a change from elsewhere last changed what the screen shows */
+} s_remote;
+
+/* A page that shows these settings is open: Screen and sound and its pages, and Time and language,
+ * whose Clock row is a settings field too. What it shows is never changed under a finger. */
+static bool prefs_pages_open(void)
+{
+    if (lv_subject_get_int(&subject_view) != VIEW_SETTINGS) {
+        return false;
+    }
+    for (uint8_t i = 0; i < S.depth; i++) {
+        switch (S.pages[i].id) {
+        case PAGE_DISPLAY:
+        case PAGE_SAVER:
+        case PAGE_NIGHT:
+        case PAGE_ANNOUNCEMENTS:
+        case PAGE_TIME: return true;
+        default: break;
+        }
+    }
+    return false;
+}
+
+/* Judges a patch and applies what it may: true when it is answered (why filled in), false while it
+ * waits for the 2 s (judged again then, from the start). */
+static bool prefs_remote_apply(const ui_prefs_patch_t *p, uint8_t why[UI_PREFS_F_LAST])
+{
+    memset(why, 0, UI_PREFS_F_LAST);
+    if (S.wizard_on || prefs_pages_open() || s_opts_dirty) {
+        ui_prefs_refuse_all(p, (uint8_t)UI_PREFS_WHY_IN_USE, why);
+        return true;
+    }
+    if (ui_app_held()) {
+        ui_prefs_refuse_all(p, (uint8_t)UI_PREFS_WHY_HELD, why);
+        return true;
+    }
+    ui_prefs_patch_t take = *p;
+    /* Announcements go on only while the voice is ready, as from this screen (D06); off, or on
+     * while already on, always. */
+    const uint32_t voice = UI_PREFS_BIT(UI_PREFS_F_VOICE_ENABLED);
+    if ((take.have & voice) != 0u && take.value[UI_PREFS_F_VOICE_ENABLED - 1u] == 1u &&
+        !S.opt.voice_enabled) {
+        ui_voice_info_t info;
+        ui_voice_info(&info);
+        if (info.state != UI_VOICE_READY) {
+            why[UI_PREFS_F_VOICE_ENABLED - 1u] = (uint8_t)UI_PREFS_WHY_VOICE_NOT_READY;
+            take.have &= ~voice;
+        }
+    }
+    ui_options_t opt = S.opt; /* the partition, the language and the region stay as they are */
+    const uint32_t changed = ui_prefs_merge(&opt, &take, why);
+    if ((changed & UI_PREFS_SHOWN) != 0u && s_remote.shown_recent) {
+        return false;
+    }
+    if (changed != 0u) {
+        if ((changed & UI_PREFS_SHOWN) != 0u) {
+            s_remote.shown_recent = true;
+            s_remote.shown_at = lv_tick_get();
+        }
+        ui_app_apply_options(&opt); /* shown and saved as a change made here is */
+    }
+    return true;
+}
+
+static void prefs_remote_tick(void)
+{
+    if (S.be.prefs_remote_take == NULL || S.be.prefs_remote_done == NULL) {
+        return;
+    }
+    if (s_remote.shown_recent && lv_tick_elaps(s_remote.shown_at) >= UI_PREFS_LOOK_MS) {
+        s_remote.shown_recent = false;
+    }
+    if (!s_remote.held) {
+        if (!S.be.prefs_remote_take(S.be.ctx, &s_remote.patch, &s_remote.ticket)) {
+            return;
+        }
+    } else if (s_remote.shown_recent) {
+        return; /* what the screen shows changed from elsewhere less than 2 s ago */
+    }
+    uint8_t why[UI_PREFS_F_LAST];
+    s_remote.held = !prefs_remote_apply(&s_remote.patch, why);
+    if (!s_remote.held) {
+        S.be.prefs_remote_done(S.be.ctx, s_remote.ticket, why);
+    }
 }
 
 /* ---- users --------------------------------------------------------------------------------- */

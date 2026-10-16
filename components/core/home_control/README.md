@@ -21,7 +21,7 @@ replays a command on its own, and does not draw anything.
 | Header | What it offers |
 |---|---|
 | `include/home_control/device_source.h` | the source interface: `dsrc_kind_t`, `dev_kind_t`, `dev_action_t`, `dev_info_t` with its `dev_values_t` (level, setpoint, temperature, modes, what a thermostat is doing, since when, what it can do - `DEV_CAP_*`, `dev_can()`; zero = not known), `dsrc_sink_t`, `device_source_ops_t` |
-| `include/home_control/home_control.h` | the registry `hc_t`: `hc_init()`, `hc_register()`, `hc_sink()`, `hc_refresh()`, `hc_tick()`, `hc_list()`, `hc_get()`, `hc_outcome_unknown()` (a failed action's outcome isn't known: the registry's own timeout or drop of an action in flight, or a source's answer that it sent it and couldn't confirm it, never a refusal made before sending - HCTL-012), `hc_needs_code()`, `hc_action_valid()`, `hc_act()`; for automations `hc_auto_allowed()` (what an automation may do, with the installer option), `hc_auto_less_secure()` (unlock, open, stop), `hc_auto_offer()` (the rows the automation pickers show for a kind and a source, each one `hc_auto_allowed()` accepts and the source can carry out) and `hc_act_auto()` (refuses with `HC_ERR_NOT_ALLOWED` by the live kind, returns the request id that `hc_port_t.result` carries) |
+| `include/home_control/home_control.h` | the registry `hc_t`: `hc_init()`, `hc_register()`, `hc_sink()`, `hc_refresh()`, `hc_tick()`, `hc_list()`, `hc_get()`, `hc_outcome_unknown()` (a failed action's outcome isn't known: the registry's own timeout or drop of an action in flight, or a source's answer that it sent it and couldn't confirm it, never a refusal made before sending - HCTL-012), `hc_needs_code()`, `hc_action_valid()`, `hc_mode_word()` (a `DEV_MODE_*` bit as the mode word `hc_act()` takes for ACT_SET_MODE: off, heat, cool, auto; NULL for anything else - the screen's mode keys and a link keypad's DEV_ACT, docs/features/11), `hc_act()`; for automations `hc_auto_allowed()` (what an automation may do, with the installer option), `hc_auto_less_secure()` (unlock, open, stop), `hc_auto_offer()` (the rows the automation pickers show for a kind and a source, each one `hc_auto_allowed()` accepts and the source can carry out) and `hc_act_auto()` (refuses with `HC_ERR_NOT_ALLOWED` by the live kind, returns the request id that `hc_port_t.result` carries) |
 | `include/home_control/dsrc_ha.h` | Home Assistant as a source: `dsrc_ha_init()`, `dsrc_ha_ops()`, `dsrc_ha_set_sender()`, the feed (`dsrc_ha_link()`, `dsrc_ha_link_at()` with the panel's clock at a drop, `dsrc_ha_catalog_begin()`, `dsrc_ha_catalog_add()`, `dsrc_ha_state()`, `dsrc_ha_result()` - a call_result by request id, its "timeout" an unknown outcome), `dsrc_ha_kind()`, `dsrc_ha_action_word()` |
 | `include/home_control/dsrc_zw.h` | the panel's Z-Wave outputs as a source: `dsrc_zw_init()`, `dsrc_zw_ops()`, `dsrc_zw_set_sender()` (a non-blocking post; the outcome through `dsrc_zw_result()`), the feed (`dsrc_zw_link()`, `dsrc_zw_begin()`, `dsrc_zw_add()`, `dsrc_zw_end()`, `dsrc_zw_state()`), `dsrc_zw_level_for()` |
 
@@ -47,6 +47,11 @@ default y, depends on `SPIRAM` and `ALARM_FEATURE_HA`) compiles the panel's wrap
   connection generation; nothing is retried automatically (HCTL-012). Every sent action hears
   back once through `port.result` with its request id: the answer, "timeout", or "offline" (its
   connection dropped, or a refresh dropped its device).
+- `port.changed` and `port.result` tell of every change of a row but `hc_act()`'s `HC_OK` (the
+  row shows it pending; the caller knows). A send its source refuses at once (`HC_ERR_OFFLINE`)
+  clears the failure the row showed, and `port.changed` says so, so a reader that copies the list
+  only when it changes (device_service's counter, the panel link's device builds) keeps nothing
+  stale.
 - An automation acts only through `hc_act_auto()`, within `hc_auto_allowed()`'s table
   (HCTL-011 as lifted by ADR-050, docs/features/41 AUT-002): lights and switches on, off and
   toggle, fans on and off, lock and unlock, covers closed, opened and stopped, valves closed and
@@ -78,7 +83,8 @@ this suite alone with `ctest --test-dir build/host -R home_control`.
 - Actions and results: success, failure, refusals, a source that says no (HCTL-006); timeout,
   disconnect and reconnect, a dropped device's action failed with its id, duplicate replies,
   request-id wraparound (HCTL-012); a failure cleared by a newer report and kept by the same one
-  (BL-175); an unknown outcome where the registry failed an action in flight (timeout, a
+  (BL-175), and one cleared by a send its source refused at once, told through `port.changed`
+  (BL-216); an unknown outcome where the registry failed an action in flight (timeout, a
   dropped connection or row) or the source says it sent it unconfirmed (the sink's `unknown`:
   Home Assistant's and Z-Wave's "timeout", through `dsrc_ha_result` and `dsrc_zw_result`), a
   refusal made before sending definite (HCTL-012, BL-171).
@@ -86,7 +92,8 @@ this suite alone with `ctest --test-dir build/host -R home_control`.
   the less secure pairs, and `hc_act_auto()` judging the live kind and returning the id its
   result carries (HCTL-011, AUT-002, AUT-015).
 - The Home Assistant source: the domain table, action words, catalog, state and link, the
-  `call` it formats, and a round trip through the registry.
+  `call` it formats, and a round trip through the registry; a mode bit's word, every other
+  byte without one (HCTL-004, HCTL-013, LINK-048).
 - The Z-Wave source (`dsrc_zw`, its own suite): listing and kinds, states, every kind x action
   allowed or refused, the posted request id coming back as a result, offline and unknown keys,
   a new list replacing the old, registration order against a full Home Assistant list, and

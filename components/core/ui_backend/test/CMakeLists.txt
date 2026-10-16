@@ -6,3 +6,6 @@ alarm_add_test(ui_dev_model SOURCES test_ui_dev_model.c LIBS ui_backend unity ST
 # voice-first-build.md D07), with voice_pack's test pack writer.
 alarm_add_test(ui_voice SOURCES test_ui_voice.c LIBS ui_backend alarm_sim alarm_proto unity STRICT
                INCLUDES ${ALARM_COMPONENTS_DIR}/core/voice_pack/test)
+# A change of the Screen and sound settings from elsewhere (docs/features/07 UI-046, docs/features/11
+# "Settings fields"): the merge and the mailbox, checked against alarm_proto's frozen table.
+alarm_add_test(ui_prefs SOURCES test_ui_prefs.c LIBS ui_backend alarm_proto unity STRICT)

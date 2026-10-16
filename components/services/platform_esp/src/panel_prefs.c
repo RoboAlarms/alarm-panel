@@ -1,14 +1,33 @@
 /*
  * panel_prefs.c - display, sound and language preferences ("ui") and the setup state ("sys") in
- * NVS.
+ * NVS; what is stored kept in RAM for any task, and the mailbox that hands a change from elsewhere
+ * to the screen (docs/features/07 UI-046, docs/features/11 "Settings over the link").
  */
 #include "panel_prefs.h"
 
 #include <string.h>
 
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
 #include "i18n/i18n.h"
 #include "i18n/i18n_date.h"
 #include "nvs.h"
+#include "ui_backend/ui_prefs.h"
+
+_Static_assert(UI_PREFS_F_LAST == PROTO_PREFS_F_LAST, "a why[] is the same size on both sides");
+_Static_assert((int)UI_PREFS_WHY_BUSY == (int)PROTO_PREFS_WHY_BUSY, "the mailbox's BUSY");
+
+/* The RAM copy, its counter and the mailbox: short copies under one spinlock, from any task. */
+static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
+static panel_prefs_t s_current;
+static bool s_current_set;
+static uint32_t s_seq;
+static struct {
+    ui_prefs_box_t box;
+    proto_prefs_values_t patch;
+    panel_prefs_done_fn done;
+    void *ctx;
+} s_remote;
 
 void panel_prefs_defaults(panel_prefs_t *out)
 {
@@ -63,7 +82,7 @@ static uint32_t get_idle_ms(nvs_handle_t h, const char *key, uint32_t def)
     return ms;
 }
 
-void panel_prefs_load(panel_prefs_t *out)
+static void load_stored(panel_prefs_t *out)
 {
     panel_prefs_defaults(out);
     nvs_handle_t h;
@@ -119,6 +138,18 @@ void panel_prefs_load(panel_prefs_t *out)
     nvs_close(h);
 }
 
+void panel_prefs_load(panel_prefs_t *out)
+{
+    load_stored(out);
+    /* The RAM copy starts from the first load; a save since then already holds newer values. */
+    portENTER_CRITICAL(&s_lock);
+    if (!s_current_set) {
+        s_current = *out;
+        s_current_set = true;
+    }
+    portEXIT_CRITICAL(&s_lock);
+}
+
 bool panel_prefs_lang_stored(void)
 {
     nvs_handle_t h;
@@ -131,7 +162,7 @@ bool panel_prefs_lang_stored(void)
     return stored;
 }
 
-esp_err_t panel_prefs_save(const panel_prefs_t *p)
+static esp_err_t save_stored(const panel_prefs_t *p)
 {
     nvs_handle_t h;
     esp_err_t err = nvs_open("ui", NVS_READWRITE, &h);
@@ -210,6 +241,153 @@ esp_err_t panel_prefs_save(const panel_prefs_t *p)
     }
     nvs_close(h);
     return err;
+}
+
+/* Every writer comes through here: the RAM copy and the counter follow what was stored. */
+esp_err_t panel_prefs_save(const panel_prefs_t *p)
+{
+    const esp_err_t err = save_stored(p);
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_lock);
+        s_current = *p;
+        s_current_set = true;
+        s_seq++;
+        portEXIT_CRITICAL(&s_lock);
+    }
+    return err;
+}
+
+uint32_t panel_prefs_seq(void)
+{
+    portENTER_CRITICAL(&s_lock);
+    const uint32_t seq = s_seq;
+    portEXIT_CRITICAL(&s_lock);
+    return seq;
+}
+
+bool panel_prefs_current(panel_prefs_t *out)
+{
+    portENTER_CRITICAL(&s_lock);
+    const bool set = s_current_set;
+    if (set) {
+        *out = s_current;
+    }
+    portEXIT_CRITICAL(&s_lock);
+    if (!set) {
+        panel_prefs_defaults(out);
+    }
+    return set;
+}
+
+void panel_prefs_to_values(const panel_prefs_t *p, proto_prefs_values_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->have = PROTO_PREFS_KNOWN;
+    out->brightness = p->brightness;
+    out->saver_brightness = p->saver_brightness;
+    out->saver_after_ms = p->saver_after_ms;
+    out->off_after_ms = p->off_after_ms;
+    out->night_on = p->night_on;
+    out->night_start = p->night_start;
+    out->night_end = p->night_end;
+    out->night_brightness = p->night_brightness;
+    out->night_off_after_ms = p->night_off_after_ms;
+    out->clock_mode = p->clock_mode;
+    out->appearance = p->appearance;
+    out->high_contrast = p->high_contrast;
+    out->volume = p->volume;
+    out->chime_volume = p->chime_volume;
+    out->voice_volume = p->voice_volume;
+    out->key_click = p->key_click;
+    out->voice_enabled = p->voice_enabled;
+    out->voice_status = p->voice_status;
+    out->voice_chime = p->voice_chime;
+}
+
+/* ---- a change from elsewhere (UI-046) ---------------------------------------------------------- */
+
+static uint32_t now_ms(void)
+{
+    return (uint32_t)(esp_timer_get_time() / 1000);
+}
+
+uint32_t panel_prefs_remote_submit(const proto_prefs_values_t *patch, panel_prefs_done_fn done,
+                                   void *ctx)
+{
+    if (patch == NULL || done == NULL) {
+        return 0u;
+    }
+    const uint32_t now = now_ms();
+    portENTER_CRITICAL(&s_lock);
+    const uint32_t ticket = ui_prefs_box_submit(&s_remote.box, now);
+    if (ticket != 0u) {
+        s_remote.patch = *patch;
+        s_remote.done = done;
+        s_remote.ctx = ctx;
+    }
+    portEXIT_CRITICAL(&s_lock);
+    return ticket;
+}
+
+bool panel_prefs_remote_cancel(uint32_t ticket)
+{
+    portENTER_CRITICAL(&s_lock);
+    const bool withdrawn = ui_prefs_box_cancel(&s_remote.box, ticket);
+    portEXIT_CRITICAL(&s_lock);
+    return withdrawn;
+}
+
+bool panel_prefs_remote_take(proto_prefs_values_t *out, uint32_t *ticket)
+{
+    const uint32_t now = now_ms();
+    proto_prefs_values_t patch;
+    memset(&patch, 0, sizeof(patch));
+    panel_prefs_done_fn done = NULL;
+    void *ctx = NULL;
+    uint32_t t = 0u;
+    portENTER_CRITICAL(&s_lock);
+    const ui_prefs_take_t r = ui_prefs_box_take(&s_remote.box, now, &t);
+    if (r != UI_PREFS_TAKE_NONE) {
+        patch = s_remote.patch;
+        done = s_remote.done;
+        ctx = s_remote.ctx;
+    }
+    portEXIT_CRITICAL(&s_lock);
+    if (r == UI_PREFS_TAKE_EXPIRED) {
+        /* Not taken within 3 s: withdrawn and never applied late; every field BUSY. */
+        uint8_t why[PROTO_PREFS_F_LAST];
+        memset(why, 0, sizeof(why));
+        for (unsigned id = 1u; id <= PROTO_PREFS_F_LAST; id++) {
+            if ((patch.have & PROTO_PREFS_BIT(id)) != 0u) {
+                why[id - 1u] = (uint8_t)PROTO_PREFS_WHY_BUSY;
+            }
+        }
+        if (done != NULL) {
+            done(ctx, t, why);
+        }
+        return false;
+    }
+    if (r != UI_PREFS_TAKE_OK) {
+        return false;
+    }
+    *out = patch;
+    *ticket = t;
+    return true;
+}
+
+void panel_prefs_remote_done(uint32_t ticket, const uint8_t why[PROTO_PREFS_F_LAST])
+{
+    panel_prefs_done_fn done = NULL;
+    void *ctx = NULL;
+    portENTER_CRITICAL(&s_lock);
+    if (ui_prefs_box_done(&s_remote.box, ticket)) {
+        done = s_remote.done;
+        ctx = s_remote.ctx;
+    }
+    portEXIT_CRITICAL(&s_lock);
+    if (done != NULL) {
+        done(ctx, ticket, why);
+    }
 }
 
 bool panel_setup_done(void)

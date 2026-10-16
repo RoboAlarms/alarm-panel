@@ -688,7 +688,6 @@ static void saver_enter(ui_light_stage_t stage)
  * applied only when the result changes: Automatic switches once at each end of the night hours,
  * in one step (UI-020). Called when the options change and when the clock's minute does. */
 static int s_theme_wanted = -1; /* the last result, -1 before the first */
-static bool language_held(void);
 
 /* by_clock: the night hours began or ended, or the time was lost. That change waits while an
  * alarm sounds or entry or exit time runs, like a language change: the screen doesn't change
@@ -706,7 +705,7 @@ static void theme_follow_as(bool by_clock)
     if ((int)want == s_theme_wanted) {
         return;
     }
-    if (by_clock && S.main != NULL && language_held()) {
+    if (by_clock && S.main != NULL && ui_app_held()) {
         return; /* tried again at the next minute */
     }
     s_theme_wanted = (int)want;
@@ -3634,8 +3633,9 @@ static void relabel(lv_obj_t *o, const i18n_catalog_t *from, const i18n_catalog_
 }
 
 /* An alarm, an entry time or an exit time keeps its words: nobody reading the screen then should
- * see it change language under them. */
-static bool language_held(void)
+ * see it change language under them (and the rest of how it looks: the theme by the clock, a
+ * setting from elsewhere, UI-046). */
+bool ui_app_held(void)
 {
     return S.mode_valid && (alarm_mode(S.mode) || S.mode == MODE_ENTRY || S.mode == MODE_EXIT);
 }
@@ -3766,7 +3766,7 @@ void ui_language_apply(void)
         S.lang_pending = false;
         return;
     }
-    if (language_held()) {
+    if (ui_app_held()) {
         S.lang_pending = true;
         return;
     }
@@ -3861,7 +3861,7 @@ static void tick(lv_timer_t *t)
         light_apply();
     }
     ui_refresh(false);
-    if (S.lang_pending && !language_held()) {
+    if (S.lang_pending && !ui_app_held()) {
         ui_language_apply(); /* the alarm or the delay that held it ended */
     }
     update_countdown();

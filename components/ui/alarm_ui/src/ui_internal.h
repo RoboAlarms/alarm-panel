@@ -388,6 +388,9 @@ void ui_theme_watch_saver(void); /* ui_app_start, once the screen saver is made 
 
 /* ---- ui_app.c ------------------------------------------------------------------------------ */
 void ui_app_theme_changed(void);
+/* An alarm, entry time or exit time is on the screen: its words and its look wait (a language
+ * change, the theme by the clock, a setting from elsewhere: I18N-014, UI-046). */
+bool ui_app_held(void);
 void ui_refresh(bool force);
 void ui_toast(const char *text);
 void ui_beep(ui_beep_t b);
@@ -640,6 +643,8 @@ void ui_settings_init(void);
 void ui_settings_open(void);                 /* the gear */
 void ui_settings_section(const char *which); /* a section in the left column */
 void ui_settings_leave(void);                /* Settings closes: forget codes, leave installer */
+/* Every tick: the delayed save, the open page's live parts, and a setting changed from elsewhere
+ * (UI-046: ui_backend_t.prefs_remote_take, judged and applied through the screen's own copy). */
 void ui_settings_tick(void);
 void ui_settings_refresh(void);              /* after a new snapshot */
 void ui_page_open(page_id_t id, int32_t arg);

@@ -23,7 +23,7 @@ The optional parts that used to live here are their own components since docs/fe
 | `alarm_store.c` | NVS namespace `alarm`: the configuration blob and runtime state; factory configuration (demo zones) only when positively absent |
 | `code_hash.c` | PBKDF2-HMAC-SHA256 for user codes on PSA SHA-256, with a fault counter the engine checks |
 | `panel_log.c` | The event log on the `eventlog` partition: a queue fed by the alarm task, a writer task, lost-report handlers, loss counters in NVS `log` |
-| `panel_prefs.c` | Display and sound preferences (NVS `ui`) and the setup state (NVS `sys`) |
+| `panel_prefs.c` | Display and sound preferences (NVS `ui`) and the setup state (NVS `sys`); what is stored, kept in RAM by every save for any task (`panel_prefs_seq()`, `panel_prefs_current()`) and as settings fields (`panel_prefs_to_values()`: the master's report to Home Assistant, a keypad's PREFS); the one-patch mailbox that hands a change from elsewhere to the screen's task (`panel_prefs_remote_*`, docs/features/07 UI-046; its bookkeeping is `ui_backend`'s host-tested `ui_prefs_box_*`) |
 | `sounder.c` | The task that renders `sounder`'s mixer in 10 ms blocks through the board's sink, and the amplifier; any task may post a sound, `sounder_play_background` one heard only over silence (the arming warning's chime, docs/features/41 D22); in dev builds the bench silence (`sounder_set_silenced`, NVS `sounder`/`silent`, the console's `speaker`, docs/features/08 AUD-025) keeps the amplifier off, alarms included |
 | `net_wifi.c` | Wi-Fi station (`esp_wifi_remote` over ESP-Hosted on the P4, native elsewhere), SNTP, time zone, fixed address, trial settings (NVS `net`, `nettrial`), the network, co-processor and clock troubles |
 | `net_check.c` | "Check the connection": Wi-Fi, address, router, lookup, internet, time, service, on a short-lived task |
@@ -36,13 +36,13 @@ The optional parts that used to live here are their own components since docs/fe
 |---|---|
 | `alarm_service.h` | Listeners, start, inputs (zone events, troubles, check-ins), synchronous commands, codes, users, installer mode, configuration, snapshots, `alarm_service_call/post()` onto the alarm task; `alarm_service_set_dormant()` for a panel in the keypad role (no engine: inputs dropped, calls answered at once, docs/features/11) |
 | `alarm_store.h`, `code_hash.h` | Load and save configuration and runtime state; code hashing and its fault counter |
-| `panel_log.h`, `panel_prefs.h`, `panel_system.h`, `sounder.h` | Event log read and flush, lost-report handlers; preferences; about and factory reset; sounds |
+| `panel_log.h`, `panel_prefs.h`, `panel_system.h`, `sounder.h` | Event log read and flush, lost-report handlers; preferences (and, for any task, their counter, RAM copy and the mailbox a change from elsewhere goes through: `panel_prefs_remote_submit()`, `_cancel()` for the submitter, `_take()` and `_done()` for the screen's port; docs/features/11 "Settings over the link"); about and factory reset; sounds |
 | `net_wifi.h`, `net_check.h` | Wi-Fi, addresses, trial settings, time zone, NTP (and switching it off, `net_wifi_set_time_server`), scan, network requirement, the low-latency holds (`net_wifi_hold_low_latency`); the connection check |
 | `zone_service.h` | Zone hub access, bindings, source registration and the Home Assistant feed |
 | `panel_console.h` | The console |
 
 ## Depends on
-- Project components: public `alarm_core`, `event_log`, `zone_hub`, `sounder`; private `alarm_mem`.
+- Project components: public `alarm_core`, `alarm_proto` (`panel_prefs.h`'s settings fields), `event_log`, `zone_hub`, `sounder`; private `alarm_mem`, `i18n`, `ui_backend`.
 - ESP-IDF: public `esp_event`, `esp_netif`; private `spi_flash`, `app_update`, `bootloader_support`, `console`, `esp_app_format`, `esp_driver_gpio`, `esp_driver_uart`, `esp_partition`, `esp_timer`, `esp_wifi`, `lwip`, `mbedtls`, `nvs_flash`; `espressif/esp_wifi_remote` `~1.6.4` and `espressif/esp_hosted` `~3.0.9` on the ESP32-P4 only (`idf_component.yml`).
 
 ## Options

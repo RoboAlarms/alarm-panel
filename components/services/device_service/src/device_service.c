@@ -58,6 +58,9 @@ static struct {
      * by ha_link's task, read by the automation task. */
     uint64_t ha_up_ms;
     uint64_t ha_catalog_ms;
+    /* device_service_seq: moved under the device lock (hc's port) or right after an act, read
+     * lock-free by anyone. Atomics. */
+    uint32_t seq;
 } S;
 
 /* Long enough for a fresh link's catalog and first states to land (DESIGN.md section 3). */
@@ -88,19 +91,34 @@ static void unlock(void)
     xSemaphoreGive(S.lock);
 }
 
+/* device_service_seq moves: release, so a reader that sees the new number and then lists (under
+ * the lock) sees at least what moved it. */
+static void seq_bump(void)
+{
+    (void)__atomic_add_fetch(&S.seq, 1u, __ATOMIC_RELEASE);
+}
+
 /* ---- hc's port ------------------------------------------------------------------------------ */
 
+/* A source reported a change (its list, a state, its link), or a send its source refused at once
+ * cleared the failure a row showed (hc_act, inside device_service_act or _act_auto): the registry
+ * re-reads it under this same lock, so a list taken after the counter moved has it. The screen
+ * still polls once a second; the panel link's device builds follow the counter (docs/features/11,
+ * BL-216). */
 static void port_changed(void *ctx)
 {
-    (void)ctx; /* the Devices view polls a change counter later (M13 UI); nothing yet */
+    (void)ctx;
+    seq_bump();
 }
 
 /* Runs under the device lock (hc calls it from inside device_service_*): the listener only
- * copies and enqueues (device_service.h). */
+ * copies and enqueues (device_service.h). Every end of an action moves the counter, hc_tick's
+ * "timeout" included, which changes the row without a port.changed. */
 static void port_result(void *ctx, uint32_t request_id, const char *ref, bool ok,
                         const char *error)
 {
     (void)ctx;
+    seq_bump();
     if (!ok) {
         ESP_LOGW(TAG, "%s: %s", ref, error[0] != '\0' ? error : "failed");
     }
@@ -419,6 +437,9 @@ hc_result_t device_service_act(const char *ref, dev_action_t action, int32_t val
     S.act_issued_ms = 0u;
 #endif
     unlock();
+    if (r == HC_OK) {
+        seq_bump(); /* the row shows it pending: the one change hc_act tells no port of */
+    }
     return r;
 }
 
@@ -446,7 +467,71 @@ hc_result_t device_service_act_auto(const char *ref, dev_action_t action, int32_
     S.act_issued_ms = 0u;
 #endif
     unlock();
+    if (r == HC_OK) {
+        seq_bump(); /* as device_service_act */
+    }
     return r;
+}
+
+uint32_t device_service_seq(void)
+{
+    return __atomic_load_n(&S.seq, __ATOMIC_ACQUIRE);
+}
+
+/* The touchscreen's own judge until BL-216 (ui_port_esp.c's dev_act), moved here unchanged so a
+ * link keypad's action is judged by the same code (docs/features/11 "Device actions"). */
+ds_person_t device_service_person_act(const alarm_source_t *src, uint8_t partition,
+                                      const char *ref, uint8_t action, int32_t value,
+                                      uint8_t mode_bit, const char *code, alarm_result_t *why)
+{
+    if (why != NULL) {
+        *why = ALARM_OK;
+    }
+    hc_device_t d;
+    if (src == NULL || ref == NULL || !device_service_get(ref, &d) ||
+        d.info.source == (uint8_t)DSRC_ZWAVE ||
+        !hc_action_valid((dev_kind_t)d.info.kind, (dev_action_t)action)) {
+        return DS_PERSON_REFUSED;
+    }
+    /* HCTL-005, judged here and not by the screen: an unlock or an opening needs a code the
+     * engine accepts, a wrong one counting toward the keypad's lockout like any other. */
+    if (hc_needs_code((dev_kind_t)d.info.kind, (dev_action_t)action, value)) {
+        if (code == NULL || code[0] == '\0') {
+            return DS_PERSON_NEED_CODE;
+        }
+        uint8_t user = 0;
+        alarm_authority_t authority = ALARM_AUTH_NONE;
+        alarm_result_t r = alarm_service_authenticate_as(src, code, partition, &user, &authority);
+        /* Until the owner rules otherwise (BL-045), the codes that may disarm at will may
+         * unlock: an arm-only or a guest code may not. A duress code unlocks as asked, without
+         * the silent duress report disarming sends (decided in BL-045). */
+        if (r == ALARM_OK && (authority == ALARM_AUTH_ARM_ONLY || authority == ALARM_AUTH_GUEST)) {
+            r = ALARM_ERR_NOT_AUTHORIZED;
+        }
+        if (r != ALARM_OK) {
+            if (why != NULL) {
+                *why = r;
+            }
+            return DS_PERSON_CODE_REFUSED;
+        }
+        /* The event with who did it, and src, is HCTL-007's (docs/features/24 Tasks): not logged
+         * yet. */
+        (void)user;
+    }
+    /* A thermostat's mode comes as one DEV_MODE_* bit: the source gets its word. */
+    const char *mode = NULL;
+    if (action == (uint8_t)ACT_SET_MODE) {
+        mode = hc_mode_word(mode_bit);
+        if (mode == NULL) {
+            return DS_PERSON_REFUSED;
+        }
+    }
+    switch (device_service_act(ref, (dev_action_t)action, value, mode)) {
+    case HC_OK: return DS_PERSON_OK;
+    case HC_ERR_BUSY: return DS_PERSON_BUSY;
+    case HC_ERR_OFFLINE: return DS_PERSON_UNREACHABLE;
+    default: return DS_PERSON_REFUSED;
+    }
 }
 
 void device_service_set_result_listener(device_service_result_fn fn, void *ctx)
@@ -621,6 +706,26 @@ void device_service_set_sender(device_service_send_fn fn, void *ctx)
 {
     (void)fn;
     (void)ctx;
+}
+uint32_t device_service_seq(void)
+{
+    return 0u;
+}
+ds_person_t device_service_person_act(const alarm_source_t *src, uint8_t partition,
+                                      const char *ref, uint8_t action, int32_t value,
+                                      uint8_t mode_bit, const char *code, alarm_result_t *why)
+{
+    (void)src;
+    (void)partition;
+    (void)ref;
+    (void)action;
+    (void)value;
+    (void)mode_bit;
+    (void)code;
+    if (why != NULL) {
+        *why = ALARM_OK;
+    }
+    return DS_PERSON_REFUSED; /* no registry: no such device */
 }
 esp_err_t device_service_console_register(void)
 {

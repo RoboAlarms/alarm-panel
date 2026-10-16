@@ -21,7 +21,8 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   finds the master (mDNS, the subnet broadcast, or an address set at the console), keeps the
   copies the touch UI reads, sends its commands (answered within 3 s, refused at once while the
   link is down, panic excepted), plays the master's sounds, follows its clock and time zone (no
-  time server of its own while paired) and answers the update gate.
+  time server of its own while paired), answers the update gate, and tells the Emergency words the
+  master's reporting (the backend's `mqtt_status` only, so the Integrations pages stay hidden).
 - **The setup** of a panel that becomes a keypad pairs while it is still a master (Option C): a
   keypad manager of its own on the same socket; the setup's Done stores the record and the keypad
   role and restarts.
@@ -68,9 +69,16 @@ a burst from eight keypads isn't dropped.
 - NVS namespace `link` (stored formats: never change a key's meaning): `role` (u8,
   `plink_service_role_t`; absent = master), `master` (blob, `plink_store_master_encode`), `keypad`
   (blob, `plink_store_keypad_encode`), `master_ip` (u32, a keypad's master set by hand, network
-  order). It holds the pairing keys: never in a backup (`backup_policy.c` leaves it out), erased by a
+  order), `otamaint` (u8 1: an update went in through the maintenance). It holds the pairing keys: never in a backup (`backup_policy.c` leaves it out), erased by a
   factory reset.
 - One alarm listener (the tenth, `alarm_service.c` `ALARM_LISTENERS_USED`).
+
+## Follow-ups
+- Developer access on a keypad (`dev_remote`: network flashing, diagnostics): a keypad starts neither
+  it nor the Panel Manager today (`panel_app` leaves `cfg->started` out).
+- `net_wifi_hold_low_latency` has no unit test: `platform_esp` has no host build.
+- `firmware/e32r40t/dependencies.lock` still has the manifest hash from before this component's
+  `idf_component.yml` (CI doesn't build that board): its next build rewrites it.
 
 ## Rules
 - Only the alarm task touches the engine: the link task never calls it and never waits for it; the
@@ -82,4 +90,7 @@ a burst from eight keypads isn't dropped.
   panel"), or by the setup's Done after a pairing.
 - On a keypad, the update gate is the link's: no update while the link is down unless the keypad is
   not paired or in its no-code maintenance (LINK-025); the update's self-test needs the link
-  (`PANEL_OTA_OK_LINK`).
+  (`PANEL_OTA_OK_LINK`, beaten on authenticated frames and while not paired). An update let through
+  by the maintenance is marked first (NVS `link`/`otamaint`); after its restart the link task beats
+  for the self-test while it runs (socket bound, crypto proved), until the image is confirmed or the
+  link is up again, then the mark goes.

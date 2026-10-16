@@ -328,8 +328,9 @@ bool panel_ota_system_idle(const char **why);
  * the panel link answers from its master's status (docs/features/11 "Roles", OTA-004). Once set,
  * it is asked instead of the alarm task by every update, the co-processor's included: true when
  * an update may start and restart now; false with *why a literal (marked I18N_NOOP_C("update",
- * ...)) saying what holds it. Called on the update and console tasks; it must not block. Set it
- * before panel_ota_start(); NULL fn: the alarm task again. */
+ * ...)) saying what holds it. Called on the update and console tasks (internal-RAM stacks): it
+ * must not wait for long (one NVS write at most). Set it before panel_ota_start(); NULL fn: the
+ * alarm task again. */
 typedef bool (*panel_ota_idle_fn)(void *ctx, const char **why);
 void panel_ota_set_idle_gate(panel_ota_idle_fn fn, void *ctx);
 /* Remote-dev probation: target ELF digest and opaque operation survive the restart. */

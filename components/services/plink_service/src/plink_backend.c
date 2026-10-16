@@ -180,6 +180,22 @@ static alarm_result_t kp_change_code(void *ctx, const char *current, const char 
     return r;
 }
 
+/* ---- a keypad: the master's reporting for the Emergency words ---------------------------------
+ * Only mqtt_status is filled, from the master's report byte, so report_state() (ui_app.c) says what
+ * happens to an alarm keyed here; mqtt_get, mqtt_set and every halink_* stay NULL, which keeps the
+ * Integrations rows hidden (ui_integrations.c wants all three MQTT entries). */
+static void kp_mqtt_status(void *ctx, ui_mqtt_status_t *out)
+{
+    (void)ctx;
+    memset(out, 0, sizeof *out);
+    link_pub_lock();
+    const uint8_t report = g_pub.kinfo_valid ? g_pub.kreport : (uint8_t)PLINK_REPORT_NONE;
+    link_pub_unlock();
+    out->state = report == PLINK_REPORT_ONLINE    ? UI_MQTT_CONNECTED
+                 : report == PLINK_REPORT_OFFLINE ? UI_MQTT_CONNECTING
+                                                  : UI_MQTT_OFF;
+}
+
 /* ---- a keypad: what only the master does (until the role gate hides it) ---------------------- */
 
 static alarm_result_t kp_program_enter(void *ctx, const char *code, uint8_t *user_out)
@@ -269,7 +285,7 @@ static void keypad_backend(ui_backend_t *be)
     be->zone_info = NULL;
     be->mqtt_get = NULL;
     be->mqtt_set = NULL;
-    be->mqtt_status = NULL;
+    be->mqtt_status = kp_mqtt_status; /* the master's reporting, nothing to set */
     be->halink_status = NULL;
     be->halink_enable = NULL;
     be->halink_pair_begin = NULL;

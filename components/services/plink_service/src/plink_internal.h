@@ -38,8 +38,8 @@
 #define LINK_KEY_ROLE   "role"      /* u8, plink_service_role_t */
 #define LINK_KEY_MASTER "master"    /* blob, plink_store_master_encode */
 #define LINK_KEY_KEYPAD "keypad"    /* blob, plink_store_keypad_encode */
-#define LINK_KEY_STATIC "master_ip" /* u32, a keypad's master set by hand (network order), 0 none  \
-                                     */
+#define LINK_KEY_STATIC "master_ip" /* u32, a keypad's master set by hand (network order) */
+#define LINK_KEY_MAINT  "otamaint"  /* u8 1: an update went in through LINK-025's maintenance */
 
 #define LINK_POLL_MS      50u /* the longest select() wait: the hand-overs are looked at */
 #define LINK_REQ_WAIT_MS  2000u
@@ -82,6 +82,7 @@ typedef struct {
     bool kinfo_valid;
     ui_link_info_t kinfo;
     plink_keypad_info_t kraw;
+    uint8_t kreport; /* the master's reporting (PLINK_REPORT_*), as this keypad can pass it on */
 } link_pub_t;
 extern link_pub_t g_pub;
 void link_pub_lock(void);
@@ -102,6 +103,8 @@ bool link_nvs_read(const char *key, void *buf, size_t cap, size_t *len);
 esp_err_t link_nvs_write(const char *key, const void *buf, size_t len);
 esp_err_t link_nvs_u32(const char *key, uint32_t value, bool erase);
 bool link_nvs_get_u32(const char *key, uint32_t *out);
+esp_err_t link_nvs_flag(const char *key, bool on); /* u8 1, or erased */
+bool link_nvs_get_flag(const char *key);
 esp_err_t link_store_role(plink_service_role_t role);
 /* Factory reset into a role (the console's `plink role ... confirm`): records the reset when an
  * engine runs, erases NVS, stores the role and restarts. Does not return. */

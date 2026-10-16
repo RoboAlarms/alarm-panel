@@ -54,6 +54,7 @@ static const char *TAG = "plink";
 #define NET_CHECK_MS       1000u
 #define BEAT_MS            1000u
 #define CMD_WAIT_MS        3000u /* the UI's wait for a command's answer (docs/features/11) */
+#define MAINT_CHECK_MS     2000u
 
 typedef enum { PAIR_NONE = 0, PAIR_LOOKING, PAIR_ASKED, PAIR_FAILED } pair_phase_t;
 typedef enum { FIND_NONE = 0, FIND_MASTER, FIND_PAIRING } find_t;
@@ -132,6 +133,13 @@ static struct {
 static uint32_t s_cmd_gen;
 static atomic_uint s_cmd_abandon; /* the gen the UI stopped waiting for */
 static atomic_bool s_off_pressed; /* OFF (disarm, silence) keyed here */
+/* An update let through by LINK-025's maintenance (link/otamaint): marked before it restarts the
+ * panel; after that restart, while marked, the link beats for the self-test without its master
+ * (the link task runs: socket bound, crypto proved). Cleared once the image is confirmed or the
+ * link is up again. */
+static atomic_bool s_maint_marked;
+static atomic_bool s_maint_beat;
+static uint64_t s_maint_at;
 static atomic_uint s_power_flags; /* PLINK_HB_* from the health task */
 
 bool ksvc_active(void)
@@ -646,8 +654,28 @@ static void beat(uint64_t now, const plink_keypad_info_t *info)
         return;
     }
     K.beat_at = now + BEAT_MS;
-    if (info->state == PLINK_LINK_NOT_PAIRED || info->status_age_s <= LINK_STATUS_FRESH) {
+    if (info->state == PLINK_LINK_NOT_PAIRED || info->status_age_s <= LINK_STATUS_FRESH ||
+        atomic_load(&s_maint_beat)) {
         panel_ota_healthy(PANEL_OTA_OK_LINK);
+    }
+}
+
+/* The maintenance update's mark, gone once its image is confirmed or the link is back. */
+static void maintenance_mark(uint64_t now, const plink_keypad_info_t *info)
+{
+    if (!atomic_load(&s_maint_marked) || now < s_maint_at) {
+        return;
+    }
+    s_maint_at = now + MAINT_CHECK_MS;
+    bool done = info->state == PLINK_LINK_ONLINE;
+    if (!done && atomic_load(&s_maint_beat)) {
+        panel_ota_status_t st; /* the update's probation: over once confirmed (or rolled back) */
+        panel_ota_get_status(&st);
+        done = !st.probation;
+    }
+    if (done && link_nvs_flag(LINK_KEY_MAINT, false) == ESP_OK) {
+        atomic_store(&s_maint_beat, false);
+        atomic_store(&s_maint_marked, false);
     }
 }
 
@@ -723,9 +751,16 @@ static void publish(uint64_t now, const plink_keypad_info_t *info)
                             ? epoch - (int64_t)info->status_age_s * 1000
                             : 0;
     snprintf(li.master_name, sizeof li.master_name, "%s", info->master_name);
+    /* The master's reporting for the Emergency words (UI-029): what it said while this keypad can
+     * reach it; set up but out of reach otherwise. */
+    uint8_t report = plink_keypad_report(K.k);
+    if (info->state != PLINK_LINK_ONLINE && report != PLINK_REPORT_NONE) {
+        report = PLINK_REPORT_OFFLINE;
+    }
     link_pub_lock();
     g_pub.kinfo = li;
     g_pub.kraw = *info;
+    g_pub.kreport = report;
     g_pub.kinfo_valid = true;
     g_pub.pair_valid = pair_valid;
     g_pub.pair = pair;
@@ -822,18 +857,31 @@ bool plink_service_update_idle(void *ctx, const char **why)
     (void)ctx;
     static const char *const NO_LINK = I18N_NOOP_C("update", "No system communication");
     bool idle = false;
+    bool maintenance = false;
     const char *reason = NO_LINK;
     link_pub_lock();
     if (g_pub.kinfo_valid && s_ui_snap != NULL) {
         const plink_keypad_info_t *i = &g_pub.kraw;
-        if (i->state == PLINK_LINK_NOT_PAIRED || i->maintenance) {
-            idle = true; /* nothing to protect here, or LINK-025's recovery */
-            reason = "";
-        } else if (i->state == PLINK_LINK_ONLINE && i->status_age_s <= LINK_STATUS_FRESH) {
+        if (i->state == PLINK_LINK_ONLINE && i->status_age_s <= LINK_STATUS_FRESH) {
             idle = proto_fw_install_allowed(s_ui_snap, &reason); /* the master's partitions */
+        } else if (i->state == PLINK_LINK_NOT_PAIRED || i->maintenance) {
+            idle = true; /* nothing to protect here, or LINK-025's recovery */
+            maintenance = i->state != PLINK_LINK_NOT_PAIRED;
+            reason = "";
         }
     }
     link_pub_unlock();
+    /* An update through the maintenance can't prove the link after its restart: mark it first,
+     * so the new image's self-test isn't failed for a master that is out of reach. One NVS write
+     * (this runs on the update or console task, both with internal-RAM stacks). */
+    if (maintenance && !atomic_load(&s_maint_marked)) {
+        if (link_nvs_flag(LINK_KEY_MAINT, true) == ESP_OK) {
+            atomic_store(&s_maint_marked, true);
+        } else {
+            idle = false;
+            reason = NO_LINK;
+        }
+    }
     if (why != NULL) {
         *why = reason;
     }
@@ -872,6 +920,7 @@ void ksvc_poll(uint64_t now)
         follow_time(now);
         copy_for_ui(now);
         beat(now, &info);
+        maintenance_mark(now, &info);
     }
     if (now >= K.publish_at) {
         K.publish_at = now + PUBLISH_MS;
@@ -1016,6 +1065,13 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     K.last_home = K.home;
     if (!setup_only && !link_nvs_get_u32(LINK_KEY_STATIC, &K.static_ip)) {
         K.static_ip = 0u;
+    }
+    if (!setup_only && link_nvs_get_flag(LINK_KEY_MAINT)) {
+        /* restarted from an update the maintenance let through: its self-test needs the beat */
+        atomic_store(&s_maint_marked, true);
+        atomic_store(&s_maint_beat, true);
+        ESP_LOGW(TAG, "updated through the maintenance: the link counts as running until the "
+                      "update is confirmed or the alarm panel answers");
     }
     const plink_caps_t caps = {.partitions = ALARM_MAX_PARTITIONS,
                                .zones = ALARM_MAX_ZONES,

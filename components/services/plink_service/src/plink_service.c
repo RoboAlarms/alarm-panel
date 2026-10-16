@@ -249,6 +249,36 @@ bool link_nvs_get_u32(const char *key, uint32_t *out)
     return ok;
 }
 
+esp_err_t link_nvs_flag(const char *key, bool on)
+{
+    nvs_handle_t h;
+    esp_err_t err = nvs_open(LINK_NS, NVS_READWRITE, &h);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = on ? nvs_set_u8(h, key, 1u) : nvs_erase_key(h, key);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        err = ESP_OK;
+    }
+    if (err == ESP_OK) {
+        err = nvs_commit(h);
+    }
+    nvs_close(h);
+    return err;
+}
+
+bool link_nvs_get_flag(const char *key)
+{
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open(LINK_NS, NVS_READONLY, &h) != ESP_OK) {
+        return false;
+    }
+    const bool set = nvs_get_u8(h, key, &v) == ESP_OK && v == 1u;
+    nvs_close(h);
+    return set;
+}
+
 esp_err_t link_store_role(plink_service_role_t role)
 {
     nvs_handle_t h;

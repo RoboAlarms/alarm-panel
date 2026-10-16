@@ -1670,6 +1670,23 @@ static void test_a_lost_event_push_is_filled_in(void)
     check_events(a);
 }
 
+/* docs/features/11 "Event record": a keypad that pairs with a master holding more than 100
+ * events ends with the newest 50 - the master answers an EV_REQ with up to 50, in as many EVENTS
+ * as the transport needs - and they are the master's. */
+static void test_a_new_keypad_gets_the_newest_50_events(void)
+{
+    for (unsigned i = 0; i < 60u; i++) {
+        EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_ARM, 1u, ALARM_LEVEL_STAY, CODE_MASTER));
+        EXPECT_RESULT(ALARM_OK, master_cmd(ALARM_CMD_DISARM, 1u, ALARM_LEVEL_NONE, CODE_MASTER));
+    }
+    TEST_ASSERT_TRUE(R.n_ev > 100u);
+    kp_t *a = kp_new();
+    pair_kp(a);
+    run_ms(3000u);
+    TEST_ASSERT_EQUAL_size_t(PLINK_EVENTS_KEPT, a->k.ev_count);
+    check_events(a);
+}
+
 /* ---- status reaching the keypads ------------------------------------------------------------- */
 
 typedef struct {
@@ -2623,6 +2640,7 @@ int main(void)
     RUN_TEST(test_command_for_another_partition_is_refused);
     RUN_TEST(test_home_partition_moves_and_sounds_follow_it);
     RUN_TEST(test_a_lost_event_push_is_filled_in);
+    RUN_TEST(test_a_new_keypad_gets_the_newest_50_events);
     RUN_TEST(test_a_change_shows_on_every_keypad_within_a_second);
     RUN_TEST(test_master_restart_keypads_back_within_15_s);
     RUN_TEST(test_keypad_restart_within_the_cache_runs_each_command_once);

@@ -72,7 +72,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-022 | The link keys are never in a backup (the `link` namespace is not in the backup policy); a factory reset erases them | unit |
 | LINK-023 | Panic keyed on a keypad is resent with the same request id every 1 s until answered or 60 s have passed, whatever the link state, and runs once (KPD-007) | unit |
 | LINK-024 | On a working Wi-Fi network a keypad shows a change of state within 1 s, and a command's answer within 1 s (Wi-Fi power save off on a master with keypads and on keypads) | HIL |
-| LINK-025 | After 10 min without system communication a keypad opens Wi-Fi, Software update, Pair again and "Make it a stand-alone panel" without a code: a keypad holds no codes and the master supervises it, so cutting it off is no worse than unplugging it | HIL |
+| LINK-025 | After 10 min without system communication a keypad opens Wi-Fi, Software update, Pair again and "Make it a stand-alone panel" without a code: a keypad holds no codes and the master supervises it, so cutting it off is no worse than unplugging it; a keypad that is not paired (removed at the master, or never paired) opens them at once - no master could check a code, and it protects nothing | unit + HIL |
 | LINK-026 | A keypad applies a status block, partition record, zone record or time only when it came in a newer frame of the session than the one it last applied for that item | unit |
 | LINK-027 | The master accepts a keypad's commands for its home partition only (NOT_AUTHORIZED otherwise), one at a time with panic in a slot of its own, at most about 2 a second (a burst of 5); requests over their limits are dropped in the link task, before anything reaches the alarm task | unit |
 
@@ -174,12 +174,15 @@ own CRC differs after a STATUS asks with ZONES_REQ.
 **Event record** (32 B): seq u32, mono_ms u64, epoch_ms i64, type u16, partition u8, zone u16,
 user u8, source kind u8 + id u16, arg u8, arg2 u8, flags u8. The master pushes each new event,
 sealed, before the STATUS that carries its seq (the Home screen reads the entry zone and who armed
-from the events when the state changes); EV_REQ fills gaps: the newest `max` events after
-after_seq. A keypad with nothing asks for the last 50; it keeps 50 and drops its ring on a new
-pairing and when last_event_seq goes below its newest. The engine numbers its events one by one,
-so events that don't start right after the newest kept (in a frame without the "left out" flag)
-mean a push was lost: the keypad keeps them and asks again after the newest it had, at most 4
-times.
+from the events when the state changes), and a STATUS never carries a last_event_seq below an
+event already pushed to that keypad; EV_REQ fills gaps: the newest `max` events after after_seq,
+up to 50, in as many EVENTS as the transport needs (the "left out" flag on the first). A keypad
+with nothing asks for the last 50; it keeps 50 and drops its ring on a new pairing and when
+last_event_seq goes below its newest. The engine numbers its events one by one, so events that
+don't start right after the newest kept (in a frame without the "left out" flag) mean a push was
+lost: the keypad keeps them and asks again after the newest it had, at most 4 times. A keypad
+holding fewer than 50 whose oldest isn't event 1 (an answer lost, or only a pushed event kept)
+asks for the newest 50 again after a STATUS, at most 4 times for one ring.
 
 **Configuration.** The master keeps one encoded copy of its configuration (`alarm_config_encode`)
 made for keypads (LINK-019). cfg_crc is that blob's CRC-32 (it also versions it across master
@@ -199,7 +202,10 @@ task (LINK-027). A command for a partition other than the keypad's home is answe
 NOT_AUTHORIZED. Codes are zero-padded to the same length so the frame's size doesn't tell a code's
 length; link traffic still shows when a command is sent. Retries: every 500 ms with the same req,
 up to 3 s; panic every 1 s for 60 s (LINK-023). While the link is down or still connecting a
-command is answered at once with ALARM_ERR_UNAVAILABLE; panic is queued and keeps being sent.
+command is answered at once with ALARM_ERR_UNAVAILABLE; panic is queued and keeps being sent. The
+master keeps 8 answers per keypad: a command's for 3 s after its last copy, a panic's for 60 s
+after its first, and panics never hold the last 2, so a disarm after a run of panics is not
+dropped (a command that finds nothing else free takes the oldest answered panic not sent for 3 s).
 
 ## Pairing
 
@@ -274,7 +280,9 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
   `HKDF-Expand(PRK_s, "plink v1 session" ‖ TH_s, 68)` = K_m2k[16] ‖ K_k2m[16] ‖ K_fin[32] ‖ sid[4]
   (a zero sid becomes 1). The WELCOME header carries sid 0.
 - `WELCOME`: e_m, n_m, `mac2 = HMAC(K_fin, frame up to mac2)[0..15]`. The keypad accepts it only
-  while it waits for the answer to its latest HELLO, wipes e_k and n_k, and makes the new session
+  while it waits for the answer to its latest HELLO, and only from where that HELLO went (unless
+  it went by broadcast); mac2 needs an X25519 first, so it works out at most 8 WELCOMEs per HELLO
+  (the next HELLO opens the count again). It wipes e_k and n_k, and makes the new session
   tentative: it sends a HEARTBEAT at once and every 500 ms until a sealed frame of the new session
   arrives, and still accepts the old session's frames meanwhile.
 - The master keeps the live session until a sealed frame arrives under the pending one (so a

@@ -210,6 +210,8 @@ static void hs_send(plink_keypad_t *k, uint64_t now)
     k->hs_backoff_ms = base * 2u < PLINK_BACKOFF_MAX_MS ? base * 2u : PLINK_BACKOFF_MAX_MS;
     k->hs_due_ms = now + wait;
     if (plink_hs_hello(k->c, k->rec.k_pair, k->rec.net_id, k->rec.device, &k->cap, &k->hs)) {
+        k->hs_to = *to;
+        k->hs_checks = 0u;
         send_to(k, to, k->hs.hello, k->hs.hello_len);
     }
 }
@@ -583,6 +585,15 @@ static void ev_drop(plink_keypad_t *k)
     k->ev_count = 0u;
     k->ev_frame_seq = 0u;
     k->ev_fill = 0u;
+    k->ev_back = false;
+    k->ev_back_tries = 0u;
+}
+
+/* A ring short of what it keeps whose oldest isn't the master's first: older events may be
+ * there to fetch (a first answer lost, or only a pushed event kept before any pull). */
+static bool ev_short(const plink_keypad_t *k)
+{
+    return k->ev_count > 0u && k->ev_count < PLINK_EVENTS_KEPT && k->events[0].seq > 1u;
 }
 
 /* A pull is due now (its waits start again at 300 ms) unless one is under way. */
@@ -605,9 +616,17 @@ static void ev_check(plink_keypad_t *k, uint64_t now, uint32_t fs)
         ev_drop(k);
     }
     if (last > ev_newest(k)) {
+        k->ev_back = false;
         ev_pull(k, now);
-    } else if (k->ev_fill == 0u) {
+    } else if (k->ev_fill == 0u && !k->ev_back) {
         k->ev_want = false;
+        /* Short: the newest 50 once more (a few times at most for one ring; a backfill under
+         * way ends with its answer). */
+        if (ev_short(k) && k->ev_back_tries < EV_FILL_TRIES) {
+            k->ev_back_tries++;
+            k->ev_back = true;
+            ev_pull(k, now);
+        }
     }
 }
 
@@ -624,8 +643,14 @@ static void ev_pump(plink_keypad_t *k, uint64_t now)
             return;
         }
     }
-    const plink_ev_req_t q = {k->ev_fill != 0u ? k->ev_fill : ev_newest(k),
-                              (uint8_t)PLINK_EVENTS_KEPT};
+    const uint32_t newest = ev_newest(k);
+    uint32_t after = newest;
+    if (k->ev_fill != 0u) {
+        after = k->ev_fill;
+    } else if (k->ev_back) {
+        after = newest > PLINK_EVENTS_KEPT ? newest - PLINK_EVENTS_KEPT : 0u;
+    }
+    const plink_ev_req_t q = {after, (uint8_t)PLINK_EVENTS_KEPT};
     uint8_t p[OWN_PAYLOAD_MAX];
     size_t n = 0u;
     if (plink_enc_ev_req(&q, p, sizeof p, &n)) {
@@ -699,6 +724,7 @@ static void on_events(plink_keypad_t *k, uint64_t now, uint32_t fs, const uint8_
     }
     if (k->ev_fill == 0u && ev_newest(k) >= k->view.snap.last_event_seq) {
         k->ev_want = false;
+        k->ev_back = false;
     }
 }
 
@@ -1005,10 +1031,22 @@ static void pair_take(plink_keypad_t *k, uint64_t now)
 static void on_welcome(plink_keypad_t *k, uint64_t now, const plink_addr_t *from,
                        const plink_hdr_t *h, const uint8_t *frame, size_t len)
 {
+    /* Only the answer to the latest HELLO. Its mac2 can be checked only after an X25519, so a
+     * device on the LAN could keep this task busy with WELCOMEs: they are taken only from where
+     * the HELLO went (unless that was a broadcast), and only so many per HELLO (the master's
+     * answer comes within a round trip; the next HELLO opens the count again). */
+    plink_hello_t w;
+    if (!k->paired || !k->hs.waiting || h->net_id != k->rec.net_id ||
+        (!plink_addr_is_broadcast(&k->hs_to) && !plink_addr_equal(from, &k->hs_to)) ||
+        k->hs_checks >= PLINK_WELCOME_CHECKS ||
+        !plink_dec_hello(&frame[PLINK_HDR_LEN], len - PLINK_HDR_LEN, false, &w) ||
+        w.proto == 0u) {
+        return;
+    }
+    k->hs_checks++;
     plink_session_t s;
-    if (!k->paired || !k->hs.waiting ||
-        !plink_hs_finish(k->c, k->rec.k_pair, &k->hs, h, frame, len, &s)) {
-        return; /* only the answer to the latest HELLO */
+    if (!plink_hs_finish(k->c, k->rec.k_pair, &k->hs, h, frame, len, &s)) {
+        return;
     }
     /* The session the master uses stays readable until it shows it has the new one. While one
      * is already tentative, the master still uses the one before it: that one stays. */
@@ -1372,9 +1410,10 @@ void plink_keypad_info(const plink_keypad_t *k, uint64_t now_ms, plink_keypad_in
         out->status_age_s = age >= UINT32_MAX ? UINT32_MAX - 1u : (uint32_t)age;
     }
     /* LINK-025: 10 min without system communication, from the last status (or from the start
-     * of connecting when none came). */
-    out->maintenance = k->paired && k->state != PLINK_LINK_ONLINE &&
-                       now_ms >= k->silent_since_ms + PLINK_MAINTENANCE_MS;
+     * of connecting when none came); and at once when not paired - removed at the master or
+     * never paired, no master can check a code and there is nothing to protect. */
+    out->maintenance = !k->paired || (k->state != PLINK_LINK_ONLINE &&
+                                      now_ms >= k->silent_since_ms + PLINK_MAINTENANCE_MS);
     if (k->paired) {
         out->device = k->rec.device;
         out->home = k->rec.home;
@@ -1475,11 +1514,14 @@ uint32_t plink_keypad_command(plink_keypad_t *k, uint64_t now_ms, const plink_cm
         return 0u; /* LINK-008: only a panic waits for the link (LINK-023) */
     }
     if (panic) {
-        /* The same panic keyed again while it is still being sent is the same request. */
+        /* The same panic keyed again while it is still being sent is the same request, and its
+         * caller waits for it again: a release from an earlier wait is undone, or the answer
+         * would free the slot before the caller reads it. */
         for (size_t i = 0; i < PLINK_CMDS_MAX; i++) {
             const plink_kcmd_t *c = &k->cmds[i];
             if (c->used && c->panic && c->state == PLINK_CMD_PENDING &&
                 c->cmd.cmd.partition == cmd->cmd.partition && c->cmd.cmd.panic == cmd->cmd.panic) {
+                k->cmd_released = (uint8_t)(k->cmd_released & ~(1u << (unsigned)i));
                 return c->req;
             }
         }

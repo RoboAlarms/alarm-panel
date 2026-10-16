@@ -1593,13 +1593,52 @@ static void test_events_go_before_their_status(void)
     }
 }
 
-/* LINK-005: EV_REQ gets the newest `max` events after after_seq that one frame holds, oldest
- * first, with the gap flag when older ones were left out. */
+/* LINK-005, LINK-006 (docs/features/11 "Event record"): an event pushed ahead of the snapshot
+ * that carries it - the platform hands events in as the alarm task makes them, its snapshot
+ * comes later - never makes a STATUS say less than what was pushed: every STATUS meanwhile (the
+ * periodic one here) carries the pushed event's seq, or the keypad would read a log started
+ * again and drop its events. A snapshot below the last (the engine's log started again) lets it
+ * go down. */
+static void test_status_never_behind_pushed_events(void)
+{
+    fk_t *k = kp_add();
+    pair(k);
+    run(2000);
+    alarm_snapshot_t snap;
+    alarm_engine_snapshot(&R.sim.eng, &snap);
+    alarm_event_t ev;
+    memset(&ev, 0, sizeof ev);
+    ev.seq = snap.last_event_seq + 1u; /* the engine's next event; its snapshot not yet in */
+    const unsigned st0 = k->count[PLINK_T_STATUS];
+    const size_t log0 = k->n_log;
+    plink_master_event(&R.m, NOW, &ev);
+    run(PLINK_STATUS_EVERY_MS + 500u);
+    TEST_ASSERT_TRUE(k->count[PLINK_T_STATUS] > st0);
+    TEST_ASSERT_EQUAL_UINT32(ev.seq, k->ev_max);
+    for (size_t i = log0; i < k->n_log; i++) {
+        if (k->log[i].type == PLINK_T_STATUS) {
+            TEST_ASSERT_EQUAL_UINT32(ev.seq, k->log[i].a);
+        }
+    }
+    TEST_ASSERT_FALSE(k->ev_order_bad);
+
+    alarm_snapshot_t low = R.snap;
+    low.last_event_seq = 2u;
+    low.seq = ++R.snap_seq;
+    plink_master_snapshot(&R.m, NOW, &low, (int64_t)(1790000000000ull + NOW), R.report);
+    TEST_ASSERT_EQUAL_UINT32(2u, mpeer(k)->ev_sent_seq);
+}
+
+/* LINK-005 (docs/features/11 "Event record"): EV_REQ gets the newest `max` events after
+ * after_seq, up to what a keypad keeps (50), oldest first, in as many frames as the transport
+ * needs (36 a frame on UDP), the gap flag on the first when older ones were left out; an answer
+ * with nothing newer is one EVENTS with none. */
 static void test_event_requests(void)
 {
     fk_t *k = kp_add();
     pair(k);
-    for (int i = 0; i < 20; i++) {
+    TEST_ASSERT_EQUAL_UINT(PLINK_EVENTS_KEPT, PLINK_EV_ANSWER_MAX);
+    for (int i = 0; i < 40; i++) {
         at_now();
         (void)sim_arm(&R.sim, 1, CODE_USER, ALARM_LEVEL_STAY, 0);
         run(50);
@@ -1609,24 +1648,33 @@ static void test_event_requests(void)
     }
     run(500);
     const uint32_t newest = R.sim.eng.seq;
-    TEST_ASSERT_TRUE(newest > 40u);
-    const size_t n0 = k->n_ev;
+    TEST_ASSERT_TRUE(newest > 60u);
+    size_t n0 = k->n_ev;
+    unsigned e0 = k->count[PLINK_T_EVENTS];
     k_ev_req(k, 0u, 50u);
     run(20);
-    TEST_ASSERT_EQUAL_size_t(n0 + 32u, k->n_ev);
-    TEST_ASSERT_TRUE((k->ev_flags & PLINK_EVF_GAP) != 0u);
+    TEST_ASSERT_EQUAL_size_t(n0 + 50u, k->n_ev);
+    TEST_ASSERT_EQUAL_UINT(e0 + 2u, k->count[PLINK_T_EVENTS]);
+    TEST_ASSERT_EQUAL_UINT32(newest - 49u, k->ev_seq[n0]);
     TEST_ASSERT_EQUAL_UINT32(newest, k->ev_seq[k->n_ev - 1u]);
-    TEST_ASSERT_EQUAL_UINT32(newest - 31u, k->ev_seq[n0]);
+    TEST_ASSERT_EQUAL_UINT8(0u, k->ev_flags & PLINK_EVF_GAP); /* the flag went on the first */
+    n0 = k->n_ev;
+    k_ev_req(k, 0u, 20u);
+    run(20);
+    TEST_ASSERT_EQUAL_size_t(n0 + 20u, k->n_ev);
+    TEST_ASSERT_TRUE((k->ev_flags & PLINK_EVF_GAP) != 0u);
+    TEST_ASSERT_EQUAL_UINT32(newest - 19u, k->ev_seq[n0]);
+    n0 = k->n_ev;
     k_ev_req(k, newest - 3u, 50u);
     run(20);
-    TEST_ASSERT_EQUAL_size_t(n0 + 35u, k->n_ev);
+    TEST_ASSERT_EQUAL_size_t(n0 + 3u, k->n_ev);
     TEST_ASSERT_EQUAL_UINT8(0u, k->ev_flags & PLINK_EVF_GAP);
-    TEST_ASSERT_EQUAL_UINT32(newest - 2u, k->ev_seq[n0 + 32u]);
-    const unsigned e = k->count[PLINK_T_EVENTS];
+    TEST_ASSERT_EQUAL_UINT32(newest - 2u, k->ev_seq[n0]);
+    e0 = k->count[PLINK_T_EVENTS];
     k_ev_req(k, newest, 50u);
     run(20);
-    TEST_ASSERT_EQUAL_UINT(e + 1u, k->count[PLINK_T_EVENTS]); /* answered: nothing newer */
-    TEST_ASSERT_EQUAL_size_t(n0 + 35u, k->n_ev);
+    TEST_ASSERT_EQUAL_UINT(e0 + 1u, k->count[PLINK_T_EVENTS]); /* answered: nothing newer */
+    TEST_ASSERT_EQUAL_size_t(n0 + 3u, k->n_ev);
 }
 
 /* ---- sounds ---------------------------------------------------------------------------------- */
@@ -1872,6 +1920,52 @@ static void test_cache_keeps_answers_still_wanted(void)
     run(10);
     TEST_ASSERT_EQUAL_UINT(PLINK_RESULTS_PER_KEYPAD + 1u, R.n_runs);
     TEST_ASSERT_EQUAL_UINT(2u, k_results(k, 9200u));
+}
+
+/* LINK-018, LINK-023, LINK-027 (docs/features/11 "Commands"): answered panics never crowd out a
+ * keypad's commands. Eight panics keyed a second apart, each answered at once: six run and are
+ * answered - each answer kept 60 s from its first copy, as long as the keypad may resend it - and
+ * the seventh and eighth wait, the last 2 answers being the commands'. A disarm then runs and is
+ * answered at once; two code checks after it run too, the second taking the oldest answered
+ * panic (not sent for 3 s: it has its answer); and the seventh panic's resend runs once a
+ * command's answer may go. */
+static void test_answered_panics_leave_room_for_commands(void)
+{
+    fk_t *k = kp_add();
+    pair(k);
+    run(3000);
+    for (uint32_t i = 0; i < 8u; i++) {
+        k_cmd(k, 7100u + i, PLINK_OP_COMMAND, ALARM_CMD_PANIC, 1u, "");
+        run(1000);
+    }
+    TEST_ASSERT_EQUAL_UINT(6u, R.n_runs);
+    for (uint32_t i = 0; i < 6u; i++) {
+        TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7100u + i));
+    }
+    TEST_ASSERT_EQUAL_UINT(0u, k_results(k, 7106u));
+    TEST_ASSERT_EQUAL_UINT(0u, k_results(k, 7107u));
+    k_cmd(k, 7200u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, CODE_USER);
+    run(10);
+    TEST_ASSERT_EQUAL_UINT(7u, R.n_runs);
+    TEST_ASSERT_EQUAL_UINT32(7200u, R.runs[6].cmd.req);
+    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7200u));
+    TEST_ASSERT_EQUAL_INT(ALARM_OK, (int)k_result(k, 7200u)->result);
+    k_cmd(k, 7201u, PLINK_OP_AUTH, ALARM_CMD_CODE_CHECK, 1u, CODE_USER);
+    run(10);
+    k_cmd(k, 7202u, PLINK_OP_AUTH, ALARM_CMD_CODE_CHECK, 1u, CODE_USER);
+    run(10);
+    TEST_ASSERT_EQUAL_UINT(9u, R.n_runs);
+    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7201u));
+    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7202u));
+    run(PLINK_CMD_GIVE_UP_MS);
+    k_cmd(k, 7106u, PLINK_OP_COMMAND, ALARM_CMD_PANIC, 1u, ""); /* its resend */
+    run(10);
+    TEST_ASSERT_EQUAL_UINT(10u, R.n_runs);
+    TEST_ASSERT_EQUAL_UINT(1u, k_results(k, 7106u));
+    k_cmd(k, 7106u, PLINK_OP_COMMAND, ALARM_CMD_PANIC, 1u, "");
+    run(10);
+    TEST_ASSERT_EQUAL_UINT(10u, R.n_runs); /* answered from the cache, not run again */
+    TEST_ASSERT_EQUAL_UINT(2u, k_results(k, 7106u));
 }
 
 /* LINK-018: port.run with no room: the command is forgotten, so its retry runs it (once). */
@@ -2407,6 +2501,7 @@ int main(void)
     RUN_TEST(test_configuration_pages);
     RUN_TEST(test_requests_are_rate_limited);
     RUN_TEST(test_events_go_before_their_status);
+    RUN_TEST(test_status_never_behind_pushed_events);
     RUN_TEST(test_event_requests);
     RUN_TEST(test_sounds_by_home_partition);
     RUN_TEST(test_command_runs_as_the_keypad);
@@ -2415,6 +2510,7 @@ int main(void)
     RUN_TEST(test_one_command_at_a_time_and_the_panic_slot);
     RUN_TEST(test_command_rate_limit);
     RUN_TEST(test_cache_keeps_answers_still_wanted);
+    RUN_TEST(test_answered_panics_leave_room_for_commands);
     RUN_TEST(test_command_refused_by_the_platform_runs_on_retry);
     RUN_TEST(test_codes_are_not_kept);
     RUN_TEST(test_supervision_not_heard);

@@ -1033,6 +1033,27 @@ static void test_maintenance_after_10_min(void)
     TEST_ASSERT_TRUE(info().maintenance);
 }
 
+/* LINK-025: a keypad that is not paired - never paired, or removed at the master - opens the
+ * no-code pages at once: no master could check a code, and it protects nothing. Paired, it
+ * doesn't. */
+static void test_maintenance_when_not_paired(void)
+{
+    kp_init(false);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_LINK_NOT_PAIRED, info().state);
+    TEST_ASSERT_TRUE(info().maintenance);
+    kp_online();
+    TEST_ASSERT_FALSE(info().maintenance);
+    uint8_t p[4];
+    size_t n = 0;
+    const plink_bye_t bye = {1u};
+    TEST_ASSERT_TRUE(plink_enc_bye(&bye, p, sizeof p, &n));
+    fm_send_sealed(PLINK_T_BYE, p, n);
+    plink_net_run(&NET, 10);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_LINK_NOT_PAIRED, info().state);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_UNPAIRED_REMOVED, info().unpaired_why);
+    TEST_ASSERT_TRUE(info().maintenance);
+}
+
 /* ---- LINK-026: frame order per item ------------------------------------------------------- */
 
 static void part_rec(plink_part_t *r, uint8_t number, uint8_t state)
@@ -1531,6 +1552,39 @@ static void test_events_hole_filled(void)
     TEST_ASSERT_EQUAL_UINT32(S.events[S.n_events - 1u].seq, K.events[K.ev_count - 1u].seq);
 }
 
+/* docs/features/11 "Event record": a keypad whose new session's first STATUS was lost, and that
+ * kept only the events pushed before the next one (whose last_event_seq is then no newer than
+ * them, so nothing is pulled for being behind), holds fewer than 50 with older ones at the
+ * master: after that STATUS it asks for the newest 50 again and ends with them. A ring that is
+ * complete from event 1 isn't asked for again. */
+static void test_short_ring_backfilled(void)
+{
+    arm_disarm(40);
+    TEST_ASSERT_TRUE(S.n_events > 60u);
+    M.pushed = S.events[S.n_events - 1u].seq;
+    NET.lose_type = PLINK_T_STATUS;
+    NET.lose_type_count = 1u; /* the new session's first */
+    kp_init(true);
+    plink_net_run(&NET, 500);
+    TEST_ASSERT_TRUE(K.live.valid);
+    TEST_ASSERT_FALSE(K.view.have_status);
+    arm_disarm(1);
+    fm_push_events();
+    plink_net_run(&NET, 10);
+    TEST_ASSERT_TRUE(K.ev_count > 0u && K.ev_count < PLINK_EVENTS_KEPT);
+    TEST_ASSERT_EQUAL_UINT(0u, M.ev_reqs);
+    const uint32_t newest = S.events[S.n_events - 1u].seq;
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, FM_STATUS_EVERY_MS + 2000u, events_full, NULL));
+    TEST_ASSERT_EQUAL_UINT(1u, M.ev_reqs);
+    TEST_ASSERT_EQUAL_UINT32(newest - PLINK_EVENTS_KEPT, M.ev_req.after_seq);
+    for (size_t i = 0; i < PLINK_EVENTS_KEPT; i++) {
+        TEST_ASSERT_EQUAL_UINT32(S.events[S.n_events - PLINK_EVENTS_KEPT + i].seq,
+                                 K.events[i].seq);
+    }
+    plink_net_run(&NET, 3u * FM_STATUS_EVERY_MS);
+    TEST_ASSERT_EQUAL_UINT(1u, M.ev_reqs); /* full now: not asked again */
+}
+
 /* ---- commands ----------------------------------------------------------------------------- */
 
 static bool cmd_done(void *ctx)
@@ -1754,6 +1808,31 @@ static void test_panic_given_up_after_60s(void)
     TEST_ASSERT_EQUAL_INT(PLINK_CMD_NO_ANSWER, plink_keypad_command_state(&K, req, NULL));
     TEST_ASSERT_FALSE(plink_keypad_panic_pending(&K));
     TEST_ASSERT_EQUAL_size_t(c0 + 60u, plink_net_count(&NET, KN, PLINK_T_CMD));
+}
+
+/* LINK-023, LINK-018: the same panic keyed again while it is still being sent is the same
+ * request, and its caller waits for it again: the first caller let it go (the UI's 3 s), yet the
+ * answer doesn't free the slot before the second reads it - DONE, run once - and the slot goes
+ * when that caller lets go. */
+static void test_panic_keyed_again_is_waited_for_again(void)
+{
+    kp_online();
+    M.serve_cmds = false; /* no answer yet */
+    const plink_cmd_t p = panic_cmd();
+    const uint32_t req = plink_keypad_command(&K, NET.now_ms, &p);
+    TEST_ASSERT_NOT_EQUAL(0u, req);
+    plink_net_run(&NET, 3000);
+    plink_keypad_command_release(&K, req);
+    TEST_ASSERT_EQUAL_INT(PLINK_CMD_PENDING, plink_keypad_command_state(&K, req, NULL));
+    TEST_ASSERT_EQUAL_UINT32(req, plink_keypad_command(&K, NET.now_ms, &p)); /* keyed again */
+    M.serve_cmds = true;
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 2000, panic_done, NULL));
+    plink_result_t res;
+    TEST_ASSERT_EQUAL_INT(PLINK_CMD_DONE, plink_keypad_command_state(&K, req, &res));
+    TEST_ASSERT_EQUAL_UINT32(req, res.req);
+    TEST_ASSERT_EQUAL_UINT(1u, M.runs);
+    plink_keypad_command_release(&K, req);
+    TEST_ASSERT_EQUAL_INT(PLINK_CMD_NONE, plink_keypad_command_state(&K, req, NULL));
 }
 
 /* ---- removal and hints -------------------------------------------------------------------- */
@@ -2029,6 +2108,48 @@ static void test_handshake_after_15_s_without_status(void)
     TEST_ASSERT_EQUAL_UINT(hellos + 1u, M.hellos);
 }
 
+static bool have_session(void *ctx)
+{
+    (void)ctx;
+    return K.live.valid && !K.hs.waiting;
+}
+
+/* LINK-015, LINK-021 (docs/features/11 "Sessions"): a WELCOME is worked out (an X25519 before its
+ * mac2 can be checked) only when it comes from where the HELLO went - the genuine answer from
+ * another address is not even worked out - and for at most PLINK_WELCOME_CHECKS per HELLO: a
+ * flood of forged ones from the master's address costs 8 X25519 and then nothing, even the
+ * genuine one waits; the next HELLO opens the count again and its answer is taken. */
+static void test_welcome_only_from_its_hello_and_counted(void)
+{
+    NET.lose_type = PLINK_T_WELCOME; /* the master's answers are kept from the keypad */
+    kp_init(true);
+    plink_net_run(&NET, 5);
+    TEST_ASSERT_TRUE(K.hs.waiting);
+    static uint8_t w[PLINK_FRAME_MAX], f[PLINK_FRAME_MAX];
+    size_t wl = 0;
+    TEST_ASSERT_TRUE(plink_net_last(&NET, MN, PLINK_T_WELCOME, w, sizeof w, &wl));
+    const plink_addr_t other = plink_addr_udp(IP_X, PLINK_UDP_PORT);
+    const uint32_t calls = TPK.hc.calls;
+    plink_keypad_input(&K, NET.now_ms, &other, w, wl);
+    TEST_ASSERT_EQUAL_UINT32(calls, TPK.hc.calls);
+    TEST_ASSERT_TRUE(K.hs.waiting);
+    TEST_ASSERT_FALSE(K.live.valid);
+    memcpy(f, w, wl);
+    f[wl - 1u] ^= 0x01u; /* mac2 */
+    for (unsigned i = 0; i < 3u * PLINK_WELCOME_CHECKS; i++) {
+        deliver(f, wl);
+    }
+    TEST_ASSERT_EQUAL_UINT32(calls + PLINK_WELCOME_CHECKS, TPK.hc.calls);
+    deliver(w, wl);
+    TEST_ASSERT_EQUAL_UINT32(calls + PLINK_WELCOME_CHECKS, TPK.hc.calls);
+    TEST_ASSERT_TRUE(K.hs.waiting);
+    TEST_ASSERT_FALSE(K.live.valid);
+    NET.lose_type = 0u;
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 2000, have_session, NULL));
+    TEST_ASSERT_EQUAL_UINT(2u, M.hellos);
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 5000, online, NULL));
+}
+
 /* ---- addresses, heartbeats and the rest --------------------------------------------------- */
 
 /* LINK-021: the master's address moves only on an authenticated frame - not on a forged or
@@ -2177,6 +2298,7 @@ int main(void)
     RUN_TEST(test_connecting_until_full_sync);
     RUN_TEST(test_lost_at_30s_back_after_3s);
     RUN_TEST(test_maintenance_after_10_min);
+    RUN_TEST(test_maintenance_when_not_paired);
     RUN_TEST(test_reordered_frames);
     RUN_TEST(test_config_pull_requests);
     RUN_TEST(test_config_pull_through_loss);
@@ -2185,11 +2307,13 @@ int main(void)
     RUN_TEST(test_zones_requested_on_crc_mismatch);
     RUN_TEST(test_events_backfill_and_ring);
     RUN_TEST(test_events_hole_filled);
+    RUN_TEST(test_short_ring_backfilled);
     RUN_TEST(test_command_and_retries);
     RUN_TEST(test_command_gives_up_at_3s);
     RUN_TEST(test_request_ids_unique_across_restart);
     RUN_TEST(test_panic_through_outage);
     RUN_TEST(test_panic_given_up_after_60s);
+    RUN_TEST(test_panic_keyed_again_is_waited_for_again);
     RUN_TEST(test_bye_removes);
     RUN_TEST(test_not_paired_hint_after_5_min);
     RUN_TEST(test_rekey_after_master_restart);
@@ -2198,6 +2322,7 @@ int main(void)
     RUN_TEST(test_master_moves);
     RUN_TEST(test_rekey_at_seq_2_30);
     RUN_TEST(test_handshake_after_15_s_without_status);
+    RUN_TEST(test_welcome_only_from_its_hello_and_counted);
     RUN_TEST(test_addresses_and_heartbeat);
     RUN_TEST(test_sounds_time_and_home);
     RUN_TEST(test_forget);

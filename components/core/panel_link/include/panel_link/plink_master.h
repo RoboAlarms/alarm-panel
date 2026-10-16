@@ -12,7 +12,11 @@
  * the result cache keyed on (keypad, req) with a digest of the command, and otherwise handed to
  * port.run with a ticket; the answer comes back through plink_master_result. A retry while it
  * runs waits for that answer; a retry after it is answered from the cache for 90 s after its last
- * copy; the same req with another digest runs as a new command.
+ * copy; the same req with another digest runs as a new command. Of a keypad's 8 answers, panics
+ * never hold the last 2 (PLINK_PANIC_FREE_SLOTS), so commands after a run of panics still run.
+ *
+ * Events: each is pushed as it comes; a STATUS never says less than what was pushed; EV_REQ is
+ * answered with up to PLINK_EV_ANSWER_MAX events, in as many frames as it takes.
  *
  * Supervision (LINK-007): level-based. A keypad is down when nothing authenticated came from it
  * for its supervision time, or it reported a status older than 30 s for that long; port.reachable
@@ -52,6 +56,8 @@ extern "C" {
 #define PLINK_X25519_PER_S       4u     /* handshakes answered per second, all keypads */
 #define PLINK_TIME_EVERY_MS      600000u
 #define PLINK_STATUS_STALE_S     30u    /* a keypad reporting an older status is not fresh */
+#define PLINK_EV_ANSWER_MAX      50u    /* events in an EV_REQ's answer: what a keypad keeps */
+#define PLINK_PANIC_FREE_SLOTS   2u     /* answers a keypad's panics never take (commands') */
 
 /* Things worth a line in the log (port.note). */
 typedef enum {
@@ -103,6 +109,7 @@ typedef struct {
     uint32_t ticket;
     plink_result_t res;
     uint64_t last_ms; /* the last copy of this req */
+    uint64_t first_ms; /* its first copy */
 } plink_cached_t;
 
 /* One keypad at run time (private). */
@@ -184,7 +191,7 @@ typedef struct {
     uint8_t x25519_count;
     uint8_t out[PLINK_FRAME_MAX];   /* frame scratch */
     uint8_t pt[PLINK_FRAME_MAX];    /* payload scratch */
-    alarm_event_t ev[32];           /* event scratch */
+    alarm_event_t ev[PLINK_EV_ANSWER_MAX]; /* event scratch */
     uint64_t time_at_ms;            /* time.epoch_ms was the wall clock then */
     uint32_t zones_crc;             /* of the snapshot's zones 1..zones_used */
     uint64_t not_paired_at;         /* the last NOT_PAIRED sent (0 none) */

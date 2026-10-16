@@ -438,7 +438,9 @@ static uint8_t *entry_base(alarm_config_t *cfg, uint8_t group, unsigned index)
     }
 }
 
-alarm_result_t alarm_config_decode(const uint8_t *buf, size_t len, alarm_config_t *out)
+/* lenient (CORE-CFG-022): an index beyond this build's capacities skips its entry's fields until
+ * the group's next selector, and the result isn't validated. */
+static alarm_result_t decode(const uint8_t *buf, size_t len, alarm_config_t *out, bool lenient)
 {
     if (buf == NULL || out == NULL || len < HDR_LEN || memcmp(buf, "ACFG", 4) != 0 ||
         buf[5] > ALARM_CONFIG_BLOB_COMPAT) {
@@ -453,6 +455,7 @@ alarm_result_t alarm_config_decode(const uint8_t *buf, size_t len, alarm_config_
 
     alarm_config_defaults(out);
     uint8_t *entry[COUNT_OF(GROUPS)] = {(uint8_t *)out, NULL, NULL, NULL, NULL};
+    bool skip[COUNT_OF(GROUPS)] = {false, false, false, false, false};
     const uint8_t *p = buf + hdr;
     const uint8_t *end = p + payload;
     while (p < end) {
@@ -473,8 +476,12 @@ alarm_result_t alarm_config_decode(const uint8_t *buf, size_t len, alarm_config_
         const group_t *g = &GROUPS[group];
         if (field == 0x00u && g->entries != 0u) {
             const uint32_t index = (vlen >= 1u && vlen <= 4u) ? rd_le(val, vlen) : 0u;
-            if (index < 1u || index > g->entries) {
+            if (index < 1u || (index > g->entries && !lenient)) {
                 return ALARM_ERR_BAD_ARG; /* doesn't fit this build's capacities */
+            }
+            skip[group] = index > g->entries; /* lenient: a bigger master's entry */
+            if (skip[group]) {
+                continue;
             }
             entry[group] = entry_base(out, group, index);
             if (group != GRP_PARTITION) {
@@ -483,12 +490,22 @@ alarm_result_t alarm_config_decode(const uint8_t *buf, size_t len, alarm_config_
             continue;
         }
         const field_t *f = find_field(g, field);
-        if (f == NULL) {
-            continue; /* a field from a newer format */
+        if (f == NULL || skip[group]) {
+            continue; /* a field from a newer format, or of an entry skipped above */
         }
         if (entry[group] == NULL || !apply_field(f, entry[group], val, vlen)) {
             return ALARM_ERR_BAD_ARG;
         }
     }
-    return alarm_config_validate(out, NULL, 0u);
+    return lenient ? ALARM_OK : alarm_config_validate(out, NULL, 0u);
+}
+
+alarm_result_t alarm_config_decode(const uint8_t *buf, size_t len, alarm_config_t *out)
+{
+    return decode(buf, len, out, false);
+}
+
+alarm_result_t alarm_config_decode_lenient(const uint8_t *buf, size_t len, alarm_config_t *out)
+{
+    return decode(buf, len, out, true);
 }

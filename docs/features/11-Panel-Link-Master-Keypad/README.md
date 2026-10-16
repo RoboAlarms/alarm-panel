@@ -555,7 +555,7 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   `ann_set_keypad`, `panel_voice`'s source, baseline and pause, the keypad's feed and tracked
   sounds, the master's SOUND before its STATUS, the keypad's Voice volume and Announcements (the
   role gate split: `ui_voice_editor_present`), the voice compared with the master's in
-  `test_plink_link.c`, the preview's `bl-048-kp-announcements` (BL-048, 5720f24)
+  `test_plink_link.c`, the preview's `bl-048-kp-announcements` (BL-048, 5720f24, 674a736)
 - [ ] On the panels, the keypad's announcements with both speakers muted (the `voice` counters and
   the `says` log lines on both): arm away (Arming, then Armed), disarm, entry, not ready, a chime
   with approved words (the keypad holding the master's pack revision), a walk test; the keypad's

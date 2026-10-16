@@ -53,3 +53,10 @@ later, a snapshot after every engine call). Every vector it needs comes from tho
 have their own known answers. A test of a network that damages frames watches only its own side's
 seals (`plink_test_port_t.only_dir`): a frame whose tag fails may be opened again under the same
 nonce, which is harmless.
+
+`test_plink_keypad.c` runs the keypad's manager against a scripted master made of the real pieces
+(pairing, the handshake answer, sessions, the codecs, STATUS from snapshots of the real engine)
+over the pretend network: pairing, the tentative session, the link's states and timers, LINK-026's
+ordering, the configuration pull, zones and events, commands and panic, BYE, REKEY and the
+handshake's back-off, the master moving. The keypad's port has an optional `resolve`: the platform
+looks for the master again before every handshake retry after the first failure.

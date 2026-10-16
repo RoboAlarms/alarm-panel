@@ -90,6 +90,10 @@ re-authenticate and repair from HA's UI; local push; every sensor a device you c
 | HAI-011 | Diagnostics download (panel info, link state, no codes or keys); repair issues for "pair again", "panel firmware too old for this integration version" | integration tests |
 | HAI-012 | Distribution: its own GitHub repository (HACS allows one integration per repository), brand icon in `brand/` (HA 2026.3+), releases, "Open in HACS" and "Add integration" My Home Assistant buttons in the README; the protocol client is a separate Python package on PyPI so the integration can move to HA core later | review |
 | HAI-013 | Message protocol versioned (`api` number); the integration refuses a panel with an unsupported major version with a clear repair message | integration tests |
+| HAI-016 | The master is the only panel Home Assistant talks to. It relays its link keypads (they run no `ha_link` or its mDNS service, docs/features/11 LINK-020) through the API 1 additions `settings`, `keypads`, `settings_set` and `settings_result`. The integration makes these entities only once the messages arrive, so an older panel or integration is unaffected; `api` stays 1 (designed 2026-10-16, BL-216) | integration tests, `test_link.c` |
+| HAI-017 | Each panel's display, sound and announcement settings (master and keypads) are config entities whose state comes only from the panel's report. A `settings_set` needs the pinned connection and no code (anyone at a panel may change them, `panel_prefs.h:2-4`). It is answered ok, or with each refused key and why. Language, region, a keypad's name, home partition and supervision are not settable (designed, BL-216; the master's own settings and no language or region are the owner's decisions 7 and 5 in docs/features/11 Open questions, recommended, not decided) | integration tests |
+| HAI-018 | Each keypad is its own device under the panel, identified by its own panel id, with connectivity, signal and firmware. It is unavailable while not heard for 30 s or while the link is down. It is never removed by itself and can be deleted once unlisted. It has entities only for the keys it accepts (designed, BL-216) | integration tests |
+| HAI-019 | At most 1 `settings_set` a second per target (burst 3), one in flight per target, a queue of 8. `not_found`, `offline` and `unsupported` are answered at once, `timeout` after 7 s. The panel enforces display safety (docs/features/07 UI-046) (designed, BL-216) | `test_link.c`, HIL |
 
 ## Design
 
@@ -145,7 +149,7 @@ its reserved bytes, and the build asserts its size and field offsets.
 
 | Message | Direction | Content |
 |---|---|---|
-| `hello` | both | API version, panel id, model, firmware, capabilities |
+| `hello` | both | API version, panel id, model, firmware |
 | `snapshot` / `delta` | panel -> HA | partitions (state, level, ready, faults, memory...), zones (open, bypassed, alarm, trouble, tamper, battery, supervision, signal), troubles, configuration (names, types, device classes) |
 | `event` | panel -> HA | each reportable event with seq and `silent` (docs/features/10 event JSON) |
 | `command` / `result` | HA -> panel | arm (level, flags), disarm, bypass, unbypass, chime, exit restart, panic (only if allowed), with the code |
@@ -153,6 +157,7 @@ its reserved bytes, and the build asserts its size and field offsets.
 | `watch` / `state` | panel -> HA / HA -> panel | entities in use (bound zones, device tiles) and their changes (M13) |
 | `call` / `call_result` | panel -> HA / HA -> panel | device actions from the Devices screen, checked against the options (M13) |
 | `zwave_devices` / `zwave_set` | panel -> HA / HA -> panel | the panel's Z-Wave switches, dimmers, relays and garage doors, and their commands (API 1 addition, additive) |
+| `settings` / `keypads` / `settings_set` / `settings_result` | panel -> HA; `settings_set` HA -> panel | each panel's Screen and sound settings and the keypads, relayed by the master (API 1 addition; designed 2026-10-16, BL-216) |
 
 ### Entities in Home Assistant
 
@@ -167,6 +172,8 @@ its reserved bytes, and the build asserts its size and field offsets.
 | `update` | panel firmware (with OTA, M6): `in_progress` from the download to the restart (and while it goes back), `progress` the percent while it downloads and -1 otherwise (a developer file and the Wi-Fi module's update have no steps, so their percent shows while they are sent); the status goes out as it changes, at most once a second ([13](../13-OTA-Updates/README.md) OTA-026) |
 | actions | `roboalarms.bypass_zone`, `roboalarms.unbypass_zone`, `roboalarms.arm` (with silent exit / instant), `roboalarms.panic` (only if allowed) |
 | Z-Wave devices | the panel's Z-Wave switches, dimmers and close-only garage doors (`zwave_devices`): `switch` (on 100, off 0), `light` (brightness as the level, back to the last level), `cover`, each its own device under the panel, unavailable while offline or missing, never removed by themselves and deletable once unlisted; commands go as `zwave_set` |
+| Panel settings (designed, BL-216) | On the panel's device and on each keypad's: `number` (Brightness, Screen saver brightness, Night brightness, Beeps, Chime and Voice volume), `select` (Screen saver after, Screen off after, Night screen off after, Appearance, Clock), `switch` (Night hours, High contrast, Key click, Announcements, Status announcements, Zone chime announcements), `time` (Night starts, Night ends). `EntityCategory.CONFIG`, named as the panel's own Settings rows. Which are enabled by default is the owner's decision 9 (docs/features/11 Open questions; recommended: Brightness, Night hours, Appearance, the 3 volumes and Announcements) |
+| Keypads (designed, BL-216) | Each its own device under the panel (`parent_of`): `binary_sensor` connectivity, `sensor` signal (dBm), firmware as `sw_version`; never removed by itself, deletable once unlisted |
 
 ### Panel screens (Settings > Integrations > Home Assistant)
 The page is the integration alone: state, "Pair", the paired HA version, "Unpair". **MQTT is a
@@ -181,6 +188,51 @@ full test coverage, unique ids, `has_entity_name`, test before configure, unavai
 reauthentication, unloading, 95 % test coverage) and the Gold rules users notice (discovery and
 discovery updates, devices, dynamic and stale devices, diagnostics, reconfigure, repair issues,
 entity and icon translations, entity categories) ([rules](https://developers.home-assistant.io/docs/core/integration-quality-scale/rules)).
+
+### Panel settings and keypads (designed 2026-10-16, BL-216)
+The owner (2026-10-16): "Home Assistant should also be able to control the settings of the
+slave panel as well." Home Assistant still talks only to the master, which relays its link keypads
+(docs/features/11 "Smart Home and Home Assistant on keypads"; the messages are protocol.md "Panel
+settings and keypads"). Nothing of it is built. The owner's decisions it needs are open
+(docs/features/11 Open questions); it is built as recommended unless decided otherwise. The
+integration's 0.2.0 isn't released (BL-173), so this goes into 0.3.0.
+
+**On the panel:**
+- `alarm_proto`:
+  - `proto_prefs.h/.c`: the table, the TLV, the JSON values writer, the `settings_set` parser,
+    the CRC;
+  - `proto_link.h`: `PROTO_LINK_IN_SETTINGS_SET` appended to `proto_link_in_type_t` (`:201-210`);
+  - the writers `proto_link_settings`, `proto_link_keypads` and `proto_link_settings_result`, and
+    `proto_link_parse_settings_set`.
+- `ha_link.c`:
+  - `push_state` (`:830`) gains `push_settings` (on `panel_prefs_seq()`, at most once a second)
+    and `push_keypads` (an FNV hash, at most once a second, as `push_zwave`, `:803-828`), both
+    reset beside `S.zw_crc = 0u` (`:1259`);
+  - `handle` (`:971`) gets the SETTINGS_SET case: the pinned peer, parse, target lookup, bucket,
+    queue, the 7 s deadline;
+  - results are drained like `send_calls`.
+- `ha_link.h`:
+  - `ha_link_settings_port_t { ctx; keypads(); set() }` and `ha_link_set_settings()`;
+  - `ha_link_settings_done(ticket, why[], n)`, callable from any task, queued;
+  - the master's own settings (target 0) go straight to `panel_prefs_remote_submit` (`ha_link`
+    already requires `platform_esp`).
+- `panel_app.c` wires the port beside `ha_link_set_zwave` (`:2062`) on a master with the link. It
+  has to be a port: `plink_service` already depends on `ha_link`.
+
+**In the integration** (`RoboAlarms/ha-addon` 0.3.0, after BL-173's 0.2.0):
+
+| File | Change |
+|---|---|
+| `aiopanel.py` | `CLIENT_INFO` "aioroboalarms 0.3.0" (`:29`). `PanelSettings` and `KeypadInfo` dataclasses. `PanelState` (`:272`) gains `settings` and `keypads` (both None until their first message), with `apply_settings` and `apply_keypads` validated whole first (HA05, as `apply_zwave` `:284-298`); unknown keys are dropped. Mirror to `protocol/aioroboalarms.py` with `scripts/sync_protocol.py`. |
+| `coordinator.py` | `_async_handle` (`:573-613`): `settings` and `keypads` return `state.ready`; `settings_result` goes through `_pending` beside `zwave_result`. `async_settings_set(target, values)` uses `_async_request` (`:1011`). `in_use`, `held`, `voice_not_ready` and `out_of_range` raise `ServiceValidationError` (translated); the rest raise `HomeAssistantError`. |
+| `entity.py` | `keypad_device_identifier(panel_id, kp_id)` = `f"{panel_id}_kp_{kp_id}"`. Keypad `DeviceInfo` with `parent_of` (`:39-47`). `RoboAlarmsSettingEntity(target_id, key)`: available when connected, the target listed and online, its settings known, and the key in `can`. `async_add_keypad_entities`, modelled on the Z-Wave helpers (`:120-188`). Unique ids `<panel_id>_set_<key>` and `<panel_id>_kp_<kp_id>_<key>`. |
+| New `number.py`, `select.py`, `time.py` | The settings entities. `PLATFORMS` (`__init__.py:21-31`) adds NUMBER, SELECT and TIME. |
+| `switch.py`, `binary_sensor.py`, `sensor.py` | The 6 setting switches; keypad connectivity; keypad signal |
+| `__init__.py` | `async_remove_config_entry_device` (`:74-94`) also allows deleting an unlisted `_kp_` device |
+| `diagnostics.py` | Adds `keypads`: names, versions, online. No codes and no keys. |
+| `strings.json`, `translations/en.json`, `es.json` | Entity names (the panel's own row titles), select options, errors |
+| `tests/test_settings.py`, `tests/test_keypads.py` | Against the firmware's golden strings from `test_link.c`: entities from `can`; values only from reports; a set sends a frame; a refusal raises; unavailable while offline; an older panel gives no entities; an older keypad gives no device |
+| `manifest.json`, README, CLAUDE.md status | 0.3.0. The release only on the maintainers' go. |
 
 ## Test and acceptance
 - Host: `alarm_proto` message codecs and the pairing code derivation (golden vectors shared
@@ -324,3 +376,6 @@ entity and icon translations, entity categories) ([rules](https://developers.hom
   build, and the 0.6.0 parser reads its frames (Test and acceptance); left: commit it, CI's
   hassfest and HACS results, the maintainers' go, the GitHub release v0.2.0, then HACS offering it
   and an upgrade keeping pairing and entity ids (BL-173)
+- [ ] Panel settings and keypads: `alarm_proto` (`proto_prefs`, the four messages, goldens),
+  `ha_link` (pushes, the set queue, the settings port), `panel_app` wiring; the integration's side
+  in `RoboAlarms/ha-addon` 0.3.0 (HAI-016..019) (BL-216)

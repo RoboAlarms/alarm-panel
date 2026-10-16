@@ -54,6 +54,7 @@ panel's Z-Wave network show up. We do the same job source-agnostically.
 | HCTL-010 | Compiled only with `CONFIG_ALARM_HOME_CONTROL` (needs `SPIRAM`); without it the rail and Settings entries don't exist | build profiles |
 | HCTL-011 | An automation may do what the system master or installer who saved it could do at the panel: turn things on or off, lock and unlock, open and close, arm and disarm (docs/features/41 AUT-002, AUT-011; ADR-050). It asks no code when it runs (HCTL-005 is for a person at the screen): it acts as that person, re-checked each time. The less secure actions - disarm, unlock, open, stop - run only while the installer allows them (AUT-015) and, after a door, window, motion or alarm trigger, only once confirmed at save (AUT-016); a script never | host tests |
 | HCTL-012 | A pending action has a bounded lifetime and is tied to the connection generation it was sent on: a reply that never comes times out, and a source that drops and reconnects fails whatever was in flight as an unknown outcome instead of leaving the device busy forever. Nothing here replays a command automatically - a person retries on purpose, which matters most for unlock and open. The screen says an unknown outcome is one: "Couldn't confirm Garage Door opened" on the page's note and "Not confirmed" on the tile and sheet - never "didn't" | host tests |
+| HCTL-013 | A link keypad's Smart Home works as the master's: the same page, words and states from the master's registry (docs/features/11 LINK-044..049), actions judged by the master as `{KEYPAD, n}` with the keypad's home partition's codes (LINK-048; the owner's decision 1, recommended, not decided); Arrange is the keypad's own (HCTL-008; decision 2, the same). Designed 2026-10-16, not built (BL-216) | link tests, preview, HIL |
 
 ## Design
 
@@ -149,6 +150,9 @@ rail's Smart Home (a house with Wi-Fi), Favorites and the rooms as tabs, tiles o
 cells with the control on the tile, the state in words, detail sheets, and Arrange.
 Tiles use the same design language as Home (colour means state, 64 px targets, words plus
 icons). An unlock opens the code pad titled "Unlock Front Door".
+A link keypad will show the same view, from its master's registry over the link (HCTL-013;
+designed, BL-216, its screens in proposal P1), and a lost link will look as a dropped Home
+Assistant does: every tile "Offline since" the last device data.
 
 The page's note is a short summary of the open page, not a log: each tile keeps its own outcome.
 It picks at most two facts in four passes - jammed devices; unlocked locks and open entrance
@@ -237,7 +241,9 @@ as the person who saved them, and an installer option can take the less secure o
 - Show a few favorite devices on Home as well, or keep Home for the alarm only? Leaning: keep
   Home for the alarm; Smart Home is one tap away.
 - Allow device control while armed away (for example from a remote keypad at the door)?
-  Leaning: yes, except unlocks need the code anyway.
+  Leaning: yes, except unlocks need the code anyway. Still open: it is the owner's decision 3 for
+  link keypads (docs/features/11 Open questions, BL-216). Recommended: the same on both screens -
+  allowed; unlock and open need the code (HCTL-005). Built so unless the owner decides otherwise.
 - A Z-Wave device source, so the panel's own Z-Wave switches, dimmers and garage doors
   (docs/features/36 ZW-034 to ZW-036, switched from their device pages today) also appear here?
   Leaning: yes, once the screen exists; `zw_outputs` already follows this document's rules (a
@@ -318,3 +324,5 @@ as the person who saved them, and an installer option can take the less secure o
       change keeps a failed action's words and an action under way (HCTL-006, HCTL-012) (BL-178)
 - [ ] Arrange: no Small and Wide for a fan without speeds, and a way back to a kind's own size
       (HCTL-008) (BL-180)
+- [ ] A link keypad's Smart Home as the master's: proposal P1 approved first, then
+      docs/features/11's tasks for it (HCTL-013) (BL-216)

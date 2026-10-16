@@ -196,6 +196,31 @@ A garage door never opens from Home Assistant: opening takes a user's code at th
 it arrived. Suggested entities on the integration's side: `switch`, `light` (brightness),
 `cover` (device class garage, close only), unavailable while `online` is false.
 
+### Panel settings and keypads (API 1 addition, 2026-10-16; docs/features/11, BL-216)
+
+Designed, not built on either side yet. Paired connections only. A client that doesn't know these
+types ignores them. One that knows them makes entities only once they arrive, so an older panel
+gets none and is never sent a `settings_set`. The panel's link keypads run no connection of their
+own: the master relays them (docs/features/11 "Smart Home and Home Assistant on keypads").
+
+| Message | Direction | Fields |
+|---|---|---|
+| `settings` | panel -> client | `values` (the master's own; keys below), `can` (keys it may set), `voice` (`"ready"`, `"loading"`, `"none"`). Whole every time; after the paired hello and on any change, at most once a second. |
+| `keypads` | panel -> client | `keypads`: the whole list every time (the client replaces what it holds). Each entry: `device` (1..8), `id` (the keypad's own panel id, null until it reports one), `name`, `home` (its partition), `online` (a live session heard in the last 30 s), `fw`, `rssi` (dBm, null when not known), `settings` (`values`, null until reported), `can`, `voice`. After the paired hello and on any change, at most once a second. |
+| `settings_set` | client -> panel | `id` (echoed), `target` (the panel id of the master or of a keypad), `values` (only the keys to change) |
+| `settings_result` | panel -> client | `id`, `ok` (true only when nothing was refused), `error` (`""`, or for the whole request: `not_found`, `offline`, `unsupported`, `busy`, `timeout`, `bad`), `refused` (`{key: "not_allowed" \| "out_of_range" \| "in_use" \| "held" \| "voice_not_ready" \| "busy"}`) |
+
+Keys and units are those in docs/features/11 "Settings fields". Delays are in seconds (0 = never;
+the panel's 9 choices). Night times are minutes after midnight (0..1439). Levels and volumes are
+percent. Every key is 11 bytes or less (the parser rule in "Two-way: the Devices screen"). An
+unknown key in `values` is refused as `not_allowed`. The panel answers within 7 s, inside the
+client's 15 s. A `settings_set` names its target by panel id, never by device number: a device
+number is reused after a removal (docs/features/11 LINK-001), so it could reach another keypad.
+
+Example (fictional ids): `{"t":"settings_set","id":"3f9a1c2e","target":"a1b2c3",
+"values":{"brightness":40}}` gets `{"t":"settings_result","id":"3f9a1c2e","ok":false,"error":"",
+"refused":{"brightness":"in_use"}}`.
+
 ## Pairing (HAI-003)
 
 Numeric comparison with a commitment, like Bluetooth LE numeric comparison: the client commits

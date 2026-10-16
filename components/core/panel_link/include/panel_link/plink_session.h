@@ -81,8 +81,9 @@ void plink_hs_k_wipe(plink_hs_k_t *hs);
 
 /* Checks a HELLO from a paired keypad (mac1 under its K_pair; the header's sender and net_id are
  * the caller's to match with the keypad first), then makes the WELCOME into welcome (cap bytes)
- * and the pending session. *n_k receives the HELLO's nonce (the caller drops HELLOs it has seen)
- * and *hello its decoded fields (capacities). false: drop the HELLO, nothing made. */
+ * and the pending session. *hello receives the HELLO's decoded fields: its nonce hello->n (the
+ * caller drops HELLOs whose n_k it has seen) and the capacities. false: drop the HELLO, nothing
+ * made (the WELCOME buffer is wiped). */
 PLINK_MUST_CHECK
 bool plink_hs_answer(const plink_crypto_t *c, const uint8_t k_pair[PLINK_KEY_LEN],
                      const plink_hdr_t *h, const uint8_t *frame, size_t len,

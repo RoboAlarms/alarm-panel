@@ -231,6 +231,17 @@ command is answered at once with ALARM_ERR_UNAVAILABLE; panic is queued and keep
 9. Limits: LINK-016. A paired keypad ignores pairing traffic unless a person started Pair again;
    the master takes PAIR_REQ only while its window is open and only from sender 0xFFFF.
 
+Settled in the code (`plink_pair.c`): u16 lengths, the net id and the attempt id are little-endian
+like the rest of the link; a PAIR_REQ for another master (net id neither 0 nor the master's) is
+dropped, one to a closed window answered CLOSED; the first address to send a request owns the
+window, even one refused for capacity or version; a request less than 3 s after the last attempt
+ended is dropped unanswered (the keypad's resend comes back), and a keypad's retry within those
+3 s goes when they are up; any message of the attempt that just failed, from its keypad, gets that
+attempt's PAIR_FAIL again (the first may have been lost); an attempt under way outlives the
+window, which closes when it ends; a new attempt id from the window's keypad ends the attempt
+under way (INTERRUPTED); a port failure answers BUSY (master) or fails locally (keypad), not
+counted.
+
 ## Sessions
 
 After pairing, and at every (re)connection, the keypad starts a handshake:
@@ -259,6 +270,9 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
   every retry after the first failure. It keeps its live session until a WELCOME verifies.
 - `NOT_PAIRED` hints only change what the keypad says, after they repeat for 5 min; the keypad
   keeps its keys until a new pairing completes.
+- HELLO and WELCOME each carry their sender's own proto and caps; both sides take the lower and
+  the common ones, and a proto of 0 is refused. A sealed frame spends its seq even when sealing
+  fails, so no nonce is tried twice; a frame with seq ≥ 2^31 is refused on arrival too.
 
 ## Timers
 

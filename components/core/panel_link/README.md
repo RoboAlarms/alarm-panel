@@ -40,3 +40,8 @@ pretend network with loss, repeats, reordering, corruption and one direction cut
 `test_plink_crypto.c` and `test_plink_frame.c` hold the known answers (RFC 3610, 4231, 5869, 7748)
 and golden frames; `test/vectors_plink_crypto.py` and `test/vectors_plink_frame.py` recompute every
 one of them with Python's `cryptography`, independently of the C code.
+
+`test_plink_pair.c` and `test_plink_session.c` check one honest pairing and one handshake byte for
+byte against `test/vectors_plink_pair.py` and `test/vectors_plink_session.py` (random numbers
+scripted through the port), then each state machine against a device in the middle, replays and
+every timer.

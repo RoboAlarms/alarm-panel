@@ -4,7 +4,8 @@
  * with a 6-digit code compared on both screens.
  *
  * Each side takes whole frames (already accepted by plink_hdr_read) and answers with at most one
- * frame (plink_out_t). Neither side stores anything: when both confirmations verified the master
+ * frame (plink_out_t: never NULL, len 0 when there is nothing to send; a call given NULL does
+ * nothing). Neither side stores anything: when both confirmations verified the master
  * hands its manager the keypad to store (plink_pm_take, then plink_pm_stored builds PAIR_DONE),
  * and the keypad hands its manager the master (plink_pk_take). Time comes in as ms.
  *
@@ -126,6 +127,11 @@ typedef struct {
     uint8_t device, home;
     uint8_t done_frame[64];  size_t done_len; uint64_t done_until;
     plink_addr_t done_peer;
+    uint8_t dh[PLINK_X25519_LEN];  /* X25519(sk, pk_k), from PAIR_REQ to the keys */
+    bool ended;                    /* the window's last attempt ended: its answer again */
+    uint32_t ended_attempt;
+    uint8_t ended_fail;            /* plink_fail_t (NONE after PAIR_DONE) */
+    uint8_t done_confirm[32]; size_t done_confirm_len; /* the PAIR_CONFIRM done_frame answers */
 } plink_pair_m_t;
 
 /* A keypad ready to be stored (plink_pm_take). */
@@ -189,6 +195,11 @@ typedef struct {
     char code[PLINK_CODE_LEN];
     bool nonce_sent, revealed, confirmed;
     plink_keypad_rec_t result;
+    uint8_t dh[PLINK_X25519_LEN];  /* X25519(sk, pk_m), from PAIR_COMMIT to the keys */
+    uint16_t net_hint;             /* plink_pk_start's net_id: each attempt starts from it */
+    uint8_t reveal_raw[32]; size_t reveal_len;
+    bool have_result;              /* result waits for plink_pk_take */
+    uint8_t device;                /* DONE: the number the master gave */
 } plink_pair_k_t;
 
 /* name: what the keypad calls itself; fw its version; kind and capacities as in PAIR_REQ. */

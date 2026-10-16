@@ -101,7 +101,7 @@ lv_obj_t * screen_wizard_create(void)
         alarm_ui_run_13(wiz_body);
         alarm_ui_run_1(wiz_body, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(wiz_body, SPACE_SM, 0);
-        alarm_ui_run_42(wiz_body, &subject_wiz_pad, 1, "wiz_body");
+        alarm_ui_run_43(wiz_body, &subject_wiz_pad, 1, "wiz_body");
 
         lv_obj_t * wiz_shade = alarm_ui_run_0(wiz_body_area, lv_pct(100), 48);
         lv_obj_set_align(wiz_shade, LV_ALIGN_BOTTOM_MID);

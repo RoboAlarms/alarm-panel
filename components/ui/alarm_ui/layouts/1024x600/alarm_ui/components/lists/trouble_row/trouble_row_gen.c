@@ -26,7 +26,7 @@ lv_obj_t * trouble_row_create(lv_obj_t * parent, const char * glyph, const char 
         /*Init all styles*/
         lv_style_init(&style_trouble_row);
 
-        alarm_ui_run_38(&style_trouble_row);
+        alarm_ui_run_39(&style_trouble_row);
         lv_style_set_min_height(&style_trouble_row, 80);
         alarm_ui_run_6(&style_trouble_row, COLOR_SURFACE, (255 * 100 / 100));
         alarm_ui_run_24(&style_trouble_row, RADIUS_MD);

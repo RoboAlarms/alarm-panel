@@ -71,6 +71,10 @@ zone_hub_result_t zone_service_register(const zone_source_ops_t *ops, void *ctx)
 zsrc_sink_t zone_service_sink(void);
 void zone_service_lock(void);
 void zone_service_unlock(void);
+/* lock() without waiting: false while another task holds it (or before the zone service runs).
+ * For a reader that must never wait (the panel link's task, LINK-027); true is followed by
+ * zone_service_unlock(). */
+bool zone_service_try_lock(void);
 void zone_service_wake(void);
 
 /* Every partition is disarmed: nothing that takes sensors off the air may happen otherwise. */

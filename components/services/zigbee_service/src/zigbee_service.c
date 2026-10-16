@@ -1945,6 +1945,20 @@ uint32_t zigbee_service_devices_held(void)
     return held;
 }
 
+bool zigbee_service_devices_held_now(uint32_t *out)
+{
+    *out = 0u;
+    if (!s_started) {
+        return true;
+    }
+    if (!zone_service_try_lock()) {
+        return false; /* busy: the caller keeps what it read before */
+    }
+    *out = zbz_panel_devices_held(&s_panel);
+    zone_service_unlock();
+    return true;
+}
+
 void zigbee_service_set_link_devices(uint32_t mask)
 {
     atomic_store(&s_link_taken, mask);
@@ -2079,6 +2093,12 @@ size_t zigbee_service_zone_diags(zigbee_service_zone_diag_t *out, size_t max)
 uint32_t zigbee_service_devices_held(void)
 {
     return 0u;
+}
+
+bool zigbee_service_devices_held_now(uint32_t *out)
+{
+    *out = 0u;
+    return true;
 }
 
 void zigbee_service_set_link_devices(uint32_t mask)

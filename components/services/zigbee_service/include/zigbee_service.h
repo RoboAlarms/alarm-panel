@@ -128,9 +128,12 @@ void zigbee_service_engine_snapshot(const alarm_snapshot_t *snap);
  *  - zigbee_service_devices_held: the numbers the Zigbee keypads hold now, read under the zone
  *    lock (waits for it: never call it holding a lock the zone hub's holder could want); 0
  *    without Zigbee;
+ *  - zigbee_service_devices_held_now: the same without waiting: false (and *out 0) while the
+ *    zone lock is busy, for a task that must never wait (the panel link's, LINK-027);
  *  - zigbee_service_set_link_devices: the numbers the link's keypads hold, taken at once by
  *    every later choice of a Zigbee keypad's number. Safe from any task, never waits. */
 uint32_t zigbee_service_devices_held(void);
+bool zigbee_service_devices_held_now(uint32_t *out);
 void zigbee_service_set_link_devices(uint32_t mask);
 
 /* MQTT (devices.md §15, ZB-026): ~/zigbee/state's values (proto_zb.h), false without Zigbee. */

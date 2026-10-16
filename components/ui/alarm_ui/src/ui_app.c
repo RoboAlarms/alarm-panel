@@ -785,6 +785,14 @@ static void update_panel(void)
     const char *note = TR("Enter your code to disarm");
     char link_title[48];
     char link_note[128];
+    if (ui_link_silence_words(link_title, sizeof(link_title), link_note, sizeof(link_note))) {
+        /* a keypad keeping a fire or CO tone through a lost link: the way to stop it here
+         * (decided 2026-10-15, "until OFF is pressed on the keypad"); steady, like the rest */
+        ui_set_str(&subject_disarm_title, link_title);
+        ui_set_str(&subject_disarm_note, link_note);
+        ui_set_int(&subject_panel, PANEL_SILENCE);
+        return;
+    }
     if (ui_link_unpaired(link_title, sizeof(link_title), link_note, sizeof(link_note))) {
         /* a keypad the alarm panel removed: the way back (BL-048, LINK-014) */
         ui_set_str(&subject_disarm_title, link_title);
@@ -2810,6 +2818,11 @@ static bool compute_locked(void)
     return alarm_snapshot_locked(&S.snap);
 }
 
+/* Locked, but Settings opens all the same: a keypad that can't show the alarm panel's state, whose
+ * last status said armed or in alarm, with a page it needs without a code (LINK-025's maintenance,
+ * an update it needs). The rest of the lock stands; Settings closes once this ends while locked. */
+static bool s_lock_waived;
+
 /* A locked control says why: one whole sentence for "armed" and one for "in alarm". */
 static void locked_toast(const char *when_disarmed, const char *when_silenced)
 {
@@ -2869,16 +2882,18 @@ void ui_refresh(bool force)
     ui_set_str(&subject_chime_icon, ps->chime ? UI_ICON_BELL : UI_ICON_BELL_OFF);
     ui_set_int(&subject_default_codes, S.snap.default_codes);
     const bool locked = compute_locked();
-    ui_set_int(&subject_locked, locked ? 1 : 0);
+    const bool waived = locked && ui_link_settings_waived();
+    ui_set_int(&subject_locked, locked && !waived ? 1 : 0); /* the gear looks as it works */
     bar_banner(locked);
     if (!S.snap.program && S.program) {
         S.program = false; /* timed out or left elsewhere */
         ui_settings_refresh();
     }
     apply_mode();
-    if (locked && !S.locked) {
+    if (locked && (!S.locked || (s_lock_waived && !waived))) {
         lock_down();
     }
+    s_lock_waived = waived;
     if (locked != S.locked) {
         S.events_shown_seq = UINT32_MAX; /* Activity's private row dims or wakes (UI-022) */
     }
@@ -3318,13 +3333,23 @@ void ui_chime_toggle(void)
 
 static void on_silence(void)
 {
+    /* A keypad keeping a fire or CO tone through a lost link: the command can't reach the alarm
+     * panel, and the link stops the tone here all the same (decided 2026-10-15). */
+    const bool here = ui_link_local_alarm();
     alarm_cmd_t cmd;
     memset(&cmd, 0, sizeof(cmd));
     cmd.type = ALARM_CMD_SILENCE;
     cmd.partition = S.opt.partition;
     const alarm_result_t r = S.be.command(S.be.ctx, &cmd, NULL);
-    /* TR: a toast after Silence during a fire, CO or medical alarm */
-    ui_toast(r == ALARM_OK ? TR("Siren silenced. Enter your code to reset") : ui_result_text(r));
+    if (here) {
+        /* TR: a toast after Silence on a keypad without system communication: its own alarm
+         * sound stops; the alarm panel goes on as it was */
+        ui_toast(TR("Silenced on this keypad"));
+    } else {
+        /* TR: a toast after Silence during a fire, CO or medical alarm */
+        ui_toast(r == ALARM_OK ? TR("Siren silenced. Enter your code to reset")
+                               : ui_result_text(r));
+    }
     ui_refresh(true);
 }
 
@@ -3408,7 +3433,7 @@ static void on_action(alarm_ui_action_t action, lv_event_t *e)
         }
         break;
     case ALARM_UI_ACT_SETTINGS:
-        if (S.locked) {
+        if (S.locked && !ui_link_settings_waived()) {
             /* TR: a toast when Settings is tapped while armed, or while the alarm sounds */
             locked_toast(TR("Settings open once the system is disarmed"),
                          TR("Settings open once the alarm is silenced"));

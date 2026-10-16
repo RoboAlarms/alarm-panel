@@ -1741,6 +1741,12 @@ static void run_keypad(const panel_app_config_t *cfg)
     START_OR_LOG(lang_packs_start());
     START_OR_LOG(asset_packs_start());
 
+    /* The link before the screen, so the UI's first look at link_info finds a keypad (its setup's
+     * pairing step, Home's Connecting), and before the network: a paired keypad runs no time
+     * server of its own. */
+    if (plink_service_start(board_name()) != ESP_OK) {
+        ESP_LOGE(TAG, "panel link failed to start: this keypad shows nothing of its alarm panel");
+    }
     const display_state_t disp = start_display(true);
     if (!disp.display || !disp.touch) {
         ESP_LOGE(TAG, "start-up incomplete:%s%s - this keypad can't be used",
@@ -1748,10 +1754,6 @@ static void run_keypad(const panel_app_config_t *cfg)
     }
     if (alarm_mem_task_create(keypad_health_task, "health", 4096, NULL, 3, NULL) != pdPASS) {
         ESP_LOGE(TAG, "health task failed to start: an update could not confirm itself");
-    }
-    /* The link before the network: a paired keypad runs no time server of its own. */
-    if (plink_service_start(board_name()) != ESP_OK) {
-        ESP_LOGE(TAG, "panel link failed to start: this keypad shows nothing of its alarm panel");
     }
     START_OR_LOG(net_wifi_start());
     START_OR_LOG(net_check_init());
@@ -1801,6 +1803,7 @@ void panel_app_run(const panel_app_config_t *cfg)
 #endif
         ESP_LOGE(TAG, "stored as a keypad, but this board can't be one: running as the alarm "
                       "panel");
+        plink_service_force_master(); /* the link and the UI follow the role this start runs */
     }
 #endif
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -2014,7 +2017,7 @@ void panel_app_run(const panel_app_config_t *cfg)
 #if CONFIG_ALARM_LINK
     if (link_err == ESP_OK) {
         /* the keypad numbers 1-8 shared with the Zigbee keypads (LINK-001) */
-        plink_service_set_devices_port(zigbee_service_devices_held,
+        plink_service_set_devices_port(zigbee_service_devices_held, zigbee_service_devices_held_now,
                                        zigbee_service_set_link_devices);
         if (plink_service_start(board_name()) != ESP_OK) {
             ESP_LOGE(TAG, "panel link failed to start: no keypads");

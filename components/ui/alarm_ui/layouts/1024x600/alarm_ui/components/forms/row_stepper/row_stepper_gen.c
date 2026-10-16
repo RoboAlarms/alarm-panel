@@ -36,7 +36,7 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_38(&style_row_stepper);
+        alarm_ui_run_39(&style_row_stepper);
         lv_style_set_min_height(&style_row_stepper, 68);
         alarm_ui_run_6(&style_row_stepper, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_row_stepper, RADIUS_MD);

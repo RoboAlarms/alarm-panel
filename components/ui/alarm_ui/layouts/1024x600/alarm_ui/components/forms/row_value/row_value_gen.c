@@ -26,7 +26,7 @@ lv_obj_t * row_value_create(lv_obj_t * parent, const char * title, const char * 
         /*Init all styles*/
         lv_style_init(&style_row_value);
 
-        alarm_ui_run_38(&style_row_value);
+        alarm_ui_run_39(&style_row_value);
         lv_style_set_min_height(&style_row_value, 52);
         lv_style_set_border_side(&style_row_value, LV_BORDER_SIDE_BOTTOM);
         alarm_ui_run_65(&style_row_value, 1, COLOR_LINE);

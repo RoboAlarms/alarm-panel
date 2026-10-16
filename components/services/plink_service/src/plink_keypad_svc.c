@@ -10,11 +10,16 @@
  *     (LINK-023);
  *   - the sounds: one-shots from the master, the home partition's continuous pattern, fire and CO
  *     from any partition; on a lost link only fire and CO keep sounding, until OFF is pressed here
- *     or the link is back (decided 2026-10-15);
+ *     or the link is back (decided 2026-10-15): OFF is a DISARM or SILENCE the master didn't run
+ *     (no link, or no answer), and link_info.local_alarm asks Home for its Silence meanwhile;
  *   - the time: the master's clock and zone, and no time server of its own while paired;
  *   - the update gate and the link's heartbeat for the update's self-test (LINK-020).
  * A master whose setup makes it a keypad uses the same manager for that pairing only (Option C):
- * the record it makes is kept in RAM until the setup's Done stores it with the keypad role.
+ * the record it makes is kept in RAM until the setup's Done stores it with the keypad role, and
+ * nothing is sent to the other master after the pairing until then (no handshake: it keeps the new
+ * keypad provisional, and drops it by itself after 10 minutes if the setup is abandoned, LINK-016).
+ * Leaving the keypad branch without Done (KP_PAIR_STOP) forgets the pairing and ends the manager
+ * (ksvc_setup_end).
  */
 #include "plink_internal.h"
 
@@ -59,6 +64,9 @@ static const char *TAG = "plink";
 #define BEAT_MS            1000u
 #define CMD_WAIT_MS        3000u /* the UI's wait for a command's answer (docs/features/11) */
 #define MAINT_CHECK_MS     2000u
+/* An OFF the master didn't run still counts for a fire or CO tone kept through a lost link when the
+ * link goes LOST this soon after it (an OFF keyed while ONLINE but the master already silent). */
+#define OFF_KEEP_MS        PLINK_LOST_MS
 
 typedef enum { PAIR_NONE = 0, PAIR_LOOKING, PAIR_ASKED, PAIR_FAILED } pair_phase_t;
 typedef enum { FIND_NONE = 0, FIND_MASTER, FIND_PAIRING } find_t;
@@ -104,13 +112,22 @@ static struct {
     bool local_off; /* OFF pressed here while the link is down: fire or CO stopped */
     /* the rest */
     uint64_t clock_at, net_at, publish_at, beat_at, events_at;
-    char ip[16];
+    char ip[16]; /* the last address it had: kept across a drop, so a new one is told at once */
+    bool net_up;
     bool sntp_off;
     uint8_t last_home;
     uint32_t home_gen;
     bool copied;
     uint32_t seq_copied, cfg_seq_copied;
+    uint32_t bad_crc;     /* the configuration it couldn't read, as last seen */
+    uint32_t bad_cfg_seq; /* ... and the configuration count then: a later install outdates it */
 } K;
+
+/* The manager and its buffers (PSRAM): allocated at the first prepare and kept, so the setup's
+ * pairing can end (ksvc_setup_end) and start again without allocating again. */
+static plink_keypad_t *s_kmem;
+static uint8_t *s_cfg_buf_mem;
+static alarm_config_t *s_cfg_mem;
 
 /* The UI's copies (link_pub_lock), PSRAM; the keypad role only. */
 static alarm_snapshot_t *s_ui_snap;
@@ -137,7 +154,11 @@ static struct {
 } s_ans;
 static uint32_t s_cmd_gen;
 static atomic_uint s_cmd_abandon; /* the gen the UI stopped waiting for */
-static atomic_bool s_off_pressed; /* OFF (disarm, silence) keyed here */
+/* OFF (disarm, silence) keyed here that the master didn't run, and when (s_cmd_mux). */
+static struct {
+    bool set;
+    uint64_t at;
+} s_off;
 /* An update let through by LINK-025's maintenance (link/otamaint): marked before it restarts the
  * panel; after that restart, while marked, the link beats for the self-test without its master
  * (the link task runs: socket bound, crypto proved). Cleared once the image is confirmed or the
@@ -157,6 +178,11 @@ bool ksvc_active(void)
 static bool port_send(void *ctx, const plink_addr_t *to, const uint8_t *frame, size_t len)
 {
     (void)ctx;
+    if (K.setup_only && K.pending) {
+        /* Option C, paired: no handshake before the setup's Done, so the other master keeps the
+         * new keypad provisional and drops it by itself if the setup is abandoned (LINK-016). */
+        return false;
+    }
     return link_send(to, frame, len);
 }
 
@@ -520,17 +546,38 @@ static void track_command(void)
     K.cmd_active = false;
 }
 
+/* OFF keyed here that the master didn't run (decided 2026-10-15): it stops a fire or CO tone kept
+ * through a lost link (sounds()), now or when the link goes LOST within OFF_KEEP_MS. */
+static void off_not_run(void)
+{
+    const uint64_t now = link_now();
+    portENTER_CRITICAL(&s_cmd_mux);
+    s_off.set = true;
+    s_off.at = now;
+    portEXIT_CRITICAL(&s_cmd_mux);
+}
+
+static alarm_result_t command(const plink_cmd_t *cmd, plink_result_t *res);
+
 alarm_result_t ksvc_command(const plink_cmd_t *cmd, plink_result_t *res)
 {
     memset(res, 0, sizeof *res);
     if (K.k == NULL || K.setup_only || s_cmd_mutex == NULL) {
         return ALARM_ERR_UNAVAILABLE;
     }
-    const bool panic = cmd->op == PLINK_OP_COMMAND && cmd->cmd.type == ALARM_CMD_PANIC;
-    if (cmd->op == PLINK_OP_COMMAND &&
+    const alarm_result_t r = command(cmd, res);
+    /* UNAVAILABLE: refused at once without the link, or no answer in 3 s. A refusal the master
+     * sent (a wrong code) doesn't count: the master is there and decides. */
+    if (r == ALARM_ERR_UNAVAILABLE && cmd->op == PLINK_OP_COMMAND &&
         (cmd->cmd.type == ALARM_CMD_DISARM || cmd->cmd.type == ALARM_CMD_SILENCE)) {
-        atomic_store(&s_off_pressed, true); /* stops a fire tone kept through a lost link */
+        off_not_run();
     }
+    return r;
+}
+
+static alarm_result_t command(const plink_cmd_t *cmd, plink_result_t *res)
+{
+    const bool panic = cmd->op == PLINK_OP_COMMAND && cmd->cmd.type == ALARM_CMD_PANIC;
     if (!panic) {
         link_pub_lock();
         const bool online = g_pub.kinfo_valid && g_pub.kraw.state == PLINK_LINK_ONLINE;
@@ -595,14 +642,24 @@ static uint8_t continuous_of(const alarm_snapshot_t *s, uint8_t home)
                                                       : (uint8_t)ALARM_SOUND_NONE;
 }
 
-static void sounds(const plink_keypad_info_t *info)
+static void sounds(uint64_t now, const plink_keypad_info_t *info)
 {
     plink_sound_t s;
     while (plink_keypad_take_sound(K.k, &s)) {
         sounder_play((alarm_sound_t)s.sound);
     }
     const bool online = info->state == PLINK_LINK_ONLINE;
-    if (atomic_exchange(&s_off_pressed, false) && !online) {
+    bool off = false;
+    portENTER_CRITICAL(&s_cmd_mux);
+    if (s_off.set && now >= s_off.at + OFF_KEEP_MS) {
+        s_off.set = false; /* too old to be about this loss */
+    }
+    if (s_off.set && !online) {
+        s_off.set = false;
+        off = true;
+    }
+    portEXIT_CRITICAL(&s_cmd_mux);
+    if (off) {
         K.local_off = true;
     }
     uint8_t want = ALARM_SOUND_NONE;
@@ -660,14 +717,17 @@ static void network(uint64_t now)
     net_wifi_get_status(&st);
     const bool up = st.state == NET_WIFI_CONNECTED;
     if (up && strcmp(st.ip, K.ip) != 0) {
+        /* A new address, also across a drop (the usual way it changes): a HEARTBEAT at once from
+         * it, so the master's STATUS follows it (nothing without a live session). */
         if (K.ip[0] != '\0') {
-            plink_keypad_addr_changed(K.k, now); /* a HEARTBEAT at once from the new address */
+            plink_keypad_addr_changed(K.k, now);
         }
         snprintf(K.ip, sizeof K.ip, "%s", st.ip);
-        K.next_search_at = now; /* a network (back): look for the master now */
-    } else if (!up) {
-        K.ip[0] = '\0';
     }
+    if (up && !K.net_up) {
+        K.next_search_at = now; /* a network (back): look for the master now */
+    }
+    K.net_up = up;
     plink_keypad_set_power(K.k, (uint8_t)atomic_load(&s_power_flags), up ? st.rssi : 0);
     /* LINK-020 / docs/features/11 "Time": no time server of its own while paired */
     if (K.paired != K.sntp_off) {
@@ -748,6 +808,34 @@ static void pair_status(uint64_t now, ui_link_pair_t *out, bool *valid)
     out->device = pi.device;
 }
 
+/* The home partition's name for the setup's last step on a master (Option C), which pulls no
+ * configuration: a master names itself after partition 1 (LINK_DEFAULT_NAME while it has none), so
+ * for home 1 its name is the partition's. "" otherwise: the step says "Partition 2". */
+static void setup_home_name(const plink_keypad_rec_t *rec, char *out, size_t len)
+{
+    out[0] = '\0';
+    if (rec->home == 1u && rec->master_name[0] != '\0' &&
+        strcmp(rec->master_name, LINK_DEFAULT_NAME) != 0) {
+        snprintf(out, len, "%s", rec->master_name);
+    }
+}
+
+/* needs_update (ui_link_info_t): a configuration this keypad couldn't read is the master's
+ * current one. The manager keeps the failed CRC after a later configuration installs, so one seen
+ * before the latest install no longer counts while the link is up. */
+static bool needs_update(const plink_keypad_info_t *info)
+{
+    const uint32_t cfg_seq = plink_keypad_config_seq(K.k);
+    if (info->cfg_bad_crc != K.bad_crc) {
+        K.bad_crc = info->cfg_bad_crc;
+        K.bad_cfg_seq = cfg_seq;
+    }
+    if (K.bad_crc == 0u) {
+        return false;
+    }
+    return info->state != PLINK_LINK_ONLINE || cfg_seq == K.bad_cfg_seq;
+}
+
 static void publish(uint64_t now, const plink_keypad_info_t *info)
 {
     ui_link_pair_t pair;
@@ -757,6 +845,10 @@ static void publish(uint64_t now, const plink_keypad_info_t *info)
         char master_addr[24] = "";
         if (K.pending && info->master.tp == PLINK_TP_UDP) {
             link_addr_ip(&info->master, master_addr); /* where the pairing found it */
+        }
+        char home_name[PLINK_NAME_MAX + 1] = "";
+        if (K.pending) {
+            setup_home_name(&K.pending_rec, home_name, sizeof home_name);
         }
         link_pub_lock();
         g_pub.setup_keypad = true;
@@ -768,6 +860,7 @@ static void publish(uint64_t now, const plink_keypad_info_t *info)
         snprintf(g_pub.setup_master, sizeof g_pub.setup_master, "%s",
                  K.pending ? K.pending_rec.master_name : "");
         snprintf(g_pub.setup_master_addr, sizeof g_pub.setup_master_addr, "%s", master_addr);
+        snprintf(g_pub.setup_home_name, sizeof g_pub.setup_home_name, "%s", home_name);
         link_pub_unlock();
         return;
     }
@@ -783,8 +876,16 @@ static void publish(uint64_t now, const plink_keypad_info_t *info)
     li.removed =
         info->state == PLINK_LINK_NOT_PAIRED && info->unpaired_why == PLINK_UNPAIRED_REMOVED;
     li.maintenance = info->maintenance;
-    li.needs_update = info->cfg_bad_crc != 0u;
+    li.needs_update = needs_update(info);
     li.panic_pending = plink_keypad_panic_pending(K.k);
+    /* a fire or CO tone kept through a lost link: Home offers Silence (sounds() keeps it) */
+    li.local_alarm = info->state != PLINK_LINK_ONLINE &&
+                     (K.cont == ALARM_SOUND_FIRE || K.cont == ALARM_SOUND_CO) && !K.local_off;
+    const alarm_config_t *cfg = plink_keypad_config(K.k);
+    if (cfg != NULL && info->home >= 1u && info->home <= ALARM_MAX_PARTITIONS) {
+        snprintf(li.home_name, sizeof li.home_name, "%.*s", (int)(sizeof li.home_name - 1u),
+                 cfg->partitions[info->home - 1u].name);
+    }
     li.device = info->device;
     li.home = info->home;
     li.home_gen = K.home_gen;
@@ -876,7 +977,8 @@ bool ksvc_ui_config(alarm_config_t *out)
         return false;
     }
     link_pub_lock();
-    const bool have = s_ui_have_cfg && (!g_pub.setup_keypad || g_pub.setup_paired);
+    /* a keypad's: the setup's pairing on a master never serves another master's configuration */
+    const bool have = s_ui_have_cfg && !g_pub.setup_keypad;
     if (have) {
         memcpy(out, s_ui_cfg, sizeof *out);
     }
@@ -906,8 +1008,14 @@ bool plink_service_update_idle(void *ctx, const char **why)
     link_pub_lock();
     if (g_pub.kinfo_valid && s_ui_snap != NULL) {
         const plink_keypad_info_t *i = &g_pub.kraw;
-        if (i->state == PLINK_LINK_ONLINE && i->status_age_s <= LINK_STATUS_FRESH) {
+        const bool fresh = i->status_age_s <= LINK_STATUS_FRESH;
+        if (i->state == PLINK_LINK_ONLINE && fresh) {
             idle = proto_fw_install_allowed(s_ui_snap, &reason); /* the master's partitions */
+        } else if (i->state != PLINK_LINK_NOT_PAIRED && i->cfg_bad_crc != 0u && fresh) {
+            /* It hears its master (statuses come, the snapshot follows them) but can't read the
+             * master's configuration, so it never gets ONLINE: this update is its way out, under
+             * the same rule as ONLINE's. */
+            idle = proto_fw_install_allowed(s_ui_snap, &reason);
         } else if (i->state == PLINK_LINK_NOT_PAIRED || i->maintenance) {
             idle = true; /* nothing to protect here, or LINK-025's recovery */
             maintenance = i->state != PLINK_LINK_NOT_PAIRED;
@@ -939,9 +1047,17 @@ void ksvc_input(uint64_t now, const plink_addr_t *from, const uint8_t *frame, si
     plink_keypad_input(K.k, now, from, frame, len);
 }
 
+/* Option C once paired: the manager rests until the setup's Done (no handshake, port_send), so
+ * nothing of it is due - its handshake timers would otherwise wake the link task for nothing. */
+static bool setup_resting(void)
+{
+    return K.setup_only && K.pending;
+}
+
 uint64_t ksvc_next(void)
 {
-    return K.k != NULL ? plink_keypad_next(K.k) : UINT64_MAX;
+    /* resting, the link task's own 50 ms turn is enough for its publishing */
+    return K.k != NULL && !setup_resting() ? plink_keypad_next(K.k) : UINT64_MAX;
 }
 
 void ksvc_poll(uint64_t now)
@@ -955,12 +1071,14 @@ void ksvc_poll(uint64_t now)
     plink_keypad_info_t info;
     plink_keypad_info(K.k, now, &info);
     discovery(now, &info);
-    plink_keypad_tick(K.k, now);
+    if (!setup_resting()) {
+        plink_keypad_tick(K.k, now);
+    }
     plink_keypad_info(K.k, now, &info);
     if (!K.setup_only) {
         track_command();
         network(now);
-        sounds(&info);
+        sounds(now, &info);
         follow_time(now);
         beat(now, &info);
         maintenance_mark(now, &info);
@@ -989,6 +1107,10 @@ uint8_t ksvc_request(uint64_t now, const link_req_t *req)
         }
         break;
     case UI_LINK_REQ_KP_PAIR_STOP:
+        if (K.setup_only) {
+            ksvc_setup_end(now); /* the wizard left the keypad branch: nothing of it stays */
+            return UI_LINK_REQ_OK;
+        }
         pair_end();
         plink_keypad_pair_cancel(K.k, now);
         break;
@@ -1086,24 +1208,79 @@ uint8_t plink_service_keypad_home(void)
     return home;
 }
 
+void ksvc_setup_end(uint64_t now)
+{
+    if (K.k == NULL || !K.setup_only) {
+        return;
+    }
+    search_stop();
+    plink_keypad_pair_cancel(K.k, now); /* an attempt under way ends on both screens */
+    /* A pairing that finished meanwhile (the UI sees DONE up to 1.5 s late) is forgotten: its
+     * record and keys wiped (port_store with NULL). The other master heard nothing after its
+     * PAIR_DONE (port_send) and drops the keypad itself after 10 minutes (LINK-016). */
+    (void)plink_keypad_forget(K.k, now);
+    plink_wipe(K.k, sizeof *K.k);
+    plink_wipe(K.cfg_buf, ALARM_CONFIG_BLOB_MAX);
+    plink_wipe(K.cfg, sizeof *K.cfg);
+    plink_wipe(&K.pending_rec, sizeof K.pending_rec);
+    link_pub_lock();
+    g_pub.setup_keypad = false; /* the master's own pairing is published again */
+    g_pub.setup_paired = false;
+    g_pub.setup_device = 0u;
+    g_pub.setup_home = 0u;
+    g_pub.setup_master[0] = '\0';
+    g_pub.setup_master_addr[0] = '\0';
+    g_pub.setup_home_name[0] = '\0';
+    g_pub.pair_valid = false;
+    memset(&g_pub.pair, 0, sizeof g_pub.pair);
+    s_ui_have_cfg = false;
+    s_ui_ev_n = 0u;
+    s_ui_seq = 0u;
+    plink_wipe(s_ui_cfg, sizeof *s_ui_cfg);
+    plink_wipe(s_ui_snap, sizeof *s_ui_snap);
+    plink_wipe(s_ui_ev, PLINK_EVENTS_KEPT * sizeof *s_ui_ev);
+    link_pub_unlock();
+    memset(&K, 0, sizeof K); /* gone: ksvc_active() false, its frames no longer routed here */
+    plink_psa_forget();
+    ESP_LOGI(TAG, "the setup's pairing as a keypad ended");
+}
+
 esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
 {
-    K.setup_only = setup_only;
-    plink_keypad_t *k = alarm_mem_slow_calloc(1, sizeof *k);
-    K.cfg_buf = alarm_mem_slow_malloc(ALARM_CONFIG_BLOB_MAX);
-    K.cfg = alarm_mem_slow_calloc(1, sizeof *K.cfg);
-    if (k == NULL || K.cfg_buf == NULL || K.cfg == NULL) {
+    /* allocated once, kept when the setup's pairing ends (ksvc_setup_end) */
+    if (s_kmem == NULL) {
+        s_kmem = alarm_mem_slow_calloc(1, sizeof *s_kmem);
+    }
+    if (s_cfg_buf_mem == NULL) {
+        s_cfg_buf_mem = alarm_mem_slow_malloc(ALARM_CONFIG_BLOB_MAX);
+    }
+    if (s_cfg_mem == NULL) {
+        s_cfg_mem = alarm_mem_slow_calloc(1, sizeof *s_cfg_mem);
+    }
+    if (s_kmem == NULL || s_cfg_buf_mem == NULL || s_cfg_mem == NULL) {
         return ESP_ERR_NO_MEM;
     }
-    /* the UI's copies; also for the setup's pairing, whose last step names the home partition
-     * from the master's configuration */
-    s_ui_snap = alarm_mem_slow_calloc(1, sizeof *s_ui_snap);
-    s_ui_cfg = alarm_mem_slow_calloc(1, sizeof *s_ui_cfg);
-    s_ui_ev = alarm_mem_slow_calloc(PLINK_EVENTS_KEPT, sizeof *s_ui_ev);
-    s_ev_tmp = alarm_mem_slow_calloc(PLINK_EVENTS_KEPT, sizeof *s_ev_tmp);
+    /* the UI's copies (the setup's pairing on a master leaves them empty) */
+    if (s_ui_snap == NULL) {
+        s_ui_snap = alarm_mem_slow_calloc(1, sizeof *s_ui_snap);
+    }
+    if (s_ui_cfg == NULL) {
+        s_ui_cfg = alarm_mem_slow_calloc(1, sizeof *s_ui_cfg);
+    }
+    if (s_ui_ev == NULL) {
+        s_ui_ev = alarm_mem_slow_calloc(PLINK_EVENTS_KEPT, sizeof *s_ui_ev);
+    }
+    if (s_ev_tmp == NULL) {
+        s_ev_tmp = alarm_mem_slow_calloc(PLINK_EVENTS_KEPT, sizeof *s_ev_tmp);
+    }
     if (s_ui_snap == NULL || s_ui_cfg == NULL || s_ui_ev == NULL || s_ev_tmp == NULL) {
         return ESP_ERR_NO_MEM;
     }
+    memset(&K, 0, sizeof K);
+    K.setup_only = setup_only;
+    plink_keypad_t *k = s_kmem;
+    K.cfg_buf = s_cfg_buf_mem;
+    K.cfg = s_cfg_mem;
     if (!setup_only) {
         s_cmd_mutex = xSemaphoreCreateMutex();
         s_cmd_done = xSemaphoreCreateBinary();
@@ -1129,8 +1306,11 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
                                .zones = ALARM_MAX_ZONES,
                                .users = ALARM_MAX_USERS,
                                .devices = ALARM_MAX_DEVICES};
-    char name[PLINK_NAME_MAX + 1];
-    snprintf(name, sizeof name, "%.38s %s", g_link.model, g_link.panel_id);
+    /* The name it gives itself when pairing, whole and short (the master's list shows it until
+     * someone renames it there): its panel id tells two new keypads apart, and nothing says what
+     * hardware it is (the screens never do). */
+    char name[32];
+    snprintf(name, sizeof name, "Keypad %s", g_link.panel_id);
     static const plink_keypad_port_t port = {
         .ctx = NULL, .send = port_send, .mtu = NULL, .store = port_store, .resolve = port_resolve};
     plink_keypad_init(k, &g_link.crypto, &port, have ? &rec : NULL, K.cfg_buf,

@@ -18,7 +18,9 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   The link is announced by mDNS `_roboalarms-link._udp` only while a keypad is paired or pairing is
   open (LINK-021); while keypads are paired a lost network is the network trouble and Wi-Fi power
   save is off (LINK-024). The keypads' device numbers 1-8 are shared with the Zigbee keypads
-  (LINK-001).
+  (LINK-001): the worker reads Zigbee's every second (it takes the zone lock, so the link task
+  never does), and a new keypad's number is reserved with Zigbee and checked again without waiting
+  before its pairing is answered (docs/features/11 "Open questions" names the window left).
 - **On a keypad** (`panel_app` starts no engine: `alarm_service_set_dormant()`) the link task
   finds the master (mDNS, the subnet broadcast, or an address set at the console; again whenever
   the manager's handshake goes unanswered, `port.resolve`), keeps the
@@ -26,20 +28,30 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   link is down, panic excepted), plays the master's sounds, follows its clock and time zone (no
   time server of its own while paired), answers the update gate, and tells the Emergency words the
   master's reporting (the backend's `mqtt_status` only, so the Integrations pages stay hidden).
+  A fire or CO tone kept through a lost link stops on OFF keyed here that the master didn't run
+  (link_info `local_alarm` asks Home for its Silence); a keypad that can't read its master's
+  configuration says it needs an update (`needs_update`), and the gate lets that update in under
+  the rule a connected keypad has. `panel_app` starts the link before the screen, so the UI's
+  first look finds the keypad role.
 - **The setup** of a panel that becomes a keypad pairs while it is still a master (Option C): a
   keypad manager of its own on the same socket; the setup's Done stores the record and the keypad
-  role and restarts.
+  role and restarts. Paired, it sends nothing more until Done (the other master keeps the keypad
+  provisional, dropped after 10 minutes if the setup is abandoned), and its last step gets the
+  home partition through `link_info`, never the other master's configuration. Leaving the keypad
+  branch (`KP_PAIR_STOP`, or the setup done as the alarm panel) forgets the pairing, clears what
+  it published and ends the manager (`ksvc_setup_end`); the master's own pairing is published
+  again.
 
 ## Public API
 | Header | What it offers |
 |---|---|
-| `include/plink_service.h` | `plink_service_role()`; on a master `plink_service_listener()` (register before `alarm_service_start()`) and `plink_service_set_devices_port()` (Zigbee's numbers); `plink_service_start()`; on a keypad `plink_service_keypad_home()` (the UI's partition), `plink_service_keypad_power()` (the heartbeat's power flags) and `plink_service_update_idle()` (for `panel_ota_set_idle_gate`); `plink_service_extend_backend()` (the UI's `link_*` entries, and a keypad's link-served entries); `plink_service_console_register()` |
+| `include/plink_service.h` | `plink_service_role()`, `plink_service_force_master()` (a start that runs the alarm panel although a keypad role is stored); on a master `plink_service_listener()` (register before `alarm_service_start()`) and `plink_service_set_devices_port()` (Zigbee's numbers); `plink_service_start()`; on a keypad `plink_service_keypad_home()` (the UI's partition), `plink_service_keypad_power()` (the heartbeat's power flags) and `plink_service_update_idle()` (for `panel_ota_set_idle_gate`); `plink_service_extend_backend()` (the UI's `link_*` entries, and a keypad's link-served entries); `plink_service_console_register()` |
 | `src/plink_internal.h` (private) | the link task's hand-overs and published copies, shared by the source files |
 
 | Source | What it does |
 |---|---|
 | `plink_service.c` | the role, the link task, the socket, NVS `link`, mDNS start, the request hand-over |
-| `plink_psa.c` | the crypto port (`plink_crypto_t`) on PSA: AES-128 ECB, X25519, the hardware RNG; proved by `plink_crypto_check` at every start |
+| `plink_psa.c` | the crypto port (`plink_crypto_t`) on PSA: AES-128 ECB, X25519, the hardware RNG; proved by `plink_crypto_check` at every start; the cached AES key goes at the end of every link task turn (`plink_psa_forget`) |
 | `plink_master_svc.c` | the master: listener, worker, the manager's port, mDNS, holds, the copies the UI reads |
 | `plink_keypad_svc.c` | a keypad: discovery, commands, sounds, time, the update gate and heartbeat, the UI's copies; the setup's pairing (Option C) |
 | `plink_backend.c` | the `ui_backend_t` entries |
@@ -96,7 +108,9 @@ a burst from eight keypads isn't dropped.
 - The role changes only by a factory reset (`plink role ... confirm`, or "Make it a stand-alone
   panel"), or by the setup's Done after a pairing.
 - On a keypad, the update gate is the link's: no update while the link is down unless the keypad is
-  not paired or in its no-code maintenance (LINK-025); the update's self-test needs the link
+  not paired or in its no-code maintenance (LINK-025), or it hears its master but can't read its
+  configuration (the master's newest status then decides, as when ONLINE); the update's self-test
+  needs the link
   (`PANEL_OTA_OK_LINK`, beaten on authenticated frames and while not paired). An update let through
   by the maintenance is marked first (NVS `link`/`otamaint`); after its restart the link task beats
   for the self-test while it runs (socket bound, crypto proved), until the image is confirmed or the

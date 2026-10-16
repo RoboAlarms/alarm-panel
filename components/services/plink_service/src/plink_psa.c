@@ -9,8 +9,10 @@
  *                        key pair; the all-zero result is refused by plink_x25519_shared
  *   random               psa_generate_random (the hardware RNG)
  *
- * The last AES key stays imported: a frame's CCM runs many blocks under one key. Keys never reach
- * the log; plink_crypto_check proves the port at every start (plink_service_start).
+ * The last AES key stays imported while the link task works on a frame (its CCM runs many blocks
+ * under one key) and goes at the end of the turn (plink_psa_forget), so a wiped session's key
+ * doesn't stay in RAM. Keys never reach the log; plink_crypto_check proves the port at every start
+ * (plink_service_start).
  */
 #include "plink_internal.h"
 
@@ -37,6 +39,13 @@ static void forget_aes(void)
         P.aes_valid = false;
     }
     plink_wipe(P.aes_key, sizeof P.aes_key);
+}
+
+void plink_psa_forget(void)
+{
+    if (P.aes_valid) {
+        forget_aes();
+    }
 }
 
 static bool aes128(void *ctx, const uint8_t key[16], const uint8_t in[16], uint8_t out[16])

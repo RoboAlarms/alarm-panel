@@ -62,12 +62,14 @@ static uint8_t s_rx[PLINK_FRAME_MAX + 1u] ALARM_SLOW_BSS; /* the link task's */
 
 /* ---- the role -------------------------------------------------------------------------------- */
 
+/* Read once at start-up (before the other tasks ask), or set by plink_service_force_master. */
+static bool s_role_read;
+static plink_service_role_t s_role = PLINK_SERVICE_MASTER;
+
 plink_service_role_t plink_service_role(void)
 {
-    static bool read;
-    static plink_service_role_t role = PLINK_SERVICE_MASTER;
-    if (!read) {
-        read = true;
+    if (!s_role_read) {
+        s_role_read = true;
         uint8_t v = PLINK_SERVICE_MASTER;
         nvs_handle_t h;
         if (nvs_open(LINK_NS, NVS_READONLY, &h) == ESP_OK) {
@@ -77,14 +79,23 @@ plink_service_role_t plink_service_role(void)
             nvs_close(h);
         }
         if (v == PLINK_SERVICE_KEYPAD) {
-            role = PLINK_SERVICE_KEYPAD;
+            s_role = PLINK_SERVICE_KEYPAD;
         } else if (v != PLINK_SERVICE_MASTER) {
             /* a role this firmware doesn't know (a newer one stored it): protect the house */
             ESP_LOGE(TAG, "stored role %u not known to this firmware: running as the alarm panel",
                      (unsigned)v);
         }
     }
-    return role;
+    return s_role;
+}
+
+void plink_service_force_master(void)
+{
+    (void)plink_service_role();
+    if (s_role != PLINK_SERVICE_MASTER) {
+        ESP_LOGW(TAG, "the stored keypad role is kept, but this start runs the alarm panel's side");
+    }
+    s_role = PLINK_SERVICE_MASTER;
 }
 
 /* ---- small helpers --------------------------------------------------------------------------- */
@@ -336,18 +347,30 @@ uint8_t link_request(const link_req_t *req)
     s_req_pending = true;
     portEXIT_CRITICAL(&s_req_mux);
     uint8_t r = UI_LINK_REQ_BUSY;
-    if (xSemaphoreTake(s_req_done, pdMS_TO_TICKS(LINK_REQ_WAIT_MS)) == pdTRUE) {
+    bool answered = false;
+    const TickType_t start = xTaskGetTickCount();
+    const TickType_t wait = pdMS_TO_TICKS(LINK_REQ_WAIT_MS);
+    /* A late answer to an earlier request given up on can wake this wait: it isn't this one's, so
+     * the wait goes on for the time left (a "busy" for a request that then runs anyway would have
+     * the screen say it wasn't done). */
+    for (TickType_t gone = 0; !answered && gone < wait; gone = xTaskGetTickCount() - start) {
+        if (xSemaphoreTake(s_req_done, wait - gone) != pdTRUE) {
+            break;
+        }
         portENTER_CRITICAL(&s_req_mux);
         if (s_req_result_gen == gen) {
             r = s_req_result;
+            answered = true;
         }
         portEXIT_CRITICAL(&s_req_mux);
-    } else {
+    }
+    if (!answered) {
         portENTER_CRITICAL(&s_req_mux);
         if (s_req_pending && s_req_gen == gen) {
-            s_req_pending = false; /* never taken: withdrawn */
+            s_req_pending = false; /* never taken: withdrawn, it won't run */
         }
         portEXIT_CRITICAL(&s_req_mux);
+        /* Taken but not answered in time (a slow NVS write): BUSY, and it may still be done. */
     }
     xSemaphoreGive(s_req_mutex);
     return r;
@@ -457,6 +480,9 @@ static void link_task(void *arg)
         if (ksvc_active()) {
             ksvc_poll(link_now());
         }
+        /* The turn's frames are done: the cached AES key goes, so a session wiped in it (a
+         * removal, a BYE, a forget, the setup's pairing ended) leaves no key behind (LINK-014). */
+        plink_psa_forget();
     }
 }
 
@@ -505,7 +531,9 @@ esp_err_t plink_service_start(const char *model)
     snprintf(g_link.panel_id, sizeof g_link.panel_id, "%.*s", (int)PLINK_PANEL_ID_LEN, id);
 
     /* LINK-003: a port that fails its known answers never carries a frame. */
-    if (!plink_psa_port(&g_link.crypto) || !plink_crypto_check(&g_link.crypto)) {
+    const bool crypto_ok = plink_psa_port(&g_link.crypto) && plink_crypto_check(&g_link.crypto);
+    plink_psa_forget(); /* the check's known-answer key */
+    if (!crypto_ok) {
         ESP_LOGE(TAG, "the link's cryptography failed its check: the panel link stays off");
         return ESP_ERR_INVALID_STATE;
     }

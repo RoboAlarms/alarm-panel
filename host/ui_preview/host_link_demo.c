@@ -146,6 +146,19 @@ static void master_done(void)
     master_info();
 }
 
+/* The setup's pairing on the alarm panel's first start is done (Option C): link_info carries what
+ * the alarm panel gave, its home partition by name for the last step (plink_backend.c). */
+static void setup_paired(void)
+{
+    if (D.info.role == UI_LINK_ROLE_MASTER) {
+        D.info.device = D.pair.device;
+        D.info.home = 1;
+        snprintf(D.info.master_name, sizeof(D.info.master_name), "Harbor House");
+        snprintf(D.info.master_addr, sizeof(D.info.master_addr), "192.0.2.42");
+        snprintf(D.info.home_name, sizeof(D.info.home_name), "Home");
+    }
+}
+
 void host_link_demo_advance(uint32_t ms)
 {
     if (!D.on) {
@@ -300,6 +313,12 @@ static uint8_t master_request(const ui_link_req_t *req)
         /* a panel on its first start, becoming a keypad: it isn't one until Done */
         keypad_looks();
         return UI_LINK_REQ_OK;
+    case UI_LINK_REQ_KP_PAIR_STOP:
+        /* the setup left the keypad branch: nothing of its pairing stays (ksvc_setup_end) */
+        D.pairing = false;
+        memset(&D.pair, 0, sizeof(D.pair));
+        master_info();
+        return UI_LINK_REQ_OK;
     default: break;
     }
     return UI_LINK_REQ_REFUSED;
@@ -340,6 +359,7 @@ static uint8_t be_request(void *ctx, const ui_link_req_t *req)
         if (D.master_allowed) {
             D.pair.state = UI_LINK_PAIR_DONE;
             D.pair.device = 2;
+            setup_paired();
         } else {
             D.pair.state = UI_LINK_PAIR_WAITING;
         }
@@ -406,6 +426,7 @@ void host_link_demo_master_allows(void)
     if (D.keypad_yes && D.pair.state == UI_LINK_PAIR_WAITING) {
         D.pair.state = UI_LINK_PAIR_DONE;
         D.pair.device = 2;
+        setup_paired();
     }
 }
 
@@ -430,6 +451,16 @@ void host_link_demo_panic_pending(bool on)
 void host_link_demo_maintenance(bool on)
 {
     D.info.maintenance = on;
+}
+
+void host_link_demo_local_alarm(bool on)
+{
+    D.info.local_alarm = on;
+}
+
+void host_link_demo_needs_update(bool on)
+{
+    D.info.needs_update = on;
 }
 
 void host_link_demo_home(uint8_t home)

@@ -56,6 +56,7 @@ static bool read_info(ui_link_info_t *out)
     }
     out->master_name[sizeof(out->master_name) - 1u] = '\0';
     out->master_addr[sizeof(out->master_addr) - 1u] = '\0';
+    out->home_name[sizeof(out->home_name) - 1u] = '\0';
     return true;
 }
 
@@ -120,6 +121,39 @@ bool ui_link_maintenance(void)
 bool ui_link_holds_home(void)
 {
     return ui_link_keypad() && L.info.state != UI_LINK_ONLINE;
+}
+
+/* It hears its alarm panel but can't read the configuration it sends (a newer one than this
+ * firmware reads), so it never shows the state: this update is the way out. */
+static bool needs_update(void)
+{
+    return ui_link_holds_home() && L.info.needs_update;
+}
+
+bool ui_link_update_open(void)
+{
+    return ui_link_maintenance() || needs_update();
+}
+
+bool ui_link_settings_waived(void)
+{
+    return ui_link_holds_home() && ui_link_update_open();
+}
+
+bool ui_link_local_alarm(void)
+{
+    return ui_link_holds_home() && L.info.local_alarm;
+}
+
+uint8_t ui_link_paired_home(char *name, size_t len)
+{
+    ui_link_info_t now;
+    name[0] = '\0';
+    if (!read_info(&now)) {
+        return 0u;
+    }
+    i18n_utf8_copy(name, len, now.home_name);
+    return now.home;
 }
 
 const char *ui_link_master_name(void)
@@ -293,6 +327,25 @@ bool ui_link_home_words(ui_link_home_t *out)
         i18n_utf8_copy(out->note, sizeof(out->note), TR("Arming is off"));
         break;
     }
+    if (needs_update()) {
+        /* TR: Home on a keypad that can't read its alarm panel's settings (they are newer than
+         * this keypad's software): the foot of the state card, one line (cut with "..." where it
+         * runs out), steady: where to update it (About has Software update). At most 47 bytes */
+        i18n_utf8_copy(out->note, sizeof(out->note), TR("Update this keypad: Settings > About"));
+    }
+    return true;
+}
+
+bool ui_link_silence_words(char *title, size_t tlen, char *note, size_t nlen)
+{
+    if (!ui_link_local_alarm()) {
+        return false;
+    }
+    /* the code pad's Silence during a fire or CO alarm, as one big button */
+    i18n_utf8_copy(title, tlen, TR("Silence"));
+    /* TR: Home on a keypad without system communication that keeps sounding a fire or CO alarm:
+     * under Silence. At most 127 bytes */
+    i18n_utf8_copy(note, nlen, TR("Stops the alarm sound on this keypad"));
     return true;
 }
 
@@ -1322,6 +1375,8 @@ void ui_link_tick(void)
     const ui_link_info_t *was = &L.info;
     const bool changed = have != L.have || now.role != was->role || now.state != was->state ||
                          now.removed != was->removed || now.maintenance != was->maintenance ||
+                         now.needs_update != was->needs_update ||
+                         now.local_alarm != was->local_alarm ||
                          now.panic_pending != was->panic_pending || now.device != was->device ||
                          now.home != was->home || now.since_epoch_ms != was->since_epoch_ms ||
                          strcmp(now.master_name, was->master_name) != 0;

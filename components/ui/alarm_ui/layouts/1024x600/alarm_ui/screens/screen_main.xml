@@ -267,6 +267,16 @@
 							<event_cb callback="ui_on_end_walk_test" trigger="clicked" user_data="pair" />
 						</action_tile>
 					</box>
+					<!-- A keypad without system communication that keeps sounding a fire or CO alarm (BL-048,
+					     decided 2026-10-15: until OFF is pressed here or the link returns): Silence stops
+					     the sound here, under Check the alarm panel (it shares the height left, as the
+					     tiles do). Steady, never blinking. -->
+					<box name="panel_silence" width="100%" height="100%" flex_grow="1">
+						<bind_flag_if_not_eq subject="subject_panel" flag="hidden" ref_value="6" />
+						<action_tile name="silence_tile" glyph="&#xE224;" title="subject_disarm_title" subtitle="subject_disarm_note" color="#color_red" width="100%" height="100%">
+							<event_cb callback="ui_on_silence" trigger="clicked" />
+						</action_tile>
+					</box>
 				</box>
 			</box>
 

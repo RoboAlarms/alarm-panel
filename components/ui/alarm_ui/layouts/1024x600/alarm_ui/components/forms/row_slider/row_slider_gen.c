@@ -38,7 +38,7 @@ lv_obj_t * row_slider_create(lv_obj_t * parent, const char * glyph, const char *
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_38(&style_row_slider);
+        alarm_ui_run_39(&style_row_slider);
         alarm_ui_run_6(&style_row_slider, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_row_slider, RADIUS_MD);
         alarm_ui_run_53(&style_row_slider, SPACE_MD, SPACE_LG, SPACE_SM, SPACE_LG);

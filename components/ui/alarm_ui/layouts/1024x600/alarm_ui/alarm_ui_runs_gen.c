@@ -288,16 +288,16 @@ void alarm_ui_run_37(lv_obj_t * o, const lv_font_t * a0, const char * a1)
     lv_obj_set_name(o, a1);
 }
 
-void alarm_ui_run_38(lv_style_t * o)
+void alarm_ui_run_38(lv_obj_t * o, lv_subject_t * a0, int32_t a1, const char * a2)
+{
+    lv_obj_bind_flag_if_not_eq(o, a0, LV_OBJ_FLAG_HIDDEN, a1);
+    lv_obj_set_name(o, a2);
+}
+
+void alarm_ui_run_39(lv_style_t * o)
 {
     lv_style_set_width(o, lv_pct(100));
     lv_style_set_height(o, LV_SIZE_CONTENT);
-}
-
-void alarm_ui_run_39(lv_obj_t * o, int32_t a0, lv_subject_t * a1, int32_t a2)
-{
-    lv_obj_set_style_pad_column(o, a0, 0);
-    lv_obj_bind_flag_if_not_eq(o, a1, LV_OBJ_FLAG_HIDDEN, a2);
 }
 
 void alarm_ui_run_40(lv_obj_t * o, lv_color_t a0)
@@ -313,15 +313,15 @@ lv_obj_t * alarm_ui_run_41(lv_obj_t * parent, const char * a0, const char * a1, 
     return o;
 }
 
-void alarm_ui_run_42(lv_obj_t * o, lv_subject_t * a0, int32_t a1, const char * a2)
+void alarm_ui_run_42(lv_obj_t * o, int32_t a0, lv_subject_t * a1, int32_t a2)
 {
-    lv_obj_bind_flag_if_eq(o, a0, LV_OBJ_FLAG_HIDDEN, a1);
-    lv_obj_set_name(o, a2);
+    lv_obj_set_style_pad_column(o, a0, 0);
+    lv_obj_bind_flag_if_not_eq(o, a1, LV_OBJ_FLAG_HIDDEN, a2);
 }
 
 void alarm_ui_run_43(lv_obj_t * o, lv_subject_t * a0, int32_t a1, const char * a2)
 {
-    lv_obj_bind_flag_if_not_eq(o, a0, LV_OBJ_FLAG_HIDDEN, a1);
+    lv_obj_bind_flag_if_eq(o, a0, LV_OBJ_FLAG_HIDDEN, a1);
     lv_obj_set_name(o, a2);
 }
 

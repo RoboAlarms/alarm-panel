@@ -37,6 +37,12 @@ typedef enum {
 /* The stored role, read once (after nvs_flash_init()); later calls give the same answer. */
 plink_service_role_t plink_service_role(void);
 
+/* The start-up runs the alarm panel although a keypad role is stored (a build or board that
+ * can't be a keypad): from here on plink_service_role() answers MASTER for this start, so the
+ * link runs the master's side and the UI the alarm panel's. The stored role is left as it is.
+ * Before plink_service_start() and the UI. */
+void plink_service_force_master(void);
+
 /* ---- the master ------------------------------------------------------------------------------ */
 
 /* The alarm listener: register it before alarm_service_start(). Its callbacks only hand over
@@ -44,17 +50,24 @@ plink_service_role_t plink_service_role(void);
 const alarm_listener_t *plink_service_listener(void);
 
 /* The engine device numbers 1..8 the link's keypads share (LINK-001): others_held answers the
- * numbers the Zigbee keypads hold (zigbee_service_devices_held), link_held is told the link's own
- * whenever they change (zigbee_service_set_link_devices). Before plink_service_start(). */
+ * numbers the Zigbee keypads hold (zigbee_service_devices_held, which waits for the zone lock: the
+ * link's worker reads it every second, never the link task); others_held_now the same without
+ * waiting, false while the lock is busy (zigbee_service_devices_held_now: the link task's check of
+ * a new keypad's number); link_held is told the link's own whenever they change, and a new
+ * keypad's number before its pairing is answered (zigbee_service_set_link_devices). Before
+ * plink_service_start(). */
 void plink_service_set_devices_port(uint32_t (*others_held)(void),
+                                    bool (*others_held_now)(uint32_t *out),
                                     void (*link_held)(uint32_t mask));
 
 /* ---- both roles ------------------------------------------------------------------------------ */
 
 /* Starts the link for the stored role: the crypto check (the link stays off when it fails, said in
- * the log), the socket, the task, and on a master the worker. model: this panel's kind of hardware,
- * the start of the name a keypad gives itself when pairing (board_name()). Once only; on a master
- * after alarm_service_start() and the network, on a keypad after alarm_service_set_dormant(). */
+ * the log), the socket, the task, and on a master the worker. model: this panel's kind of hardware
+ * (board_name()), for the log; a keypad names itself "Keypad <panel id>" when pairing. Once only;
+ * on a master after alarm_service_start() and the network, on a keypad after
+ * alarm_service_set_dormant() and esp_netif_init(), before the UI starts (the UI's first look at
+ * link_info then finds the keypad role). */
 esp_err_t plink_service_start(const char *model);
 
 /* ---- the keypad ------------------------------------------------------------------------------ */
@@ -68,8 +81,9 @@ uint8_t plink_service_keypad_home(void);
 void plink_service_keypad_power(bool mains_lost, bool battery_low, bool battery_present);
 
 /* The update gate (panel_ota_set_idle_gate): idle only while the link is up and the master's
- * newest status, under 15 s old, allows an update (proto_fw_install_allowed); a keypad not paired,
- * or in its no-code maintenance (LINK-025), may update too. */
+ * newest status, under 15 s old, allows an update (proto_fw_install_allowed); the same for a
+ * keypad that hears its master but can't read its configuration (it needs this update); a keypad
+ * not paired, or in its no-code maintenance (LINK-025), may update too. */
 bool plink_service_update_idle(void *ctx, const char **why);
 
 #if CONFIG_ALARM_FEATURE_UI

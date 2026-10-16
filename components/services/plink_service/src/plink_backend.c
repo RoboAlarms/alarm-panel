@@ -35,12 +35,15 @@ static bool link_info(void *ctx, ui_link_info_t *out)
         out->role = UI_LINK_ROLE_MASTER;
         out->keypads = (uint8_t)g_pub.keypads;
         out->keypads_down = g_pub.keypads_down;
-        if (g_pub.setup_paired) {
-            /* the setup's pairing as a keypad (Option C): what it was given, for its last step */
+        if (g_pub.setup_keypad && g_pub.setup_paired) {
+            /* the setup's pairing as a keypad (Option C): what it was given, for its last step
+             * (the home partition by name where it is known: this panel's own configuration is
+             * not that master's) */
             out->device = g_pub.setup_device;
             out->home = g_pub.setup_home;
             snprintf(out->master_name, sizeof out->master_name, "%s", g_pub.setup_master);
             snprintf(out->master_addr, sizeof out->master_addr, "%s", g_pub.setup_master_addr);
+            snprintf(out->home_name, sizeof out->home_name, "%s", g_pub.setup_home_name);
         }
     }
     link_pub_unlock();
@@ -362,26 +365,12 @@ static void keypad_backend(ui_backend_t *be)
     be->storage_action = NULL;
 }
 
-/* A master during its setup (Option C): once its own pairing as a keypad is done, the setup's
- * last step reads that master's configuration (its home partition's name); otherwise this
- * panel's own. */
-static bool (*s_own_get_config)(void *ctx, alarm_config_t *out);
-
-static bool setup_get_config(void *ctx, alarm_config_t *out)
-{
-    if (ksvc_ui_config(out)) {
-        return true;
-    }
-    return s_own_get_config != NULL && s_own_get_config(ctx, out);
-}
-
+/* A master keeps every entry of its own; during its setup's pairing as a keypad (Option C) the
+ * last step reads what it needs from link_info (never the other master's configuration). */
 void plink_service_extend_backend(ui_backend_t *be)
 {
     if (plink_service_role() == PLINK_SERVICE_KEYPAD) {
         keypad_backend(be);
-    } else {
-        s_own_get_config = be->get_config;
-        be->get_config = setup_get_config;
     }
     be->link_info = link_info;
     be->link_pair_status = link_pair_status;

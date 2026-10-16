@@ -60,6 +60,11 @@ void host_link_demo_numbers_held(uint16_t mask);
 /* A keypad: a panic still being sent (LINK-023), 10 minutes without the alarm panel (LINK-025). */
 void host_link_demo_panic_pending(bool on);
 void host_link_demo_maintenance(bool on);
+/* A keypad without the alarm panel keeping a fire or CO tone (decided 2026-10-15: until OFF here
+ * or the link returns); the walk clears it after Silence, as the service does. */
+void host_link_demo_local_alarm(bool on);
+/* A keypad that hears its alarm panel but can't read its configuration: it needs an update. */
+void host_link_demo_needs_update(bool on);
 /* A keypad: the alarm panel moved it to partition home (any number, to try the range check), a new
  * home_gen. */
 void host_link_demo_home(uint8_t home);

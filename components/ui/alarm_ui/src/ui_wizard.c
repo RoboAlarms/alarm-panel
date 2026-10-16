@@ -132,9 +132,23 @@ static void build_language(lv_obj_t *b)
 
 /* ---- the role (BL-048) ---------------------------------------------------------------------- */
 
+static uint8_t pair_ask(uint8_t kind, bool allow);
+
+/* The keypad branch is left (Back from its pairing step, the alarm panel chosen instead, the
+ * alarm panel's Done): whatever its pairing made is forgotten on this panel (KP_PAIR_STOP), so
+ * nothing of another alarm panel stays behind. Harmless when nothing runs. */
+static void keypad_branch_left(void)
+{
+    (void)pair_ask(UI_LINK_REQ_KP_PAIR_STOP, false);
+}
+
 static void role_chosen(void *ctx)
 {
+    const bool was_keypad = s_keypad;
     s_keypad = (uintptr_t)ctx != 0u;
+    if (was_keypad && !s_keypad) {
+        keypad_branch_left();
+    }
     build_step(); /* the dots count the branch's steps at once (not animated) */
 }
 
@@ -477,11 +491,14 @@ static void build_kp_done(lv_obj_t *b)
     char title[96];
     char detail[128];
     ui_link_keypad_title(title, sizeof(title), s_pair.p.device, master);
-    const uint8_t p = S.opt.partition;
+    /* The home partition the alarm panel gave, by the name it has there (link_info): this
+     * panel's own configuration isn't that alarm panel's. */
     char part[ALARM_NAME_LEN + 16];
-    if (S.cfg->partitions[p - 1u].name[0] != '\0') {
-        i18n_utf8_copy(part, sizeof(part), S.cfg->partitions[p - 1u].name);
-    } else {
+    uint8_t p = ui_link_paired_home(part, sizeof(part));
+    if (p < 1u || p > ALARM_MAX_PARTITIONS) {
+        p = S.opt.partition;
+    }
+    if (part[0] == '\0') {
         I18N_FORMAT(part, sizeof(part), TR_C("default partition name", "Partition {0}"),
                     (unsigned)p);
     }
@@ -908,7 +925,7 @@ static void go(int32_t dir)
         ui_clock_fields_start();
     }
     if (from == STEP_PAIR && s_step == STEP_WIFI) {
-        (void)pair_ask(UI_LINK_REQ_KP_PAIR_STOP, false); /* Back stops looking */
+        keypad_branch_left(); /* Back stops looking, and forgets a pairing that just finished */
     }
     if (s_step == STEP_PAIR && from != STEP_PAIR) {
         pair_start();
@@ -922,6 +939,9 @@ void ui_wizard_next(void)
         return;
     }
     if (s_step == STEP_DONE) {
+        if (s_role) {
+            keypad_branch_left(); /* the alarm panel's Done: nothing of the keypad branch stays */
+        }
         finish();
         return;
     }
@@ -961,7 +981,7 @@ void ui_wizard_exit(void)
     ui_sheet_close();
     ui_rows_reset();
     if (s_step == STEP_PAIR) {
-        (void)pair_ask(UI_LINK_REQ_KP_PAIR_STOP, false); /* Pair again left: it stops looking */
+        keypad_branch_left(); /* Pair again left: it stops looking */
     }
     S.wizard_on = false;
     S.wizard_paused = false;

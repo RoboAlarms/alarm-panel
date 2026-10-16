@@ -26,7 +26,7 @@ lv_obj_t * big_value_create(lv_obj_t * parent, const char * label, const char * 
         /*Init all styles*/
         lv_style_init(&style_big_value);
 
-        alarm_ui_run_38(&style_big_value);
+        alarm_ui_run_39(&style_big_value);
         alarm_ui_run_6(&style_big_value, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_big_value, RADIUS_MD);
         lv_style_set_pad_all(&style_big_value, SPACE_LG);

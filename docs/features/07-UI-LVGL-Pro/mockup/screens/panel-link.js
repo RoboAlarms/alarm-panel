@@ -81,7 +81,7 @@ const onTheAlarmPanel = () => [
 const pair = (meta, notes, body, extra = {}) => linkSetup(meta, notes, {...PAIR, ...extra, body});
 
 pair({id: 'setup-pair-looking', shot: 'bl-048-setup-pair-looking', title: 'Setup, keypad: looking for the alarm panel'},
-  'The step after Wi-Fi (KP_PAIR_START: a keypad starts an attempt only when a person asks, LINK-016). It keeps looking; what to do on the alarm panel stays on the page. Nothing moves: no spinner, the words change only when something is found. Next is dimmed: the step goes on by itself. Back returns to Wi-Fi and stops looking (KP_PAIR_STOP).',
+  'The step after Wi-Fi (KP_PAIR_START: a keypad starts an attempt only when a person asks, LINK-016). It keeps looking; what to do on the alarm panel stays on the page. Nothing moves: no spinner, the words change only when something is found. Next is dimmed: the step goes on by itself. Back returns to Wi-Fi and stops looking (KP_PAIR_STOP); on a panel becoming a keypad, leaving this branch (Back, the alarm panel chosen instead) also forgets a pairing that had just finished, so nothing of the other alarm panel stays.',
   [M.row_status({glyph: 'search', color: 'blue', title: 'Looking for the alarm panel', detail: 'On your Wi-Fi'}), onTheAlarmPanel()].join(''));
 
 pair({id: 'setup-pair-code', shot: 'bl-048-setup-pair-code', title: 'Setup, keypad: found, compare the code'},
@@ -102,7 +102,7 @@ pair({id: 'setup-pair-waiting', shot: 'bl-048-setup-pair-waiting', title: 'Setup
   ].join(''));
 
 linkSetup({id: 'setup-pair-done', shot: 'bl-048-setup-pair-done', title: 'Setup, keypad: paired'},
-  'The keypad branch\'s last step (4 of 4), shown by itself once both sides confirmed (LINK-016). The keypad\'s number comes from the alarm panel, the time zone too. No Back: undoing a pairing is done at the alarm panel (remove the keypad) or here by a factory reset. Done stores the role (KP_DONE), marks the setup done and the panel restarts as a keypad (kp-home-connecting).',
+  'The keypad branch\'s last step (4 of 4), shown by itself once both sides confirmed (LINK-016). The keypad\'s number comes from the alarm panel, the time zone too, and its home partition by the name it has there (link_info.home_name; "Partition 2" when not known). Until Done this panel sends Harbor House nothing more, so a setup left on this step for over 10 minutes is dropped there (pair again). No Back: undoing a pairing is done at the alarm panel (remove the keypad) or here by a factory reset. Done stores the role (KP_DONE), marks the setup done and the panel restarts as a keypad (kp-home-connecting).',
   {step: 4, steps: LINK_KEYPAD_STEPS, glyph: 'party-popper', title: 'You\'re all set',
     note: 'This panel is now a keypad. The alarm, zones and codes live on the alarm panel.', next: 'Done',
     body: [
@@ -273,6 +273,17 @@ kp({id: 'kp-home-lost', shot: 'bl-048-kp-home-lost', title: 'Keypad: Home with n
     detail: 'Harbor House hasn\'t answered\nSince 10:36 PM', note: 'State unknown · Arming is off'},
   M.panel_arm(M.arm_strip({glyph: 'wifi-off', tone: 'amber', title: 'Check the alarm panel', detail: 'Is it on, and on the same Wi-Fi?'}), {disabled: true}))}));
 
+kp({id: 'kp-home-lost-silence', shot: 'bl-048-kp-home-lost-silence', title: 'Keypad: no system communication, its fire alarm still sounding'},
+  'A fire or CO alarm was sounding when Harbor House stopped answering: the keypad keeps that sound (decided 2026-10-15: until OFF is pressed on the keypad or the link returns), and in the dimmed tiles\' place offers Silence (link_info.local_alarm), under Check the alarm panel. The state card stays the steady "No system communication" (the state is unknown): no alarm look, nothing blinks. Silence stops the sound on this keypad only, with the toast "Silenced on this keypad" (the command can\'t reach Harbor House; a Disarm or Silence keyed while the link was still up but not answered counts too); the dimmed tiles come back. Built from the decision without a proposal of its own (BL-048 review).',
+  () => ({tone: 'gray', bar: {banner: null, chimeOff: true}, content: M.home({tone: 'gray', glyph: 'unlink', headline: 'No system communication',
+    detail: 'Harbor House hasn\'t answered\nSince 10:36 PM', note: 'State unknown · Arming is off'},
+  `<div class="pane_stack">${M.arm_strip({glyph: 'wifi-off', tone: 'amber', title: 'Check the alarm panel', detail: 'Is it on, and on the same Wi-Fi?'})}${M.action_tile({glyph: 'bell-ring', title: 'Silence', subtitle: 'Stops the alarm sound on this keypad', color: 'red'})}</div>`)}));
+
+kp({id: 'kp-home-update', shot: 'bl-048-kp-home-update', title: 'Keypad: Home when it needs an update'},
+  'Harbor House answers, but its settings are newer than this keypad\'s software reads (link_info.needs_update), so the keypad never gets to show the state: it stays Connecting (or No system communication after a loss), and the foot of the state card says where to update it, steady. Software update then opens without a code (no code can be checked at Harbor House meanwhile), and Settings opens even if the last status said armed; the update installs only when Harbor House\'s partitions allow it, as on a connected keypad. Built without a proposal of its own (BL-048 review).',
+  () => ({tone: 'blue', bar: {banner: null, chimeOff: true}, content: M.home({tone: 'blue', glyph: 'wifi', headline: 'Connecting', detail: 'To Harbor House', note: 'Update this keypad: Settings > About'},
+    M.panel_arm('', {disabled: true}))}));
+
 kp({id: 'kp-emergency-lost', shot: 'bl-048-kp-emergency-lost', title: 'Keypad: Emergency with no system communication'},
   'The Emergency view (panic); its words name the alarm panel, and while there is no system communication (or still connecting with a panic waiting) the small print says the keypad keeps trying (LINK-023: kept for 60 s, run once). When Harbor House takes it, the small print goes back to its usual words and the alarm shows on Home.',
   () => ({view: 'panic', tone: 'gray', bar: {banner: null, chimeOff: true}, content: `<div class="view col center" style="gap:var(--space_xxl)">
@@ -295,7 +306,7 @@ const kpSet = (meta, notes, page) => kp(meta, notes,
   () => ({view: 'settings', bar: ONLINE_BAR, content: M.settings({sections: KP_SECTIONS, ...page})}));
 
 kpSet({id: 'kp-settings', shot: 'bl-048-kp-settings', title: 'Keypad: Settings, Screen and sound'},
-  'A keypad\'s settings-display: no Voice volume and no Announcements (a keypad has no voice); the chime and beeps play what Harbor House says, at this keypad\'s volumes. Like today, Screen and sound needs no code. After 10 minutes without system communication (LINK-025), Wi-Fi and Software update open without a code.',
+  'A keypad\'s settings-display: no Voice volume and no Announcements (a keypad has no voice); the chime and beeps play what Harbor House says, at this keypad\'s volumes. Like today, Screen and sound needs no code. After 10 minutes without system communication (LINK-025), Wi-Fi and Software update open without a code, and Settings opens even if the last status said armed or in alarm (it closes once Harbor House answers armed).',
   {section: 'display', title: 'Screen and sound', note: '', body: [
     M.section('Sound'),
     M.row_level({glyph: 'bell', title: 'Chime volume', value: 70}),

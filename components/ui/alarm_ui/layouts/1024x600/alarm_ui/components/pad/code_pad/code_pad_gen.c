@@ -137,7 +137,7 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
         lv_obj_set_style_pad_column(pad_lead, SPACE_LG, 0);
         lv_obj_t * pad_icon = alarm_ui_run_25(pad_lead, &style_pad_icon);
         lv_obj_bind_style_prop(pad_icon, LV_STYLE_BG_COLOR, 0, &subject_pad_color);
-        alarm_ui_run_42(pad_icon, &subject_pad_glyph_on, 0, "pad_icon");
+        alarm_ui_run_43(pad_icon, &subject_pad_glyph_on, 0, "pad_icon");
         lv_obj_t * lv_label_1 = alarm_ui_run_33(pad_icon);
         alarm_ui_run_12(lv_label_1, icons_28, &subject_pad_glyph);
         lv_obj_bind_style_prop(lv_label_1, LV_STYLE_TEXT_COLOR, 0, &subject_pad_color);
@@ -212,7 +212,7 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
         lv_obj_set_style_flex_track_place(pad_options, LV_FLEX_ALIGN_CENTER, 0);
         lv_obj_set_style_pad_column(pad_options, SPACE_SM, 0);
         lv_obj_set_style_pad_row(pad_options, SPACE_SM, 0);
-        alarm_ui_run_42(pad_options, &subject_pad_options, 0, "pad_options");
+        alarm_ui_run_43(pad_options, &subject_pad_options, 0, "pad_options");
         chip_create(pad_options, alarm_ui_tr_c("arming option, no entry time", "No entry delay"), &subject_opt_instant);
 
         lv_obj_t * chip_1 = chip_create(pad_options, alarm_ui_tr("Silent exit"), &subject_opt_silent);

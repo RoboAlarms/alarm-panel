@@ -1545,7 +1545,8 @@ typedef struct {
     bool removed;        /* NOT_PAIRED because the master removed it (the "removed" page) */
     bool maintenance;    /* LINK-025: 10 min without system communication - Wi-Fi, updates, Pair
                           * again and "Make it a stand-alone panel" open without a code */
-    bool needs_update;   /* the master's configuration is newer than this keypad can read */
+    bool needs_update;   /* the master's configuration is newer than this keypad can read: Home
+                          * says so and Software update opens without a code */
     bool panic_pending;  /* a panic is still being sent (LINK-023: up to 1 min) */
     uint8_t device;      /* its keypad number at the master, 0 none */
     uint8_t home;        /* the partition it shows and arms */
@@ -1558,6 +1559,14 @@ typedef struct {
     /* Appended (the screens, BL-048): a keypad's alarm panel's address on the network, as About
      * shows it ("192.0.2.42"); "" not known (About leaves the row out). */
     char master_addr[24];
+    /* Appended (BL-048 review): a keypad that lost the link keeps sounding a fire or CO tone until
+     * OFF is pressed here or the link returns (decided 2026-10-15): while true, Home offers
+     * Silence, which sends ALARM_CMD_SILENCE through command() and stops the tone here even when
+     * the alarm panel can't be reached. */
+    bool local_alarm;
+    /* The home partition's name as the alarm panel calls it, "" not known: the setup's last step
+     * on a panel becoming a keypad (its own configuration is not the alarm panel's). */
+    char home_name[ALARM_NAME_LEN];
 } ui_link_info_t;
 
 /* ui_link_pair_t.state: either side's pairing (plink_pair_state_t). */

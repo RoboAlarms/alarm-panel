@@ -73,7 +73,7 @@ lv_obj_t * arm_strip_create(lv_obj_t * parent)
 
         lv_obj_t * arm_strip_note = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_WRAP);
         alarm_ui_run_29(arm_strip_note, COLOR_AMBER, &subject_arm_strip_note);
-        alarm_ui_run_42(arm_strip_note, &subject_arm_strip_note_on, 0, "arm_strip_note");
+        alarm_ui_run_43(arm_strip_note, &subject_arm_strip_note_on, 0, "arm_strip_note");
 
         lv_obj_t * arm_strip_put_off = alarm_ui_run_22(box_0, lv_pct(100), LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_style_flex_main_place(arm_strip_put_off, LV_FLEX_ALIGN_CENTER, 0);

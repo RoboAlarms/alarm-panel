@@ -38,7 +38,7 @@ lv_obj_t * list_row_create(lv_obj_t * parent, const char * glyph, lv_color_t col
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_38(&style_list_row);
+        alarm_ui_run_39(&style_list_row);
         lv_style_set_min_height(&style_list_row, 72);
         alarm_ui_run_6(&style_list_row, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_list_row, RADIUS_MD);

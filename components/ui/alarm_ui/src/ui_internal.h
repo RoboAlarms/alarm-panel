@@ -110,8 +110,15 @@ void *ui_slow_alloc(size_t size);
 #define UI_FLAG_SCROLL_SURFACE LV_OBJ_FLAG_USER_1
 
 enum { VIEW_HOME = 0, VIEW_ZONES, VIEW_ACTIVITY, VIEW_TROUBLES, VIEW_PANIC, VIEW_SETTINGS, VIEW_DEVICES };
-enum { PANEL_ARM = 0, PANEL_DISARM, PANEL_PAD, PANEL_MEMORY, PANEL_WALK,
-       PANEL_LINK /* a keypad that isn't paired: Pair again (BL-048) */ };
+enum {
+    PANEL_ARM = 0,
+    PANEL_DISARM,
+    PANEL_PAD,
+    PANEL_MEMORY,
+    PANEL_WALK,
+    PANEL_LINK,   /* a keypad that isn't paired: Pair again (BL-048) */
+    PANEL_SILENCE /* a keypad keeping a fire or CO tone through a lost link: Silence */
+};
 /* Settings sections (subject_settings_section): the numbers are the XML's ref_value, not the order
  * of the left column. */
 enum {
@@ -990,6 +997,18 @@ bool ui_link_keypad(void);  /* a keypad: the alarm panel's pages are left out (t
 bool ui_link_maintenance(void);
 /* A keypad that can't show the alarm panel's state (connecting, lost, not paired): arming waits. */
 bool ui_link_holds_home(void);
+/* Software update opens without a code: LINK-025's maintenance, or a keypad that can't read its
+ * alarm panel's configuration (it needs this update) and so can't check a code there. */
+bool ui_link_update_open(void);
+/* Settings opens although the last status said armed or in alarm: a keypad that can't show the
+ * alarm panel's state and has a page it needs without a code (LINK-025, an update it needs). */
+bool ui_link_settings_waived(void);
+/* A keypad keeping a fire or CO tone through a lost link (decided 2026-10-15): Home's right side
+ * is Silence (panel 6), which stops the tone here (ALARM_CMD_SILENCE through command()). */
+bool ui_link_local_alarm(void);
+/* The setup's last step on a panel becoming a keypad: its home partition at the alarm panel and
+ * that partition's name ("" not known), read now. */
+uint8_t ui_link_paired_home(char *name, size_t len);
 const char *ui_link_master_name(void); /* the alarm panel's name: a value, never translated */
 /* "Keypad 2 of Harbor House" (About, the setup's last step). */
 void ui_link_keypad_title(char *out, size_t len, uint8_t device, const char *master);
@@ -1005,6 +1024,8 @@ typedef struct {
 bool ui_link_home_words(ui_link_home_t *out);
 /* Home's right side on a keypad that isn't paired: Pair again, with its words (panel 5). */
 bool ui_link_unpaired(char *title, size_t tlen, char *note, size_t nlen);
+/* ... and on a keypad keeping a fire or CO tone through a lost link: Silence (panel 6). */
+bool ui_link_silence_words(char *title, size_t tlen, char *note, size_t nlen);
 void ui_link_pair_again(void);
 /* The alarm panel's keypads on Wi-Fi: how many (the installer menu counts them), and Keypads and
  * devices' section on top of the table; *held gets the numbers they hold (bit n - 1), which the

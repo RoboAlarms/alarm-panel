@@ -342,7 +342,12 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   fire and CO from any partition. On link loss it stops a continuous pattern (no stale entry or
   burglary tone) except fire and CO, which keep sounding until OFF is pressed on the keypad or the
   link returns (decided 2026-10-15), and shows the steady "No system communication" state
-  (LINK-008).
+  (LINK-008). OFF is a Disarm or Silence the master didn't run (no link, or no answer within 3 s,
+  also in the 30 s before the loss); while the tone is kept, Home offers Silence in the dimmed
+  tiles' place (`ui_link_info_t.local_alarm`).
+- **Needs an update**: a keypad that hears its master but can't read its configuration (newer than
+  its firmware reads) never gets ONLINE; Home says to update it, Software update opens without a
+  code, and the update gate decides on the master's newest status as for ONLINE.
 - **Time**: the keypad follows the master's TIME (epoch and time zone; it ignores epoch 0) and
   runs no time server of its own while paired.
 - **Wi-Fi power save** is held off through `net_wifi_hold_low_latency(owner, on)`, one hold per
@@ -399,9 +404,30 @@ goes to its HELLO's source without moving it). Firmware with the link sets
 ## Open questions
 - Keypad-attached inputs (LINK-011), cross-partition GOTO (KPD-006) and partitions beyond home:
   after the Wi-Fi keypad works.
-- A link keypad's trouble scopes to all partitions (the engine's device table has no entry for it),
-  as Z-Wave's: a core call taking the partition would fix both. The trouble names the keypad by
-  number only ("Keypad 3 not responding"); a name lookup shared with Zigbee and Z-Wave would fix it.
+- A link keypad's supervision trouble takes its partition from the engine's device-table entry with
+  the keypad's number (`alarm_engine_device_reachable`), enabled or not: all partitions while that
+  entry was never given one, but an entry once used for partition 2 and switched off puts a
+  partition-1 keypad's trouble, its restore, its report and `trouble_unack` on partition 2. Known
+  limitation, as for Z-Wave's keypads: a core call taking the partition (the keypad's home), or the
+  engine using all partitions for an entry that isn't enabled, would fix both. The trouble names
+  the keypad by number only ("Keypad 3 not responding"); a name lookup shared with Zigbee and
+  Z-Wave would fix it.
+- LINK-001's number shared with Zigbee: the link chooses from Zigbee's numbers as its worker read
+  them (at most a second old: the zone lock is never taken on the link task, LINK-027), reserves
+  the chosen one with Zigbee at once and reads Zigbee's numbers again without waiting before the
+  pairing is answered (a clash ends the pairing, "Nothing was saved"). Left open: a Zigbee keypad
+  given the same number within that second while the zone lock is busy at the moment of the check.
+  A Zigbee-side call that claims a number under the zone lock would close it.
+- The setup's pairing on a master (Option C) sends the other master nothing after PAIR_DONE until
+  the setup's Done, so an abandoned setup leaves only a provisional keypad there, dropped after
+  10 minutes (LINK-016); a setup left on its last step for longer loses the pairing too (the
+  keypad then says it isn't paired: pair again). Its last step names the home partition from the
+  master's name (a master is named after partition 1), "Partition 2" otherwise: PAIR_DONE carrying
+  the home partition's name (an appended field, LINK-017) would name every partition.
+- A keypad that couldn't read a configuration keeps that CRC (`cfg_bad_crc`) after a later one
+  installs; the service treats it as current only while the link isn't ONLINE or no configuration
+  installed since. The core clearing it on a successful install, or reporting the status's
+  configuration CRC, would make `needs_update` exact.
 - For the maintainers: should panic be resent longer than 60 s; do a keypad's mains and battery
   flags become device troubles (an engine change) or stay in the keypads list. Decided 2026-10-15:
   fire and CO keep sounding on a keypad that lost the link (Roles); 5 min default supervision

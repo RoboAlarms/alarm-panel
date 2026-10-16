@@ -42,7 +42,7 @@ lv_obj_t * row_switch_create(lv_obj_t * parent, const char * title, const char *
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_38(&style_row_setting);
+        alarm_ui_run_39(&style_row_setting);
         lv_style_set_min_height(&style_row_setting, 68);
         alarm_ui_run_6(&style_row_setting, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_row_setting, RADIUS_MD);

@@ -1737,7 +1737,9 @@ static void build_page(void)
     case PAGE_SOFTWARE:
         /* TR: About > Software update, the title. At most 47 bytes */
         i18n_utf8_copy(title, sizeof(title), TR("Software update"));
-        if (!ui_settings_allowed(ACCESS_SYSTEM) && !ui_link_maintenance()) {
+        /* a keypad in LINK-025's maintenance, or one that needs this update to read its alarm
+         * panel's settings (it can't check a code there), opens it without a code */
+        if (!ui_settings_allowed(ACCESS_SYSTEM) && !ui_link_update_open()) {
             /* TR: a locked page: the line under the title. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SYSTEM, TR("Software update"),
                                TR("The system master or installer code updates the software"),

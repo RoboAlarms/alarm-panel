@@ -10478,6 +10478,86 @@ static void walk_link_keypad(void)
            "BL-048: Leave setup didn't leave");
 }
 
+/* What the review of the keypad role added (BL-048): the fire or CO tone a keypad keeps through a
+ * lost link and its Silence (decided 2026-10-15), a keypad that needs an update to read its alarm
+ * panel's settings, and the no-code pages while the last status said armed (LINK-025). */
+static void walk_link_keypad_kept(void)
+{
+    printf("A keypad: its kept fire tone, an update it needs, maintenance while armed (BL-048)\n");
+    tap_name("nav_home");
+    run(300);
+    link_state(HOST_LINK_KEYPAD_LOST);
+    host_link_demo_local_alarm(true);
+    run(1100);
+    expect(lv_subject_get_int(&subject_panel) == 6 && /* Silence */
+               find_visible(lv_screen_active(), "panel_silence") != NULL,
+           "BL-048: a keypad keeping a fire tone without the alarm panel offers no Silence");
+    link_has("Stops the alarm sound on this keypad", "BL-048: Silence doesn't say what it stops");
+    expect(find_visible(lv_screen_active(), "link_strip") != NULL,
+           "BL-048: the kept fire tone hides Check the alarm panel");
+    expect(lv_subject_get_int(&subject_alarm_active) == 0,
+           "BL-048: a keypad without the alarm panel shows an alarm look (LINK-008)");
+    shot("bl-048-kp-home-lost-silence");
+    tap(lv_obj_get_child(by_name("panel_silence"), 0));
+    run(300);
+    expect(strcmp(lv_subject_get_string(&subject_toast), "Silenced on this keypad") == 0,
+           "BL-048: Silence on a keypad without the alarm panel doesn't say it stopped here");
+    host_link_demo_local_alarm(false); /* the service stops the tone and says so */
+    run(1100);
+    expect(lv_subject_get_int(&subject_panel) == 0 && link_tile_dimmed(),
+           "BL-048: after Silence the dimmed arming tiles don't come back");
+    run(4000); /* the toast goes */
+
+    link_state(HOST_LINK_KEYPAD_CONNECTING);
+    host_link_demo_needs_update(true);
+    run(1100);
+    link_has("Update this keypad: Settings > About",
+             "BL-048: a keypad that needs an update doesn't say so");
+    shot("bl-048-kp-home-update");
+    tap_name("bar_settings");
+    run(300);
+    tap_name("set_about");
+    run(300);
+    tap_link("Software update");
+    run(300);
+    expect(find_label(lv_screen_active(), "The system master or installer code updates the "
+                                          "software") == NULL,
+           "BL-048: a keypad that needs an update asks for a code it can't check");
+    tap_name("nav_home");
+    run(300);
+    host_link_demo_needs_update(false);
+
+    /* LINK-025 while the last status said armed: Settings opens for the no-code pages, and closes
+     * once the alarm panel answers armed. */
+    alarm_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = ALARM_CMD_ARM;
+    cmd.partition = 1;
+    cmd.level = ALARM_LEVEL_AWAY;
+    snprintf(cmd.code, sizeof(cmd.code), "%s", "123456");
+    expect(host_panel_remote_command(&cmd) == ALARM_OK, "BL-048: the house would not arm");
+    link_state(HOST_LINK_KEYPAD_LOST);
+    host_link_demo_maintenance(true);
+    run(1100);
+    tap_name("bar_settings");
+    run(300);
+    expect(lv_subject_get_int(&subject_view) == 5, /* Settings */
+           "BL-048: maintenance can't open Settings while the last status said armed (LINK-025)");
+    tap_name("set_wifi");
+    run(300);
+    expect(find_label(lv_screen_active(), "A master or installer code changes the network") == NULL,
+           "BL-048: maintenance's Wi-Fi asks for a code (LINK-025)");
+    link_state(HOST_LINK_KEYPAD_ONLINE);
+    run(300);
+    expect(lv_subject_get_int(&subject_view) != 5,
+           "BL-048: Settings stays open once the alarm panel answers armed (UI-022)");
+    cmd.type = ALARM_CMD_DISARM;
+    expect(host_panel_remote_command(&cmd) == ALARM_OK, "BL-048: the house would not disarm");
+    run(1100);
+    tap_name("nav_home");
+    run(300);
+}
+
 static void walk_link_master(const ui_options_t *start)
 {
     printf("The alarm panel: Keypads and devices (BL-048)\n");
@@ -10594,6 +10674,7 @@ static void walk_panel_link(const ui_options_t *start)
 {
     walk_link_setup(start);
     walk_link_keypad();
+    walk_link_keypad_kept();
     walk_link_master(start);
     host_link_demo_state(HOST_LINK_OFF); /* as without the link, for what follows */
     run(1100);

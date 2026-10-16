@@ -61,7 +61,6 @@ static const char *TAG = "plink";
 #define PUBLISH_MS      500u
 #define CFG_RETRY_MS    1000u
 #define CLOCK_STEP_MS   2000
-#define DEFAULT_NAME    "RoboAlarms Panel"
 
 typedef struct {
     uint8_t partition;
@@ -144,9 +143,12 @@ static struct {
 } s_lockout[PLINK_KEYPADS_MAX + 1u];
 
 /* The device numbers shared with Zigbee (wired by the start-up). */
-static uint32_t (*s_others_held)(void);
-static atomic_uint s_others; /* their last answer, refreshed by the link task every second */
+static uint32_t (*s_others_held)(void);          /* waits for the zone lock: the worker's */
+static bool (*s_others_held_now)(uint32_t *out); /* never waits: the link task's check */
+static atomic_uint s_others;   /* their last answer, refreshed by the worker every second */
+static TickType_t s_others_at; /* the worker's last refresh */
 static void (*s_link_held)(uint32_t mask);
+static uint32_t s_told; /* the numbers Zigbee was last told the link holds (the link task's) */
 
 /* ---- the alarm listener (on the alarm task: hand over and return) ---------------------------- */
 
@@ -205,10 +207,23 @@ const alarm_listener_t *plink_service_listener(void)
     return &s_listener;
 }
 
-void plink_service_set_devices_port(uint32_t (*others_held)(void), void (*link_held)(uint32_t mask))
+void plink_service_set_devices_port(uint32_t (*others_held)(void),
+                                    bool (*others_held_now)(uint32_t *out),
+                                    void (*link_held)(uint32_t mask))
 {
     s_others_held = others_held;
+    s_others_held_now = others_held_now;
     s_link_held = link_held;
+}
+
+/* The Zigbee keypads' numbers, read under the zone lock - which a zone source holds while it posts
+ * to the alarm task - so only off the link task (LINK-027): at start-up, then by the worker at most
+ * once a second. */
+static void refresh_others(void)
+{
+    if (s_others_held != NULL) {
+        atomic_store(&s_others, s_others_held());
+    }
 }
 
 /* ---- the worker ------------------------------------------------------------------------------ */
@@ -327,8 +342,9 @@ static void build_config(void)
         atomic_store(&s_enabled_devices, enabled);
         /* The installation's name: the setup's "Name your system" names partition 1 (as
          * ha_link). */
+        const char *name = s_cfg->partitions[0].name;
         snprintf(out.name, sizeof out.name, "%.*s", (int)PLINK_NAME_MAX,
-                 s_cfg->partitions[0].name[0] != '\0' ? s_cfg->partitions[0].name : DEFAULT_NAME);
+                 name[0] != '\0' ? name : LINK_DEFAULT_NAME);
         out.ok = plink_cfg_for_keypads(s_cfg, s_cfg_scratch, s_blob[out.blob],
                                        ALARM_CONFIG_BLOB_MAX, &out.len, &out.crc) == ALARM_OK;
         /* the copies hold code hashes and the salt: nothing of them stays */
@@ -354,6 +370,10 @@ static void worker_task(void *arg)
     (void)arg;
     for (;;) {
         (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(1000));
+        if (xTaskGetTickCount() - s_others_at >= pdMS_TO_TICKS(1000)) {
+            s_others_at = xTaskGetTickCount();
+            refresh_others();
+        }
         flush_edges();
         if (atomic_exchange(&s_cfg_job, false)) {
             build_config();
@@ -375,9 +395,46 @@ static bool port_send(void *ctx, const plink_addr_t *to, const uint8_t *frame, s
     return link_send(to, frame, len);
 }
 
+/* A new keypad's number, before its pairing is answered (LINK-001): the manager chose it from the
+ * Zigbee numbers the worker read up to a second ago, and Zigbee chooses from the link's numbers it
+ * was last told. So the number is reserved with Zigbee at once (its later choices skip it), then
+ * Zigbee's numbers are read again without waiting: one Zigbee gave out meanwhile ends this pairing
+ * ("Nothing was saved"; the next try takes another). Left open: a Zigbee keypad given the same
+ * number within that second while the zone lock is busy right now - the check can't be made
+ * without waiting for it, and the link task never waits (LINK-027). False: not reserved. */
+static bool reserve_new(uint32_t added, uint32_t numbers)
+{
+    if (s_link_held == NULL) {
+        return true;
+    }
+    s_link_held(s_told | numbers);
+    uint32_t zigbee = 0u;
+    if (s_others_held_now != NULL && s_others_held_now(&zigbee)) {
+        atomic_store(&s_others, zigbee);
+        if ((zigbee & added) != 0u) {
+            s_link_held(s_told); /* released */
+            ESP_LOGW(TAG, "keypad number %u was just given to a Zigbee keypad: pairing ended",
+                     (unsigned)__builtin_ctz(zigbee & added) + 1u);
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool port_store(void *ctx, const plink_master_rec_t *rec)
 {
     (void)ctx;
+    uint32_t numbers = 0u;
+    for (uint8_t i = 0; i < rec->count && i < PLINK_KEYPADS_MAX; i++) {
+        const uint8_t d = rec->peer[i].device;
+        if (d >= PLINK_DEVICE_FIRST && d <= PLINK_DEVICE_LAST) {
+            numbers |= 1u << (d - 1u);
+        }
+    }
+    const uint32_t added = numbers & ~s_told;
+    if (added != 0u && !reserve_new(added, numbers)) {
+        return false;
+    }
     uint8_t buf[PLINK_STORE_MAX]; /* on the internal stack: NVS reads it with the cache off */
     size_t len = 0;
     bool ok = plink_store_master_encode(rec, buf, sizeof buf, &len) &&
@@ -385,6 +442,9 @@ static bool port_store(void *ctx, const plink_master_rec_t *rec)
     plink_wipe(buf, sizeof buf);
     if (!ok) {
         ESP_LOGE(TAG, "the keypads' record could not be stored");
+        if (added != 0u && s_link_held != NULL) {
+            s_link_held(s_told); /* the reservation goes with the pairing */
+        }
     }
     return ok;
 }
@@ -429,17 +489,8 @@ static void port_reachable(void *ctx, uint8_t device, bool reachable)
     worker_kick();
 }
 
-/* The Zigbee keypads' numbers, read under the zone lock outside the manager's calls (its port
- * must not wait): every second, and before pairing opens. */
-static void refresh_others(void)
-{
-    if (s_others_held != NULL) {
-        atomic_store(&s_others, s_others_held());
-    }
-}
-
 /* The numbers others hold (LINK-001): the device table's enabled entries (from the last
- * configuration read) and the Zigbee keypads' (refresh_others). Never waits. */
+ * configuration read) and the Zigbee keypads' (refresh_others, reserve_new). Never waits. */
 static uint32_t port_devices_taken(void *ctx)
 {
     (void)ctx;
@@ -449,6 +500,7 @@ static uint32_t port_devices_taken(void *ctx)
 static void port_held_changed(void *ctx, uint32_t held)
 {
     (void)ctx;
+    s_told = held;
     if (s_link_held != NULL) {
         s_link_held(held);
     }
@@ -725,8 +777,9 @@ static void publish(uint64_t now)
             g_pub.keypads_down++;
         }
     }
-    if (!g_pub.setup_keypad) {
-        /* the setup's own pairing as a keypad, when it runs, is published by plink_keypad_svc.c */
+    if (!ksvc_active()) {
+        /* the setup's own pairing as a keypad, while its manager exists, is published by
+         * plink_keypad_svc.c; otherwise this master's own, always */
         g_pub.pair_valid = pi.state != PLINK_PS_IDLE;
         memset(&g_pub.pair, 0, sizeof g_pub.pair);
         g_pub.pair.state = pi.state;
@@ -748,11 +801,13 @@ void msvc_poll(uint64_t now)
     ask_config(now);
     if (now >= s_net_at) {
         s_net_at = now + NET_CHECK_MS;
-        refresh_others();
         const bool up = link_wifi_up();
         if (up != s_net_up) {
             s_net_up = up;
             plink_master_net(s_m, now, up); /* supervision pauses while it is down (LINK-007) */
+        }
+        if (ksvc_active() && panel_setup_done() && !s_kp_forced) {
+            ksvc_setup_end(now); /* the setup ended as the alarm panel: its keypad pairing goes */
         }
     }
     if (now >= s_time_at) {
@@ -811,10 +866,12 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         if (!forced && !installer_ok()) {
             return UI_LINK_REQ_NOT_ALLOWED;
         }
-        if (!s_cfg_done) {
-            return UI_LINK_REQ_BUSY; /* the device table's numbers aren't read yet (LINK-001) */
+        if (!s_cfg_done || ksvc_active()) {
+            /* the device table's numbers aren't read yet (LINK-001), or the setup's own pairing
+             * as a keypad runs (a bench's `plink kp`): one pairing at a time */
+            return UI_LINK_REQ_BUSY;
         }
-        refresh_others();
+        worker_kick(); /* Zigbee's numbers read again soon; a new one is checked when chosen */
         if (!plink_master_pair_open(s_m, now)) {
             const uint32_t taken = port_devices_taken(NULL) | plink_master_held(s_m);
             return (taken & 0xFFu) == 0xFFu ? UI_LINK_REQ_FULL : UI_LINK_REQ_FAILED;
@@ -863,6 +920,10 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         /* The setup making this panel a keypad (Option C): it stays the master until the pairing
          * is done, with a keypad manager of its own for the pairing on the same socket. Only a
          * panel whose setup isn't done and that has no keypads. */
+        if (req->kind == UI_LINK_REQ_KP_PAIR_STOP) {
+            ksvc_setup_end(now); /* always allowed; nothing when no setup pairing runs */
+            break;
+        }
         if ((panel_setup_done() && !s_kp_forced) || plink_master_held(s_m) != 0u ||
             plink_master_pairing(s_m)) {
             return UI_LINK_REQ_REFUSED;
@@ -925,7 +986,7 @@ esp_err_t msvc_prepare(uint64_t now)
         }
     }
     plink_wipe(buf, sizeof buf);
-    snprintf(s_name, sizeof s_name, "%s", DEFAULT_NAME); /* until the configuration is read */
+    snprintf(s_name, sizeof s_name, "%s", LINK_DEFAULT_NAME); /* until the configuration is read */
     refresh_others();
     static const plink_master_port_t port = {
         .ctx = NULL,
@@ -946,8 +1007,16 @@ esp_err_t msvc_prepare(uint64_t now)
     };
     plink_master_init(s_m, &g_link.crypto, &port, have ? &rec : NULL, s_name, g_link.panel_id, now);
     plink_wipe(&rec, sizeof rec);
+    /* The manager starts with the network up; the service says how it is now, so supervision
+     * pauses at once on a master whose Wi-Fi isn't there yet and resumes one period after it is
+     * (LINK-007): later only the changes are told. */
+    s_net_up = link_wifi_up();
+    if (!s_net_up) {
+        plink_master_net(s_m, now, false);
+    }
+    s_told = plink_master_held(s_m);
     if (s_link_held != NULL) {
-        s_link_held(plink_master_held(s_m)); /* Zigbee knows the link's numbers from the start */
+        s_link_held(s_told); /* Zigbee knows the link's numbers from the start */
     }
     atomic_store(&s_snap_news, true); /* the current state at once, not at the next change */
     check_time(now, true);

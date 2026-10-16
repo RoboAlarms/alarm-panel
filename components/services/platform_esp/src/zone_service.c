@@ -811,6 +811,11 @@ void zone_service_lock(void)
     lock();
 }
 
+bool zone_service_try_lock(void)
+{
+    return s_lock != NULL && xSemaphoreTakeRecursive(s_lock, 0) == pdTRUE;
+}
+
 void zone_service_unlock(void)
 {
     unlock();

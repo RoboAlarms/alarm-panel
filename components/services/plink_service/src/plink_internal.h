@@ -48,9 +48,17 @@
 #define LINK_MDNS_SERVICE "_roboalarms-link" /* 15 characters, RFC 6763's longest: never longer */
 #define LINK_MDNS_PROTO   "_udp"
 
+/* The name a master gives itself until its configuration is read, and keeps while partition 1 has
+ * none: the setup's "Name your system" names partition 1, and the master is called after it. */
+#define LINK_DEFAULT_NAME "RoboAlarms Panel"
+
 /* ---- plink_psa.c ----------------------------------------------------------------------------- */
 /* The three primitives on PSA; only the link task calls in (and the start-up's check before it). */
 bool plink_psa_port(plink_crypto_t *out);
+/* The last AES key is kept between the blocks of a frame: this destroys it and wipes its copy, so
+ * no session key outlives its session in RAM (LINK-014). The link task calls it at the end of
+ * every turn; the start-up after its check. */
+void plink_psa_forget(void);
 
 /* ---- plink_service.c ------------------------------------------------------------------------- */
 typedef struct {
@@ -74,11 +82,13 @@ typedef struct {
     uint8_t kind[PLINK_KEYPADS_MAX]; /* plink_kind_t, for the console */
     uint8_t keypads_down;
     bool pairing_open; /* mDNS says pair=1 */
-    bool setup_keypad; /* the setup's own pairing as a keypad runs (Option C) */
+    bool setup_keypad; /* the setup's own pairing as a keypad runs (Option C): only while its
+                        * manager exists, from KP_PAIR_START until KP_PAIR_STOP or the setup ends */
     bool setup_paired; /* ... and it paired: */
     uint8_t setup_device, setup_home;
     char setup_master[PLINK_NAME_MAX + 1];
     char setup_master_addr[24];
+    char setup_home_name[PLINK_NAME_MAX + 1]; /* "" not known */
     /* either side's pairing */
     bool pair_valid;
     ui_link_pair_t pair;
@@ -134,7 +144,8 @@ typedef struct {
     bool bench;  /* from the service console of a development build: no installer mode needed */
 } link_req_t;
 /* Hands req to the link task and waits for its answer (a ui_link_result_t), LINK_REQ_WAIT_MS at
- * most (UI_LINK_REQ_BUSY then). Never from the link task. */
+ * most. UI_LINK_REQ_BUSY then: withdrawn, so it never runs, unless the link task had already taken
+ * it (a slow NVS write) - it may then still be done. Never from the link task. */
 uint8_t link_request(const link_req_t *req);
 
 /* ---- plink_master_svc.c: the master's side (the link task unless said) ----------------------- */
@@ -148,6 +159,11 @@ uint32_t msvc_stack_free(void); /* the worker's, for the console */
 /* ---- plink_keypad_svc.c: a keypad's side - the role's, or a master's setup pairing ----------- */
 esp_err_t ksvc_prepare(uint64_t now, bool setup_only);
 bool ksvc_active(void); /* a keypad manager exists */
+/* The setup's pairing on a master (Option C) is over without Done (KP_PAIR_STOP, or the setup
+ * ended another way): a finished pairing is forgotten (its keys wiped; the other master drops the
+ * keypad it never heard from, LINK-016's provisional rule), the published setup state cleared and
+ * the manager gone - its buffers are kept for the next KP_PAIR_START. Nothing without one. */
+void ksvc_setup_end(uint64_t now);
 void ksvc_input(uint64_t now, const plink_addr_t *from, const uint8_t *frame, size_t len);
 void ksvc_poll(uint64_t now);
 uint64_t ksvc_next(void);

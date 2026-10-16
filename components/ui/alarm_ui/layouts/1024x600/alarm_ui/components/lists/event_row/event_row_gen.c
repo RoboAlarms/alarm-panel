@@ -26,7 +26,7 @@ lv_obj_t * event_row_create(lv_obj_t * parent, const char * glyph, const char * 
         /*Init all styles*/
         lv_style_init(&style_event_row);
 
-        alarm_ui_run_38(&style_event_row);
+        alarm_ui_run_39(&style_event_row);
         lv_style_set_min_height(&style_event_row, 72);
         alarm_ui_run_6(&style_event_row, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_event_row, RADIUS_MD);

@@ -56,7 +56,7 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_38(&style_text_card);
+        alarm_ui_run_39(&style_text_card);
         alarm_ui_run_6(&style_text_card, COLOR_SURFACE, (255 * 100 / 100));
         alarm_ui_run_24(&style_text_card, RADIUS_XL);
         alarm_ui_run_53(&style_text_card, SPACE_XL, SPACE_XL, SPACE_LG, SPACE_LG);

@@ -217,6 +217,28 @@ static void test_an_empty_backend_is_all_null(void)
     TEST_ASSERT_NULL(be.zw_device);
     TEST_ASSERT_NULL(be.zw_request);
     TEST_ASSERT_NULL(be.zw_progress);
+    TEST_ASSERT_NULL(be.link_info); /* no panel link: no Keypads section, no role step */
+    TEST_ASSERT_NULL(be.link_pair_status);
+    TEST_ASSERT_NULL(be.link_keypads);
+    TEST_ASSERT_NULL(be.link_request);
+}
+
+/* The panel link's pages' contract (docs/features/11): a zeroed info is the alarm panel itself,
+ * a zeroed pairing is idle, request kinds start at 1, and the pairing's failure numbers are the
+ * protocol's (plink_fail_t). */
+static void test_link_contract(void)
+{
+    ui_link_info_t info;
+    memset(&info, 0, sizeof(info));
+    TEST_ASSERT_EQUAL_INT(UI_LINK_ROLE_MASTER, info.role);
+    ui_link_pair_t pair;
+    memset(&pair, 0, sizeof(pair));
+    TEST_ASSERT_EQUAL_INT(UI_LINK_PAIR_IDLE, pair.state);
+    TEST_ASSERT_EQUAL_INT(UI_LINK_FAIL_NONE, pair.fail);
+    TEST_ASSERT_TRUE(UI_LINK_REQ_PAIR_OPEN != 0);
+    TEST_ASSERT_EQUAL_INT(0, UI_LINK_REQ_OK);
+    TEST_ASSERT_EQUAL_INT(13, UI_LINK_FAIL_VERSION);
+    TEST_ASSERT_TRUE(sizeof(pair.code) >= 7u);
 }
 
 /* The Z-Wave pages' contract (docs/features/36 screens.md §12): an idle operation is all zeros, a
@@ -302,6 +324,7 @@ int main(void)
     RUN_TEST(test_appearance_theme);
     RUN_TEST(test_an_empty_backend_is_all_null);
     RUN_TEST(test_zwave_contract);
+    RUN_TEST(test_link_contract);
     RUN_TEST(test_answers_in_the_readers_language);
     return UNITY_END();
 }

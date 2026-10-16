@@ -4,8 +4,8 @@
 four sides (security, protocol, fit with the code, safety) before building; the portable protocol,
 the master's and the keypad's services, the keypad role and the PC simulator are being built. Built
 before this work: the master's own UI through `ui_backend_t` and the engine's device supervision
-(CORE-TRBL-008). Left after Wi-Fi: the screens (proposal `BL-048-panel-link.js`, waiting for
-approval), ESP-NOW through our C6 build, 433 MHz, the firmware relay (M8) · **Milestone:** M7 (the
+(CORE-TRBL-008). Screens: proposal `BL-048-panel-link.js`, approved
+2026-10-15. Left after Wi-Fi: ESP-NOW through our C6 build, 433 MHz, the firmware relay (M8) · **Milestone:** M7 (the
 firmware relay M8) · **Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
@@ -54,7 +54,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-004 | Pairing needs the installer at the master (installer mode), uses commit-then-reveal, and both screens show the same 6-digit code with the other side's name and address, confirmed on both (defeats a device in the middle) | unit + HIL |
 | LINK-005 | ESP-NOW control frames fit in 250 bytes; a UDP datagram is at most 1200 bytes; bulk data (configuration, events, zones) is paged to the transport's largest frame | unit |
 | LINK-006 | The master sends status on change (repeated at +250 ms and +1 s, at most one per 100 ms per keypad) and at least every 10 s; keypads send heartbeats every 10 s (±1 s jitter) | unit + HIL |
-| LINK-007 | The master raises a device supervision trouble (`alarm_service_device_reachable(n, false)`) for a keypad not heard for its supervision time (60 s by default, per keypad), or one that reports no fresh status for that long; it clears it when both directions are fresh again and before a removed keypad's number is freed; supervision pauses while the master's own Wi-Fi is down (the network trouble covers it) and resumes one period after it is back | unit + HIL |
+| LINK-007 | The master raises a device supervision trouble (`alarm_service_device_reachable(n, false)`) for a keypad not heard for its supervision time (5 min by default, per keypad: 1 min, 5 min, 15 min or not supervised; decided 2026-10-15), or one that reports no fresh status for that long; it clears it when both directions are fresh again and before a removed keypad's number is freed; supervision pauses while the master's own Wi-Fi is down (the network trouble covers it) and resumes one period after it is back | unit + HIL |
 | LINK-008 | A keypad shows "No system communication" after 30 s without an authenticated status and refuses arming; it never shows stale status as current; from start-up until the first status and configuration are in it shows a steady "Connecting" state | unit + HIL |
 | LINK-009 | Automatic failover ESP-NOW <-> LAN within 15 s; duplicates suppressed by sequence number | HIL (ESP-NOW) |
 | LINK-010 | The master's ESP-NOW channel follows its Wi-Fi AP; beacons carry the channel; keypads rescan channels 1-13 when lost | HIL (ESP-NOW) |
@@ -264,7 +264,7 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
 | Status from the master | on change (+250 ms, +1 s repeats, ≤ 1 per 100 ms per keypad), and every 10 s |
 | Heartbeat from a keypad | every 10 s, ±1 s jitter; every 500 ms while a new session is tentative |
 | Keypad: new handshake / link lost | 15 s / 30 s without an authenticated frame |
-| Master: supervision trouble | the keypad's supervision time (60 s default) |
+| Master: supervision trouble | the keypad's supervision time (5 min default) |
 | Command retry / give up | 500 ms / 3 s |
 | Panic resend / kept | 1 s / 60 s from keying |
 | Master's result cache | 90 s after the last copy of a request |
@@ -316,8 +316,10 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   generation number, checked on the LVGL task. The plink task never takes `board_ui_lock` and never
   calls the UI.
 - **Sounds**: the keypad plays its home partition's continuous pattern and one-shot sounds, and
-  fire and CO from any partition. On link loss it stops the continuous pattern (no stale entry or
-  alarm tone) and shows the steady "No system communication" state (LINK-008).
+  fire and CO from any partition. On link loss it stops a continuous pattern (no stale entry or
+  burglary tone) except fire and CO, which keep sounding until OFF is pressed on the keypad or the
+  link returns (decided 2026-10-15), and shows the steady "No system communication" state
+  (LINK-008).
 - **Time**: the keypad follows the master's TIME (epoch and time zone; it ignores epoch 0) and
   runs no time server of its own while paired.
 - **Wi-Fi power save** is held off through `net_wifi_hold_low_latency(owner, on)`, one hold per
@@ -364,7 +366,7 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   link backend.
 - CI: `link_smoke` over UDP on 127.0.0.1.
 - Panels (HIL): pair the 10.1" as a keypad of the 7"; arm, disarm and a wrong code from the keypad;
-  power the keypad off (trouble after 60 s, cleared when back); restart the master (keypad back
+  power the keypad off (trouble after its supervision time, cleared when back); restart the master (keypad back
   within 15 s); remove the keypad (it is told, its frames refused); latency under 1 s; one direction
   dropped; both addresses changed across a router restart; mDNS blocked; the access point's password
   changed and the keypad recovered from its own screen; the master factory-reset and the keypad
@@ -377,10 +379,10 @@ goes to its HELLO's source without moving it). Firmware with the link sets
 - A link keypad's trouble scopes to all partitions (the engine's device table has no entry for it),
   as Z-Wave's: a core call taking the partition would fix both. The trouble names the keypad by
   number only ("Keypad 3 not responding"); a name lookup shared with Zigbee and Z-Wave would fix it.
-- For the maintainers: should fire and CO tones keep sounding on a keypad that lost the link until
-  OFF is pressed there; should panic be resent longer than 60 s; is 60 s the right default
-  supervision for Wi-Fi keypads (5 min would match the network trouble); do a keypad's mains and
-  battery flags become device troubles (an engine change) or stay in the keypads list.
+- For the maintainers: should panic be resent longer than 60 s; do a keypad's mains and battery
+  flags become device troubles (an engine change) or stay in the keypads list. Decided 2026-10-15:
+  fire and CO keep sounding on a keypad that lost the link (Roles); 5 min default supervision
+  (LINK-007); the screens as proposed (`BL-048-panel-link.js`, approved).
 - Not taken from the review: a persisted boot counter in HELLO (the seen-n_k list and the X25519
   budget already bound replays); a new `alarm_result_t` for "no link" (UNAVAILABLE says it).
 

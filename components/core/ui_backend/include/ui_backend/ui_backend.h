@@ -1518,6 +1518,135 @@ enum {
     UI_APPEARANCE_AUTO = 2,  /* dark during the night hours, light by day (UI-043) */
 };
 
+/* ---- The panel link: master and keypads (docs/features/11, BL-048) --------------------------
+ * A panel is the alarm panel itself (the master, every panel before BL-048) or a keypad for a
+ * master elsewhere in the house. The pages read the link through these four entries
+ * (ui_backend_t.link_*), polled at most once a second (UI-027); NULL entries mean a firmware
+ * without the link: nothing about keypads is shown and the setup has no role step. */
+
+/* ui_link_info_t.role */
+enum {
+    UI_LINK_ROLE_MASTER = 0, /* the alarm panel (the default) */
+    UI_LINK_ROLE_KEYPAD = 1, /* a keypad: the master-only pages are hidden (the role gate) */
+};
+
+/* ui_link_info_t.state on a keypad (plink_link_state_t, docs/features/11 LINK-008). */
+enum {
+    UI_LINK_NOT_PAIRED = 0, /* no master: "Pair again" / the setup's pairing step */
+    UI_LINK_CONNECTING,     /* after a start or a pairing, until the first full sync */
+    UI_LINK_ONLINE,
+    UI_LINK_LOST,           /* "No system communication": arming off, Panic still tries */
+};
+
+typedef struct {
+    uint8_t role;        /* UI_LINK_ROLE_* */
+    /* A keypad: */
+    uint8_t state;       /* UI_LINK_* */
+    bool removed;        /* NOT_PAIRED because the master removed it (the "removed" page) */
+    bool maintenance;    /* LINK-025: 10 min without system communication - Wi-Fi, updates, Pair
+                          * again and "Make it a stand-alone panel" open without a code */
+    bool needs_update;   /* the master's configuration is newer than this keypad can read */
+    bool panic_pending;  /* a panic is still being sent (LINK-023: up to 1 min) */
+    uint8_t device;      /* its keypad number at the master, 0 none */
+    uint8_t home;        /* the partition it shows and arms */
+    uint32_t home_gen;   /* changes when the master changes the home partition */
+    int64_t since_epoch_ms; /* LOST: the last time the master answered (0 not known) */
+    char master_name[48];   /* the alarm panel's name, e.g. "Harbor House" */
+    /* A master: */
+    uint8_t keypads;     /* keypads paired with it */
+    uint8_t keypads_down;/* of those, not responding */
+} ui_link_info_t;
+
+/* ui_link_pair_t.state: either side's pairing (plink_pair_state_t). */
+enum {
+    UI_LINK_PAIR_IDLE = 0,
+    UI_LINK_PAIR_OPEN,    /* master: waiting for a keypad (left_s); keypad: looking / asked */
+    UI_LINK_PAIR_WORKING, /* the two are exchanging keys */
+    UI_LINK_PAIR_COMPARE, /* code shown: the person compares and answers */
+    UI_LINK_PAIR_WAITING, /* this side said yes: waiting for the other */
+    UI_LINK_PAIR_DONE,
+    UI_LINK_PAIR_FAILED,  /* fail says why */
+};
+
+/* ui_link_pair_t.fail (plink_fail_t's numbers). */
+enum {
+    UI_LINK_FAIL_NONE = 0,
+    UI_LINK_FAIL_REFUSED = 1,
+    UI_LINK_FAIL_TIMEOUT = 2,
+    UI_LINK_FAIL_MISMATCH = 3,
+    UI_LINK_FAIL_BUSY = 4,
+    UI_LINK_FAIL_CLOSED = 5,
+    UI_LINK_FAIL_FULL = 6,
+    UI_LINK_FAIL_OVERLAP = 7,
+    UI_LINK_FAIL_LIMIT = 8,
+    UI_LINK_FAIL_CAPACITY = 9,
+    UI_LINK_FAIL_CANCELLED = 10,
+    UI_LINK_FAIL_INTERRUPTED = 11,
+    UI_LINK_FAIL_STORE = 12,
+    UI_LINK_FAIL_VERSION = 13,
+    UI_LINK_FAIL_NOT_FOUND = 100, /* keypad: no alarm panel open for pairing was found */
+    UI_LINK_FAIL_TWO_MASTERS = 101, /* keypad: two alarm panels are open for pairing */
+};
+
+typedef struct {
+    uint8_t state;       /* UI_LINK_PAIR_* */
+    uint8_t fail;        /* UI_LINK_FAIL_* when FAILED */
+    uint8_t attempts;    /* used of 3 */
+    uint32_t left_s;     /* master: the window's seconds left; keypad: looking for this long */
+    char code[8];        /* "588460" while COMPARE or WAITING, else "" */
+    char peer_name[48];  /* the keypad's or the alarm panel's name */
+    char peer_addr[24];  /* its address on the network, e.g. "192.0.2.57" */
+    uint8_t device;      /* DONE: the keypad's number */
+} ui_link_pair_t;
+
+/* One keypad at the master (Installer > Keypads and devices). */
+typedef struct {
+    uint8_t device;         /* 1..8 */
+    char name[48];
+    uint8_t home;           /* its home partition */
+    uint16_t supervision_s; /* 0 = not supervised */
+    bool connected;         /* heard within its supervision time */
+    bool down;              /* not responding: its trouble is raised */
+    bool waiting;           /* paired, never connected yet */
+    int64_t heard_epoch_ms; /* last heard (0 not known) */
+    char addr[24];
+    char fw[32];
+} ui_link_keypad_t;
+
+typedef enum {
+    /* the master, installer mode with every partition disarmed: */
+    UI_LINK_REQ_PAIR_OPEN = 1,    /* open the 2-minute window */
+    UI_LINK_REQ_PAIR_DECIDE,      /* `allow`: the installer compared the codes */
+    UI_LINK_REQ_PAIR_STOP,        /* close the window / end the attempt */
+    UI_LINK_REQ_KEYPAD_SET,       /* `device`: `name`, `home`, `supervision_s` */
+    UI_LINK_REQ_KEYPAD_REMOVE,    /* `device` (LINK-014) */
+    /* a panel becoming a keypad (the setup), or a keypad pairing again: */
+    UI_LINK_REQ_KP_PAIR_START,    /* look for an alarm panel open for pairing and ask it */
+    UI_LINK_REQ_KP_PAIR_CONFIRM,  /* `allow`: the codes match (true) or not */
+    UI_LINK_REQ_KP_PAIR_RETRY,    /* try again after a failure */
+    UI_LINK_REQ_KP_PAIR_STOP,     /* give up (the setup's Back) */
+    UI_LINK_REQ_KP_DONE,          /* the pairing's Done: store the role and restart as a keypad */
+} ui_link_request_t;
+
+typedef struct {
+    uint8_t kind; /* ui_link_request_t */
+    bool allow;
+    uint8_t device;
+    uint8_t home;
+    uint16_t supervision_s;
+    char name[48];
+} ui_link_req_t;
+
+/* What link_request answers. */
+typedef enum {
+    UI_LINK_REQ_OK = 0,
+    UI_LINK_REQ_NOT_ALLOWED, /* the master: installer mode with every partition disarmed needed */
+    UI_LINK_REQ_FULL,        /* PAIR_OPEN: keypad numbers 1-8 are all in use */
+    UI_LINK_REQ_BUSY,        /* something else is under way */
+    UI_LINK_REQ_FAILED,      /* it couldn't be done (storage) */
+    UI_LINK_REQ_REFUSED,     /* not in this role, or a bad argument */
+} ui_link_result_t;
+
 /* What the UI needs from the platform. Commands block until the engine has answered.
  * The M4 entries (settings, installer mode, users, event log, network) are optional: a NULL
  * entry hides what depends on it. */
@@ -1853,6 +1982,18 @@ typedef struct {
      * tones go on. The editor or Announcements page that played one calls it as it closes.
      * Optional (NULL: nothing to stop). */
     void (*voice_preview_stop)(void *ctx);
+
+    /* ---- the panel link (docs/features/11; the types above ui_backend_t). NULL: no link in
+     * this firmware - no Keypads section, no role step, every page as before. ---- */
+    /* The role and, on a keypad, the link's state; false: not known yet (show nothing). */
+    bool (*link_info)(void *ctx, ui_link_info_t *out);
+    /* The pairing under way on either side; false: none. */
+    bool (*link_pair_status)(void *ctx, ui_link_pair_t *out);
+    /* The master's keypads, by number; returns how many (0 on a keypad). */
+    size_t (*link_keypads)(void *ctx, ui_link_keypad_t *out, size_t max);
+    /* A request; a ui_link_result_t. The pairing requests return at once, link_pair_status
+     * follows them. */
+    uint8_t (*link_request)(void *ctx, const ui_link_req_t *req);
 } ui_backend_t;
 
 /* auto_try's "the runner didn't take it" (automation_service.h's AUTOMATION_TRY_BUSY, asserted

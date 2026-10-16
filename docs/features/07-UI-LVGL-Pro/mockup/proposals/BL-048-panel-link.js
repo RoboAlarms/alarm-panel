@@ -12,7 +12,8 @@
 // Nothing blinks; every countdown and live word changes at most once a second (UI-020, UI-023).
 // Screens never name how the link works (no protocols): "Wi-Fi", "keypad", "alarm panel", "code".
 
-const P = (why, replaces = null) => ({bl: 'BL-048', status: 'draft', replaces, why});
+const DECIDED = '2026-10-15: approved with the recommended answers to the open questions: keep "No system communication"; "Stop" (not "Cancel") for ending the add flow, as Zigbee; the section heading "Keypads" (not "Keypads on Wi-Fi"); "Connected" (not "Online"); a new keypad is "Keypad N" until renamed on the alarm panel; removing is a hold row with no dialog; supervision choices 1 min, 5 min (the default), 15 min, Not supervised; a keypad shows the factory-code reminder pointing to the alarm panel; Panic hidden on a removed keypad; the role step is a counted dot. Also decided: fire and CO tones keep sounding on a keypad that loses the link until OFF is pressed there or the link returns.';
+const P = (why, replaces = null) => ({bl: 'BL-048', status: 'approved', decided: DECIDED, replaces, why});
 
 // ================================ A. The setup on a new panel ================================
 // Dots: the alarm panel's setup counts Role, Wi-Fi, Time zone, Codes, Name and Done (6); a keypad's

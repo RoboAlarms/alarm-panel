@@ -26,7 +26,7 @@ lv_obj_t * event_row_create(lv_obj_t * parent, const char * glyph, const char * 
         /*Init all styles*/
         lv_style_init(&style_event_row);
 
-        alarm_ui_run_36(&style_event_row);
+        alarm_ui_run_38(&style_event_row);
         lv_style_set_min_height(&style_event_row, 72);
         alarm_ui_run_6(&style_event_row, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_event_row, RADIUS_MD);
@@ -49,10 +49,10 @@ lv_obj_t * event_row_create(lv_obj_t * parent, const char * glyph, const char * 
         lv_obj_t * box_1 = alarm_ui_run_8(box_0);
         lv_obj_set_style_min_height(box_1, 56, 0);
         alarm_ui_run_1(box_1, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_55(box_1);
+        alarm_ui_run_59(box_1);
         lv_obj_t * title_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(title_label, title);
-        alarm_ui_run_35(title_label, font_label, "title_label");
+        alarm_ui_run_37(title_label, font_label, "title_label");
 
         lv_obj_t * detail_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(detail_label, detail);

@@ -29,7 +29,7 @@ lv_obj_t * action_tile_create(lv_obj_t * parent, const char * glyph, lv_subject_
         lv_style_init(&style_action_tile_pressed);
 
         alarm_ui_run_6(&style_action_tile, COLOR_SURFACE, (255 * 100 / 100));
-        alarm_ui_run_23(&style_action_tile, RADIUS_XL);
+        alarm_ui_run_24(&style_action_tile, RADIUS_XL);
         lv_style_set_pad_all(&style_action_tile, SPACE_XL);
         alarm_ui_run_17(&style_action_tile, LV_FLEX_FLOW_COLUMN);
         lv_style_set_pad_row(&style_action_tile, SPACE_MD);
@@ -49,7 +49,7 @@ lv_obj_t * action_tile_create(lv_obj_t * parent, const char * glyph, lv_subject_
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_20(parent);
-        alarm_ui_run_15(box_0, &style_action_tile, 0, &style_action_tile_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(box_0, &style_action_tile, 0, &style_action_tile_pressed, LV_STATE_PRESSED);
         lv_obj_t * icon_chip_0 = icon_chip_create(box_0, glyph, 168, icons_96, color);
         lv_obj_set_style_margin_bottom(icon_chip_0, SPACE_MD, 0);
 

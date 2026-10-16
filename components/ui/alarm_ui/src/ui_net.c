@@ -1079,8 +1079,55 @@ static void clock_row_tick(void)
     }
 }
 
+/* A keypad's Time and language (BL-048): the clock and the time zone come from the alarm panel
+ * (docs/features/11 "Roles on a P4 panel": a keypad follows its TIME and runs no time server), so
+ * they are read-only here and say so; the 12/24-hour clock, the language and the region are this
+ * keypad's, the language and region behind a code as on any panel. */
+static void keypad_time_build(lv_obj_t *body, bool unlocked, char *note, size_t nlen)
+{
+    const char *master = ui_link_master_name();
+    char now[64];
+    char detail[128];
+    bool settable = false;
+    s_clock_source = clock_source(&settable);
+    s_clock_settable = settable;
+    s_clock_minute = clock_now(now, sizeof(now));
+    s_clock_polled = lv_tick_get();
+    /* TR: a keypad's Time and language, under the date and time: it comes from the alarm panel
+     * named {0}. At most 80 bytes */
+    I18N_FORMAT(detail, sizeof(detail), TR("From {0}"), master);
+    s_clock_row = ui_row_link(body, UI_ICON_CALENDAR_CLOCK, ui_tone_green(), now, detail, NULL,
+                              NULL, NULL, NULL);
+    char tz[64] = "UTC0";
+    if (S.be.get_timezone != NULL) {
+        S.be.get_timezone(S.be.ctx, tz, sizeof(tz));
+    }
+    const int i = ui_tz_find(tz);
+    /* TR: a keypad's Time and language, under Time zone: it is set on the alarm panel named {0}.
+     * At most 80 bytes */
+    I18N_FORMAT(detail, sizeof(detail), TR("Set on {0}"), master);
+    ui_row_link(body, UI_ICON_GLOBE, ui_tone_blue(), TR("Time zone"), detail,
+                i >= 0 ? TR_C("time zone", UI_TIMEZONES[i].name) : tz, NULL, NULL, NULL);
+    ui_lang_clock_row(body); /* this keypad's and anyone's */
+    if (!unlocked) {
+        /* TR: a keypad's Time and language without a code, the line under the title. At most 127
+         * bytes */
+        i18n_utf8_copy(note, nlen, TR("A master or installer code changes the language"));
+        /* TR: a locked page: its title (cut to 31 bytes). At most 31 bytes */
+        ui_settings_unlock_row(body, ACCESS_SHARED, TR("Time and language"));
+        return;
+    }
+    /* TR: Settings > Time and language, the heading over the language rows */
+    ui_section(body, TR("Language"));
+    ui_lang_rows(body);
+}
+
 void ui_time_build(lv_obj_t *body, bool unlocked, char *note, size_t nlen)
 {
+    if (ui_link_keypad()) {
+        keypad_time_build(body, unlocked, note, nlen);
+        return;
+    }
     clock_row(body);
     if (!unlocked) {
         /* TR: Settings > Time and language without a code, the line under the title. At most 127

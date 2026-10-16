@@ -66,8 +66,8 @@ lv_obj_t * pad_key_create(lv_obj_t * parent, const char * text, const lv_font_t 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_20(parent);
-        alarm_ui_run_15(box_0, &style_pad_key, 0, &style_pad_key_pressed, LV_STATE_PRESSED);
-        alarm_ui_run_15(box_0, &style_pad_key_short, LV_STATE_USER_2, &style_pad_key_disabled, LV_STATE_DISABLED);
+        alarm_ui_run_16(box_0, &style_pad_key, 0, &style_pad_key_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(box_0, &style_pad_key_short, LV_STATE_USER_2, &style_pad_key_disabled, LV_STATE_DISABLED);
         lv_obj_t * lv_label_0 = alarm_ui_run_33(box_0);
         lv_label_set_text(lv_label_0, text);
         lv_obj_set_style_text_font(lv_label_0, font, 0);

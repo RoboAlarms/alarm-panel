@@ -129,16 +129,53 @@ void ui_settings_init(void)
     S.depth = 0;
 }
 
+/* The role gate (BL-048): a keypad holds no users, integrations, automations or walk test - they
+ * are the alarm panel's - so its Settings list leaves them out (Installer, About's row, too). */
+static bool section_gated(int32_t section)
+{
+    return ui_link_keypad() && (section == SECTION_USERS || section == SECTION_INTEGRATIONS ||
+                                section == SECTION_WALK || section == SECTION_AUTOMATIONS ||
+                                section == SECTION_INSTALLER);
+}
+
+static void role_gate(void)
+{
+    static const struct {
+        const char *name;
+        int32_t section;
+    } lines[] = {
+        {NOTR("set_users"), SECTION_USERS},
+        {NOTR("set_integrations"), SECTION_INTEGRATIONS},
+        {NOTR("set_walk"), SECTION_WALK},
+    };
+    for (size_t i = 0; i < sizeof(lines) / sizeof(lines[0]); i++) {
+        lv_obj_t *line = ui_find(S.main, lines[i].name);
+        bool hide = section_gated(lines[i].section);
+#if !ALARM_UI_INTEGRATIONS && !ALARM_UI_NOTIFY
+        /* Nothing to integrate with in this firmware: no Integrations section (docs/features/33).
+         */
+        hide = hide || lines[i].section == SECTION_INTEGRATIONS;
+#endif
+        if (line != NULL) {
+            lv_obj_set_flag(line, LV_OBJ_FLAG_HIDDEN, hide);
+        }
+    }
+}
+
 void ui_settings_open(void)
 {
     ui_update_tag(); /* the list is right from the start */
 #if ALARM_UI_AUTOMATIONS
     /* The Automations line, once the backend has them (docs/features/41); with Event log gone
-     * to Activity there is room for it (BL-131 finding 7). */
-    ui_set_int(&subject_automations_avail, ui_automations_available() ? 1 : 0);
+     * to Activity there is room for it (BL-131 finding 7). Not on a keypad (BL-048). */
+    ui_set_int(&subject_automations_avail, ui_automations_available() && !ui_link_keypad() ? 1 : 0);
 #endif
+    role_gate();
     ui_set_int(&subject_view, VIEW_SETTINGS);
-    const int32_t section = lv_subject_get_int(&subject_settings_section);
+    int32_t section = lv_subject_get_int(&subject_settings_section);
+    if (section_gated(section)) {
+        section = SECTION_DISPLAY;
+    }
     if (S.program) { /* About, then the Installer menu on top of it */
         select_section(SECTION_ABOUT);
         ui_page_open(PAGE_INSTALLER, 0);
@@ -169,6 +206,9 @@ void ui_settings_section(const char *which)
         if (strcmp(which, names[i].name) == 0) {
             section = names[i].section;
         }
+    }
+    if (section_gated(section)) {
+        section = section == SECTION_INSTALLER ? SECTION_ABOUT : SECTION_DISPLAY; /* a keypad's */
     }
     if (section == SECTION_INSTALLER) { /* the Installer page is About's (BL-189) */
         select_section(SECTION_ABOUT);
@@ -1508,8 +1548,32 @@ static void running_for(char *out, size_t len, uint32_t up)
     I18N_FORMAT(out, len, TR_C("running for", "{0} {1}"), big, small);
 }
 
+/* About's Set up section: zones, users and events in use. */
+static void about_setup(lv_obj_t *body, char *buf, size_t blen, uint32_t log_count)
+{
+    unsigned zones = 0;
+    unsigned users = 0;
+    for (unsigned z = 0; z < ALARM_MAX_ZONES; z++) {
+        zones += S.cfg->zones[z].type != ALARM_ZT_NOT_USED;
+    }
+    for (unsigned u = 0; u < ALARM_MAX_USERS; u++) {
+        users += S.cfg->users[u].authority != ALARM_AUTH_NONE;
+    }
+    /* TR: About, a heading: what is set up (zones, users, events). At most 47 bytes */
+    ui_section(body, TR("Set up"));
+    /* TR: About, zones in use {0} of the most the panel has {1}. At most 31 bytes */
+    I18N_FORMAT(buf, blen, TR("{0} of {1}"), zones, (unsigned)ALARM_MAX_ZONES);
+    ui_row_value(body, TR("Zones"), buf);
+    I18N_FORMAT(buf, blen, TR("{0} of {1}"), users, (unsigned)ALARM_MAX_USERS);
+    ui_row_value(body, TR("Users"), buf);
+    /* TR: About, how many events the log holds. At most 31 bytes */
+    I18N_FORMAT(buf, blen, TRN("{0} event", "{0} events", log_count), (unsigned)log_count);
+    ui_row_value(body, TR("Event log"), buf);
+}
+
 /* What System details showed, now on About itself after SD card (BL-189): This panel, Network,
- * Set up, Hardware. The panel's ID and version are in About's top row. */
+ * Set up (a keypad: its alarm panel, BL-048), Hardware. The panel's ID and version are in About's
+ * top row. */
 static void about_details(lv_obj_t *body)
 {
     ui_about_t a;
@@ -1561,24 +1625,12 @@ static void about_details(lv_obj_t *body)
     ui_row_value(body, TR("IP address"), w.state == UI_NET_CONNECTED && w.ip[0] ? w.ip : "-");
     ui_row_value(body, TR("MAC address"), w.mac[0] ? w.mac : "-");
 
-    unsigned zones = 0;
-    unsigned users = 0;
-    for (unsigned z = 0; z < ALARM_MAX_ZONES; z++) {
-        zones += S.cfg->zones[z].type != ALARM_ZT_NOT_USED;
+    if (ui_link_keypad()) {
+        /* a keypad's zones, users and event log are the alarm panel's (BL-048) */
+        ui_link_about_details(body);
+    } else {
+        about_setup(body, buf, sizeof(buf), (uint32_t)a.log_count);
     }
-    for (unsigned u = 0; u < ALARM_MAX_USERS; u++) {
-        users += S.cfg->users[u].authority != ALARM_AUTH_NONE;
-    }
-    /* TR: About, a heading: what is set up (zones, users, events). At most 47 bytes */
-    ui_section(body, TR("Set up"));
-    /* TR: About, zones in use {0} of the most the panel has {1}. At most 31 bytes */
-    I18N_FORMAT(buf, sizeof(buf), TR("{0} of {1}"), zones, (unsigned)ALARM_MAX_ZONES);
-    ui_row_value(body, TR("Zones"), buf);
-    I18N_FORMAT(buf, sizeof(buf), TR("{0} of {1}"), users, (unsigned)ALARM_MAX_USERS);
-    ui_row_value(body, TR("Users"), buf);
-    /* TR: About, how many events the log holds. At most 31 bytes */
-    I18N_FORMAT(buf, sizeof(buf), TRN("{0} event", "{0} events", a.log_count), (unsigned)a.log_count);
-    ui_row_value(body, TR("Event log"), buf);
 
     ui_section(body, TR("Hardware"));
     ui_row_value(body, TR("Processor"), a.chip[0] ? a.chip : "-");
@@ -1636,14 +1688,20 @@ static void build_about(lv_obj_t *body, char *title, size_t tlen, char *note, si
     }
     ui_row_link(body, UI_ICON_SHIELD_CHECK, ui_tone_green(), TR("RoboAlarms Panel"), detail, NULL, NULL,
                 NULL, NULL);
+    ui_link_about_row(body); /* a keypad: what it is a keypad of (BL-048) */
     ui_update_about_row(body, about_open, (void *)(intptr_t)PAGE_SOFTWARE);
     ui_storage_about_row(body, about_open, (void *)(intptr_t)PAGE_SD_CARD);
     about_details(body);
-    ui_section(body, ""); /* a gap before the Installer row */
-    /* TR: Settings > About, the Installer row's line. At most 111 bytes */
-    ui_row_link(body, UI_ICON_WRENCH, ui_tone_blue(), TR("Installer"),
-                TR("Changes how the alarm works · needs the installer code"), NULL,
-                UI_ICON_CHEVRON_RIGHT, about_open, (void *)(intptr_t)PAGE_INSTALLER);
+    if (ui_link_keypad()) {
+        /* Installer is the alarm panel's; a keypad has the way back to a panel of its own */
+        ui_link_about_end(body);
+    } else {
+        ui_section(body, ""); /* a gap before the Installer row */
+        /* TR: Settings > About, the Installer row's line. At most 111 bytes */
+        ui_row_link(body, UI_ICON_WRENCH, ui_tone_blue(), TR("Installer"),
+                    TR("Changes how the alarm works · needs the installer code"), NULL,
+                    UI_ICON_CHEVRON_RIGHT, about_open, (void *)(intptr_t)PAGE_INSTALLER);
+    }
     ui_paragraph(body, TR("Made with LVGL (MIT), the Inter typeface (SIL Open Font License 1.1), "
                           "Lucide icons (ISC) and parts of Z-Wave JS (MIT)."),
                  ui_tone_gray());
@@ -1679,7 +1737,7 @@ static void build_page(void)
     case PAGE_SOFTWARE:
         /* TR: About > Software update, the title. At most 47 bytes */
         i18n_utf8_copy(title, sizeof(title), TR("Software update"));
-        if (!ui_settings_allowed(ACCESS_SYSTEM)) {
+        if (!ui_settings_allowed(ACCESS_SYSTEM) && !ui_link_maintenance()) {
             /* TR: a locked page: the line under the title. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SYSTEM, TR("Software update"),
                                TR("The system master or installer code updates the software"),
@@ -1699,7 +1757,8 @@ static void build_page(void)
     case PAGE_WIFI:
         /* TR: Settings, the page title. At most 47 bytes */
         i18n_utf8_copy(title, sizeof(title), TR("Wi-Fi and network"));
-        if (!ui_settings_allowed(ACCESS_SHARED)) {
+        /* a keypad without the alarm panel for 10 minutes opens it without a code (LINK-025) */
+        if (!ui_settings_allowed(ACCESS_SHARED) && !ui_link_maintenance()) {
             /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SHARED, TR("Wi-Fi and network"),
                                TR("A master or installer code changes the network"), note,
@@ -1713,7 +1772,7 @@ static void build_page(void)
     case PAGE_NETWORK:
         /* TR: Settings > Wi-Fi > Network, the page title. At most 47 bytes */
         i18n_utf8_copy(title, sizeof(title), TR("Network"));
-        if (!ui_settings_allowed(ACCESS_SHARED)) {
+        if (!ui_settings_allowed(ACCESS_SHARED) && !ui_link_maintenance()) {
             /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SHARED, TR("Network"),
                                TR("A master or installer code changes the network"), note,
@@ -1779,6 +1838,9 @@ static void build_page(void)
         ui_zwave_build(pg->id, pg->arg, body, title, sizeof(title), note, sizeof(note));
         break;
 #endif
+    case PAGE_LINK_STANDALONE: /* a keypad's (BL-048): no installer mode on a keypad */
+        ui_link_build(pg->id, pg->arg, body, title, sizeof(title), note, sizeof(note));
+        break;
 #if ALARM_UI_AUTOMATIONS
     case PAGE_AUTOMATIONS:
     case PAGE_AUTOMATION:

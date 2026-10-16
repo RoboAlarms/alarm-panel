@@ -176,6 +176,10 @@ lv_subject_t subject_arm_strip_note_on;
 lv_subject_t subject_poff_hour;
 lv_subject_t subject_poff_night_title;
 lv_subject_t subject_poff_night;
+lv_subject_t subject_link_role;
+lv_subject_t subject_link_home;
+lv_subject_t subject_panic_hint;
+lv_subject_t subject_panic_link;
 lv_subject_t subject_settings_section;
 lv_subject_t subject_automations_avail;
 lv_subject_t subject_update_waiting;
@@ -193,6 +197,7 @@ lv_subject_t subject_sheet_cancel;
 lv_subject_t subject_sheet_eye;
 lv_subject_t subject_sheet_shown;
 lv_subject_t subject_wiz_step;
+lv_subject_t subject_wiz_steps;
 lv_subject_t subject_wiz_icon;
 lv_subject_t subject_wiz_title;
 lv_subject_t subject_wiz_note;
@@ -540,7 +545,7 @@ void alarm_ui_init_gen(const char * asset_path)
         lv_style_set_text_font(&style_saver, font_body);
         lv_style_set_pad_all(&style_saver, 0);
         alarm_ui_run_6(&style_card, COLOR_SURFACE, (255 * 100 / 100));
-        alarm_ui_run_23(&style_card, RADIUS_LG);
+        alarm_ui_run_24(&style_card, RADIUS_LG);
         lv_style_set_bg_color(&style_pressable, COLOR_RAISED);
         lv_style_set_bg_opa(&style_knob_off, (255 * 0 / 100));
         lv_style_set_pad_all(&style_knob_off, 0);
@@ -556,18 +561,18 @@ void alarm_ui_init_gen(const char * asset_path)
         alarm_ui_run_6(&style_nav_active, COLOR_RAISED, (255 * 100 / 100));
         lv_style_set_text_color(&style_nav_active, COLOR_TEXT);
         lv_style_set_text_color(&style_nav_on, COLOR_BLUE);
-        alarm_ui_run_61(&style_device_arrange, 3, COLOR_BLUE);
+        alarm_ui_run_65(&style_device_arrange, 3, COLOR_BLUE);
         lv_style_set_border_opa(&style_device_arrange, (255 * 0 / 100));
-        alarm_ui_run_61(&style_device_picked, 3, COLOR_BLUE);
+        alarm_ui_run_65(&style_device_picked, 3, COLOR_BLUE);
         lv_style_set_border_opa(&style_device_picked, (255 * 100 / 100));
         lv_style_set_bg_color(&style_device_still, COLOR_SURFACE);
         alarm_ui_run_6(&style_segment_active, COLOR_RAISED, (255 * 100 / 100));
         lv_style_set_text_color(&style_segment_active, COLOR_TEXT);
-        alarm_ui_run_60(&style_button, 52, RADIUS_FULL);
+        alarm_ui_run_64(&style_button, 52, RADIUS_FULL);
         alarm_ui_run_6(&style_button, COLOR_RAISED, (255 * 100 / 100));
-        alarm_ui_run_14(&style_button, SPACE_XL, SPACE_XL);
+        alarm_ui_run_15(&style_button, SPACE_XL, SPACE_XL);
         lv_style_set_pad_column(&style_button, SPACE_SM);
-        alarm_ui_run_43(&style_button, font_label, COLOR_TEXT);
+        alarm_ui_run_45(&style_button, font_label, COLOR_TEXT);
         lv_style_set_bg_color(&style_button_pressed, COLOR_PRESSED);
         lv_style_set_bg_color(&style_button_primary, COLOR_BLUE);
         lv_style_set_text_color(&style_button_primary, COLOR_ON_TONE);
@@ -578,29 +583,29 @@ void alarm_ui_init_gen(const char * asset_path)
         lv_style_set_radius(&style_bar_round, RADIUS_FULL);
         alarm_ui_run_6(&style_bar_round, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_text_color(&style_bar_round, COLOR_TEXT_2);
-        alarm_ui_run_60(&style_bar_pill, 40, RADIUS_FULL);
+        alarm_ui_run_64(&style_bar_pill, 40, RADIUS_FULL);
         alarm_ui_run_6(&style_bar_pill, COLOR_AMBER, (255 * 16 / 100));
-        alarm_ui_run_14(&style_bar_pill, SPACE_MD, SPACE_MD);
+        alarm_ui_run_15(&style_bar_pill, SPACE_MD, SPACE_MD);
         lv_style_set_pad_column(&style_bar_pill, 6);
         lv_style_set_text_color(&style_bar_pill, COLOR_AMBER);
         lv_style_set_bg_opa(&style_bar_pill_active, (255 * 30 / 100));
         alarm_ui_run_6(&style_backdrop, lv_color_hex(0x000000), (255 * 65 / 100));
         alarm_ui_run_6(&style_sheet_card, COLOR_SURFACE, (255 * 100 / 100));
-        alarm_ui_run_23(&style_sheet_card, RADIUS_XL);
+        alarm_ui_run_24(&style_sheet_card, RADIUS_XL);
         lv_style_set_pad_all(&style_sheet_card, SPACE_XL);
         lv_style_set_layout(&style_sheet_card, LV_LAYOUT_FLEX);
         lv_style_set_flex_flow(&style_sheet_card, LV_FLEX_FLOW_COLUMN);
         lv_style_set_pad_row(&style_sheet_card, SPACE_MD);
-        alarm_ui_run_60(&style_roller, ROLLER_H, RADIUS_MD);
+        alarm_ui_run_64(&style_roller, ROLLER_H, RADIUS_MD);
         alarm_ui_run_6(&style_roller, COLOR_BG, (255 * 100 / 100));
         lv_style_set_border_width(&style_roller, 0);
         lv_style_set_pad_all(&style_roller, 0);
-        alarm_ui_run_43(&style_roller, font_label, COLOR_TEXT_2);
+        alarm_ui_run_45(&style_roller, font_label, COLOR_TEXT_2);
         lv_style_set_text_align(&style_roller, LV_TEXT_ALIGN_CENTER);
         lv_style_set_anim_duration(&style_roller, 0);
         lv_style_set_radius(&style_roller_selected, RADIUS_SM);
         alarm_ui_run_6(&style_roller_selected, COLOR_RAISED, (255 * 100 / 100));
-        alarm_ui_run_43(&style_roller_selected, font_title, COLOR_TEXT);
+        alarm_ui_run_45(&style_roller_selected, font_title, COLOR_TEXT);
         alarm_ui_run_19(&style_step, 36, 6, RADIUS_FULL);
         alarm_ui_run_6(&style_step, COLOR_LINE, (255 * 100 / 100));
         lv_style_set_bg_color(&style_step_on, COLOR_BLUE);
@@ -1030,6 +1035,17 @@ void alarm_ui_init_gen(const char * asset_path)
                            UI_SUBJECT_STRING_LENGTH,
                            ""
                           );
+    lv_subject_init_int(&subject_link_role, 0);
+    lv_subject_init_int(&subject_link_home, 0);
+    static char subject_panic_hint_buf[UI_SUBJECT_STRING_LENGTH];
+    static char subject_panic_hint_prev_buf[UI_SUBJECT_STRING_LENGTH];
+    lv_subject_init_string(&subject_panic_hint,
+                           subject_panic_hint_buf,
+                           subject_panic_hint_prev_buf,
+                           UI_SUBJECT_STRING_LENGTH,
+                           ""
+                          );
+    lv_subject_init_int(&subject_panic_link, 0);
     lv_subject_init_int(&subject_settings_section, 0);
     lv_subject_init_int(&subject_automations_avail, 0);
     lv_subject_init_int(&subject_update_waiting, 0);
@@ -1090,7 +1106,10 @@ void alarm_ui_init_gen(const char * asset_path)
     lv_subject_init_int(&subject_sheet_shown, 0);
     lv_subject_init_int(&subject_wiz_step, 0);
     lv_subject_set_min_value_int(&subject_wiz_step, 0);
-    lv_subject_set_max_value_int(&subject_wiz_step, 5);
+    lv_subject_set_max_value_int(&subject_wiz_step, 6);
+    lv_subject_init_int(&subject_wiz_steps, 5);
+    lv_subject_set_min_value_int(&subject_wiz_steps, 4);
+    lv_subject_set_max_value_int(&subject_wiz_steps, 6);
     static char subject_wiz_icon_buf[UI_SUBJECT_STRING_LENGTH];
     static char subject_wiz_icon_prev_buf[UI_SUBJECT_STRING_LENGTH];
     lv_subject_init_string(&subject_wiz_icon,
@@ -1226,6 +1245,10 @@ void alarm_ui_init_gen(const char * asset_path)
     lv_xml_register_subject(NULL, "subject_poff_hour", &subject_poff_hour);
     lv_xml_register_subject(NULL, "subject_poff_night_title", &subject_poff_night_title);
     lv_xml_register_subject(NULL, "subject_poff_night", &subject_poff_night);
+    lv_xml_register_subject(NULL, "subject_link_role", &subject_link_role);
+    lv_xml_register_subject(NULL, "subject_link_home", &subject_link_home);
+    lv_xml_register_subject(NULL, "subject_panic_hint", &subject_panic_hint);
+    lv_xml_register_subject(NULL, "subject_panic_link", &subject_panic_link);
     lv_xml_register_subject(NULL, "subject_settings_section", &subject_settings_section);
     lv_xml_register_subject(NULL, "subject_automations_avail", &subject_automations_avail);
     lv_xml_register_subject(NULL, "subject_update_waiting", &subject_update_waiting);
@@ -1243,6 +1266,7 @@ void alarm_ui_init_gen(const char * asset_path)
     lv_xml_register_subject(NULL, "subject_sheet_eye", &subject_sheet_eye);
     lv_xml_register_subject(NULL, "subject_sheet_shown", &subject_sheet_shown);
     lv_xml_register_subject(NULL, "subject_wiz_step", &subject_wiz_step);
+    lv_xml_register_subject(NULL, "subject_wiz_steps", &subject_wiz_steps);
     lv_xml_register_subject(NULL, "subject_wiz_icon", &subject_wiz_icon);
     lv_xml_register_subject(NULL, "subject_wiz_title", &subject_wiz_title);
     lv_xml_register_subject(NULL, "subject_wiz_note", &subject_wiz_note);

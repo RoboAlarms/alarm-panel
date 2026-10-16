@@ -28,11 +28,11 @@ lv_obj_t * badge_create(lv_obj_t * parent, lv_subject_t * subject, lv_color_t co
 
         lv_style_set_height(&style_badge, 22);
         lv_style_set_min_width(&style_badge, 22);
-        alarm_ui_run_59(&style_badge, RADIUS_FULL, (255 * 100 / 100));
+        alarm_ui_run_63(&style_badge, RADIUS_FULL, (255 * 100 / 100));
         lv_style_set_pad_left(&style_badge, 6);
         lv_style_set_pad_right(&style_badge, 6);
         alarm_ui_run_17(&style_badge, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_43(&style_badge, font_caption, COLOR_ON_TONE);
+        alarm_ui_run_45(&style_badge, font_caption, COLOR_ON_TONE);
 
         alarm_ui_style_track(&style_badge, ALARM_UI_STYLE_BADGE_BADGE);
 
@@ -44,8 +44,8 @@ lv_obj_t * badge_create(lv_obj_t * parent, lv_subject_t * subject, lv_color_t co
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_21(parent, LV_SIZE_CONTENT, LV_OBJ_FLAG_FLOATING);
-        alarm_ui_run_51(box_0, LV_ALIGN_TOP_RIGHT, -4, 2);
+        lv_obj_t * box_0 = alarm_ui_run_22(parent, LV_SIZE_CONTENT, LV_OBJ_FLAG_FLOATING);
+        alarm_ui_run_56(box_0, LV_ALIGN_TOP_RIGHT, -4, 2);
         lv_obj_set_style_bg_color(box_0, color, 0);
         lv_obj_add_style(box_0, &style_badge, 0);
         lv_obj_bind_flag_if_eq(box_0, subject, LV_OBJ_FLAG_HIDDEN, 0);

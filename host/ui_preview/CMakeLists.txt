@@ -63,8 +63,9 @@ target_link_libraries(shot_png PUBLIC lvgl)
 
 # host_zigbee_demo.c: the demo Zigbee backend the walk's BL-144/147/148 shots are drawn over;
 # host_zigbee_real.c: the panel's real Zigbee over the fake radio (BL-143 ZB-M6), the walk's
-# zb-real segment and the simulator's default.
-set(ZB_HOST host_zigbee_demo.c host_zigbee_real.c)
+# zb-real segment and the simulator's default; host_link_demo.c: the panel link's demo backend
+# (BL-048), which host_panel.c wires the same way.
+set(ZB_HOST host_zigbee_demo.c host_zigbee_real.c host_link_demo.c)
 # voice_walk.c: the scripted voice check (what the policy says and the files it renders); it also
 # compiles the simulator's audio core (host/ui_sim/sim_audio.c, no sound card here) to prove the
 # simulator's speech path.

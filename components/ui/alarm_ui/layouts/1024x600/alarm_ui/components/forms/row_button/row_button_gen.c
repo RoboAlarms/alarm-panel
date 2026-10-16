@@ -33,7 +33,7 @@ lv_obj_t * row_button_create(lv_obj_t * parent, const char * glyph, const char *
         lv_style_set_border_width(&style_row_button, 1);
         alarm_ui_run_17(&style_row_button, LV_FLEX_FLOW_ROW);
         lv_style_set_pad_column(&style_row_button, SPACE_SM);
-        alarm_ui_run_43(&style_row_button, font_label, COLOR_TEXT);
+        alarm_ui_run_45(&style_row_button, font_label, COLOR_TEXT);
         lv_style_set_bg_opa(&style_row_button_pressed, (255 * 30 / 100));
 
         alarm_ui_style_track(&style_row_button, ALARM_UI_STYLE_ROW_BUTTON_ROW_BUTTON);
@@ -50,7 +50,7 @@ lv_obj_t * row_button_create(lv_obj_t * parent, const char * glyph, const char *
         lv_obj_t * box_0 = alarm_ui_run_20(parent);
         lv_obj_set_style_bg_color(box_0, color, 0);
         lv_obj_set_style_border_color(box_0, color, 0);
-        alarm_ui_run_15(box_0, &style_row_button, 0, &style_row_button_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(box_0, &style_row_button, 0, &style_row_button_pressed, LV_STATE_PRESSED);
         lv_obj_t * lv_label_0 = lv_label_create(box_0);
         lv_label_set_text(lv_label_0, glyph);
         lv_obj_set_style_text_font(lv_label_0, icons_20, 0);

@@ -24,7 +24,8 @@ static bool t_aes(void *ctx, const uint8_t key[16], const uint8_t in[16], uint8_
 {
     plink_test_port_t *t = ctx;
     t->aes_calls++;
-    if (is_a0(in)) {
+    /* in[1] is the nonce's first byte: the direction of the frame (plink_nonce). */
+    if (is_a0(in) && (t->only_dir == 0u || in[1] == t->only_dir)) {
         const uint32_t h = fnv1a(fnv1a(2166136261u, key, 16), in, 16);
         for (uint32_t i = 0; i < t->seen_count; i++) {
             if (t->seen[i] == h) {

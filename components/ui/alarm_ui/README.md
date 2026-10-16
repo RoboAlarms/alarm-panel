@@ -26,7 +26,8 @@ and simulator. The contract is `components/core/ui_backend`; its ESP-IDF impleme
 | `ui_update.c` / `ui_storage.c` | About > Software update; About > SD card |
 | `ui_zwave.c` | Installer > Z-Wave (docs/features/36 screens.md): the installer menu's row and the Z-Wave page - the radio, the devices, the network's settings; a page table the add, device, remove, region and radio pages slot into (Z7b). Only with `ALARM_UI_WITH_ZWAVE` |
 | `ui_walk.c` | The walk test (docs/features/40): Settings > Walk test (start it, follow it, its list of zones, the summary after it), Home's card while one runs (who started it when that was elsewhere, the end warning), the status bar's walk test banner, the installer menu's Walk test |
-| `ui_wizard.c`, `ui_tz.c` | First-boot setup; the time zone table |
+| `ui_wizard.c`, `ui_tz.c` | First-boot setup (with the panel link: the role, and a keypad's Wi-Fi and pairing steps); the time zone table |
+| `ui_link.c` | The panel link (docs/features/11, BL-048): Installer > Keypads and devices' keypads on Wi-Fi (adding one with the code compared on both screens, a keypad's page, removing it), and a panel in the keypad role: Home while it connects, without the alarm panel or not paired, Emergency's words, About's rows, Make it a stand-alone panel, the home partition. Read through `ui_backend_t.link_*`; nothing shows without them |
 | `ui_saver.c` | The screen saver picture, decoded once with LVGL's TJPGD |
 | `ui_status.c` (`include/ui_status.h`) | The status screen a board shows when the full UI doesn't fit in its RAM: state, troubles, clock, a ring under the finger; operates nothing |
 | `ui_text.c` / `ui_text.h` | Icons and tones, the zone card, the words only this screen uses; wraps `notify`'s sentences |

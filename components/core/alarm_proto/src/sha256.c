@@ -1,17 +1,13 @@
 /*
- * sha256.c - SHA-256 (FIPS 180-4) for the link's pairing code and commitments (proto_link.h).
- * Plain C11, no heap; tested against the standard vectors in components/core/alarm_proto/test/test_link.c.
+ * sha256.c - SHA-256 (FIPS 180-4) for the link's pairing code and commitments (proto_link.h) and,
+ * in pieces, for the panel link's HMAC, HKDF and transcripts (proto_sha256.h). Plain C11, no
+ * heap; tested against the standard vectors in components/core/alarm_proto/test/test_link.c, and
+ * in pieces in components/core/panel_link/test/test_plink_crypto.c.
  */
 #include <string.h>
 
 #include "alarm_proto/proto_link.h"
-
-typedef struct {
-    uint32_t h[8];
-    uint64_t total;    /* message bytes so far */
-    uint8_t buf[64];
-    size_t buf_len;
-} sha256_t;
+#include "alarm_proto/proto_sha256.h"
 
 static const uint32_t K[64] = {
     0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu, 0x59f111f1u, 0x923f82a4u,
@@ -31,7 +27,7 @@ static uint32_t rotr(uint32_t x, unsigned n)
     return (x >> n) | (x << (32u - n));
 }
 
-static void sha256_block(sha256_t *s, const uint8_t p[64])
+static void sha256_block(proto_sha256_ctx_t *s, const uint8_t p[64])
 {
     uint32_t w[64];
     for (size_t i = 0; i < 16; i++) {
@@ -77,7 +73,7 @@ static void sha256_block(sha256_t *s, const uint8_t p[64])
     s->h[7] += h;
 }
 
-static void sha256_init(sha256_t *s)
+void proto_sha256_init(proto_sha256_ctx_t *s)
 {
     static const uint32_t H0[8] = {0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au,
                                    0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u};
@@ -86,8 +82,12 @@ static void sha256_init(sha256_t *s)
     s->buf_len = 0;
 }
 
-static void sha256_update(sha256_t *s, const uint8_t *p, size_t len)
+void proto_sha256_update(proto_sha256_ctx_t *s, const void *data, size_t len)
 {
+    const uint8_t *p = data;
+    if (len == 0u) {
+        return; /* data may be NULL */
+    }
     s->total += len;
     if (s->buf_len != 0u) {
         size_t take = 64u - s->buf_len;
@@ -114,20 +114,20 @@ static void sha256_update(sha256_t *s, const uint8_t *p, size_t len)
     }
 }
 
-static void sha256_final(sha256_t *s, uint8_t out[32])
+void proto_sha256_final(proto_sha256_ctx_t *s, uint8_t out[32])
 {
     uint64_t bits = s->total * 8u;
     static const uint8_t pad = 0x80;
-    sha256_update(s, &pad, 1);
+    proto_sha256_update(s, &pad, 1);
     static const uint8_t zero[64] = {0};
     while (s->buf_len != 56u) {
-        sha256_update(s, zero, s->buf_len < 56u ? 56u - s->buf_len : 64u - s->buf_len);
+        proto_sha256_update(s, zero, s->buf_len < 56u ? 56u - s->buf_len : 64u - s->buf_len);
     }
     uint8_t len_be[8];
     for (size_t i = 0; i < 8; i++) {
         len_be[i] = (uint8_t)(bits >> (56u - 8u * i));
     }
-    sha256_update(s, len_be, 8);
+    proto_sha256_update(s, len_be, 8);
     for (size_t i = 0; i < 8; i++) {
         out[4 * i] = (uint8_t)(s->h[i] >> 24);
         out[4 * i + 1] = (uint8_t)(s->h[i] >> 16);
@@ -138,8 +138,8 @@ static void sha256_final(sha256_t *s, uint8_t out[32])
 
 void proto_sha256(const void *data, size_t len, uint8_t out[32])
 {
-    sha256_t s;
-    sha256_init(&s);
-    sha256_update(&s, (const uint8_t *)data, len);
-    sha256_final(&s, out);
+    proto_sha256_ctx_t s;
+    proto_sha256_init(&s);
+    proto_sha256_update(&s, data, len);
+    proto_sha256_final(&s, out);
 }

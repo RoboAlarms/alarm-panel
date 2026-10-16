@@ -84,13 +84,8 @@ about({id: 'installer-menu', shot: 'installer_menu', title: 'Installer mode: the
   ].join('')}});
 
 // Installer > Keypads and devices (ui_installer.c build_devices, build_device): the engine's table of
-// supervised devices, every one of its 16 numbers a row, and a device's page. No preview picture yet.
-about({id: 'installer-devices', shot: null, title: 'Installer: Keypads and devices', installer: true,
-  notes: 'A row for each of the 16 device numbers, in order: the name (or "Device 4"), and its partition ("All partitions", the partition\'s name) when in use, else "Not in use" with a gray chip. A fresh panel has none in use, so the menu row says None. The page scrolls; the rows under the fold are Device 6 to Device 16.',
-  body: {title: 'Keypads and devices', note: 'A supervised device that stops answering shows a trouble', back: 'installer-menu', body:
-    Array.from({length: 16}, (_, i) => M.row_link({glyph: 'cpu', color: 'gray', title: `Device ${i + 1}`, detail: 'Not in use',
-      goTo: i === 0 ? 'installer-device' : ''})).join('')}});
-
+// supervised devices, every one of its 16 numbers a row, is drawn with the panel link's keypads on top
+// (panel-link.js installer-devices); a device's page here.
 about({id: 'installer-device', shot: null, title: 'Installer: one supervised device', installer: true,
   notes: 'Device 1 just switched on. Off, the page has the switch alone. Name opens the keyboard ("Hall keypad, Garage expander..."); Home partition a pick sheet (All partitions, then each partition in use; "The partition a keypad shows and arms"); Supervision a pick sheet (Not supervised, 1, 4 or 12 hours; "Silent this long: a trouble"). Saved when the page is left.',
   body: {title: 'Device 1', note: 'Device 1 · saved when you go back', back: 'installer-devices', body: [

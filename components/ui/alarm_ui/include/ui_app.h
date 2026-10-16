@@ -51,6 +51,10 @@ unsigned ui_app_text_cuts(const char **last);
 /* Runs the setup again on a panel that is already set up (the installer menu): every step can
  * be left with "Leave setup", which goes back to Home and changes nothing else. */
 void ui_app_run_setup(void);
+/* The setup as a panel's first start shows it (ui_options_t.run_setup): no "Leave setup", and in a
+ * firmware with the panel link the role step after Welcome (BL-048). A panel starts it through
+ * ui_app_start; the PC preview's walk starts it here. */
+void ui_app_first_setup(void);
 #if CONFIG_ALARM_DEV_REMOTE || CONFIG_ALARM_PANEL_WEB
 bool ui_dev_control_begin(void);
 void ui_dev_control_end(void);

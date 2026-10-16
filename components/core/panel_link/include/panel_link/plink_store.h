@@ -28,7 +28,7 @@
 extern "C" {
 #endif
 
-#define PLINK_SUPERVISION_DEFAULT_S 60u /* LINK-007 */
+#define PLINK_SUPERVISION_DEFAULT_S 300u /* LINK-007: 5 min (decided 2026-10-15) */
 
 #define PLINK_PEER_PROVISIONAL 0x01u /* paired, no handshake yet: not supervised (LINK-016) */
 
@@ -71,6 +71,8 @@ bool plink_store_master_encode(const plink_master_rec_t *rec, uint8_t *out, size
 bool plink_store_master_decode(const uint8_t *buf, size_t len, plink_master_rec_t *rec);
 bool plink_store_keypad_encode(const plink_keypad_rec_t *rec, uint8_t *out, size_t cap,
                                size_t *len);
+/* false as the master's, and for a record without its fields, a network (net_id 0) or a number
+ * in 1..8; *rec is then zeroed. */
 bool plink_store_keypad_decode(const uint8_t *buf, size_t len, plink_keypad_rec_t *rec);
 
 #ifdef __cplusplus

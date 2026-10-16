@@ -28,7 +28,7 @@ lv_obj_t * device_key_create(lv_obj_t * parent, const char * glyph, const char *
         lv_style_init(&style_device_key);
         lv_style_init(&style_device_key_pressed);
 
-        alarm_ui_run_60(&style_device_key, lv_pct(100), RADIUS_MD);
+        alarm_ui_run_64(&style_device_key, lv_pct(100), RADIUS_MD);
         alarm_ui_run_6(&style_device_key, COLOR_RAISED, (255 * 100 / 100));
         alarm_ui_run_17(&style_device_key, LV_FLEX_FLOW_ROW);
         lv_style_set_pad_column(&style_device_key, SPACE_XS);
@@ -49,10 +49,10 @@ lv_obj_t * device_key_create(lv_obj_t * parent, const char * glyph, const char *
         lv_obj_t * box_0 = box_create(parent);
         lv_obj_set_flex_grow(box_0, 1);
         lv_obj_set_flag(box_0, LV_OBJ_FLAG_CLICKABLE, true);
-        alarm_ui_run_15(box_0, &style_device_key, 0, &style_device_key_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(box_0, &style_device_key, 0, &style_device_key_pressed, LV_STATE_PRESSED);
         lv_obj_t * icon = lv_label_create(box_0);
         lv_label_set_text(icon, glyph);
-        alarm_ui_run_35(icon, icons_20, "icon");
+        alarm_ui_run_37(icon, icons_20, "icon");
 
         lv_obj_t * text_label = lv_label_create(box_0);
         lv_label_set_text(text_label, text);

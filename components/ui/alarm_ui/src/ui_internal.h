@@ -15,7 +15,9 @@
  *   ui_walk.c       the walk test: Settings > Walk test, its list, Home's card while one runs
  *   ui_automations.c, ui_auto_edit.c  Settings > Automations: the list, a page, the editors
  *                   (ALARM_UI_AUTOMATIONS; ui_automations.h)
- *   ui_wizard.c     first-boot setup
+ *   ui_wizard.c     first-boot setup (and a keypad's role and pairing steps, BL-048)
+ *   ui_link.c       the panel link (docs/features/11, BL-048): Installer > Keypads and devices'
+ *                   keypads on Wi-Fi, a keypad's Home, About and stand-alone page
  * Everything runs on the LVGL thread.
  */
 #pragma once
@@ -108,7 +110,8 @@ void *ui_slow_alloc(size_t size);
 #define UI_FLAG_SCROLL_SURFACE LV_OBJ_FLAG_USER_1
 
 enum { VIEW_HOME = 0, VIEW_ZONES, VIEW_ACTIVITY, VIEW_TROUBLES, VIEW_PANIC, VIEW_SETTINGS, VIEW_DEVICES };
-enum { PANEL_ARM = 0, PANEL_DISARM, PANEL_PAD, PANEL_MEMORY, PANEL_WALK };
+enum { PANEL_ARM = 0, PANEL_DISARM, PANEL_PAD, PANEL_MEMORY, PANEL_WALK,
+       PANEL_LINK /* a keypad that isn't paired: Pair again (BL-048) */ };
 /* Settings sections (subject_settings_section): the numbers are the XML's ref_value, not the order
  * of the left column. */
 enum {
@@ -247,6 +250,10 @@ typedef enum {
     PAGE_FW_SERVER,       /* Installer > Updates > Update server (BL-186; ui_update.c) */
     PAGE_FW_WARNING,      /* ... the warning before a server whose key the panel does not trust */
     PAGE_ANNOUNCEMENTS,   /* Screen and sound > Announcements (BL-202, D06; ui_voice.c's words) */
+    /* The panel link (docs/features/11, BL-048; ui_link.c) */
+    PAGE_LINK_ADD,        /* Installer > Keypads and devices > Add a keypad */
+    PAGE_LINK_KEYPAD,     /* a keypad on Wi-Fi, arg = its number (1..8) */
+    PAGE_LINK_STANDALONE, /* a keypad's About > Make it a stand-alone panel (a factory reset) */
 } page_id_t;
 
 typedef struct {
@@ -957,13 +964,61 @@ void ui_update_banner_tick(void);
 
 /* ---- ui_wizard.c --------------------------------------------------------------------------- */
 void ui_wizard_init(void);
-void ui_wizard_start(bool can_exit); /* can_exit: the panel is already set up, offer "Leave setup" */
+/* can_exit: the panel is already set up, offer "Leave setup"; without it (a first start) a firmware
+ * with the panel link asks for the role after Welcome (BL-048). */
+void ui_wizard_start(bool can_exit);
+/* A keypad that isn't paired: the setup's pairing step, again (Home's Pair again, BL-048). */
+void ui_wizard_pair_again(void);
 void ui_wizard_next(void);
 void ui_wizard_back(void);
 void ui_wizard_exit(void);   /* "Leave setup": back to Home, nothing else changed */
 void ui_wizard_tick(void);
 void ui_wizard_pause(void);  /* an alarm needs the main screen */
 void ui_wizard_resume(void);
+
+/* ---- ui_link.c (the panel link, docs/features/11, BL-048) ---------------------------------------
+ * A panel is the alarm panel itself (the master) or a keypad for one elsewhere in the house. The
+ * link is read through ui_backend_t.link_*, at most once a second (UI-027); with NULL entries (a
+ * firmware without the link), or while link_info answers false (not known yet), every call below
+ * says no and nothing of the link shows. */
+void ui_link_init(void);    /* ui_app_start, before the setup: the role and its partition */
+void ui_link_tick(void);    /* once a second: Home's words, the open page's live words */
+bool ui_link_master(void);  /* the alarm panel, in a firmware with the link */
+bool ui_link_keypad(void);  /* a keypad: the alarm panel's pages are left out (the role gate) */
+/* LINK-025: 10 minutes without system communication; Wi-Fi, Software update and "Make it a
+ * stand-alone panel" open without a code. */
+bool ui_link_maintenance(void);
+/* A keypad that can't show the alarm panel's state (connecting, lost, not paired): arming waits. */
+bool ui_link_holds_home(void);
+const char *ui_link_master_name(void); /* the alarm panel's name: a value, never translated */
+/* "Keypad 2 of Harbor House" (About, the setup's last step). */
+void ui_link_keypad_title(char *out, size_t len, uint8_t device, const char *master);
+/* Home's state card on a keypad that doesn't show the alarm panel's state (connecting, no system
+ * communication, not paired, LINK-008): true with the words; Home shows no state of its own. */
+typedef struct {
+    const char *glyph;
+    lv_color_t tone;
+    char headline[48];
+    char detail[128];
+    char note[128];
+} ui_link_home_t;
+bool ui_link_home_words(ui_link_home_t *out);
+/* Home's right side on a keypad that isn't paired: Pair again, with its words (panel 5). */
+bool ui_link_unpaired(char *title, size_t tlen, char *note, size_t nlen);
+void ui_link_pair_again(void);
+/* The alarm panel's keypads on Wi-Fi: how many (the installer menu counts them), and Keypads and
+ * devices' section on top of the table; *held gets the numbers they hold (bit n - 1), which the
+ * table leaves out (LINK-001). */
+uint8_t ui_link_keypad_count(void);
+void ui_link_devices_section(lv_obj_t *body, uint16_t *held);
+bool ui_link_build(page_id_t id, int32_t arg, lv_obj_t *body, char *title, size_t tlen, char *note,
+                   size_t nlen);
+void ui_link_stop(void); /* a page is being dropped: leaving Add a keypad closes pairing */
+/* About on a keypad: its row under the panel's, the alarm panel's rows instead of Set up, and the
+ * way back to a panel of its own instead of Installer. */
+void ui_link_about_row(lv_obj_t *body);
+void ui_link_about_details(lv_obj_t *body);
+void ui_link_about_end(lv_obj_t *body);
 
 /* ---- ui_tz.c ------------------------------------------------------------------------------- */
 typedef struct {

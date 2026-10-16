@@ -30,3 +30,4 @@ components/ui/alarm_ui/src/ui_zigbee.c
 components/ui/alarm_ui/src/ui_automations.c
 components/ui/alarm_ui/src/ui_auto_edit.c
 components/ui/alarm_ui/src/ui_voice.c
+components/ui/alarm_ui/src/ui_link.c

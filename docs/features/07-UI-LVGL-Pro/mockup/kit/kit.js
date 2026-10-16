@@ -55,16 +55,17 @@ const M = (() => {
   /**
    * The navigation rail: places only (BL-131). view: home|zones|devices|activity|panic; tone colours
    * the logo. Smart Home (BL-045, HCTL-003) shows only while there is a device to control
-   * (devices: false hides it); its name is on two lines and its button a line taller (.two).
+   * (devices: false hides it); its name is on two lines and its button a line taller (.two). panic:
+   * false (BL-048) leaves Panic out, as a keypad the alarm panel removed shows it.
    */
-  function rail({view = 'home', tone = 'green', zones = 0, devices = true} = {}) {
+  function rail({view = 'home', tone = 'green', zones = 0, devices = true, panic = true} = {}) {
     const counts = {zones};
     return `<div class="rail">
       <div class="rail_logo" style="color:${color(tone)}"><i></i></div>
       ${NAV.filter((n) => devices || n.key !== 'devices').map((n) => `<div class="nav_item${n.text.includes('\n') ? ' two' : ''}${view === n.key ? ' active' : ''}"${go(n.go)}>
         ${icon(n.glyph, 28)}${raw(n.text.split('\n').map(esc).join('<br>'), 'caption')}${badge(counts[n.key])}</div>`).join('')}
       <div class="rail_fill"></div>
-      <div class="nav_item panic${view === 'panic' ? ' active' : ''}"${go('panic')}>${icon('siren', 28)}${text('Panic', 'caption')}</div>
+      ${panic ? `<div class="nav_item panic${view === 'panic' ? ' active' : ''}"${go('panic')}>${icon('siren', 28)}${text('Panic', 'caption')}</div>` : ''}
     </div>`;
   }
 
@@ -81,9 +82,10 @@ const M = (() => {
    * The status bar. banner: null (the date) | 'codes' | 'installer' | 'walk' | 'remote' | 'arm', or
    * {glyph, tone, text, goTo}; bannerText replaces a named banner's words. battery: null (none shown),
    * 'none' (the red struck-out battery: no battery fitted), or {glyph, text, level: ''|'warn'|'critical'}.
+   * chimeOff (BL-048): Chime dimmed alone, as a keypad without the alarm panel shows it (Settings stays).
    */
   function bar({banner = 'codes', bannerText, date = 'Saturday, September 19', time = '10:41', ampm = 'PM',
-    wifi = 'wifi', wifiOk = true, battery = 'none', troubles = 0, chime = false, settings = false, locked = false, view} = {}) {
+    wifi = 'wifi', wifiOk = true, battery = 'none', troubles = 0, chime = false, settings = false, locked = false, chimeOff = false, view} = {}) {
     let left = text(date, 'label', 'text_2');
     if (banner) {
       const b = typeof banner === 'string' ? BANNERS[banner] : banner;
@@ -103,7 +105,7 @@ const M = (() => {
       <span class="${wifiOk ? 't2' : 'warn'}">${icon(wifi, 20)}</span>
       ${bat}
       <div class="bar_clock">${text(time, 'title')}${ampm ? text(ampm, 'caption', 'text_2', 'ampm') : ''}</div>
-      <div class="bar_round${chime ? ' on' : ''}${locked ? ' disabled' : ''}"${go(locked ? '' : 'chime-pad')}>${icon(chime ? 'bell' : 'bell-off', 20)}</div>
+      <div class="bar_round${chime ? ' on' : ''}${locked || chimeOff ? ' disabled' : ''}"${go(locked || chimeOff ? '' : 'chime-pad')}>${icon(chime ? 'bell' : 'bell-off', 20)}</div>
       <div class="bar_settings${settings ? ' active' : ''}${locked ? ' disabled' : ''}"${go(locked ? '' : 'settings-display')}>${icon('settings', 20)}</div>
     </div>`;
   }
@@ -117,13 +119,14 @@ const M = (() => {
       ${fill > 0 ? `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${color(tone)}" stroke-width="${width}"
         stroke-linecap="round" stroke-dasharray="${len} ${c}" transform="rotate(-90 ${size / 2} ${size / 2})"/>` : ''}</svg>`;
   }
-  /** The state card: ring, icon or seconds left, headline, detail, note. */
+  /** The state card: ring, icon or seconds left, headline, detail (a "\n" starts a line of its own), note. */
   function hero({tone = 'green', glyph = 'shield-check', countdown = 0, fill = 1, headline, detail, note, alarm = false}) {
     return `<div class="hero${alarm ? ' alarm' : ''}">
       <div class="ring_box">${ring(236, 12, tone, fill)}
         <div class="disk" style="color:${color(tone)}">${countdown ? text(countdown, 'digits', null, 'count') : icon(glyph, 96)}</div></div>
       ${text(headline, 'headline')}
-      ${text(detail, 'body', 'text_2', 'detail')}
+      ${String(detail).includes('\n') ? `<span class="font_body detail" style="color:${color('text_2')}">${String(detail).split('\n').map(esc).join('<br>')}</span>`
+        : text(detail, 'body', 'text_2', 'detail')}
       ${note ? text(note, 'caption', 'text_3', 'note dots') : ''}
     </div>`;
   }

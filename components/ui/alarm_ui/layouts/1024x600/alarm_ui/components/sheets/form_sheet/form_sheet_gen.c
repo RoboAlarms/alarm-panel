@@ -24,7 +24,7 @@ lv_obj_t * form_sheet_create(lv_obj_t * parent)
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_0(parent, lv_pct(100), lv_pct(100));
-        alarm_ui_run_32(box_0);
+        alarm_ui_run_32(box_0, &style_backdrop);
         lv_obj_set_name_static(box_0, "form_sheet_#");
         lv_obj_t * form_card = alarm_ui_run_0(box_0, 760, LV_SIZE_CONTENT);
         lv_obj_set_style_max_height(form_card, 584, 0);
@@ -44,18 +44,18 @@ lv_obj_t * form_sheet_create(lv_obj_t * parent)
         lv_obj_set_name(form_note, "form_note");
 
         lv_obj_t * form_cancel = alarm_ui_run_5(box_1, &style_button_pressed, LV_STATE_PRESSED);
-        alarm_ui_run_9(form_cancel, ui_on_sheet_cancel, "form_cancel");
-        alarm_ui_run_16(form_cancel, alarm_ui_tr("Cancel"));
+        alarm_ui_run_10(form_cancel, ui_on_sheet_cancel, "form_cancel");
+        alarm_ui_run_14(form_cancel, alarm_ui_tr("Cancel"));
 
         lv_obj_t * form_ok = alarm_ui_run_5(box_1, &style_button_primary, 0);
         lv_obj_add_style(form_ok, &style_button_tone_pressed, LV_STATE_PRESSED);
-        alarm_ui_run_9(form_ok, ui_on_sheet_done, "form_ok");
-        alarm_ui_run_16(form_ok, alarm_ui_tr("Done"));
+        alarm_ui_run_10(form_ok, ui_on_sheet_done, "form_ok");
+        alarm_ui_run_14(form_ok, alarm_ui_tr("Done"));
 
         lv_obj_t * form_body = alarm_ui_run_0(form_card, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_13(form_body);
         alarm_ui_run_1(form_body, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_48(form_body, SPACE_SM, "form_body");
+        alarm_ui_run_49(form_body, SPACE_SM, "form_body");
 
         the_root = box_0;
     }

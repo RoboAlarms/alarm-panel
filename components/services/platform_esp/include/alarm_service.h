@@ -49,6 +49,15 @@ typedef void (*alarm_service_fn)(alarm_engine_t *e, alarm_ms_t now, void *ctx);
 /* Register before alarm_service_start() to also see the start-up event. */
 esp_err_t alarm_service_add_listener(const alarm_listener_t *listener);
 
+/* A panel in the keypad role runs no engine (docs/features/11 "Roles on a P4 panel"): call this
+ * first, before anything can post, instead of alarm_service_start(). From then on every input
+ * (zone events, troubles, check-ins) is dropped without waiting, every synchronous call answers
+ * at once - ESP_ERR_INVALID_STATE, or ALARM_ERR_UNAVAILABLE for those returning an
+ * alarm_result_t - alarm_service_start() is refused, alarm_service_get_snapshot() zero-fills and
+ * alarm_service_recent_events() returns 0. Never undone until the restart. */
+void alarm_service_set_dormant(void);
+bool alarm_service_dormant(void);
+
 /* Event numbers continue after this one (the newest in the flash event log), even when the
  * stored runtime state is older or gone. Call before alarm_service_start(). */
 void alarm_service_set_min_event_seq(uint32_t seq);

@@ -81,6 +81,7 @@ removes it.
 | [`net_mqtt`](services/net_mqtt) | services | MQTT client over TLS: availability, replay, discovery, commands | [10](../docs/features/10-MQTT-and-Home-Assistant/README.md) |
 | [`net_notify`](services/net_notify) | services | sends notifications to ntfy and Pushover | [26](../docs/features/26-Notifications/README.md) |
 | [`ha_link`](services/ha_link) | services | the local Home Assistant integration API (HACS) | [23](../docs/features/23-Home-Assistant-Integration/README.md) |
+| [`plink_service`](services/plink_service) | services | the panel link on a panel: the role, the UDP link task, the master's listener and worker, the keypad's UI backend, sounds, time and update gate, the `plink` console | [11](../docs/features/11-Panel-Link-Master-Keypad/README.md) |
 | [`panel_ota`](services/panel_ota) | services | signed firmware updates, rollback, release check, serial upload, C6 updates | [13](../docs/features/13-OTA-Updates/README.md) |
 | [`panel_web`](services/panel_web) | services | the panel-hosted HTTPS Panel Manager; its pages and the PC mock in `web/`, their Node tests in `test/` | [31](../docs/features/31-Browser-Panel-Manager/README.md) |
 | [`dev_remote`](services/dev_remote) | services | enrolled developer access: network flashing, diagnostics, screen | [30](../docs/features/30-Remote-Development/README.md) |

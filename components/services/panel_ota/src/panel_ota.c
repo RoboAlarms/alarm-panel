@@ -242,7 +242,7 @@ static volatile uint32_t s_health_last[PANEL_OTA_HEALTH_COUNT];
 static volatile uint32_t s_health_stale; /* required bits not reporting (update task writes) */
 
 static const char *const HEALTH_NAME[PANEL_OTA_HEALTH_COUNT] = {
-    "the alarm engine", "the event log", "the screen", "sensor input", "touch",
+    "the alarm engine", "the event log", "the screen", "sensor input", "touch", "the panel link",
 };
 
 static void lock(void)
@@ -317,10 +317,26 @@ static void gate_on_alarm_task(alarm_engine_t *e, alarm_ms_t now, void *ctx)
     g->allowed = proto_fw_install_allowed(&s_gate_snap, &g->why);
 }
 
+/* A panel without an engine of its own (a link keypad): its gate answers instead. */
+static panel_ota_idle_fn s_idle_fn;
+static void *s_idle_ctx;
+
+void panel_ota_set_idle_gate(panel_ota_idle_fn fn, void *ctx)
+{
+    s_idle_ctx = ctx;
+    __atomic_store_n(&s_idle_fn, fn, __ATOMIC_RELEASE);
+}
+
 bool panel_ota_system_idle(const char **why)
 {
     idle_gate_t g = {.allowed = false, .why = ""};
-    if (alarm_service_call(gate_on_alarm_task, &g) != ESP_OK) {
+    const panel_ota_idle_fn gate = __atomic_load_n(&s_idle_fn, __ATOMIC_ACQUIRE);
+    if (gate != NULL) {
+        g.allowed = gate(s_idle_ctx, &g.why);
+        if (g.why == NULL) {
+            g.why = "";
+        }
+    } else if (alarm_service_call(gate_on_alarm_task, &g) != ESP_OK) {
         /* The alarm task isn't running (bring-up): the published snapshot is all there is. */
         alarm_service_get_snapshot(&s_gate_snap);
         g.allowed = proto_fw_install_allowed(&s_gate_snap, &g.why);

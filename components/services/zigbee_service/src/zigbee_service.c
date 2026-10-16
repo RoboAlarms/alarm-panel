@@ -207,6 +207,7 @@ static atomic_uint s_cfg_seq;                         /* the engine's configurat
 static uint32_t s_cfg_seen;
 static atomic_bool s_cfg_known;
 static atomic_uint s_taken; /* engine device numbers held elsewhere (bit n-1), zbz's port */
+static atomic_uint s_link_taken; /* the panel link's keypads' numbers (bit n-1), LINK-001 */
 
 /* The siren trouble (zbw_port_t.bell_trouble): wanted under the zone lock, told after it. */
 static atomic_int s_bell_want = -1;
@@ -425,11 +426,11 @@ static void port_changed(void *ctx)
     atomic_fetch_add(&s_changed, 1u);
 }
 
-/* From the copy refresh_taken() keeps: never waits for the alarm task. */
+/* From the copy refresh_taken() keeps and the panel link's numbers: never waits. */
 static uint32_t port_devices_taken(void *ctx)
 {
     (void)ctx;
-    return atomic_load(&s_taken);
+    return atomic_load(&s_taken) | atomic_load(&s_link_taken);
 }
 
 /* A siren's or a keypad's frame (zbw_port_t.send, zba_port_t.send). */
@@ -898,8 +899,8 @@ static void refresh_walk_scope(void)
 
 /* The engine device numbers held by the installer's device table (zbz_panel_port_t
  * .devices_taken), refreshed when the configuration changes - outside the zone lock: it waits
- * for the alarm task. The panel-link keypads (docs/features/11 LINK-001) add theirs once that
- * service exists. */
+ * for the alarm task. The panel-link keypads' numbers (docs/features/11 LINK-001) come on top,
+ * from zigbee_service_set_link_devices. */
 static void refresh_taken(void)
 {
     if (!atomic_load(&s_cfg_known)) {
@@ -1933,6 +1934,22 @@ uint64_t zbsvc_now_ms(void)
     return now_ms();
 }
 
+uint32_t zigbee_service_devices_held(void)
+{
+    if (!s_started) {
+        return 0u; /* no keypad was ever assigned: the panel isn't built yet */
+    }
+    zone_service_lock();
+    const uint32_t held = zbz_panel_devices_held(&s_panel);
+    zone_service_unlock();
+    return held;
+}
+
+void zigbee_service_set_link_devices(uint32_t mask)
+{
+    atomic_store(&s_link_taken, mask);
+}
+
 #else /* CONFIG_ALARM_ZSRC_ZIGBEE */
 
 esp_err_t zigbee_service_start(const zigbee_service_config_t *cfg)
@@ -2057,6 +2074,16 @@ size_t zigbee_service_zone_diags(zigbee_service_zone_diag_t *out, size_t max)
     (void)out;
     (void)max;
     return 0u;
+}
+
+uint32_t zigbee_service_devices_held(void)
+{
+    return 0u;
+}
+
+void zigbee_service_set_link_devices(uint32_t mask)
+{
+    (void)mask;
 }
 
 #endif /* CONFIG_ALARM_ZSRC_ZIGBEE */

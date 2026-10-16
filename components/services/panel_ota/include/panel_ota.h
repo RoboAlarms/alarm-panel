@@ -149,9 +149,10 @@ typedef enum {
     PANEL_OTA_OK_UI = 1u << 2,      /* the display and UI task draw */
     PANEL_OTA_OK_SENSORS = 1u << 3, /* zone source processing is actually running */
     PANEL_OTA_OK_TOUCH = 1u << 4,   /* local touch input is usable */
+    PANEL_OTA_OK_LINK = 1u << 5,    /* a link keypad hears its master (docs/features/11 LINK-020) */
 } panel_ota_health_t;
 
-#define PANEL_OTA_HEALTH_COUNT 5u /* bits defined above (append a bit, then raise this) */
+#define PANEL_OTA_HEALTH_COUNT 6u /* bits defined above (append a bit, then raise this) */
 
 /* After alarm_service_start(), from a task with an internal-RAM stack: logs an undone update once,
  * starts probation when this is the first boot of an update, loads the update server and its
@@ -322,6 +323,15 @@ void panel_ota_abort(void);
 /* Restart into the image from panel_ota_end() as soon as the system is idle. */
 esp_err_t panel_ota_apply(const alarm_source_t *src, uint8_t user);
 bool panel_ota_system_idle(const char **why);
+
+/* Who answers "is the system idle?" on a panel that runs no alarm engine of its own: a keypad of
+ * the panel link answers from its master's status (docs/features/11 "Roles", OTA-004). Once set,
+ * it is asked instead of the alarm task by every update, the co-processor's included: true when
+ * an update may start and restart now; false with *why a literal (marked I18N_NOOP_C("update",
+ * ...)) saying what holds it. Called on the update and console tasks; it must not block. Set it
+ * before panel_ota_start(); NULL fn: the alarm task again. */
+typedef bool (*panel_ota_idle_fn)(void *ctx, const char **why);
+void panel_ota_set_idle_gate(panel_ota_idle_fn fn, void *ctx);
 /* Remote-dev probation: target ELF digest and opaque operation survive the restart. */
 esp_err_t panel_ota_remote_prepare(const char *operation, const uint8_t expected_elf[32]);
 bool panel_ota_remote_confirm(const char *operation);

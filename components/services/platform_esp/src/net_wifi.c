@@ -46,7 +46,8 @@ static esp_netif_t *s_netif;
 static TaskHandle_t s_task;
 static bool s_wifi_ready;
 static atomic_uint s_interactive_until_ms;
-static bool s_interactive_radio; /* network task owns the power-save transition */
+static atomic_uint s_latency_holds; /* net_wifi_latency_owner_t bits held */
+static bool s_low_latency_radio; /* network task owns the power-save transition */
 static wifi_ps_type_t s_saved_power_save;
 static bool s_have_creds;
 static bool s_connect_failed;   /* esp_wifi_connect() itself failed: the net task retries */
@@ -57,6 +58,7 @@ static atomic_uint s_time_syncs;
 static volatile bool s_required;
 static atomic_uint s_required_mask; /* net_wifi_requester_t bits */
 static bool s_sntp_started;
+static atomic_bool s_sntp_off; /* net_wifi_set_time_server(false): a link keypad's master's time */
 static uint32_t s_retry_ms = RETRY_MIN_MS;
 static char s_ntp[64]; /* lwIP keeps a pointer to the server name */
 static net_wifi_ap_t s_scan[NET_WIFI_SCAN_MAX] ALARM_SLOW_BSS; /* task-only: slow memory */
@@ -87,6 +89,7 @@ static void trial_tick(void);
 #define NOTIFY_NTP       0x10u
 #define NOTIFY_IPCFG     0x20u
 #define NOTIFY_ADDR      0x40u
+#define NOTIFY_LATENCY   0x80u
 
 static void set_state(net_wifi_state_t st)
 {
@@ -160,7 +163,7 @@ static void time_synced(struct timeval *tv)
 
 static void start_sntp(void)
 {
-    if (s_sntp_started) {
+    if (s_sntp_started || atomic_load(&s_sntp_off)) {
         return;
     }
     strlcpy(s_ntp, NET_WIFI_DEFAULT_NTP, sizeof(s_ntp));
@@ -419,29 +422,58 @@ void net_wifi_note_interaction(void)
 {
     atomic_store(&s_interactive_until_ms, (uint32_t)(esp_timer_get_time() / 1000) + 5000);
 }
-static void interactive_radio_tick(void)
+
+void net_wifi_hold_low_latency(net_wifi_latency_owner_t owner, bool on)
+{
+    const unsigned before = on ? atomic_fetch_or(&s_latency_holds, (unsigned)owner)
+                               : atomic_fetch_and(&s_latency_holds, ~(unsigned)owner);
+    const unsigned after = on ? (before | (unsigned)owner) : (before & ~(unsigned)owner);
+    if ((before != 0u) != (after != 0u) && s_task != NULL) {
+        xTaskNotify(s_task, NOTIFY_LATENCY, eSetBits); /* the net task applies it now */
+    }
+}
+
+/* The holds now: the ones taken, and remote viewing's while its five seconds run. */
+static unsigned latency_holds(void)
 {
     uint32_t until = atomic_load(&s_interactive_until_ms);
     const uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    const bool active = until && (int32_t)(now - until) < 0;
-    if (!active && until != 0u) {
+    const bool viewing = until && (int32_t)(now - until) < 0;
+    if (!viewing && until != 0u) {
         /* Forget the deadline once it has passed: 24.9 days later the signed difference would
          * have gone negative again and switched power saving off for weeks. */
         atomic_compare_exchange_strong(&s_interactive_until_ms, &until, 0u);
     }
-    if (active && !s_interactive_radio) {
+    return atomic_load(&s_latency_holds) | (viewing ? (unsigned)NET_WIFI_LATENCY_REMOTE : 0u);
+}
+
+/* The net task alone changes the radio's power save: off while any hold stands, and the mode it
+ * found restored when the last one goes. */
+static void low_latency_tick(void)
+{
+    const unsigned holds = latency_holds();
+    if (holds != 0u && !s_low_latency_radio) {
         wifi_ps_type_t previous;
         if (esp_wifi_get_ps(&previous) == ESP_OK &&
             (previous == WIFI_PS_NONE || esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK)) {
             s_saved_power_save = previous;
-            s_interactive_radio = true;
-            ESP_LOGI(TAG, "Remote viewing: low-latency Wi-Fi (previous power save %d)", previous);
+            s_low_latency_radio = true;
+            ESP_LOGI(TAG, "low-latency Wi-Fi for %s%s (previous power save %d)",
+                     (holds & NET_WIFI_LATENCY_REMOTE) != 0u ? "remote viewing " : "",
+                     (holds & NET_WIFI_LATENCY_LINK) != 0u ? "the panel link" : "", previous);
         }
-    } else if (!active && s_interactive_radio) {
+    } else if (holds == 0u && s_low_latency_radio) {
         if (s_saved_power_save == WIFI_PS_NONE || esp_wifi_set_ps(s_saved_power_save) == ESP_OK) {
-            s_interactive_radio = false;
-            ESP_LOGI(TAG, "Remote viewing ended: restored Wi-Fi power save %d", s_saved_power_save);
+            s_low_latency_radio = false;
+            ESP_LOGI(TAG, "low-latency Wi-Fi ended: restored power save %d", s_saved_power_save);
         }
+    }
+}
+
+void net_wifi_set_time_server(bool on)
+{
+    if (atomic_exchange(&s_sntp_off, !on) != !on && s_task != NULL) {
+        xTaskNotify(s_task, NOTIFY_NTP, eSetBits); /* stopped, or started when connected */
     }
 }
 static bool wifi_bringup(void)
@@ -618,7 +650,7 @@ static void net_task(void *arg)
             retry_at = xTaskGetTickCount() + pdMS_TO_TICKS(s_retry_ms);
             s_retry_ms = (s_retry_ms * 2u > RETRY_MAX_MS) ? RETRY_MAX_MS : s_retry_ms * 2u;
         }
-        interactive_radio_tick();
+        low_latency_tick();
         if (bits & NOTIFY_CONFIG) {
             esp_wifi_disconnect();
             apply_credentials();

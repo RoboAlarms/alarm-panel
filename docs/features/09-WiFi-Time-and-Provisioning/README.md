@@ -64,13 +64,19 @@ Notes on the table (2026-09-28):
   Default TZ: `UTC0`.
 - Reconnect backoff 1 s doubling to 60 s. The `network` trouble follows NET-003:
   `net_wifi_set_required(<who>, true)` arms it, then 5 minutes without an IP raises it. Each
-  feature that needs the network has its own bit (`NET_WIFI_REQ_MQTT`, `_NOTIFY`, `_HA`; LAN keypads in M7), so one switching off cannot clear another's need. Nothing
+  feature that needs the network has its own bit (`NET_WIFI_REQ_MQTT`, `_NOTIFY`, `_HA`, `_LINK`
+  for a master with keypads), so one switching off cannot clear another's need. Nothing
   required the network in M2, so it never fired then. A failed `esp_wifi_connect()` call
   schedules the same backoff retry (no disconnect event follows it), an unreadable network-trial
   record is cleared instead of aborting start-up, and the low-latency deadline for remote viewing
   is forgotten once passed (it wrapped after 24.9 days and switched power saving off for weeks;
   [B006](../../bugs/B006-notifications-lost-after-outage.md), 8367725; seeing its fix on a panel is
   BL-025).
+- Wi-Fi power save is off while anything holds low latency (`net_wifi_hold_low_latency(owner,
+  on)`, one hold per reason: remote viewing, the panel link's master with keypads and every
+  keypad, docs/features/11 LINK-024); only the `net` task changes the radio's mode and restores
+  the one it found when the last hold goes. A link keypad runs no time server while paired
+  (`net_wifi_set_time_server(false)`): it follows its master's time.
 - `clock_not_set` is raised at start when the clock reads before 2025 and cleared by the first
   SNTP sync (it doesn't beep by default). SNTP uses `pool.ntp.org` and re-syncs every 6 h
   (`CONFIG_LWIP_SNTP_UPDATE_DELAY`). Events carry `epoch_ms = 0` until then ("time unknown").

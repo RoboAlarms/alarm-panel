@@ -1,0 +1,88 @@
+/*
+ * plink_service.h - the panel link on a panel (docs/features/11, BL-048): the role (master or
+ * keypad, NVS "link"), one task that owns the UDP socket on port 6056 and the link manager of the
+ * role (components/core/panel_link), the crypto port on PSA, mDNS, and around them:
+ *   - on a master: the alarm listener, a worker that runs the keypads' commands on the alarm task,
+ *     supervision through alarm_service_device_reachable, the device numbers shared with Zigbee;
+ *   - on a keypad: the UI backend that shows the master's status and sends its commands, the
+ *     sounds, the time and the update gate;
+ *   - the UI's link entries for either role and the `plink` console command.
+ *
+ * The component follows ALARM_LINK the "absent" way (components/services/alarm_features): with the
+ * option off nothing here is compiled, and callers guard their calls with #if CONFIG_ALARM_LINK.
+ * The link task never takes board_ui_lock and never calls the UI; the UI's entries read copies.
+ */
+#pragma once
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "alarm_service.h"
+#include "esp_err.h"
+#include "sdkconfig.h"
+#if CONFIG_ALARM_FEATURE_UI
+#include "ui_backend/ui_backend.h"
+#endif
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* The role, stored in NVS "link", key "role" (u8). A stored contract: never renumber. */
+typedef enum {
+    PLINK_SERVICE_MASTER = 0, /* the alarm panel; also when nothing is stored */
+    PLINK_SERVICE_KEYPAD = 1, /* a keypad for a master elsewhere in the house */
+} plink_service_role_t;
+
+/* The stored role, read once (after nvs_flash_init()); later calls give the same answer. */
+plink_service_role_t plink_service_role(void);
+
+/* ---- the master ------------------------------------------------------------------------------ */
+
+/* The alarm listener: register it before alarm_service_start(). Its callbacks only hand over
+ * (a snapshot flag, events and sounds into queues that never wait). */
+const alarm_listener_t *plink_service_listener(void);
+
+/* The engine device numbers 1..8 the link's keypads share (LINK-001): others_held answers the
+ * numbers the Zigbee keypads hold (zigbee_service_devices_held), link_held is told the link's own
+ * whenever they change (zigbee_service_set_link_devices). Before plink_service_start(). */
+void plink_service_set_devices_port(uint32_t (*others_held)(void),
+                                    void (*link_held)(uint32_t mask));
+
+/* ---- both roles ------------------------------------------------------------------------------ */
+
+/* Starts the link for the stored role: the crypto check (the link stays off when it fails, said in
+ * the log), the socket, the task, and on a master the worker. model: this panel's kind of hardware,
+ * the start of the name a keypad gives itself when pairing (board_name()). Once only; on a master
+ * after alarm_service_start() and the network, on a keypad after alarm_service_set_dormant(). */
+esp_err_t plink_service_start(const char *model);
+
+/* ---- the keypad ------------------------------------------------------------------------------ */
+
+/* Its home partition from its stored record (1..ALARM_MAX_PARTITIONS; 1 when not paired): the
+ * UI's ui_options_t.partition before it starts (docs/features/11 "Roles"). */
+uint8_t plink_service_keypad_home(void);
+
+/* Mains and battery for the heartbeat (the master's keypads list shows them), from the task that
+ * polls the power monitor. Never waits. */
+void plink_service_keypad_power(bool mains_lost, bool battery_low, bool battery_present);
+
+/* The update gate (panel_ota_set_idle_gate): idle only while the link is up and the master's
+ * newest status, under 15 s old, allows an update (proto_fw_install_allowed); a keypad not paired,
+ * or in its no-code maintenance (LINK-025), may update too. */
+bool plink_service_update_idle(void *ctx, const char **why);
+
+#if CONFIG_ALARM_FEATURE_UI
+/* The UI backend's link entries (link_info, link_pair_status, link_keypads, link_request) for the
+ * role; on a keypad also the entries the link serves (status, configuration, events, commands,
+ * codes) and the master-only ones turned off (NULL, or ALARM_ERR_UNAVAILABLE where the UI calls
+ * without looking). After ui_port_esp_backend(), before the UI starts. */
+void plink_service_extend_backend(ui_backend_t *be);
+#endif
+
+/* The `plink` console command (the service console only; ESP_OK without it). */
+esp_err_t plink_service_console_register(void);
+
+#ifdef __cplusplus
+}
+#endif

@@ -35,7 +35,7 @@ step is an event in the log and on MQTT (OTA-010).
 ## Public API
 | Header | What it offers |
 |---|---|
-| `include/panel_ota.h` | `panel_ota_start(required)`, the heartbeat contract (`panel_ota_healthy()`, `panel_ota_health_stale()`, `PANEL_OTA_OK_*` bits), status and listeners, the update server (check, commit, channel, facts, wanted locales, the running version's languages) / check / install / stop / cancel / discard, the writer (`panel_ota_begin/write/end/abort/apply`), `panel_ota_system_idle()`, remote-development probation (`panel_ota_remote_prepare/confirm/operation`, `panel_ota_cancel_remote()`), `panel_ota_cp_update()`, `panel_ota_console_register()` |
+| `include/panel_ota.h` | `panel_ota_start(required)`, the heartbeat contract (`panel_ota_healthy()`, `panel_ota_health_stale()`, `PANEL_OTA_OK_*` bits), status and listeners, the update server (check, commit, channel, facts, wanted locales, the running version's languages) / check / install / stop / cancel / discard, the writer (`panel_ota_begin/write/end/abort/apply`), `panel_ota_system_idle()` and the gate that answers it on a panel with no engine of its own (`panel_ota_set_idle_gate()`, a link keypad, docs/features/11), remote-development probation (`panel_ota_remote_prepare/confirm/operation`, `panel_ota_cancel_remote()`), `panel_ota_cp_update()`, `panel_ota_console_register()` |
 | (in `alarm_proto`) `alarm_proto/ota_profile.h`, `alarm_proto/ota_retry.h` | which signed project names may replace the running one; the retry schedule after a failed check (moved there in docs/features/33 step 8 so they are host-tested as part of a core component) |
 | `panel_ota_internal.h` (private) | shared between `panel_ota.c`, `cp_ota.c`, `ota_console.c` and `ota_trust.c` |
 

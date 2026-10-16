@@ -33,10 +33,11 @@ static const char *TAG = "alarm";
 /* The listeners the firmware registers at most, every feature on. Raise it with each new
  * alarm_service_add_listener call (Grep it across components/ and firmware/):
  *   panel_app.c     1 the event log, 2 the sounder, 3 MQTT, 4 Home Assistant, 5 the zone hub,
- *                   6 notifications, 7 the automations (docs/features/41 DESIGN.md section 5)
+ *                   6 notifications, 7 the automations (docs/features/41 DESIGN.md section 5),
+ *                   10 the panel link's master side (plink_service, docs/features/11)
  *   board (before_engine, crowpanel_p4 app_main.c)  8 the Panel Manager's sign-ins (web_login)
  *   zwave_service.c 9 Z-Wave's keypad feedback (added after the engine starts) */
-#define ALARM_LISTENERS_USED 9
+#define ALARM_LISTENERS_USED 10
 #define MAX_LISTENERS 12 /* the rest is headroom */
 _Static_assert(MAX_LISTENERS >= ALARM_LISTENERS_USED,
                "every listener the firmware registers needs a slot: raise MAX_LISTENERS");
@@ -114,6 +115,7 @@ static size_t s_ring_count;
 /* Set by engine callbacks, handled after the engine call returns (alarm task only). */
 static bool s_status_dirty = true;
 static bool s_frozen; /* factory reset or restore under way: never write NVS again */
+static bool s_dormant; /* the keypad role: no engine, inputs dropped (alarm_service_set_dormant) */
 static uint32_t s_min_event_seq;
 
 /* Durability. The engine's state in RAM is authoritative and is never rolled back because a
@@ -161,6 +163,28 @@ static SemaphoreHandle_t s_bind_owner; /* set once by alarm_service_start */
 alarm_ms_t alarm_service_now(void)
 {
     return (alarm_ms_t)(esp_timer_get_time() / 1000);
+}
+
+static bool dormant(void)
+{
+    return __atomic_load_n(&s_dormant, __ATOMIC_ACQUIRE);
+}
+
+void alarm_service_set_dormant(void)
+{
+    __atomic_store_n(&s_dormant, true, __ATOMIC_RELEASE);
+}
+
+bool alarm_service_dormant(void)
+{
+    return dormant();
+}
+
+/* What a synchronous call answers when the alarm task never ran it: unavailable on a panel with
+ * no engine (the keypad role), otherwise the engine is in no state to run it (not started). */
+static alarm_result_t not_run(void)
+{
+    return dormant() ? ALARM_ERR_UNAVAILABLE : ALARM_ERR_BAD_STATE;
 }
 
 /* Alarm task: the engine holds arming exactly while the radio holds it or a change is made. */
@@ -623,7 +647,7 @@ esp_err_t alarm_service_add_listener(const alarm_listener_t *listener)
 
 esp_err_t alarm_service_start(void)
 {
-    if (s_task != NULL) {
+    if (s_task != NULL || dormant()) {
         return ESP_ERR_INVALID_STATE;
     }
     if (s_lock == NULL) {
@@ -755,6 +779,9 @@ esp_err_t alarm_service_start(void)
  * Check-ins may be dropped: a missed one is caught by the next. */
 static void post(const msg_t *m)
 {
+    if (dormant()) {
+        return; /* no engine in this role: nobody would ever read it */
+    }
     if (!ensure_queue()) {
         ESP_LOGE(TAG, "no alarm queue: input dropped (kind %d)", (int)m->kind);
         return;
@@ -892,8 +919,8 @@ esp_err_t alarm_service_call(alarm_service_fn fn, void *ctx)
     if (fn == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (s_task == NULL || xTaskGetCurrentTaskHandle() == s_task) {
-        return ESP_ERR_INVALID_STATE; /* not started, or called from a listener */
+    if (dormant() || s_task == NULL || xTaskGetCurrentTaskHandle() == s_task) {
+        return ESP_ERR_INVALID_STATE; /* no engine, not started, or called from a listener */
     }
     StaticSemaphore_t sem_buf;
     SemaphoreHandle_t done = xSemaphoreCreateBinaryStatic(&sem_buf);
@@ -913,7 +940,7 @@ esp_err_t alarm_service_post(alarm_service_fn fn, void *ctx)
     if (fn == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    if (__atomic_load_n(&s_task, __ATOMIC_ACQUIRE) == NULL) {
+    if (dormant() || __atomic_load_n(&s_task, __ATOMIC_ACQUIRE) == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
     const msg_t m = {.kind = MSG_CALL, .call = {.fn = fn, .ctx = ctx, .done = NULL}};
@@ -944,6 +971,9 @@ esp_err_t alarm_service_store_status(void)
  * PSA can never be entered again. code_hash_init() retries after a transient failure. */
 static alarm_result_t crypto_ready(const char *what)
 {
+    if (dormant()) {
+        return ALARM_ERR_UNAVAILABLE; /* no engine to check a code with: nothing to hash for */
+    }
     const esp_err_t err = code_hash_init();
     if (err == ESP_OK) {
         return ALARM_OK;
@@ -978,7 +1008,7 @@ static void do_command(alarm_engine_t *e, alarm_ms_t now, void *ctx)
 alarm_result_t alarm_service_command(const alarm_cmd_t *cmd, const alarm_source_t *src,
                                      alarm_cmd_result_t *result)
 {
-    cmd_ctx_t c = {.cmd = cmd, .src = src, .res = result, .r = ALARM_ERR_BAD_STATE};
+    cmd_ctx_t c = {.cmd = cmd, .src = src, .res = result, .r = not_run()};
     alarm_service_call(do_command, &c);
     return c.r;
 }
@@ -1019,7 +1049,7 @@ alarm_result_t alarm_service_command_as(const alarm_cmd_t *cmd, const alarm_sour
     if (result)
         memset(result, 0, sizeof(*result));
     cmd_ctx_t c = {.cmd = cmd, .src = src, .res = result, .user = user, .when = when,
-                   .r = ALARM_ERR_BAD_STATE};
+                   .r = not_run()};
     alarm_service_call(do_command_as, &c);
     return c.r;
 }
@@ -1046,7 +1076,7 @@ static void do_auth(alarm_engine_t *e, alarm_ms_t now, void *ctx)
 alarm_result_t alarm_service_authenticate(const alarm_source_t *src, const char *code,
                                           uint8_t partition, uint8_t *user_out)
 {
-    auth_ctx_t c = {.src = src, .code = code, .partition = partition, .r = ALARM_ERR_BAD_STATE};
+    auth_ctx_t c = {.src = src, .code = code, .partition = partition, .r = not_run()};
     /* Refuse rather than hash the code into an unpredictable value that would fail as a wrong
      * code and count towards the keypad lockout. Either way nobody gets in. */
     const alarm_result_t ready = crypto_ready("checking a code");
@@ -1064,7 +1094,7 @@ alarm_result_t alarm_service_authenticate_as(const alarm_source_t *src, const ch
                                              uint8_t partition, uint8_t *user_out,
                                              alarm_authority_t *authority_out)
 {
-    auth_ctx_t c = {.src = src, .code = code, .partition = partition, .r = ALARM_ERR_BAD_STATE};
+    auth_ctx_t c = {.src = src, .code = code, .partition = partition, .r = not_run()};
     const alarm_result_t ready = crypto_ready("checking a code");
     if (ready != ALARM_OK) {
         return ready;
@@ -1111,7 +1141,7 @@ alarm_result_t alarm_service_user_set(const alarm_source_t *src, const char *act
 {
     user_ctx_t c = {.src = src, .actor = actor_code, .user_no = user_no, .new_code = new_code,
                     .authority = authority, .partitions = partitions, .name = name,
-                    .r = ALARM_ERR_BAD_STATE};
+                    .r = not_run()};
     if (crypto_ready("setting a user code") != ALARM_OK) {
         return ALARM_ERR_UNAVAILABLE;
     }
@@ -1123,7 +1153,7 @@ alarm_result_t alarm_service_user_delete(const alarm_source_t *src, const char *
                                          uint8_t user_no)
 {
     user_ctx_t c = {.src = src, .actor = actor_code, .user_no = user_no,
-                    .r = ALARM_ERR_BAD_STATE};
+                    .r = not_run()};
     alarm_service_call(do_user_delete, &c);
     return c.r;
 }
@@ -1140,7 +1170,7 @@ alarm_result_t alarm_service_user_update(const alarm_source_t *src, const char *
                                          uint8_t partitions, const char *name)
 {
     user_ctx_t c = {.src = src, .actor = actor_code, .user_no = user_no, .authority = authority,
-                    .partitions = partitions, .name = name, .r = ALARM_ERR_BAD_STATE};
+                    .partitions = partitions, .name = name, .r = not_run()};
     alarm_service_call(do_user_update, &c);
     return c.r;
 }
@@ -1159,7 +1189,7 @@ alarm_result_t alarm_service_user_set_as(const alarm_source_t *src, uint8_t acto
 {
     user_ctx_t c = {.src = src, .as_user = actor, .user_no = user_no, .new_code = new_code,
                     .authority = authority, .partitions = partitions, .name = name,
-                    .r = ALARM_ERR_BAD_STATE};
+                    .r = not_run()};
     if (crypto_ready("setting a user code") != ALARM_OK) {
         return ALARM_ERR_UNAVAILABLE;
     }
@@ -1179,7 +1209,7 @@ alarm_result_t alarm_service_user_update_as(const alarm_source_t *src, uint8_t a
                                             uint8_t partitions, const char *name)
 {
     user_ctx_t c = {.src = src, .as_user = actor, .user_no = user_no, .authority = authority,
-                    .partitions = partitions, .name = name, .r = ALARM_ERR_BAD_STATE};
+                    .partitions = partitions, .name = name, .r = not_run()};
     alarm_service_call(do_user_update_as, &c);
     return c.r;
 }
@@ -1194,7 +1224,7 @@ alarm_result_t alarm_service_user_delete_as(const alarm_source_t *src, uint8_t a
                                             uint8_t user_no)
 {
     user_ctx_t c = {.src = src, .as_user = actor, .user_no = user_no,
-                    .r = ALARM_ERR_BAD_STATE};
+                    .r = not_run()};
     alarm_service_call(do_user_delete_as, &c);
     return c.r;
 }
@@ -1216,7 +1246,7 @@ static void do_program_enter(alarm_engine_t *e, alarm_ms_t now, void *ctx)
 alarm_result_t alarm_service_program_enter(const alarm_source_t *src, const char *code,
                                            uint8_t *user_out)
 {
-    program_ctx_t c = {.src = src, .code = code, .r = ALARM_ERR_BAD_STATE};
+    program_ctx_t c = {.src = src, .code = code, .r = not_run()};
     /* An empty code is the power-up recovery window, which hashes nothing. */
     const bool hashes = code != NULL && code[0] != '\0';
     if (hashes) {
@@ -1240,7 +1270,7 @@ static void do_program_enter_as(alarm_engine_t *e, alarm_ms_t now, void *ctx)
 
 alarm_result_t alarm_service_program_enter_as(const alarm_source_t *src, uint8_t user)
 {
-    program_ctx_t c = {.src = src, .user = user, .r = ALARM_ERR_BAD_STATE};
+    program_ctx_t c = {.src = src, .user = user, .r = not_run()};
     alarm_service_call(do_program_enter_as, &c);
     return c.r;
 }
@@ -1277,7 +1307,7 @@ alarm_result_t alarm_service_program_set_code(const alarm_source_t *src, uint8_t
                                               const char *new_code)
 {
     program_ctx_t c = {.src = src, .code = new_code, .user_no = user_no,
-                       .r = ALARM_ERR_BAD_STATE};
+                       .r = not_run()};
     if (crypto_ready("setting a user code") != ALARM_OK) {
         return ALARM_ERR_UNAVAILABLE;
     }
@@ -1334,7 +1364,7 @@ alarm_result_t alarm_service_keypad_execute(const alarm_keyseq_result_t *ks,
                                             const alarm_source_t *src,
                                             alarm_cmd_result_t *result)
 {
-    keypad_ctx_t c = {.ks = ks, .src = src, .res = result, .r = ALARM_ERR_BAD_STATE};
+    keypad_ctx_t c = {.ks = ks, .src = src, .res = result, .r = not_run()};
     const bool creates_code = ks != NULL && ks->kind == ALARM_KS_USER_SET;
     if (creates_code && crypto_ready("setting a user code") != ALARM_OK) {
         return ALARM_ERR_UNAVAILABLE;
@@ -1373,7 +1403,7 @@ static void do_set_config(alarm_engine_t *e, alarm_ms_t now, void *ctx)
 
 alarm_result_t alarm_service_set_config(const alarm_config_t *cfg)
 {
-    cfg_ctx_t c = {.cfg = cfg, .r = ALARM_ERR_BAD_STATE};
+    cfg_ctx_t c = {.cfg = cfg, .r = not_run()};
     alarm_service_call(do_set_config, &c);
     return c.r;
 }
@@ -1409,7 +1439,7 @@ alarm_result_t alarm_service_voice_invalidate(const uint8_t *zones, alarm_config
     if (zones == NULL || scratch == NULL) {
         return ALARM_ERR_BAD_ARG;
     }
-    voice_inv_ctx_t c = {.config = {.cfg = NULL, .r = ALARM_ERR_BAD_STATE}, .zones = zones,
+    voice_inv_ctx_t c = {.config = {.cfg = NULL, .r = not_run()}, .zones = zones,
                          .scratch = scratch, .n = 0u};
     alarm_service_call(do_voice_invalidate, &c);
     if (written != NULL && c.config.r == ALARM_OK) {
@@ -1441,7 +1471,7 @@ static void do_program_apply_as(alarm_engine_t *e, alarm_ms_t now, void *ctx)
 alarm_result_t alarm_service_program_apply_as(const alarm_source_t *src, uint8_t user,
     uint32_t expected_revision, const alarm_config_t *cfg)
 {
-    remote_cfg_ctx_t c = {.config = {.cfg=cfg, .r=ALARM_ERR_BAD_STATE}, .src=src,
+    remote_cfg_ctx_t c = {.config = {.cfg=cfg, .r=not_run()}, .src=src,
         .user=user, .revision=expected_revision};
     alarm_service_call(do_program_apply_as, &c);
     return c.config.r;
@@ -1468,7 +1498,7 @@ uint32_t alarm_service_snapshot_seq(void)
  * lock that was never created. */
 void alarm_service_get_snapshot(alarm_snapshot_t *out)
 {
-    if (s_lock == NULL) {
+    if (s_lock == NULL || dormant()) {
         memset(out, 0, sizeof(*out));
         return;
     }
@@ -1479,7 +1509,7 @@ void alarm_service_get_snapshot(alarm_snapshot_t *out)
 
 size_t alarm_service_recent_events(alarm_event_t *out, size_t max)
 {
-    if (s_lock == NULL) {
+    if (s_lock == NULL || dormant()) {
         return 0u;
     }
     lock();

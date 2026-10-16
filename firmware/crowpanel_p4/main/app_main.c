@@ -183,6 +183,12 @@ void app_main(void)
 #else
         .health_mask = PANEL_OTA_OK_ENGINE | PANEL_OTA_OK_LOG | PANEL_OTA_OK_SENSORS,
 #endif
+#if CONFIG_ALARM_FEATURE_UI && CONFIG_ALARM_LINK
+        /* As a keypad of the panel link (docs/features/11 LINK-020) it runs no engine, log or zone
+         * sources: it is operated on its touchscreen and shows its master's state, so the link is
+         * in the mask instead. panel_app picks the mask for the stored role. */
+        .keypad_health_mask = PANEL_OTA_OK_UI | PANEL_OTA_OK_TOUCH | PANEL_OTA_OK_LINK,
+#endif
         .log_chip = log_silicon,
         .before_engine = web_listeners,
 #if CONFIG_ALARM_FEATURE_UI

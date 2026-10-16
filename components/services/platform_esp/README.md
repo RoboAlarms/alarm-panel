@@ -34,10 +34,10 @@ The optional parts that used to live here are their own components since docs/fe
 ## Public API
 | Header | What it offers |
 |---|---|
-| `alarm_service.h` | Listeners, start, inputs (zone events, troubles, check-ins), synchronous commands, codes, users, installer mode, configuration, snapshots, `alarm_service_call/post()` onto the alarm task |
+| `alarm_service.h` | Listeners, start, inputs (zone events, troubles, check-ins), synchronous commands, codes, users, installer mode, configuration, snapshots, `alarm_service_call/post()` onto the alarm task; `alarm_service_set_dormant()` for a panel in the keypad role (no engine: inputs dropped, calls answered at once, docs/features/11) |
 | `alarm_store.h`, `code_hash.h` | Load and save configuration and runtime state; code hashing and its fault counter |
 | `panel_log.h`, `panel_prefs.h`, `panel_system.h`, `sounder.h` | Event log read and flush, lost-report handlers; preferences; about and factory reset; sounds |
-| `net_wifi.h`, `net_check.h` | Wi-Fi, addresses, trial settings, time zone, NTP, scan, network requirement; the connection check |
+| `net_wifi.h`, `net_check.h` | Wi-Fi, addresses, trial settings, time zone, NTP (and switching it off, `net_wifi_set_time_server`), scan, network requirement, the low-latency holds (`net_wifi_hold_low_latency`); the connection check |
 | `zone_service.h` | Zone hub access, bindings, source registration and the Home Assistant feed |
 | `panel_console.h` | The console |
 

@@ -16,6 +16,10 @@
  *
  * Moved here from firmware/crowpanel_p4/main/app_main.c; the board-specific parts reach it
  * through the board contract (board_api.h) and the hooks in panel_app_config_t.
+ *
+ * A panel stored in the panel link's keypad role (docs/features/11, ALARM_LINK) takes another
+ * path, run_keypad(): no engine, event log, zone sources or integrations - the screen shows its
+ * master's status through the link.
  */
 #include "panel_app.h"
 
@@ -64,6 +68,9 @@
 #include "zigbee_service.h"
 #include "zone_service.h"
 #include "zwave_service.h"
+#if CONFIG_ALARM_LINK
+#include "plink_service.h"
+#endif
 #if CONFIG_ALARM_FEATURE_UI
 #include "ui_app.h"
 #include "ui_port_esp.h"
@@ -85,8 +92,13 @@ static void start_or_log(esp_err_t err, const char *what)
 }
 #define START_OR_LOG(call) start_or_log((call), #call)
 
-/* Filter owned by the alarm task; battery sampling belongs to the health task. */
+/* Filter owned by the alarm task; battery sampling belongs to the health task. On a keypad of
+ * the panel link there is no alarm task: the health task keeps the filter and publishes its
+ * status in s_power_seen. */
 static power_monitor_t s_power;
+static bool s_keypad; /* this panel runs in the keypad role (set before anything starts) */
+static portMUX_TYPE s_power_mux = portMUX_INITIALIZER_UNLOCKED;
+static power_sample_t s_power_seen;
 
 #define KEYPAD_PARTITION 1u /* the local keypad shows partition 1 */
 
@@ -167,6 +179,12 @@ static void copy_power(alarm_engine_t *e, alarm_ms_t now, void *ctx)
 
 esp_err_t panel_app_power_status(power_sample_t *out)
 {
+    if (s_keypad) {
+        portENTER_CRITICAL(&s_power_mux);
+        *out = s_power_seen;
+        portEXIT_CRITICAL(&s_power_mux);
+        return ESP_OK;
+    }
     return alarm_service_call(copy_power, out);
 }
 
@@ -180,7 +198,7 @@ static void ui_power(void *ctx, ui_power_info_t *out)
     (void)ctx;
     power_sample_t status;
     *out = (ui_power_info_t){.state = UI_BATTERY_UNKNOWN, .percent = -1};
-    if (alarm_service_call(copy_power, &status) != ESP_OK) {
+    if (panel_app_power_status(&status) != ESP_OK) {
         return;
     }
     out->state = status.battery_present == POWER_YES ? UI_BATTERY_PRESENT :
@@ -400,7 +418,7 @@ static int cmd_health(int argc, char **argv)
     } PARTS[] = {
         {PANEL_OTA_OK_ENGINE, "alarm engine"},  {PANEL_OTA_OK_LOG, "event log"},
         {PANEL_OTA_OK_UI, "screen"},            {PANEL_OTA_OK_SENSORS, "sensor input"},
-        {PANEL_OTA_OK_TOUCH, "touch"},
+        {PANEL_OTA_OK_TOUCH, "touch"},          {PANEL_OTA_OK_LINK, "panel link"},
     };
     const uint32_t stale = panel_ota_health_stale();
     printf("%s\n", stale == 0u ? "every part of the panel reports that it is working"
@@ -435,7 +453,7 @@ static int cmd_power(int argc, char **argv)
         return s_cfg->power_report();
     }
     power_sample_t status;
-    if (alarm_service_call(copy_power, &status) != ESP_OK) {
+    if (panel_app_power_status(&status) != ESP_OK) {
         return 1;
     }
     printf("Power: AC present: %s; battery present: %s; battery low: %s; charging: %s\n"
@@ -1535,7 +1553,7 @@ typedef struct {
     bool touch;   /* and it can be operated */
 } display_state_t;
 
-static display_state_t start_display(void)
+static display_state_t start_display(bool keypad)
 {
     display_state_t st = {false, false};
 #if CONFIG_ALARM_FEATURE_UI
@@ -1557,13 +1575,23 @@ static display_state_t start_display(void)
     }
     ui_backend_t backend;
     ui_port_esp_backend(&backend);
-    if (s_cfg->extend_backend != NULL) {
-        s_cfg->extend_backend(&backend);
+    if (!keypad && s_cfg->extend_backend != NULL) {
+        s_cfg->extend_backend(&backend); /* the Panel Manager: a master's */
     }
+#if CONFIG_ALARM_LINK
+    /* The link's entries; on a keypad also the master's status, commands and codes through the
+     * link instead of the engine (docs/features/11 "Roles on a P4 panel"). */
+    plink_service_extend_backend(&backend);
+#endif
     backend.backlight = ui_backlight;
     backend.power_info = ui_power;
     ui_options_t opt;
     ui_port_esp_options(&opt); /* stored preferences; the setup wizard on first boot */
+#if CONFIG_ALARM_LINK
+    if (keypad) {
+        opt.partition = plink_service_keypad_home(); /* the partition it shows and arms */
+    }
+#endif
     const size_t free_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 #if CONFIG_ALARM_UI_LVGL_BUDGET_KB > 0
     /* A board without PSRAM builds the UI's LVGL objects from the heap it shares with Wi-Fi and
@@ -1604,6 +1632,7 @@ static display_state_t start_display(void)
              (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024u));
     st.display = true;
 #else
+    (void)keypad;
     ESP_LOGW(TAG, "this firmware has no touch UI (ALARM_FEATURE_UI off): running headless");
 #endif
     return st;
@@ -1639,6 +1668,112 @@ static void log_chip(void)
     ESP_LOGI(TAG, "%s silicon v%d.%d", CONFIG_IDF_TARGET, chip.revision / 100, chip.revision % 100);
 }
 
+/* The board's audio and the sounder on it (both roles). */
+static void start_audio(void)
+{
+    const uint32_t rate = board_info()->audio_rate_hz != 0u ? board_info()->audio_rate_hz
+                                                            : SND_SAMPLE_RATE;
+    if (board_audio_init(rate) == ESP_OK) {
+        const sounder_sink_t sink = {
+            .sample_rate_hz = rate, .ctx = NULL, .write = audio_write, .amp = audio_amp};
+        ESP_ERROR_CHECK(sounder_start(&sink));
+    } else {
+        ESP_LOGE(TAG, "audio failed: no keypad sounds");
+    }
+}
+
+/* The stored preferences and the three volumes (both roles). */
+static void load_prefs(panel_prefs_t *prefs)
+{
+    panel_prefs_load(prefs);
+    sounder_set_volume(prefs->volume); /* Beeps */
+    sounder_set_chime_volume(prefs->chime_volume); /* AUD-032: each on its own */
+    sounder_set_voice_volume(prefs->voice_volume);
+}
+
+#if CONFIG_ALARM_LINK && CONFIG_ALARM_FEATURE_UI
+/* ---- the keypad role (docs/features/11 "Roles on a P4 panel") ------------------------------ */
+
+/* A keypad's health: no engine keeps the battery's filter here, so this task does, and hands the
+ * mains and battery to the link's heartbeat. The screen and touch beat from the LVGL task
+ * (ui_heartbeat), the link from the link task. */
+static void keypad_health_task(void *arg)
+{
+    (void)arg;
+    const power_source_t source = {.read = board_battery_read};
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(HEALTH_TICK_MS));
+        board_battery_poll(); /* bounded bus access outside the UI task */
+        power_monitor_poll(&s_power, &source, alarm_service_now());
+        portENTER_CRITICAL(&s_power_mux);
+        s_power_seen = s_power.status;
+        portEXIT_CRITICAL(&s_power_mux);
+        plink_service_keypad_power(s_power.status.ac_present == POWER_NO,
+                                   s_power.status.battery_low == POWER_YES,
+                                   s_power.status.battery_present == POWER_YES);
+    }
+}
+
+/* A keypad for a master elsewhere: the board, the sounder, the languages and packs, the screen
+ * with the link's backend, Wi-Fi, updates (gated by the link) and the console - and nothing that
+ * runs the alarm: no engine, event log, zone sources, MQTT, notifications, Home Assistant,
+ * devices, automations, voice or Panel Manager (LINK-020). */
+static void run_keypad(const panel_app_config_t *cfg)
+{
+    s_keypad = true;
+    alarm_service_set_dormant(); /* first: nothing may queue for an engine that never runs */
+    ESP_LOGI(TAG, "this panel is a keypad of the panel link (docs/features/11)");
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_LOGI(TAG, "board: %s (%s)", board_name(), board_info()->id);
+    (void)board_pins_safe(board_info(), "board description");
+    ESP_ERROR_CHECK(board_power_init());
+    start_audio();
+    panel_prefs_t prefs;
+    load_prefs(&prefs);
+
+    /* Updates: only while the link is up and the master allows it (the gate), and the self-test
+     * needs the screen, touch and the link (keypad_health_mask). */
+    panel_ota_set_device(board_info()->id);
+    panel_ota_set_facts("", NULL, 0);
+    panel_ota_set_idle_gate(plink_service_update_idle, NULL);
+    START_OR_LOG(panel_ota_start(cfg->keypad_health_mask));
+    START_OR_LOG(lang_packs_start());
+    START_OR_LOG(asset_packs_start());
+
+    const display_state_t disp = start_display(true);
+    if (!disp.display || !disp.touch) {
+        ESP_LOGE(TAG, "start-up incomplete:%s%s - this keypad can't be used",
+                 disp.display ? "" : " no picture", disp.touch ? "" : " no touch");
+    }
+    if (alarm_mem_task_create(keypad_health_task, "health", 4096, NULL, 3, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "health task failed to start: an update could not confirm itself");
+    }
+    /* The link before the network: a paired keypad runs no time server of its own. */
+    if (plink_service_start(board_name()) != ESP_OK) {
+        ESP_LOGE(TAG, "panel link failed to start: this keypad shows nothing of its alarm panel");
+    }
+    START_OR_LOG(net_wifi_start());
+    START_OR_LOG(net_check_init());
+#if CONFIG_ALARM_SERVICE_CONSOLE
+    START_OR_LOG(panel_console_start());
+    START_OR_LOG(plink_service_console_register());
+    START_OR_LOG(panel_ota_console_register());
+    START_OR_LOG(lang_packs_console_register());
+    START_OR_LOG(app_console_register());
+    if (cfg->console != NULL) {
+        START_OR_LOG(cfg->console());
+    }
+#endif
+    /* cfg->started is left out: it starts the Panel Manager and developer access, a master's. */
+    ESP_LOGI(TAG, "%s running as a keypad: internal RAM free %u KB (largest block %u KB)",
+             board_name(),
+             (unsigned)(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) / 1024u),
+             (unsigned)(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT) /
+                        1024u));
+}
+#endif
+
 void panel_app_run(const panel_app_config_t *cfg)
 {
     s_cfg = cfg;
@@ -1655,6 +1790,19 @@ void panel_app_run(const panel_app_config_t *cfg)
         recovery_park("the panel's stored settings could not be opened", nvs_err);
         return;
     }
+#if CONFIG_ALARM_LINK
+    /* The role, right after NVS: a keypad starts none of the alarm (docs/features/11). */
+    if (plink_service_role() == PLINK_SERVICE_KEYPAD) {
+#if CONFIG_ALARM_FEATURE_UI
+        if (cfg->keypad_health_mask != 0u) {
+            run_keypad(cfg);
+            return;
+        }
+#endif
+        ESP_LOGE(TAG, "stored as a keypad, but this board can't be one: running as the alarm "
+                      "panel");
+    }
+#endif
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(esp_netif_init());
     /* A description with a problem is a firmware bug (its host test should have caught it);
@@ -1689,21 +1837,10 @@ void panel_app_run(const panel_app_config_t *cfg)
                                    s_clock_place[0] != '\0' ? s_clock_place : NULL));
 #endif
 
-    const uint32_t rate = board_info()->audio_rate_hz != 0u ? board_info()->audio_rate_hz
-                                                            : SND_SAMPLE_RATE;
-    if (board_audio_init(rate) == ESP_OK) {
-        const sounder_sink_t sink = {
-            .sample_rate_hz = rate, .ctx = NULL, .write = audio_write, .amp = audio_amp};
-        ESP_ERROR_CHECK(sounder_start(&sink));
-    } else {
-        ESP_LOGE(TAG, "audio failed: no keypad sounds");
-    }
+    start_audio();
 
     panel_prefs_t prefs;
-    panel_prefs_load(&prefs);
-    sounder_set_volume(prefs.volume); /* Beeps */
-    sounder_set_chime_volume(prefs.chime_volume); /* AUD-032: each on its own */
-    sounder_set_voice_volume(prefs.voice_volume);
+    load_prefs(&prefs);
     /* docs/features/41 D30: the automations' names for the event words and the JSON, before
      * any task that reads them starts (Activity, notifications, MQTT, the Panel Manager). */
     auto_names_register(prefs.clock_mode, prefs.region, prefs.lang);
@@ -1726,6 +1863,15 @@ void panel_app_run(const panel_app_config_t *cfg)
 #endif
 #if CONFIG_ALARM_FEATURE_HA
     ESP_ERROR_CHECK(alarm_service_add_listener(ha_link_listener()));
+#endif
+#if CONFIG_ALARM_LINK
+    /* The panel link's master side (docs/features/11) can't stop the boot: without its listener
+     * the link stays off and the alarm runs on. */
+    const esp_err_t link_err = alarm_service_add_listener(plink_service_listener());
+    if (link_err != ESP_OK) {
+        ESP_LOGE(TAG, "the panel link's listener not added (%s): no keypads",
+                 esp_err_to_name(link_err));
+    }
 #endif
     ESP_ERROR_CHECK(alarm_service_add_listener(zone_service_listener()));
     if (cfg->before_engine != NULL) {
@@ -1792,7 +1938,7 @@ void panel_app_run(const panel_app_config_t *cfg)
         panel_voice_set_prefs(&vp);
     }
 
-    const display_state_t disp = start_display();
+    const display_state_t disp = start_display(false);
     if (!disp.display) {
         ESP_LOGE(TAG, "no picture: the panel keeps protecting, but nobody can use it here");
     }
@@ -1865,6 +2011,16 @@ void panel_app_run(const panel_app_config_t *cfg)
         ESP_LOGE(TAG, "Home Assistant link failed to start");
     }
 #endif
+#if CONFIG_ALARM_LINK
+    if (link_err == ESP_OK) {
+        /* the keypad numbers 1-8 shared with the Zigbee keypads (LINK-001) */
+        plink_service_set_devices_port(zigbee_service_devices_held,
+                                       zigbee_service_set_link_devices);
+        if (plink_service_start(board_name()) != ESP_OK) {
+            ESP_LOGE(TAG, "panel link failed to start: no keypads");
+        }
+    }
+#endif
 #if CONFIG_ALARM_SERVICE_CONSOLE
     START_OR_LOG(panel_console_start());
 #if CONFIG_ALARM_FEATURE_MQTT
@@ -1875,6 +2031,9 @@ void panel_app_run(const panel_app_config_t *cfg)
 #endif
 #if CONFIG_ALARM_FEATURE_HA
     START_OR_LOG(ha_link_console_register());
+#endif
+#if CONFIG_ALARM_LINK
+    START_OR_LOG(plink_service_console_register());
 #endif
     START_OR_LOG(device_service_console_register());
 #if CONFIG_ALARM_FEATURE_AUTOMATIONS

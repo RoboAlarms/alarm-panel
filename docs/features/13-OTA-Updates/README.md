@@ -176,6 +176,12 @@ in the room.
 | `PANEL_OTA_OK_SENSORS` | the zone hub's task | each completed tick of the sources (`zone_service_passes`), at most 4 s apart |
 | `PANEL_OTA_OK_UI` | the LVGL task | an `lv_timer` callback, i.e. a completed `lv_timer_handler()` pass |
 | `PANEL_OTA_OK_TOUCH` | the GT911 poll on the LVGL task | a read the controller answered - `polls` minus I2C `errors` moving, finger or no finger |
+| `PANEL_OTA_OK_LINK` | a panel link keypad's link task (docs/features/11) | at most once a second while the master's status is under 15 s old, or the keypad isn't paired |
+
+A panel in the panel link's keypad role (docs/features/11 LINK-020) runs no engine, log or zone
+sources: its mask is screen, touch and the link (`panel_app_config_t.keypad_health_mask`), and its
+"is the system idle?" is answered from its master's status (`panel_ota_set_idle_gate`): only while
+the link is up and that status, under 15 s old, passes `proto_fw_install_allowed()`.
 
 The parts that publish a counter rather than beating themselves are read by the `health` task in
 `components/app/panel_app/src/panel_app.c` every 2 s, which turns "the counter moved" into the

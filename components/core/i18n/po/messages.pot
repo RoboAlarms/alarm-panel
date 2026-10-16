@@ -14593,6 +14593,11 @@ msgstr ""
 msgid "You are signed out."
 msgstr ""
 
+#: components/services/plink_service/src/plink_keypad_svc.c
+msgctxt "update"
+msgid "No system communication"
+msgstr ""
+
 #: components/services/ui_port_esp/src/ui_port_esp.c
 msgctxt "why"
 msgid "Those addresses don't go together"

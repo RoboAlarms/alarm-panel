@@ -5,6 +5,7 @@ idf_component_register(SRCS "src/panel_app.c"
                        REQUIRES alarm_features power_monitor ui_backend
                        PRIV_REQUIRES alarm_core alarm_mem alarm_ui automation_service backup_service board_api device_service ha_link
                                      lang_packs net_mqtt net_notify panel_clock panel_ota panel_storage panel_voice platform_esp
+                                     plink_service
                                      rf_service ui_port_esp zigbee_service zone_hub zwave_service console
                                      esp_driver_spi esp_event esp_netif esp_partition esp_timer
                                      lvgl__lvgl nvs_flash)

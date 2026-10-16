@@ -9,8 +9,8 @@ about 0.3 s. A keypad's own voice (LINK-028, decided 2026-10-16) works on the pa
 both speakers muted. Left: the bench cases below that need a person or a network change, ESP-NOW
 through our C6 build, 433 MHz, keypad inputs, GOTO, keypad updates at the master's order (M8,
 designed 2026-10-16: "Updates through the link"). Smart Home and Home Assistant on keypads
-designed 2026-10-16 (BL-216), not built, its decisions open · **Milestone:** M7 (keypad updates
-M8) · **Depends on:** 01, 04, 09, 12, 15
+designed 2026-10-16 (BL-216), its decisions and screens approved that day, not built ·
+**Milestone:** M7 (keypad updates M8) · **Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
 Let another panel act as a remote keypad for a master panel, like the keypads on a classic panel's
@@ -48,6 +48,37 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
   partitions" and GOTO wait for KPD-006.
 - **Until ESP-NOW exists a Wi-Fi keypad works only while the router and the master have power**:
   the installer guide says to put the router on backup power.
+- **Smart Home and Home Assistant on keypads** (BL-216): decided 2026-10-16 (the owner: "Approve
+  P1, recommendations OK"), each as the design recommended. The numbers stay, so other documents
+  can name them:
+  1. A keypad unlocks or opens only with a code valid for its home partition, as for all its
+     commands (LINK-027, LINK-048), never any partition as on the master's screen.
+  2. Smart Home's Arrange: each panel keeps its own (HCTL-008, "one panel setting").
+  3. Device control while armed Away is the same on both screens: allowed; unlock and open need
+     the code (HCTL-005; docs/features/24 Open questions).
+  4. Home Assistant may change settings while a partition is armed (the panel's own gear is
+     locked then, `ui_app.c:2893-2896`), not only while disarmed. Changes are held during an
+     alarm, entry time or exit time (UI-046).
+  5. Language and region are not set from Home Assistant in v1 (their ids can be appended later).
+  6. Home Assistant may set the Beeps volume to 0 (it silences entry beeps, never alarms), as the
+     screen and the Panel Manager may (`web_config.c:122`).
+  7. The master's own settings are in Home Assistant too: the same entities on every panel.
+  8. A keypad without PREFS (older firmware) gets no Home Assistant device until it is updated.
+  9. Entities enabled by default: Brightness, Night hours, Appearance, the 3 volumes and
+     Announcements; the other 12 are disabled (171 entities with 8 keypads otherwise).
+  10. No notice on the panel when a setting changed from elsewhere, as with the Panel Manager
+      today.
+  11. "Smart Home controls" means the Smart Home view. The automations' warning and Put off are
+      left out of BL-216, as their own row (BL-217). Settings > Integrations stays master-only
+      (LINK-020).
+  12. The Panel Manager's lost update (docs/bugs/B031) is its own row (BL-218), fixed on BL-216's
+      mailbox.
+  13. Proposal P1, `docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-216-keypad-smart-home.js`,
+      is approved: on the 10.1" keypad, its rail with Smart Home, Smart Home live, the code pad
+      "Unlock {0}", link lost ("Offline since 9:12 PM" on every tile, the note "Your devices
+      can't be reached right now") and a give-up ("Not confirmed"), from today's parts and words
+      only, its pictures from the preview's `host_link_demo`. `ui_devices.c` and `ui_link.c`
+      change as it shows, and `screens/panel-link.js` is updated once it is built.
 
 ## Requirements
 | ID | Requirement | Verified by |
@@ -99,7 +130,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-045 | The master pushes changed device records at most one round per 500 ms per keypad (1 s on frames under 1,200 B), the full set at each new session and on DEV_STATE_REQ, and a summary every 10 s. A keypad whose `states_crc` differs asks after 250 ms, then at least 1 s apart, doubling to 30 s. A record applies only under the installed list and from a newer frame of the session for its device (LINK-026). On a working Wi-Fi network a keypad shows a change within 1 s of the master's own screen (designed, BL-216) | unit, link, HIL |
 | LINK-046 | While a keypad isn't ONLINE, or has had no device data for 30 s, every mirrored device reads offline since its last device data, as the master's do when Home Assistant drops (HCTL-006). A tap then sends nothing (designed, BL-216) | unit, preview |
 | LINK-047 | DEV_ACT names a device by ref, never by index; the ref and code are zero-padded, so every DEV_ACT has the same size. The master answers copies from its own cache (4 per keypad, 90 s) and runs an action at most once. The keypad resends every 500 ms for 3 s, never after, and shows an unanswered action as "Not confirmed" (HCTL-012). The keypad asks for the code itself; the master judges again (designed, BL-216) | unit, link |
-| LINK-048 | One judge for both screens (`device_service_person_act`). A keypad's action runs as `{KEYPAD, n}` with n from the session, its code checked for the keypad's home partition (decision 1 in Open questions: recommended, not decided). A wrong code counts toward that keypad's lockout and its STATUS shows it. Arm-only and guest codes are refused; Z-Wave rows are refused until BL-169 (designed, BL-216) | unit, HIL |
+| LINK-048 | One judge for both screens (`device_service_person_act`). A keypad's action runs as `{KEYPAD, n}` with n from the session, its code checked for the keypad's home partition (decision 1, decided 2026-10-16). A wrong code counts toward that keypad's lockout and its STATUS shows it. Arm-only and guest codes are refused; Z-Wave rows are refused until BL-169 (designed, BL-216) | unit, HIL |
 | LINK-049 | Device and settings traffic shares no cache, slot, bucket, task or turn with alarm commands, and goes only in a turn with no STATUS change or RESULT due for that keypad. With 64 devices changing every 100 ms, disarm and panic answer as fast as without it (designed, BL-216) | link (storm), HIL |
 | LINK-050 | A keypad with `PLINK_CAP_PREFS` reports its settings (field ids frozen in `proto_prefs.h`), its panel id, its voice state and the fields it accepts: at each session's first STATUS, after each save (at most 1 a second), and on PREFS_REQ. HEARTBEAT appends the settings CRC; the master asks again while it differs, at most every 2 s. The master keeps the report in RAM only (designed, BL-216) | unit, link |
 | LINK-051 | PREFS_SET carries only listed fields to change. One is in flight per keypad, resent every 1 s and given up at 6 s. The answer is a PREFS with its req, the refusals per field and the values now stored. A req is applied once (the answer is kept 30 s). The keypad checks every value itself and applies it through its screen (UI-046) (designed, BL-216) | unit, link |
@@ -847,10 +878,10 @@ The owner (2026-10-16): "we need to make sure that the Smart Home controls work 
 they do on the Master. Home Assistant should also be able to control the settings of the slave
 panel as well." Designed 2026-10-16 (BL-216). Nothing of it is built.
 
-The owner has not decided the 13 questions this design needs (Open questions): it is built as
-recommended unless decided otherwise. The keypad's Smart Home screens wait on proposal P1
-(`docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-216-keypad-smart-home.js`), which the owner
-has not approved yet.
+The owner decided the 13 questions this design needs on 2026-10-16 ("Approve P1, recommendations
+OK"): each as recommended, listed in Decisions. The keypad's Smart Home screens are proposal P1
+(`docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-216-keypad-smart-home.js`), approved that
+day.
 
 ### What people get
 
@@ -861,7 +892,7 @@ has not approved yet.
   failed states, "Couldn't confirm", the note, and Arrange.
 - The devices and their states are the master's. Each action is judged again on the master, by
   the same function the master's own screen uses.
-- Arrange is the keypad's own (decision 2, recommended).
+- Arrange is the keypad's own (decision 2, decided 2026-10-16).
 - While the link is down, or no device data has come for 30 s, every tile reads "Offline since"
   with the time of the last device data ("Offline since 9:12 PM"). The note reads "Your devices
   can't be reached right now". A tap sends nothing.
@@ -1061,9 +1092,9 @@ mode_bit, code, &why)`.
   5. call `device_service_act` with `hc_mode_word(mode_bit)`.
 - **Master's screen:** `{KEYPAD, ALARM_KEYPAD_LOCAL}` with partition 0, as today.
 - **Link keypad n:** `{KEYPAD, n}`, with n from the session and never from the frame, and
-  partition = its home (decision 1, recommended). A wrong code counts toward that keypad's own
-  lockout (USR-005). After each job the task refreshes `s_lockout[n]` with `run_job`'s helper
-  (`plink_master_svc.c:316-325`), so STATUS `lockout_left_ms` shows it.
+  partition = its home (decision 1, decided 2026-10-16). A wrong code counts toward that
+  keypad's own lockout (USR-005). After each job the task refreshes `s_lockout[n]` with
+  `run_job`'s helper (`plink_master_svc.c:316-325`), so STATUS `lockout_left_ms` shows it.
 - HCTL-007's event goes here when it is built, with `src`.
 
 ### Settings fields
@@ -1104,8 +1135,8 @@ The TLV is: id u8, len u8, value little-endian. Ranges follow `panel_prefs.c:66-
   keypad encodes them. The master computes it over the bytes it received, so it holds across
   versions.
 - **Never a settings field:** codes, role, pairing, home partition, name, supervision, Wi-Fi and
-  IP, time and time zone, language and region (v1, decision 5, recommended), updates, factory
-  reset, the setup, the Panel Manager, developer access.
+  IP, time and time zone, language and region (v1, decision 5, decided 2026-10-16), updates,
+  factory reset, the setup, the Panel Manager, developer access.
 
 ### Settings over the link
 
@@ -1166,8 +1197,8 @@ loop. It takes a patch through `be->prefs_remote_take`, then:
 6. `be->prefs_remote_done(ticket, why[])`.
 
 The master's own settings (Home Assistant's target 0) use the same mailbox and the same rules.
-Whether Home Assistant may change settings while a partition is armed is decision 4 (recommended:
-allowed, held during an alarm, entry time or exit time).
+Home Assistant may change settings while a partition is armed; they are held during an alarm,
+entry time or exit time (decision 4, decided 2026-10-16).
 
 ### Alarm traffic always wins
 
@@ -1218,7 +1249,7 @@ allowed, held during an alarm, entry time or exit time).
 | `ui_backend` | `ui_dev_from_parts()` in `ui_dev_model.h` (moved from `ui_port_esp.c:1227-1253`). New `ui_prefs.h`: `UI_PREFS_F_*` (= proto ids, asserted), `UI_PREFS_LOOK`, `ui_prefs_merge`. New entries `prefs_remote_take` and `prefs_remote_done`. The comment at `ui_backend.h:1875` changes. |
 | `ui_port_esp` | `dev_list` uses `ui_dev_from_parts`. `dev_act` becomes a wrapper over `device_service_person_act`. It implements the two `prefs_remote_*` entries for both roles. |
 | `platform_esp` | `panel_prefs_seq()`, `panel_prefs_current()`, `panel_prefs_remote_submit`, `_take`, `_done` and `_cancel`. The seq and RAM copy are updated in `panel_prefs_save` (`panel_prefs.c:134`), so every writer is caught. |
-| UI | Drop `&& !ui_link_keypad()` and `\|\| ui_link_keypad()` at `ui_devices.c:2486-2490`, and the forced 0 at `ui_link.c:392-396`, after P1 is approved. `prefs_remote_tick` in `ui_settings.c`. `ui_app_held()`. Unchanged: `ui_settings.c:136-138` and `:171` (Integrations and Automations stay master-only). |
+| UI | Drop `&& !ui_link_keypad()` and `\|\| ui_link_keypad()` at `ui_devices.c:2486-2490`, and the forced 0 at `ui_link.c:392-396` (P1, approved 2026-10-16). `prefs_remote_tick` in `ui_settings.c`. `ui_app_held()`. Unchanged: `ui_settings.c:136-138` and `:171` (Integrations and Automations stay master-only). |
 
 Today no device change is signalled: `port_changed` in `device_service.c:93-96` does nothing, and
 the screen polls every 1 s (`ui_devices.c:40`). Hence `device_service_seq()` above, also bumped
@@ -1352,8 +1383,8 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   2. Each kind from the keypad: Home Assistant and the master follow, and the keypad shows the
      change within 1 s of the master (the development build's `home:` lines).
   3. Unlocks: an unlock with a valid code works; an arm-only code is refused; 5 wrong codes lock
-     out only that keypad, and the master's own keypad is unaffected; a code of another
-     partition's user follows decision 1.
+     out only that keypad, and the master's own keypad is unaffected; a code valid only for
+     another partition is refused (decision 1).
   4. Link cut (UDP 6056 blocked for 45 s): every tile reads "Offline since…" with the note. A cut
      during an unlock gives "Not confirmed", never a second unlock. After the cut it recovers by
      itself.
@@ -1420,49 +1451,14 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   `want` (BL-050; without it a keypad offered a newer version than its master's takes the relay).
   Estimates, not measured yet: the relay's speed, `esp_partition_mmap` windows of the running
   slot, the slot's exact length with its signature sector, free PSRAM on a master for a copy.
-- Smart Home and Home Assistant on keypads, for the owner (designed 2026-10-16, BL-216): none of
-  these is decided yet, and it is built as recommended unless decided otherwise.
-  1. Which partition's codes may unlock or open from a keypad. Recommended: its home partition,
-     as for all its commands (LINK-027). The alternative is any partition, as on the master's
-     screen.
-  2. Smart Home's Arrange on a keypad. Recommended: each panel keeps its own (HCTL-008, "one
-     panel setting").
-  3. Device control while armed Away (docs/features/24, Open questions). Recommended: the same
-     on both screens - allowed; unlock and open need the code.
-  4. Home Assistant changing settings while armed (the panel's own gear is locked then,
-     `ui_app.c:2893-2896`). Recommended: allowed, but held during an alarm, entry time or exit
-     time. The alternative is disarmed only.
-  5. Language and region from Home Assistant. Recommended: not in v1 (their ids can be appended
-     later).
-  6. Beeps volume 0 from Home Assistant (it silences entry beeps, never alarms). Recommended:
-     allowed, as at the screen and in the Panel Manager (`web_config.c:122`).
-  7. The master's own settings in Home Assistant too. Recommended: yes, the same entities on
-     every panel.
-  8. Keypads without PREFS (older firmware). Recommended: no Home Assistant device until
-     updated.
-  9. Entities enabled by default. Recommended: Brightness, Night hours, Appearance, the 3 volumes
-     and Announcements; the other 12 disabled (171 entities with 8 keypads otherwise).
-  10. A notice on the panel when a setting changed from elsewhere. Recommended: none, as with the
-      Panel Manager today.
-  11. The scope of "Smart Home controls". Recommended: the Smart Home view. The automations'
-      warning and Put off go to BL-217. Settings > Integrations stays master-only (LINK-020).
-  12. The Panel Manager's lost update (docs/bugs/B031). Recommended: its own row (BL-218), fixed
-      on BL-216's mailbox.
-  13. Proposal P1, `docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-216-keypad-smart-home.js`:
-      on the 10.1" keypad, its rail with Smart Home, Smart Home live, the code pad "Unlock {0}",
-      link lost ("Offline since 9:12 PM" on every tile, the note "Your devices can't be reached
-      right now") and a give-up ("Not confirmed"), from today's parts and words only, its
-      pictures from the preview's `host_link_demo`. Recommended: approve it. It awaits the
-      owner's approval; `ui_devices.c` and `ui_link.c` change only after it, and
-      `screens/panel-link.js` is updated once it is built.
-
-  Not designed, only if the owner asks (each needs its own proposal): a notice on a panel when a
-  setting changed from elsewhere (new words); a keypad's Screen and sound rows on the master's
-  Installer > Keypads page; a Panel Manager page for keypads (docs/features/31 mockup). No
-  proposal is needed for a setting applied from elsewhere (the existing rows show it, and an open
-  page refuses the change) or for the Home Assistant entity names (the integration's own strings,
-  reviewed in its pull request). A keypad's mains and battery in Home Assistant wait for the
-  maintainers' question above.
+- Smart Home and Home Assistant on keypads (BL-216; its 13 questions were decided 2026-10-16, in
+  Decisions). Not designed, only if the owner asks (each needs its own proposal): a notice on a
+  panel when a setting changed from elsewhere (new words); a keypad's Screen and sound rows on the
+  master's Installer > Keypads page; a Panel Manager page for keypads (docs/features/31 mockup).
+  No proposal is needed for a setting applied from elsewhere (the existing rows show it, and an
+  open page refuses the change) or for the Home Assistant entity names (the integration's own
+  strings, reviewed in its pull request). A keypad's mains and battery in Home Assistant wait for
+  the maintainers' question above.
 
 ## Tasks
 - [x] `panel_link` core: crypto helpers with known-answer tests, the v1 frame codec and replay
@@ -1566,8 +1562,8 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   entries kept, PREFS report, mailbox hand-over (LINK-046, -047, -050, -051) (BL-216)
 - [ ] UI-046: `panel_prefs_seq`, `_current` and the mailbox; `prefs_remote_*`; `ui_prefs_merge`;
   `prefs_remote_tick`; `ui_app_held` (BL-216)
-- [ ] Proposal P1 approved, then the role gates removed; `host_link_demo` with devices; preview
-  shots compared (HCTL-013, UI-044) (BL-216)
+- [ ] The role gates removed as proposal P1 shows (approved 2026-10-16); `host_link_demo` with
+  devices; preview shots compared (HCTL-013, UI-044) (BL-216)
 - [ ] `host/link_sim`: a fake registry on the virtual master, `devices` and `prefs` on the virtual
   keypad; `link_smoke` extended (LINK-013) (BL-216)
 - [ ] Home Assistant: `alarm_proto`, `ha_link`, `panel_app` wiring (docs/features/23

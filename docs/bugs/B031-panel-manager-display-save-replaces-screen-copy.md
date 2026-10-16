@@ -41,9 +41,9 @@ the fields that were saved elsewhere:
    `panel_app.c:1592`). Whether this callback can run on a keypad was not checked.
 
 ## Fix
-Not started. Recommended (the owner's decision 12 in docs/features/11 Open questions, not decided
-yet): once BL-216 builds the settings mailbox (`panel_prefs_remote_submit`, docs/features/07
-UI-046), `preferences_changed` submits the saved fields as a patch to it. The screen's task then
+Not started. Decided 2026-10-16 (the owner's decision 12 in docs/features/11 Decisions): once
+BL-216 builds the settings mailbox (`panel_prefs_remote_submit`, docs/features/07 UI-046),
+`preferences_changed` submits the saved fields as a patch to it. The screen's task then
 merges only those fields into its own copy and keeps its partition and language; UI-046's rules
 decide what happens while a change on the screen is unsaved.
 

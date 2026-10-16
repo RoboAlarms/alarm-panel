@@ -162,9 +162,6 @@ typedef struct {
     uint64_t now;
     bool have_find;     /* where to look for the master (port.resolve) */
     plink_addr_t find;
-    bool pair_asked;    /* pairing asked by broadcast: no master has answered yet */
-    bool pair_found;    /* ... and then one answered from found */
-    plink_addr_t found;
 } link_keypad_t;
 
 /* name: what the keypad calls itself (NULL "PC keypad"); master: where to look for the master

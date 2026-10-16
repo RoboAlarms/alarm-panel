@@ -145,6 +145,7 @@ static struct {
 
 /* The device numbers shared with Zigbee (wired by the start-up). */
 static uint32_t (*s_others_held)(void);
+static atomic_uint s_others; /* their last answer, refreshed by the link task every second */
 static void (*s_link_held)(uint32_t mask);
 
 /* ---- the alarm listener (on the alarm task: hand over and return) ---------------------------- */
@@ -443,16 +444,21 @@ static void port_checkin(void *ctx, uint8_t device)
     }
 }
 
-/* The numbers others hold: the device table's enabled entries (from the last configuration read)
- * and the Zigbee keypads' (under the zone lock, briefly). LINK-001. */
+/* The Zigbee keypads' numbers, read under the zone lock outside the manager's calls (its port
+ * must not wait): every second, and before pairing opens. */
+static void refresh_others(void)
+{
+    if (s_others_held != NULL) {
+        atomic_store(&s_others, s_others_held());
+    }
+}
+
+/* The numbers others hold (LINK-001): the device table's enabled entries (from the last
+ * configuration read) and the Zigbee keypads' (refresh_others). Never waits. */
 static uint32_t port_devices_taken(void *ctx)
 {
     (void)ctx;
-    uint32_t taken = atomic_load(&s_enabled_devices);
-    if (s_others_held != NULL) {
-        taken |= s_others_held();
-    }
-    return taken;
+    return atomic_load(&s_enabled_devices) | atomic_load(&s_others);
 }
 
 static void port_held_changed(void *ctx, uint32_t held)
@@ -757,6 +763,7 @@ void msvc_poll(uint64_t now)
     ask_config(now);
     if (now >= s_net_at) {
         s_net_at = now + NET_CHECK_MS;
+        refresh_others();
         const bool up = link_wifi_up();
         if (up != s_net_up) {
             s_net_up = up;
@@ -819,6 +826,10 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         if (!forced && !installer_ok()) {
             return UI_LINK_REQ_NOT_ALLOWED;
         }
+        if (!s_cfg_done) {
+            return UI_LINK_REQ_BUSY; /* the device table's numbers aren't read yet (LINK-001) */
+        }
+        refresh_others();
         if (!plink_master_pair_open(s_m, now)) {
             const uint32_t taken = port_devices_taken(NULL) | plink_master_held(s_m);
             return (taken & 0xFFu) == 0xFFu ? UI_LINK_REQ_FULL : UI_LINK_REQ_FAILED;
@@ -921,6 +932,7 @@ esp_err_t msvc_prepare(uint64_t now)
     }
     plink_wipe(buf, sizeof buf);
     snprintf(s_name, sizeof s_name, "%s", DEFAULT_NAME); /* until the configuration is read */
+    refresh_others();
     static const plink_master_port_t port = {
         .ctx = NULL,
         .send = port_send,

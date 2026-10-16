@@ -60,3 +60,14 @@ over the pretend network: pairing, the tentative session, the link's states and 
 ordering, the configuration pull, zones and events, commands and panic, BYE, REKEY and the
 handshake's back-off, the master moving. The keypad's port has an optional `resolve`: the platform
 looks for the master again before every handshake retry after the first failure.
+
+`test_plink_link.c` runs the real master and up to eight real keypads together over the pretend
+network, the engine (`alarm_sim`) behind the master as the platform wires it, every side on its
+own clock (a restart starts one again): pairing from scratch to a keypad that shows the master in
+every displayed field, commands and the lockout of one keypad, status within a second with loss,
+restarts of either side, both directions cut, a keypad switched off, the master's Wi-Fi down, panic
+through an outage, removal, eight keypads pulling the configuration, replays, a hostile keypad with
+valid keys, addresses moving, and six hours on a damaged network. After every test it checks that
+no side used a key and nonce twice and no command ran twice. Its random numbers all come from
+seeds: `PLINK_LINK_SEED=<n>` in the environment runs it on other ones (a change to the managers
+is worth a few dozen).

@@ -1056,31 +1056,58 @@ static void test_hello_repeated_while_pending_gets_the_same_welcome(void)
     TEST_ASSERT_EQUAL_UINT32(pending, k->live.sid);
 }
 
-/* LINK-015: at most about 4 handshakes a second over all keypads. */
-static void test_x25519_budget(void)
+/* n fresh HELLOs from keypad k at once. */
+static void fresh_hellos(fk_t *k, int n)
 {
-    fk_t *k = kp_add();
-    pair(k);
-    k->hb_on_welcome = false;
-    run(1100);
-    const unsigned w0 = welcomes();
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < n; i++) {
         plink_hs_k_t hs;
         TEST_ASSERT_TRUE(plink_hs_hello(&k->c, k->rec.k_pair, k->rec.net_id, k->rec.device, &CAP,
                                         &hs));
         k_send(k, hs.hello, hs.hello_len);
     }
+}
+
+/* LINK-015: at most about 4 handshakes a second over all keypads; LINK-027: one keypad's fresh
+ * HELLOs get a burst of 2 and then 1 a second, so a device with one keypad's keys can't use up
+ * the budget of the others (and a keypad refused for the others' sake keeps its share). */
+static void test_x25519_budget(void)
+{
+    fk_t *k[KP_MAX];
+    for (unsigned j = 0; j < KP_MAX; j++) {
+        k[j] = kp_add();
+        pair(k[j]);
+        k[j]->hb_on_welcome = false;
+    }
+    run(2100);
+    /* One keypad: 2 of 6, then 1 a second. */
+    unsigned w0 = welcomes();
+    fresh_hellos(k[0], 6);
+    run(100);
+    TEST_ASSERT_EQUAL_UINT(w0 + 2u, welcomes());
+    run(1000);
+    fresh_hellos(k[0], 3);
+    run(100);
+    TEST_ASSERT_EQUAL_UINT(w0 + 3u, welcomes());
+    /* Every keypad at once: 4 of 6 in a second, whoever sends them. */
+    run(2100);
+    w0 = welcomes();
+    for (unsigned j = 0; j < KP_MAX; j++) {
+        fresh_hellos(k[j], 2);
+    }
     run(100);
     TEST_ASSERT_EQUAL_UINT(w0 + PLINK_X25519_PER_S, welcomes());
+    /* The last keypad was refused for the budget, not for its own share: both of its next ones
+     * go once the second is over. */
     run(1000);
-    k_hello(k);
+    fresh_hellos(k[KP_MAX - 1u], 2);
     run(100);
-    TEST_ASSERT_EQUAL_UINT(w0 + PLINK_X25519_PER_S + 1u, welcomes());
+    TEST_ASSERT_EQUAL_UINT(w0 + PLINK_X25519_PER_S + 2u, welcomes());
 }
 
 /* LINK-015: the live session stays until a sealed frame proves the pending one; promotion sends
- * STATUS and TIME at once under the new session; the old session's frames then get a REKEY; a
- * pending session never proved expires after 20 s. */
+ * STATUS and TIME at once under the new session, the STATUS again at +250 ms and +1 s as a
+ * change's (LINK-006: one lost copy must not leave the keypad without a status for 10 s); the old
+ * session's frames then get a REKEY; a pending session never proved expires after 20 s. */
 static void test_pending_session_and_promotion(void)
 {
     plink_master_time(&R.m, NOW, 1790000000000LL, "UTC0");
@@ -1114,6 +1141,12 @@ static void test_pending_session_and_promotion(void)
     TEST_ASSERT_EQUAL_UINT(st + 1u, k->count[PLINK_T_STATUS]);
     TEST_ASSERT_EQUAL_UINT(tm + 1u, k->count[PLINK_T_TIME]);
     TEST_ASSERT_EQUAL_UINT32(l2, k->log[k->n_log - 1u].sid);
+    const uint64_t promoted = k->log[k->n_log - 1u].at;
+    run(PLINK_STATUS_REPEAT2_MS);
+    TEST_ASSERT_EQUAL_UINT(st + 3u, k->count[PLINK_T_STATUS]);
+    TEST_ASSERT_UINT64_WITHIN(5u, promoted + PLINK_STATUS_REPEAT1_MS, k->log[k->n_log - 2u].at);
+    TEST_ASSERT_UINT64_WITHIN(5u, promoted + PLINK_STATUS_REPEAT2_MS, k->log[k->n_log - 1u].at);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_T_STATUS, k->log[k->n_log - 1u].type);
     /* The old session is gone: its frames get a hint to start a handshake. */
     k->auto_hb = false;
     k_heartbeat_with(k, &s1);

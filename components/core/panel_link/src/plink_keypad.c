@@ -46,6 +46,7 @@
 #define NOT_PAIRED_RUN_MS 120000u /* NOT_PAIRED hints further apart start a new run */
 #define STORE_RETRY_MS    5000u
 #define OWN_PAYLOAD_MAX   64u /* the keypad's own payloads: HEARTBEAT, CMD, the requests */
+#define EV_FILL_TRIES     4u  /* EV_REQs for one hole in the events before it is let be */
 
 enum { STORE_NONE = 0, STORE_WRITE = 1, STORE_ERASE = 2 };
 
@@ -580,6 +581,17 @@ static void ev_drop(plink_keypad_t *k)
     memset(k->events, 0, sizeof k->events);
     k->ev_count = 0u;
     k->ev_frame_seq = 0u;
+    k->ev_fill = 0u;
+}
+
+/* A pull is due now (its waits start again at 300 ms) unless one is under way. */
+static void ev_pull(plink_keypad_t *k, uint64_t now)
+{
+    if (!k->ev_want) {
+        k->ev_want = true;
+        k->ev_retry_ms = PLINK_PULL_RETRY_MS;
+        k->ev_next_ms = now;
+    }
 }
 
 /* After a STATUS (frame fs): its last_event_seq below the newest kept means the master's log
@@ -592,12 +604,8 @@ static void ev_check(plink_keypad_t *k, uint64_t now, uint32_t fs)
         ev_drop(k);
     }
     if (last > ev_newest(k)) {
-        if (!k->ev_want) {
-            k->ev_want = true;
-            k->ev_retry_ms = PLINK_PULL_RETRY_MS;
-            k->ev_next_ms = now;
-        }
-    } else {
+        ev_pull(k, now);
+    } else if (k->ev_fill == 0u) {
         k->ev_want = false;
     }
 }
@@ -607,7 +615,16 @@ static void ev_pump(plink_keypad_t *k, uint64_t now)
     if (!k->ev_want || !k->live.valid || now < k->ev_next_ms) {
         return;
     }
-    const plink_ev_req_t q = {ev_newest(k), (uint8_t)PLINK_EVENTS_KEPT};
+    if (k->ev_fill != 0u && ++k->ev_fill_tries > EV_FILL_TRIES) {
+        /* The master's answers never brought it: let the hole be. */
+        k->ev_fill = 0u;
+        if (ev_newest(k) >= k->view.snap.last_event_seq) {
+            k->ev_want = false;
+            return;
+        }
+    }
+    const plink_ev_req_t q = {k->ev_fill != 0u ? k->ev_fill : ev_newest(k),
+                              (uint8_t)PLINK_EVENTS_KEPT};
     uint8_t p[OWN_PAYLOAD_MAX];
     size_t n = 0u;
     if (plink_enc_ev_req(&q, p, sizeof p, &n)) {
@@ -643,7 +660,12 @@ static bool ev_insert(plink_keypad_t *k, const alarm_event_t *e)
     return true;
 }
 
-static void on_events(plink_keypad_t *k, uint32_t fs, const uint8_t *p, size_t n)
+/* Events in, oldest first. The engine numbers its events one by one, so events past the newest
+ * kept that don't start right after it, in a frame that doesn't say older ones were left out,
+ * mean one pushed before them was lost (or is still on its way): they are kept, and the events
+ * after the newest kept before them are pulled once more, until one comes that fills the hole, an
+ * answer says it can't, or EV_FILL_TRIES requests went unanswered. */
+static void on_events(plink_keypad_t *k, uint64_t now, uint32_t fs, const uint8_t *p, size_t n)
 {
     size_t got = 0u;
     uint8_t flags = 0u;
@@ -651,13 +673,30 @@ static void on_events(plink_keypad_t *k, uint32_t fs, const uint8_t *p, size_t n
         return;
     }
     const uint32_t before = ev_newest(k);
+    bool hole = false;
     for (size_t i = 0; i < got; i++) {
+        if (k->scr.ev[i].seq > before) {
+            hole =
+                k->ev_count > 0u && k->scr.ev[i].seq > before + 1u && (flags & PLINK_EVF_GAP) == 0u;
+            break;
+        }
+    }
+    for (size_t i = 0; i < got; i++) {
+        if (k->ev_fill != 0u &&
+            (k->scr.ev[i].seq == k->ev_fill + 1u || (flags & PLINK_EVF_GAP) != 0u)) {
+            k->ev_fill = 0u; /* the hole is filled, or the master says it can't be */
+        }
         (void)ev_insert(k, &k->scr.ev[i]);
     }
     if (ev_newest(k) != before) {
         k->ev_frame_seq = fs;
     }
-    if (ev_newest(k) >= k->view.snap.last_event_seq) {
+    if (hole && k->ev_fill == 0u) {
+        k->ev_fill = before;
+        k->ev_fill_tries = 0u;
+        ev_pull(k, now);
+    }
+    if (k->ev_fill == 0u && ev_newest(k) >= k->view.snap.last_event_seq) {
         k->ev_want = false;
     }
 }
@@ -1057,7 +1096,7 @@ static void on_sealed(plink_keypad_t *k, uint64_t now, const plink_addr_t *from,
     case PLINK_T_STATUS: on_status(k, now, fs, k->pt, n); break;
     case PLINK_T_ZONES: on_zones(k, now, fs, k->pt, n); break;
     case PLINK_T_CFG_PAGE: on_cfg_page(k, now, k->pt, n); break;
-    case PLINK_T_EVENTS: on_events(k, fs, k->pt, n); break;
+    case PLINK_T_EVENTS: on_events(k, now, fs, k->pt, n); break;
     case PLINK_T_RESULT: on_result(k, k->pt, n); break;
     case PLINK_T_SOUND: on_sound(k, k->pt, n); break;
     case PLINK_T_TIME: on_time(k, now, fs, k->pt, n); break;

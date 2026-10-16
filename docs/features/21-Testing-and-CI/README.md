@@ -1,10 +1,10 @@
 # 21 · Testing and CI
 
-**Status:** Living document - the host tests (with sanitizers in CI), the UI preview and the
-panel simulator (`host/ui_sim`) run on the PC; CI adds the architecture, board, backlog and
-UI-contract checks and the P4 firmware build with its size check; panels are checked through the
-service console and `panelctl`. Left: the panel link's LAN simulator (BL-048), on-target test
-apps (dropped), hardware checklists as issue templates (BL-077).
+**Status:** Living document - the host tests (with sanitizers in CI), the UI preview, the
+panel simulator (`host/ui_sim`) and the panel link's simulator (`host/link_sim`, its `link_smoke`
+in CTest) run on the PC; CI adds the architecture, board, backlog and UI-contract checks and the
+P4 firmware build with its size check; panels are checked through the service console and
+`panelctl`. Left: on-target test apps (dropped), hardware checklists as issue templates (BL-077).
 · **Milestone:** all · **Depends on:** all
 
 ## Goal
@@ -24,7 +24,7 @@ hardware with repeatable checklists, and keep every requirement traceable to a t
 | Host unit (updates) | `alarm_proto` firmware helpers: semantic versions and the upgrade rule, manifest pick and URL resolution, install policy, base64 and upload lines with CRC, the HA `update` state and discovery | `components/core/alarm_proto/test/test_fw.c` | **done** (M6) |
 | Host unit (the other components) | Every other component's own `test/` folder, found by `host/CMakeLists.txt`: among them 433 MHz decoding (`rf_decode`) and the CC1101 (`cc1101_regs`), power (`power_monitor`), home control, storage, the clock (`rtc_clock`), Zigbee (`zigbee_host`), Z-Wave (`zwave_proto`, `zwave_host`, `zwave_zones`), the Home Assistant link (`alarm_proto` `test_link.c`, `test_pair.c`) and the boards' descriptions. The Panel Manager's pages run under Node (`components/services/panel_web/test`), the tools under Python (`tools/tests/test_*.py`) | `components/<tier>/<name>/test`, `tools/tests` | in place, grows with each component |
 | Host unit (future) | the panel link's frames and crypto vectors, schedules | the owning component's `test/` | planned (M7+): the panel link BL-048, its crypto BL-049, schedules BL-046 |
-| PC simulator | Interactive engine + virtual keypad/master over LAN UDP (the panel link's simulator, not `host/ui_sim`) | `host/sim` | planned (M7), not built (BL-048) |
+| PC simulator | The panel link's simulator (not `host/ui_sim`): `link_sim master` (the real engine and the master's side of the link) and `link_sim keypad` (the keypad's side and the status it rebuilds) over UDP with a console each, with the OS's random numbers so they pair with panels on the LAN too; `link_smoke`, the two in one process over 127.0.0.1 on a virtual clock, runs in CTest (LINK-013) | `host/link_sim`, `tools/link_sim.ps1` | **done** (M7, BL-048) |
 | On-target unit | BSP drivers, NVS store (ESP-IDF Unity test apps); the audio patterns are host-tested instead, so only the I2S path and the amplifier are left for the board | `firmware/*/test` | dropped 2026-09-28: the console and `panelctl` checks cover the board |
 | Hardware-in-the-loop | Checklists per feature (display, touch, audio, Wi-Fi, C6, MQTT, OTA, link). Tools: `tools/panel_console.py` (types console commands without resetting the panel, captures boot logs with `--reset`, stops the display with `--hold-reset`), `tools/ota_serial.py` (firmware upload, `--tamper`), `display [stress <s>]` (refresh monitor: frames/s, late frames, UI redraws, refresh times, touch polls, flicker guard) and `display watch <s>` (a line a second while someone uses the screen); for enrolled development panels `tools/panelctl.py` and the explicit, opt-in scripts `tools/tests/hardware_*.py` and `panel_web_*hil.py` ([30](../30-Remote-Development/README.md), [31](../31-Browser-Panel-Manager/README.md)). The checks still owed on a panel are docs/BACKLOG.md section 3 | feature READMEs ([06](../06-CrowPanel-P4-Platform/README.md), [13](../13-OTA-Updates/README.md)) | **started** 2026-09-19 (boot, display refresh, C6, OTA on the CrowPanel) |
 | End-to-end | Mosquitto (TLS) + Home Assistant test instance + panel | integration rig | planned (M5): [10](../10-MQTT-and-Home-Assistant/README.md) and [23](../23-Home-Assistant-Integration/README.md) Tasks (BL-026, BL-027) |
@@ -85,6 +85,9 @@ normal flash does not need them (CONTRIBUTING.md "Display safety"):
 
 ## Running
 - The panel in a window, to try a change by hand: `pwsh tools/ui_sim.ps1` (Windows).
+- The panel link on a PC: `pwsh tools/link_sim.ps1 master` and `pwsh tools/link_sim.ps1 keypad
+  --master 127.0.0.1` in two terminals (Linux/macOS: host/README.md); `-Smoke` runs `link_smoke`,
+  which CTest runs with the host tests.
 - Windows: `pwsh tools/host_test.ps1` (uses gcc/cmake/ninja from PATH or CLion's bundled toolchain).
 - Linux/macOS: `cmake -S host -B build/host -G Ninja && cmake --build build/host && ctest --test-dir build/host --output-on-failure`
 - CLion: open `host/` as a CMake project; each suite is a run target.
@@ -119,9 +122,9 @@ normal flash does not need them (CONTRIBUTING.md "Display safety"):
 - [x] Firmware size report per image: `tools/check_image_size.py` (16 tests), the job summary
 - [ ] Hardware checklists as issue templates: `.github/ISSUE_TEMPLATE` holds only the bug report
       and feature request forms today (M2) (BL-077)
-- [ ] The panel link's PC simulator, `host/sim` (the "PC simulator" layer above): the engine with
-      a virtual keypad and master over LAN UDP; not built - `host/ui_sim` is the touchscreen's
-      simulator, a different thing (M7) (BL-048)
+- [x] The panel link's PC simulator, `host/link_sim` (the "PC simulator" layer above): the
+      engine with a virtual keypad and master over LAN UDP, `link_smoke` in CTest; `host/ui_sim`
+      is the touchscreen's simulator, a different thing (M7) (BL-048)
 - Dropped 2026-09-28: on-target unit test apps (`firmware/*/test`, the "On-target unit"
   layer above) - the service console and `panelctl` hardware checks cover the board, and the
   drivers' logic is host-tested

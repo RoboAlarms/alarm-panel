@@ -152,6 +152,8 @@ typedef struct {
     uint8_t result_due;         /* bit i: cache[i] answered, its RESULT not sent yet */
     uint8_t cache_panic;        /* bit i: cache[i] is a panic (resent for 60 s, not 3 s) */
     uint32_t cmd_ticket, panic_ticket; /* the commands in flight */
+    uint64_t hs_tokens_at;      /* its fresh handshakes (token bucket) */
+    uint8_t hs_tokens;
 } plink_peer_t;
 
 typedef struct {

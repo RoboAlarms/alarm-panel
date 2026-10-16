@@ -41,9 +41,27 @@
  * kind the master did not decide about then, never one twice; after a keypad restart, a master
  * restart, a cut link and its backfill, nothing from before.
  *
+ * Smart Home and settings on keypads (LINK-043..051): the master's registry is a fake one (twenty
+ * devices of every kind, an offline one and a Z-Wave row among them; 64 in the storm) whose list
+ * and records the rig hands in as the plink_dev task does; port.dev_run is the one judge (the
+ * device by ref, a code checked by the engine as that keypad) answering after a delay, every call
+ * logged; a keypad offering PREFS has a service that reports its settings and applies each change
+ * the master writes, in turn. On top of the end-to-end run: the list and records converge through
+ * loss, damage, copies and reordering, and on 250 B frames; an action runs once through copies and
+ * lost answers, never after its 3 s; a renamed or reordered list never acts on another device; a
+ * master restart in the middle of a pull never mixes lists; a 45 s cut reads offline since the cut
+ * and replays nothing; a write applies once and ends TIMEOUT at 6 s; a keypad offering only FW (v1)
+ * gets nothing new, nor does a new keypad of a v1 master; and the storm leaves disarm and panic as
+ * fast as calm. After every test, too: no device action ran twice; no DEV_ACT went after its 3 s;
+ * no keypad installed a list the master never had, nor showed a device another's record (each
+ * device's record carries a tag of its ref, checked at every change of a mirror); and in every
+ * master turn DEV_* and PREFS* frames came after the alarm traffic, never while that keypad's
+ * STATUS change or a RESULT waited, at most 2 to a keypad and 8 in all.
+ *
  * Requirements: LINK-001, LINK-002, LINK-003, LINK-004, LINK-006, LINK-007, LINK-008, LINK-014,
  * LINK-015, LINK-016, LINK-018, LINK-019, LINK-021, LINK-023, LINK-024, LINK-026, LINK-027,
- * LINK-028 (and the keypad rules they serve: KPD-008, UI-023, D05 of docs/features/08).
+ * LINK-028, LINK-043..051 (and the keypad rules they serve: KPD-008, UI-023, D05 of
+ * docs/features/08).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +69,7 @@
 
 #include "alarm/alarm_codec.h"
 #include "alarm/alarm_snapshot.h"
+#include "alarm_proto/proto_prefs.h"
 #include "annunciator/annunciator.h"
 #include "panel_link/plink_keypad.h"
 #include "panel_link/plink_master.h"
@@ -62,6 +81,8 @@
 #include "voice_pack/voice_pack.h"
 
 #define KP_MAX        8u
+#define KP_TOOK       64u /* settings changes a keypad's platform took, logged */
+#define KP_INQ        4u  /* ... and held to apply, at most */
 #define EV_LOG        8192u
 #define RAN_MAX       2048u
 #define PEND_MAX      64u
@@ -136,8 +157,9 @@ typedef struct {
     uint8_t blob[ALARM_CONFIG_BLOB_MAX];
     alarm_config_t cfg;
     const char *name;
-    uint16_t caps; /* the capability bits it offers at its next boot (0: none) */
-    bool reused; /* an earlier boot's port saw a key and nonce twice */
+    uint16_t caps;           /* the capability bits it offers at its next boot (0: none) */
+    plink_dev_mirror_t *mir; /* its Smart Home mirror, attached at each boot (NULL: none) */
+    bool reused;             /* an earlier boot's port saw a key and nonce twice */
     /* its NVS */
     bool have_rec;
     plink_keypad_rec_t rec;
@@ -164,6 +186,37 @@ typedef struct {
     uint64_t cd_shown;
     unsigned cd_rises;
     voice_t v; /* LINK-028: its voice, when a test turns it on */
+    /* Smart Home and settings (LINK-043..051): what went either way */
+    unsigned sent[TYPES];   /* frames it sent, by type */
+    unsigned from_m[TYPES]; /* frames the master sent it (lost or not), by type */
+    size_t hb_min, hb_max;  /* its HEARTBEATs' lengths (0: none yet) */
+    uint64_t act_until;     /* its DEV_ACTs may go until then: its actions' 3 s (the network's) */
+    unsigned act_late;      /* a DEV_ACT sent after them */
+    uint32_t dev_seen;      /* its mirror's seq when last checked (plink_dev_info_t.seq) */
+    uint32_t list_seen;     /* ... and its list_seq */
+    unsigned mixed;         /* a list installed that isn't one the master had, byte for byte */
+    unsigned wrong_rec;     /* a row showing another device's record */
+    /* LINK-049: the master's frames to it in one turn (an input, a tick or an engine pump) */
+    uint64_t turn;
+    unsigned turn_home;     /* DEV_* and PREFS* frames in that turn */
+    bool turn_alarm;        /* STATUS, RESULT, SOUND, EVENTS or ZONES in it */
+    unsigned home_most;     /* DEV_* and PREFS* frames in a turn, the most */
+    unsigned shared;        /* turns where they followed alarm traffic */
+    unsigned alarm_after;   /* alarm traffic after one of them in a turn */
+    unsigned home_held;     /* one went while its STATUS change or a RESULT waited */
+    /* its settings as its platform keeps them, when app is on (LINK-050, LINK-051) */
+    bool app;
+    proto_prefs_values_t pv;
+    uint32_t apply_ms;      /* a change takes this long to apply (its screen's task) */
+    plink_prefs_change_t in[KP_INQ]; /* changes taken, applied in turn */
+    unsigned n_in;
+    uint64_t in_due;        /* the first applied then (its own clock) */
+    uint32_t took[KP_TOOK]; /* every change it took, by req (across its restarts) */
+    unsigned n_took;
+    /* a command watched from its CMD to its RESULT and to its screen showing what it asked */
+    uint32_t watch_req;
+    uint8_t watch_shows;    /* the state to show (0xFF: none) */
+    uint64_t watch_done, watch_shown; /* the network's clock (0: not yet) */
 } kp_t;
 
 /* A command port.run took, waiting for its delay. */
@@ -255,12 +308,71 @@ typedef struct {
     bool explain;       /* every LOST checked against the network's log */
     hostile_t h;
     voice_t mv;         /* LINK-028: the master's voice, fed straight from the engine */
+    uint32_t mtu;       /* every transport's largest frame, both sides (0: PLINK_FRAME_MAX) */
+    uint64_t m_turn;    /* the master's turns: each input, tick and engine pump */
+    uint64_t turn_at;   /* the turn turn_home counts */
+    unsigned turn_home; /* DEV_* and PREFS* frames in it, to every keypad */
+    unsigned home_most; /* ... the most in any turn */
 } rig_t;
 
 static rig_t R;
 static uint64_t SEED; /* PLINK_LINK_SEED, mixed into every seed (0: the usual ones) */
 static uint8_t FBUF[PLINK_FRAME_MAX], PBUF[PLINK_FRAME_MAX];
 static alarm_config_t CFG_TMP;
+
+/* Smart Home: the master's registry as its platform keeps it, and what its ports saw. */
+#define REG_LISTS 16u /* the newest lists handed to the master, kept */
+#define REG_RUNS  512u
+#define REG_DONES 256u
+
+/* One call of port.dev_run: the action as the master handed it on, and the one judge's answer. */
+typedef struct {
+    uint32_t ticket;
+    uint8_t device, home;
+    uint32_t req;
+    uint8_t digest[PLINK_SHA256_LEN]; /* plink_dev_act_digest: never the code */
+    char ref[PLINK_REF_MAX + 1];
+    uint8_t action, mode;
+    int32_t value;
+    bool coded;
+    uint8_t result, why; /* the judge's */
+    uint64_t at;         /* the network's clock */
+    uint64_t due;        /* answered then (the master's clock; 0: answered, or left to the test) */
+} reg_run_t;
+
+/* One end of a settings write (port.prefs_done). */
+typedef struct {
+    uint8_t device;
+    uint32_t req;
+    uint8_t result, refused_count;
+    uint64_t at; /* the network's clock */
+} reg_done_t;
+
+static struct {
+    hc_device_t rows[PLINK_DEV_MAX]; /* the registry, in its order */
+    size_t n_rows;
+    uint8_t blob[PLINK_DEV_BLOB_MAX];
+    size_t blob_len;
+    uint32_t list_crc;
+    plink_dev_recs_t recs;
+    struct {
+        uint32_t crc;
+        size_t len;
+        uint8_t b[PLINK_DEV_BLOB_MAX];
+    } list[REG_LISTS]; /* every list handed in (the newest): a keypad installs only these */
+    unsigned n_list;
+    bool manual;           /* port.dev_run only logs: the test answers (REG.ticket) */
+    uint32_t delay_ms;     /* else the platform answers after this */
+    uint32_t delay_max_ms; /* ... or after a random delay up to this, when not 0 */
+    reg_run_t run[REG_RUNS];
+    unsigned n_runs, n_due;
+    uint32_t ticket; /* the newest run's */
+    reg_done_t done[REG_DONES];
+    unsigned n_done;
+    uint8_t done_fields[PLINK_PREFS_BODY_MAX]; /* the newest OK's values now */
+    size_t done_fields_len;
+} REG;
+static plink_dev_mirror_t HMIR[KP_MAX]; /* each keypad's mirror (about 31 KB) */
 
 #define NOW (R.net.now_ms)
 
@@ -521,6 +633,7 @@ static void sync_engine(uint64_t t)
  * snapshot (its seq rises every time; the master coalesces). */
 static void pump(uint64_t t)
 {
+    R.m_turn++; /* the master's alarm traffic from here is a turn of its own */
     voice_t *ref = R.mv.on ? &R.mv : NULL; /* LINK-028: the master's voice, as panel_app feeds it */
     if (ref != NULL) {
         ref->s.now = t;
@@ -670,7 +783,484 @@ static void m_zone(uint16_t zone, bool fault)
     pump(mnow());
 }
 
+/* ---- Smart Home: the master's registry and its platform -------------------------------------- */
+
+/* A device's tag, a function of its ref alone. Its record's since (the registry's Unix seconds)
+ * carries it, so a keypad's row showing another device's record shows another tag. */
+static uint32_t reg_tag(const char *ref)
+{
+    return 1700000000u + plink_home_ref_key(ref) % 100000000u;
+}
+
+/* A device the registry lists, online, with the values its kind has. */
+static hc_device_t *reg_add(uint8_t source, uint8_t kind, const char *ref, const char *name,
+                            const char *area, const char *state)
+{
+    TEST_ASSERT_TRUE_MESSAGE(REG.n_rows < PLINK_DEV_MAX, "the registry is full");
+    hc_device_t *d = &REG.rows[REG.n_rows++];
+    memset(d, 0, sizeof *d);
+    dev_info_t *f = &d->info;
+    f->source = source;
+    f->kind = kind;
+    snprintf(f->ref, sizeof f->ref, "%s", ref);
+    snprintf(f->name, sizeof f->name, "%s", name);
+    snprintf(f->area, sizeof f->area, "%s", area);
+    snprintf(f->state, sizeof f->state, "%s", state);
+    f->online = true;
+    f->values.since = reg_tag(ref);
+    switch (kind) {
+    case DEV_LIGHT:
+        f->values.flags = DEV_VAL_LEVEL | DEV_VAL_LEVEL_SET;
+        f->values.caps = DEV_CAP_KNOWN | DEV_CAP_DIM;
+        break;
+    case DEV_FAN:
+        f->values.flags = DEV_VAL_LEVEL;
+        f->values.caps = DEV_CAP_KNOWN | DEV_CAP_SPEED;
+        break;
+    case DEV_COVER:
+        f->values.flags = DEV_VAL_LEVEL;
+        f->values.caps = DEV_CAP_KNOWN | DEV_CAP_STOP | DEV_CAP_POSITION;
+        break;
+    case DEV_CLIMATE:
+        f->values.flags = DEV_VAL_SETPOINT | DEV_VAL_TEMP;
+        f->values.setpoint = 2100;
+        f->values.temp = 2050;
+        f->values.modes = DEV_MODE_HEAT;
+        f->values.hvac_action = DEV_HVAC_HEATING;
+        break;
+    default: break;
+    }
+    return d;
+}
+
+/* A Home Assistant device named by its ref. */
+static void reg_row(const char *ref, uint8_t kind, const char *state)
+{
+    (void)reg_add(DSRC_HA, kind, ref, ref, "", state);
+}
+
+/* Its source renamed a device's ref: to a keypad another device, with its own tag. */
+static void reg_set_ref(hc_device_t *d, const char *ref)
+{
+    snprintf(d->info.ref, sizeof d->info.ref, "%s", ref);
+    d->info.values.since = reg_tag(ref);
+}
+
+static int reg_find(const char *ref)
+{
+    for (size_t i = 0; i < REG.n_rows; i++) {
+        if (strcmp(REG.rows[i].info.ref, ref) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+/* The house's twenty devices: lights and switches, two locks, two covers, a thermostat, a scene,
+ * a script, a fan, a valve, a light that is offline, and a Z-Wave light (which both screens leave
+ * out until BL-169). */
+static void reg_catalog(void)
+{
+    static const struct {
+        uint8_t source, kind;
+        const char *ref, *name, *area, *state;
+    } C[] = {
+        {DSRC_HA, DEV_LIGHT, "light.hall", "Hall", "Hall", "off"},
+        {DSRC_HA, DEV_LIGHT, "light.kitchen", "Kitchen ceiling", "Kitchen", "off"},
+        {DSRC_HA, DEV_LIGHT, "light.porch", "Porch", "Outside", "off"},
+        {DSRC_HA, DEV_LIGHT, "light.bedroom", "Bedside", "Bedroom", "off"},
+        {DSRC_HA, DEV_LIGHT, "light.office", "Desk lamp", "Office", "off"},
+        {DSRC_HA, DEV_SWITCH, "switch.porch", "Porch fountain", "Outside", "off"},
+        {DSRC_HA, DEV_SWITCH, "switch.coffee", "Coffee maker", "Kitchen", "off"},
+        {DSRC_HA, DEV_SWITCH, "switch.heater", "Towel heater", "Bathroom", "off"},
+        {DSRC_HA, DEV_LOCK, "lock.front", "Front door", "Hall", "locked"},
+        {DSRC_HA, DEV_LOCK, "lock.back", "Back door", "Kitchen", "locked"},
+        {DSRC_HA, DEV_COVER, "cover.garage", "Garage door", "Garage", "closed"},
+        {DSRC_HA, DEV_COVER, "cover.blinds", "Living room blinds", "Living room", "closed"},
+        {DSRC_HA, DEV_CLIMATE, "climate.hall", "Thermostat", "Hall", "heat"},
+        {DSRC_HA, DEV_SCENE, "scene.evening", "Evening", "", "scening"},
+        {DSRC_HA, DEV_SCRIPT, "script.goodnight", "Good night", "", "off"},
+        {DSRC_HA, DEV_FAN, "fan.bedroom", "Ceiling fan", "Bedroom", "off"},
+        {DSRC_HA, DEV_VALVE, "valve.water", "Water main", "Utility", "open"},
+        {DSRC_HA, DEV_LIGHT, "light.garden", "Garden", "Outside", "off"},
+        {DSRC_HA, DEV_SWITCH, "switch.pump", "Pond pump", "Garden", "off"},
+        {DSRC_ZWAVE, DEV_LIGHT, "zwave.node_7", "Porch lantern", "Outside", "off"},
+    };
+    for (size_t i = 0; i < sizeof C / sizeof C[0]; i++) {
+        (void)reg_add(C[i].source, C[i].kind, C[i].ref, C[i].name, C[i].area, C[i].state);
+    }
+    REG.rows[reg_find("light.garden")].info.online = false; /* unreachable (HCTL-006) */
+}
+
+/* n lights and switches (the storm's). */
+static void reg_many(size_t n)
+{
+    char ref[32], name[32];
+    for (size_t i = 0; i < n; i++) {
+        const bool sw = (i & 1u) != 0u;
+        snprintf(ref, sizeof ref, "%s.storm_%02u", sw ? "switch" : "light", (unsigned)i);
+        snprintf(name, sizeof name, "Storm %02u", (unsigned)i);
+        (void)reg_add(DSRC_HA, sw ? DEV_SWITCH : DEV_LIGHT, ref, name, "Hall", "off");
+    }
+}
+
+/* 64 lights with long refs, names and areas in place of the registry: a list of about 8.6 KB, 8
+ * pages on UDP. variant tells the refs of one such list from another's. */
+static void reg_big(unsigned variant)
+{
+    char ref[PLINK_REF_MAX + 1], name[PLINK_NAME_MAX + 1], area[PLINK_AREA_MAX + 1];
+    REG.n_rows = 0u;
+    for (unsigned i = 0; i < PLINK_DEV_MAX; i++) {
+        snprintf(ref, sizeof ref, "light.long_room_number_%02u_of_the_east_wing_%u", i, variant);
+        snprintf(name, sizeof name, "The ceiling light of room %02u, east wing", i);
+        snprintf(area, sizeof area, "The far end of the east wing, floor %02u", i);
+        (void)reg_add(DSRC_HA, DEV_LIGHT, ref, name, area, "off");
+    }
+}
+
+/* The rows rotated by k. */
+static void reg_rotate(size_t k)
+{
+    static hc_device_t tmp[PLINK_DEV_MAX];
+    const size_t n = REG.n_rows;
+    memcpy(tmp, REG.rows, n * sizeof tmp[0]);
+    for (size_t i = 0; i < n; i++) {
+        REG.rows[i] = tmp[(i + k) % n];
+    }
+}
+
+static void reg_reverse(void)
+{
+    for (size_t i = 0, j = REG.n_rows; i + 1u < j; i++, j--) {
+        const hc_device_t t = REG.rows[i];
+        REG.rows[i] = REG.rows[j - 1u];
+        REG.rows[j - 1u] = t;
+    }
+}
+
+/* Row i's state moves on, as its source reports it: its record's bytes change. */
+static void reg_flip(size_t i)
+{
+    dev_info_t *f = &REG.rows[i].info;
+    const bool on = strcmp(f->state, "on") == 0 || strcmp(f->state, "unlocked") == 0 ||
+                    strcmp(f->state, "open") == 0;
+    switch (f->kind) {
+    case DEV_LOCK: snprintf(f->state, sizeof f->state, "%s", on ? "locked" : "unlocked"); break;
+    case DEV_COVER:
+    case DEV_VALVE:
+        snprintf(f->state, sizeof f->state, "%s", on ? "closed" : "open");
+        f->values.level = on ? 0u : 100u;
+        break;
+    case DEV_CLIMATE: f->values.temp = 1800 + (f->values.temp - 1800 + 10) % 800; break;
+    case DEV_SCENE:
+    case DEV_SCRIPT: f->values.level = (uint8_t)((f->values.level + 1u) % 101u); break;
+    default:
+        snprintf(f->state, sizeof f->state, "%s", on ? "off" : "on");
+        f->values.level = (uint8_t)((f->values.level + 7u) % 101u);
+        break;
+    }
+}
+
+/* The registry's list and records handed to the master, as its plink_dev task does; every new
+ * list remembered, to check what the keypads install. */
+static void reg_push(void)
+{
+    TEST_ASSERT_TRUE(plink_home_list_build(REG.rows, REG.n_rows, REG.blob, sizeof REG.blob,
+                                           &REG.blob_len, &REG.list_crc));
+    plink_home_recs_build(REG.rows, REG.n_rows, &REG.recs);
+    bool known = false;
+    for (unsigned i = 0; i < REG.n_list && i < REG_LISTS; i++) {
+        known = known || REG.list[i].crc == REG.list_crc;
+    }
+    if (!known) {
+        const unsigned at = REG.n_list++ % REG_LISTS;
+        REG.list[at].crc = REG.list_crc;
+        REG.list[at].len = REG.blob_len;
+        memcpy(REG.list[at].b, REG.blob, REG.blob_len);
+    }
+    plink_master_home(&R.m, mnow(), REG.blob, REG.blob_len, REG.list_crc, &REG.recs);
+}
+
+/* The one judge (device_service_person_act, LINK-048) as the platform runs it for port.dev_run:
+ * the device by ref, a Z-Wave row or an action its kind doesn't take refused, an offline one
+ * unreachable, and the code an action needs checked by the engine as {KEYPAD, device} for the
+ * keypad's home partition (a wrong one counts toward that keypad's lockout). */
+static uint8_t reg_judge(uint8_t device, uint8_t home, const plink_dev_act_t *act, uint8_t *why)
+{
+    *why = 0u;
+    const int i = reg_find(act->ref);
+    if (i < 0) {
+        return PLINK_DEV_REFUSED;
+    }
+    const dev_info_t *f = &REG.rows[i].info;
+    if (f->source == DSRC_ZWAVE ||
+        !hc_action_valid((dev_kind_t)f->kind, (dev_action_t)act->action)) {
+        return PLINK_DEV_REFUSED;
+    }
+    if (!f->online) {
+        return PLINK_DEV_UNREACHABLE;
+    }
+    if (!hc_needs_code((dev_kind_t)f->kind, (dev_action_t)act->action, act->value)) {
+        return PLINK_DEV_OK;
+    }
+    if (act->code[0] == '\0') {
+        return PLINK_DEV_NEED_CODE;
+    }
+    char code[sizeof act->code];
+    memcpy(code, act->code, sizeof code);
+    const alarm_source_t src = {ALARM_SRC_KEYPAD, device};
+    uint8_t user = 0u;
+    sync_engine(mnow());
+    const alarm_result_t r =
+        alarm_engine_authenticate(&R.sim.eng, &src, code, home, R.sim.now, &user);
+    plink_wipe(code, sizeof code);
+    R.pump_due = true;
+    if (r != ALARM_OK) {
+        *why = (uint8_t)r;
+        return PLINK_DEV_CODE_REFUSED;
+    }
+    return PLINK_DEV_OK;
+}
+
+/* An action the judge allowed, done: what its device reports now. */
+static void reg_apply(hc_device_t *d, const reg_run_t *r)
+{
+    dev_info_t *f = &d->info;
+    const char *word = NULL;
+    switch (r->action) {
+    case ACT_ON: word = "on"; break;
+    case ACT_OFF: word = "off"; break;
+    case ACT_TOGGLE: word = strcmp(f->state, "on") == 0 ? "off" : "on"; break;
+    case ACT_LOCK: word = "locked"; break;
+    case ACT_UNLOCK: word = "unlocked"; break;
+    case ACT_OPEN:
+        word = "open";
+        f->values.level = 100u;
+        break;
+    case ACT_CLOSE:
+        word = "closed";
+        f->values.level = 0u;
+        break;
+    case ACT_STOP: word = "stopped"; break;
+    case ACT_SET_LEVEL:
+        f->values.level = (uint8_t)r->value;
+        word = f->kind == DEV_COVER ? (r->value > 0 ? "open" : "closed") : "on";
+        break;
+    case ACT_SET_TEMP: f->values.setpoint = r->value; break;
+    case ACT_SET_MODE:
+        f->values.modes = r->mode;
+        word = r->mode == DEV_MODE_OFF ? "off" : r->mode == DEV_MODE_COOL ? "cool" : "heat";
+        break;
+    case ACT_RUN: f->values.level = (uint8_t)((f->values.level + 1u) % 101u); break;
+    default: break;
+    }
+    if (word != NULL) {
+        snprintf(f->state, sizeof f->state, "%s", word);
+    }
+}
+
+/* port.dev_run: logged and judged at once (the code copy wiped), then answered by the platform
+ * after REG.delay_ms (or a random delay up to REG.delay_max_ms) - its device changed and the
+ * registry handed in first, as the plink_dev task posts RES_DEVICES before RES_DEV_ACK - or, with
+ * REG.manual, left for the test to answer. */
+static bool p_dev_run(void *ctx, uint32_t ticket, uint8_t device, uint8_t home,
+                      const plink_dev_act_t *act)
+{
+    (void)ctx;
+    TEST_ASSERT_FALSE_MESSAGE(R.in_run, "port.dev_run called from inside a port call");
+    TEST_ASSERT_TRUE_MESSAGE(REG.n_runs < REG_RUNS, "the rig's action log is full");
+    reg_run_t *r = &REG.run[REG.n_runs++];
+    memset(r, 0, sizeof *r);
+    r->ticket = ticket;
+    r->device = device;
+    r->home = home;
+    r->req = act->req;
+    plink_dev_act_digest(act, r->digest);
+    memcpy(r->ref, act->ref, sizeof r->ref);
+    r->action = act->action;
+    r->mode = act->mode;
+    r->value = act->value;
+    r->coded = act->code[0] != '\0';
+    r->at = NOW;
+    r->result = reg_judge(device, home, act, &r->why);
+    REG.ticket = ticket;
+    if (!REG.manual) {
+        const uint32_t delay =
+            REG.delay_max_ms != 0u ? (uint32_t)(rnd() % (REG.delay_max_ms + 1u)) : REG.delay_ms;
+        r->due = mnow() + delay;
+        if (r->due == 0u) {
+            r->due = 1u;
+        }
+        REG.n_due++;
+    }
+    return true;
+}
+
+/* The answers whose delay is up, at the master's clock t. */
+static void reg_serve(uint64_t t)
+{
+    for (unsigned i = 0; REG.n_due > 0u && i < REG.n_runs; i++) {
+        reg_run_t *r = &REG.run[i];
+        if (r->due == 0u || r->due > t) {
+            continue;
+        }
+        r->due = 0u;
+        REG.n_due--;
+        if (r->result == PLINK_DEV_OK) {
+            const int row = reg_find(r->ref);
+            if (row >= 0) {
+                reg_apply(&REG.rows[row], r);
+                reg_push();
+            } else {
+                r->result = PLINK_DEV_UNREACHABLE; /* gone from the registry meanwhile */
+            }
+        }
+        plink_master_dev_answer(&R.m, t, r->ticket, r->result, r->why);
+    }
+}
+
+static uint64_t reg_next(void)
+{
+    uint64_t t = UINT64_MAX;
+    for (unsigned i = 0; REG.n_due > 0u && i < REG.n_runs; i++) {
+        if (REG.run[i].due != 0u) {
+            t = min64(t, REG.run[i].due);
+        }
+    }
+    return t;
+}
+
+static void p_prefs_done(void *ctx, uint8_t device, const plink_prefs_done_t *d)
+{
+    (void)ctx;
+    TEST_ASSERT_TRUE_MESSAGE(REG.n_done < REG_DONES, "the rig's write log is full");
+    reg_done_t *e = &REG.done[REG.n_done++];
+    e->device = device;
+    e->req = d->req;
+    e->result = d->result;
+    e->refused_count = d->refused_count;
+    e->at = NOW;
+    if (d->result == PLINK_PSET_OK) {
+        REG.done_fields_len = d->fields_len <= sizeof REG.done_fields ? d->fields_len : 0u;
+        if (REG.done_fields_len > 0u) {
+            memcpy(REG.done_fields, d->fields, REG.done_fields_len);
+        }
+    }
+}
+
+/* Times port.dev_run took keypad device's action req, and the first. */
+static unsigned reg_runs(uint8_t device, uint32_t req)
+{
+    unsigned c = 0;
+    for (unsigned i = 0; i < REG.n_runs; i++) {
+        c += REG.run[i].device == device && REG.run[i].req == req;
+    }
+    return c;
+}
+
+static const reg_run_t *reg_run_of(uint8_t device, uint32_t req)
+{
+    for (unsigned i = 0; i < REG.n_runs; i++) {
+        if (REG.run[i].device == device && REG.run[i].req == req) {
+            return &REG.run[i];
+        }
+    }
+    return NULL;
+}
+
+/* How write req to device ended (NULL: not yet); *times, how often port.prefs_done said. */
+static const reg_done_t *reg_done_of(uint8_t device, uint32_t req, unsigned *times)
+{
+    const reg_done_t *e = NULL;
+    unsigned c = 0;
+    for (unsigned i = 0; i < REG.n_done; i++) {
+        if (REG.done[i].device == device && REG.done[i].req == req) {
+            e = e != NULL ? e : &REG.done[i];
+            c++;
+        }
+    }
+    if (times != NULL) {
+        *times = c;
+    }
+    return e;
+}
+
+/* A fields body: brightness and the Beeps volume. */
+static size_t prefs_body(uint8_t brightness, uint8_t volume, uint8_t *out)
+{
+    proto_prefs_values_t v;
+    memset(&v, 0, sizeof v);
+    TEST_ASSERT_EQUAL_INT(PROTO_PREFS_WHY_NONE,
+                          proto_prefs_put(&v, PROTO_PREFS_F_BRIGHTNESS, brightness));
+    TEST_ASSERT_EQUAL_INT(PROTO_PREFS_WHY_NONE, proto_prefs_put(&v, PROTO_PREFS_F_VOLUME, volume));
+    return proto_prefs_encode(&v, PROTO_PREFS_KNOWN, out, PROTO_PREFS_ENC_MAX);
+}
+
 /* ---- the master's port ----------------------------------------------------------------------- */
+
+/* The largest frame on every transport (ESP-NOW's 250 B when a test sets R.mtu). */
+static size_t frame_max(void)
+{
+    return R.mtu != 0u ? R.mtu : PLINK_FRAME_MAX;
+}
+
+/* DEV_* and PREFS* frames (types 0x32-0x3A), and the alarm traffic that never waits for them. */
+static bool home_type(uint8_t t)
+{
+    return t >= PLINK_T_DEV_LIST_REQ && t <= PLINK_T_PREFS_SET;
+}
+
+static bool alarm_type(uint8_t t)
+{
+    return t == PLINK_T_STATUS || t == PLINK_T_RESULT || t == PLINK_T_SOUND ||
+           t == PLINK_T_EVENTS || t == PLINK_T_ZONES;
+}
+
+/* LINK-049 on every frame the master sends a keypad, by turn (one input, tick or engine pump):
+ * DEV_* and PREFS* frames go at most 2 to a keypad and 8 in all in a turn, never while that
+ * keypad has a STATUS change waiting or a RESULT due, and no STATUS, RESULT, SOUND, EVENTS or
+ * ZONES ever follows one of them in the same turn. */
+static void m_watch(const plink_addr_t *to, const uint8_t *frame, size_t len)
+{
+    if (len <= 3u) {
+        return;
+    }
+    const uint8_t type = frame[3];
+    if (R.turn_at != R.m_turn) {
+        R.turn_at = R.m_turn;
+        R.turn_home = 0u;
+    }
+    for (unsigned i = 0; i < R.nkp; i++) {
+        kp_t *k = &R.kp[i];
+        if (!plink_addr_equal(&R.net.node[k->node].addr, to)) {
+            continue;
+        }
+        if (type < TYPES) {
+            k->from_m[type]++;
+        }
+        if (k->turn != R.m_turn) {
+            k->turn = R.m_turn;
+            k->turn_home = 0u;
+            k->turn_alarm = false;
+        }
+        if (home_type(type)) {
+            k->turn_home++;
+            R.turn_home++;
+            k->home_most = k->turn_home > k->home_most ? k->turn_home : k->home_most;
+            R.home_most = R.turn_home > R.home_most ? R.turn_home : R.home_most;
+            k->shared += k->turn_alarm && k->turn_home == 1u;
+            const uint8_t d = dev(k);
+            if (d >= PLINK_DEVICE_FIRST && d <= PLINK_DEVICE_LAST) {
+                const plink_peer_t *p = &R.m.peer[d - 1u];
+                k->home_held += p->change_ms != 0u || p->result_due != 0u;
+            }
+        } else if (alarm_type(type)) {
+            k->alarm_after += k->turn_home > 0u;
+            k->turn_alarm = true;
+        }
+        return;
+    }
+}
 
 static bool p_send(void *ctx, const plink_addr_t *to, const uint8_t *frame, size_t len)
 {
@@ -678,7 +1268,16 @@ static bool p_send(void *ctx, const plink_addr_t *to, const uint8_t *frame, size
     if (R.in_run) {
         R.sent_in_run++;
     }
+    TEST_ASSERT_TRUE_MESSAGE(len <= frame_max(), "a frame from the master over its transport's");
+    m_watch(to, frame, len);
     return plink_net_send(&R.net, R.mnode, to, frame, len);
+}
+
+static size_t p_mtu(void *ctx, uint8_t transport)
+{
+    (void)ctx;
+    (void)transport;
+    return frame_max();
 }
 
 static bool p_store(void *ctx, const plink_master_rec_t *rec)
@@ -838,16 +1437,19 @@ static void m_input(void *ctx, uint64_t now, const plink_addr_t *from, const uin
     if (len > 3u && f[3] < TYPES) {
         R.m_got[f[3]]++;
     }
+    R.m_turn++;
     plink_master_input(&R.m, clock_of(now, R.m_off), from, f, len);
 }
 
 static void m_tick(void *ctx, uint64_t now)
 {
     (void)ctx;
+    R.m_turn++;
     const uint64_t t = clock_of(now, R.m_off);
     const bool due = alarm_engine_next_deadline(&R.sim.eng) <= t;
     sync_engine(t);
     runs_due(t);
+    reg_serve(t); /* device actions answered, as the plink_dev task's results come in */
     if (due || R.pump_due || t >= R.pumped_at + PUMP_EVERY_MS) {
         pump(t);
     }
@@ -865,6 +1467,7 @@ static uint64_t m_next(void *ctx)
     for (unsigned i = 0; i < R.n_pend; i++) {
         t = min64(t, R.pend[i].due);
     }
+    t = min64(t, reg_next());
     t = min64(t, R.pump_due ? mnow() : R.pumped_at + PUMP_EVERY_MS);
     return net_of(t, R.m_off);
 }
@@ -934,6 +1537,111 @@ static void log_trim(void)
     R.net.log_count = keep;
 }
 
+static uint8_t shows(const kp_t *k);
+
+/* LINK-044, LINK-045, LINK-047: the mirror after every change of it - a list installed is one the
+ * master handed in, byte for byte (never pages of two), and every row with a record shows its own
+ * device's (its tag), whatever was reordered, renamed, carried over or answered. */
+static void mirror_check(kp_t *k, uint64_t t)
+{
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&k->k, t, &di);
+    if (di.seq == k->dev_seen) {
+        return;
+    }
+    k->dev_seen = di.seq;
+    if (di.list_crc == 0u) {
+        return;
+    }
+    if (di.list_seq != k->list_seen) {
+        k->list_seen = di.list_seq;
+        bool found = false;
+        for (unsigned i = 0; i < REG.n_list && i < REG_LISTS; i++) {
+            found = found ||
+                    (REG.list[i].crc == di.list_crc && REG.list[i].len == k->mir->blob_len &&
+                     memcmp(REG.list[i].b, k->mir->blob, REG.list[i].len) == 0);
+        }
+        k->mixed += !found;
+    }
+    for (unsigned i = 0; i < di.count; i++) {
+        plink_dev_cat_t cat;
+        plink_dev_rec_t rec;
+        bool usable = false;
+        if (plink_keypad_dev_row(&k->k, (uint8_t)i, &cat, &usable) && usable &&
+            plink_keypad_dev_rec(&k->k, (uint8_t)i, &rec) && rec.since != reg_tag(cat.ref)) {
+            k->wrong_rec++;
+        }
+    }
+}
+
+/* Keypad k's settings report, as its platform gives it (its panel id c0ffe<n>). */
+static void app_report(kp_t *k, uint64_t t)
+{
+    uint8_t body[PROTO_PREFS_ENC_MAX];
+    const size_t n = proto_prefs_encode(&k->pv, PROTO_PREFS_KNOWN, body, sizeof body);
+    char id[PLINK_PANEL_ID_LEN + 1];
+    snprintf(id, sizeof id, "c0ffe%x", (unsigned)(k - R.kp));
+    TEST_ASSERT_TRUE(plink_keypad_prefs_report(&k->k, t, id, PLINK_VOICE_READY, PROTO_PREFS_KNOWN,
+                                               body, n));
+}
+
+/* The settings changes from the master, taken by the keypad's service for its screen whenever the
+ * core gives one (LINK-051: each req once), and applied in turn. */
+static void app_take(kp_t *k, uint64_t t)
+{
+    plink_prefs_change_t c;
+    while (plink_keypad_take_prefs_set(&k->k, &c)) {
+        TEST_ASSERT_TRUE_MESSAGE(k->n_took < KP_TOOK, "the rig's log of changes taken is full");
+        k->took[k->n_took++] = c.req;
+        TEST_ASSERT_TRUE_MESSAGE(k->n_in < KP_INQ, "a keypad given more changes than it holds");
+        if (k->n_in == 0u) {
+            k->in_due = t + k->apply_ms;
+        }
+        k->in[k->n_in++] = c;
+    }
+}
+
+/* ... applied on its screen's task when its time comes (UI-046): each field checked, the values
+ * merged into its own, and the answer - the refusals and the values now stored - handed back. */
+static void app_apply(kp_t *k, uint64_t t)
+{
+    if (k->n_in == 0u || t < k->in_due) {
+        return;
+    }
+    const plink_prefs_change_t c = k->in[0];
+    memmove(&k->in[0], &k->in[1], --k->n_in * sizeof k->in[0]);
+    k->in_due = t + k->apply_ms;
+    proto_prefs_decoded_t d;
+    uint8_t refused[2u * PROTO_PREFS_F_LAST];
+    uint8_t n = 0u;
+    if (proto_prefs_decode(c.fields, c.len, PROTO_PREFS_KNOWN, &d)) {
+        for (unsigned id = 1u; id <= PROTO_PREFS_F_LAST; id++) {
+            uint32_t v = 0u;
+            if (proto_prefs_get(&d.values, id, &v)) {
+                (void)proto_prefs_put(&k->pv, id, v);
+            }
+            if ((d.refused & PROTO_PREFS_BIT(id)) != 0u) {
+                refused[2u * n] = (uint8_t)id;
+                refused[2u * n + 1u] = d.why[id - 1u];
+                n++;
+            }
+        }
+    }
+    uint8_t body[PROTO_PREFS_ENC_MAX];
+    const size_t nb = proto_prefs_encode(&k->pv, PROTO_PREFS_KNOWN, body, sizeof body);
+    TEST_ASSERT_TRUE(plink_keypad_prefs_answer(&k->k, t, c.req, refused, n, body, nb));
+}
+
+/* Times keypad k took settings change req. */
+static unsigned app_took(const kp_t *k, uint32_t req)
+{
+    unsigned c = 0;
+    for (unsigned i = 0; i < k->n_took; i++) {
+        c += k->took[i] == req;
+    }
+    return c;
+}
+
 /* What the keypad's UI reads after every call into it. */
 static void observe(kp_t *k)
 {
@@ -1001,6 +1709,21 @@ static void observe(kp_t *k)
         plink_vfeed_poll(&k->v.s.f, t, &view);
         v_step(&k->v, t);
     }
+    if (k->app) {
+        app_take(k, t);
+    }
+    if (k->mir != NULL) {
+        mirror_check(k, t);
+    }
+    if (k->watch_req != 0u) {
+        if (k->watch_done == 0u &&
+            plink_keypad_command_state(&k->k, k->watch_req, NULL) == PLINK_CMD_DONE) {
+            k->watch_done = NOW;
+        }
+        if (k->watch_shown == 0u && k->watch_shows != 0xFFu && shows(k) == k->watch_shows) {
+            k->watch_shown = NOW;
+        }
+    }
 }
 
 /* LINK-028: keypad k's voice from now on (as its panel starts it), fed through plink_vfeed. */
@@ -1031,6 +1754,9 @@ static void k_tick(void *ctx, uint64_t now)
         k->resolve_due = false;
         plink_keypad_master_addr(&k->k, t, maddr(), false);
     }
+    if (k->app) {
+        app_apply(k, t);
+    }
     plink_keypad_tick(&k->k, t);
     observe(k);
 }
@@ -1042,13 +1768,34 @@ static uint64_t k_next(void *ctx)
     if (k->resolve_due) {
         t = min64(t, know(k));
     }
+    if (k->n_in > 0u) {
+        t = min64(t, k->in_due);
+    }
     return net_of(t, k->off);
 }
 
 static bool kp_send(void *ctx, const plink_addr_t *to, const uint8_t *frame, size_t len)
 {
-    const kp_t *k = ctx;
+    kp_t *k = ctx;
+    TEST_ASSERT_TRUE_MESSAGE(len <= frame_max(), "a frame from a keypad over its transport's");
+    if (len > 3u && frame[3] < TYPES) {
+        const uint8_t type = frame[3];
+        k->sent[type]++;
+        if (type == PLINK_T_HEARTBEAT) {
+            k->hb_min = k->hb_min == 0u || len < k->hb_min ? len : k->hb_min;
+            k->hb_max = len > k->hb_max ? len : k->hb_max;
+        }
+        /* LINK-047: an action's copies go for 3 s, never after */
+        k->act_late += type == PLINK_T_DEV_ACT && NOW >= k->act_until;
+    }
     return plink_net_send(&R.net, k->node, to, frame, len);
+}
+
+static size_t kp_mtu(void *ctx, uint8_t transport)
+{
+    (void)ctx;
+    (void)transport;
+    return frame_max();
 }
 
 static bool kp_store(void *ctx, const plink_keypad_rec_t *rec)
@@ -1101,10 +1848,19 @@ static void kp_boot(kp_t *k)
     memset(&k->port, 0, sizeof k->port);
     k->port.ctx = k;
     k->port.send = kp_send;
+    k->port.mtu = kp_mtu;
     k->port.store = kp_store;
     k->port.resolve = kp_resolve;
     plink_keypad_init(&k->k, &k->c, &k->port, k->have_rec ? &k->rec : NULL, k->blob, sizeof k->blob,
                       &k->cfg, PLINK_KIND_PANEL, &CAP, k->caps, k->name, "1.4.0", know(k));
+    if (k->mir != NULL) {
+        plink_keypad_home_attach(&k->k, k->mir);
+    }
+    k->dev_seen = k->list_seen = UINT32_MAX;
+    k->n_in = 0u; /* the changes being applied went with the panel */
+    if (k->app) {
+        app_report(k, know(k)); /* its settings, as its platform hands them in at start-up */
+    }
     k->resolve_due = false;
     plink_keypad_info_t in;
     plink_keypad_info(&k->k, know(k), &in);
@@ -1561,6 +2317,7 @@ static void x_input(void *ctx, uint64_t now, const plink_addr_t *from, const uin
 void setUp(void)
 {
     memset(&R, 0, sizeof R);
+    memset(&REG, 0, sizeof REG);
     const char *seed = getenv("PLINK_LINK_SEED");
     SEED = seed != NULL ? strtoull(seed, NULL, 0) * 0x9E3779B97F4A7C15ull : 0u;
     plink_net_init(&R.net, 0x11AB5EEDull ^ SEED);
@@ -1582,6 +2339,9 @@ void setUp(void)
     R.port.lockout_left = p_lockout;
     R.port.events_after = p_events_after;
     R.port.note = p_note;
+    R.port.mtu = p_mtu;
+    R.port.dev_run = p_dev_run;
+    R.port.prefs_done = p_prefs_done;
     plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
     R.mnode = plink_net_node(&R.net, IP_M, NULL, m_input, m_tick, m_next);
     R.xnode = plink_net_node(&R.net, IP_X, NULL, x_input, x_tick, x_next);
@@ -1611,6 +2371,28 @@ void tearDown(void)
                     memcmp(R.ran[i].digest, R.ran[j].digest, PLINK_SHA256_LEN) == 0,
                 "a command ran twice");
         }
+    }
+    /* LINK-047: no device action ran twice (the same keypad, request id and action). */
+    for (unsigned i = 0; i < REG.n_runs; i++) {
+        for (unsigned j = i + 1u; j < REG.n_runs; j++) {
+            TEST_ASSERT_FALSE_MESSAGE(
+                REG.run[i].device == REG.run[j].device && REG.run[i].req == REG.run[j].req &&
+                    memcmp(REG.run[i].digest, REG.run[j].digest, PLINK_SHA256_LEN) == 0,
+                "a device action ran twice");
+        }
+    }
+    /* LINK-049: Smart Home and settings never ahead of, or in the way of, the alarm traffic. */
+    TEST_ASSERT_TRUE_MESSAGE(R.home_most <= PLINK_HOME_PER_TICK, "over 8 DEV/PREFS frames a turn");
+    for (unsigned i = 0; i < R.nkp; i++) {
+        const kp_t *k = &R.kp[i];
+        TEST_ASSERT_TRUE_MESSAGE(k->home_most <= PLINK_HOME_PER_KEYPAD,
+                                 "over 2 DEV/PREFS frames to a keypad in a turn");
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0u, k->alarm_after, "alarm traffic after a DEV/PREFS frame");
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0u, k->home_held, "a DEV/PREFS frame ahead of a STATUS");
+        /* LINK-047, LINK-044 */
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0u, k->act_late, "a DEV_ACT after its 3 s");
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0u, k->mixed, "a list installed the master never had");
+        TEST_ASSERT_EQUAL_UINT_MESSAGE(0u, k->wrong_rec, "a row showed another device's record");
     }
 }
 
@@ -3472,6 +4254,1263 @@ static void test_under_loss_a_keypad_never_says_more_than_the_master(void)
     }
 }
 
+/* ---- Smart Home and settings on keypads (LINK-043..052) -------------------------------------- */
+
+/* Keypad k mirrors the master: online with fresh device data, the master's list installed byte for
+ * byte, its records' CRC the master's. */
+static bool mirrored(const kp_t *k)
+{
+    if (k->mir == NULL || R.net.node[k->node].down || REG.list_crc == 0u) {
+        return false;
+    }
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&k->k, know(k), &di);
+    return di.fresh && di.list_crc == REG.list_crc && k->mir->blob_len == REG.blob_len &&
+           memcmp(k->mir->blob, REG.blob, REG.blob_len) == 0 &&
+           plink_home_states_crc(&k->mir->recs) == plink_home_states_crc(&REG.recs);
+}
+
+/* Every keypad with a mirror that is switched on mirrors the master. */
+static bool c_all_mirrored(void *ctx)
+{
+    (void)ctx;
+    for (unsigned i = 0; i < R.nkp; i++) {
+        const kp_t *k = &R.kp[i];
+        if (k->mir != NULL && !R.net.node[k->node].down && !mirrored(k)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* The master offering caps: a new start, with the rig's registry ports and no list yet. */
+static void home_master(uint16_t caps)
+{
+    R.m_caps = caps;
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
+    remake_blob();
+    plink_master_time(&R.m, mnow(), epoch_now(), "UTC0");
+    pump(mnow());
+}
+
+/* A keypad offering caps, paired: with HOME its mirror attached, with PREFS its platform reporting
+ * its settings and applying the master's changes (in 30 ms). */
+static kp_t *home_kp(uint16_t caps)
+{
+    kp_t *k = kp_add();
+    k->caps = caps;
+    k->mir = (caps & PLINK_CAP_HOME) != 0u ? &HMIR[k - R.kp] : NULL;
+    k->app = (caps & PLINK_CAP_PREFS) != 0u;
+    k->apply_ms = 30u;
+    memset(&k->pv, 0, sizeof k->pv);
+    (void)proto_prefs_put(&k->pv, PROTO_PREFS_F_BRIGHTNESS, 80u);
+    (void)proto_prefs_put(&k->pv, PROTO_PREFS_F_APPEARANCE, 2u);
+    (void)proto_prefs_put(&k->pv, PROTO_PREFS_F_VOLUME, 50u);
+    (void)proto_prefs_put(&k->pv, PROTO_PREFS_F_CHIME_VOLUME, 40u);
+    (void)proto_prefs_put(&k->pv, PROTO_PREFS_F_VOICE_VOLUME, 60u);
+    (void)proto_prefs_put(&k->pv, PROTO_PREFS_F_KEY_CLICK, 1u);
+    kp_boot(k);
+    pair_kp(k);
+    return k;
+}
+
+/* A device action from keypad k, as its screen asks: plink_keypad_dev_act's answer, the action's
+ * 3 s watched (no copy may go after them). */
+static uint8_t kact(kp_t *k, const char *ref, uint8_t action, int32_t value, uint8_t mode,
+                    const char *code, uint32_t *ticket)
+{
+    const uint64_t before = k->act_until;
+    k->act_until = NOW + PLINK_DEV_ACT_GIVE_UP_MS; /* its first copy goes from inside the call */
+    uint32_t t = 0u;
+    const uint8_t r = plink_keypad_dev_act(&k->k, know(k), ref, action, value, mode, code, &t);
+    if (r != PLINK_DEV_OK) {
+        k->act_until = before;
+    }
+    if (ticket != NULL) {
+        *ticket = t;
+    }
+    return r;
+}
+
+typedef struct {
+    const kp_t *k;
+    uint32_t ticket;
+} act_wait_t;
+
+static bool c_act_done(void *ctx)
+{
+    const act_wait_t *w = ctx;
+    return plink_keypad_dev_act_state(&w->k->k, w->ticket, NULL) != PLINK_CMD_PENDING;
+}
+
+/* The row of keypad k's installed list that names ref (-1: none). */
+static int krow(const kp_t *k, const char *ref)
+{
+    plink_dev_cat_t cat;
+    bool usable = false;
+    for (unsigned i = 0; plink_keypad_dev_row(&k->k, (uint8_t)i, &cat, &usable); i++) {
+        if (usable && strcmp(cat.ref, ref) == 0) {
+            return (int)i;
+        }
+    }
+    return -1;
+}
+
+typedef struct {
+    const kp_t *k;
+    uint32_t req;
+} write_wait_t;
+
+/* Settings write req to keypad k has ended (port.prefs_done). */
+static bool c_written(void *ctx)
+{
+    const write_wait_t *w = ctx;
+    return reg_done_of(dev(w->k), w->req, NULL) != NULL;
+}
+
+/* A settings write from Home Assistant to keypad k (plink_master_prefs_set). */
+static bool kset(const kp_t *k, uint32_t req, const uint8_t *body, size_t len, uint8_t *why)
+{
+    return plink_master_prefs_set(&R.m, mnow(), dev(k), req, PLINK_ORIGIN_HA, body, len, why);
+}
+
+/* The master holds keypad k's settings as they are: its report's CRC is k's values'. */
+static bool c_report(void *ctx)
+{
+    const kp_t *k = ctx;
+    plink_keypad_home_t kh;
+    return plink_master_keypad_home(&R.m, mnow(), dev(k), &kh) && kh.prefs.have &&
+           kh.prefs.crc == proto_prefs_values_crc(&k->pv);
+}
+
+static plink_prefs_change_t HCH; /* the change a keypad took, by hand */
+
+static bool c_taken(void *ctx)
+{
+    kp_t *k = ctx;
+    return plink_keypad_take_prefs_set(&k->k, &HCH);
+}
+
+static bool c_prefs_done(void *ctx)
+{
+    (void)ctx;
+    return REG.n_done > 0u;
+}
+
+/* LINK-043..051 end to end, the real master with the real keypad (both offering HOME and PREFS,
+ * the keypad with a mirror): the keypad mirrors the master's device list and records - its
+ * states_crc the master's - and a change on the master reaches it; an action runs once through
+ * port.dev_run as {KEYPAD, n} for its home partition and its DEV_ACK's record lands in the mirror
+ * at once; the keypad's settings report reaches the master (its CRC the heartbeat's), and a write
+ * from the master is taken once on the keypad and its answer comes back through port.prefs_done. */
+static void test_home_and_settings_end_to_end(void)
+{
+    REG.manual = true; /* the test answers the action */
+    home_master(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    reg_row("light.hall", DEV_LIGHT, "off");
+    reg_row("lock.front", DEV_LOCK, "locked");
+    reg_row("switch.porch", DEV_SWITCH, "on");
+    reg_push();
+    kp_t *a = kp_add();
+    a->caps = PLINK_CAP_HOME | PLINK_CAP_PREFS;
+    a->mir = &HMIR[0];
+    kp_boot(a);
+    pair_kp(a);
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_HOME | PLINK_CAP_PREFS, k_caps_of(a));
+    TEST_ASSERT_TRUE(run_until(5000u, c_all_mirrored, NULL));
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&a->k, know(a), &di);
+    TEST_ASSERT_TRUE(di.fresh);
+    TEST_ASSERT_EQUAL_UINT8(3u, di.count);
+
+    /* A change on the master. */
+    snprintf(REG.rows[2].info.state, sizeof REG.rows[2].info.state, "off");
+    reg_push();
+    TEST_ASSERT_TRUE(run_until(2000u, c_all_mirrored, NULL));
+    plink_dev_rec_t r;
+    TEST_ASSERT_TRUE(plink_keypad_dev_rec(&a->k, 2u, &r));
+    TEST_ASSERT_EQUAL_STRING("off", r.word);
+
+    /* An action: run once, as that keypad for its home partition; the answer's record at once. */
+    uint32_t t = 0;
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, kact(a, "light.hall", ACT_ON, -1, 0u, NULL, &t));
+    run_ms(10u);
+    TEST_ASSERT_EQUAL_UINT(1u, REG.n_runs);
+    TEST_ASSERT_EQUAL_UINT8(dev(a), REG.run[0].device);
+    TEST_ASSERT_EQUAL_UINT8(1u, REG.run[0].home);
+    TEST_ASSERT_EQUAL_STRING("light.hall", REG.run[0].ref);
+    TEST_ASSERT_EQUAL_UINT8(ACT_ON, REG.run[0].action);
+    snprintf(REG.rows[0].info.state, sizeof REG.rows[0].info.state, "on");
+    reg_push();
+    plink_master_dev_answer(&R.m, mnow(), REG.ticket, PLINK_DEV_OK, 0u);
+    act_wait_t w = {a, t};
+    TEST_ASSERT_TRUE(run_until(1000u, c_act_done, &w));
+    plink_dev_answer_t ans;
+    TEST_ASSERT_EQUAL_INT(PLINK_CMD_DONE, plink_keypad_dev_act_state(&a->k, t, &ans));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, ans.result);
+    TEST_ASSERT_TRUE(plink_keypad_dev_rec(&a->k, 0u, &r));
+    TEST_ASSERT_EQUAL_STRING("on", r.word);
+    run_ms(PLINK_DEV_ACT_GIVE_UP_MS);
+    TEST_ASSERT_EQUAL_UINT(1u, REG.n_runs);
+    TEST_ASSERT_TRUE(c_all_mirrored(NULL));
+
+    /* Its settings: the report reaches the master; a write is taken once and answered. */
+    uint8_t body[PROTO_PREFS_ENC_MAX], set[PROTO_PREFS_ENC_MAX], now_b[PROTO_PREFS_ENC_MAX];
+    const size_t nb = prefs_body(80u, 30u, body);
+    TEST_ASSERT_TRUE(plink_keypad_prefs_report(&a->k, know(a), "c0ffee", PLINK_VOICE_READY,
+                                               PROTO_PREFS_KNOWN, body, nb));
+    run_ms(PLINK_HEARTBEAT_MS + 1500u);
+    plink_keypad_home_t kh;
+    TEST_ASSERT_TRUE(plink_master_keypad_home(&R.m, mnow(), dev(a), &kh));
+    TEST_ASSERT_TRUE(kh.online);
+    TEST_ASSERT_TRUE(kh.prefs.have);
+    TEST_ASSERT_EQUAL_STRING("c0ffee", kh.prefs.panel_id);
+    TEST_ASSERT_EQUAL_HEX32(proto_prefs_crc(body, nb), kh.prefs.crc);
+    TEST_ASSERT_EQUAL_UINT(0u, a->got[PLINK_T_PREFS_REQ]); /* the heartbeat's CRC agreed */
+    const size_t ns = prefs_body(40u, 30u, set);
+    uint8_t why = 0xFFu;
+    TEST_ASSERT_TRUE(
+        plink_master_prefs_set(&R.m, mnow(), dev(a), 501u, PLINK_ORIGIN_HA, set, ns, &why));
+    TEST_ASSERT_TRUE(run_until(1000u, c_taken, a));
+    TEST_ASSERT_EQUAL_UINT32(501u, HCH.req);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_ORIGIN_HA, HCH.origin);
+    TEST_ASSERT_EQUAL_UINT8(ns, HCH.len);
+    TEST_ASSERT_EQUAL_MEMORY(set, HCH.fields, ns);
+    run_ms(1500u); /* a resend or two: never taken again */
+    plink_prefs_change_t again;
+    TEST_ASSERT_FALSE(plink_keypad_take_prefs_set(&a->k, &again));
+    TEST_ASSERT_EQUAL_UINT(0u, REG.n_done);
+    const size_t nn = prefs_body(40u, 30u, now_b);
+    TEST_ASSERT_TRUE(plink_keypad_prefs_answer(&a->k, know(a), 501u, NULL, 0u, now_b, nn));
+    TEST_ASSERT_TRUE(run_until(1000u, c_prefs_done, NULL));
+    TEST_ASSERT_EQUAL_UINT(1u, REG.n_done);
+    TEST_ASSERT_EQUAL_UINT8(dev(a), REG.done[0].device);
+    TEST_ASSERT_EQUAL_UINT32(501u, REG.done[0].req);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PSET_OK, REG.done[0].result);
+    TEST_ASSERT_EQUAL_size_t(nn, REG.done_fields_len);
+    TEST_ASSERT_EQUAL_MEMORY(now_b, REG.done_fields, nn);
+    run_ms(PLINK_PREFS_SET_GIVE_UP_MS);
+    TEST_ASSERT_EQUAL_UINT(1u, REG.n_done);
+    TEST_ASSERT_TRUE(plink_master_keypad_home(&R.m, mnow(), dev(a), &kh));
+    TEST_ASSERT_EQUAL_HEX32(proto_prefs_crc(now_b, nn), kh.prefs.crc);
+}
+
+/* The list itself changes (a new list_crc), in one of six ways by how: a device added, a name
+ * changed (the same device), the rows rotated, a ref changed (to a keypad another device), the last
+ * device removed, the rows reversed. *n numbers the new refs and names. */
+static void reg_reshape(unsigned how, unsigned *n)
+{
+    char ref[PLINK_REF_MAX + 1];
+    hc_device_t *mid = &REG.rows[REG.n_rows / 2u];
+    switch (how % 6u) {
+    case 0:
+        snprintf(ref, sizeof ref, "light.attic_%u", (*n)++);
+        (void)reg_add(DSRC_HA, DEV_LIGHT, ref, "Attic", "Upstairs", "off");
+        break;
+    case 1:
+        snprintf(REG.rows[0].info.name, sizeof REG.rows[0].info.name, "Renamed %u", (*n)++);
+        break;
+    case 2: reg_rotate(3u); break;
+    case 3:
+        snprintf(ref, sizeof ref, "switch.moved_%u", (*n)++);
+        reg_set_ref(mid, ref);
+        break;
+    case 4: REG.n_rows--; break;
+    default: reg_reverse(); break;
+    }
+}
+
+/* LINK-044, LINK-045, LINK-026: three keypads mirror the master's twenty devices. On a working
+ * network a change shows on every keypad within a push (500 ms; LINK-045's second), and a new list
+ * with its records within a second. Then for two minutes, on a network losing 10 %, copying 2 %,
+ * damaging 1 % and reordering (up to 300 ms of jitter), a device changes every 250 ms and the list
+ * itself every 20 s - a device added, a name changed, the rows rotated, a ref changed, a device
+ * removed, the rows reversed. Once it is quiet, on the same damaged network, every keypad has the
+ * master's list byte for byte and its records; no keypad ever installed a list the master never had
+ * nor showed a device another's record (the rig's mirror check, at every change), none remembered a
+ * list as bad, and their catch-up kept its pace: DEV_STATE_REQ at most about once a second, besides
+ * one at each install. */
+static void test_home_list_and_states_converge_through_loss(void)
+{
+    home_master(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    reg_catalog();
+    reg_push();
+    kp_t *k[3];
+    for (unsigned i = 0; i < 3u; i++) {
+        k[i] = home_kp(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    }
+    TEST_ASSERT_TRUE(run_until(10000u, c_all_mirrored, NULL));
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&k[0]->k, know(k[0]), &di);
+    TEST_ASSERT_EQUAL_UINT8(REG.n_rows, di.count);
+
+    /* A working network: every change on every keypad within a push. */
+    uint64_t worst = 0u;
+    for (unsigned n = 0; n < 20u; n++) {
+        reg_flip((size_t)(rnd() % REG.n_rows));
+        reg_push();
+        const uint64_t t0 = NOW;
+        TEST_ASSERT_TRUE(run_until(1000u, c_all_mirrored, NULL));
+        worst = NOW - t0 > worst ? NOW - t0 : worst;
+        run_ms(100u + rnd() % 900u);
+    }
+    TEST_ASSERT_TRUE(worst <= PLINK_DEV_PUSH_MS + 10u);
+    /* ... and the list itself (a device added, the rows rotated, one removed): installed with its
+     * records within a second (its DEV_STATE goes at once; the pull starts 0-500 ms on). */
+    unsigned named = 0u;
+    for (unsigned n = 0; n < 3u; n++) {
+        reg_reshape(2u * n, &named);
+        reg_push();
+        TEST_ASSERT_TRUE(run_until(1000u, c_all_mirrored, NULL));
+        run_ms(500u);
+    }
+
+    damage_on();
+    R.net.loss_pm = 100u;
+    R.net.dup_pm = 20u;
+    R.net.corrupt_pm = 10u;
+    R.net.jitter_ms = 300u;
+    unsigned reqs0[3];
+    for (unsigned i = 0; i < 3u; i++) {
+        reqs0[i] = k[i]->sent[PLINK_T_DEV_STATE_REQ];
+    }
+    const unsigned lists0 = REG.n_list;
+    const uint64_t t0 = NOW;
+    for (unsigned s = 0; s < 480u; s++) {
+        reg_flip((size_t)(rnd() % REG.n_rows));
+        if (s % 80u == 79u) {
+            reg_reshape(s / 80u, &named);
+        }
+        reg_push();
+        run_ms(250u);
+    }
+    const uint64_t span = NOW - t0;
+    TEST_ASSERT_TRUE(run_until(60000u, c_all_mirrored, NULL));
+    const unsigned lists = REG.n_list - lists0;
+    TEST_ASSERT_EQUAL_UINT(6u, lists);
+    for (unsigned i = 0; i < 3u; i++) {
+        TEST_ASSERT_TRUE(k[i]->sent[PLINK_T_DEV_STATE_REQ] - reqs0[i] <=
+                         (unsigned)(span / PLINK_DEV_REQ_GAP_MS) + lists + 2u);
+        TEST_ASSERT_EQUAL_UINT32(0u, k[i]->k.dev_pull.bad_crc);
+        TEST_ASSERT_TRUE(k[i]->dev_seen != UINT32_MAX); /* the mirror check ran */
+    }
+}
+
+/* LINK-043, LINK-044, LINK-045: on a transport whose largest frame is 250 B (ESP-NOW's; the link
+ * fails over to it after pairing, which both sides check at every send), with 10 % loss, 2 %
+ * copies and up to 100 ms of jitter: the keypad pulls the master's list in pages of 211 B and its
+ * records in DEV_STATE frames that fit, every frame either side sends fits 250 B, and it mirrors
+ * the master through two minutes of changes; an unlock with its code and a settings write go
+ * through too. */
+static void test_home_converges_on_frames_of_250(void)
+{
+    home_master(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    kp_t *a = home_kp(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    R.mtu = PLINK_FRAME_ESPNOW;
+    reg_catalog();
+    reg_push();
+    R.net.loss_pm = 100u;
+    R.net.dup_pm = 20u;
+    R.net.jitter_ms = 100u;
+    TEST_ASSERT_TRUE(run_until(60000u, c_all_mirrored, NULL));
+    const size_t page = PLINK_FRAME_ESPNOW - PLINK_SEALED_OVERHEAD - PLINK_CFG_PAGE_HDR;
+    TEST_ASSERT_EQUAL_UINT(211u, page);
+    TEST_ASSERT_TRUE(REG.blob_len > 2u * page); /* pages of 211 B */
+    TEST_ASSERT_TRUE(a->got[PLINK_T_DEV_LIST_PAGE] >= (REG.blob_len + page - 1u) / page);
+    for (unsigned s = 0; s < 480u; s++) {
+        reg_flip((size_t)(rnd() % REG.n_rows));
+        reg_push();
+        run_ms(250u);
+    }
+    TEST_ASSERT_TRUE(run_until(30000u, c_all_mirrored, NULL));
+
+    REG.delay_ms = 100u;
+    uint32_t t = 0u;
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, kact(a, "lock.front", ACT_UNLOCK, 0, 0u, CODE_USER, &t));
+    act_wait_t w = {a, t};
+    TEST_ASSERT_TRUE(run_until(PLINK_DEV_ACT_GIVE_UP_MS, c_act_done, &w));
+    plink_dev_answer_t ans;
+    if (plink_keypad_dev_act_state(&a->k, t, &ans) == PLINK_CMD_DONE) {
+        TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, ans.result);
+        TEST_ASSERT_EQUAL_UINT(1u, reg_runs(dev(a), t));
+    }
+    TEST_ASSERT_TRUE(reg_runs(dev(a), t) <= 1u);
+    uint8_t body[PROTO_PREFS_ENC_MAX], why = 0xFFu;
+    const size_t nb = prefs_body(35u, 20u, body);
+    TEST_ASSERT_TRUE(kset(a, 250u, body, nb, &why));
+    write_wait_t ww = {a, 250u};
+    TEST_ASSERT_TRUE(run_until(PLINK_PREFS_SET_GIVE_UP_MS + 100u, c_written, &ww));
+    if (reg_done_of(dev(a), 250u, NULL)->result == PLINK_PSET_OK) {
+        TEST_ASSERT_EQUAL_UINT(1u, app_took(a, 250u));
+    }
+    R.net.loss_pm = R.net.dup_pm = 0u;
+    R.net.jitter_ms = 0u;
+    TEST_ASSERT_TRUE(run_until(15000u, c_all_mirrored, NULL));
+    TEST_ASSERT_TRUE(run_until(15000u, c_report, a));
+    TEST_ASSERT_TRUE(app_took(a, 250u) <= 1u);
+}
+
+/* LINK-047, LINK-048, HCTL-012: what a keypad can judge itself sends nothing - a Z-Wave row and
+ * an action its kind doesn't take (REFUSED), an unlock without a code (NEED_CODE), an offline
+ * device (UNREACHABLE), a ref no row names (REFUSED). Then sixty actions on a damaged network (10 %
+ * loss, 5 % copies, 1 % damaged, up to 300 ms of jitter), some with their first two DEV_ACKs lost
+ * on purpose, the platform answering after 0 to 1.5 s - or after 3.5 s, past the keypad's give-up:
+ * each runs at most once (the fake registry counts port.dev_run's calls), exactly once when it was
+ * answered, as the device the keypad named, for that keypad's home partition, its code checked by
+ * the engine as that keypad; no copy goes after the keypad's 3 s, and the master never runs one
+ * later than the last copy could arrive. One given up shows "Not confirmed" (UNSURE), and its late
+ * answer still lands. Then bursts, an action every 500 ms with answers lost, and an action whose
+ * answer and next copy are lost while four more come: none runs twice, as the master keeps an
+ * answer while its keypad may ask for it. A wrong code is CODE_REFUSED with the engine's reason. */
+static void test_a_device_action_runs_once_through_loss(void)
+{
+    home_master(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    reg_catalog();
+    reg_push();
+    kp_t *a = home_kp(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    TEST_ASSERT_TRUE(run_until(10000u, c_all_mirrored, NULL));
+    const uint8_t d = dev(a);
+
+    const unsigned acts0 = a->sent[PLINK_T_DEV_ACT];
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_REFUSED, kact(a, "zwave.node_7", ACT_ON, -1, 0u, NULL, NULL));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_REFUSED, kact(a, "lock.front", ACT_ON, -1, 0u, NULL, NULL));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_NEED_CODE,
+                            kact(a, "lock.front", ACT_UNLOCK, 0, 0u, NULL, NULL));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_UNREACHABLE,
+                            kact(a, "light.garden", ACT_ON, -1, 0u, NULL, NULL));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_REFUSED,
+                            kact(a, "light.nowhere", ACT_ON, -1, 0u, NULL, NULL));
+    run_ms(1000u);
+    TEST_ASSERT_EQUAL_UINT(acts0, a->sent[PLINK_T_DEV_ACT]);
+    TEST_ASSERT_EQUAL_UINT(0u, REG.n_runs);
+
+    static const struct {
+        const char *ref;
+        uint8_t action;
+        int32_t value;
+        uint8_t mode;
+        const char *code;
+    } ACT[] = {
+        {"light.hall", ACT_TOGGLE, -1, 0u, NULL},
+        {"lock.front", ACT_UNLOCK, 0, 0u, CODE_USER},
+        {"switch.coffee", ACT_ON, -1, 0u, NULL},
+        {"cover.garage", ACT_OPEN, 0, 0u, CODE_USER},
+        {"climate.hall", ACT_SET_TEMP, 2150, 0u, NULL},
+        {"lock.front", ACT_LOCK, 0, 0u, NULL},
+        {"scene.evening", ACT_RUN, 0, 0u, NULL},
+        {"climate.hall", ACT_SET_MODE, 0, PLINK_DEV_MODE_COOL, NULL},
+        {"fan.bedroom", ACT_SET_LEVEL, 60, 0u, NULL},
+        {"cover.garage", ACT_CLOSE, 0, 0u, NULL},
+        {"light.kitchen", ACT_SET_LEVEL, 40, 0u, NULL},
+        {"valve.water", ACT_CLOSE, 0, 0u, NULL},
+    };
+    damage_on();
+    R.net.loss_pm = 100u;
+    R.net.dup_pm = 50u;
+    R.net.corrupt_pm = 10u;
+    R.net.jitter_ms = 300u;
+    unsigned sent = 0u, answered = 0u, ok = 0u, gave_up = 0u, unsure = 0u, late = 0u;
+    unsigned not_sent = 0u;
+    for (unsigned n = 0; n < 60u; n++) {
+        const size_t x = n % (sizeof ACT / sizeof ACT[0]);
+        const bool slow = n % 9u == 4u;
+        REG.delay_ms = slow ? 3500u : 0u; /* slow: answered after the keypad gave up */
+        REG.delay_max_ms = slow ? 0u : 1500u;
+        if (!slow && n % 5u == 2u) {
+            R.net.lose_type = PLINK_T_DEV_ACK; /* its first two answers lost */
+            R.net.lose_type_count = 2u;
+        }
+        const uint64_t t0 = NOW;
+        uint32_t t = 0u;
+        if (kact(a, ACT[x].ref, ACT[x].action, ACT[x].value, ACT[x].mode, ACT[x].code, &t) !=
+            PLINK_DEV_OK) {
+            not_sent++; /* the link LOST at that moment, or its device data stale */
+            R.net.lose_type = 0u;
+            run_ms(5000u);
+            continue;
+        }
+        sent++;
+        act_wait_t w = {a, t};
+        (void)run_until(ACT[x].code != NULL ? 3000u : 1000u, c_act_done, &w); /* the screen */
+        plink_keypad_dev_act_release(&a->k, t);
+        (void)run_until(PLINK_DEV_ACT_GIVE_UP_MS, c_act_done, &w);
+        plink_dev_answer_t ans;
+        if (plink_keypad_dev_act_state(&a->k, t, &ans) == PLINK_CMD_NO_ANSWER) {
+            gave_up++;
+            unsure += ans.overlay == PLINK_DEV_OVL_UNSURE;
+        }
+        run_ms(4000u); /* a late answer, and the last copies, land: nothing runs any more */
+        R.net.lose_type = 0u;
+        const plink_cmd_state_t st = plink_keypad_dev_act_state(&a->k, t, &ans);
+        const unsigned runs = reg_runs(d, t);
+        TEST_ASSERT_TRUE_MESSAGE(runs <= 1u, "a device action ran twice");
+        if (st == PLINK_CMD_DONE) {
+            answered++;
+            late += slow;
+            TEST_ASSERT_EQUAL_UINT(1u, runs);
+            TEST_ASSERT_EQUAL_UINT8(reg_run_of(d, t)->result, ans.result);
+            ok += ans.result == PLINK_DEV_OK;
+        }
+        if (runs == 1u) {
+            const reg_run_t *e = reg_run_of(d, t);
+            TEST_ASSERT_EQUAL_STRING(ACT[x].ref, e->ref);
+            TEST_ASSERT_EQUAL_UINT8(ACT[x].action, e->action);
+            TEST_ASSERT_EQUAL_INT32(ACT[x].value, e->value);
+            TEST_ASSERT_EQUAL_UINT8(1u, e->home);
+            TEST_ASSERT_EQUAL(ACT[x].code != NULL, e->coded);
+            TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, e->result); /* its code was the right one */
+            TEST_ASSERT_TRUE_MESSAGE(e->at <= t0 + PLINK_DEV_ACT_GIVE_UP_MS + R.net.delay_ms +
+                                                  R.net.jitter_ms + 1u,
+                                     "an action ran after its last copy could have arrived");
+        }
+    }
+    TEST_ASSERT_TRUE(not_sent <= 3u);
+    TEST_ASSERT_TRUE(answered * 4u >= sent * 3u); /* most answers get through */
+    TEST_ASSERT_EQUAL_UINT(answered, ok);
+    TEST_ASSERT_TRUE(gave_up >= 5u); /* the slow ones */
+    TEST_ASSERT_TRUE(unsure >= 1u);
+    TEST_ASSERT_TRUE(late >= 3u); /* a late answer lands */
+    TEST_ASSERT_TRUE(a->sent[PLINK_T_DEV_ACT] - acts0 > sent + gave_up); /* resent */
+
+    /* Bursts: an action every 500 ms, one device after another (BUSY while both of the keypad's
+     * slots are sending), answered within 0.7 s, every fourth one's first three answers lost:
+     * still none runs twice - the master never gives up an answer its keypad may ask for again. */
+    static const char *const TAP[] = {"light.hall",   "switch.porch",  "light.kitchen",
+                                      "switch.coffee", "light.porch",   "switch.heater",
+                                      "light.bedroom", "switch.pump",   "light.office"};
+    REG.delay_ms = 0u;
+    REG.delay_max_ms = 700u;
+    uint32_t burst[48];
+    unsigned n_burst = 0u, burst_ran = 0u;
+    for (unsigned n = 0; n < 48u; n++) {
+        if (n % 4u == 0u) {
+            R.net.lose_type = PLINK_T_DEV_ACK;
+            R.net.lose_type_count = 3u;
+        }
+        uint32_t t = 0u;
+        const char *tap = TAP[n % (sizeof TAP / sizeof TAP[0])];
+        const uint8_t r = kact(a, tap, ACT_TOGGLE, -1, 0u, NULL, &t);
+        if (r == PLINK_DEV_OK) {
+            burst[n_burst++] = t;
+        } else {
+            TEST_ASSERT_TRUE(r == PLINK_DEV_BUSY || r == PLINK_DEV_UNREACHABLE);
+        }
+        run_ms(PLINK_DEV_ACT_RETRY_MS);
+    }
+    R.net.lose_type = 0u;
+    run_ms(5000u);
+    for (unsigned i = 0; i < n_burst; i++) {
+        const unsigned runs = reg_runs(d, burst[i]);
+        TEST_ASSERT_TRUE_MESSAGE(runs <= 1u, "a device action ran twice");
+        burst_ran += runs;
+    }
+    TEST_ASSERT_TRUE(n_burst >= 16u);
+    TEST_ASSERT_TRUE(burst_ran * 2u >= n_burst);
+
+    /* Quiet again. An answer is kept while its keypad may still ask for it: one action's answer
+     * and its next copy are lost while four more come; its third copy, 1 s on, gets the kept
+     * answer, and it ran once. */
+    R.net.loss_pm = R.net.dup_pm = R.net.corrupt_pm = 0u;
+    R.net.jitter_ms = 0u;
+    REG.delay_ms = 0u;
+    REG.delay_max_ms = 0u;
+    TEST_ASSERT_TRUE(run_until(30000u, c_all_mirrored, NULL));
+    run_ms(PLINK_RESULT_KEEP_MS); /* every answer kept so far has gone */
+    static const char *const MORE[] = {"switch.porch", "light.kitchen", "switch.coffee",
+                                       "light.porch"};
+    uint32_t kept = 0u, more[4];
+    const uint64_t t1 = NOW;
+    R.net.lose_type = PLINK_T_DEV_ACK; /* its first answer */
+    R.net.lose_type_count = 1u;
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, kact(a, "light.hall", ACT_TOGGLE, -1, 0u, NULL, &kept));
+    for (unsigned i = 0; i < 4u; i++) {
+        run_ms(100u);
+        TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, kact(a, MORE[i], ACT_TOGGLE, -1, 0u, NULL, &more[i]));
+    }
+    run_ms(t1 + PLINK_DEV_ACT_RETRY_MS - 50u - NOW);
+    R.net.lose_type = PLINK_T_DEV_ACT; /* its copy at 500 ms */
+    R.net.lose_type_count = 1u;
+    run_ms(PLINK_DEV_ACT_GIVE_UP_MS + 1000u);
+    TEST_ASSERT_EQUAL_INT(PLINK_CMD_DONE, plink_keypad_dev_act_state(&a->k, kept, NULL));
+    TEST_ASSERT_EQUAL_UINT(1u, reg_runs(d, kept));
+    for (unsigned i = 0; i < 4u; i++) {
+        TEST_ASSERT_TRUE(reg_runs(d, more[i]) <= 1u);
+    }
+
+    /* A wrong code. */
+    REG.delay_ms = 100u;
+    TEST_ASSERT_TRUE(run_until(30000u, c_all_mirrored, NULL));
+    uint32_t t = 0u;
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, kact(a, "lock.back", ACT_UNLOCK, 0, 0u, "8642", &t));
+    act_wait_t w = {a, t};
+    TEST_ASSERT_TRUE(run_until(3000u, c_act_done, &w));
+    plink_dev_answer_t ans;
+    TEST_ASSERT_EQUAL_INT(PLINK_CMD_DONE, plink_keypad_dev_act_state(&a->k, t, &ans));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_CODE_REFUSED, ans.result);
+    TEST_ASSERT_NOT_EQUAL_UINT8(0u, ans.why);
+    TEST_ASSERT_EQUAL_UINT8(reg_run_of(d, t)->why, ans.why);
+    TEST_ASSERT_EQUAL_STRING("locked", REG.rows[reg_find("lock.back")].info.state);
+}
+
+/* LINK-047, LINK-044: an action names its device by ref, never by index. Forty times, while a
+ * keypad's action is on its way, the master's list changes under it - its rows rotated, the
+ * device's name changed, a device added ahead of it, or the device's ref changed - on a network
+ * losing 5 % with up to 150 ms of jitter: every action that runs is of the device the keypad named,
+ * and changes that device alone in the registry; one on a ref the master no longer lists is
+ * REFUSED and runs nowhere; no keypad row ever showed another device's record, before, during or
+ * after an install (the rig's mirror check). */
+static void test_a_renamed_or_reordered_list_never_acts_on_another_device(void)
+{
+    static hc_device_t before[PLINK_DEV_MAX];
+    home_master(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    reg_catalog();
+    reg_push();
+    kp_t *a = home_kp(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    const uint8_t d = dev(a);
+    R.net.loss_pm = 50u;
+    R.net.jitter_ms = 150u;
+    REG.delay_max_ms = 300u;
+    unsigned ran = 0u, refused = 0u, skipped = 0u;
+    for (unsigned n = 0; n < 40u; n++) {
+        /* (a list change whose DEV_STATE was lost is named again by the next 10 s summary) */
+        TEST_ASSERT_TRUE(run_until(35000u, c_all_mirrored, NULL));
+        /* a light or a switch the keypad shows, picked from its own list */
+        char ref[PLINK_REF_MAX + 1];
+        memset(ref, 0, sizeof ref);
+        plink_dev_info_t di;
+        plink_keypad_dev_info(&a->k, know(a), &di);
+        const unsigned start = (unsigned)(rnd() % di.count);
+        for (unsigned j = 0; j < di.count && ref[0] == '\0'; j++) {
+            const uint8_t i = (uint8_t)((start + j) % di.count);
+            plink_dev_cat_t cat;
+            plink_dev_rec_t rec;
+            bool usable = false;
+            if (plink_keypad_dev_row(&a->k, i, &cat, &usable) && usable &&
+                cat.source == DSRC_HA && (cat.kind == DEV_LIGHT || cat.kind == DEV_SWITCH) &&
+                plink_keypad_dev_rec(&a->k, i, &rec) && (rec.flags & PLINK_DEVF_ONLINE) != 0u) {
+                memcpy(ref, cat.ref, sizeof ref);
+            }
+        }
+        TEST_ASSERT_TRUE(ref[0] != '\0');
+        const int at = reg_find(ref);
+        TEST_ASSERT_TRUE(at >= 0);
+        const size_t n_before = REG.n_rows;
+        memcpy(before, REG.rows, n_before * sizeof before[0]);
+        uint32_t t = 0u;
+        if (kact(a, ref, ACT_TOGGLE, -1, 0u, NULL, &t) != PLINK_DEV_OK) {
+            skipped++;
+            continue;
+        }
+        /* The master's list changes before the DEV_ACT arrives (2 to 152 ms on). */
+        const unsigned how = n % 4u;
+        char other[PLINK_REF_MAX + 1];
+        switch (how) {
+        case 0: reg_rotate(1u + (size_t)(rnd() % (REG.n_rows - 1u))); break;
+        case 1:
+            snprintf(REG.rows[at].info.name, sizeof REG.rows[at].info.name, "Renamed %u", n);
+            break;
+        case 2:
+            snprintf(other, sizeof other, "switch.added_%u", n);
+            (void)reg_add(DSRC_HA, DEV_SWITCH, other, "Added", "Hall", "off");
+            reg_rotate(REG.n_rows - 1u); /* first */
+            break;
+        default:
+            snprintf(other, sizeof other, "light.renamed_%u", n);
+            reg_set_ref(&REG.rows[at], other);
+            break;
+        }
+        reg_push();
+        act_wait_t w = {a, t};
+        (void)run_until(PLINK_DEV_ACT_GIVE_UP_MS, c_act_done, &w);
+        plink_keypad_dev_act_release(&a->k, t);
+        run_ms(1000u);
+        const unsigned runs = reg_runs(d, t);
+        plink_dev_answer_t ans;
+        const plink_cmd_state_t st = plink_keypad_dev_act_state(&a->k, t, &ans);
+        if (how == 3u) {
+            TEST_ASSERT_EQUAL_UINT(0u, runs); /* no such ref at the master now: nothing ran */
+            if (st == PLINK_CMD_DONE) {
+                TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_REFUSED, ans.result);
+                refused++;
+            }
+        } else {
+            TEST_ASSERT_TRUE(runs <= 1u);
+            if (runs == 1u) {
+                TEST_ASSERT_EQUAL_STRING(ref, reg_run_of(d, t)->ref);
+                ran++;
+            }
+            if (st == PLINK_CMD_DONE) {
+                TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, ans.result);
+                TEST_ASSERT_EQUAL_UINT(1u, runs);
+            }
+        }
+        /* In the registry, the device named changed if it ran, and nothing else did. */
+        for (size_t i = 0; i < n_before; i++) {
+            const dev_info_t *b = &before[i].info;
+            const int now_at = reg_find(b->ref);
+            if (now_at < 0) {
+                continue; /* its ref changed */
+            }
+            const dev_info_t *f = &REG.rows[now_at].info;
+            const bool same = strcmp(f->state, b->state) == 0 && f->values.level == b->values.level;
+            TEST_ASSERT_TRUE_MESSAGE(same == (strcmp(b->ref, ref) != 0 || runs == 0u),
+                                     "an action changed another device, or not its own");
+        }
+    }
+    TEST_ASSERT_TRUE(skipped <= 2u);
+    TEST_ASSERT_TRUE(ran >= 25u);
+    TEST_ASSERT_TRUE(refused >= 5u);
+    R.net.loss_pm = 0u;
+    R.net.jitter_ms = 0u;
+    TEST_ASSERT_TRUE(run_until(15000u, c_all_mirrored, NULL));
+}
+
+/* Keypad k is part way through pulling a list: its first page in, its last not. */
+static bool c_pulling(void *ctx)
+{
+    const plink_pull_t *pl = &((const kp_t *)ctx)->k.dev_pull;
+    return pl->pulling && pl->total != 0u && pl->have > 0u && pl->have < pl->total;
+}
+
+/* LINK-044, LINK-015: the master restarts while a keypad is part way through pulling its list of
+ * 64 devices (8 pages on UDP), on a network losing 10 % with up to 200 ms of jitter. Back with no
+ * list for 3 s (its registry is empty until Home Assistant's catalog comes) and then another one
+ * (the rows reversed, refs changed): the keypad keeps its old list meanwhile, drops the pages it
+ * had, pulls the new list whole and installs it - byte for byte the master's, its records the
+ * master's. Back with the same list: the pull goes on to the same list. A list installed is only
+ * ever one the master had, whole (the rig's mirror check), and none is remembered as bad. */
+static void test_a_master_restart_during_a_pull_never_mixes_lists(void)
+{
+    home_master(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    reg_catalog();
+    reg_push();
+    kp_t *a = home_kp(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    TEST_ASSERT_TRUE(run_until(10000u, c_all_mirrored, NULL));
+    R.net.loss_pm = 100u;
+    R.net.jitter_ms = 200u;
+    for (unsigned round = 0; round < 2u; round++) {
+        const uint32_t old = REG.list_crc;
+        reg_big(round);
+        reg_push();
+        TEST_ASSERT_TRUE(REG.blob_len > 7u * (PLINK_PAYLOAD_MAX - PLINK_CFG_PAGE_HDR));
+        TEST_ASSERT_TRUE(run_until(30000u, c_pulling, a));
+        plink_dev_info_t di;
+        plink_keypad_dev_info(&a->k, know(a), &di);
+        TEST_ASSERT_EQUAL_HEX32(old, di.list_crc); /* the old list stays until the new is whole */
+        R.net.node[R.mnode].down = true;
+        run_ms(2000u);
+        master_restart();
+        if (round == 0u) {
+            run_ms(3000u); /* no list yet */
+            plink_keypad_dev_info(&a->k, know(a), &di);
+            TEST_ASSERT_EQUAL_HEX32(old, di.list_crc);
+            const size_t len_x = REG.blob_len;
+            reg_reverse();
+            for (unsigned i = 0; i < 4u; i++) {
+                /* a ref changed, its length kept: the new list is as long as the old */
+                char ref[PLINK_REF_MAX + 1];
+                memcpy(ref, REG.rows[i * 9u].info.ref, sizeof ref);
+                char *at = strstr(ref, "east");
+                TEST_ASSERT_NOT_NULL(at);
+                memcpy(at, "west", 4u);
+                reg_set_ref(&REG.rows[i * 9u], ref);
+            }
+            reg_push();
+            TEST_ASSERT_EQUAL_size_t(len_x, REG.blob_len);
+        } else {
+            reg_push();
+        }
+        TEST_ASSERT_TRUE(run_until(60000u, c_all_mirrored, NULL));
+        TEST_ASSERT_EQUAL_UINT32(0u, a->k.dev_pull.bad_crc);
+        TEST_ASSERT_TRUE(a->dev_seen != UINT32_MAX);
+    }
+}
+
+/* LINK-046, LINK-047, LINK-051, LINK-015: the link is cut both ways for 45 s while the keypad's
+ * devices change every 200 ms. An action keyed at the cut goes six times in its 3 s, is given up
+ * and shows "Not confirmed"; once 30 s have passed since the last device data - the cut, within a
+ * push - every device reads offline since then, and a tap sends nothing; a settings write keyed at
+ * the cut ends TIMEOUT at 6 s. Back together the keypad mirrors the master again, the overlay gone
+ * with the new records, and nothing from before comes back: the action given up never runs, the
+ * write that timed out is never applied, and frames captured before the cut (a DEV_ACT, a
+ * PREFS_SET, a DEV_STATE) sent again afterwards change nothing. */
+static void test_a_45_s_cut_shows_offline_since_the_cut_and_replays_nothing(void)
+{
+    static uint8_t f_act[PLINK_FRAME_MAX], f_set[PLINK_FRAME_MAX], f_state[PLINK_FRAME_MAX];
+    size_t n_act = 0u, n_set = 0u, n_state = 0u;
+    home_master(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    reg_catalog();
+    reg_push();
+    kp_t *a = home_kp(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    TEST_ASSERT_TRUE(run_until(10000u, c_all_mirrored, NULL));
+    const uint8_t d = dev(a);
+    REG.delay_ms = 100u;
+
+    /* Frames to send again later: an action's, a write's, a DEV_STATE. */
+    uint32_t t = 0u;
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, kact(a, "switch.coffee", ACT_ON, -1, 0u, NULL, &t));
+    TEST_ASSERT_TRUE(plink_net_last(&R.net, a->node, PLINK_T_DEV_ACT, f_act, sizeof f_act, &n_act));
+    act_wait_t w = {a, t};
+    TEST_ASSERT_TRUE(run_until(1000u, c_act_done, &w));
+    uint8_t body[PROTO_PREFS_ENC_MAX], why = 0xFFu;
+    const size_t nb = prefs_body(70u, 45u, body);
+    TEST_ASSERT_TRUE(kset(a, 4501u, body, nb, &why));
+    write_wait_t ww = {a, 4501u};
+    TEST_ASSERT_TRUE(run_until(2000u, c_written, &ww));
+    TEST_ASSERT_TRUE(
+        plink_net_last(&R.net, R.mnode, PLINK_T_PREFS_SET, f_set, sizeof f_set, &n_set));
+    reg_flip(0u);
+    reg_push();
+    TEST_ASSERT_TRUE(run_until(1000u, c_all_mirrored, NULL));
+    TEST_ASSERT_TRUE(
+        plink_net_last(&R.net, R.mnode, PLINK_T_DEV_STATE, f_state, sizeof f_state, &n_state));
+
+    /* The devices change every 200 ms; then the cut. */
+    for (unsigned s = 0; s < 10u; s++) {
+        reg_flip((size_t)(rnd() % REG.n_rows));
+        reg_push();
+        run_ms(200u);
+    }
+    const uint64_t t_cut = NOW;
+    R.net.cut_to = a->node;
+    R.net.cut_from = a->node;
+    const unsigned acts0 = a->sent[PLINK_T_DEV_ACT];
+    const int porch = krow(a, "light.porch");
+    TEST_ASSERT_TRUE(porch >= 0);
+    uint32_t lost = 0u;
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK, kact(a, "light.porch", ACT_ON, -1, 0u, NULL, &lost));
+    TEST_ASSERT_TRUE(kset(a, 4502u, body, nb, &why));
+    uint64_t stale_at = 0u;
+    while (NOW < t_cut + 45000u) {
+        reg_flip((size_t)(rnd() % REG.n_rows));
+        reg_push();
+        run_ms(200u);
+        if (NOW >= t_cut + 1000u && NOW < t_cut + 1200u) {
+            /* the screen stopped waiting: pending while it is sent */
+            plink_keypad_dev_act_release(&a->k, lost);
+            TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OVL_PENDING,
+                                    plink_keypad_dev_overlay(&a->k, (uint8_t)porch, NULL));
+        }
+        plink_dev_info_t di;
+        plink_keypad_dev_info(&a->k, know(a), &di);
+        if (!di.fresh && stale_at == 0u) {
+            stale_at = NOW;
+        }
+    }
+    /* Given up after its six copies: "Not confirmed". */
+    TEST_ASSERT_EQUAL_INT(PLINK_CMD_NO_ANSWER, plink_keypad_dev_act_state(&a->k, lost, NULL));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OVL_UNSURE,
+                            plink_keypad_dev_overlay(&a->k, (uint8_t)porch, NULL));
+    TEST_ASSERT_EQUAL_UINT(acts0 + PLINK_DEV_ACT_GIVE_UP_MS / PLINK_DEV_ACT_RETRY_MS,
+                           a->sent[PLINK_T_DEV_ACT]);
+    /* Every device reads offline since the last device data: the cut, within a push. */
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&a->k, know(a), &di);
+    TEST_ASSERT_FALSE(di.fresh);
+    const uint64_t heard = net_of(di.heard_ms, a->off);
+    TEST_ASSERT_TRUE(heard <= t_cut + R.net.delay_ms);
+    TEST_ASSERT_TRUE(heard + PLINK_DEV_PUSH_MS + 10u >= t_cut);
+    TEST_ASSERT_TRUE(stale_at != 0u);
+    TEST_ASSERT_TRUE(stale_at <= heard + PLINK_DEV_STALE_MS + 200u);
+    /* A tap sends nothing. */
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_UNREACHABLE,
+                            kact(a, "light.hall", ACT_ON, -1, 0u, NULL, NULL));
+    run_ms(100u);
+    TEST_ASSERT_EQUAL_UINT(acts0 + PLINK_DEV_ACT_GIVE_UP_MS / PLINK_DEV_ACT_RETRY_MS,
+                           a->sent[PLINK_T_DEV_ACT]);
+    /* The write keyed at the cut: TIMEOUT at 6 s, once. */
+    unsigned times = 0u;
+    const reg_done_t *e = reg_done_of(d, 4502u, &times);
+    TEST_ASSERT_NOT_NULL(e);
+    TEST_ASSERT_EQUAL_UINT(1u, times);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PSET_TIMEOUT, e->result);
+    TEST_ASSERT_UINT64_WITHIN(5u, t_cut + PLINK_PREFS_SET_GIVE_UP_MS, e->at);
+
+    /* Back together. */
+    R.net.cut_to = -1;
+    R.net.cut_from = -1;
+    TEST_ASSERT_TRUE(run_until(30000u, c_all_mirrored, NULL));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OVL_NONE,
+                            plink_keypad_dev_overlay(&a->k, (uint8_t)porch, NULL));
+    /* Nothing from before comes back. */
+    const unsigned runs0 = REG.n_runs, took0 = a->n_took;
+    const uint32_t states0 = plink_home_states_crc(&a->mir->recs);
+    plink_net_inject(&R.net, a->node, maddr(), f_act, n_act);
+    plink_net_inject(&R.net, R.mnode, plink_net_addr(&R.net, a->node), f_set, n_set);
+    plink_net_inject(&R.net, R.mnode, plink_net_addr(&R.net, a->node), f_state, n_state);
+    run_ms(3000u);
+    TEST_ASSERT_EQUAL_UINT(runs0, REG.n_runs);
+    TEST_ASSERT_EQUAL_UINT(took0, a->n_took);
+    TEST_ASSERT_EQUAL_HEX32(states0, plink_home_states_crc(&a->mir->recs));
+    TEST_ASSERT_TRUE(mirrored(a));
+    TEST_ASSERT_EQUAL_UINT(0u, reg_runs(d, lost));
+    TEST_ASSERT_EQUAL_UINT(0u, app_took(a, 4502u));
+    TEST_ASSERT_EQUAL_UINT(1u, app_took(a, 4501u));
+}
+
+/* LINK-051, LINK-050, LINK-043: twenty settings writes from the master to a keypad built without
+ * home control (PREFS only), on a damaged network (10 % loss, 2 % copies, 1 % damaged, up to 300 ms
+ * of jitter), the first answer lost on purpose and every other write applied slower than the
+ * master's 1 s resend: each is taken by the keypad once at most - exactly once when it was
+ * answered - and port.prefs_done says how each ended, once; a second write while one is in flight
+ * is BUSY; the master's copy of the keypad's settings ends as the keypad's. The keypad switched
+ * off: a write keyed at once ends TIMEOUT at 6 s, one keyed 30 s later is refused OFFLINE at once,
+ * and back on it never applies either. Nothing of Smart Home ever went to it. */
+static void test_a_settings_write_applies_once_and_times_out_when_the_keypad_is_gone(void)
+{
+    home_master(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    reg_catalog();
+    reg_push();
+    kp_t *a = home_kp(PLINK_CAP_PREFS);
+    const uint8_t d = dev(a);
+    TEST_ASSERT_TRUE(run_until(5000u, c_report, a));
+    damage_on();
+    R.net.loss_pm = 100u;
+    R.net.dup_pm = 20u;
+    R.net.corrupt_pm = 10u;
+    R.net.jitter_ms = 300u;
+    uint8_t body[PROTO_PREFS_ENC_MAX], why = 0xFFu;
+    unsigned ok = 0u;
+    for (unsigned n = 0; n < 20u; n++) {
+        const uint32_t req = 7000u + n;
+        a->apply_ms = (n & 1u) != 0u ? 1500u : 30u; /* slower than the master's resend */
+        if (n == 0u) {
+            R.net.lose_type = PLINK_T_PREFS; /* its answer lost */
+            R.net.lose_type_count = 1u;
+        }
+        const uint8_t brightness = (uint8_t)(10u + (n * 7u) % 91u);
+        const size_t nb = prefs_body(brightness, (uint8_t)((n * 13u) % 101u), body);
+        TEST_ASSERT_TRUE(kset(a, req, body, nb, &why));
+        if (n == 0u) {
+            TEST_ASSERT_FALSE(kset(a, req + 100u, body, nb, &why));
+            TEST_ASSERT_EQUAL_UINT8(PLINK_PSET_BUSY, why);
+        }
+        write_wait_t ww = {a, req};
+        TEST_ASSERT_TRUE(run_until(PLINK_PREFS_SET_GIVE_UP_MS + 100u, c_written, &ww));
+        run_ms(2000u); /* the copies under way land */
+        R.net.lose_type = 0u;
+        unsigned times = 0u;
+        const reg_done_t *e = reg_done_of(d, req, &times);
+        TEST_ASSERT_EQUAL_UINT(1u, times);
+        TEST_ASSERT_TRUE_MESSAGE(app_took(a, req) <= 1u, "a settings change applied twice");
+        if (e->result == PLINK_PSET_OK) {
+            ok++;
+            TEST_ASSERT_EQUAL_UINT(1u, app_took(a, req));
+            uint32_t v = 0u;
+            TEST_ASSERT_TRUE(proto_prefs_get(&a->pv, PROTO_PREFS_F_BRIGHTNESS, &v));
+            TEST_ASSERT_EQUAL_UINT32(brightness, v);
+        } else {
+            TEST_ASSERT_EQUAL_UINT8(PLINK_PSET_TIMEOUT, e->result);
+        }
+    }
+    TEST_ASSERT_TRUE(ok >= 17u);
+    R.net.loss_pm = R.net.dup_pm = R.net.corrupt_pm = 0u;
+    R.net.jitter_ms = 0u;
+    TEST_ASSERT_TRUE(run_until(15000u, c_report, a));
+    for (unsigned t = PLINK_T_DEV_LIST_REQ; t <= PLINK_T_DEV_ACK; t++) {
+        TEST_ASSERT_EQUAL_UINT(0u, a->from_m[t]);
+        TEST_ASSERT_EQUAL_UINT(0u, a->got[t]);
+        TEST_ASSERT_EQUAL_UINT(0u, a->sent[t]);
+    }
+
+    /* The keypad switched off. */
+    kp_off(a);
+    const uint64_t t_off = NOW;
+    const size_t nb = prefs_body(55u, 5u, body);
+    TEST_ASSERT_TRUE(kset(a, 7100u, body, nb, &why));
+    write_wait_t ww = {a, 7100u};
+    TEST_ASSERT_TRUE(run_until(PLINK_PREFS_SET_GIVE_UP_MS + 100u, c_written, &ww));
+    const reg_done_t *e = reg_done_of(d, 7100u, NULL);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PSET_TIMEOUT, e->result);
+    TEST_ASSERT_UINT64_WITHIN(5u, t_off + PLINK_PREFS_SET_GIVE_UP_MS, e->at);
+    run_ms(PLINK_HOME_HEARD_MS);
+    TEST_ASSERT_FALSE(kset(a, 7101u, body, nb, &why));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_PSET_OFFLINE, why);
+    /* Back on: neither is applied, and its settings reach the master again. */
+    kp_boot(a);
+    TEST_ASSERT_TRUE(run_until(20000u, c_synced, a));
+    run_ms(5000u);
+    TEST_ASSERT_EQUAL_UINT(0u, app_took(a, 7100u));
+    TEST_ASSERT_EQUAL_UINT(0u, app_took(a, 7101u));
+    TEST_ASSERT_NULL(reg_done_of(d, 7101u, NULL));
+    TEST_ASSERT_TRUE(run_until(5000u, c_report, a));
+}
+
+/* LINK-043, LINK-039 (docs/features/11 "Versions"): beside a keypad with Smart Home and settings,
+ * a keypad offering only FW (a v1 keypad) is never sent, and never receives, a frame of type 0x32
+ * or above while the master's devices change every 200 ms, the other keypad acts and its settings
+ * are written; a write to it is UNSUPPORTED, the master holds no settings for it, and its HEARTBEAT
+ * carries no settings section (5 B shorter than the other's). Then the master restarts as a v1
+ * master (FW only): the new keypad sends and receives nothing new either, not even its HEARTBEAT's
+ * section, and its taps and writes to it are refused at once. */
+static void test_a_keypad_offering_only_fw_gets_nothing_new(void)
+{
+    home_master(PLINK_CAPS_KNOWN);
+    reg_catalog();
+    reg_push();
+    kp_t *a = home_kp(PLINK_CAPS_KNOWN);
+    kp_t *b = home_kp(PLINK_CAP_FW);
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAPS_KNOWN, m_caps_of(a));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW, m_caps_of(b));
+    TEST_ASSERT_TRUE(run_until(10000u, c_all_mirrored, NULL));
+    REG.delay_ms = 100u;
+    uint8_t body[PROTO_PREFS_ENC_MAX], why = 0xFFu;
+    const size_t nb = prefs_body(60u, 30u, body);
+    for (unsigned s = 0; s < 150u; s++) {
+        reg_flip((size_t)(rnd() % REG.n_rows));
+        reg_push();
+        if (s % 10u == 0u) {
+            TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_OK,
+                                    kact(a, "light.hall", ACT_TOGGLE, -1, 0u, NULL, NULL));
+        }
+        if (s % 15u == 0u) {
+            TEST_ASSERT_TRUE(kset(a, 600u + s, body, nb, &why));
+            TEST_ASSERT_FALSE(kset(b, 600u + s, body, nb, &why));
+            TEST_ASSERT_EQUAL_UINT8(PLINK_PSET_UNSUPPORTED, why);
+        }
+        run_ms(200u);
+    }
+    TEST_ASSERT_TRUE(run_until(10000u, c_all_mirrored, NULL));
+    TEST_ASSERT_TRUE(a->got[PLINK_T_DEV_STATE] > 0u);
+    TEST_ASSERT_TRUE(a->got[PLINK_T_DEV_ACK] > 0u);
+    TEST_ASSERT_TRUE(a->got[PLINK_T_PREFS_SET] > 0u);
+    for (unsigned t = PLINK_T_DEV_LIST_REQ; t < TYPES; t++) {
+        TEST_ASSERT_EQUAL_UINT(0u, b->from_m[t]);
+        TEST_ASSERT_EQUAL_UINT(0u, b->got[t]);
+        TEST_ASSERT_EQUAL_UINT(0u, b->sent[t]);
+    }
+    plink_keypad_home_t kh;
+    TEST_ASSERT_TRUE(plink_master_keypad_home(&R.m, mnow(), dev(b), &kh));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW, kh.caps);
+    TEST_ASSERT_FALSE(kh.prefs.have);
+    TEST_ASSERT_TRUE(b->hb_min != 0u);
+    TEST_ASSERT_EQUAL_UINT(b->hb_min, b->hb_max);
+    TEST_ASSERT_EQUAL_UINT(b->hb_min + 5u, a->hb_min);
+    TEST_ASSERT_EQUAL_UINT(a->hb_min, a->hb_max);
+
+    /* The master restarts as a v1 master. */
+    R.net.node[R.mnode].down = true;
+    run_ms(2000u);
+    R.m_caps = PLINK_CAP_FW;
+    master_restart();
+    reg_push();
+    TEST_ASSERT_TRUE(run_until(20000u, c_all_synced, NULL));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW, m_caps_of(a));
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_FW, k_caps_of(a));
+    memset(a->got, 0, sizeof a->got);
+    memset(a->sent, 0, sizeof a->sent);
+    memset(a->from_m, 0, sizeof a->from_m);
+    a->hb_min = a->hb_max = b->hb_min = b->hb_max = 0u;
+    for (unsigned s = 0; s < 150u; s++) {
+        reg_flip((size_t)(rnd() % REG.n_rows));
+        reg_push();
+        if (s % 10u == 0u) {
+            TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_UNREACHABLE,
+                                    kact(a, "light.hall", ACT_TOGGLE, -1, 0u, NULL, NULL));
+            TEST_ASSERT_FALSE(kset(a, 900u + s, body, nb, &why));
+            TEST_ASSERT_EQUAL_UINT8(PLINK_PSET_UNSUPPORTED, why);
+        }
+        run_ms(200u);
+    }
+    for (unsigned t = PLINK_T_DEV_LIST_REQ; t < TYPES; t++) {
+        TEST_ASSERT_EQUAL_UINT(0u, a->from_m[t]);
+        TEST_ASSERT_EQUAL_UINT(0u, a->got[t]);
+        TEST_ASSERT_EQUAL_UINT(0u, a->sent[t]);
+    }
+    TEST_ASSERT_TRUE(a->hb_min != 0u);
+    TEST_ASSERT_EQUAL_UINT(b->hb_min, a->hb_min);
+    TEST_ASSERT_EQUAL_UINT(a->hb_min, a->hb_max);
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&a->k, know(a), &di);
+    TEST_ASSERT_TRUE(di.attached);
+    TEST_ASSERT_FALSE(di.shared);
+    TEST_ASSERT_FALSE(di.fresh);
+}
+
+/* ---- the storm (LINK-049) ---- */
+
+#define STORM_CMDS 4u
+#define STORM_ACTS 30u
+
+/* What one run of the storm's script measured on keypad a. */
+typedef struct {
+    uint64_t result_ms[STORM_CMDS]; /* each command's CMD to its RESULT */
+    uint64_t shown_ms[STORM_CMDS];  /* ... to the keypad showing what it asked for (0: no state) */
+    unsigned home_frames;           /* DEV_* and PREFS* frames the master sent keypad a */
+    unsigned shared;                /* turns where they followed alarm traffic to keypad a */
+    unsigned acts, acts_ok, acts_busy, writes, writes_ok;
+    uint32_t ticket[STORM_ACTS];    /* each action that went */
+} storm_t;
+
+/* One run of the storm's script: the master's 64 devices mirrored by two keypads, on a network
+ * without loss (so the times compare exactly), the alarm task's worker answering a command in
+ * 20 ms and the plink_dev task an action in 60 ms; over 15 s keypad a arms, disarms, keys a panic
+ * and disarms again, and 40 ms after each of the last three a window opens at the master (closed
+ * again a second later): that STATUS change waits for the 100 ms after the command's own, while
+ * the DEV_ACK of the action keyed with the command falls due. With storm, meanwhile, every device
+ * changes every 100 ms, keypad a keys an action every 500 ms (one with each command) and the
+ * master writes keypad a's settings every second. */
+static void storm_run(bool storm, storm_t *out)
+{
+    static const struct {
+        uint32_t at_ms;
+        alarm_cmd_type_t type;
+        alarm_arm_level_t level;
+        const char *code;
+        uint8_t shows;
+    } SCRIPT[STORM_CMDS] = {
+        {2000u, ALARM_CMD_ARM, ALARM_LEVEL_STAY, CODE_USER, (uint8_t)ALARM_STATE_EXIT_DELAY},
+        {6000u, ALARM_CMD_DISARM, ALARM_LEVEL_NONE, CODE_USER, (uint8_t)ALARM_STATE_DISARMED},
+        {9000u, ALARM_CMD_PANIC, ALARM_LEVEL_NONE, "", 0xFFu},     /* sounds; the state stays */
+        {12000u, ALARM_CMD_DISARM, ALARM_LEVEL_NONE, CODE_USER, 0xFFu}, /* silences it */
+    };
+    static const struct {
+        uint32_t at_ms;
+        bool open;
+    } WINDOW[] = {{6040u, true},  {7000u, false},  {9040u, true},
+                  {10000u, false}, {12040u, true}, {13000u, false}};
+    memset(out, 0, sizeof *out);
+    home_master(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    reg_many(PLINK_DEV_MAX);
+    reg_push();
+    kp_t *a = home_kp(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    (void)home_kp(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    TEST_ASSERT_TRUE(run_until(20000u, c_all_mirrored, NULL));
+    R.run_mode = RUN_LATER;
+    R.run_delay_ms = 20u;
+    REG.delay_ms = 60u;
+    unsigned frames0 = 0u;
+    for (unsigned t = PLINK_T_DEV_LIST_REQ; t <= PLINK_T_PREFS_SET; t++) {
+        frames0 += a->from_m[t];
+    }
+    const unsigned shared0 = a->shared;
+    uint8_t body[PROTO_PREFS_ENC_MAX], why = 0xFFu;
+    unsigned cmd = 0u, watched = STORM_CMDS;
+    uint64_t issued = 0u;
+    for (unsigned step = 0; step < 150u; step++) {
+        if (storm) {
+            for (size_t i = 0; i < REG.n_rows; i++) {
+                reg_flip(i);
+            }
+            reg_push();
+            if (step % 5u == 0u) {
+                uint32_t t = 0u;
+                const uint8_t r = kact(a, REG.rows[(step / 5u) % REG.n_rows].info.ref, ACT_TOGGLE,
+                                       -1, 0u, NULL, &t);
+                TEST_ASSERT_TRUE(r == PLINK_DEV_OK || r == PLINK_DEV_BUSY);
+                out->acts_busy += r == PLINK_DEV_BUSY;
+                if (r == PLINK_DEV_OK) {
+                    out->ticket[out->acts_ok++] = t;
+                }
+                out->acts++;
+            }
+            if (step % 10u == 0u) {
+                const size_t nb =
+                    prefs_body((uint8_t)(20u + step / 2u), (uint8_t)(step % 100u), body);
+                out->writes++;
+                out->writes_ok += kset(a, 8000u + step, body, nb, &why);
+            }
+        }
+        if (cmd < STORM_CMDS && SCRIPT[cmd].at_ms == step * 100u) {
+            TEST_ASSERT_EQUAL_UINT(STORM_CMDS, watched); /* the one before is in */
+            a->watch_req = kcmd(a, PLINK_OP_COMMAND, SCRIPT[cmd].type, 1u, SCRIPT[cmd].level,
+                                SCRIPT[cmd].code);
+            TEST_ASSERT_NOT_EQUAL_UINT32(0u, a->watch_req);
+            a->watch_shows = SCRIPT[cmd].shows;
+            a->watch_done = a->watch_shown = 0u;
+            issued = NOW;
+            watched = cmd++;
+        }
+        uint32_t into = 0u; /* of this step's 100 ms */
+        for (size_t w = 0; w < sizeof WINDOW / sizeof WINDOW[0]; w++) {
+            const uint32_t at = WINDOW[w].at_ms;
+            if (at >= step * 100u && at < step * 100u + 100u) {
+                if (at - step * 100u > into) {
+                    run_ms(at - step * 100u - into);
+                    into = at - step * 100u;
+                }
+                m_zone(Z_WINDOW, WINDOW[w].open);
+            }
+        }
+        run_ms(100u - into);
+        if (watched < STORM_CMDS && a->watch_done != 0u &&
+            (a->watch_shown != 0u || a->watch_shows == 0xFFu)) {
+            plink_result_t res;
+            TEST_ASSERT_EQUAL_INT(PLINK_CMD_DONE,
+                                  plink_keypad_command_state(&a->k, a->watch_req, &res));
+            EXPECT_RESULT(ALARM_OK, (alarm_result_t)res.result);
+            out->result_ms[watched] = a->watch_done - issued;
+            out->shown_ms[watched] = a->watch_shown != 0u ? a->watch_shown - issued : 0u;
+            plink_keypad_command_release(&a->k, a->watch_req);
+            a->watch_req = 0u;
+            watched = STORM_CMDS;
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT(STORM_CMDS, cmd);
+    TEST_ASSERT_EQUAL_UINT(STORM_CMDS, watched);
+    for (unsigned t = PLINK_T_DEV_LIST_REQ; t <= PLINK_T_PREFS_SET; t++) {
+        out->home_frames += a->from_m[t];
+    }
+    out->home_frames -= frames0;
+    out->shared = a->shared - shared0;
+    TEST_ASSERT_TRUE(run_until(15000u, c_all_mirrored, NULL));
+    for (unsigned i = 0; i < out->acts_ok; i++) {
+        TEST_ASSERT_EQUAL_UINT(1u, reg_runs(dev(a), out->ticket[i])); /* every one that went */
+    }
+}
+
+/* LINK-049, LINK-024 (its protocol part), LINK-023, LINK-047: THE STORM. The same script runs
+ * twice, calm and in the storm - the master's 64 devices all changing every 100 ms, an action keyed
+ * on the keypad every 500 ms, its settings written every second - while that keypad arms,
+ * disarms, keys a panic and disarms again: each command's CMD to RESULT is the same to the
+ * millisecond in both, within LINK-024's second, and so is the keypad showing the state it asked
+ * for. Every master turn put a keypad's STATUS, RESULT, SOUND, EVENTS and ZONES ahead of its DEV_*
+ * and PREFS* frames - turns with both included - sent none of those while that keypad's STATUS
+ * change (a window opened 40 ms after a command) or a RESULT waited, and at most 2 to a keypad and
+ * 8 in all (the rig's turn check, after each run). Every write is answered and every action that
+ * went runs once; an action keyed while both of the keypad's slots still send is BUSY at once (the
+ * master keeps 8 answers per keypad, each reused 3 s after the action's last copy, and takes new
+ * ones at 1 per 500 ms after a burst of 4). */
+static void test_the_storm_never_delays_disarm_or_panic(void)
+{
+    static const char *const NAME[STORM_CMDS] = {"arm", "disarm", "panic", "disarm"};
+    storm_t calm, storm;
+    storm_run(false, &calm);
+    tearDown(); /* the calm run's checks, then the same house again */
+    setUp();
+    storm_run(true, &storm);
+    for (unsigned i = 0; i < STORM_CMDS; i++) {
+        printf("storm: %s CMD to RESULT %llu ms (calm %llu ms), shown %llu ms (calm %llu ms)\n",
+               NAME[i], (unsigned long long)storm.result_ms[i],
+               (unsigned long long)calm.result_ms[i], (unsigned long long)storm.shown_ms[i],
+               (unsigned long long)calm.shown_ms[i]);
+    }
+    printf("storm: %u DEV/PREFS frames to the keypad (calm %u), %u turns with them after its "
+           "alarm traffic; %u actions keyed, %u went and ran once, %u BUSY; %u of %u writes "
+           "answered\n",
+           storm.home_frames, calm.home_frames, storm.shared, storm.acts, storm.acts_ok,
+           storm.acts_busy, REG.n_done, storm.writes);
+    for (unsigned i = 0; i < STORM_CMDS; i++) {
+        TEST_ASSERT_EQUAL_UINT64(calm.result_ms[i], storm.result_ms[i]);
+        TEST_ASSERT_TRUE(storm.result_ms[i] <= 1000u);
+        TEST_ASSERT_EQUAL_UINT64(calm.shown_ms[i], storm.shown_ms[i]);
+        TEST_ASSERT_TRUE(storm.shown_ms[i] <= 1000u);
+    }
+    /* It was a storm. */
+    TEST_ASSERT_EQUAL_UINT(0u, calm.acts);
+    TEST_ASSERT_EQUAL_UINT(STORM_ACTS, storm.acts);
+    TEST_ASSERT_EQUAL_UINT(storm.acts, storm.acts_ok + storm.acts_busy);
+    TEST_ASSERT_TRUE(storm.acts_ok >= STORM_ACTS / 2u);
+    TEST_ASSERT_EQUAL_UINT(storm.acts_ok, REG.n_runs);
+    TEST_ASSERT_EQUAL_UINT(15u, storm.writes_ok);
+    TEST_ASSERT_EQUAL_UINT(15u, REG.n_done);
+    for (unsigned i = 0; i < REG.n_done; i++) {
+        TEST_ASSERT_EQUAL_UINT8(PLINK_PSET_OK, REG.done[i].result);
+    }
+    TEST_ASSERT_TRUE(storm.home_frames >= 2u * 15000u / PLINK_DEV_PUSH_MS); /* 2 frames a round */
+    TEST_ASSERT_TRUE(storm.shared >= 1u); /* the order was put to the test */
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -3486,6 +5525,16 @@ int main(void)
     RUN_TEST(test_a_change_shows_on_every_keypad_within_a_second);
     RUN_TEST(test_master_restart_keypads_back_within_15_s);
     RUN_TEST(test_capabilities_offered_meet_in_the_and);
+    RUN_TEST(test_home_and_settings_end_to_end);
+    RUN_TEST(test_home_list_and_states_converge_through_loss);
+    RUN_TEST(test_home_converges_on_frames_of_250);
+    RUN_TEST(test_a_device_action_runs_once_through_loss);
+    RUN_TEST(test_a_renamed_or_reordered_list_never_acts_on_another_device);
+    RUN_TEST(test_a_master_restart_during_a_pull_never_mixes_lists);
+    RUN_TEST(test_a_45_s_cut_shows_offline_since_the_cut_and_replays_nothing);
+    RUN_TEST(test_a_settings_write_applies_once_and_times_out_when_the_keypad_is_gone);
+    RUN_TEST(test_a_keypad_offering_only_fw_gets_nothing_new);
+    RUN_TEST(test_the_storm_never_delays_disarm_or_panic);
     RUN_TEST(test_keypad_restart_within_the_cache_runs_each_command_once);
     RUN_TEST(test_master_to_keypad_cut_lost_at_30_s_and_trouble_by_status_age);
     RUN_TEST(test_keypad_to_master_cut_trouble_after_the_supervision_time);

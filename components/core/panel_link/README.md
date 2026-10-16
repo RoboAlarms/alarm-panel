@@ -18,13 +18,15 @@ on a panel, `host/link_sim` on a PC) and drives the managers here with frames an
 | `plink_store.h` | the master's and the keypad's records in NVS `link` (stored contracts) |
 | `plink_pair.h` | pairing on both sides: commit-then-reveal, the code, the keys |
 | `plink_session.h` | the handshake and the sessions it makes |
-| `plink_master.h` | the master's link manager: keypads, sessions, pairing, status, commands, supervision |
-| `plink_keypad.h` | a keypad's link manager: its master, the handshake, status, configuration, events, commands and panic |
+| `plink_home.h` | Smart Home on keypads, both sides: the device list blob built from `home_control`'s registry rows (`plink_home_list_build`, `plink_home_recs_build`), `list_crc` (never 0) and `states_crc`, the records by index (`plink_dev_recs_t`), a keypad's lenient walk of a pulled blob (`plink_home_list_check`, `_next`, `_find`), and a row's record carried over by ref at a new list's install (`plink_home_list_keys`, `plink_home_carry`) |
+| `plink_master.h` | the master's link manager: keypads, sessions, pairing, status, commands, supervision; Smart Home and settings on keypads (`plink_master_home`, `plink_master_dev_answer`, `plink_master_prefs_set`, `plink_master_keypad_home`, `port.dev_run`, `port.prefs_done`) |
+| `plink_keypad.h` | a keypad's link manager: its master, the handshake, status, configuration, events, commands and panic; Smart Home and settings on keypads: the mirror of the master's devices in the caller's memory (`plink_keypad_home_attach`, `plink_dev_mirror_t`; without one HOME is never offered), the list pulled as the configuration is (one `plink_pull_t` each), the rows, records and freshness (`plink_keypad_dev_info`, `_dev_row`, `_dev_rec`), device actions and what a device shows meanwhile (`plink_keypad_dev_act`, `_dev_act_state`, `_dev_act_release`, `_dev_overlay`), the settings report and each change applied once (`plink_keypad_prefs_report`, `plink_keypad_take_prefs_set`, `plink_keypad_prefs_answer`) |
 | `plink_vfeed.h` | what a keypad's voice hears (LINK-028): the keypad's events, sounds and snapshot turned into the voice's baseline, pause, facts and commits - covered events only, never older than its baseline, held for a STATUS on its way, settled for a late tone |
 
 ## Depends on
-`alarm_core` (types, snapshot, configuration codec); privately `alarm_proto` (SHA-256) and
-`zwave_host` (AES-128-CCM and X25519 on the same three-primitive port).
+`alarm_core` (types, snapshot, configuration codec) and `home_control` (the registry's rows that
+`plink_home` lists); privately `alarm_proto` (SHA-256, the settings fields' CRC) and `zwave_host`
+(AES-128-CCM and X25519 on the same three-primitive port).
 
 ## Rules
 - Plain C11, no heap, no globals; time comes in as ms. One task owns a manager.
@@ -71,14 +73,36 @@ keypads built from the real pairing, handshake, session and message codecs, with
 later, a snapshot after every engine call). Every vector it needs comes from those codecs, which
 have their own known answers. A test of a network that damages frames watches only its own side's
 seals (`plink_test_port_t.only_dir`): a frame whose tag fails may be opened again under the same
-nonce, which is harmless.
+nonce, which is harmless. Its Smart Home and settings tests hand in a fake registry as the
+platform does and check every rule of LINK-043..051 on the master: nothing without the capability
+bit or under 250 B frames, the list's pages, the full set after a new session's STATUS and TIME,
+rounds, summaries and requests, a list change, device actions run once from their own cache and
+bucket with each DEV_ACK's record as it is then, the settings report, PREFS_REQ and writes (the
+next write started from inside `port.prefs_done`, the answer's report already kept), and all of
+it behind a waiting STATUS or RESULT - before the engine's first snapshot too, with no deadline
+already past - at most 2 frames per keypad and 8 per tick.
+
+`test_plink_home.c` checks the shared pieces: the blob from the registry's rows (rows whose ref
+the wire can't carry left out of the blob and the records alike, at most 64, the longest list
+within `PLINK_DEV_BLOB_MAX`), `list_crc` never 0, a newer master's blob read leniently and a newer
+compat refused, the records' flags and `states_crc`, and records carried over by ref.
 
 `test_plink_keypad.c` runs the keypad's manager against a scripted master made of the real pieces
 (pairing, the handshake answer, sessions, the codecs, STATUS from snapshots of the real engine)
 over the pretend network: pairing, the tentative session, the link's states and timers, LINK-026's
 ordering, the configuration pull, zones and events, commands and panic, BYE, REKEY and the
 handshake's back-off, the master moving. The keypad's port has an optional `resolve`: the platform
-looks for the master again before every handshake retry after the first failure.
+looks for the master again before every handshake retry after the first failure. Its scripted
+master also builds a device list and records from a fake registry with `plink_home.h` and offers
+HOME and PREFS when a test asks: HOME offered only with a mirror, nothing of either capability
+without its bit or on frames under 250 B; the list pulled (its first page alone, then two out),
+installed whole, a list that fails remembered, records carried over by ref; records in frame order
+per device and only under the installed list, caught up 250 ms after a mismatch then 1 s apart
+doubling to 30 s; device data stale after 30 s, kept fresh only by data under the installed list
+(a list that fails leaves the old one reading offline); device actions refused at once, resent
+every 500 ms and given up at 3 s (the code wiped after the last copy), late answers and what the
+device shows, 2 slots apart from the commands; list and state requests held while a panic is
+sent; the settings report's timing, the HEARTBEAT's settings CRC, a PREFS_SET applied once.
 
 `test_plink_link.c` runs the real master and up to eight real keypads together over the pretend
 network, the engine (`alarm_sim`) behind the master as the platform wires it, every side on its
@@ -86,10 +110,22 @@ own clock (a restart starts one again): pairing from scratch to a keypad that sh
 every displayed field, commands and the lockout of one keypad, status within a second with loss,
 restarts of either side, both directions cut, a keypad switched off, the master's Wi-Fi down, panic
 through an outage, removal, eight keypads pulling the configuration, replays, a hostile keypad with
-valid keys, addresses moving, and six hours on a damaged network. After every test it checks that
-no side used a key and nonce twice and no command ran twice. Its random numbers all come from
-seeds: `PLINK_LINK_SEED=<n>` in the environment runs it on other ones (a change to the managers
-is worth a few dozen).
+valid keys, addresses moving, six hours on a damaged network, and Smart Home and settings: end to
+end (the mirror's `states_crc` the master's, an action run once, a write applied once); behind a
+fake registry (twenty devices of every kind; a judge that checks codes with the engine, answering
+after a delay) and keypads whose service applies the master's settings writes, the list and
+records converging through loss, damage, copies and reordering and on 250 B frames, an action run
+once through lost answers and never after its 3 s, a renamed or reordered list never acting on
+another device, a master restart in the middle of a pull, a 45 s cut (offline since the cut,
+nothing replayed), a write applied once or ended TIMEOUT at 6 s, a v1 keypad and a v1 master
+getting nothing new, and the storm (64 devices changing every 100 ms, an action every 500 ms and a
+write every second) leaving disarm and panic exactly as fast as calm. After every test it checks
+that no side used a key and nonce twice, no command and no device action ran twice, no DEV_ACT
+went after its 3 s, no keypad installed a list the master never had or showed a device another's
+record, and every master turn sent a keypad's DEV_* and PREFS* frames after its alarm traffic,
+never while its STATUS change or a RESULT waited, at most 2 to a keypad and 8 in all. Its random
+numbers all come from seeds: `PLINK_LINK_SEED=<n>` in the environment runs it on other ones (a
+change to the managers is worth a few dozen).
 
 A keypad's voice (LINK-028): `test_plink_vfeed.c` drives `plink_vfeed` over a fake keypad (its
 link state, snapshot and event ring) and a recording port: nothing before the first ONLINE, the

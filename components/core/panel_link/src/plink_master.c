@@ -17,6 +17,8 @@
 
 #include <string.h>
 
+#include "alarm/alarm_codec.h"       /* alarm_crc32 */
+#include "alarm_proto/proto_prefs.h" /* prefs_crc */
 #include "panel_link/plink_keypad.h" /* how long a keypad resends a command */
 #include "panel_link/plink_wire.h"
 
@@ -36,6 +38,13 @@
 #define X25519_WINDOW_MS   1000u
 #define HS_BURST           2u     /* one keypad's fresh handshakes: a burst of 2, then 1 a second, */
 #define HS_EVERY_MS        1000u  /* so one keypad's keys can't use up the budget of all of them */
+/* Smart Home and settings (docs/features/11 "Alarm traffic always wins"): buckets of their own. */
+#define DEV_REQ_BURST      16u    /* DEV_LIST_REQ and DEV_STATE_REQ: a burst of 16, */
+#define DEV_REQ_EVERY_MS   100u   /* then one per 100 ms */
+#define DEV_ACT_BURST      4u     /* DEV_ACT: a burst of 4, then one per 500 ms */
+#define DEV_ACT_EVERY_MS   500u
+#define PREFS_BURST        4u     /* PREFS: a burst of 4, then one a second */
+#define PREFS_EVERY_MS     1000u
 
 /* ---- small helpers --------------------------------------------------------------------------- */
 
@@ -250,6 +259,12 @@ static void peer_start(plink_peer_t *p, uint64_t now)
     p->requests_at = now;
     p->hs_tokens = HS_BURST;
     p->hs_tokens_at = now;
+    p->home.req_tokens = DEV_REQ_BURST;
+    p->home.req_tokens_at = now;
+    p->home.act_tokens = DEV_ACT_BURST;
+    p->home.act_tokens_at = now;
+    p->home.prefs_tokens = PREFS_BURST;
+    p->home.prefs_tokens_at = now;
     p->provisional_until = is_provisional(p) ? now + PLINK_PROVISIONAL_MS : 0u;
 }
 
@@ -870,18 +885,18 @@ void plink_master_result(plink_master_t *m, uint64_t now_ms, uint32_t ticket,
 
 /* ---- requests: configuration, zones, events -------------------------------------------------- */
 
-/* A CFG_REQ: a page of the keypads' configuration copy. A request for another blob (an older
- * cfg_crc) gets the current one from offset 0, so the keypad starts again. */
-static void on_cfg_req(plink_master_t *m, plink_peer_t *p, size_t n)
+/* A page of a blob (the configuration copy, or the device list: CFG_PAGE's layout either way),
+ * statelessly: a request for another blob (an older CRC) gets the current one from offset 0, so
+ * the keypad starts again. */
+static void send_blob_page(plink_master_t *m, plink_peer_t *p, uint8_t type, const uint8_t *blob,
+                           size_t blob_len, uint32_t crc, const plink_cfg_req_t *r)
 {
-    plink_cfg_req_t r;
-    if (!plink_dec_cfg_req(m->pt, n, &r) || m->cfg == NULL || m->cfg_len == 0u ||
-        m->cfg_len > UINT32_MAX) {
+    if (blob == NULL || blob_len == 0u || blob_len > UINT32_MAX) {
         return;
     }
-    const uint32_t total = (uint32_t)m->cfg_len;
-    uint32_t offset = r.offset;
-    if (r.cfg_crc != m->cfg_crc || offset > total) {
+    const uint32_t total = (uint32_t)blob_len;
+    uint32_t offset = r->offset;
+    if (r->cfg_crc != crc || offset > total) {
         offset = 0u;
     }
     const size_t cap = pt_cap(m, p);
@@ -890,19 +905,28 @@ static void on_cfg_req(plink_master_t *m, plink_peer_t *p, size_t n)
     if (len > room) {
         len = room;
     }
-    if (r.max != 0u && len > r.max) {
-        len = r.max;
+    if (r->max != 0u && len > r->max) {
+        len = r->max;
     }
     plink_cfg_page_t pg;
     memset(&pg, 0, sizeof pg);
-    pg.cfg_crc = m->cfg_crc;
+    pg.cfg_crc = crc;
     pg.total = total;
     pg.offset = offset;
-    pg.data = m->cfg + offset;
+    pg.data = blob + offset;
     pg.len = (uint16_t)(len > UINT16_MAX ? UINT16_MAX : len);
     size_t plen = 0u;
     if (plink_enc_cfg_page(&pg, m->pt, cap, &plen)) {
-        (void)send_sealed(m, p, PLINK_T_CFG_PAGE, plen);
+        (void)send_sealed(m, p, type, plen);
+    }
+}
+
+/* A CFG_REQ: a page of the keypads' configuration copy. */
+static void on_cfg_req(plink_master_t *m, plink_peer_t *p, size_t n)
+{
+    plink_cfg_req_t r;
+    if (plink_dec_cfg_req(m->pt, n, &r)) {
+        send_blob_page(m, p, PLINK_T_CFG_PAGE, m->cfg, m->cfg_len, m->cfg_crc, &r);
     }
 }
 
@@ -957,6 +981,11 @@ static void on_heartbeat(plink_master_t *m, plink_peer_t *p, uint64_t now, size_
     }
     p->hb = hb;
     p->status_age_s = hb.status_age_s;
+    /* LINK-050: its settings' CRC, read only in a session with PREFS: while it isn't the report's,
+     * PREFS_REQ goes (every 2 s at most) until a report comes. */
+    if ((p->live.caps & PLINK_CAP_PREFS) != 0u && hb.has_prefs) {
+        p->home.prefs_want = !p->home.report.have || hb.prefs_crc != p->home.report.crc;
+    }
     /* No status yet (0xFFFF) or one older than 30 s: the master's direction isn't fresh. */
     if (hb.status_age_s > PLINK_STATUS_STALE_S) {
         if (p->stale_since_ms == 0u) {
@@ -971,6 +1000,573 @@ static void on_heartbeat(plink_master_t *m, plink_peer_t *p, uint64_t now, size_
     if (m->port.checkin != NULL && !p->down && p->stale_since_ms == 0u) {
         m->port.checkin(m->port.ctx, dev_of(m, p));
     }
+}
+
+/* ---- Smart Home and settings on keypads (LINK-043..051) -------------------------------------- */
+
+#define DEV_CACHE_NONE PLINK_DEV_RESULTS_PER_KEYPAD
+
+static uint64_t bit64(unsigned i)
+{
+    return (uint64_t)1u << i;
+}
+
+/* Bits 0..count-1. */
+static uint64_t first_bits(unsigned count)
+{
+    return count >= 64u ? UINT64_MAX : bit64(count) - 1u;
+}
+
+/* Whether p takes a capability's frames now (LINK-043): a live session holding the bit, on a
+ * transport whose frames are 250 B or more. Asked at every send and every frame taken, so a
+ * failover to a smaller transport is safe. */
+static bool home_ok(const plink_master_t *m, const plink_peer_t *p, uint16_t bit)
+{
+    return is_live(p) && (p->live.caps & bit) != 0u &&
+           frame_cap(m, &p->addr) >= PLINK_FRAME_ESPNOW;
+}
+
+static void prefs_done(const plink_master_t *m, uint8_t device, const plink_prefs_done_t *d)
+{
+    if (m->port.prefs_done != NULL) {
+        m->port.prefs_done(m->port.ctx, device, d);
+    }
+}
+
+/* A write that ends without an answer: TIMEOUT, or OFFLINE for a keypad removed. */
+static void prefs_end(const plink_master_t *m, plink_peer_t *p, uint8_t result)
+{
+    plink_home_peer_t *h = &p->home;
+    if (!h->set_busy) {
+        return;
+    }
+    h->set_busy = false;
+    plink_prefs_done_t d;
+    memset(&d, 0, sizeof d);
+    d.req = h->set_req;
+    d.result = result;
+    prefs_done(m, dev_of(m, p), &d);
+}
+
+/* A new session (after its STATUS and TIME): the full set of records, or the summary of an empty
+ * list; a PREFS comes from the keypad at its first STATUS. */
+static void home_session(plink_master_t *m, plink_peer_t *p, uint64_t now)
+{
+    plink_home_peer_t *h = &p->home;
+    h->changed = h->round = 0u;
+    h->list_n = 0u;
+    h->ack_due = 0u;
+    h->push_at = 0u;
+    h->prefs_want = false;
+    h->prefs_req_at = 0u;
+    h->summary_at = 0u; /* an empty list's summary at once */
+    h->list_repeats = 0u;
+    if (m->dev_list_crc != 0u && home_ok(m, p, PLINK_CAP_HOME)) {
+        h->round = first_bits(m->dev_recs.count);
+        h->summary_at = h->round != 0u ? now + PLINK_DEV_SUMMARY_MS : 0u;
+    }
+}
+
+/* ---- device actions (LINK-047, LINK-049) ---- */
+
+/* Entry i forgotten, and the action slot it still held. */
+static void dev_cache_clear(plink_home_peer_t *h, size_t i)
+{
+    plink_dev_cached_t *e = &h->cache[i];
+    if (e->pending && e->ticket != 0u && e->ticket == h->act_ticket) {
+        h->act_running = false;
+        h->act_ticket = 0u;
+    }
+    memset(e, 0, sizeof *e);
+    h->ack_due = (uint8_t)(h->ack_due & ~(1u << i));
+}
+
+/* Answers kept 90 s after the last copy of their request; an action whose answer never came is
+ * let go as long after its last copy. */
+static void dev_cache_expire(plink_home_peer_t *h, uint64_t now)
+{
+    for (size_t i = 0; i < PLINK_DEV_RESULTS_PER_KEYPAD; i++) {
+        if (h->cache[i].last_ms != 0u && now >= h->cache[i].last_ms + PLINK_RESULT_KEEP_MS) {
+            dev_cache_clear(h, i);
+        }
+    }
+}
+
+static size_t dev_cache_find(const plink_home_peer_t *h, uint32_t req)
+{
+    for (size_t i = 0; i < PLINK_DEV_RESULTS_PER_KEYPAD; i++) {
+        if (h->cache[i].last_ms != 0u && h->cache[i].req == req) {
+            return i;
+        }
+    }
+    return DEV_CACHE_NONE;
+}
+
+/* A slot for a new action: a free one, else the answer its keypad stopped resending the longest
+ * ago - a keypad resends an action for 3 s and never after, so an answer it may still ask for is
+ * never given up and nothing runs twice. DEV_CACHE_NONE: none now (the action is dropped; its
+ * resend comes back). */
+static size_t dev_cache_slot(const plink_home_peer_t *h, uint64_t now)
+{
+    size_t best = DEV_CACHE_NONE;
+    for (size_t i = 0; i < PLINK_DEV_RESULTS_PER_KEYPAD; i++) {
+        const plink_dev_cached_t *e = &h->cache[i];
+        if (e->last_ms == 0u) {
+            return i;
+        }
+        if (e->pending || (h->ack_due & (1u << i)) != 0u ||
+            now < e->last_ms + PLINK_DEV_ACT_GIVE_UP_MS) {
+            continue;
+        }
+        if (best == DEV_CACHE_NONE || e->last_ms < h->cache[best].last_ms) {
+            best = i;
+        }
+    }
+    return best;
+}
+
+/* A new action in cache slot i: answered at once when this master can't run it (no list or no
+ * runner: UNAVAILABLE; a ref its list doesn't hold: REFUSED), else handed to port.dev_run - one at
+ * a time, from its own bucket - and pending until its answer. The answer goes at the next tick
+ * either way, never from inside a port call. */
+static void dev_act_run(plink_master_t *m, plink_peer_t *p, uint64_t now, size_t i,
+                        const plink_dev_act_t *act, const uint8_t digest[PLINK_SHA256_LEN])
+{
+    plink_home_peer_t *h = &p->home;
+    uint8_t refusal = 0xFFu;
+    if (m->dev_blob == NULL || m->port.dev_run == NULL) {
+        refusal = PLINK_DEV_UNAVAILABLE;
+    } else if (!plink_home_list_find(m->dev_blob, m->dev_blob_len, act->ref, NULL)) {
+        refusal = PLINK_DEV_REFUSED;
+    } else if (h->act_running || !bucket_take(&h->act_tokens, &h->act_tokens_at, now,
+                                              DEV_ACT_BURST, DEV_ACT_EVERY_MS)) {
+        return; /* over its limits: dropped here; the keypad's resend comes back */
+    }
+    dev_cache_clear(h, i);
+    plink_dev_cached_t *e = &h->cache[i];
+    e->req = act->req;
+    memcpy(e->digest, digest, PLINK_SHA256_LEN);
+    memcpy(e->ref, act->ref, sizeof e->ref);
+    e->last_ms = now != 0u ? now : 1u;
+    if (refusal != 0xFFu) {
+        e->result = refusal;
+        h->ack_due = (uint8_t)(h->ack_due | (1u << i));
+        return;
+    }
+    uint32_t ticket = ++m->next_ticket;
+    if (ticket == 0u) {
+        ticket = ++m->next_ticket;
+    }
+    e->pending = true;
+    e->ticket = ticket;
+    h->act_running = true;
+    h->act_ticket = ticket;
+    m->in_run = true;
+    const bool ok = m->port.dev_run(m->port.ctx, ticket, dev_of(m, p), p->rec.home, act);
+    m->in_run = false;
+    if (!ok && e->pending && e->ticket == ticket) {
+        dev_cache_clear(h, i); /* no room now: forgotten, so the keypad's resend runs it */
+    }
+    results_flush(m);
+}
+
+/* A DEV_ACT (LINK-047): a copy of one already taken gets its answer (or waits for it); the same
+ * req for another action is a new one once the first is answered. */
+static void dev_act_take(plink_master_t *m, plink_peer_t *p, uint64_t now,
+                         const plink_dev_act_t *act)
+{
+    plink_home_peer_t *h = &p->home;
+    uint8_t digest[PLINK_SHA256_LEN];
+    plink_dev_act_digest(act, digest);
+    dev_cache_expire(h, now);
+    const size_t found = dev_cache_find(h, act->req);
+    if (found != DEV_CACHE_NONE) {
+        plink_dev_cached_t *e = &h->cache[found];
+        if (memcmp(e->digest, digest, sizeof digest) == 0) {
+            e->last_ms = now != 0u ? now : 1u;
+            if (!e->pending) {
+                h->ack_due = (uint8_t)(h->ack_due | (1u << found));
+            }
+            return;
+        }
+        if (e->pending) {
+            return; /* the same req for another action: once the first is answered */
+        }
+        dev_cache_clear(h, found);
+    }
+    const size_t slot = dev_cache_slot(h, now);
+    if (slot != DEV_CACHE_NONE) {
+        dev_act_run(m, p, now, slot, act, digest);
+    }
+}
+
+/* A DEV_ACT: decoded, taken, and every copy of its code wiped (LINK-018, LINK-047). */
+static void on_dev_act(plink_master_t *m, plink_peer_t *p, uint64_t now, size_t n)
+{
+    plink_dev_act_t act;
+    const bool ok = plink_dec_dev_act(m->pt, n, &act);
+    plink_wipe(m->pt, n);
+    if (ok) {
+        dev_act_take(m, p, now, &act);
+    }
+    plink_wipe(&act, sizeof act);
+}
+
+/* Cache entry i's DEV_ACK, with the device's record as it is now: found by ref in the current
+ * list, so a list that changed meanwhile gives its new index (LINK-047), and none when the list
+ * no longer holds it. */
+static void send_dev_ack(plink_master_t *m, plink_peer_t *p, size_t i)
+{
+    const plink_dev_cached_t *e = &p->home.cache[i];
+    plink_dev_ack_t a;
+    memset(&a, 0, sizeof a);
+    a.req = e->req;
+    a.result = e->result;
+    a.why = e->why;
+    uint8_t index = 0u;
+    if (m->dev_blob != NULL &&
+        plink_home_list_find(m->dev_blob, m->dev_blob_len, e->ref, &index) &&
+        plink_home_rec(&m->dev_recs, index, &a.rec)) {
+        a.has_rec = true;
+        a.list_crc = m->dev_list_crc;
+        a.index = index;
+    }
+    size_t len = 0u;
+    if (plink_enc_dev_ack(&a, m->pt, pt_cap(m, p), &len)) {
+        (void)send_sealed(m, p, PLINK_T_DEV_ACK, len);
+    }
+}
+
+/* ---- the device list and the records (LINK-044, LINK-045) ---- */
+
+/* A DEV_LIST_REQ waits for the next tick (dropped when two already do: its retry comes back). */
+static void on_dev_list_req(plink_master_t *m, plink_peer_t *p, size_t n)
+{
+    plink_home_peer_t *h = &p->home;
+    plink_dev_list_req_t r;
+    if (plink_dec_dev_list_req(m->pt, n, &r) && m->dev_blob != NULL &&
+        h->list_n < PLINK_DEV_LIST_QUEUE) {
+        h->list_q[h->list_n++] = r;
+    }
+}
+
+/* A DEV_STATE_REQ: the records asked for go in the round under way (count 0: from first to the
+ * last). One under another list, or for none, gets a DEV_STATE naming this list. */
+static void on_dev_state_req(plink_master_t *m, plink_peer_t *p, size_t n)
+{
+    plink_home_peer_t *h = &p->home;
+    plink_dev_state_req_t r;
+    if (!plink_dec_dev_state_req(m->pt, n, &r) || m->dev_list_crc == 0u) {
+        return;
+    }
+    const unsigned count = m->dev_recs.count;
+    unsigned last = r.count == 0u ? count : (unsigned)r.first + r.count;
+    if (last > count) {
+        last = count;
+    }
+    uint64_t bits = 0u;
+    for (unsigned i = r.first; i < last; i++) {
+        bits |= bit64(i);
+    }
+    if (r.list_crc != m->dev_list_crc || bits == 0u) {
+        h->summary_at = 0u; /* at once */
+        return;
+    }
+    h->round |= bits;
+    h->changed &= ~bits;
+}
+
+/* One DEV_STATE to p: the records of the round under way that fit its frame, in index order
+ * (records = false: a summary, count 0); the head always names the list and its states_crc. */
+static void send_dev_state(plink_master_t *m, plink_peer_t *p, uint64_t now, bool records)
+{
+    plink_home_peer_t *h = &p->home;
+    const size_t cap = pt_cap(m, p);
+    const size_t room = cap > PLINK_DEV_STATE_HEAD ? cap - PLINK_DEV_STATE_HEAD : 0u;
+    /* The records are gathered in m->out, read before the payload is sealed there. */
+    uint8_t *items = m->out;
+    size_t used = 0u;
+    uint8_t count = 0u;
+    for (unsigned i = 0; records && i < m->dev_recs.count && i < PLINK_DEV_MAX; i++) {
+        const uint64_t b = bit64(i);
+        const size_t k = m->dev_recs.len[i];
+        if ((h->round & b) == 0u) {
+            continue;
+        }
+        if (k > 0u && used + 1u + k > room) {
+            break;
+        }
+        h->round &= ~b;
+        h->changed &= ~b; /* it goes as it is now */
+        if (k > 0u) {
+            items[used] = (uint8_t)i;
+            memcpy(&items[used + 1u], m->dev_recs.rec[i], k);
+            used += 1u + k;
+            count++;
+        }
+    }
+    if (records && count == 0u) {
+        h->round = 0u; /* nothing whole left to send in it */
+        return;
+    }
+    plink_dev_state_t s;
+    memset(&s, 0, sizeof s);
+    s.list_crc = m->dev_list_crc;
+    s.states_crc = m->dev_states_crc;
+    s.count = count;
+    s.items = items;
+    s.items_len = used;
+    size_t len = 0u;
+    if (plink_enc_dev_state(&s, m->pt, cap, &len)) {
+        (void)send_sealed(m, p, PLINK_T_DEV_STATE, len);
+    }
+    /* Any DEV_STATE names the list and proves the data fresh: the summary is due 10 s on. A new
+     * list is named again at +250 ms and +1 s, as a STATUS change is (LINK-006): one lost frame
+     * would otherwise cost a keypad 10 s. */
+    h->summary_at = now + PLINK_DEV_SUMMARY_MS;
+    if (h->list_repeats > 0u) {
+        h->summary_at = now + (h->list_repeats == 2u
+                                   ? PLINK_STATUS_REPEAT1_MS
+                                   : PLINK_STATUS_REPEAT2_MS - PLINK_STATUS_REPEAT1_MS);
+        h->list_repeats--;
+    }
+}
+
+/* ---- settings (LINK-050, LINK-051) ---- */
+
+static bool panel_id_ok(const char *id)
+{
+    for (size_t i = 0; i < PLINK_PANEL_ID_LEN; i++) {
+        const char c = id[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) {
+            return false;
+        }
+    }
+    return id[PLINK_PANEL_ID_LEN] == '\0';
+}
+
+/* A PREFS: the keypad's report, kept when it came in a newer frame of the session than the one
+ * held (LINK-026's rule); then the answer to the write in flight when it carries its req
+ * (refusals per field, the values now stored). port.prefs_done comes last, once the report is
+ * kept and nothing more is read here: it may start the next write (plink_master_prefs_set leaves
+ * m->pt, where its pointers lead, alone) and read plink_master_keypad_home. */
+static void on_prefs(plink_master_t *m, plink_peer_t *p, const plink_hdr_t *hdr, size_t n)
+{
+    plink_home_peer_t *h = &p->home;
+    plink_prefs_t r;
+    if (!plink_dec_prefs(m->pt, n, &r)) {
+        return;
+    }
+    if (!h->report.have || h->report_sid != hdr->sid || hdr->seq > h->report_seq) {
+        plink_prefs_report_t *rep = &h->report;
+        const uint32_t count = rep->count;
+        memset(rep, 0, sizeof *rep);
+        rep->have = true;
+        rep->count = count + 1u;
+        if (panel_id_ok(r.panel_id)) {
+            memcpy(rep->panel_id, r.panel_id, sizeof rep->panel_id);
+        }
+        rep->voice = r.voice;
+        rep->accepts = r.accepts;
+        const size_t fl = r.fields_len <= sizeof rep->fields ? r.fields_len : sizeof rep->fields;
+        if (fl > 0u) {
+            memcpy(rep->fields, r.fields, fl);
+        }
+        rep->fields_len = (uint8_t)fl;
+        rep->crc = proto_prefs_crc(r.fields, r.fields_len);
+        h->report_sid = hdr->sid;
+        h->report_seq = hdr->seq;
+        h->prefs_want = false; /* the newest word: the next heartbeat says whether it differs */
+    }
+    if (r.req != 0u && h->set_busy && r.req == h->set_req) {
+        h->set_busy = false;
+        plink_prefs_done_t d;
+        memset(&d, 0, sizeof d);
+        d.req = r.req;
+        d.result = PLINK_PSET_OK;
+        d.refused_count = r.refused_count;
+        d.refused = r.refused;
+        d.fields = r.fields;
+        d.fields_len = r.fields_len;
+        prefs_done(m, dev_of(m, p), &d);
+    }
+}
+
+static void send_prefs_req(plink_master_t *m, plink_peer_t *p, uint64_t now)
+{
+    plink_home_peer_t *h = &p->home;
+    plink_prefs_req_t r;
+    r.have_crc = h->report.have ? h->report.crc : 0u;
+    size_t len = 0u;
+    if (plink_enc_prefs_req(&r, m->pt, pt_cap(m, p), &len)) {
+        (void)send_sealed(m, p, PLINK_T_PREFS_REQ, len);
+    }
+    h->prefs_req_at = now != 0u ? now : 1u;
+}
+
+static void send_prefs_set(plink_master_t *m, plink_peer_t *p, uint64_t now)
+{
+    plink_home_peer_t *h = &p->home;
+    plink_prefs_set_t s;
+    memset(&s, 0, sizeof s);
+    s.req = h->set_req;
+    s.origin = h->set_origin;
+    s.fields = h->set_fields;
+    s.fields_len = h->set_len;
+    size_t len = 0u;
+    if (plink_enc_prefs_set(&s, m->pt, pt_cap(m, p), &len)) {
+        (void)send_sealed(m, p, PLINK_T_PREFS_SET, len);
+    }
+    h->set_next_ms = now + PLINK_PREFS_SET_RETRY_MS;
+}
+
+/* ---- the tick's turn (LINK-049) ---- */
+
+/* p's changed records go in rounds: one per 500 ms (1 s on frames under 1,200 B). */
+static uint32_t push_gap(const plink_master_t *m, const plink_peer_t *p)
+{
+    return frame_cap(m, &p->addr) < PLINK_FRAME_MAX ? PLINK_DEV_PUSH_SMALL_MS : PLINK_DEV_PUSH_MS;
+}
+
+/* What every tick does for p whatever its turn: answers and a write let go when their time is
+ * up, and the work of a capability p can't take now dropped - a keypad resends what it still
+ * wants, and a DEV_STATE goes at once when it can take them again (its CRCs tell it what it
+ * lacks). */
+static void home_upkeep(plink_master_t *m, plink_peer_t *p, uint64_t now)
+{
+    plink_home_peer_t *h = &p->home;
+    dev_cache_expire(h, now);
+    if (h->set_busy && now >= h->set_started_ms + PLINK_PREFS_SET_GIVE_UP_MS) {
+        prefs_end(m, p, PLINK_PSET_TIMEOUT);
+    }
+    if (!home_ok(m, p, PLINK_CAP_HOME)) {
+        h->ack_due = 0u;
+        h->round = h->changed = 0u;
+        h->list_n = 0u;
+        h->summary_at = 0u;
+    }
+    if (!home_ok(m, p, PLINK_CAP_PREFS)) {
+        h->prefs_want = false;
+    }
+}
+
+/* p's DEV_* and PREFS* frames this tick, at most room: none while a STATUS change waits for it or
+ * a RESULT is due (alarm traffic always wins); then answers first, the write, the request for a
+ * report, the records, the summary, the list's pages (docs/features/11 "Alarm traffic always
+ * wins"). Returns how many went. */
+static unsigned home_turn(plink_master_t *m, plink_peer_t *p, uint64_t now, unsigned room)
+{
+    plink_home_peer_t *h = &p->home;
+    if (p->change_ms != 0u || p->result_due != 0u) {
+        return 0u;
+    }
+    const bool home = home_ok(m, p, PLINK_CAP_HOME);
+    const bool prefs = home_ok(m, p, PLINK_CAP_PREFS);
+    if (home && h->round == 0u && h->changed != 0u && now >= h->push_at) {
+        h->round = h->changed; /* a new round: what changed since the last */
+        h->changed = 0u;
+        h->push_at = now + push_gap(m, p);
+    }
+    unsigned sent = 0u;
+    while (sent < room) {
+        if (home && h->ack_due != 0u) {
+            size_t i = 0u;
+            while ((h->ack_due & (1u << i)) == 0u) {
+                i++;
+            }
+            h->ack_due = (uint8_t)(h->ack_due & ~(1u << i));
+            send_dev_ack(m, p, i);
+        } else if (prefs && h->set_busy && now >= h->set_next_ms) {
+            send_prefs_set(m, p, now);
+        } else if (prefs && h->prefs_want &&
+                   (h->prefs_req_at == 0u || now >= h->prefs_req_at + PLINK_PREFS_REQ_GAP_MS)) {
+            send_prefs_req(m, p, now);
+        } else if (home && h->round != 0u) {
+            send_dev_state(m, p, now, true);
+        } else if (home && m->dev_list_crc != 0u && now >= h->summary_at) {
+            send_dev_state(m, p, now, false);
+        } else if (home && h->list_n > 0u) {
+            const plink_dev_list_req_t r = h->list_q[0];
+            h->list_n--;
+            memmove(&h->list_q[0], &h->list_q[1], h->list_n * sizeof h->list_q[0]);
+            send_blob_page(m, p, PLINK_T_DEV_LIST_PAGE, m->dev_blob, m->dev_blob_len,
+                           m->dev_list_crc, &r);
+        } else {
+            break;
+        }
+        sent++;
+    }
+    return sent;
+}
+
+/* The tick's DEV_* and PREFS* frames, after its alarm traffic: at most 2 per keypad and 8 in all,
+ * keypad after keypad from the one after where the last full tick stopped, so none is left
+ * behind (LINK-049). */
+static void home_service(plink_master_t *m, uint64_t now)
+{
+    unsigned left = PLINK_HOME_PER_TICK;
+    const unsigned first = m->home_first % PLINK_KEYPADS_MAX;
+    for (unsigned k = 0; k < PLINK_KEYPADS_MAX; k++) {
+        const unsigned at = (first + k) % PLINK_KEYPADS_MAX;
+        plink_peer_t *p = &m->peer[at];
+        if (!p->used) {
+            continue;
+        }
+        home_upkeep(m, p, now);
+        if (left == 0u) {
+            continue;
+        }
+        left -= home_turn(m, p, now, left < PLINK_HOME_PER_KEYPAD ? left : PLINK_HOME_PER_KEYPAD);
+        if (left == 0u) {
+            m->home_first = (uint8_t)((at + 1u) % PLINK_KEYPADS_MAX);
+        }
+    }
+}
+
+/* When p's home work is next due (UINT64_MAX: nothing planned). Work held back by a STATUS change
+ * waits for that STATUS - which goes only once the engine's first snapshot is in, so until then it
+ * waits for plink_master_snapshot, never a time already past; work of a capability p can't take
+ * now is dropped at the next tick. */
+static uint64_t home_next(const plink_master_t *m, const plink_peer_t *p)
+{
+    const plink_home_peer_t *h = &p->home;
+    uint64_t t = UINT64_MAX;
+    for (size_t i = 0; i < PLINK_DEV_RESULTS_PER_KEYPAD; i++) {
+        if (h->cache[i].last_ms != 0u) {
+            t = min64(t, h->cache[i].last_ms + PLINK_RESULT_KEEP_MS);
+        }
+    }
+    if (h->set_busy) {
+        t = min64(t, h->set_started_ms + PLINK_PREFS_SET_GIVE_UP_MS);
+    }
+    uint64_t due = UINT64_MAX;
+    if (home_ok(m, p, PLINK_CAP_HOME)) {
+        if (h->ack_due != 0u || h->round != 0u || h->list_n > 0u) {
+            due = 0u;
+        }
+        if (h->changed != 0u) {
+            due = min64(due, h->push_at);
+        }
+        if (m->dev_list_crc != 0u) {
+            due = min64(due, h->summary_at); /* 0: at once */
+        }
+    } else if (h->ack_due != 0u || h->round != 0u || h->changed != 0u || h->list_n > 0u ||
+               h->summary_at != 0u) {
+        due = 0u; /* dropped at the next tick */
+    }
+    if (home_ok(m, p, PLINK_CAP_PREFS)) {
+        if (h->set_busy) {
+            due = min64(due, h->set_next_ms);
+        }
+        if (h->prefs_want) {
+            due = min64(due, h->prefs_req_at == 0u ? 0u : h->prefs_req_at + PLINK_PREFS_REQ_GAP_MS);
+        }
+    }
+    if (due != UINT64_MAX && p->change_ms != 0u && is_live(p)) {
+        /* Behind the STATUS waiting for it (home_turn sends nothing before it). */
+        due = m->have_snap ? max64(due, status_next(p)) : UINT64_MAX;
+    }
+    return min64(t, due);
 }
 
 /* ---- sessions (LINK-015) --------------------------------------------------------------------- */
@@ -1163,16 +1759,44 @@ static void on_sealed(plink_master_t *m, uint64_t now, const plink_addr_t *from,
             }
         }
         break;
+    /* LINK-043: a capability's frames are taken only from a session holding its bit, on a
+     * transport whose frames are 250 B or more; LINK-049: from buckets of their own, never the
+     * commands' or the requests'. Over its limit a frame is dropped: the keypad's retry comes. */
+    case PLINK_T_DEV_LIST_REQ:
+    case PLINK_T_DEV_STATE_REQ:
+        if (home_ok(m, p, PLINK_CAP_HOME) &&
+            bucket_take(&p->home.req_tokens, &p->home.req_tokens_at, now, DEV_REQ_BURST,
+                        DEV_REQ_EVERY_MS)) {
+            if (h->type == PLINK_T_DEV_LIST_REQ) {
+                on_dev_list_req(m, p, n);
+            } else {
+                on_dev_state_req(m, p, n);
+            }
+        }
+        break;
+    case PLINK_T_DEV_ACT:
+        if (home_ok(m, p, PLINK_CAP_HOME)) {
+            on_dev_act(m, p, now, n);
+        }
+        break;
+    case PLINK_T_PREFS:
+        if (home_ok(m, p, PLINK_CAP_PREFS) &&
+            bucket_take(&p->home.prefs_tokens, &p->home.prefs_tokens_at, now, PREFS_BURST,
+                        PREFS_EVERY_MS)) {
+            on_prefs(m, p, h, n);
+        }
+        break;
     default: break; /* LINK-017: nothing else is the master's to take */
     }
     plink_wipe(m->pt, n);
     if (promoting && p->used) {
         /* A new session: STATUS and TIME at once, the STATUS repeated as a change's is (LINK-006):
          * the keypad has dropped the old session, and until one of them arrives it has no status
-         * (CONNECTING at start-up, or nearer to LOST). */
+         * (CONNECTING at start-up, or nearer to LOST). Its device records follow (LINK-045). */
         status_changed(p, now);
         send_status(m, p, now);
         send_time(m, p, now);
+        home_session(m, p, now);
     }
     supervise(m, p, now);
 }
@@ -1439,6 +2063,7 @@ void plink_master_tick(plink_master_t *m, uint64_t now_ms)
         }
         supervise(m, p, now_ms);
     }
+    home_service(m, now_ms); /* after every keypad's alarm traffic */
 }
 
 uint64_t plink_master_next(const plink_master_t *m)
@@ -1480,6 +2105,7 @@ uint64_t plink_master_next(const plink_master_t *m)
             t = min64(t, p->time_due_ms);
         }
         t = min64(t, supervise_next(m, p));
+        t = min64(t, home_next(m, p));
     }
     return t;
 }
@@ -1656,6 +2282,169 @@ void plink_master_net(plink_master_t *m, uint64_t now_ms, bool up)
     }
 }
 
+/* ---- Smart Home and settings on keypads ------------------------------------------------------ */
+
+void plink_master_home(plink_master_t *m, uint64_t now_ms, const uint8_t *blob, size_t len,
+                       uint32_t list_crc, const plink_dev_recs_t *recs)
+{
+    (void)now_ms; /* what goes, goes at the next tick */
+    if (m == NULL) {
+        return;
+    }
+    const bool have = blob != NULL && len >= PLINK_DEV_BLOB_HDR && list_crc != 0u;
+    const uint32_t crc = have ? list_crc : 0u;
+    const bool list_changed = crc != m->dev_list_crc;
+    m->dev_blob = have ? blob : NULL;
+    m->dev_blob_len = have ? len : 0u;
+    m->dev_list_crc = crc;
+    /* The records: those whose bytes changed (by their CRC) are pushed in the next round. */
+    const unsigned old_count = m->dev_recs.count;
+    const unsigned count =
+        have && recs != NULL ? (recs->count <= PLINK_DEV_MAX ? recs->count : PLINK_DEV_MAX) : 0u;
+    uint64_t moved = 0u;
+    for (unsigned i = 0; i < PLINK_DEV_MAX; i++) {
+        const uint8_t k =
+            (uint8_t)(i < count && recs->len[i] <= PLINK_DEV_REC_MAX ? recs->len[i] : 0u);
+        const uint32_t c = k > 0u ? alarm_crc32(0u, recs->rec[i], k) : 0u;
+        if (i < count && (i >= old_count || k != m->dev_recs.len[i] || c != m->dev_rec_crc[i])) {
+            moved |= bit64(i);
+        }
+        m->dev_rec_crc[i] = c;
+        m->dev_recs.len[i] = k;
+        if (k > 0u) {
+            memcpy(m->dev_recs.rec[i], recs->rec[i], k);
+        }
+    }
+    m->dev_recs.count = (uint8_t)count;
+    m->dev_states_crc = plink_home_states_crc(&m->dev_recs);
+    for (size_t i = 0; i < PLINK_KEYPADS_MAX; i++) {
+        plink_peer_t *p = &m->peer[i];
+        plink_home_peer_t *h = &p->home;
+        if (!p->used || !home_ok(m, p, PLINK_CAP_HOME)) {
+            continue; /* a new session brings it everything */
+        }
+        if (list_changed) {
+            /* LINK-044: records under the new list are of no use until the keypad installs it:
+             * what it still had to be sent is dropped, and a DEV_STATE naming the list goes at
+             * once (the keypad then pulls it, and asks for every record). */
+            h->changed = h->round = 0u;
+            h->summary_at = 0u;
+            h->list_repeats = 2u;
+        } else {
+            h->changed |= moved & first_bits(count);
+        }
+    }
+}
+
+void plink_master_dev_answer(plink_master_t *m, uint64_t now_ms, uint32_t ticket, uint8_t result,
+                             uint8_t why)
+{
+    if (m == NULL || ticket == 0u) {
+        return;
+    }
+    for (size_t k = 0; k < PLINK_KEYPADS_MAX; k++) {
+        plink_home_peer_t *h = &m->peer[k].home;
+        if (h->act_ticket == ticket) {
+            h->act_running = false;
+            h->act_ticket = 0u;
+        }
+        for (size_t i = 0; m->peer[k].used && i < PLINK_DEV_RESULTS_PER_KEYPAD; i++) {
+            plink_dev_cached_t *e = &h->cache[i];
+            if (e->last_ms == 0u || !e->pending || e->ticket != ticket) {
+                continue;
+            }
+            e->result = result;
+            e->why = why;
+            e->pending = false;
+            e->ticket = 0u;
+            e->last_ms = max64(e->last_ms, now_ms);
+            h->ack_due = (uint8_t)(h->ack_due | (1u << i)); /* at the next tick */
+            return;
+        }
+    }
+}
+
+bool plink_master_prefs_set(plink_master_t *m, uint64_t now_ms, uint8_t device, uint32_t req,
+                            uint8_t origin, const uint8_t *fields, size_t len, uint8_t *why)
+{
+    plink_peer_t *p = m != NULL ? peer_of(m, device) : NULL;
+    uint8_t w = PLINK_PSET_OK;
+    if (p == NULL) {
+        w = PLINK_PSET_NOT_FOUND;
+    } else if (req == 0u || len > PLINK_PREFS_SET_BODY_MAX || (fields == NULL && len > 0u)) {
+        w = PLINK_PSET_BAD;
+    } else {
+        /* The body framed as both codecs want it (count, then that many whole TLVs), checked in
+         * a buffer of its own: this may run from inside port.prefs_done, whose pointers lead into
+         * m->pt. */
+        plink_prefs_set_t s;
+        memset(&s, 0, sizeof s);
+        s.req = req;
+        s.origin = origin;
+        s.fields = fields;
+        s.fields_len = len;
+        uint8_t check[PLINK_PREFS_SET_MAX];
+        size_t n = 0u;
+        if (!plink_enc_prefs_set(&s, check, sizeof check, &n)) {
+            w = PLINK_PSET_BAD;
+        } else if (!is_live(p) || p->live_heard_ms == 0u ||
+                   now_ms - p->live_heard_ms >= PLINK_HOME_HEARD_MS) {
+            w = PLINK_PSET_OFFLINE;
+        } else if (!home_ok(m, p, PLINK_CAP_PREFS)) {
+            w = PLINK_PSET_UNSUPPORTED;
+        } else if (p->home.set_busy) {
+            w = PLINK_PSET_BUSY;
+        }
+    }
+    if (why != NULL) {
+        *why = w;
+    }
+    if (w != PLINK_PSET_OK) {
+        return false;
+    }
+    plink_home_peer_t *h = &p->home;
+    h->set_busy = true;
+    h->set_req = req;
+    h->set_origin = origin;
+    h->set_len = (uint8_t)len;
+    if (len > 0u) {
+        memcpy(h->set_fields, fields, len);
+    }
+    h->set_started_ms = now_ms;
+    h->set_next_ms = now_ms; /* at the next tick, then every second */
+    return true;
+}
+
+bool plink_master_keypad_home(const plink_master_t *m, uint64_t now_ms, uint8_t device,
+                              plink_keypad_home_t *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+    memset(out, 0, sizeof *out);
+    if (m == NULL || device < PLINK_DEVICE_FIRST || device > PLINK_DEVICE_LAST ||
+        !m->peer[device - 1u].used) {
+        return false;
+    }
+    const plink_peer_t *p = &m->peer[device - 1u];
+    out->device = device;
+    out->online = is_live(p) && p->live_heard_ms != 0u &&
+                  now_ms - p->live_heard_ms < PLINK_HOME_HEARD_MS;
+    out->caps = is_live(p) ? p->live.caps : 0u;
+    out->prefs = p->home.report;
+    /* Two keypads reporting one panel id: the higher number's is left out (docs/features/11
+     * "Settings over the link"). */
+    for (uint8_t d = PLINK_DEVICE_FIRST; out->prefs.panel_id[0] != '\0' && d < device; d++) {
+        const plink_peer_t *o = &m->peer[d - 1u];
+        if (o->used && o->home.report.have &&
+            strcmp(o->home.report.panel_id, out->prefs.panel_id) == 0) {
+            out->id_taken = true;
+            memset(out->prefs.panel_id, 0, sizeof out->prefs.panel_id);
+        }
+    }
+    return true;
+}
+
 /* ---- the keypads ----------------------------------------------------------------------------- */
 
 size_t plink_master_peers(const plink_master_t *m, uint64_t now_ms, plink_peer_info_t *out,
@@ -1717,6 +2506,11 @@ bool plink_master_remove(plink_master_t *m, uint64_t now_ms, uint8_t device)
     p->cmd_running = p->panic_running = false;
     p->cmd_ticket = p->panic_ticket = 0u;
     p->used = false;
+    /* A write in flight hears back once p is no keypad any more (a write asked for from inside
+     * port.prefs_done is NOT_FOUND, never one that would never end); then its device answers and
+     * settings go. */
+    prefs_end(m, p, PLINK_PSET_OFFLINE);
+    plink_wipe(&p->home, sizeof p->home);
     const bool bye = p->live.valid && p->have_addr;
     note(m, PLINK_NOTE_REMOVED, device);
     const bool stored = store_or_retry(m, now_ms);

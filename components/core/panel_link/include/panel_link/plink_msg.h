@@ -622,6 +622,8 @@ typedef struct {
  * section's length byte left out), so a master's CRC over a body it received is the keypad's. */
 #define PLINK_PREFS_MAX     128u /* PREFS with every v1 field and every one refused */
 #define PLINK_PREFS_SET_MAX 75u  /* PREFS_SET with every v1 field */
+#define PLINK_PREFS_BODY_MAX     255u /* a fields section's body: its length is one byte */
+#define PLINK_PREFS_SET_BODY_MAX (PLINK_PREFS_SET_MAX - 6u) /* 69 B: every field v1 knows */
 
 /* Why a field was refused: proto_prefs.h's PROTO_PREFS_WHY_* (asserted in plink_msg.c). An
  * unknown value reads as NOT_ALLOWED. */

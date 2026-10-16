@@ -23,6 +23,20 @@
  * is called on every change, true before a removed keypad's number is freed. Paused while the
  * master's own network is down (plink_master_net), resumed a period after it is back. A
  * provisional keypad (paired, no handshake yet) is not supervised and is dropped after 10 min.
+ *
+ * Smart Home and settings on keypads (LINK-043..051; docs/features/11 "Smart Home and Home
+ * Assistant on keypads"): the platform hands in its registry's device list and records
+ * (plink_master_home, built with plink_home.h); DEV_LIST_REQ is served from that blob as CFG_REQ
+ * is; changed records go in rounds, the full set at each new session and on DEV_STATE_REQ, a
+ * summary every 10 s. A DEV_ACT is answered from its own cache of 8 per keypad (90 s after the
+ * last copy; an entry reused 3 s after it) or handed to port.dev_run, one at a time from its own bucket; the answer comes back
+ * through plink_master_dev_answer, and every DEV_ACK carries the device's record as it is when
+ * that DEV_ACK goes. A keypad's settings report (PREFS) is kept, asked for again while its
+ * heartbeat's prefs_crc differs, and a write (plink_master_prefs_set) is resent until the PREFS
+ * carrying its req answers it (port.prefs_done). Nothing of this shares a cache, slot, bucket or
+ * frame budget with the alarm traffic: it goes only to a session with its capability bit, on a
+ * transport whose frames are 250 B or more, and only in a tick where that keypad has no STATUS
+ * change waiting and no RESULT due - at most 2 frames per keypad and 8 per tick.
  */
 #ifndef PLINK_MASTER_H
 #define PLINK_MASTER_H
@@ -34,6 +48,7 @@
 #include "alarm/alarm_snapshot.h"
 #include "panel_link/plink_crypto.h"
 #include "panel_link/plink_frame.h"
+#include "panel_link/plink_home.h"
 #include "panel_link/plink_msg.h"
 #include "panel_link/plink_pair.h"
 #include "panel_link/plink_session.h"
@@ -58,6 +73,43 @@ extern "C" {
 #define PLINK_STATUS_STALE_S     30u    /* a keypad reporting an older status is not fresh */
 #define PLINK_EV_ANSWER_MAX      50u    /* events in an EV_REQ's answer: what a keypad keeps */
 #define PLINK_PANIC_FREE_SLOTS   2u     /* answers a keypad's panics never take (commands') */
+
+/* Smart Home and settings on keypads (LINK-045, LINK-047, LINK-049..051). */
+#define PLINK_DEV_RESULTS_PER_KEYPAD 8u     /* DEV_ACT answers kept per keypad (bitmasks: <= 8):
+                                             * an entry is reused 3 s after its last copy, so the
+                                             * 500 ms bucket, not the cache, sets the pace */
+#define PLINK_DEV_PUSH_MS            500u   /* changed records: a round per keypad at most this */
+#define PLINK_DEV_PUSH_SMALL_MS      1000u  /* ... on a transport whose frames are under 1,200 B */
+#define PLINK_DEV_SUMMARY_MS         10000u /* a DEV_STATE at least this often (else a summary) */
+#define PLINK_DEV_LIST_QUEUE         2u     /* DEV_LIST_REQs waiting for a tick, per keypad */
+#define PLINK_HOME_PER_KEYPAD        2u     /* DEV_* and PREFS* frames per keypad per tick */
+#define PLINK_HOME_PER_TICK          8u     /* ... and in all */
+#define PLINK_HOME_HEARD_MS          30000u /* a keypad heard this recently takes a write */
+#define PLINK_PREFS_REQ_GAP_MS       2000u  /* PREFS_REQ at most this often while the CRC differs */
+#define PLINK_PREFS_SET_RETRY_MS     1000u
+#define PLINK_PREFS_SET_GIVE_UP_MS   6000u
+/* A fields body's sizes, PLINK_PREFS_BODY_MAX and PLINK_PREFS_SET_BODY_MAX: plink_msg.h. */
+
+/* How plink_master_prefs_set went (local: never on the wire). */
+typedef enum {
+    PLINK_PSET_OK = 0,      /* sent; or, in port.prefs_done, answered (perhaps with refusals) */
+    PLINK_PSET_NOT_FOUND,   /* no keypad has that number */
+    PLINK_PSET_OFFLINE,     /* no live session, or not heard for 30 s; in prefs_done: removed */
+    PLINK_PSET_UNSUPPORTED, /* its session lacks PLINK_CAP_PREFS, or its frames are under 250 B */
+    PLINK_PSET_BUSY,        /* a write to it is in flight */
+    PLINK_PSET_TIMEOUT,     /* in prefs_done: no answer within 6 s */
+    PLINK_PSET_BAD,         /* req 0, or fields not a fields body of at most 69 B */
+} plink_pset_t;
+
+/* The end of a write (port.prefs_done). The pointers are valid during the call only. */
+typedef struct {
+    uint32_t req;
+    uint8_t result;          /* plink_pset_t: OK, TIMEOUT or OFFLINE */
+    uint8_t refused_count;   /* OK: the fields it refused */
+    const uint8_t *refused;  /* refused_count x (id u8, why u8: plink_prefs_why_t) */
+    const uint8_t *fields;   /* OK: the values it stores now, a fields body (count first) */
+    size_t fields_len;
+} plink_prefs_done_t;
 
 /* Things worth a line in the log (port.note). */
 typedef enum {
@@ -100,6 +152,19 @@ typedef struct {
     size_t (*events_after)(void *ctx, uint32_t after_seq, alarm_event_t *out, size_t max,
                            bool *gap);
     void (*note)(void *ctx, plink_note_t note, uint8_t device); /* may be NULL */
+    /* Runs a keypad's device action off this task: the one judge of both screens as {KEYPAD,
+     * device}, its code checked for the keypad's home partition (LINK-048); the answer comes back
+     * through plink_master_dev_answer(ticket). The platform copies what it needs and wipes its
+     * copy of the code after use. false: no room now (the keypad's resend comes back). NULL:
+     * this master serves no devices (UNAVAILABLE). */
+    bool (*dev_run)(void *ctx, uint32_t ticket, uint8_t device, uint8_t home,
+                    const plink_dev_act_t *act);
+    /* A settings write ended (plink_master_prefs_set): the keypad's answer, or none in time, or
+     * the keypad removed. Called from inside plink_master_input, _tick and _remove, once the
+     * master's state is settled: it may start the next write (plink_master_prefs_set) and read
+     * plink_master_keypad_home (which already holds the newest report), and must call nothing
+     * else here. May be NULL. */
+    void (*prefs_done)(void *ctx, uint8_t device, const plink_prefs_done_t *done);
 } plink_master_port_t;
 
 typedef struct {
@@ -111,6 +176,62 @@ typedef struct {
     uint64_t last_ms; /* the last copy of this req */
     uint64_t first_ms; /* its first copy */
 } plink_cached_t;
+
+/* A DEV_ACT's answer (LINK-047): never its code. */
+typedef struct {
+    uint32_t req;
+    uint8_t digest[PLINK_SHA256_LEN]; /* plink_dev_act_digest */
+    bool pending;
+    uint32_t ticket;
+    uint8_t result;                   /* plink_dev_result_t */
+    uint8_t why;
+    uint64_t last_ms;                 /* the last copy of this req (0: the entry is free) */
+    char ref[PLINK_REF_MAX + 1];      /* the device: each DEV_ACK carries its record then */
+} plink_dev_cached_t;
+
+/* A keypad's settings report as the master keeps it (LINK-050): RAM only. */
+typedef struct {
+    bool have;
+    uint32_t count;                         /* reports kept so far: moves with each one */
+    char panel_id[PLINK_PANEL_ID_LEN + 1];  /* "" when it named none, or not 6 lowercase hex */
+    uint8_t voice;                          /* plink_voice_t */
+    uint32_t accepts;                       /* bit id - 1: a field it takes */
+    uint32_t crc;                           /* prefs_crc: proto_prefs_crc over fields */
+    uint8_t fields_len;
+    uint8_t fields[PLINK_PREFS_BODY_MAX];   /* the fields section's body as received */
+} plink_prefs_report_t;
+
+/* One keypad's Smart Home and settings (private). About 1 KB. */
+typedef struct {
+    uint64_t changed;           /* bit i: record i changed and waits for the next round */
+    uint64_t round;             /* bit i: record i goes in the round under way */
+    uint64_t push_at;           /* the next round starts no sooner */
+    uint64_t summary_at;        /* the next DEV_STATE at the latest; 0: at once (a new list, a
+                                 * request under another, the transport big enough again) */
+    uint8_t list_repeats;       /* a new list is named again at +250 ms and +1 s (LINK-044) */
+    plink_dev_list_req_t list_q[PLINK_DEV_LIST_QUEUE]; /* pages to serve, oldest first */
+    uint8_t list_n;
+    uint8_t req_tokens;         /* DEV_LIST_REQ and DEV_STATE_REQ (token bucket) */
+    uint64_t req_tokens_at;
+    plink_dev_cached_t cache[PLINK_DEV_RESULTS_PER_KEYPAD];
+    uint8_t ack_due;            /* bit i: cache[i]'s DEV_ACK goes at the next tick */
+    bool act_running;           /* one action in flight */
+    uint32_t act_ticket;
+    uint8_t act_tokens;         /* DEV_ACT (token bucket) */
+    uint64_t act_tokens_at;
+    plink_prefs_report_t report;
+    uint32_t report_sid, report_seq; /* the frame the report came in: a newer one replaces it */
+    uint8_t prefs_tokens;       /* PREFS (token bucket) */
+    uint64_t prefs_tokens_at;
+    bool prefs_want;            /* the heartbeat's prefs_crc isn't the report's */
+    uint64_t prefs_req_at;      /* the last PREFS_REQ (0 none) */
+    bool set_busy;              /* a write in flight */
+    uint32_t set_req;
+    uint8_t set_origin;
+    uint8_t set_len;
+    uint8_t set_fields[PLINK_PREFS_SET_BODY_MAX];
+    uint64_t set_started_ms, set_next_ms;
+} plink_home_peer_t;
 
 /* One keypad at run time (private). */
 typedef struct {
@@ -162,6 +283,7 @@ typedef struct {
     uint32_t cmd_ticket, panic_ticket; /* the commands in flight */
     uint64_t hs_tokens_at;      /* its fresh handshakes (token bucket) */
     uint8_t hs_tokens;
+    plink_home_peer_t home;     /* Smart Home and settings */
 } plink_peer_t;
 
 typedef struct {
@@ -201,6 +323,14 @@ typedef struct {
     bool in_run;                    /* inside port.run: answers wait until it returns */
     plink_out_t pout;               /* the pairing's answer */
     plink_status_t st_a, st_b;      /* status scratch */
+    /* Smart Home: the device list (the blob stays the caller's) and a copy of its records. */
+    const uint8_t *dev_blob;
+    size_t dev_blob_len;
+    uint32_t dev_list_crc;          /* 0: no list */
+    plink_dev_recs_t dev_recs;
+    uint32_t dev_rec_crc[PLINK_DEV_MAX]; /* each record's CRC-32: what changed */
+    uint32_t dev_states_crc;
+    uint8_t home_first;             /* the keypad whose home frames go first at the next tick */
 } plink_master_t;
 
 /* rec: the stored record (NULL or a zero net_id: none yet; a net id is chosen at the first
@@ -281,6 +411,45 @@ bool plink_master_rename(plink_master_t *m, uint8_t device, const char *name);
 bool plink_master_set_home(plink_master_t *m, uint64_t now_ms, uint8_t device, uint8_t home);
 bool plink_master_set_supervision(plink_master_t *m, uint64_t now_ms, uint8_t device,
                                   uint16_t seconds);
+/* ---- Smart Home and settings on keypads (LINK-043..051) ---- */
+/* The registry's device list and its records, as plink_home_list_build and plink_home_recs_build
+ * made them from one copy of the registry (index for index): the blob stays the caller's and must
+ * stay valid until the next call; the records are copied. A blob of NULL (or list_crc 0) is no
+ * list: no DEV_STATE goes and every DEV_ACT is answered UNAVAILABLE. A new list_crc clears what
+ * each keypad still had to be sent (records under the new list are of no use until it installs
+ * it) and sends a DEV_STATE at once, which names the new list; otherwise the records whose bytes
+ * changed go in the next round. */
+void plink_master_home(plink_master_t *m, uint64_t now_ms, const uint8_t *blob, size_t len,
+                       uint32_t list_crc, const plink_dev_recs_t *recs);
+/* A device action's answer from the platform (port.dev_run's ticket): result a
+ * plink_dev_result_t, why the alarm_result_t of a refused code. Its DEV_ACK goes at the next tick
+ * with the device's record as it is then (plink_master_home's newest). */
+void plink_master_dev_answer(plink_master_t *m, uint64_t now_ms, uint32_t ticket, uint8_t result,
+                             uint8_t why);
+/* Changes keypad device's settings (LINK-051): fields is a fields body (count first, the fields
+ * to change, only ids both this master and the keypad's accepts know), req the write's id (not 0).
+ * Refused at once (false, *why: plink_pset_t) when no keypad has that number, a bad body, the
+ * keypad offline (no live session, or not heard for 30 s), unsupported (no PLINK_CAP_PREFS, or a
+ * transport under 250 B), or busy (one write in flight). Otherwise PREFS_SET goes at the next tick
+ * and every second with the same req until the PREFS carrying req answers it, or 6 s have
+ * passed: port.prefs_done says which, once. */
+bool plink_master_prefs_set(plink_master_t *m, uint64_t now_ms, uint8_t device, uint32_t req,
+                            uint8_t origin, const uint8_t *fields, size_t len, uint8_t *why);
+
+/* A keypad's Smart Home and settings side, for the platform's list of keypads. */
+typedef struct {
+    uint8_t device;
+    bool online;   /* a live session heard within the last 30 s */
+    uint16_t caps; /* the live session's common capabilities (0: none, or no session) */
+    bool id_taken; /* a keypad with a lower number reports the same panel id: prefs.panel_id is
+                    * "" here (the platform logs it) */
+    plink_prefs_report_t prefs; /* its newest settings report (prefs.have: one came) */
+} plink_keypad_home_t;
+
+/* Keypad device's (false: no such keypad). */
+bool plink_master_keypad_home(const plink_master_t *m, uint64_t now_ms, uint8_t device,
+                              plink_keypad_home_t *out);
+
 /* The numbers the link holds (bit d-1). */
 uint32_t plink_master_held(const plink_master_t *m);
 /* Whether the link is in use (a keypad paired or pairing open): mDNS is announced only then. */

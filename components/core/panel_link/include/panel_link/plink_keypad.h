@@ -17,6 +17,24 @@
  * A WELCOME is worked out only from where its HELLO went (unless that was a broadcast, as
  * plink_keypad_master_addr was told), at most PLINK_WELCOME_CHECKS per HELLO. Not paired, the
  * no-code maintenance pages are open (LINK-025).
+ *
+ * Smart Home and settings (LINK-043..052; docs/features/11 "Smart Home and Home Assistant on
+ * keypads"). With a mirror attached (plink_keypad_home_attach; without one the keypad never offers
+ * PLINK_CAP_HOME), the keypad mirrors its master's device list: pulled by the list_crc a DEV_STATE
+ * names, page by page as the configuration is, kept installed until a new one is whole, each row's
+ * record carried over by ref at an install, then every record asked for. A record applies only
+ * under the installed list and from a newer frame of the session for its device (LINK-026); while
+ * the records' CRC differs from the master's, DEV_STATE_REQ goes 250 ms on, then at least 1 s
+ * apart, doubling to 30 s. Device data (a DEV_STATE, or a DEV_ACK's record, under the installed
+ * list) older than 30 s, or a link not ONLINE, reads offline (LINK-046). A device action
+ * (plink_keypad_dev_act) is refused at once when it can't go, else resent every 500 ms with the
+ * same req, given up after 3 s and never sent after; 2 slots of its own, apart from the
+ * commands'. List and state requests wait while a panic is being sent. In a
+ * session with PLINK_CAP_PREFS the keypad reports its settings (plink_keypad_prefs_report: PREFS
+ * at the session's first STATUS, after a change at most once a second, and on PREFS_REQ; each
+ * HEARTBEAT carries their CRC), takes each PREFS_SET once (plink_keypad_take_prefs_set) and
+ * answers it (plink_keypad_prefs_answer), a repeat from the answer kept 30 s. Nothing of this goes
+ * on a transport whose frames are under 250 B.
  */
 #ifndef PLINK_KEYPAD_H
 #define PLINK_KEYPAD_H
@@ -29,6 +47,7 @@
 #include "alarm/alarm_snapshot.h"
 #include "panel_link/plink_crypto.h"
 #include "panel_link/plink_frame.h"
+#include "panel_link/plink_home.h"
 #include "panel_link/plink_msg.h"
 #include "panel_link/plink_pair.h"
 #include "panel_link/plink_session.h"
@@ -59,6 +78,17 @@ extern "C" {
 #define PLINK_NOT_PAIRED_HINT_MS 300000u
 #define PLINK_CMDS_MAX           4u      /* commands in flight (one is panic's) */
 #define PLINK_WELCOME_CHECKS     8u      /* WELCOMEs worked out (X25519) per HELLO, at most */
+/* Smart Home and settings (LINK-045..051); a device action's resend and give-up are
+ * PLINK_DEV_ACT_RETRY_MS and PLINK_DEV_ACT_GIVE_UP_MS (plink_home.h). */
+#define PLINK_DEV_ACTS_MAX       2u      /* device actions in flight, apart from the commands */
+#define PLINK_DEV_STALE_MS       30000u  /* LINK-046: no device data this long reads offline */
+#define PLINK_DEV_REQ_WAIT_MS    250u    /* LINK-045: DEV_STATE_REQ this long after a mismatch, */
+#define PLINK_DEV_REQ_GAP_MS     1000u   /* then at least this far apart, ... */
+#define PLINK_DEV_REQ_GAP_MAX_MS 30000u  /* ... doubling up to this */
+#define PLINK_PREFS_GAP_MS       1000u   /* LINK-050: an unasked-for PREFS at most this often */
+#define PLINK_PREFS_KEEP_MS      30000u  /* LINK-051: a PREFS_SET's answer kept for its repeats */
+#define PLINK_PREFS_OWN_MAX      128u    /* the keypad's own fields body (v1's 19 fields: 69 B) */
+#define PLINK_PREFS_REFUSED_MAX  32u     /* refusals an answer carries, at most */
 
 typedef enum {
     PLINK_LINK_NOT_PAIRED = 0,
@@ -103,7 +133,7 @@ typedef struct {
     plink_result_t res;
 } plink_kcmd_t;
 
-/* One configuration request out (private). */
+/* One pull request out (private). */
 typedef struct {
     bool used;
     uint32_t off;
@@ -111,6 +141,88 @@ typedef struct {
     uint64_t due_ms;   /* sent again then */
     uint32_t retry_ms; /* 300 ms, doubling to 2 s */
 } plink_kpull_t;
+
+/* A blob pulled from the master page by page, by its CRC (private): the configuration (CFG_REQ,
+ * its length named by STATUS) and the device list (DEV_LIST_REQ, its length learned from its first
+ * page). The first requests go 0-500 ms after the change, 2 are kept out, each retried after
+ * 300 ms doubling to 2 s; a blob that fails is remembered and not pulled again. */
+typedef struct {
+    uint8_t *buf;          /* the blob being pulled (caller's memory) */
+    size_t cap;
+    uint8_t type;          /* the requests' message type */
+    bool pulling;
+    uint32_t crc, total, have; /* total 0: known at the first page; have: bytes in from offset 0 */
+    uint32_t ahead_off, ahead_len; /* one page in past the first gap */
+    plink_kpull_t req[PLINK_PULL_OUTSTANDING];
+    uint32_t bad_crc;      /* a blob that failed (or doesn't fit): not pulled again */
+    uint64_t next_ms;      /* the pull's first requests */
+} plink_pull_t;
+
+/* The mirror of the master's devices (LINK-044, LINK-045): the caller's memory, about 31 KB (PSRAM
+ * on a panel), attached by plink_keypad_home_attach. Private: read it through the getters below. */
+typedef struct {
+    uint8_t blob[PLINK_DEV_BLOB_MAX];   /* the installed list */
+    uint32_t blob_len;
+    uint32_t list_crc;                  /* 0: none installed yet */
+    uint16_t off[PLINK_DEV_MAX];        /* each row's offset in blob */
+    uint32_t keys[PLINK_DEV_MAX];       /* each row's ref key (plink_home_ref_key; 0: unusable) */
+    plink_dev_recs_t recs;              /* each row's record as it came (recs.count: the rows) */
+    uint32_t frame_seq[PLINK_DEV_MAX];  /* LINK-026: the frame each record last came in */
+    uint8_t in[PLINK_DEV_BLOB_MAX];     /* the list being pulled (the installed one stays) */
+    uint32_t in_keys[PLINK_DEV_MAX];    /* an install's scratch */
+    plink_dev_recs_t carry;             /* an install's scratch */
+} plink_dev_mirror_t;
+
+/* What a device action looks like on its device's tile once its caller stopped waiting (the
+ * screen's 1 s, 3 s with a code; plink_keypad_dev_act_release), until a later record for that
+ * device or the next action on it (docs/features/11 "Device actions"). */
+typedef enum {
+    PLINK_DEV_OVL_NONE = 0, /* the record as it is */
+    PLINK_DEV_OVL_PENDING,  /* still being sent: shown pending */
+    PLINK_DEV_OVL_FAILED,   /* the master refused it after the caller stopped waiting: failed */
+    PLINK_DEV_OVL_UNSURE,   /* no answer in 3 s: failed and unsure ("Not confirmed", HCTL-012) */
+} plink_dev_overlay_t;
+
+/* One device action (private). */
+typedef struct {
+    bool used;
+    uint32_t req;
+    plink_dev_act_t act;   /* its code wiped after its last copy, or once answered */
+    uint32_t key;          /* its device's ref key */
+    uint64_t started_ms, next_ms;
+    uint8_t state;         /* plink_cmd_state_t */
+    uint8_t result, why;   /* DONE: the master's answer */
+    bool released;         /* its caller stopped waiting: the overlay shows */
+    uint8_t overlay;       /* plink_dev_overlay_t */
+} plink_kact_t;
+
+/* A settings change from the master (LINK-051): PREFS_SET's req, origin and fields. */
+typedef struct {
+    uint32_t req;
+    uint8_t origin;                       /* plink_origin_t */
+    uint8_t len;                          /* the fields body's bytes */
+    uint8_t fields[PLINK_PREFS_BODY_MAX]; /* the fields to change, count first (proto_prefs) */
+} plink_prefs_change_t;
+
+/* The keypad's settings on the link (private). */
+typedef struct {
+    bool have;                            /* a report was given */
+    char panel_id[PLINK_PANEL_ID_LEN + 1];
+    uint8_t voice;                        /* plink_voice_t */
+    uint32_t accepts;
+    uint8_t len;
+    uint8_t fields[PLINK_PREFS_OWN_MAX];  /* the values now, a fields body */
+    uint32_t crc;                         /* proto_prefs_crc of fields: HEARTBEAT's prefs_crc */
+    bool due;                             /* an unasked-for PREFS waits */
+    uint64_t next_ms;                     /* ... and goes no sooner */
+    uint32_t first_sid;                   /* the session whose first STATUS asked for one */
+    uint8_t in_state;                     /* the change below: 0 none, 1 waiting, 2 taken */
+    plink_prefs_change_t in;
+    uint32_t ans_req;                     /* the last answer (0: none), for repeats of its req */
+    uint64_t ans_ms;
+    uint8_t ans_count;
+    uint8_t ans_refused[2u * PLINK_PREFS_REFUSED_MAX];
+} plink_kprefs_t;
 
 typedef struct {
     /* private */
@@ -126,6 +238,7 @@ typedef struct {
     uint8_t kind;
     plink_caps_t cap;
     uint16_t caps;               /* what this keypad offers (PLINK_CAPS_KNOWN at most) */
+    uint16_t caps_asked;         /* what its caller offered: HOME goes only with a mirror */
     char name[PLINK_NAME_MAX + 1];
     char fw[PLINK_FW_MAX + 1];
     bool have_master;
@@ -157,14 +270,8 @@ typedef struct {
     uint32_t part_frame_seq[ALARM_MAX_PARTITIONS];
     uint32_t zone_frame_seq[ALARM_MAX_ZONES];
     uint32_t time_frame_seq;
-    uint8_t *cfg_buf;            /* the blob being pulled (caller's memory) */
-    size_t cfg_cap;
-    bool cfg_pulling;
-    uint32_t cfg_pull_crc, cfg_total, cfg_have; /* cfg_have: bytes in from offset 0 */
-    uint32_t cfg_ahead_off, cfg_ahead_len;      /* one page in past the first gap */
-    plink_kpull_t cfg_req[PLINK_PULL_OUTSTANDING];
-    uint32_t cfg_bad_crc;        /* a blob that failed to decode: not pulled again */
-    uint64_t cfg_next_ms;        /* the pull's first requests (0-500 ms after the change) */
+    plink_pull_t cfg_pull;       /* the configuration (into the caller's cfg_buf); its bad_crc:
+                                  * one that failed to decode, not pulled again */
     uint32_t cfg_installed_crc;
     alarm_config_t *cfg;         /* the decoded configuration (caller's memory) */
     bool have_cfg;
@@ -192,6 +299,22 @@ typedef struct {
     uint8_t power_flags;
     int8_t rssi;
     uint64_t started_ms;
+    /* Smart Home (LINK-044..047): none without a mirror */
+    plink_dev_mirror_t *home;
+    plink_pull_t dev_pull;       /* the device list (into home->in) */
+    uint32_t dev_named_crc;      /* the list the master's newest DEV_STATE names (0: none yet) */
+    uint32_t dev_named_states;   /* ... and its states_crc */
+    uint32_t dev_head_seq;       /* LINK-026: the frame that head came in */
+    bool dev_want;               /* the records' CRC differs: DEV_STATE_REQ due at dev_next_ms */
+    uint64_t dev_next_ms;
+    uint32_t dev_gap_ms;
+    uint64_t dev_req_ms;         /* the last DEV_STATE_REQ (0: none): the next 1 s on at least */
+    uint64_t dev_heard_ms;       /* the last device data under the installed list (0: none) */
+    bool dev_fresh;              /* ... within PLINK_DEV_STALE_MS (the tick clears it) */
+    uint32_t dev_seq;            /* moves with every change the platform copies */
+    uint32_t dev_list_seq;       /* moves at every install */
+    plink_kact_t acts[PLINK_DEV_ACTS_MAX];
+    plink_kprefs_t prefs;        /* settings (LINK-050, LINK-051) */
     plink_out_t out;             /* frame scratch: pairing's answers and sealed frames */
     uint8_t pt[PLINK_FRAME_MAX]; /* an opened frame's payload */
     union {
@@ -203,7 +326,8 @@ typedef struct {
 /* rec: the stored record, or NULL when not paired. cfg_buf (ALARM_CONFIG_BLOB_MAX bytes) and cfg
  * (an alarm_config_t) are the caller's memory (PSRAM on a panel). name, fw, kind and cap describe
  * this keypad for pairing and HELLO; caps are the capability bits it offers there (PLINK_CAP_*,
- * masked with PLINK_CAPS_KNOWN; LINK-043): each session keeps those its master offers too. */
+ * masked with PLINK_CAPS_KNOWN; LINK-043): each session keeps those its master offers too.
+ * PLINK_CAP_HOME is offered only once a mirror is attached (plink_keypad_home_attach). */
 void plink_keypad_init(plink_keypad_t *k, const plink_crypto_t *c, const plink_keypad_port_t *port,
                        const plink_keypad_rec_t *rec, uint8_t *cfg_buf, size_t cfg_cap,
                        alarm_config_t *cfg, uint8_t kind, const plink_caps_t *cap, uint16_t caps,
@@ -287,6 +411,85 @@ plink_cmd_state_t plink_keypad_command_state(const plink_keypad_t *k, uint32_t r
 void plink_keypad_command_release(plink_keypad_t *k, uint32_t req);
 /* A panic is still being sent (for the Emergency words). */
 bool plink_keypad_panic_pending(const plink_keypad_t *k);
+
+/* ---- Smart Home: the master's devices (LINK-043..047) ---- */
+/* The mirror's memory (NULL: none - a keypad built without home control, or without the memory).
+ * Only with one does the keypad offer PLINK_CAP_HOME. Call it right after plink_keypad_init,
+ * before the first tick: a session already up keeps the offer its HELLO made. */
+void plink_keypad_home_attach(plink_keypad_t *k, plink_dev_mirror_t *mem);
+
+typedef struct {
+    bool attached;     /* a mirror: this keypad offers PLINK_CAP_HOME */
+    bool shared;       /* the live session holds HOME: the master serves it devices */
+    uint32_t list_crc; /* the installed list (0: none yet - Smart Home appears once it is in) */
+    uint8_t count;     /* its rows */
+    uint32_t list_seq; /* moves each time another list installs */
+    uint32_t seq;      /* moves with every change to copy: list, record, action, freshness */
+    bool fresh;        /* LINK-046: ONLINE, with device data within 30 s; otherwise every row reads
+                        * offline since heard_ms, and an action sends nothing */
+    uint64_t heard_ms; /* the last device data, on the keypad's clock (0: none) */
+} plink_dev_info_t;
+
+void plink_keypad_dev_info(const plink_keypad_t *k, uint64_t now_ms, plink_dev_info_t *out);
+/* Row index of the installed list, in the master's order: its catalog fields (zeros, with *usable
+ * false, for a row this firmware can't use; either may be NULL). false past the last row. */
+bool plink_keypad_dev_row(const plink_keypad_t *k, uint8_t index, plink_dev_cat_t *cat,
+                          bool *usable);
+/* Row index's record (false: none has come yet). */
+bool plink_keypad_dev_rec(const plink_keypad_t *k, uint8_t index, plink_dev_rec_t *rec);
+/* Row index's overlay (plink_dev_overlay_t) and the action it is about (*action, may be NULL). */
+uint8_t plink_keypad_dev_overlay(const plink_keypad_t *k, uint8_t index, uint8_t *action);
+
+/* A device action, naming its device by ref (LINK-047; docs/features/11 "Device actions"): action
+ * a dev_action_t, value its value, mode one PLINK_DEV_MODE_* bit for ACT_SET_MODE (ignored
+ * otherwise), code the user's code or NULL. Returns PLINK_DEV_OK with *ticket (its req, not 0)
+ * when it goes: its first copy now, then every 500 ms with the same req until answered or 3 s
+ * have passed, never after; its code is wiped after its last copy. Otherwise a plink_dev_result_t
+ * at once, with nothing sent: UNAVAILABLE without a mirror; UNREACHABLE when the link isn't
+ * ONLINE, the session doesn't share HOME on a transport of 250 B or more, the device data is stale
+ * (LINK-046), or the row is offline (or has no record yet); REFUSED for a ref the installed list
+ * doesn't hold, a Z-Wave row (until BL-169), an action its kind doesn't take, a mode that isn't
+ * one bit, or a code that isn't digits only; NEED_CODE when hc_needs_code and code is empty;
+ * BUSY while an action on that device, or one in each slot, is still being sent. */
+uint8_t plink_keypad_dev_act(plink_keypad_t *k, uint64_t now_ms, const char *ref, uint8_t action,
+                             int32_t value, uint8_t mode, const char *code, uint32_t *ticket);
+
+typedef struct {
+    uint8_t result;  /* DONE: plink_dev_result_t (an unknown one reads REFUSED) */
+    uint8_t why;     /* CODE_REFUSED: the alarm_result_t, so the pad says why */
+    uint8_t overlay; /* plink_dev_overlay_t */
+} plink_dev_answer_t;
+
+/* Where action ticket stands: PENDING, DONE (*out: the master's answer; its record is already in
+ * the mirror) or NO_ANSWER (given up after 3 s); NONE once its slot went to another action. */
+plink_cmd_state_t plink_keypad_dev_act_state(const plink_keypad_t *k, uint32_t ticket,
+                                             plink_dev_answer_t *out);
+/* The caller stopped waiting: from now on its device shows the action's overlay - pending while
+ * it is sent, failed for a refusal, failed and unsure once given up - until a later record for
+ * that device or the next action on it. */
+void plink_keypad_dev_act_release(plink_keypad_t *k, uint32_t ticket);
+
+/* ---- settings (LINK-050..052) ---- */
+/* The keypad's settings now: its panel id (6 lowercase hex characters; anything else the master
+ * keeps as none), its voice (plink_voice_t), the fields it accepts (bit id - 1) and their values,
+ * a fields body (proto_prefs_encode, count first; at most PLINK_PREFS_OWN_MAX). Sent as PREFS in a
+ * session with PLINK_CAP_PREFS: at its first STATUS, after a change at most once a second, and on
+ * PREFS_REQ; every HEARTBEAT carries its prefs_crc. false: fields isn't a fields body. */
+bool plink_keypad_prefs_report(plink_keypad_t *k, uint64_t now_ms, const char *panel_id,
+                               uint8_t voice, uint32_t accepts, const uint8_t *fields, size_t len);
+/* A settings change from the master to apply (false: none waiting): each PREFS_SET req is given
+ * once. A repeat of it is ignored until it is answered, then answered again from that answer for
+ * 30 s, so a change is never applied twice; another req waits while one is being applied (the
+ * master's resend brings it back). */
+bool plink_keypad_take_prefs_set(plink_keypad_t *k, plink_prefs_change_t *out);
+/* The answer to change req: the fields refused, refused_count x (id u8, why u8:
+ * plink_prefs_why_t; at most PLINK_PREFS_REFUSED_MAX are sent), and the values now stored (a
+ * fields body, as for plink_keypad_prefs_report; NULL keeps the report's). Sent as PREFS at once
+ * and kept 30 s for its repeats. false: a bad argument (fields that aren't a body were not taken;
+ * the answer still went). */
+bool plink_keypad_prefs_answer(plink_keypad_t *k, uint64_t now_ms, uint32_t req,
+                               const uint8_t *refused, uint8_t refused_count, const uint8_t *fields,
+                               size_t len);
 
 /* Forget the master (a person made it a stand-alone panel, or paired again): the record erased,
  * the session wiped. */

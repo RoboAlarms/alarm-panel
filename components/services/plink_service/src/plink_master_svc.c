@@ -995,9 +995,9 @@ esp_err_t msvc_prepare(uint64_t now)
         .store = port_store,
         .run = port_run,
         .reachable = port_reachable,
-        /* No check-ins: the manager reports every heartbeat, also from a keypad its supervision
-         * holds down for a stale status, and the engine's check-in would clear that trouble. The
-         * reachable edges carry LINK-007 alone. */
+        /* No check-ins: the reachable edges carry LINK-007 alone. A check-in would only repeat
+         * reachable(true) (it clears the same trouble), once per heartbeat, and the engine call
+         * can wait for the alarm task's queue, which the link task never does (LINK-027). */
         .checkin = NULL,
         .devices_taken = port_devices_taken,
         .held_changed = port_held_changed,

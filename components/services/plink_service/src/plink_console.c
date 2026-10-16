@@ -258,8 +258,15 @@ static int list_keypads(void)
                             : k->down      ? "NOT RESPONDING"
                             : k->connected ? "connected"
                                            : "not heard";
+        /* a keypad nobody named is "Keypad N", as the screen calls it */
+        char name[sizeof k->name];
+        if (k->name[0] != '\0') {
+            snprintf(name, sizeof name, "%s", k->name);
+        } else {
+            snprintf(name, sizeof name, "Keypad %u", (unsigned)k->device);
+        }
         printf("  %u  %4u  %9us  %-15s  %-15s  %-8s  %s\n", (unsigned)k->device, (unsigned)k->home,
-               (unsigned)k->supervision_s, state, k->addr, k->fw, k->name);
+               (unsigned)k->supervision_s, state, k->addr, k->fw, name);
     }
     return 0;
 }

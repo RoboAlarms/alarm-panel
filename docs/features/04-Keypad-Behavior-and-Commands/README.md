@@ -3,8 +3,9 @@
 **Status:** Implemented v1 - The key parser (`alarm_keyseq`, host-tested, used by the console's
 `keys`), the touch keypad with the panic hold and the keypad messages run on a panel and in the PC
 preview, with the lockout countdown and a test of Home's words (`ui_words_test`); the flows'
-acceptance on a panel is BL-024. Left: remote keypads (M7, BL-048), a classic two-line view
-(BL-073).
+acceptance on a panel is BL-024. Remote keypads over Wi-Fi run with the panel link
+(docs/features/11, tried on two panels 2026-10-16). Left: GOTO on a remote keypad (KPD-006,
+BL-048), a classic two-line view (BL-073).
 · **Milestone:** M1 (parser), M3 (UI), M7 (remote keypads) · **Depends on:** 01, 07, 08, 11
 
 ## Goal
@@ -135,7 +136,8 @@ Front Door", "Alarm occurred", "Carbon monoxide".
       test_golden_wording, test_every_event_type_has_words)
 - [x] Host tests for Home's words and ui_text.c (ui_words_test) (BL-066, 5153415)
 - [ ] Classic two-line keypad view, optional, driven by `alarm_keyseq` like the console (BL-073)
-- Remote keypads (KPD-006, KPD-007) come with the panel link: docs/features/11 (LINK-008),
-  BL-048.
+- Remote keypads: KPD-007 ("No system communication", Panic still sent) and KPD-008 (each
+  keypad's own lockout) are built with the panel link (docs/features/11 LINK-008, LINK-023);
+  KPD-006 (GOTO) is docs/features/01's box (BL-048).
 - Trying the arming flows and the panic hold on a panel is part of BL-024 (the touchscreen on a
   panel), whose boxes are in docs/features/07 Tasks.

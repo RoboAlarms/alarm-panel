@@ -1,11 +1,12 @@
 # 11 · Panel link: master and remote keypads
 
-**Status:** In progress (BL-048): the design below is for Wi-Fi first (ADR-054), reviewed from
-four sides (security, protocol, fit with the code, safety) before building; the portable protocol,
-the master's and the keypad's services, the keypad role and the PC simulator are being built. Built
-before this work: the master's own UI through `ui_backend_t` and the engine's device supervision
-(CORE-TRBL-008). Screens: approved 2026-10-15 and built (`ui_link.c`, the setup's role and
-pairing steps), walked in the PC preview over a demo backend. Left after Wi-Fi: ESP-NOW through our C6 build, 433 MHz, the firmware relay (M8) · **Milestone:** M7 (the
+**Status:** Implemented v1 over Wi-Fi (BL-048): the portable protocol (`panel_link`), the master's
+and the keypad's service (`plink_service`), the keypad role on the P4 panels, the screens (approved
+2026-10-15) and the PC simulator (`host/link_sim`, `link_smoke` in CI), reviewed three times; on
+the two development panels (2026-10-16) pairing, commands, lockout, supervision, a master restart,
+removal and pairing again, and a PC keypad with a panel worked, a change shown on the keypad in
+about 0.3 s. Left: the bench cases below that need a person or a network change, ESP-NOW through
+our C6 build, 433 MHz, keypad inputs, GOTO, the firmware relay (M8) · **Milestone:** M7 (the
 firmware relay M8) · **Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
@@ -468,31 +469,46 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   CMD it sends, though its commands and requests stay within LINK-027's limits.
 
 ## Tasks
-- [ ] `panel_link` core: crypto helpers with known-answer tests, the v1 frame codec and replay
-  window, message codecs, pairing (LINK-003, -004, -005, -016, -017) (M7) (BL-048)
-- [ ] `panel_link` core: handshake and sessions, master and keypad managers, stored records with
+- [x] `panel_link` core: crypto helpers with known-answer tests, the v1 frame codec and replay
+  window, message codecs, pairing (LINK-003, -004, -005, -016, -017) (BL-048, e59c7f6, 9384622,
+  f6d7ee0, 3ae2b70)
+- [x] `panel_link` core: handshake and sessions, master and keypad managers, stored records with
   frozen fixtures, the keypad configuration copy and lenient decode, the keypad's snapshot rebuild
-  (LINK-001, -006, -007, -008, -014, -015, -018, -019, -023, -026, -027) (M7) (BL-048)
-- [ ] LAN UDP transport and the PC virtual keypad and virtual master (`host/link_sim`, the PC
-  simulator of docs/features/21), `link_smoke` in CI (LINK-013) (M7) (BL-048)
+  (LINK-001, -006, -007, -008, -014, -015, -018, -019, -023, -026, -027) (BL-048, e05415a,
+  1aeeba6, 2205fbc, 1c5f6fa, aaaec6d)
+- [x] LAN UDP transport and the PC virtual keypad and virtual master (`host/link_sim`, the PC
+  simulator of docs/features/21), `link_smoke` in CI (LINK-013) (BL-048, 317253d, 7c9e3d6)
 - [x] Loopback on the master: the touch UI reaches the alarm task through `ui_backend_t` (M3)
   (`components/services/ui_port_esp/src/ui_port_esp.c` `command` calls `alarm_service_command`)
-- [ ] `plink_service` on the master: UDP, mDNS (LINK-021), the listener, the worker, supervision
+- [x] `plink_service` on the master: UDP, mDNS (LINK-021), the listener, the worker, supervision
   through `alarm_service_device_reachable` (LINK-007), the device numbers shared with Zigbee
   (`zigbee_service_devices_held`, `zigbee_service_set_link_devices`; LINK-001), Wi-Fi power-save
-  holds, the `plink` console (M7) (BL-048)
-- [ ] Keypad role on a P4: `panel_app` without the engine and the master's services, the keypad
+  holds, the `plink` console (BL-048, 3c0f63c, c7e4396, adac98d, 32894bf)
+- [x] Keypad role on a P4: `panel_app` without the engine and the master's services, the keypad
   backend for `ui_backend_t` rendering the master's status and sending its commands (LINK-002,
-  LINK-020), sounds from the master, the update gate and `PANEL_OTA_OK_LINK`; the 4" board's side
-  is docs/features/19 CYD-015 (M7) (BL-048)
+  LINK-020), sounds from the master, the update gate and `PANEL_OTA_OK_LINK` (BL-048, c7e4396,
+  2bea2f7, dbf172f, 32894bf); the 4" board's side is docs/features/19 CYD-015
 - [x] Pairing screens and the keypads' section in installer mode, the setup's role step, the
   keypad's Connecting, "No system communication", removed and no-code maintenance states, the role
   gate in Settings and About (LINK-004, -008, -014, -025; UI-011, UI-012): `ui_link.c`,
   `ui_wizard.c`, walked in the preview over `host/ui_preview/host_link_demo.c`; the mockup's
   `screens/panel-link.js` (BL-048, 18cc635)
-- [ ] On the two development panels: pairing, commands, supervision, master restart, removal,
-  latency and the other HIL cases above (LINK-004, -006, -007, -008, -014, -021, -024, -025) (M7)
-  (BL-048)
+- [x] On the two development panels, the 7" master and the 10.1" keypad (2026-10-16): pairing by
+  the setup's path and by the keypad role, found by mDNS, the same code on both; arm, disarm and a
+  wrong code from the keypad (about 150 ms with the code's hashing), its own lockout after 5 wrong
+  codes with the master's keypad unaffected; a change on the master shown on the keypad in about
+  0.3 s; supervision raised 60 s after the keypad went silent and cleared when it was back; a
+  master restart (status again within 15 s, never "No system communication"); removal (the keypad
+  told) and pairing again; a PC virtual keypad paired with the 7" from another subnet; hours of
+  soak with an arm and disarm every 30 min (LINK-004, -006, -007, -008, -013, -014, -021, -024)
+  (BL-048, cf6ad2b)
+- [ ] On the panels, what needs a person or a network change: the screens on the glass (pairing,
+  Connecting, "No system communication", the kept fire tone's Silence, removed, maintenance), one
+  direction dropped, both addresses changed across a router restart, mDNS blocked (the broadcast
+  fallback), the access point's password changed and the keypad recovered from its own screen,
+  the master factory-reset and the keypad paired again, an update refused during an entry delay,
+  the PC virtual master with a panel keypad (needs the PC's firewall to let UDP 6056 in)
+  (LINK-008, -021, -025) (M7) (BL-048)
 - [ ] ESP-NOW transport: through our C6 bridge on the P4 (docs/features/12 CP-003), native on the
   ESP32; the channel follows the master's access point (LINK-010) (M7) (BL-048)
 - [x] The engine's device supervision trouble for a silent keypad (LINK-007's engine side,

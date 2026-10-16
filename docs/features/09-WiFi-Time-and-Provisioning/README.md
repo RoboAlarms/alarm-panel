@@ -2,8 +2,8 @@
 
 **Status:** Implemented v1 - Wi-Fi through the C6, time from the internet with a time zone, the
 first-time setup and Settings > Wi-Fi with a fixed address and the connection check; verified on
-a panel (joined 2026-09-19, the check's seven steps 2026-09-20). Left: the
-setup's role step and the keypads' mDNS with M7 (BL-048) · **Milestone:** M2, M4, M5 · **Depends on:** 06, 12, 14
+a panel (joined 2026-09-19, the check's seven steps 2026-09-20); the setup's role step and the
+keypads' mDNS with the panel link (BL-048, tried on two panels 2026-10-16) · **Milestone:** M2, M4, M5 · **Depends on:** 06, 12, 14
 
 **Code:** `components/services/platform_esp/src/net_wifi.c`, `net_check.c`;
 `components/ui/alarm_ui/src/ui_net.c`, `ui_wizard.c`
@@ -172,9 +172,9 @@ says what the clock says and what set it last and, with a module, opens "Set the
 - [x] SNTP + TZ + clock trouble (M2)
 - [x] Configurable NTP server (M4)
 - [x] Setup wizard screens (M4)
-- [ ] The setup's role step (Master / Keypad, then pairing for a keypad), with the keypad role in
-  M7 (NET-001) (BL-048): the screens are built and walked in the preview (`ui_wizard.c`, the
-  link's demo backend); left: the firmware's role and pairing behind `ui_backend_t.link_*`
+- [x] The setup's role step (Master / Keypad, then pairing for a keypad) (NET-001): the screens
+  (`ui_wizard.c`) and the firmware behind `ui_backend_t.link_*` (a panel in its setup pairs as
+  a keypad, keeps its Wi-Fi and restarts as one) (BL-048, 18cc635, c7e4396, 32894bf)
 - [x] Network settings screen: scan, password, hidden networks, forget (M4)
 - [x] Fixed address, network mask, router and name servers behind the cog (NET-011)
 - [x] "Check the connection", step by step, with what went wrong (NET-012)
@@ -186,7 +186,8 @@ says what the clock says and what set it last and, with a module, opens "Set the
   `roboalarms-<panel ID>`, `_roboalarms._tcp` (M12, docs/features/23) and `_roboalarms-dev._tcp`
   (docs/features/30); the names differ from NET-006's, see the notes under the table
   (`ha_link.c` `mdns_apply()`, `dev_remote.c` `maintenance()`)
-- [ ] mDNS: announce `_roboalarms-link._udp` for LAN keypads, with the panel link (M7) (BL-048)
+- [x] mDNS: `_roboalarms-link._udp` on UDP 6056 while the master has a keypad or pairing is open,
+  found by keypads (`plink_service`; LINK-021) (BL-048, c7e4396)
 - [x] NET-006 follows the names as built, the hostname announced while a service is, the LAN
       keypads' service `_roboalarms-link._udp` (decided 2026-09-28; the row updated)
 - [x] Joining Wi-Fi and SNTP on the real panel (2026-09-19)

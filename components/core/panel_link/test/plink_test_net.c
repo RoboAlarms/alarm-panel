@@ -75,6 +75,7 @@ static void note(plink_net_t *net, int from, int to, const uint8_t *frame, size_
         s->type = len > 3u ? frame[3] : 0u;
         s->len = len;
         s->lost = lost;
+        s->corrupted = false;
         s->at_ms = net->now_ms;
     }
 }
@@ -130,6 +131,7 @@ bool plink_net_send(plink_net_t *net, int from, const plink_addr_t *to, const ui
     memcpy(r->b, frame, len);
     const int to_node = is_broadcast(to) ? -2 : node_at(net, to);
     const bool lost = lose(net, from, to_node, frame, len);
+    const size_t logged = net->log_count;
     note(net, from, to_node, frame, len, lost);
     if (lost) {
         return true;
@@ -138,6 +140,9 @@ bool plink_net_send(plink_net_t *net, int from, const plink_addr_t *to, const ui
     memcpy(buf, frame, len);
     if (chance(net, net->corrupt_pm) && len > 0u) {
         buf[rnd(net) % len] ^= (uint8_t)(1u + rnd(net) % 255u);
+        if (net->log_count > logged) {
+            net->log[logged].corrupted = true;
+        }
     }
     const uint64_t jitter = net->jitter_ms != 0u ? rnd(net) % (net->jitter_ms + 1u) : 0u;
     enqueue(net, from, to, buf, len, net->now_ms + net->delay_ms + jitter);

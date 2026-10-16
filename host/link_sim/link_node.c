@@ -866,7 +866,7 @@ static void k_resolve(void *ctx)
 {
     link_keypad_t *v = ctx;
     if (v->have_find) {
-        plink_keypad_master_addr(&v->k, v->now, &v->find);
+        plink_keypad_master_addr(&v->k, v->now, &v->find, plink_addr_is_broadcast(&v->find));
     }
 }
 
@@ -913,7 +913,7 @@ void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t
                       PLINK_KIND_PC, &cap, name != NULL ? name : "PC keypad", LINK_FW, now_ms);
     plink_wipe(&rec, sizeof(rec));
     if (master != NULL) {
-        plink_keypad_master_addr(&v->k, now_ms, master);
+        plink_keypad_master_addr(&v->k, now_ms, master, plink_addr_is_broadcast(master));
     }
 }
 
@@ -922,16 +922,17 @@ void link_keypad_master(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *m
     v->now = now_ms;
     v->have_find = true;
     v->find = *master;
-    plink_keypad_master_addr(&v->k, now_ms, master);
+    plink_keypad_master_addr(&v->k, now_ms, master, plink_addr_is_broadcast(master));
 }
 
-/* An address, or the broadcast address when there is no mDNS on the PC: the keypad's pairing
- * then asks every panel on the subnet and pairs with the first master that answers (LINK-021;
- * a second one answering ends the attempt, as two masters open for pairing must). */
+/* An address, or the broadcast address when there is no mDNS on the PC (255.255.255.255, the one
+ * broadcast the PC uses): the keypad's pairing then asks every panel on the subnet and pairs with
+ * the first master that answers (LINK-021; a second one answering ends the attempt, as two
+ * masters open for pairing must). */
 void link_keypad_pair(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *master)
 {
     v->now = now_ms;
-    plink_keypad_pair_start(&v->k, now_ms, master, 0u);
+    plink_keypad_pair_start(&v->k, now_ms, master, plink_addr_is_broadcast(master), 0u);
 }
 
 void link_keypad_input(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *from,

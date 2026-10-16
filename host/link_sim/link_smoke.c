@@ -369,7 +369,7 @@ int main(int argc, char **argv)
         return fail("pairing did not open");
     }
     link_master_sync(&M, NOW);
-    plink_keypad_pair_start(&K.k, NOW, &maddr, 0u);
+    plink_keypad_pair_start(&K.k, NOW, &maddr, false, 0u);
     if (!run_until(both_compare, 30000u)) {
         return fail("the two sides never showed a code to compare");
     }

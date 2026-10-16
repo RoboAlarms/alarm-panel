@@ -313,8 +313,9 @@ bool plink_addr_equal(const plink_addr_t *a, const plink_addr_t *b)
 
 bool plink_addr_is_broadcast(const plink_addr_t *a)
 {
-    /* 255.255.255.255, or a subnet's directed broadcast as a /24 has it (x.y.z.255). */
-    return a != NULL && a->tp == PLINK_TP_UDP && a->len == 6u && a->a[3] == 255u;
+    /* Only 255.255.255.255: a subnet's broadcast is named by its caller (plink_frame.h). */
+    return a != NULL && a->tp == PLINK_TP_UDP && a->len == 6u && a->a[0] == 255u &&
+           a->a[1] == 255u && a->a[2] == 255u && a->a[3] == 255u;
 }
 
 /* Appends v in decimal at out[at]; returns the new end. */

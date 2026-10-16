@@ -159,9 +159,10 @@ typedef struct {
 /* An IPv4 UDP address (ip in network byte order as four bytes, port in host order). */
 plink_addr_t plink_addr_udp(const uint8_t ip[4], uint16_t port);
 bool plink_addr_equal(const plink_addr_t *a, const plink_addr_t *b);
-/* A UDP address that reaches every panel on the subnet: 255.255.255.255, or one whose IPv4 ends
- * in .255 (a /24's directed broadcast). A keypad that asks by broadcast pairs with the master
- * that answers (LINK-021, plink_pk_start). */
+/* The limited broadcast, 255.255.255.255 (UDP): always a broadcast. A subnet's directed
+ * broadcast (ip | ~netmask) can't be told from a unicast address by its bytes (x.y.z.127 on a /25,
+ * x.y.z.255 a host on a /23), so whoever builds one says so: the broadcast argument of
+ * plink_keypad_master_addr and plink_pk_start (LINK-021). */
 bool plink_addr_is_broadcast(const plink_addr_t *a);
 /* "192.0.2.10:6056" (UDP) or "aa:bb:cc:dd:ee:ff" (ESP-NOW), "-" for none; out holds 24 bytes. */
 void plink_addr_text(const plink_addr_t *a, char out[24]);

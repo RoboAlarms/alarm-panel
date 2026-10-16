@@ -777,7 +777,7 @@ static unsigned m_sent_to(int to, uint8_t type)
 static void pair_start(fk_t *k)
 {
     TEST_ASSERT_TRUE(plink_master_pair_open(&R.m, NOW));
-    plink_pk_start(&k->pk, NOW, maddr(), plink_master_net_id(&R.m), &KOUT);
+    plink_pk_start(&k->pk, NOW, maddr(), false, plink_master_net_id(&R.m), &KOUT);
     k_send_out(k);
     TEST_ASSERT_TRUE(plink_net_run_until(&R.net, 5000, c_compare, k));
 }

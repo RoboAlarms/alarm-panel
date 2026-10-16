@@ -259,8 +259,10 @@ window, which closes when it ends; a new attempt id from the window's keypad end
 under way (INTERRUPTED); a port failure answers BUSY (master) or fails locally (keypad), not
 counted. Each step's payload is kept whole, up to a frame's (1183 bytes), so a newer firmware's
 longer one is taken (LINK-017); only a protocol version of 0 is refused (VERSION), and a key of
-small order (MISMATCH), both before anything is disclosed. A keypad that asks by broadcast (an
-address ending in .255) asks so in every attempt; a `PAIR_FAIL` that comes before any
+small order (MISMATCH), both before anything is disclosed. A keypad that asks by broadcast asks
+so in every attempt; the service says when it does (its subnet's broadcast, ip | ~netmask, looks
+like any address: x.y.z.127 on a /25, while x.y.z.255 can be a host on a /23), and only
+255.255.255.255 is a broadcast by its bytes; a `PAIR_FAIL` that comes before any
 `PAIR_COMMIT` doesn't end the attempt (another master may still answer) but names the reason if
 it times out; the `PAIR_FAIL` of two masters answering goes by broadcast, with net id 0, so both
 end their attempt.
@@ -282,7 +284,9 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
   (a zero sid becomes 1). The WELCOME header carries sid 0.
 - `WELCOME`: e_m, n_m, `mac2 = HMAC(K_fin, frame up to mac2)[0..15]`. The keypad accepts it only
   while it waits for the answer to its latest HELLO, and only from where that HELLO went (unless
-  it went by broadcast); mac2 needs an X25519 first, so it works out at most 8 WELCOMEs per HELLO
+  it went by broadcast, as the service said when it gave the address: the subnet's broadcast is
+  named, never guessed from its bytes); mac2 needs an X25519 first, so it works out at most 8
+  WELCOMEs per HELLO
   (the next HELLO opens the count again). It wipes e_k and n_k, and makes the new session
   tentative: it sends a HEARTBEAT at once and every 500 ms until a sealed frame of the new session
   arrives, and still accepts the old session's frames meanwhile.

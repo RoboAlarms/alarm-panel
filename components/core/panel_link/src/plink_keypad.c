@@ -211,6 +211,7 @@ static void hs_send(plink_keypad_t *k, uint64_t now)
     k->hs_due_ms = now + wait;
     if (plink_hs_hello(k->c, k->rec.k_pair, k->rec.net_id, k->rec.device, &k->cap, &k->hs)) {
         k->hs_to = *to;
+        k->hs_bcast = to == &k->disc ? k->disc_bcast : plink_addr_is_broadcast(to);
         k->hs_checks = 0u;
         send_to(k, to, k->hs.hello, k->hs.hello_len);
     }
@@ -996,6 +997,7 @@ static bool drop_master(plink_keypad_t *k, uint64_t now, uint8_t why)
     k->paired = false;
     k->unpaired_why = why;
     k->have_master = k->have_disc = false;
+    k->disc_bcast = false;
     memset(&k->master, 0, sizeof k->master);
     memset(&k->disc, 0, sizeof k->disc);
     set_state(k, now, PLINK_LINK_NOT_PAIRED);
@@ -1019,6 +1021,7 @@ static void pair_take(plink_keypad_t *k, uint64_t now)
     k->unpaired_why = PLINK_UNPAIRED_NEVER;
     k->master = k->disc = at;
     k->have_master = k->have_disc = true;
+    k->disc_bcast = false; /* the master that answered, never a broadcast */
     (void)store_now(k, now, STORE_WRITE);
     k->state = PLINK_LINK_CONNECTING;
     k->state_since_ms = now;
@@ -1033,11 +1036,12 @@ static void on_welcome(plink_keypad_t *k, uint64_t now, const plink_addr_t *from
 {
     /* Only the answer to the latest HELLO. Its mac2 can be checked only after an X25519, so a
      * device on the LAN could keep this task busy with WELCOMEs: they are taken only from where
-     * the HELLO went (unless that was a broadcast), and only so many per HELLO (the master's
-     * answer comes within a round trip; the next HELLO opens the count again). */
+     * the HELLO went (unless that was a broadcast: then the master answers from its own
+     * address), and only so many per HELLO (the master's answer comes within a round trip; the
+     * next HELLO opens the count again). */
     plink_hello_t w;
     if (!k->paired || !k->hs.waiting || h->net_id != k->rec.net_id ||
-        (!plink_addr_is_broadcast(&k->hs_to) && !plink_addr_equal(from, &k->hs_to)) ||
+        (!k->hs_bcast && !plink_addr_equal(from, &k->hs_to)) ||
         k->hs_checks >= PLINK_WELCOME_CHECKS ||
         !plink_dec_hello(&frame[PLINK_HDR_LEN], len - PLINK_HDR_LEN, false, &w) ||
         w.proto == 0u) {
@@ -1193,13 +1197,17 @@ void plink_keypad_init(plink_keypad_t *k, const plink_crypto_t *c, const plink_k
     }
 }
 
-void plink_keypad_master_addr(plink_keypad_t *k, uint64_t now_ms, const plink_addr_t *addr)
+void plink_keypad_master_addr(plink_keypad_t *k, uint64_t now_ms, const plink_addr_t *addr,
+                              bool broadcast)
 {
     if (k == NULL || addr == NULL) {
         return;
     }
-    const bool changed = !k->have_disc || !plink_addr_equal(&k->disc, addr);
+    const bool bcast = broadcast || plink_addr_is_broadcast(addr);
+    const bool changed =
+        !k->have_disc || !plink_addr_equal(&k->disc, addr) || k->disc_bcast != bcast;
     k->disc = *addr;
+    k->disc_bcast = bcast;
     k->have_disc = true;
     if (!k->have_master) {
         k->master = *addr;
@@ -1342,13 +1350,13 @@ void plink_keypad_set_power(plink_keypad_t *k, uint8_t flags, int8_t rssi)
 /* ---- pairing ------------------------------------------------------------------------------ */
 
 void plink_keypad_pair_start(plink_keypad_t *k, uint64_t now_ms, const plink_addr_t *master,
-                             uint16_t net_id)
+                             bool broadcast, uint16_t net_id)
 {
     if (k == NULL || master == NULL) {
         return;
     }
     k->pairing = true;
-    plink_pk_start(&k->pair, now_ms, master, net_id, &k->out);
+    plink_pk_start(&k->pair, now_ms, master, broadcast, net_id, &k->out);
     send_out(k);
 }
 

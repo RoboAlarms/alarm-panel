@@ -638,7 +638,8 @@ void tearDown(void)
     TEST_ASSERT_FALSE_MESSAGE(M.tp.reused, "the master used a key and nonce twice");
 }
 
-static void kp_init(bool paired)
+/* A keypad, paired or not; a paired one is told the master is at `at` (a broadcast when bcast). */
+static void kp_init_at(bool paired, const plink_addr_t *at, bool bcast)
 {
     memset(&REC, 0, sizeof REC);
     REC.net_id = NET_ID;
@@ -652,8 +653,13 @@ static void kp_init(bool paired)
     plink_keypad_init(&K, &CK, &port, paired ? &REC : NULL, KBUF, sizeof KBUF, &KCFG,
                       PLINK_KIND_PANEL, &CAP, "Hall keypad", "1.2.3", NET.now_ms);
     if (paired) {
-        plink_keypad_master_addr(&K, NET.now_ms, plink_net_addr(&NET, MN));
+        plink_keypad_master_addr(&K, NET.now_ms, at, bcast);
     }
+}
+
+static void kp_init(bool paired)
+{
+    kp_init_at(paired, plink_net_addr(&NET, MN), false);
 }
 
 static plink_keypad_info_t info(void)
@@ -776,7 +782,7 @@ static void pair_once(void)
 {
     plink_pm_open(&M.pm, NET.now_ms);
     M.pairing = true;
-    plink_keypad_pair_start(&K, NET.now_ms, plink_net_addr(&NET, MN), NET_ID);
+    plink_keypad_pair_start(&K, NET.now_ms, plink_net_addr(&NET, MN), false, NET_ID);
     TEST_ASSERT_TRUE(plink_net_run_until(&NET, 3000, both_compare, NULL));
     plink_pair_info_t a, b;
     plink_keypad_pair_info(&K, NET.now_ms, &a);
@@ -2044,7 +2050,7 @@ static void test_master_moves(void)
     TEST_ASSERT_TRUE(RESOLVES >= 1u);
     TEST_ASSERT_EQUAL_UINT(1u, M.promotions);
     TEST_ASSERT_TRUE(master_is(&old_addr));
-    plink_keypad_master_addr(&K, NET.now_ms, &NET.node[MN].addr); /* discovery found it */
+    plink_keypad_master_addr(&K, NET.now_ms, &NET.node[MN].addr, false); /* discovery found it */
     TEST_ASSERT_TRUE(plink_net_run_until(&NET, 10, hello_sent_to, &NET.node[MN].addr));
     plink_net_run(&NET, 1000);
     TEST_ASSERT_EQUAL_UINT(2u, M.promotions);
@@ -2150,6 +2156,71 @@ static void test_welcome_only_from_its_hello_and_counted(void)
     TEST_ASSERT_TRUE(plink_net_run_until(&NET, 5000, online, NULL));
 }
 
+/* LINK-021, LINK-015: on a /25 whose mDNS is blocked the keypad says HELLO to its subnet's
+ * broadcast, x.y.z.127, which the service names as one (its bytes don't say so): the master's
+ * WELCOME comes from the master's own address and is taken, the master's address is learnt from
+ * it, and the link comes up. */
+static void test_hello_by_subnet_broadcast(void)
+{
+    static const uint8_t ip_b[4] = {192u, 0u, 2u, 127u};
+    memcpy(NET.subnet_bcast, ip_b, sizeof ip_b);
+    const plink_addr_t b = plink_addr_udp(ip_b, (uint16_t)PLINK_UDP_PORT);
+    kp_init_at(true, &b, true);
+    TEST_ASSERT_TRUE_MESSAGE(plink_net_run_until(&NET, 5000, online, NULL), "not online");
+    TEST_ASSERT_TRUE(hello_sent_to((void *)&b));
+    TEST_ASSERT_EQUAL_UINT(1u, M.hellos);
+    TEST_ASSERT_TRUE(master_is(plink_net_addr(&NET, MN)));
+}
+
+/* LINK-021: the same subnet broadcast named as a unicast address (the bug this guards against,
+ * the other way round): a WELCOME from anywhere but where the HELLO went is not worked out. */
+static void test_hello_to_unnamed_broadcast_takes_no_other_welcome(void)
+{
+    static const uint8_t ip_b[4] = {192u, 0u, 2u, 127u};
+    memcpy(NET.subnet_bcast, ip_b, sizeof ip_b);
+    const plink_addr_t b = plink_addr_udp(ip_b, (uint16_t)PLINK_UDP_PORT);
+    NET.lose_type = PLINK_T_WELCOME; /* the master's answers are kept from the keypad */
+    kp_init_at(true, &b, false);
+    plink_net_run(&NET, 5);
+    TEST_ASSERT_EQUAL_UINT(1u, M.hellos); /* the master heard it and answered */
+    TEST_ASSERT_TRUE(K.hs.waiting);
+    static uint8_t w[PLINK_FRAME_MAX];
+    size_t wl = 0;
+    TEST_ASSERT_TRUE(plink_net_last(&NET, MN, PLINK_T_WELCOME, w, sizeof w, &wl));
+    const uint32_t calls = TPK.hc.calls;
+    plink_keypad_input(&K, NET.now_ms, plink_net_addr(&NET, MN), w, wl);
+    TEST_ASSERT_EQUAL_UINT32(calls, TPK.hc.calls); /* not worked out */
+    TEST_ASSERT_TRUE(K.hs.waiting);
+    TEST_ASSERT_FALSE(K.live.valid);
+}
+
+/* LINK-021, LINK-015: a master whose own (unicast) address ends in .255 - a host on a /23 - is
+ * no broadcast: its WELCOME is worked out only from that address, as any master's. */
+static void test_master_ending_255_keeps_welcome_check(void)
+{
+    static const uint8_t ip_255[4] = {198u, 51u, 100u, 255u};
+    NET.node[MN].addr = plink_addr_udp(ip_255, (uint16_t)PLINK_UDP_PORT);
+    NET.lose_type = PLINK_T_WELCOME; /* the master's answers are kept from the keypad */
+    kp_init_at(true, &NET.node[MN].addr, false);
+    plink_net_run(&NET, 5);
+    TEST_ASSERT_TRUE(K.hs.waiting);
+    TEST_ASSERT_FALSE(K.hs_bcast);
+    static uint8_t w[PLINK_FRAME_MAX];
+    size_t wl = 0;
+    TEST_ASSERT_TRUE(plink_net_last(&NET, MN, PLINK_T_WELCOME, w, sizeof w, &wl));
+    const plink_addr_t other = plink_addr_udp(IP_X, PLINK_UDP_PORT);
+    const uint32_t calls = TPK.hc.calls;
+    plink_keypad_input(&K, NET.now_ms, &other, w, wl);
+    TEST_ASSERT_EQUAL_UINT32(calls, TPK.hc.calls); /* not even worked out */
+    TEST_ASSERT_TRUE(K.hs.waiting);
+    plink_keypad_input(&K, NET.now_ms, &NET.node[MN].addr, w, wl); /* worked out, and taken */
+    TEST_ASSERT_TRUE(TPK.hc.calls > calls);
+    TEST_ASSERT_TRUE(K.live.valid);
+    NET.lose_type = 0u;
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 5000, online, NULL));
+    TEST_ASSERT_TRUE(master_is(&NET.node[MN].addr));
+}
+
 /* ---- addresses, heartbeats and the rest --------------------------------------------------- */
 
 /* LINK-021: the master's address moves only on an authenticated frame - not on a forged or
@@ -2171,13 +2242,13 @@ static void test_addresses_and_heartbeat(void)
     f[PLINK_HDR_LEN + 3u] ^= 0x10u; /* forged: the tag fails */
     plink_keypad_input(&K, NET.now_ms, &x, f, fl);
     TEST_ASSERT_TRUE(master_is(m));
-    plink_keypad_master_addr(&K, NET.now_ms, &x); /* discovery, while the session is up */
+    plink_keypad_master_addr(&K, NET.now_ms, &x, false); /* discovery, while the session is up */
     TEST_ASSERT_TRUE(master_is(m));
     TEST_ASSERT_TRUE(plink_addr_equal(&x, &K.disc));
     fl = fm_seal(PLINK_T_STATUS, p, pl, f);
     plink_keypad_input(&K, NET.now_ms, &x, f, fl); /* genuine, from a new address */
     TEST_ASSERT_TRUE(master_is(&x));
-    plink_keypad_master_addr(&K, NET.now_ms, m);
+    plink_keypad_master_addr(&K, NET.now_ms, m, false);
     fl = fm_seal(PLINK_T_STATUS, p, pl, f);
     deliver(f, fl);
     TEST_ASSERT_TRUE(master_is(m));
@@ -2323,6 +2394,9 @@ int main(void)
     RUN_TEST(test_rekey_at_seq_2_30);
     RUN_TEST(test_handshake_after_15_s_without_status);
     RUN_TEST(test_welcome_only_from_its_hello_and_counted);
+    RUN_TEST(test_hello_by_subnet_broadcast);
+    RUN_TEST(test_hello_to_unnamed_broadcast_takes_no_other_welcome);
+    RUN_TEST(test_master_ending_255_keeps_welcome_check);
     RUN_TEST(test_addresses_and_heartbeat);
     RUN_TEST(test_sounds_time_and_home);
     RUN_TEST(test_forget);

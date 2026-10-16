@@ -728,7 +728,7 @@ static void k_tick(void *ctx, uint64_t now)
     if (k->resolve_due) {
         /* mDNS answered: the master is where it was */
         k->resolve_due = false;
-        plink_keypad_master_addr(&k->k, t, maddr());
+        plink_keypad_master_addr(&k->k, t, maddr(), false);
     }
     plink_keypad_tick(&k->k, t);
     observe(k);
@@ -815,7 +815,7 @@ static void kp_boot(kp_t *k)
     k->cd_have = false;
     R.net.node[k->node].down = false;
     if (k->have_rec) {
-        plink_keypad_master_addr(&k->k, know(k), maddr());
+        plink_keypad_master_addr(&k->k, know(k), maddr(), false);
     }
 }
 
@@ -1058,7 +1058,7 @@ static bool c_compare(void *ctx)
 static void pair_kp(kp_t *k)
 {
     TEST_ASSERT_TRUE(plink_master_pair_open(&R.m, mnow()));
-    plink_keypad_pair_start(&k->k, know(k), maddr(), plink_master_net_id(&R.m));
+    plink_keypad_pair_start(&k->k, know(k), maddr(), false, plink_master_net_id(&R.m));
     TEST_ASSERT_TRUE(run_until(15000u, c_compare, k));
     plink_pair_info_t a, b;
     plink_keypad_pair_info(&k->k, know(k), &a);
@@ -1335,7 +1335,7 @@ static void test_pairing_from_scratch_reaches_online(void)
     TEST_ASSERT_EQUAL_UINT8(PLINK_PS_OPEN, mi.state);
     TEST_ASSERT_EQUAL_UINT32(PLINK_PAIR_WINDOW_MS / 1000u, mi.left_s);
     TEST_ASSERT_EQUAL_STRING("", mi.code);
-    plink_keypad_pair_start(&a->k, know(a), maddr(), plink_master_net_id(&R.m));
+    plink_keypad_pair_start(&a->k, know(a), maddr(), false, plink_master_net_id(&R.m));
     plink_keypad_pair_info(&a->k, know(a), &ki);
     TEST_ASSERT_EQUAL_UINT8(PLINK_PS_OPEN, ki.state); /* its request sent */
     TEST_ASSERT_TRUE(run_until(15000u, c_compare, a));

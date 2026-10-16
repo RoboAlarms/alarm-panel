@@ -60,10 +60,16 @@ static int node_at(const plink_net_t *net, const plink_addr_t *a)
     return -1;
 }
 
-static bool is_broadcast(const plink_addr_t *a)
+static bool is_broadcast(const plink_net_t *net, const plink_addr_t *a)
 {
-    return a->tp == PLINK_TP_UDP && a->len >= 4u && a->a[0] == 255u && a->a[1] == 255u &&
-           a->a[2] == 255u && a->a[3] == 255u;
+    static const uint8_t none[4] = {0u, 0u, 0u, 0u};
+    if (a->tp != PLINK_TP_UDP || a->len < 4u) {
+        return false;
+    }
+    const bool all = a->a[0] == 255u && a->a[1] == 255u && a->a[2] == 255u && a->a[3] == 255u;
+    const bool subnet = memcmp(net->subnet_bcast, none, 4u) != 0 &&
+                        memcmp(net->subnet_bcast, a->a, 4u) == 0;
+    return all || subnet;
 }
 
 static void note(plink_net_t *net, int from, int to, const uint8_t *frame, size_t len, bool lost)
@@ -129,7 +135,7 @@ bool plink_net_send(plink_net_t *net, int from, const plink_addr_t *to, const ui
     r->to = *to;
     r->len = len;
     memcpy(r->b, frame, len);
-    const int to_node = is_broadcast(to) ? -2 : node_at(net, to);
+    const int to_node = is_broadcast(net, to) ? -2 : node_at(net, to);
     const bool lost = lose(net, from, to_node, frame, len);
     const size_t logged = net->log_count;
     note(net, from, to_node, frame, len, lost);
@@ -166,7 +172,7 @@ static void deliver(plink_net_t *net, const plink_net_dgram_t *d)
         if (i == d->from || n->down) {
             continue;
         }
-        if (is_broadcast(&d->to) || plink_addr_equal(&n->addr, &d->to)) {
+        if (is_broadcast(net, &d->to) || plink_addr_equal(&n->addr, &d->to)) {
             n->input(n->ctx, net->now_ms, &d->from_addr, d->b, d->len);
         }
     }

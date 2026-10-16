@@ -98,6 +98,7 @@ static struct {
     uint8_t misses;
     bool gave_addr;
     plink_addr_t given;
+    bool given_bcast; /* given is the subnet broadcast */
     /* pairing a person asked for */
     uint8_t pair_phase; /* pair_phase_t */
     uint8_t pair_fail;  /* UI_LINK_FAIL_* while PAIR_FAILED */
@@ -322,14 +323,18 @@ static plink_addr_t addr_of(const found_t *f)
     return plink_addr_udp(ip, f->port);
 }
 
-static void give_master(uint64_t now, const plink_addr_t *addr)
+/* broadcast: addr is this panel's subnet broadcast (link_subnet_broadcast), which the core can't
+ * tell from a unicast address by its bytes (LINK-021). */
+static void give_master(uint64_t now, const plink_addr_t *addr, bool broadcast)
 {
-    if (!K.gave_addr || !plink_addr_equal(&K.given, addr)) {
+    if (!K.gave_addr || !plink_addr_equal(&K.given, addr) || K.given_bcast != broadcast) {
         char text[24];
         link_addr_ip(addr, text);
-        ESP_LOGI(TAG, "looking for the alarm panel at %s", text);
-        plink_keypad_master_addr(K.k, now, addr); /* it moves only on a sealed frame from there */
+        ESP_LOGI(TAG, "looking for the alarm panel at %s%s", text, broadcast ? " (broadcast)" : "");
+        /* it moves only on a sealed frame from there */
+        plink_keypad_master_addr(K.k, now, addr, broadcast);
         K.given = *addr;
+        K.given_bcast = broadcast;
         K.gave_addr = true;
     }
 }
@@ -348,7 +353,7 @@ static void pair_begin(uint64_t now, uint32_t ip)
     K.pair_fail = UI_LINK_FAIL_NONE;
     if (ip != 0u) {
         const plink_addr_t addr = link_addr_of(ip);
-        plink_keypad_pair_start(K.k, now, &addr, 0u);
+        plink_keypad_pair_start(K.k, now, &addr, false, 0u);
         K.pair_phase = PAIR_ASKED;
     } else {
         K.pair_phase = PAIR_LOOKING;
@@ -378,7 +383,7 @@ static void found_for_pairing(uint64_t now, const found_t *f, size_t n)
         pair_fail(UI_LINK_FAIL_TWO_MASTERS); /* "More than one alarm panel is open for pairing" */
     } else if (open != NULL) {
         const plink_addr_t addr = addr_of(open);
-        plink_keypad_pair_start(K.k, now, &addr, open->net);
+        plink_keypad_pair_start(K.k, now, &addr, false, open->net);
         K.pair_phase = PAIR_ASKED;
     }
 }
@@ -391,14 +396,14 @@ static void found_master(uint64_t now, const found_t *f, size_t n)
         if (f[i].net == K.net_id && same_panel) {
             K.misses = 0;
             const plink_addr_t addr = addr_of(&f[i]);
-            give_master(now, &addr);
+            give_master(now, &addr, false);
             return;
         }
     }
     if (++K.misses >= 2u) {
         plink_addr_t b; /* mDNS blocked or lost: the subnet broadcast (LINK-021) */
         link_subnet_broadcast(&b);
-        give_master(now, &b);
+        give_master(now, &b, true);
     }
 }
 
@@ -421,7 +426,7 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
         if (PAIR_BROADCAST && K.search == NULL && now - K.pair_started >= PAIR_LOOK_MS) {
             plink_addr_t b; /* nothing on mDNS: ask by broadcast (an open master answers) */
             link_subnet_broadcast(&b);
-            plink_keypad_pair_start(K.k, now, &b, 0u);
+            plink_keypad_pair_start(K.k, now, &b, true, 0u);
             K.pair_phase = PAIR_ASKED;
         } else if (K.search == NULL && now >= K.next_search_at && link_wifi_up()) {
             K.next_search_at = now + PAIR_LOOK_EVERY_MS;
@@ -451,7 +456,7 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
     }
     if (K.static_ip != 0u) {
         const plink_addr_t addr = link_addr_of(K.static_ip);
-        give_master(now, &addr);
+        give_master(now, &addr, false);
         return;
     }
     /* Until a first address is found, every 10 s; after that when the manager asks (resolve) */

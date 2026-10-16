@@ -1045,7 +1045,7 @@ void plink_pk_init(plink_pair_k_t *pk, const plink_crypto_t *c, uint8_t kind,
 }
 
 void plink_pk_start(plink_pair_k_t *pk, uint64_t now_ms, const plink_addr_t *master,
-                    uint16_t net_id, plink_out_t *out)
+                    bool broadcast, uint16_t net_id, plink_out_t *out)
 {
     if (out == NULL) {
         return;
@@ -1058,7 +1058,7 @@ void plink_pk_start(plink_pair_k_t *pk, uint64_t now_ms, const plink_addr_t *mas
      * it at the master. */
     pk->master = *master;
     pk->asked = *master;
-    pk->by_broadcast = plink_addr_is_broadcast(master);
+    pk->by_broadcast = broadcast || plink_addr_is_broadcast(master);
     pk->found = false;
     pk->heard_fail = PLINK_FAIL_NONE;
     pk->net_hint = net_id;

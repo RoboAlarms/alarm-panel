@@ -14,8 +14,9 @@
  * start-up, after 15 s without an authenticated STATUS (counted from the last WELCOME too: a new
  * session brings a STATUS at once), on a REKEY for the live sid (at most every 5 s), at seq 2^30,
  * every 24 h; failures back off 1, 2, 4 ... 30 s with jitter (2 s at most while a panic waits).
- * A WELCOME is worked out only from where its HELLO went (unless that was a broadcast), at most
- * PLINK_WELCOME_CHECKS per HELLO. Not paired, the no-code maintenance pages are open (LINK-025).
+ * A WELCOME is worked out only from where its HELLO went (unless that was a broadcast, as
+ * plink_keypad_master_addr was told), at most PLINK_WELCOME_CHECKS per HELLO. Not paired, the
+ * no-code maintenance pages are open (LINK-025).
  */
 #ifndef PLINK_KEYPAD_H
 #define PLINK_KEYPAD_H
@@ -130,11 +131,13 @@ typedef struct {
     plink_addr_t master;         /* where sealed frames go: moved only by authenticated ones */
     bool have_disc;
     plink_addr_t disc;           /* where discovery last found the master: HELLOs go there */
+    bool disc_bcast;             /* disc is a broadcast (said by the caller, or 255.255.255.255) */
     plink_session_t live;
     bool tentative;              /* the live session waits for its first frame from the master */
     plink_session_t old;         /* still accepted while tentative */
     plink_hs_k_t hs;
     plink_addr_t hs_to;          /* where the latest HELLO went: its WELCOME comes from there */
+    bool hs_bcast;               /* hs_to was a broadcast: the WELCOME comes from any address */
     uint8_t hs_checks;           /* WELCOMEs worked out for it (PLINK_WELCOME_CHECKS at most) */
     uint64_t hs_due_ms, hs_backoff_ms, last_rekey_ms, session_started_ms;
     uint64_t status_heard_ms;    /* the last authenticated STATUS or WELCOME (+15 s: handshake) */
@@ -204,9 +207,13 @@ void plink_keypad_init(plink_keypad_t *k, const plink_crypto_t *c, const plink_k
                        alarm_config_t *cfg, uint8_t kind, const plink_caps_t *cap,
                        const char *name, const char *fw, uint64_t now_ms);
 
-/* Where the master is now (discovery: mDNS, a broadcast answer, or set by hand). A paired keypad
- * sends its HELLO there; its address moves only on an authenticated WELCOME or sealed frame. */
-void plink_keypad_master_addr(plink_keypad_t *k, uint64_t now_ms, const plink_addr_t *addr);
+/* Where the master is now (discovery: mDNS, set by hand, or the subnet's broadcast when mDNS
+ * finds nothing). A paired keypad sends its HELLO there; its address moves only on an
+ * authenticated WELCOME or sealed frame. broadcast: addr is the subnet's broadcast (ip | ~netmask,
+ * which its bytes don't tell; 255.255.255.255 always is one), so the WELCOME may come from any
+ * address (LINK-021). */
+void plink_keypad_master_addr(plink_keypad_t *k, uint64_t now_ms, const plink_addr_t *addr,
+                              bool broadcast);
 void plink_keypad_input(plink_keypad_t *k, uint64_t now_ms, const plink_addr_t *from,
                         const uint8_t *frame, size_t len);
 void plink_keypad_tick(plink_keypad_t *k, uint64_t now_ms);
@@ -217,8 +224,10 @@ void plink_keypad_addr_changed(plink_keypad_t *k, uint64_t now_ms);
 void plink_keypad_set_power(plink_keypad_t *k, uint8_t flags, int8_t rssi);
 
 /* ---- pairing (a person on the keypad) ---- */
+/* master and broadcast as plink_pk_start's: asked by broadcast, the first master to answer is
+ * the attempt's. */
 void plink_keypad_pair_start(plink_keypad_t *k, uint64_t now_ms, const plink_addr_t *master,
-                             uint16_t net_id);
+                             bool broadcast, uint16_t net_id);
 void plink_keypad_pair_retry(plink_keypad_t *k, uint64_t now_ms);
 void plink_keypad_pair_confirm(plink_keypad_t *k, uint64_t now_ms, bool match);
 void plink_keypad_pair_cancel(plink_keypad_t *k, uint64_t now_ms);

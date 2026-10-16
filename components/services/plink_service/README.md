@@ -23,7 +23,10 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   before its pairing is answered (docs/features/11 "Open questions" names the window left).
 - **On a keypad** (`panel_app` starts no engine: `alarm_service_set_dormant()`) the link task
   finds the master (mDNS, the subnet broadcast, or an address set at the console; again whenever
-  the manager's handshake goes unanswered, `port.resolve`), keeps the
+  the manager's handshake goes unanswered, `port.resolve`; the subnet broadcast, ip | ~netmask,
+  is named as one to `plink_keypad_master_addr` and `plink_keypad_pair_start`, since its bytes
+  don't say so on a subnet other than a /24), and pairs by that broadcast when mDNS finds no master
+  open for pairing within 10 s (`PAIR_BROADCAST`; the first master's answer is taken), keeps the
   copies the touch UI reads, sends its commands (answered within 3 s, refused at once while the
   link is down, panic excepted), plays the master's sounds, follows its clock and time zone (no
   time server of its own while paired), answers the update gate, and tells the Emergency words the
@@ -89,10 +92,6 @@ a burst from eight keypads isn't dropped.
 - One alarm listener (the tenth, `alarm_service.c` `ALARM_LISTENERS_USED`).
 
 ## Follow-ups
-- Pairing by subnet broadcast when mDNS finds no master open for pairing (`PAIR_BROADCAST` in
-  `plink_keypad_svc.c`, off): it waits for the keypad's pairing in `panel_link` to take the
-  master's answer from its own address; today a PAIR_COMMIT from another address than the request
-  went to ends the attempt. Handshakes by broadcast work (a WELCOME is taken from any address).
 - Developer access on a keypad (`dev_remote`: network flashing, diagnostics): a keypad starts neither
   it nor the Panel Manager today (`panel_app` leaves `cfg->started` out).
 - `net_wifi_hold_low_latency` has no unit test: `platform_esp` has no host build.

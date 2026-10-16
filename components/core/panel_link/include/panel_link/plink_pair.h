@@ -19,8 +19,9 @@
  *   - within one window every attempt comes from one address: another address ends the window
  *     (PLINK_FAIL_OVERLAP);
  *   - a keypad's attempt has one master: the address it asked, or - asked by broadcast
- *     (plink_addr_is_broadcast; LINK-021) - the source of the attempt's first PAIR_COMMIT, fixed
- *     before n_k goes. A PAIR_COMMIT from any other address ends the attempt (OVERLAP);
+ *     (plink_pk_start's broadcast, or 255.255.255.255; LINK-021) - the source of the attempt's
+ *     first PAIR_COMMIT, fixed before n_k goes. A PAIR_COMMIT from any other address ends the
+ *     attempt (OVERLAP);
  *   - PAIR_FAIL is honoured only for the current attempt and from its peer's address.
  *
  * Each step's payload is kept as it came, up to a whole frame's (PLINK_PAIR_PAYLOAD_MAX): a newer
@@ -218,13 +219,13 @@ typedef struct {
 void plink_pk_init(plink_pair_k_t *pk, const plink_crypto_t *c, uint8_t kind,
                    const plink_caps_t *cap, const char *name, const char *fw);
 /* A person started pairing with the master at that address (from discovery: its TXT net is
- * net_id, 0 when not known): a new pairing of up to 3 attempts; sends PAIR_REQ. A broadcast
- * address (mDNS found nothing, LINK-021) asks every panel on the subnet: each attempt is asked
- * by broadcast, and its first PAIR_COMMIT makes its source the attempt's master; a PAIR_FAIL that
- * comes before any PAIR_COMMIT ends nothing (another master may still answer) but names the
- * reason when the attempt times out. */
+ * net_id, 0 when not known): a new pairing of up to 3 attempts; sends PAIR_REQ. broadcast (the
+ * subnet's broadcast when mDNS found nothing, LINK-021; 255.255.255.255 always is one) asks every
+ * panel on the subnet: each attempt is asked by broadcast, and its first PAIR_COMMIT makes its
+ * source the attempt's master; a PAIR_FAIL that comes before any PAIR_COMMIT ends nothing
+ * (another master may still answer) but names the reason when the attempt times out. */
 void plink_pk_start(plink_pair_k_t *pk, uint64_t now_ms, const plink_addr_t *master,
-                    uint16_t net_id, plink_out_t *out);
+                    bool broadcast, uint16_t net_id, plink_out_t *out);
 /* Try again after a failure (counts against the 3 when the last one disclosed n_k). */
 void plink_pk_retry(plink_pair_k_t *pk, uint64_t now_ms, plink_out_t *out);
 void plink_pk_input(plink_pair_k_t *pk, uint64_t now_ms, const plink_addr_t *from,

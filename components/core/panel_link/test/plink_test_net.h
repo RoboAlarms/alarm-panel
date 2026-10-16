@@ -85,6 +85,7 @@ typedef struct {
     int lose_next_from;      /* ... only those from this node (-1 any) */
     uint8_t lose_type;       /* datagrams of this message type are lost (0 none) */
     uint32_t lose_type_count;/* ... this many times (0 = always while lose_type is set) */
+    uint8_t subnet_bcast[4]; /* a subnet's broadcast, e.g. x.y.z.127 on a /25 (0: none) */
 } plink_net_t;
 
 void plink_net_init(plink_net_t *net, uint64_t seed);
@@ -92,8 +93,8 @@ void plink_net_init(plink_net_t *net, uint64_t seed);
 int plink_net_node(plink_net_t *net, const uint8_t ip[4], void *ctx, plink_net_input_fn input,
                    plink_net_tick_fn tick, plink_net_next_fn next);
 const plink_addr_t *plink_net_addr(const plink_net_t *net, int node);
-/* A node's port.send: queues the datagram (faults applied). A destination of 255.255.255.255
- * reaches every other node. Always true (UDP doesn't know). */
+/* A node's port.send: queues the datagram (faults applied). A destination of 255.255.255.255,
+ * or subnet_bcast when set, reaches every other node. Always true (UDP doesn't know). */
 bool plink_net_send(plink_net_t *net, int from, const plink_addr_t *to, const uint8_t *frame,
                     size_t len);
 /* Runs ms of fake time: delivers due datagrams in time order and ticks every node at its next

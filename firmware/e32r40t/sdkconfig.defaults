@@ -142,6 +142,8 @@ CONFIG_ALARM_I18N_BUILTIN=y
 # CONFIG_ALARM_FEATURE_RTC is not set
 # CONFIG_ALARM_HOME_CONTROL is not set
 # CONFIG_ALARM_FEATURE_AUTOMATIONS is not set
+# The panel link's keypad copies live in PSRAM; this board's keypad role is docs/features/19 CYD-015.
+# CONFIG_ALARM_LINK is not set
 CONFIG_ALARM_ZSRC_RF=y
 # CONFIG_ALARM_ZSRC_ZIGBEE is not set
 # Z-Wave (docs/features/36) keeps its network in PSRAM, which this board doesn't have.

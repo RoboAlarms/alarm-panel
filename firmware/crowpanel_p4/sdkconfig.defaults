@@ -213,6 +213,9 @@ CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
 CONFIG_LOG_TIMESTAMP_SOURCE_SYSTEM=y
 
 CONFIG_LWIP_MAX_SOCKETS=24
+# The panel link's one UDP socket (docs/features/11 "Transports"): room for a burst from 8 keypads
+# (the default queues 6 datagrams and drops the rest).
+CONFIG_LWIP_UDP_RECVMBOX_SIZE=32
 CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
 # The remote keypad's live screen and its presses and keys travel over one WebSocket
 # (docs/features/31): the session is checked before the upgrade (pre-handshake).
@@ -253,6 +256,8 @@ CONFIG_ALARM_FEATURE_PHOTO_SAVER=y
 CONFIG_ALARM_FEATURE_RTC=y
 CONFIG_ALARM_HOME_CONTROL=y
 CONFIG_ALARM_FEATURE_AUTOMATIONS=y
+# The panel link (docs/features/11): a master with keypad panels, or a keypad for a master.
+CONFIG_ALARM_LINK=y
 CONFIG_ALARM_ZSRC_RF=y
 # The Zigbee sensor radio (docs/features/20, ADR-047): in every P4 image. The ESP32-H2 in the
 # wireless socket runs firmware/radios/h2_rcp; the P4 runs Espressif's Zigbee stack as coordinator

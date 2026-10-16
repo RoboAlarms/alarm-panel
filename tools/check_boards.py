@@ -45,6 +45,7 @@ MANIFEST = [
     "ALARM_FEATURE_RTC",
     "ALARM_HOME_CONTROL",
     "ALARM_FEATURE_AUTOMATIONS",
+    "ALARM_LINK",
     "ALARM_ZSRC_RF",
     "ALARM_ZSRC_ZIGBEE",
     "ALARM_ZSRC_ZWAVE",
@@ -56,7 +57,8 @@ MANIFEST = [
 # Features whose memory only fits beside PSRAM (components/services/alarm_features/Kconfig;
 # Z-Wave's network: components/services/zwave_service/Kconfig).
 NEEDS_PSRAM = ["ALARM_FEATURE_HA", "ALARM_PANEL_WEB", "ALARM_DEV_REMOTE",
-               "ALARM_FEATURE_PHOTO_SAVER", "ALARM_HOME_CONTROL", "ALARM_ZSRC_ZWAVE"]
+               "ALARM_FEATURE_PHOTO_SAVER", "ALARM_HOME_CONTROL", "ALARM_ZSRC_ZWAVE",
+               "ALARM_LINK"]
 # Options that only exist inside another one (Kconfig "if"): stated on, they need it on.
 NEEDS = [("ALARM_HOME_CONTROL", "ALARM_FEATURE_HA"),
          ("ALARM_FEATURE_AUTOMATIONS", "ALARM_HOME_CONTROL"),

@@ -29,6 +29,7 @@ FULL = {
     "ALARM_FEATURE_RTC": "n",
     "ALARM_HOME_CONTROL": "n",
     "ALARM_FEATURE_AUTOMATIONS": "n",
+    "ALARM_LINK": "n",
     "ALARM_ZSRC_RF": "y",
     "ALARM_ZSRC_ZIGBEE": "n",
     "ALARM_ZSRC_ZWAVE": "n",
@@ -124,6 +125,15 @@ class Manifests(unittest.TestCase):
         self.assertIn("tiny: CONFIG_ALARM_PANEL_WEB needs PSRAM, which this board's manifest "
                       "doesn't turn on", problems)
         self.t.board("big", dict(FULL, ALARM_FEATURE_HA="y", ALARM_PANEL_WEB="y", SPIRAM="y"))
+        self.assertEqual(self.t.problems("big"), [])
+
+    def test_the_panel_link_needs_psram(self):
+        # docs/features/11: the keypads' configuration copies live in PSRAM.
+        self.t.board("tiny", dict(FULL, ALARM_LINK="y"))
+        self.assertEqual(self.t.problems("tiny"),
+                         ["tiny: CONFIG_ALARM_LINK needs PSRAM, which this board's manifest "
+                          "doesn't turn on"])
+        self.t.board("big", dict(FULL, ALARM_LINK="y", SPIRAM="y"))
         self.assertEqual(self.t.problems("big"), [])
 
     def test_devices_need_the_home_assistant_link(self):

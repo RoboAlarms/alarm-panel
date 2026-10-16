@@ -4,8 +4,8 @@
 four sides (security, protocol, fit with the code, safety) before building; the portable protocol,
 the master's and the keypad's services, the keypad role and the PC simulator are being built. Built
 before this work: the master's own UI through `ui_backend_t` and the engine's device supervision
-(CORE-TRBL-008). Screens: proposal `BL-048-panel-link.js`, approved
-2026-10-15. Left after Wi-Fi: ESP-NOW through our C6 build, 433 MHz, the firmware relay (M8) · **Milestone:** M7 (the
+(CORE-TRBL-008). Screens: approved 2026-10-15 and built (`ui_link.c`, the setup's role and
+pairing steps), walked in the PC preview over a demo backend. Left after Wi-Fi: ESP-NOW through our C6 build, 433 MHz, the firmware relay (M8) · **Milestone:** M7 (the
 firmware relay M8) · **Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
@@ -404,11 +404,11 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   backend for `ui_backend_t` rendering the master's status and sending its commands (LINK-002,
   LINK-020), sounds from the master, the update gate and `PANEL_OTA_OK_LINK`; the 4" board's side
   is docs/features/19 CYD-015 (M7) (BL-048)
-- [ ] Pairing screens and the keypads' section in installer mode, the setup's role step, the
+- [x] Pairing screens and the keypads' section in installer mode, the setup's role step, the
   keypad's Connecting, "No system communication", removed and no-code maintenance states, the role
-  gate in Settings and About (LINK-004, -008, -014, -025; UI-011, UI-012): proposal
-  `docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-048-panel-link.js` approved first (M7)
-  (BL-048)
+  gate in Settings and About (LINK-004, -008, -014, -025; UI-011, UI-012): `ui_link.c`,
+  `ui_wizard.c`, walked in the preview over `host/ui_preview/host_link_demo.c`; the mockup's
+  `screens/panel-link.js` (BL-048, 18cc635)
 - [ ] On the two development panels: pairing, commands, supervision, master restart, removal,
   latency and the other HIL cases above (LINK-004, -006, -007, -008, -014, -021, -024, -025) (M7)
   (BL-048)

@@ -23,8 +23,10 @@ components the same way, through `cmake/alarm_host.cmake`.
   socket; `link_udp.c` is the only file with the OS's network headers (Winsock or POSIX),
   `link_os_crypto.c` the crypto port (zwave_host's PC AES and X25519, the OS's random numbers),
   `link_sim.c` the console and `link_smoke.c` the CI test. No mDNS on the PC: a keypad is given
-  `--master`, or asks by broadcast to 255.255.255.255:6056. A tool built on the seeded test port
-  (`link_smoke`) talks only to 127.0.0.0/8.
+  `--master`, or asks by broadcast to 255.255.255.255:6056 - for pairing, the first master to
+  answer is paired with (the pairing starts again addressed to it; a second master that answers
+  stops it), and a paired keypad says HELLO there and follows the master's authenticated
+  answer. A tool built on the seeded test port (`link_smoke`) talks only to 127.0.0.0/8.
 - LVGL comes from the firmware's managed copy or a clone of the pinned tag
   (`cmake/alarm_lvgl.cmake`); the UI library from `cmake/alarm_ui.cmake`, which reads the
   same source list as the firmware (`components/ui/alarm_ui/sources.cmake`).

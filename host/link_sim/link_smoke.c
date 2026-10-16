@@ -12,7 +12,9 @@
  * master's supervision trouble after the supervision time and clears it when it is back
  * (LINK-007); the master restarted from its stored record has the keypad ONLINE again within
  * 15 s (docs/features/11 "Test and acceptance"); a removed keypad is told and is NOT_PAIRED with
- * its record erased (LINK-014); no AES-CCM key and nonce was used twice on either side (LINK-003).
+ * its record erased (LINK-014); it pairs again asking by broadcast, as link_sim does without
+ * mDNS (here the test's LAN hands a broadcast to the master's socket); no AES-CCM key and nonce
+ * was used twice on either side (LINK-003).
  *
  * The crypto port is the seeded test port (deterministic), so the sockets are loopback only
  * (link_udp.h). Exit 0: passed; 1: failed (the message says where); 77: no UDP socket here
@@ -50,6 +52,7 @@ static bool VERBOSE;
 static unsigned LOST;
 static const char *STAGE = "start";
 static const uint8_t LO[4] = {127, 0, 0, 1};
+static const uint8_t BCAST[4] = {255, 255, 255, 255};
 
 static int fail(const char *fmt, ...) LINK_PRINTF(1, 2);
 
@@ -65,16 +68,8 @@ static void say_k(void *ctx, const char *line)
     printf("%8.3f  K  %s\n", (double)(NOW - 1000000u) / 1000.0, line);
 }
 
-static bool to_side(const plink_addr_t *to, const side_t *s)
-{
-    if (to->tp != PLINK_TP_UDP || to->len < 6u || !s->udp.open) {
-        return false;
-    }
-    const uint16_t port = (uint16_t)(((unsigned)to->a[4] << 8) | (unsigned)to->a[5]);
-    return memcmp(to->a, s->udp.ip, 4) == 0 && port == s->udp.port;
-}
-
-/* port.send of either side: the datagram goes out on that side's socket for real. */
+/* port.send of either side: the datagram goes out on that side's socket for real. The test's
+ * LAN is the two sockets: a broadcast (to the other side's port) reaches the other side. */
 static bool side_send(void *ctx, const plink_addr_t *to, const uint8_t *frame, size_t len)
 {
     side_t *s = ctx;
@@ -83,10 +78,15 @@ static bool side_send(void *ctx, const plink_addr_t *to, const uint8_t *frame, s
     }
     side_t *peer = s == &SM ? &SK : &SM;
     const uint16_t port = (uint16_t)(((unsigned)to->a[4] << 8) | (unsigned)to->a[5]);
-    if (!link_udp_send(&s->udp, to->a, port, frame, len)) {
+    uint8_t ip[4];
+    memcpy(ip, to->a, 4);
+    if (memcmp(ip, BCAST, 4) == 0 && peer->udp.open) {
+        memcpy(ip, peer->udp.ip, 4);
+    }
+    if (!link_udp_send(&s->udp, ip, port, frame, len)) {
         return false;
     }
-    if (to_side(to, peer)) {
+    if (peer->udp.open && memcmp(ip, peer->udp.ip, 4) == 0 && port == peer->udp.port) {
         peer->inflight++;
     }
     return true;
@@ -518,6 +518,7 @@ int main(int argc, char **argv)
 
     /* LINK-014: removed at the master, the keypad is told and forgets the master. */
     STAGE = "remove";
+    const uint8_t first_device = DEVICE;
     if (!plink_master_remove(&M.m, NOW, DEVICE)) {
         return fail("plink_master_remove refused keypad %u", (unsigned)DEVICE);
     }
@@ -545,6 +546,38 @@ int main(int argc, char **argv)
         return fail("a removed keypad left its trouble behind");
     }
 
+    /* Paired again, asking by broadcast: the first master to answer is paired with. */
+    STAGE = "pairing by broadcast";
+    if (!plink_master_pair_open(&M.m, NOW)) {
+        return fail("pairing did not open again");
+    }
+    link_master_sync(&M, NOW);
+    const plink_addr_t bcast = plink_addr_udp(BCAST, SM.udp.port);
+    const uint64_t asked = NOW;
+    link_keypad_pair(&K, NOW, &bcast);
+    if (!run_until(both_compare, 30000u)) {
+        return fail("asked by broadcast, the two sides never showed a code to compare");
+    }
+    plink_master_pair_info(&M.m, NOW, &pm);
+    plink_keypad_pair_info(&K.k, NOW, &pk);
+    if (strlen(pm.code) != 6u || strcmp(pm.code, pk.code) != 0 ||
+        !plink_addr_equal(&pk.peer, &maddr)) {
+        return fail("asked by broadcast: codes \"%s\" and \"%s\"", pm.code, pk.code);
+    }
+    plink_keypad_pair_confirm(&K.k, NOW, true);
+    plink_master_pair_decide(&M.m, NOW, true);
+    link_master_sync(&M, NOW);
+    if (!run_until(keypad_online, 30000u)) {
+        return fail("paired by broadcast, the keypad never came ONLINE (it is %s)",
+                    link_state_text(kinfo().state));
+    }
+    DEVICE = kinfo().device;
+    if (!run_until(keypad_online_both_ways, 5000u)) {
+        return fail("paired by broadcast, the master doesn't see keypad %u online",
+                    (unsigned)DEVICE);
+    }
+    const uint64_t broadcast_ms = NOW - asked;
+
     STAGE = "nonces";
     if (SM.tp.reused || SK.tp.reused) {
         return fail("an AES-CCM key and nonce were used twice (%s)",
@@ -553,10 +586,11 @@ int main(int argc, char **argv)
 
     printf("link_smoke: OK - paired (code %s) and ONLINE in %.1f s; arm away, disarm and a wrong "
            "code from keypad %u; supervision trouble %.1f s after it stopped, cleared %.1f s after "
-           "it was back; ONLINE %.1f s after the master restarted; removed. %.0f s of link time "
-           "in %u ms%s\n",
-           code, (double)online_ms / 1000.0, (unsigned)DEVICE, (double)trouble_ms / 1000.0,
-           (double)back_ms / 1000.0, (double)restart_ms / 1000.0,
+           "it was back; ONLINE %.1f s after the master restarted; removed; paired again by "
+           "broadcast and ONLINE in %.1f s. %.0f s of link time in %u ms%s\n",
+           code, (double)online_ms / 1000.0, (unsigned)first_device,
+           (double)trouble_ms / 1000.0, (double)back_ms / 1000.0, (double)restart_ms / 1000.0,
+           (double)broadcast_ms / 1000.0,
            (double)(NOW - 1000000u) / 1000.0, (unsigned)(link_os_mono_ms() - real0),
            LOST != 0u ? " (some loopback datagrams were lost)" : "");
     link_udp_close(&SM.udp);

@@ -339,15 +339,9 @@ static void m_reachable(void *ctx, uint8_t device, bool reachable)
         v->down = reachable ? (v->down & ~bit) : (v->down | bit);
     }
     alarm_engine_device_reachable(&v->eng, device, reachable, v->now);
-    say(&v->io, reachable ? "keypad %u: heard again, its trouble cleared"
+    say(&v->io, reachable ? "keypad %u: its supervision trouble is clear"
                           : "keypad %u: not responding, supervision trouble raised",
         (unsigned)device);
-}
-
-static void m_checkin(void *ctx, uint8_t device)
-{
-    link_master_t *v = ctx;
-    alarm_engine_device_checkin(&v->eng, device, v->now);
 }
 
 static uint32_t m_taken(void *ctx)
@@ -631,7 +625,10 @@ bool link_master_init(link_master_t *v, const plink_crypto_t *c, const link_io_t
     port.store = m_store;
     port.run = m_run;
     port.reachable = m_reachable;
-    port.checkin = m_checkin;
+    /* port.checkin stays NULL: the engine's check-in clears a device trouble at once, but the
+     * link clears a keypad's only when both directions are fresh again (LINK-007), through
+     * port.reachable. A link keypad isn't in the engine's device table, so the engine has no
+     * timer of its own for it to feed. */
     port.devices_taken = m_taken;
     port.held_changed = m_held;
     port.lockout_left = m_lockout;
@@ -857,6 +854,22 @@ static bool k_store(void *ctx, const plink_keypad_rec_t *rec)
     return ok;
 }
 
+/* port.resolve: before a handshake retry, look for the master again. On the PC that is where
+ * it was said to be (--master), or the broadcast address. */
+static void k_resolve(void *ctx)
+{
+    link_keypad_t *v = ctx;
+    if (v->have_find) {
+        plink_keypad_master_addr(&v->k, v->now, &v->find);
+    }
+}
+
+static bool is_broadcast(const plink_addr_t *a)
+{
+    return a->tp == PLINK_TP_UDP && a->len >= 4u && a->a[0] == 255u && a->a[1] == 255u &&
+           a->a[2] == 255u && a->a[3] == 255u;
+}
+
 void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t *io,
                       link_store_t *store, const char *name, const plink_addr_t *master,
                       uint64_t now_ms)
@@ -865,12 +878,18 @@ void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t
     v->c = c;
     v->io = *io;
     v->store = store;
+    v->now = now_ms;
+    if (master != NULL) {
+        v->have_find = true;
+        v->find = *master;
+    }
     memset(v->said_part_state, 0xFF, sizeof(v->said_part_state)); /* nothing said yet */
     plink_keypad_port_t port;
     memset(&port, 0, sizeof(port));
     port.ctx = v;
     port.send = k_send;
     port.store = k_store;
+    port.resolve = k_resolve;
 
     plink_keypad_rec_t rec;
     memset(&rec, 0, sizeof(rec));
@@ -900,17 +919,76 @@ void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t
 
 void link_keypad_master(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *master)
 {
+    v->now = now_ms;
+    v->have_find = true;
+    v->find = *master;
     plink_keypad_master_addr(&v->k, now_ms, master);
+}
+
+void link_keypad_pair(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *master)
+{
+    v->now = now_ms;
+    v->pair_asked = is_broadcast(master);
+    v->pair_found = false;
+    plink_keypad_pair_start(&v->k, now_ms, master, 0u);
+}
+
+/* Pairing asked by broadcast (no mDNS on the PC). The keypad's pairing takes PAIR_COMMIT only
+ * from the address it asked - a master that answers from elsewhere ends the attempt as a second
+ * master - so the first master to answer is where the pairing starts again, addressed to it.
+ * Asking ends at the masters that answered (PAIR_FAIL by broadcast), and a second master that
+ * answers stops it all, as two masters open for pairing must (docs/features/11 "Pairing" 2).
+ * true: the frame was taken here. */
+static bool pair_discovery(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *from,
+                           const uint8_t *frame, size_t len)
+{
+    plink_hdr_t h;
+    if ((!v->pair_asked && !v->pair_found) || !plink_hdr_read(frame, len, &h) ||
+        h.type != PLINK_T_PAIR_COMMIT) {
+        return false;
+    }
+    plink_pair_info_t pi;
+    plink_keypad_pair_info(&v->k, now_ms, &pi);
+    if (pi.state == PLINK_PS_IDLE || pi.state == PLINK_PS_DONE || pi.state == PLINK_PS_FAILED) {
+        v->pair_asked = v->pair_found = false;
+        return false;
+    }
+    char addr[24];
+    plink_addr_text(from, addr);
+    if (v->pair_asked) {
+        v->pair_asked = false;
+        v->pair_found = true;
+        v->found = *from;
+        say(&v->io, "a master answered from %s: pairing with it", addr);
+        plink_keypad_pair_cancel(&v->k, now_ms);
+        plink_keypad_pair_start(&v->k, now_ms, from, h.net_id);
+        return true;
+    }
+    if (!plink_addr_equal(from, &v->found)) {
+        v->pair_found = false;
+        say(&v->io,
+            "a second master answered from %s: more than one alarm panel is open for pairing - "
+            "pairing stopped (give the address: pair IP)",
+            addr);
+        plink_keypad_pair_cancel(&v->k, now_ms);
+        return true;
+    }
+    return false;
 }
 
 void link_keypad_input(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *from,
                        const uint8_t *frame, size_t len)
 {
+    v->now = now_ms;
+    if (pair_discovery(v, now_ms, from, frame, len)) {
+        return;
+    }
     plink_keypad_input(&v->k, now_ms, from, frame, len);
 }
 
 void link_keypad_tick(link_keypad_t *v, uint64_t now_ms)
 {
+    v->now = now_ms;
     if (plink_keypad_next(&v->k) <= now_ms) {
         plink_keypad_tick(&v->k, now_ms);
     }

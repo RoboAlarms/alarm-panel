@@ -357,7 +357,7 @@ static bool keypad_line(char *line)
             say_line(NULL, "no address given: asking by broadcast to 255.255.255.255:6056");
         }
         const plink_addr_t addr = plink_addr_udp(ip, port);
-        plink_keypad_pair_start(&K.k, now, &addr, 0u);
+        link_keypad_pair(&K, now, &addr);
     } else if (strcmp(t[0], "yes") == 0 || strcmp(t[0], "no") == 0) {
         plink_keypad_pair_confirm(&K.k, now, strcmp(t[0], "yes") == 0);
     } else if (strcmp(t[0], "cancel") == 0) {

@@ -159,15 +159,24 @@ typedef struct {
     uint8_t said_part_state[ALARM_MAX_PARTITIONS];
     uint8_t said_part_level[ALARM_MAX_PARTITIONS];
     link_pending_t pending[PLINK_CMDS_MAX];
+    uint64_t now;
+    bool have_find;     /* where to look for the master (port.resolve) */
+    plink_addr_t find;
+    bool pair_asked;    /* pairing asked by broadcast: no master has answered yet */
+    bool pair_found;    /* ... and then one answered from found */
+    plink_addr_t found;
 } link_keypad_t;
 
-/* name: what the keypad calls itself (NULL "PC keypad"); master: where the master is, NULL when
- * not known (a paired keypad then has no one to say HELLO to until link_keypad_master is
- * called). */
+/* name: what the keypad calls itself (NULL "PC keypad"); master: where to look for the master
+ * (an address, or 255.255.255.255 to ask by broadcast; port.resolve looks there again), NULL
+ * when not known (a paired keypad then says HELLO to no one until link_keypad_master). */
 void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t *io,
                       link_store_t *store, const char *name, const plink_addr_t *master,
                       uint64_t now_ms);
 void link_keypad_master(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *master);
+/* A person started pairing with the master at that address. 255.255.255.255 asks every master
+ * on the LAN: the first to answer is paired with, and a second one stops it. */
+void link_keypad_pair(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *master);
 void link_keypad_input(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *from,
                        const uint8_t *frame, size_t len);
 void link_keypad_tick(link_keypad_t *v, uint64_t now_ms);

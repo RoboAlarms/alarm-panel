@@ -47,3 +47,7 @@ alarm_add_component_tests()
 alarm_add_test(host_zigbee_real
                SOURCES ui_preview/host_zigbee_real.c ui_preview/test_host_zigbee_real.c
                LIBS zigbee_zones_fake unity INCLUDES ui_preview STRICT)
+
+# The panel link's PC simulator (docs/features/11 LINK-013): link_sim, and link_smoke - a master
+# and a keypad over real UDP on 127.0.0.1 on a virtual clock - in CTest.
+add_subdirectory(link_sim ${CMAKE_BINARY_DIR}/link_sim)

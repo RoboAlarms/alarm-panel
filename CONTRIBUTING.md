@@ -85,8 +85,8 @@ or a feature option. `python tools/check_architecture.py` checks the rules (CI r
 | `firmware/e32r40t` | the 4" board's application: the status screen until the full touch UI fits in its RAM (docs/features/19); runs on a development board |
 | `components/<tier>/<name>/test` | that component's host tests (Unity), found by `host/CMakeLists.txt`; `components/core/alarm_core/test/sim.c` is the engine harness other tests share |
 | `cmake/` | shared CMake: `alarm_firmware.cmake` (a firmware project from `ALARM_BOARD`: version, signed name, profile check) and `alarm_idf.cmake` (the tiers for ESP-IDF, only the project's own board), `alarm_host.cmake` (portable components, warnings, `alarm_add_test`), `alarm_lvgl.cmake`, `alarm_ui.cmake`, `alarm_board.cmake` (a board's manifest for the PC builds) |
-| `host/` | the PC test runner (`host/CMakeLists.txt`, Unity in `host/third_party`), the scripted PC preview of the UI (`host/ui_preview`) and the interactive panel simulator (`host/ui_sim`) |
-| `tools/` | `idf.ps1` / `idf.sh` (Windows / POSIX, keep in step), `host_test.ps1`, `ui_sim.ps1`, `ui_preview.ps1`, `ui_mockup.py` (the touchscreen mockup), `lvpro_gen.py`, `i18n.py` (the translation catalogs), `embed_image.py`, `ota_serial.py`, `panel_console.py`, `stamp_app_desc.py` (the firmware build runs it after each link: the image's own build date), the checks `check_architecture.py`, `check_boards.py`, `check_image_size.py` (tests in `tools/tests`) |
+| `host/` | the PC test runner (`host/CMakeLists.txt`, Unity in `host/third_party`), the scripted PC preview of the UI (`host/ui_preview`), the interactive panel simulator (`host/ui_sim`) and the panel link's simulator (`host/link_sim`: a virtual master and keypad over UDP, and `link_smoke` in CTest) |
+| `tools/` | `idf.ps1` / `idf.sh` (Windows / POSIX, keep in step), `host_test.ps1`, `ui_sim.ps1`, `link_sim.ps1`, `ui_preview.ps1`, `ui_mockup.py` (the touchscreen mockup), `lvpro_gen.py`, `i18n.py` (the translation catalogs), `embed_image.py`, `ota_serial.py`, `panel_console.py`, `stamp_app_desc.py` (the firmware build runs it after each link: the image's own build date), the checks `check_architecture.py`, `check_boards.py`, `check_image_size.py` (tests in `tools/tests`) |
 | `docs/` | all documentation, indexed in `docs/README.md`: `features/`, `bugs/`, `sensors/` (how real sensors behave), `research/`, `hardware/`. The user and installer guides are their own repository, [RoboAlarms/documentation](https://github.com/RoboAlarms/documentation), published at <https://docs.roboalarms.com> |
 | `docs/features/` | one planning doc per feature, index and roadmap in `docs/features/README.md` |
 | `docs/BACKLOG.md` | everything left to do, in order, each row with what it needs (the PC, a panel, a part, a decision) and where its details are |
@@ -145,6 +145,14 @@ or a feature option. `python tools/check_architecture.py` checks the rules (CI r
   protecting a house. `-Board <board>` (both scripts) builds another board's profile from its
   manifest (`firmware/<board>/sdkconfig.defaults`): layout, pages and LVGL memory. Windows only (LVGL's Win32 backend); `host/ui_sim/sim_main.c` holds the
   buttons, `host/ui_preview/host_panel.c` the simulated world they drive.
+- **Panel link simulator (PC): `pwsh tools/link_sim.ps1 master`** and, in a second terminal,
+  `pwsh tools/link_sim.ps1 keypad --master 127.0.0.1` (Linux/macOS: host/README.md) - a virtual
+  master (the real engine) and a virtual keypad over UDP with a console each (docs/features/11
+  LINK-013): pair them (`pair` on both, compare the codes, `allow` and `yes`), arm and disarm from
+  the keypad, stop it and watch the master's supervision trouble. They use the OS's random
+  numbers, so they pair with panels on the LAN too (no mDNS on the PC: `--master <ip>`, or the
+  keypad asks by broadcast). `-Smoke` runs `link_smoke`, the same test CTest runs: both in one
+  process over 127.0.0.1 on a virtual clock.
 - UI preview (PC): `pwsh tools/ui_preview.ps1` renders every screen to `build/ui_preview/shots`
   and fails if the scripted walk-through gets stuck or a check reports the wrong thing. Look at
   the PNGs after UI changes; adding a `shot()` renumbers the later ones, so refresh the whole

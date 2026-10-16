@@ -52,10 +52,9 @@ static const char *TAG = "plink";
 #define MDNS_RESULTS       4u
 #define PAIR_LOOK_EVERY_MS 3000u
 #define PAIR_LOOK_MS       10000u /* mDNS alone, then the subnet broadcast too */
-/* The broadcast PAIR_REQ waits for the keypad's pairing to take the master's answer from its own
- * (unicast) address: today plink_pair.c ends the attempt (OVERLAP) when the PAIR_COMMIT comes from
- * another address than the request went to. Until then pairing finds the master by mDNS only. */
-#define PAIR_BROADCAST     0
+/* After PAIR_LOOK_MS without an mDNS answer the keypad asks by the subnet broadcast: the core's
+ * pairing takes the first PAIR_COMMIT's (unicast) address as its master's (LINK-021). */
+#define PAIR_BROADCAST     1
 #define PAIR_GIVE_UP_MS    30000u /* no alarm panel answered: UI_LINK_FAIL_NOT_FOUND (E-18) */
 #define CLOCK_CHECK_MS     10000u
 #define CLOCK_STEP_MS      2000

@@ -37,3 +37,6 @@ on a panel, `host/link_sim` on a PC) and drives the managers here with frames an
 `test/plink_test_port.c` is the PC crypto port (zwave_host's primitives, marked insecure, with a
 check that no AES-CCM key and nonce is ever used twice on one side); `test/plink_test_net.c` is a
 pretend network with loss, repeats, reordering, corruption and one direction cut on a fake clock.
+`test_plink_crypto.c` and `test_plink_frame.c` hold the known answers (RFC 3610, 4231, 5869, 7748)
+and golden frames; `test/vectors_plink_crypto.py` and `test/vectors_plink_frame.py` recompute every
+one of them with Python's `cryptography`, independently of the C code.

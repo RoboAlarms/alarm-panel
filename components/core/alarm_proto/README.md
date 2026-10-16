@@ -22,6 +22,7 @@ transport, TLS, clocks and randomness. No heap, no globals, no RTOS.
 | `include/alarm_proto/proto_fw.h` | Semantic versions, release-manifest pick, `proto_fw_install_allowed()`, base64 and upload-line decoding, the `…/firmware` state JSON and the Home Assistant `update` entity |
 | `include/alarm_proto/ota_retry.h`, `ota_profile.h` | The update task's retry schedule after a failed release check (10 min doubling to 6 h, OTA-015) and which signed project names may replace the running one (DEV-004/015); header-only, moved here from `panel_ota` in docs/features/33 step 8 |
 | `include/alarm_proto/proto_link.h` | Local Home Assistant link v1: SHA-256, hex, frame header, pairing code, message writers (hello, snapshot, delta, event, result, watch, call) and parsers (catalog, state, call result, incoming messages) |
+| `include/alarm_proto/proto_sha256.h` | SHA-256 over a message in pieces (init, update, final): the panel link's HMAC, HKDF and transcripts (`panel_link`, docs/features/11); `proto_sha256()` runs on it |
 | `include/alarm_proto/proto_zw.h` | The Z-Wave devices the panel switches, as Home Assistant switch, light and cover entities (MQTT-018..020) |
 | `include/alarm_proto/proto_zb.h` | The Zigbee network's diagnostics: `~/zigbee/state`, its Home Assistant sensor, and a zone's device battery and signal (MQTT-021, MQTT-022) |
 | `include/alarm_proto/proto_pair.h` | The panel's pairing state machine: 2-minute window, commitment check, the code, allow or reject |

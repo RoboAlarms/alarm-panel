@@ -24,7 +24,7 @@ lv_obj_t * nav_toggle_create(lv_obj_t * parent, lv_subject_t * icon, const char 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_20(parent);
-        alarm_ui_run_30(box_0, &style_nav_item, 0, &style_nav_item_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_54(box_0, &style_nav_item, 0, &style_nav_item_pressed, LV_STATE_PRESSED);
         lv_obj_t * lv_label_0 = lv_label_create(box_0);
         lv_obj_set_style_text_font(lv_label_0, icons_28, 0);
         lv_label_bind_text(lv_label_0, icon, NULL);
@@ -32,8 +32,8 @@ lv_obj_t * nav_toggle_create(lv_obj_t * parent, lv_subject_t * icon, const char 
         lv_obj_t * lv_label_1 = lv_label_create(box_0);
         lv_label_set_text(lv_label_1, text);
         lv_obj_set_width(lv_label_1, lv_pct(100));
-        alarm_ui_run_37(lv_label_1, 36);
-        alarm_ui_run_57(lv_label_1);
+        alarm_ui_run_35(lv_label_1, 36);
+        alarm_ui_run_60(lv_label_1);
 
         the_root = box_0;
     }

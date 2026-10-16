@@ -137,6 +137,9 @@ extern "C" {
 #define UI_ICON_ARROW_UP        "\xEE\x81\x8A" /* U+E04A */
 #define UI_ICON_ARROW_DOWN      "\xEE\x81\x82" /* U+E042 */
 #define UI_ICON_CHEVRON_LEFT    "\xEE\x81\xAE" /* U+E06E */
+/* The panel link (BL-048): a keypad on Wi-Fi, and Stop */
+#define UI_ICON_KEYBOARD        "\xEE\x8A\x84" /* U+E284 */
+#define UI_ICON_X               "\xEE\x86\xB2" /* U+E1B2 */
 
 /* Tone colours: the XML's colour constants, in the current theme (ui_theme.c); gray is
  * color_text_2. */

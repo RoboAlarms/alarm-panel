@@ -2483,8 +2483,9 @@ static void poll(void)
         }
     }
     D.n = kept;
-    ui_set_int(&subject_devices_avail, D.n > 0u ? 1 : 0);
-    if (D.n == 0u && on_view()) {
+    /* a keypad controls no devices: its rail has no Smart Home (BL-048) */
+    ui_set_int(&subject_devices_avail, D.n > 0u && !ui_link_keypad() ? 1 : 0);
+    if ((D.n == 0u || ui_link_keypad()) && on_view()) {
         ui_set_int(&subject_view, VIEW_HOME); /* the last device went away */
     }
 }

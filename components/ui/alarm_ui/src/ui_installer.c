@@ -421,6 +421,7 @@ static void build_menu(lv_obj_t *body, char *note, size_t nlen)
     for (unsigned i = 0; i < ALARM_MAX_DEVICES; i++) {
         devices += S.edit->devices[i].enabled;
     }
+    devices += ui_link_keypad_count(); /* the keypads on Wi-Fi too (BL-048) */
     ui_section(body, TR("Sensors and devices"));
     in_use_words(zones, text, sizeof(text));
     ui_row_link(body, UI_ICON_DOOR_CLOSED, ui_tone_green(), TR("Zones"), TR("Sensors, types, names"),
@@ -950,7 +951,14 @@ static void build_devices(lv_obj_t *body, char *note, size_t nlen)
 {
     /* TR: the line under the page title. At most 127 bytes */
     i18n_utf8_copy(note, nlen, TR("A supervised device that stops answering shows a trouble"));
+    /* The keypads on Wi-Fi on top, in a firmware with the panel link (BL-048); the numbers they
+     * hold are left out of the table under them (LINK-001). */
+    uint16_t held = 0;
+    ui_link_devices_section(body, &held);
     for (uint8_t d = 1; d <= ALARM_MAX_DEVICES; d++) {
+        if ((held & (1u << (d - 1u))) != 0u) {
+            continue;
+        }
         const alarm_device_config_t *dc = &S.edit->devices[d - 1u];
         char name[ALARM_NAME_LEN + 16], detail[64], part[ALARM_NAME_LEN + 16];
         if (dc->enabled) {
@@ -1962,6 +1970,9 @@ bool ui_installer_build(page_id_t id, int32_t arg, lv_obj_t *body, char *title, 
         build_devices(body, note, nlen);
         return true;
     case PAGE_DEVICE: build_device(body, arg, title, tlen, note, nlen); return true;
+    case PAGE_LINK_ADD:
+    case PAGE_LINK_KEYPAD:
+        return ui_link_build(id, arg, body, title, tlen, note, nlen); /* BL-048 */
     case PAGE_FW_SERVER:
     case PAGE_FW_WARNING: return ui_fwsrv_build(id, body, title, tlen, note, nlen);
     default: return false;

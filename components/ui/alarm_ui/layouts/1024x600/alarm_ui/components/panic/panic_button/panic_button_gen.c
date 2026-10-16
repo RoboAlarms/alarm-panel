@@ -84,7 +84,7 @@ lv_obj_t * panic_button_create(lv_obj_t * parent, const char * glyph, const char
         lv_arc_set_value(progress, 0);
         lv_obj_set_flag(progress, LV_OBJ_FLAG_CLICKABLE, false);
         lv_obj_set_style_arc_color(progress, color, LV_PART_INDICATOR);
-        alarm_ui_run_15(progress, &style_panic_ring, 0, &style_panic_ring_indicator, LV_PART_INDICATOR);
+        alarm_ui_run_16(progress, &style_panic_ring, 0, &style_panic_ring_indicator, LV_PART_INDICATOR);
         lv_obj_add_style(progress, &style_knob_off, LV_PART_KNOB);
         lv_obj_set_name(progress, "progress");
 
@@ -95,7 +95,7 @@ lv_obj_t * panic_button_create(lv_obj_t * parent, const char * glyph, const char
         lv_obj_set_flag(button, LV_OBJ_FLAG_PRESS_LOCK, true);
         lv_obj_set_style_bg_color(button, color, 0);
         lv_obj_set_style_border_color(button, color, 0);
-        alarm_ui_run_15(button, &style_panic_button, 0, &style_panic_button_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(button, &style_panic_button, 0, &style_panic_button_pressed, LV_STATE_PRESSED);
         lv_obj_set_name(button, "button");
         lv_obj_t * lv_label_0 = alarm_ui_run_33(button);
         lv_label_set_text(lv_label_0, glyph);

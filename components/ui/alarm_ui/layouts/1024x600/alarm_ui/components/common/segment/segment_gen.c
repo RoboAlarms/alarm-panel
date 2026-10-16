@@ -28,9 +28,9 @@ lv_obj_t * segment_create(lv_obj_t * parent, const char * text)
         lv_style_init(&style_segment);
         lv_style_init(&style_segment_pressed);
 
-        alarm_ui_run_60(&style_segment, 44, RADIUS_MD);
-        alarm_ui_run_14(&style_segment, SPACE_LG, SPACE_LG);
-        alarm_ui_run_43(&style_segment, font_label, COLOR_TEXT_2);
+        alarm_ui_run_63(&style_segment, 44, RADIUS_MD);
+        alarm_ui_run_15(&style_segment, SPACE_LG, SPACE_LG);
+        alarm_ui_run_45(&style_segment, font_label, COLOR_TEXT_2);
         alarm_ui_run_6(&style_segment_pressed, COLOR_PRESSED, (255 * 100 / 100));
 
         alarm_ui_style_track(&style_segment, ALARM_UI_STYLE_SEGMENT_SEGMENT);
@@ -44,8 +44,8 @@ lv_obj_t * segment_create(lv_obj_t * parent, const char * text)
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_21(parent, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
-        alarm_ui_run_15(box_0, &style_segment, 0, &style_segment_pressed, LV_STATE_PRESSED);
+        lv_obj_t * box_0 = alarm_ui_run_22(parent, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
+        alarm_ui_run_16(box_0, &style_segment, 0, &style_segment_pressed, LV_STATE_PRESSED);
         lv_obj_t * lv_label_0 = lv_label_create(box_0);
         lv_label_set_text(lv_label_0, text);
 

@@ -16,7 +16,7 @@ report problems as troubles.
 ## Requirements
 | ID | Requirement | Verified by |
 |---|---|---|
-| NET-001 | First-boot wizard on the touchscreen: language (English until the language step of docs/features/37 I18N-012, M22 G3), **role** (Master / Keypad), Wi-Fi (scan list + hidden SSID + on-screen keyboard), time zone, optional change of the factory installer (69420) and master (123456) codes (master role), done | preview (role step: M7), HIL |
+| NET-001 | First-boot wizard on the touchscreen: language (English until the language step of docs/features/37 I18N-012, M22 G3), **role** (Master / Keypad), Wi-Fi (scan list + hidden SSID + on-screen keyboard), time zone, optional change of the factory installer (69420) and master (123456) codes (master role), done | preview (the role step and a keypad's pairing too, BL-048; on panels: M7), HIL |
 | NET-002 | Wi-Fi uses the standard `esp_wifi` API through ESP-Hosted/`esp_wifi_remote` (C6 radio); WPA2/WPA3-Personal | HIL: joined a WPA2 network (2026-09-19) |
 | NET-003 | Reconnect with backoff (1 s -> 60 s); raise the `network` trouble after 5 min disconnected (configurable), only when something depends on the network (MQTT or LAN keypads) | unit + HIL |
 | NET-004 | SNTP time sync (default `pool.ntp.org`, configurable) with a POSIX TZ string chosen from a list; re-sync every 6 h | HIL: synced on the panel (2026-09-19) |
@@ -167,7 +167,8 @@ says what the clock says and what set it last and, with a module, opens "Set the
 - [x] Configurable NTP server (M4)
 - [x] Setup wizard screens (M4)
 - [ ] The setup's role step (Master / Keypad, then pairing for a keypad), with the keypad role in
-  M7 (NET-001) (BL-048)
+  M7 (NET-001) (BL-048): the screens are built and walked in the preview (`ui_wizard.c`, the
+  link's demo backend); left: the firmware's role and pairing behind `ui_backend_t.link_*`
 - [x] Network settings screen: scan, password, hidden networks, forget (M4)
 - [x] Fixed address, network mask, router and name servers behind the cog (NET-011)
 - [x] "Check the connection", step by step, with what went wrong (NET-012)

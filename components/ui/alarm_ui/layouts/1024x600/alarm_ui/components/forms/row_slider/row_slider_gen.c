@@ -38,12 +38,12 @@ lv_obj_t * row_slider_create(lv_obj_t * parent, const char * glyph, const char *
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_36(&style_row_slider);
+        alarm_ui_run_38(&style_row_slider);
         alarm_ui_run_6(&style_row_slider, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_row_slider, RADIUS_MD);
-        alarm_ui_run_50(&style_row_slider, SPACE_MD, SPACE_LG, SPACE_SM, SPACE_LG);
+        alarm_ui_run_53(&style_row_slider, SPACE_MD, SPACE_LG, SPACE_SM, SPACE_LG);
         lv_style_set_pad_row(&style_row_slider, SPACE_SM);
-        alarm_ui_run_60(&style_slider, 8, RADIUS_FULL);
+        alarm_ui_run_63(&style_slider, 8, RADIUS_FULL);
         alarm_ui_run_6(&style_slider, COLOR_PRESSED, (255 * 100 / 100));
         lv_style_set_radius(&style_slider_indicator, RADIUS_FULL);
         alarm_ui_run_6(&style_slider_indicator, COLOR_BLUE, (255 * 100 / 100));
@@ -83,7 +83,7 @@ lv_obj_t * row_slider_create(lv_obj_t * parent, const char * glyph, const char *
 
         lv_obj_t * value_label = lv_label_create(box_1);
         lv_label_set_text(value_label, value);
-        alarm_ui_run_45(value_label, "value_label");
+        alarm_ui_run_47(value_label, "value_label");
 
         lv_obj_t * slider = lv_slider_create(box_0);
         lv_obj_set_width(slider, lv_pct(100));
@@ -93,8 +93,8 @@ lv_obj_t * row_slider_create(lv_obj_t * parent, const char * glyph, const char *
         lv_obj_set_ext_click_area(slider, 16);
         lv_obj_set_style_margin_left(slider, 14, 0);
         lv_obj_set_style_margin_right(slider, 10, 0);
-        alarm_ui_run_15(slider, &style_slider, 0, &style_slider_indicator, LV_PART_INDICATOR);
-        alarm_ui_run_64(slider, &style_slider_knob, LV_PART_KNOB, "slider");
+        alarm_ui_run_16(slider, &style_slider, 0, &style_slider_indicator, LV_PART_INDICATOR);
+        alarm_ui_run_67(slider, &style_slider_knob, LV_PART_KNOB, "slider");
 
         the_root = box_0;
     }

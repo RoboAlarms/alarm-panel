@@ -1555,6 +1555,9 @@ typedef struct {
     /* A master: */
     uint8_t keypads;     /* keypads paired with it */
     uint8_t keypads_down;/* of those, not responding */
+    /* Appended (the screens, BL-048): a keypad's alarm panel's address on the network, as About
+     * shows it ("192.0.2.42"); "" not known (About leaves the row out). */
+    char master_addr[24];
 } ui_link_info_t;
 
 /* ui_link_pair_t.state: either side's pairing (plink_pair_state_t). */

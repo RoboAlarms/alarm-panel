@@ -56,19 +56,19 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_36(&style_text_card);
+        alarm_ui_run_38(&style_text_card);
         alarm_ui_run_6(&style_text_card, COLOR_SURFACE, (255 * 100 / 100));
-        alarm_ui_run_23(&style_text_card, RADIUS_XL);
-        alarm_ui_run_50(&style_text_card, SPACE_XL, SPACE_XL, SPACE_LG, SPACE_LG);
+        alarm_ui_run_24(&style_text_card, RADIUS_XL);
+        alarm_ui_run_53(&style_text_card, SPACE_XL, SPACE_XL, SPACE_LG, SPACE_LG);
         lv_style_set_pad_row(&style_text_card, SPACE_MD);
         lv_style_set_width(&style_text_field, lv_pct(100));
         lv_style_set_radius(&style_text_field, RADIUS_MD);
         alarm_ui_run_6(&style_text_field, COLOR_RAISED, (255 * 100 / 100));
-        alarm_ui_run_61(&style_text_field, 2, COLOR_RAISED);
+        alarm_ui_run_64(&style_text_field, 2, COLOR_RAISED);
         lv_style_set_pad_left(&style_text_field, SPACE_LG);
         lv_style_set_pad_right(&style_text_field, SPACE_LG);
         lv_style_set_pad_top(&style_text_field, 15);
-        alarm_ui_run_43(&style_text_field, font_title, COLOR_TEXT);
+        alarm_ui_run_45(&style_text_field, font_title, COLOR_TEXT);
         lv_style_set_border_color(&style_text_field_focused, COLOR_BLUE);
         lv_style_set_border_color(&style_text_cursor, COLOR_BLUE);
         lv_style_set_border_width(&style_text_cursor, 2);
@@ -89,7 +89,7 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
         alarm_ui_run_6(&style_keyboard_key, COLOR_RAISED, (255 * 100 / 100));
         lv_style_set_border_width(&style_keyboard_key, 0);
         lv_style_set_shadow_width(&style_keyboard_key, 0);
-        alarm_ui_run_43(&style_keyboard_key, font_label, COLOR_TEXT);
+        alarm_ui_run_45(&style_keyboard_key, font_label, COLOR_TEXT);
         lv_style_set_bg_color(&style_keyboard_key_pressed, COLOR_PRESSED);
         lv_style_set_bg_color(&style_keyboard_key_special, COLOR_KEY_SPECIAL);
         lv_style_set_text_color(&style_keyboard_key_special, COLOR_TEXT_2);
@@ -129,7 +129,7 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
         lv_obj_add_style(box_0, &style_backdrop, 0);
         lv_obj_t * text_card = box_create(box_0);
         lv_obj_set_align(text_card, LV_ALIGN_BOTTOM_MID);
-        alarm_ui_run_64(text_card, &style_text_card, 0, "text_card");
+        alarm_ui_run_67(text_card, &style_text_card, 0, "text_card");
         lv_obj_t * box_1 = alarm_ui_run_0(text_card, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_1(box_1, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(box_1);
@@ -144,13 +144,13 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
         alarm_ui_run_29(lv_label_1, COLOR_TEXT_2, &subject_sheet_note);
 
         lv_obj_t * sheet_cancel = alarm_ui_run_5(box_1, &style_button_pressed, LV_STATE_PRESSED);
-        alarm_ui_run_9(sheet_cancel, ui_on_sheet_cancel, "sheet_cancel");
-        alarm_ui_run_16(sheet_cancel, alarm_ui_tr("Cancel"));
+        alarm_ui_run_10(sheet_cancel, ui_on_sheet_cancel, "sheet_cancel");
+        alarm_ui_run_14(sheet_cancel, alarm_ui_tr("Cancel"));
 
         lv_obj_t * sheet_done = alarm_ui_run_5(box_1, &style_button_primary, 0);
         lv_obj_add_style(sheet_done, &style_button_tone_pressed, LV_STATE_PRESSED);
-        alarm_ui_run_9(sheet_done, ui_on_sheet_done, "sheet_done");
-        alarm_ui_run_58(sheet_done, &subject_sheet_ok);
+        alarm_ui_run_10(sheet_done, ui_on_sheet_done, "sheet_done");
+        alarm_ui_run_61(sheet_done, &subject_sheet_ok);
 
         lv_obj_t * box_3 = alarm_ui_run_0(text_card, lv_pct(100), LV_SIZE_CONTENT);
         lv_obj_t * sheet_text = lv_textarea_create(box_3);
@@ -158,8 +158,8 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
         lv_textarea_set_placeholder_text(sheet_text, "");
         lv_textarea_set_password_show_time(sheet_text, 1200);
         lv_obj_set_scrollbar_mode(sheet_text, LV_SCROLLBAR_MODE_OFF);
-        alarm_ui_run_15(sheet_text, &style_text_field, 0, &style_text_field_focused, LV_STATE_FOCUSED);
-        alarm_ui_run_15(sheet_text, &style_text_cursor, LV_PART_CURSOR, &style_text_placeholder, LV_PART_TEXTAREA_PLACEHOLDER);
+        alarm_ui_run_16(sheet_text, &style_text_field, 0, &style_text_field_focused, LV_STATE_FOCUSED);
+        alarm_ui_run_16(sheet_text, &style_text_cursor, LV_PART_CURSOR, &style_text_placeholder, LV_PART_TEXTAREA_PLACEHOLDER);
         lv_obj_bind_style(sheet_text, &style_text_field_eye, 0, &subject_sheet_eye, 1);
         lv_obj_set_name(sheet_text, "sheet_text");
 
@@ -167,10 +167,10 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
         lv_obj_set_align(sheet_eye, LV_ALIGN_RIGHT_MID);
         lv_obj_set_x(sheet_eye, -4);
         lv_obj_set_flag(sheet_eye, LV_OBJ_FLAG_CLICKABLE, true);
-        alarm_ui_run_56(sheet_eye, LV_OBJ_FLAG_CLICK_FOCUSABLE, false, 6);
-        alarm_ui_run_15(sheet_eye, &style_text_eye, 0, &style_text_eye_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_59(sheet_eye, LV_OBJ_FLAG_CLICK_FOCUSABLE, false, 6);
+        alarm_ui_run_16(sheet_eye, &style_text_eye, 0, &style_text_eye_pressed, LV_STATE_PRESSED);
         lv_obj_bind_flag_if_eq(sheet_eye, &subject_sheet_eye, LV_OBJ_FLAG_HIDDEN, 0);
-        alarm_ui_run_9(sheet_eye, ui_on_sheet_eye, "sheet_eye");
+        alarm_ui_run_10(sheet_eye, ui_on_sheet_eye, "sheet_eye");
         lv_obj_t * lv_label_4 = alarm_ui_run_11(sheet_eye, "\xEE\x82\xBA");
         lv_obj_set_style_text_font(lv_label_4, icons_20, 0);
         lv_obj_bind_flag_if_eq(lv_label_4, &subject_sheet_shown, LV_OBJ_FLAG_HIDDEN, 1);
@@ -182,8 +182,8 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
         lv_obj_t * sheet_kb = lv_keyboard_create(text_card);
         lv_obj_set_width(sheet_kb, lv_pct(100));
         lv_keyboard_set_textarea(sheet_kb, sheet_text);
-        alarm_ui_run_15(sheet_kb, &style_keyboard, 0, &style_keyboard_key, LV_PART_ITEMS);
-        alarm_ui_run_15(sheet_kb, &style_keyboard_key_pressed, LV_PART_ITEMS | LV_STATE_PRESSED, &style_keyboard_key_special, LV_PART_ITEMS | LV_STATE_CHECKED);
+        alarm_ui_run_16(sheet_kb, &style_keyboard, 0, &style_keyboard_key, LV_PART_ITEMS);
+        alarm_ui_run_16(sheet_kb, &style_keyboard_key_pressed, LV_PART_ITEMS | LV_STATE_PRESSED, &style_keyboard_key_special, LV_PART_ITEMS | LV_STATE_CHECKED);
         lv_obj_set_name(sheet_kb, "sheet_kb");
 
         the_root = box_0;

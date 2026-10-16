@@ -1562,7 +1562,7 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
 - [ ] ESP-NOW <-> LAN failover (LINK-009) (M7) (BL-048)
 - [x] Wire: types 0x2D-0x31, `PLINK_CAP_FW`, the STATUS bits UPDATING, HOLD, FIRE and CO defined,
   the codecs and Python goldens; every v1 payload and number in a frozen
-  `test/plink_wire_fixture_v1.h` (LINK-032, -037, -038, -040) (BL-048, WIRECOMMIT)
+  `test/plink_wire_fixture_v1.h` (LINK-032, -037, -038, -040) (BL-048, a97a745)
 - [ ] The STATUS bits UPDATING, HOLD, FIRE and CO in `plink_view.c`: set from the master's
   snapshot, read on the keypad (LINK-030, -034, -039) (BL-048)
 - [ ] Keypad fail-safes in `plink_view.c`, FIRE/CO sounding in `continuous_of`, and UNAVAILABLE for
@@ -1589,9 +1589,9 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   (BL-048)
 - [x] Run-time caps: the offered caps an argument of `plink_master_init` and `plink_keypad_init`,
   each session keeping both offers ANDed under `PLINK_CAPS_KNOWN`; no panel offers a bit yet
-  (LINK-043) (BL-048, WIRECOMMIT)
+  (LINK-043) (BL-048, a97a745)
 - [x] Wire: 0x32-0x3A, the HEARTBEAT section, the codecs and Python goldens, in the frozen v1
-  fixture; `proto_prefs` (LINK-043, -050, -051, -052; HAI-017) (BL-216, WIRECOMMIT)
+  fixture; `proto_prefs` (LINK-043, -050, -051, -052; HAI-017) (BL-216, a97a745)
 - [ ] Master core: list, pushes, summary, catch-up, DEV_ACT cache and buckets, PREFS report and
   PREFS_REQ, PREFS_SET, send order (LINK-044..051) (BL-216)
 - [ ] Keypad core: `plink_pull_t` from the configuration pull, mirror and catch-up, freshness,

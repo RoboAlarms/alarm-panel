@@ -622,8 +622,8 @@ static void countdown(kp_t *k, uint64_t t, uint8_t home)
 /* A keypad just went LOST on a damaged network: LINK-006 and LINK-008 say that may happen only
  * when every STATUS the master sent it since the one it last applied - one every 10 s, so at
  * least two in those 30 s, the network's jitter aside - was lost or damaged on the way (those
- * sent in the last 400 ms may still be under way: not counted); and its session is still the one
- * the master holds (a status lost is no session lost). */
+ * sent in the last 400 ms may still be under way: not counted); and the master still holds its
+ * session, or its old one while a handshake hands over (a status lost is no session lost). */
 static void lost_explained(kp_t *k)
 {
     unsigned sent = 0, gone = 0;
@@ -638,8 +638,12 @@ static void lost_explained(kp_t *k)
     if (sent < PLINK_LOST_MS / PLINK_STATUS_EVERY_MS - 1u || gone < sent) {
         k->lost_unexplained++;
     }
+    /* (in a handshake the keypad's new session is tentative and the master's still the old one) */
     const plink_peer_t *p = &R.m.peer[dev(k) - 1u];
-    if (!k->k.live.valid || !p->live.valid || p->live.sid != k->k.live.sid) {
+    const bool same = k->k.live.valid && p->live.valid && p->live.sid == k->k.live.sid;
+    const bool handing_over =
+        k->k.tentative && k->k.old.valid && p->live.valid && p->live.sid == k->k.old.sid;
+    if (!same && !handing_over) {
         k->lost_session++;
     }
 }

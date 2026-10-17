@@ -50,13 +50,14 @@
  * loss, damage, copies and reordering, and on 250 B frames; an action runs once through copies and
  * lost answers, never after its 3 s; a renamed or reordered list never acts on another device; a
  * master restart in the middle of a pull never mixes lists; a 45 s cut reads offline since the cut
- * and replays nothing; a write applies once and ends TIMEOUT at 6 s; a keypad offering only FW (v1)
- * gets nothing new, nor does a new keypad of a v1 master; and the storm leaves disarm and panic as
- * fast as calm. After every test, too: no device action ran twice; no DEV_ACT went after its 3 s;
- * no keypad installed a list the master never had, nor showed a device another's record (each
- * device's record carries a tag of its ref, checked at every change of a mirror); and in every
- * master turn DEV_* and PREFS* frames came after the alarm traffic, never while that keypad's
- * STATUS change or a RESULT waited, at most 2 to a keypad and 8 in all.
+ * and replays nothing; an idle list - empty, or of twenty devices - stays fresh on its summaries; a
+ * write applies once and ends TIMEOUT at 6 s; a keypad offering only FW (v1) gets nothing new, nor
+ * does a new keypad of a v1 master; and the storm leaves disarm and panic as fast as calm. After
+ * every test, too: no device action ran twice; no DEV_ACT went after its 3 s; no keypad installed a
+ * list the master never had, nor showed a device another's record (each device's record carries a
+ * tag of its ref, checked at every change of a mirror); and in every master turn DEV_* and PREFS*
+ * frames came after the alarm traffic, never while that keypad's STATUS change or a RESULT waited,
+ * at most 2 to a keypad and 8 in all.
  *
  * Requirements: LINK-001, LINK-002, LINK-003, LINK-004, LINK-006, LINK-007, LINK-008, LINK-014,
  * LINK-015, LINK-016, LINK-018, LINK-019, LINK-021, LINK-023, LINK-024, LINK-026, LINK-027,
@@ -5148,6 +5149,64 @@ static void test_a_45_s_cut_shows_offline_since_the_cut_and_replays_nothing(void
     TEST_ASSERT_EQUAL_UINT(1u, app_took(a, 4501u));
 }
 
+/* Keypad k watched for ms in steps of 100 ms: the longest time without a DEV_STATE reaching it,
+ * and whether its device data ever read stale meanwhile. */
+static uint64_t dev_quiet_most(kp_t *k, uint64_t ms, bool *stale)
+{
+    unsigned seen = k->got[PLINK_T_DEV_STATE];
+    uint64_t last = NOW, most = 0u;
+    const uint64_t end = NOW + ms;
+    *stale = false;
+    while (NOW < end) {
+        run_ms(100u);
+        if (k->got[PLINK_T_DEV_STATE] != seen) {
+            seen = k->got[PLINK_T_DEV_STATE];
+            most = NOW - last > most ? NOW - last : most;
+            last = NOW;
+        }
+        plink_dev_info_t di;
+        plink_keypad_dev_info(&k->k, know(k), &di);
+        *stale = *stale || !di.fresh;
+    }
+    return NOW - last > most ? NOW - last : most;
+}
+
+/* LINK-045, LINK-046: nothing changes for two minutes on a master whose registry is empty (Home
+ * Assistant not connected: the empty list, named all the same) or holds twenty devices: its
+ * summary every 10 s reaches the keypad - never more than 10 s without a DEV_STATE - and its
+ * device data never reads stale. */
+static void idle_list_stays_fresh(bool devices)
+{
+    home_master(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    if (devices) {
+        reg_catalog();
+    }
+    reg_push();
+    TEST_ASSERT_NOT_EQUAL_UINT32(0u, REG.list_crc);
+    TEST_ASSERT_EQUAL_size_t(devices ? 20u : 0u, REG.n_rows);
+    kp_t *a = home_kp(PLINK_CAP_HOME | PLINK_CAP_PREFS);
+    TEST_ASSERT_TRUE(run_until(10000u, c_all_mirrored, NULL));
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&a->k, know(a), &di);
+    TEST_ASSERT_EQUAL_HEX32(REG.list_crc, di.list_crc);
+    TEST_ASSERT_EQUAL_UINT8(devices ? 20u : 0u, di.count);
+    bool stale = true;
+    const uint64_t most = dev_quiet_most(a, 120000u, &stale);
+    TEST_ASSERT_TRUE_MESSAGE(most <= PLINK_DEV_SUMMARY_MS + 200u, "a summary went missing");
+    TEST_ASSERT_FALSE(stale);
+    TEST_ASSERT_TRUE(mirrored(a));
+}
+
+static void test_an_empty_list_stays_fresh_on_summaries(void)
+{
+    idle_list_stays_fresh(false);
+}
+
+static void test_twenty_idle_devices_stay_fresh_on_summaries(void)
+{
+    idle_list_stays_fresh(true);
+}
+
 /* LINK-051, LINK-050, LINK-043: twenty settings writes from the master to a keypad built without
  * home control (PREFS only), on a damaged network (10 % loss, 2 % copies, 1 % damaged, up to 300 ms
  * of jitter), the first answer lost on purpose and every other write applied slower than the
@@ -5536,6 +5595,8 @@ int main(void)
     RUN_TEST(test_a_renamed_or_reordered_list_never_acts_on_another_device);
     RUN_TEST(test_a_master_restart_during_a_pull_never_mixes_lists);
     RUN_TEST(test_a_45_s_cut_shows_offline_since_the_cut_and_replays_nothing);
+    RUN_TEST(test_an_empty_list_stays_fresh_on_summaries);
+    RUN_TEST(test_twenty_idle_devices_stay_fresh_on_summaries);
     RUN_TEST(test_a_settings_write_applies_once_and_times_out_when_the_keypad_is_gone);
     RUN_TEST(test_a_keypad_offering_only_fw_gets_nothing_new);
     RUN_TEST(test_the_storm_never_delays_disarm_or_panic);

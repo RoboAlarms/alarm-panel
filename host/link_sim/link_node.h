@@ -143,6 +143,7 @@ typedef struct {
     size_t n;
     link_house_act_t acts[LINK_HOUSE_ACTS];
     const dsrc_sink_t *sink;
+    bool gone; /* its Home Assistant not connected: the registry empty */
 } link_house_t;
 
 /* A keypad's device action handed over by port.dev_run (private; the code wiped once judged). */
@@ -234,6 +235,9 @@ void link_master_say_devices(link_master_t *v, uint64_t now_ms);
 /* The house's device ref can't be reached (online false) or can again: false when there is no
  * such device. */
 bool link_master_device_online(link_master_t *v, uint64_t now_ms, const char *ref, bool online);
+/* The house's Home Assistant connected again, or not: then its registry is empty, as a panel's is
+ * until Home Assistant's catalog comes (the keypads get the empty list). */
+void link_master_house(link_master_t *v, uint64_t now_ms, bool connected);
 /* Keypad device's settings as it last reported them. */
 void link_master_say_prefs(link_master_t *v, uint64_t now_ms, uint8_t device);
 /* A settings write to keypad device (LINK-051), as Home Assistant's would go through the master,

@@ -3124,6 +3124,29 @@ static void test_dev_summary_every_10_s(void)
     expect_mirror(k);
 }
 
+/* LINK-045: an empty registry (Home Assistant not connected) is an empty list, named all the
+ * same: its summary goes at the new session and then every 10 s, and no record ever does. */
+static void test_dev_summary_of_an_empty_list_every_10_s(void)
+{
+    master_caps(HOME_CAPS);
+    home_push();
+    TEST_ASSERT_EQUAL_size_t(PLINK_DEV_BLOB_HDR, R.blob_len);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0u, R.list_crc);
+    fk_t *k = home_kp(HOME_CAPS);
+    const size_t l0 = k->n_log;
+    pair(k);
+    run(1000);
+    TEST_ASSERT_EQUAL_size_t(1u, k_states(k, l0, false, NULL, 0u));
+    const size_t l1 = k->n_log;
+    run(35000);
+    uint64_t at[8];
+    TEST_ASSERT_EQUAL_size_t(3u, k_states(k, l1, false, at, 8u));
+    TEST_ASSERT_UINT64_WITHIN(1u, PLINK_DEV_SUMMARY_MS, at[1] - at[0]);
+    TEST_ASSERT_UINT64_WITHIN(1u, PLINK_DEV_SUMMARY_MS, at[2] - at[1]);
+    TEST_ASSERT_EQUAL_size_t(0u, k_states(k, l0, true, NULL, 0u));
+    expect_mirror(k);
+}
+
 /* LINK-045, LINK-049: DEV_STATE_REQ gets the records asked for (count 0: to the last); one under
  * another list, or for none, a DEV_STATE naming this list; requests over their bucket (16, then
  * one per 100 ms) are dropped. */
@@ -3984,6 +4007,7 @@ int main(void)
     RUN_TEST(test_dev_full_set_at_a_new_session);
     RUN_TEST(test_dev_changed_records_in_rounds);
     RUN_TEST(test_dev_summary_every_10_s);
+    RUN_TEST(test_dev_summary_of_an_empty_list_every_10_s);
     RUN_TEST(test_dev_state_requests);
     RUN_TEST(test_dev_list_change);
     RUN_TEST(test_dev_act_runs_once);

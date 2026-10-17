@@ -821,14 +821,14 @@ static void house_apply(dev_info_t *d, const link_house_act_t *a, uint32_t epoch
 
 static bool hs_online(void *ctx)
 {
-    (void)ctx;
-    return true; /* the house's Home Assistant link: up */
+    const link_master_t *v = ctx;
+    return !v->house.gone; /* the house's Home Assistant link */
 }
 
 static size_t hs_list(void *ctx, dev_info_t *out, size_t max)
 {
     link_master_t *v = ctx;
-    const size_t n = v->house.n < max ? v->house.n : max;
+    const size_t n = v->house.gone ? 0u : v->house.n < max ? v->house.n : max;
     memcpy(out, v->house.dev, n * sizeof(out[0]));
     return n;
 }
@@ -1121,6 +1121,14 @@ bool link_master_device_online(link_master_t *v, uint64_t now_ms, const char *re
     v->house.sink->changed(v->house.sink->ctx, (uint8_t)DSRC_HA);
     link_master_sync(v, now_ms);
     return true;
+}
+
+void link_master_house(link_master_t *v, uint64_t now_ms, bool connected)
+{
+    v->now = now_ms;
+    v->house.gone = !connected;
+    v->house.sink->changed(v->house.sink->ctx, (uint8_t)DSRC_HA);
+    link_master_sync(v, now_ms);
 }
 
 /* A row's words: "on, level 80 %, pending (unlock)". */

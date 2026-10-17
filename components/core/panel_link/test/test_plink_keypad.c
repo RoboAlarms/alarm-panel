@@ -3402,15 +3402,19 @@ static void test_dev_states_catch_up(void)
 }
 
 /* LINK-046: device data counts as fresh for 30 s from the last DEV_STATE (a summary too) or
- * DEV_ACK record under the installed list; past that, or while the link isn't ONLINE, every row
- * reads offline since the last device data, and an action sends nothing. */
+ * DEV_ACK record under the installed list - each summary moves heard_ms, but not seq, as nothing
+ * shown changes; past that, or while the link isn't ONLINE, every row reads offline since the
+ * last device data, and an action sends nothing. */
 static void test_dev_freshness_30_s(void)
 {
     home_rig();
     kp_home_online();
     TEST_ASSERT_TRUE(dev_info().fresh);
+    const plink_dev_info_t d0 = dev_info();
     plink_net_run(&NET, 35000); /* a summary every 10 s */
     TEST_ASSERT_TRUE(dev_info().fresh);
+    TEST_ASSERT_TRUE(dev_info().heard_ms >= d0.heard_ms + 3u * DEV_SUMMARY_MS);
+    TEST_ASSERT_EQUAL_UINT32(d0.seq, dev_info().seq);
     M.dev_auto = false;
     plink_net_run(&NET, 100); /* nothing on its way */
     const uint64_t last = dev_info().heard_ms;

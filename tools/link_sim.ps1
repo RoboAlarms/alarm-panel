@@ -8,8 +8,9 @@
 
     master  the real alarm engine with a small house and the master's side of the link: open
             pairing, allow a keypad, list and remove keypads, open zones, arm and disarm; the
-            house's devices for the keypads' Smart Home (devices, device) and a keypad's Screen
-            and sound settings (prefs N, prefs N set KEY VALUE), as Home Assistant changes them.
+            house's devices for the keypads' Smart Home (devices, device, house) and a keypad's
+            Screen and sound settings (prefs N, prefs N set KEY VALUE), as Home Assistant changes
+            them.
     keypad  the keypad's side of the link and the master's status as the keypad rebuilds it:
             pair, arm, disarm, chime, panic; the master's devices as it mirrors them (devices)
             and acts on them (act REF ACTION [VALUE] [CODE]); its own settings (prefs).

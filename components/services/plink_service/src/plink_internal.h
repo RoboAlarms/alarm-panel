@@ -242,8 +242,8 @@ typedef struct {
     bool offered;            /* a mirror: PLINK_CAP_HOME offered */
     bool fresh;              /* ONLINE, with device data within 30 s (LINK-046) */
     size_t rows;             /* the screen's rows */
-    plink_dev_info_t mirror; /* as of the copy */
-    uint64_t copied_ms;      /* link_now() of the copy (0: none yet) */
+    plink_dev_info_t mirror; /* as of the link task's last turn (heard_ms too) */
+    uint64_t copied_ms;      /* link_now() of the rows' copy (0: none yet) */
 } ksvc_dev_info_t;
 size_t ksvc_dev_copy(ui_dev_t *out, size_t max, ksvc_dev_info_t *info);
 /* ui_backend_t.dev_act on a keypad (the LVGL task): steps 1-4 answered at once from the copy

@@ -428,7 +428,9 @@ typedef struct {
     uint32_t seq;      /* moves with every change to copy: list, record, action, freshness */
     bool fresh;        /* LINK-046: ONLINE, with device data within 30 s; otherwise every row reads
                         * offline since heard_ms, and an action sends nothing */
-    uint64_t heard_ms; /* the last device data, on the keypad's clock (0: none) */
+    uint64_t heard_ms; /* the last device data, on the keypad's clock (0: none); it moves without
+                        * seq while the data stays fresh (nothing to redraw then), so a copy made
+                        * at seq reads it again itself (a summary every 10 s) */
 } plink_dev_info_t;
 
 void plink_keypad_dev_info(const plink_keypad_t *k, uint64_t now_ms, plink_dev_info_t *out);

@@ -24,7 +24,9 @@ components the same way, through `cmake/alarm_host.cmake`.
   `link_os_crypto.c` the crypto port (zwave_host's PC AES and X25519, the OS's random numbers),
   `link_sim.c` the console and `link_smoke.c` the CI test. Smart Home and settings on keypads
   (BL-216): the virtual master's devices are home_control's real registry over a fake Home
-  Assistant source (`devices`, `device REF online|offline`), each keypad action judged as the
+  Assistant source (`devices`, `device REF online|offline`; `house off` disconnects it, so the
+  keypads get the empty list a panel serves until Home Assistant's catalog comes, and `house on`
+  connects it again), each keypad action judged as the
   panel's `device_service_person_act` judges it, and `prefs N set KEY VALUE` changes a keypad's
   Screen and sound settings as Home Assistant would; the virtual keypad mirrors the devices
   (`devices`, `act REF ACTION [VALUE] [CODE]`) and keeps its own settings (`prefs`, `prefs set`).

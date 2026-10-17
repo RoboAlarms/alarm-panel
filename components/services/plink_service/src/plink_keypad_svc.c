@@ -234,13 +234,13 @@ static atomic_uint s_power_flags; /* PLINK_HB_* from the health task */
 static bool s_home;
 static plink_dev_mirror_t *s_mirror; /* the core's (about 31 KB) */
 /* The screen's copy (s_dev_lock): the rows as ui_dev_from_parts makes them, whether the device
- * data is fresh, and the mirror's state for the console. */
+ * data is fresh, and the mirror's state for the console (as of the link task's last turn). */
 static SemaphoreHandle_t s_dev_lock;
 static ui_dev_t *s_kdevs; /* PLINK_DEV_MAX */
 static size_t s_kdev_n;
 static bool s_kdev_fresh;
 static plink_dev_info_t s_kdev_info ALARM_SLOW_BSS;
-static uint64_t s_kdev_at; /* link_now() of the copy */
+static uint64_t s_kdev_at; /* link_now() of the rows' copy */
 /* The screen's device actions (ksvc_dev_act): one at a time, their own hand-over - never the
  * commands' s_cmd_mutex or slots - the code wiped once handed over. */
 static SemaphoreHandle_t s_act_mutex;
@@ -747,7 +747,9 @@ _Static_assert(PLINK_DEV_MAX >= UI_DEVL_MAX, "the master's list fills the screen
 /* The screen's copy of the mirror, made again when the mirror moves (a list, a record, an action,
  * the freshness): every row this firmware can use, in the master's order, through the one
  * converter of both screens (ui_dev_from_parts). While the device data isn't fresh, each tile
- * reads offline since the last device data (LINK-046). */
+ * reads offline since the last device data (LINK-046). The mirror's state beside it follows every
+ * turn: device data heard while it stays fresh (a summary every 10 s) moves heard_ms and nothing
+ * the screen shows, and the console counts "last N s ago" from it. */
 static void home_copy(uint64_t now)
 {
     if (!s_home) {
@@ -756,6 +758,12 @@ static void home_copy(uint64_t now)
     plink_dev_info_t di;
     plink_keypad_dev_info(K.k, now, &di);
     if (K.dev_copied && di.seq == K.dev_seq_copied && di.fresh == K.dev_fresh_copied) {
+        /* the rows stand; s_kdev_info is only this task's to write, so read here unlocked */
+        if (di.heard_ms != s_kdev_info.heard_ms || di.shared != s_kdev_info.shared) {
+            xSemaphoreTake(s_dev_lock, portMAX_DELAY);
+            s_kdev_info = di;
+            xSemaphoreGive(s_dev_lock);
+        }
         return;
     }
     const int64_t epoch = link_epoch_ms();

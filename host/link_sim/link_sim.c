@@ -117,6 +117,8 @@ static void help(void)
                  "  arm away|stay|night CODE, disarm CODE   at the master's own console\n"
                  "  devices         the house's devices, as the keypads get them\n"
                  "  device REF online|offline   the house can reach that device, or can't\n"
+                 "  house off|on    the house's Home Assistant disconnected (no devices: the\n"
+                 "                  keypads get the empty list), or back\n"
                  "  prefs N         keypad N's Screen and sound settings, as it reported them\n"
                  "  prefs N set KEY VALUE   change one on keypad N, as Home Assistant would\n"
                  "                  (KEY: brightness, saver_after, night, night_start, beeps...)\n"
@@ -391,6 +393,9 @@ static bool master_line(char *line)
         if (!link_master_device_online(&M, now, t[1], strcmp(t[2], "online") == 0)) {
             say_line(NULL, "no such device (type devices)");
         }
+    } else if (strcmp(t[0], "house") == 0 && n == 2u &&
+               (strcmp(t[1], "on") == 0 || strcmp(t[1], "off") == 0)) {
+        link_master_house(&M, now, strcmp(t[1], "on") == 0);
     } else if (strcmp(t[0], "prefs") == 0 && n == 2u && parse_uint(t[1], 255u, &a)) {
         link_master_say_prefs(&M, now, (uint8_t)a);
     } else if (strcmp(t[0], "prefs") == 0 && n == 5u && parse_uint(t[1], 255u, &a) &&

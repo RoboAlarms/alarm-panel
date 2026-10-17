@@ -71,6 +71,9 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
      master whose only keypad is off during its update goes back to its old version.
   4. The update server takes `want` (BL-050): without it a keypad offered a newer version than
      its master's would take the relay.
+  5. A keypad never updates past its master (2026-10-17, the owner: the keypads must not update to
+     a version past the master). Every way a paired keypad can update is capped at the version its
+     master runs ("The keypad", Never past its master); only a cable goes past, for development.
 - **Smart Home and Home Assistant on keypads** (BL-216): decided 2026-10-16 (the owner: "Approve
   P1, recommendations OK"), each as the design recommended. The numbers stay, so other documents
   can name them:
@@ -135,7 +138,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-026 | A keypad applies a status block, partition record, zone record or time only when it came in a newer frame of the session than the one it last applied for that item | unit |
 | LINK-027 | The master accepts a keypad's commands for its home partition only (NOT_AUTHORIZED otherwise), one at a time with panic in a slot of its own, at most about 2 a second (a burst of 5); requests over their limits are dropped in the link task, before anything reaches the alarm task | unit |
 | LINK-028 | A keypad speaks its home partition's announcements (docs/features/08 D05) from the master's pushed events, sounds and status, with its own Announcements switches and Voice volume (D06; decided 2026-10-16); nothing older than its last baseline (a reconnect, a backfill, a master restart) is ever spoken, nor an event the master made more than 5 s before its time now (by the engine time every STATUS carries, or its wall clock), nor the end of an exit time learned more than 5 s after the keypad's own countdown ended, and nothing while the link is not ONLINE; a keypad whose baseline falls in an exit time (it started, or its link came back) says that exit time's end as the master does | unit + HIL |
-| LINK-029 | A keypad whose session has `PLINK_CAP_FW` installs firmware only at its master's order, for the version the master names, never older or equal; it runs no update check of its own and offers no Install. Its own Install stays for LINK-025's maintenance, the needs-update state and a master without the bit; the console isn't held back; Stop stays (OTA-027) | unit (`test_plink_fw.c`), HIL |
+| LINK-029 | A keypad whose session has `PLINK_CAP_FW` installs firmware only at its master's order, for the version the master names, never older or equal, and never newer than the version its master runs (decided 2026-10-17); it runs no update check of its own and offers no Install. Its own Install stays only for LINK-025's maintenance and the needs-update state, capped at its master's version (its check sends `want` = that version, which INFO names at each session; no Install while it has never heard one); its console's update commands are capped the same way; only a cable goes past; Stop stays (OTA-027) | unit (`test_plink_fw.c`), HIL |
 | LINK-030 | The master keeps every keypad with `PLINK_CAP_FW` on the version it runs, with no person's step (decided 2026-10-17): it orders a keypad behind once its own update is confirmed and whenever it finds one behind (newly paired, back on line), while it runs no update and `proto_fw_install_allowed()` passes on its snapshot; every hold ends by itself (a stop after 24 h, a transfer failure's budget after 24 h, a blocked keypad probed again every 24 h; a canary at the master's next version); STATUS carries UPDATING and HOLD, and a keypad's gate refuses while either is set; one keypad installs or self-tests at a time, in device-number order; a rollback, or no return within 10 min, holds that device and chip revision on its version until the master's next version or Try again now; meanwhile the master puts off its own restart and doesn't raise that keypad's supervision trouble (up to 10 min) | unit, link |
 | LINK-031 | PROBE comes first. FETCH when the keypad's server offers exactly the target. RELAY when the keypad can't reach the server or is offered another version: from the master's running image (same device, chip range, accepted project) or a copy fetched with the keypad's facts. A refusal by the server for that keypad, or of the image itself, is never relayed. A fetch that fails for a reach or transfer reason falls back to the relay once | unit (planner table) |
 | LINK-032 | The keypad pulls bytes by image digest (`id8`) and offset, never by session, in order into its writer, within the order's page, count and gap and a 16 KB window, with flash busy at most half the time; it continues across a new session and a master restart with the same image. The master answers statelessly, only to the keypad holding the relay, from a bucket of its own; LINK-024 holds while it runs | link (lossy) |
@@ -535,7 +538,8 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   Troubles' Acknowledge stay dimmed, as they stay locked.
 - **Needs an update**: a keypad that hears its master but can't read its configuration (newer than
   its firmware reads) never gets ONLINE; Home says to update it, Software update opens without a
-  code, and the update gate decides on the master's newest status as for ONLINE.
+  code and offers at most its master's version (LINK-029), and the update gate decides on the
+  master's newest status as for ONLINE.
 - **Time**: the keypad follows the master's TIME (epoch and time zone; it ignores epoch 0) and
   runs no time server of its own while paired.
 - **Wi-Fi power save** is held off through `net_wifi_hold_low_latency(owner, on)`, one hold per
@@ -626,8 +630,21 @@ Decided 2026-10-17 (Decisions, keypad updates, 2): the master keeps every keypad
   master's order:
   - it runs no scheduled check of its own (`panel_ota_set_checks(false)`); PROBE is its check;
   - its Software update says "Updates come from <master>" and offers no Install.
-- Its own Install stays in three cases: LINK-025 maintenance, the needs-update state, and a session
-  without the bit. The console is not held back.
+- **Never past its master** (Decisions, keypad updates, 5). The master names the version it runs
+  in every order: INFO's `version` is its running version, and every other order names it too (the
+  master orders no other version). The keypad keeps the latest in NVS (`link/mver`) and caps every
+  update at it:
+  - its own Install stays only in LINK-025's maintenance and the needs-update state, and its check
+    then sends `want` = that version, so the server offers that version or nothing (FWS-028);
+  - a keypad that has never heard its master's version (a session without the bit) offers no
+    Install while paired;
+  - the console's update commands refuse an offer or an image newer than that version ("<master>
+    runs 0.6.2: update it first");
+  - only a cable (the USB bootloader) goes past, for development.
+
+  A keypad already newer than its master (the master went back by cable) is never sent back
+  (OTA-014): it stays as it is, shown "Newer than this panel". Unpaired, or made a stand-alone
+  panel, it has no master and no cap.
 - Stop stays (OTA-027). The installer or the system master can stop a run at the keypad (their code
   is checked by the master). The master tries that keypad again after 24 h, or with its next
   version.
@@ -776,12 +793,15 @@ bits that failed.
 | 0x31 | `FW_PAGE` | M->K | id8[8], total u32, offset u32, len u16, len bytes (fixed, like CFG_PAGE; bytes after the data are ignored) | 18 B + data: 1,157 B on UDP, 207 B in 250 B |
 
 **When each is sent:**
+- **FW_ORDER INFO:** at each session's first STATUS and whenever the master's confirmed version
+  changes, so a keypad always knows the version it may not pass.
 - **FW_INFO:** at the first STATUS of each session, on a change, and on INFO; at most one every 2 s.
 - **FW_STATE:** in answer to every order, on each change of state or `why`, at most once a second
   for `bytes`, and every 10 s while a run exists.
 
 **Values** (never renumbered):
-- **op:** 1 INFO, 2 PROBE, 3 FETCH, 4 RELAY, 5 INSTALL, 6 CANCEL.
+- **op:** 1 INFO (its `version` is the master's running version), 2 PROBE, 3 FETCH, 4 RELAY, 5
+  INSTALL, 6 CANCEL.
 - **kind:** 0 is the P4 application. 1 (C6), 2 (language pack) and 3 (asset pack) are reserved, and
   v1 refuses them.
 - **state:** 0 IDLE, 1 PROBING, 2 FETCHING, 3 RECEIVING, 4 KEY_WAIT, 5 VERIFYING, 6 READY, 7

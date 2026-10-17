@@ -1728,9 +1728,16 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   about a minute), both restarted within 4 s of the disarm, the master passed its self-test with
   its keypad back, the keypad's trial passed once its master ran the version, Activity logged
   installing and updated; the keypad took its master's update server by itself (BL-048)
+- [x] On the panels (2026-10-17, muted), the rest: the keypad hard-reset (its reset line) at 30 % of
+  its relay came back on its old version and was relayed again to READY; a master whose keypad was
+  held off past 180 s failed its self-test ("the keypads not running") and went back, and dropped
+  that version; with bench fault images (0.7.3-fault.z, `no_zone_service`, which only a master's
+  self-test needs) the master went back on its own self-test and the keypad, healthy on the new
+  version and on trial, went back with it ("its master doesn't run ..."), Activity logging the
+  keypad rolled back (BL-048)
 - [ ] On the panels, still: the keypad downloading itself (needs an update server with the
-  release); the master going back and the keypad with it; power pulled mid-download; `display
-  watch` and touch on the keypad while it writes (BL-048)
+  release); a real power cut mid-download; `display watch` and touch on the keypad while it
+  writes; the screens on the glass while updating (BL-048)
 - [x] Run-time caps: the offered caps an argument of `plink_master_init` and `plink_keypad_init`,
   each session keeping both offers ANDed under `PLINK_CAPS_KNOWN` (LINK-043) (BL-048,
   a97a745)

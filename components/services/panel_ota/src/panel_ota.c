@@ -4524,6 +4524,9 @@ static void probation_tick(uint64_t now)
         if (unproven != shown) {
             shown = unproven;
             health_text(unproven, what, sizeof(what));
+            if (what[0] == '\0') {
+                snprintf(what, sizeof(what), "its master to run %s", s_ord_version);
+            }
             ESP_LOGI(TAG, "self-test: waiting for %s to keep reporting", what);
         }
         return;
@@ -4544,12 +4547,14 @@ static void probation_tick(uint64_t now)
         }
         health_text(missing != 0u ? missing : unproven, what, sizeof(what));
         if (trial == PANEL_OTA_TRIAL_FAIL) {
-            snprintf(what, sizeof(what), "its master doesn't run %s", s_ord_version);
+            ESP_LOGE(TAG, "self-test failed: its master doesn't run %s (health 0x%" PRIx32
+                     "): going back with it", s_ord_version, (uint32_t)s_health);
+        } else {
+            ESP_LOGE(TAG,
+                     "self-test failed: %s not running (health 0x%" PRIx32 ", need 0x%" PRIx32
+                     "): rolling back",
+                     what, (uint32_t)s_health, s_required);
         }
-        ESP_LOGE(TAG,
-                 "self-test failed: %s not running (health 0x%" PRIx32 ", need 0x%" PRIx32
-                 "): rolling back",
-                 what, (uint32_t)s_health, s_required);
         /* OTA-031: say why the panel restarts, armed or not, before it does. */
         lock();
         s_st.phase = PANEL_OTA_RESTARTING;

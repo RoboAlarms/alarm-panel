@@ -759,7 +759,12 @@ static bool bench_judge(void *ctx, const proto_fw_header_t *h, uint32_t size,
                  k->info.version, h->version);
         return false;
     }
-    if (strcmp(h->version, target) != 0) {
+    /* The planner takes the spare slot's update as the target at its next turn (about a second):
+     * a copy sent straight after this panel's own update is judged against that slot too. */
+    panel_ota_image_t spare;
+    const bool spare_is_it =
+        panel_ota_spare_image(&spare) == ESP_OK && strcmp(spare.version, h->version) == 0;
+    if (strcmp(h->version, target) != 0 && !spare_is_it) {
         snprintf(why, why_len, "The keypads' target is %s, not %s: update this panel first",
                  target, h->version);
         return false;

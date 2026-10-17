@@ -76,7 +76,7 @@ set(ALARM_BENCH_FAULT "$ENV{ALARM_BENCH_FAULT}")
 if(NOT ALARM_BENCH_FAULT STREQUAL "")
     if(NOT PROJECT_VER MATCHES "-fault")
         message(FATAL_ERROR "ALARM_BENCH_FAULT=${ALARM_BENCH_FAULT} needs a test version with "
-                            "-fault in it (-Version x.y.z-fault.<name>)")
+                            "-fault in it, at most 15 characters (-Version 0.7.3-fault.z)")
     endif()
     if(NOT ALARM_BENCH_FAULT MATCHES "^(no_zone_service|no_touch|zones_stop)$")
         message(FATAL_ERROR "ALARM_BENCH_FAULT must be no_zone_service, no_touch or zones_stop")

@@ -123,7 +123,8 @@ or a feature option. `python tools/check_architecture.py` checks the rules (CI r
   your own from a file (Advanced tools > Software). The version
   is the `VERSION` file; `-Version x.y.z-test` builds a test image in its own folder. A bench
   fault image, to prove the update self-test catches a broken part, sets `ALARM_BENCH_FAULT`
-  (`no_zone_service`, `no_touch`, `zones_stop`) with a `-Version x.y.z-fault.<name>`; the build
+  (`no_zone_service`, `no_touch`, `zones_stop`) with a `-Version` that has `-fault` in it and fits
+  15 characters, the asset packs' limit (`0.7.3-fault.z`: letters, digits, dots and dashes); the build
   refuses either without the other (docs/features/13 "Still to run on the bench"). Never install
   one on a panel that protects a house.
 - Remote development (docs/features/30): `pwsh tools/idf.ps1 -Profile dev build` / POSIX

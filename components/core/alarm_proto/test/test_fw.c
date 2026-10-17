@@ -696,7 +696,7 @@ static const char *build_state(const proto_fw_state_t *st)
  * payload over "release_url":null (B019) */
 static void test_update_state(void)
 {
-    proto_fw_state_t st = {"0.6.0", "", "RoboAlarms Panel firmware", NULL, false, -1};
+    proto_fw_state_t st = {"0.6.0", "", "RoboAlarms Panel firmware", NULL, false, -1, NULL, 0u};
     TEST_ASSERT_EQUAL_STRING("{\"installed_version\":\"0.6.0\",\"latest_version\":\"0.6.0\","
                              "\"title\":\"RoboAlarms Panel firmware\","
                              "\"in_progress\":false,\"update_percentage\":null}",
@@ -712,6 +712,42 @@ static void test_update_state(void)
                              "\"release_url\":\"https://example.org/notes/0.6.1\","
                              "\"in_progress\":true,\"update_percentage\":42}",
                              build_state(&st));
+}
+
+/* OTA-010, docs/features/11 "What people see": a master's link keypads, keys added only - none
+ * paired leaves the payload as it was; a version not known is null; at most 8. */
+static void test_update_state_keypads(void)
+{
+    static proto_fw_keypad_t kp[PROTO_FW_KEYPADS_MAX + 1u];
+    memset(kp, 0, sizeof(kp));
+    kp[0].device = 1u;
+    snprintf(kp[0].version, sizeof(kp[0].version), "%s", "0.6.0");
+    snprintf(kp[0].state, sizeof(kp[0].state), "%s", "up_to_date");
+    kp[1].device = 3u;
+    snprintf(kp[1].state, sizeof(kp[1].state), "%s", "downloading");
+    proto_fw_state_t st = {"0.6.0", "", "RoboAlarms Panel firmware", NULL, false, -1, kp, 0u};
+    TEST_ASSERT_NULL(strstr(build_state(&st), "keypads"));
+    st.keypad_count = 2u;
+    TEST_ASSERT_EQUAL_STRING("{\"installed_version\":\"0.6.0\",\"latest_version\":\"0.6.0\","
+                             "\"title\":\"RoboAlarms Panel firmware\","
+                             "\"in_progress\":false,\"update_percentage\":null,"
+                             "\"keypads\":[{\"device\":1,\"version\":\"0.6.0\","
+                             "\"state\":\"up_to_date\"},{\"device\":3,\"version\":null,"
+                             "\"state\":\"downloading\"}]}",
+                             build_state(&st));
+    /* 8 at most, each with the longest version and state: within PROTO_PAYLOAD_MAX */
+    for (size_t i = 0; i < PROTO_FW_KEYPADS_MAX + 1u; i++) {
+        kp[i].device = (uint8_t)(i + 1u);
+        memset(kp[i].version, '9', sizeof(kp[i].version) - 1u);
+        memset(kp[i].state, 'x', sizeof(kp[i].state) - 1u);
+    }
+    st.keypad_count = PROTO_FW_KEYPADS_MAX + 1u;
+    st.release_url = "https://example.org/a/very/long/notes/address/for/a/release/0.6.1";
+    const char *s = build_state(&st);
+    TEST_ASSERT_NOT_NULL(strstr(s, "\"device\":8"));
+    TEST_ASSERT_NULL(strstr(s, "\"device\":9"));
+    st.keypads = NULL; /* none handed: left out */
+    TEST_ASSERT_NULL(strstr(build_state(&st), "keypads"));
 }
 
 /* OTA-010 */
@@ -1140,6 +1176,7 @@ int main(void)
     RUN_TEST(test_base64);
     RUN_TEST(test_upload_line);
     RUN_TEST(test_update_state);
+    RUN_TEST(test_update_state_keypads);
     RUN_TEST(test_update_discovery);
     RUN_TEST(test_why_numbers_frozen);
     RUN_TEST(test_version_cap);

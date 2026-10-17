@@ -14880,6 +14880,18 @@ msgstr ""
 msgid "You are signed out."
 msgstr ""
 
+#. Software update: why this panel's restart into its update waits - one of its keypads runs its own new version's self-test, or installs. At most 39 bytes.
+#: components/services/plink_service/src/plink_fwm_svc.c
+msgctxt "update"
+msgid "A keypad is checking its update"
+msgstr ""
+
+#. Software update: why this panel's restart into its update waits - its keypads are still downloading the same update, so they can restart together. At most 39 bytes.
+#: components/services/plink_service/src/plink_fwm_svc.c
+msgctxt "update"
+msgid "Its keypads are getting the update"
+msgstr ""
+
 #: components/services/plink_service/src/plink_keypad_svc.c
 msgctxt "update"
 msgid "No system communication"

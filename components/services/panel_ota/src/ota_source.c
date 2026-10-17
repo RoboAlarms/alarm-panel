@@ -1,7 +1,8 @@
 /*
  * ota_source.c - a master's image sources for its keypads (docs/features/11 "The master", image
- * sources): its own running image, read through windows of its partition, and one copy in PSRAM
- * fetched with a keypad's facts. No partition change, no fw_cache, and no flash is ever written:
+ * sources): its own running image, read through windows of its partition, its own update waiting
+ * in its spare slot (the same windows, of that partition), and one copy in PSRAM fetched with a
+ * keypad's facts. No partition change, no fw_cache, and no flash is ever written:
  * a foreign image never goes into the master's own spare slot, which esp_ota_set_boot_partition
  * would boot.
  *
@@ -121,15 +122,17 @@ static void win_unmap_locked(void)
     }
 }
 
-/* len bytes at off of the running partition, through the 256 KB window (call with s_src held,
- * from a task with an internal-RAM stack). */
-static esp_err_t win_read_locked(uint32_t off, uint8_t *out, size_t len)
+/* len bytes at off of part (the running partition, or the spare one), through the 256 KB window
+ * (call with s_src held, from a task with an internal-RAM stack). A window of another partition is
+ * unmapped first. */
+static esp_err_t win_read_locked(const esp_partition_t *part, uint32_t off, uint8_t *out, size_t len)
 {
-    if (S.part == NULL) {
-        S.part = esp_ota_get_running_partition();
-        if (S.part == NULL) {
-            return ESP_ERR_NOT_FOUND;
-        }
+    if (part == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (S.part != part) {
+        win_unmap_locked();
+        S.part = part;
     }
     if ((uint64_t)off + len > S.part->size) {
         return ESP_ERR_INVALID_SIZE;
@@ -182,7 +185,7 @@ static bool hash_running(uint32_t size, uint8_t out[32])
             ok = false;
             break;
         }
-        ok = win_read_locked(off, buf, n) == ESP_OK;
+        ok = win_read_locked(esp_ota_get_running_partition(), off, buf, n) == ESP_OK;
         give();
         ok = ok && psa_hash_update(&op, buf, n) == PSA_SUCCESS;
     }
@@ -273,8 +276,22 @@ esp_err_t panel_ota_running_read(uint32_t offset, void *out, size_t len)
     } else if ((uint64_t)offset + len > s_img.size) {
         err = ESP_ERR_INVALID_SIZE;
     } else {
-        err = win_read_locked(offset, out, len);
+        err = win_read_locked(esp_ota_get_running_partition(), offset, out, len);
     }
+    give();
+    return err;
+}
+
+esp_err_t panel_ota_source_part_read(const esp_partition_t *part, uint32_t offset, void *out,
+                                     size_t len)
+{
+    if (out == NULL || part == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!take()) {
+        return ESP_ERR_NO_MEM;
+    }
+    const esp_err_t err = win_read_locked(part, offset, out, len);
     give();
     return err;
 }
@@ -306,9 +323,11 @@ esp_err_t panel_ota_fetch_for(const proto_fwsrv_facts_t *facts, const char *vers
     }
     /* Asked under s_src: a run accepted before this answer frees the copy only after this
      * request is in (panel_ota_source_own_run takes s_src too), so it never outlives the start. */
-    if (panel_ota_run_busy()) {
+    /* not started, or its own run: its version is changing - but its own release downloaded and
+     * checked, waiting for the restart, is the very version its keypads need a copy of */
+    if (panel_ota_run_busy() && !panel_ota_own_waiting()) {
         give();
-        return ESP_ERR_INVALID_STATE; /* not started, or its own run: its version is changing */
+        return ESP_ERR_INVALID_STATE;
     }
     memset(&s_creq, 0, sizeof(s_creq));
     s_creq.pending = true;

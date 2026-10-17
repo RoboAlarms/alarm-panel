@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "alarm/alarm_strings.h"
+#include "link_fw.h"
 #include "panel_link/plink_store.h"
 #include "panel_link/plink_view.h"
 
@@ -1332,6 +1333,9 @@ bool link_master_init(link_master_t *v, const plink_crypto_t *c, const link_io_t
         memset(salt, 0x5A, sizeof(salt));
     }
     house(&v->cfg, salt);
+    if (io->mfw != NULL) {
+        v->cfg.partitions[0].exit_delay_s = 45u; /* the shortest: updates' scenarios arm whole */
+    }
     alarm_ports_t ports;
     memset(&ports, 0, sizeof(ports));
     ports.ctx = v;
@@ -1369,6 +1373,8 @@ bool link_master_init(link_master_t *v, const plink_crypto_t *c, const link_io_t
     port.note = m_note;
     port.dev_run = m_dev_run;
     port.prefs_done = m_prefs_done;
+    /* Updates through the link (link_fw.h): offered with the PC's stand-in for panel_ota. */
+    port.fw_read = io->mfw != NULL ? link_mfw_read : NULL;
 
     /* The registry and its one source (BL-216), before the first build. */
     house_init(&v->house, (uint32_t)(m_epoch(v) / 1000));
@@ -1393,12 +1399,15 @@ bool link_master_init(link_master_t *v, const plink_crypto_t *c, const link_io_t
     }
     char id[PLINK_PANEL_ID_LEN + 1];
     snprintf(id, sizeof(id), "%s", panel_id != NULL ? panel_id : "0ac5e1");
-    plink_master_init(&v->m, c, &port, have, name != NULL ? name : "PC master", id, LINK_CAPS,
-                      now_ms);
+    plink_master_init(&v->m, c, &port, have, name != NULL ? name : "PC master", id,
+                      (uint16_t)(LINK_CAPS | (io->mfw != NULL ? PLINK_CAP_FW : 0u)), now_ms);
     const unsigned count = have != NULL ? rec.count : 0u;
     plink_wipe(&rec, sizeof(rec));
     plink_master_net(&v->m, now_ms, true);
     plink_master_time(&v->m, now_ms, m_epoch(v), LINK_TZ);
+    if (io->mfw != NULL) {
+        link_mfw_boot(v, now_ms);
+    }
     v->dirty = true;
     link_master_sync(v, now_ms);
     say(io, "master \"%s\" (panel %s): %u keypad%s stored", name != NULL ? name : "PC master", id,
@@ -1410,6 +1419,9 @@ void link_master_input(link_master_t *v, uint64_t now_ms, const plink_addr_t *fr
                        const uint8_t *frame, size_t len)
 {
     v->now = now_ms;
+    if (v->io.mfw != NULL && v->io.mfw->down) {
+        return; /* restarting: off */
+    }
     plink_master_input(&v->m, now_ms, from, frame, len);
     link_master_sync(v, now_ms);
 }
@@ -1417,6 +1429,9 @@ void link_master_input(link_master_t *v, uint64_t now_ms, const plink_addr_t *fr
 void link_master_tick(link_master_t *v, uint64_t now_ms)
 {
     v->now = now_ms;
+    if (v->io.mfw != NULL && !link_mfw_tick(v, now_ms)) {
+        return; /* restarting: off, or it just started again */
+    }
     if (alarm_engine_next_deadline(&v->eng) <= now_ms) {
         alarm_engine_tick(&v->eng, now_ms);
     }
@@ -1430,10 +1445,17 @@ void link_master_tick(link_master_t *v, uint64_t now_ms)
 
 uint64_t link_master_next(const link_master_t *v)
 {
+    if (v->io.mfw != NULL && v->io.mfw->down) {
+        return link_mfw_next(v);
+    }
     uint64_t t = alarm_engine_next_deadline(&v->eng);
     const uint64_t more[3] = {plink_master_next(&v->m), house_next(v), v->dev_build_at};
     for (size_t i = 0; i < 3u; i++) {
         t = more[i] < t ? more[i] : t;
+    }
+    if (v->io.mfw != NULL) {
+        const uint64_t f = link_mfw_next(v);
+        t = f < t ? f : t;
     }
     return t;
 }
@@ -1766,6 +1788,9 @@ void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t
     port.send = k_send;
     port.store = k_store;
     port.resolve = k_resolve;
+    /* Updates through the link (link_fw.h): the relay's writer, with the PC's stand-in for
+     * panel_ota. */
+    port.fw_write = io->kfw != NULL ? link_kfw_write : NULL;
 
     plink_keypad_rec_t rec;
     memset(&rec, 0, sizeof(rec));
@@ -1785,10 +1810,15 @@ void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t
         .users = ALARM_MAX_USERS,
         .devices = ALARM_MAX_DEVICES,
     };
+    const uint16_t caps = (uint16_t)(LINK_CAPS | (io->kfw != NULL ? PLINK_CAP_FW : 0u));
     plink_keypad_init(&v->k, c, &port, have, v->cfg_buf, sizeof(v->cfg_buf), &v->cfg, PLINK_KIND_PC,
-                      &cap, LINK_CAPS, name != NULL ? name : "PC keypad", LINK_FW, now_ms);
+                      &cap, caps, name != NULL ? name : "PC keypad",
+                      io->kfw != NULL ? io->kfw->running : LINK_FW, now_ms);
     plink_wipe(&rec, sizeof(rec));
     plink_keypad_home_attach(&v->k, &v->mirror); /* before the first tick: HOME is offered */
+    if (io->kfw != NULL) {
+        link_kfw_boot(v, now_ms); /* its facts, last result, master's version, trial */
+    }
     kp_prefs_report(v, now_ms);
     if (master != NULL) {
         plink_keypad_master_addr(&v->k, now_ms, master, plink_addr_is_broadcast(master));
@@ -1817,12 +1847,21 @@ void link_keypad_input(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *fr
                        const uint8_t *frame, size_t len)
 {
     v->now = now_ms;
+    if (v->io.kfw != NULL && v->io.kfw->down) {
+        return; /* restarting: off */
+    }
     plink_keypad_input(&v->k, now_ms, from, frame, len);
+    if (v->io.kfw != NULL) {
+        (void)link_kfw_tick(v, now_ms); /* an order is taken at once */
+    }
 }
 
 void link_keypad_tick(link_keypad_t *v, uint64_t now_ms)
 {
     v->now = now_ms;
+    if (v->io.kfw != NULL && !link_kfw_tick(v, now_ms)) {
+        return; /* restarting: off, or it just started again */
+    }
     if (plink_keypad_next(&v->k) <= now_ms) {
         plink_keypad_tick(&v->k, now_ms);
     }
@@ -1831,7 +1870,12 @@ void link_keypad_tick(link_keypad_t *v, uint64_t now_ms)
 
 uint64_t link_keypad_next(const link_keypad_t *v)
 {
-    return plink_keypad_next(&v->k);
+    uint64_t t = plink_keypad_next(&v->k);
+    if (v->io.kfw != NULL) {
+        const uint64_t f = link_kfw_next(v);
+        t = v->io.kfw->down || f < t ? f : t;
+    }
+    return t;
 }
 
 uint8_t link_keypad_home(const link_keypad_t *v, uint64_t now_ms)

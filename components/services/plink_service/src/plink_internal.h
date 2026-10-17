@@ -43,6 +43,11 @@
 #define LINK_KEY_KEYPAD "keypad"    /* blob, plink_store_keypad_encode */
 #define LINK_KEY_STATIC "master_ip" /* u32, a keypad's master set by hand (network order) */
 #define LINK_KEY_MAINT  "otamaint"  /* u8 1: an update went in through LINK-025's maintenance */
+/* Updates through the link (docs/features/11, BL-048): */
+#define LINK_KEY_MVER   "mver" /* blob, a keypad's master's version (LINK-029): schema u8 1, net_id
+                                * u16 little-endian, version (len u8, bytes) */
+#define LINK_KEY_KUP    "kup"  /* u32, bit d-1: a master's keypads on line when its own restart into
+                                * an update came (LINK-041), erased once it runs confirmed */
 
 #define LINK_POLL_MS      50u /* the longest select() wait: the hand-overs are looked at */
 #define LINK_REQ_WAIT_MS  2000u
@@ -141,6 +146,7 @@ enum {
     LINK_REQ_KP_FORGET,        /* keypad, `plink forget` */
     LINK_REQ_KP_FORCE,         /* master, `plink kp force`: the setup's keypad pairing although the
                                 * setup is done (dev builds; a bench panel keeps its Wi-Fi) */
+    LINK_REQ_FW_AGAIN,         /* master, `plink fw update <n>`: keypad device asked again now */
 };
 typedef struct {
     uint8_t kind;
@@ -174,6 +180,48 @@ void msvc_lockout_refresh(uint8_t device);
  * after an action, so its DEV_ACK carries the record that shows it. */
 void msvc_post_devices(uint8_t buf, size_t len, uint32_t crc);
 void msvc_post_dev_ack(uint32_t ticket, uint8_t result, uint8_t why);
+
+/* The worker is woken at once (it looks every second anyway). Any task. */
+void msvc_kick(void);
+
+/* ---- plink_fwm_svc.c: a master's keypad updates (docs/features/11 "Updates through the link",
+ * BL-048). The link task unless said. ------------------------------------------------------------ */
+/* The start-up, before the manager: the planner's memory (PSRAM), the event queue, link/kup, the
+ * restart's hook. ESP_ERR_NO_MEM: updates are left out (logged), the link runs without them. */
+esp_err_t fsvc_prepare(uint64_t now);
+/* PLINK_CAP_FW once fsvc_prepare succeeded (LINK-043). */
+uint16_t fsvc_caps(void);
+/* The manager's port.fw_read: its spare slot, its running one (both map flash windows: this
+ * task's internal-RAM stack) or the copy in PSRAM, by id8. */
+size_t fsvc_fw_read(void *ctx, const uint8_t id8[PLINK_ID8_LEN], uint32_t offset, uint8_t *out,
+                    size_t len);
+/* Each turn, before the manager's tick: UPDATING, LINK-041's question, the planner's step. */
+void fsvc_poll(plink_master_t *m, uint64_t now);
+/* With link_pub_lock held, from the keypads' rows (peers): the published copies. true when the
+ * keypads' part of MQTT's firmware state changed (the caller tells net_mqtt after unlocking). */
+bool fsvc_publish_locked(const plink_peer_info_t *peers, size_t n);
+/* LINK_REQ_FW_AGAIN: a ui_link_result_t. */
+uint8_t fsvc_request(plink_master_t *m, uint64_t now, const link_req_t *req);
+/* The worker's turn: the Activity events handed over, posted (they wait for the alarm task). */
+void fsvc_worker(void);
+/* `plink fw` on a master (the console task): prints the planner's view. */
+int fsvc_console_show(void);
+
+/* ---- plink_fwk_svc.c: a keypad's updates from its master (docs/features/11 "The keypad",
+ * BL-048). The link task unless said. ------------------------------------------------------------ */
+/* What the keypad offers: PLINK_CAP_FW, with the relay's writer (kfw_write). */
+uint16_t kfw_caps(void);
+/* The relay's writer (port.fw_write): panel_ota_write on the link task (internal-RAM stack). */
+size_t kfw_write(void *ctx, uint32_t offset, const uint8_t *data, size_t len, uint32_t *busy_ms);
+/* Right after plink_keypad_init: its master's version back (link/mver) and the cap, its facts and
+ * last result, its trial after an install its master ordered. */
+void kfw_boot(plink_keypad_t *k, uint64_t now);
+/* Each turn, after the manager's tick: link/mver and the cap, the orders through panel_ota, its
+ * run's state, the gate (asked twice) and INSTALL, the trial for panel_ota's self-test, the
+ * published copy. kept_tone: a fire or CO tone kept through a lost link (its gate's KEPT_TONE). */
+void kfw_poll(plink_keypad_t *k, uint64_t now, const plink_keypad_info_t *info, bool kept_tone);
+/* `plink fw` on a keypad (the console task). */
+int kfw_console_show(void);
 
 /* ---- plink_home_svc.c: Smart Home and settings on the master's keypads (BL-216) --------------
  * docs/features/11 "Smart Home and Home Assistant on keypads". The link task unless said. */

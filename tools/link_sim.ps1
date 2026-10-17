@@ -10,10 +10,14 @@
             pairing, allow a keypad, list and remove keypads, open zones, arm and disarm; the
             house's devices for the keypads' Smart Home (devices, device, house) and a keypad's
             Screen and sound settings (prefs N, prefs N set KEY VALUE), as Home Assistant changes
-            them.
+            them; updates through the link (fw install V: its keypads follow it; fw, fw update N,
+            fw bad, fw server on|off|refuse).
     keypad  the keypad's side of the link and the master's status as the keypad rebuilds it:
             pair, arm, disarm, chime, panic; the master's devices as it mirrors them (devices)
-            and acts on them (act REF ACTION [VALUE] [CODE]); its own settings (prefs).
+            and acts on them (act REF ACTION [VALUE] [CODE]); its own settings (prefs); its
+            updates from its master (fw, fw server on|off|refuse, fw bad).
+    --version V and --model M say what each runs (1.4.0, pc_panel). python tools/link_fw_sim.py
+    runs the update scenarios on a master and a keypad.
 
   The two pair with each other, and with panels on the LAN: they use the OS's random numbers.
   There is no mDNS on the PC: give the keypad --master <ip>[:port], or it asks by broadcast to

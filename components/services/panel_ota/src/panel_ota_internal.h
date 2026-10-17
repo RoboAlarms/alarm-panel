@@ -8,6 +8,7 @@
 #include <stdint.h>
 
 #include "alarm/alarm_types.h"
+#include "esp_partition.h"
 #include "panel_ota.h"
 
 /* proto_fw_install_allowed(), asked of the alarm task itself so the answer and the engine's
@@ -57,6 +58,13 @@ void panel_ota_notify_source(void);
 bool panel_ota_confirmed(void);
 /* An update run of this panel's own, its self-test, or not started (OTA-030). */
 bool panel_ota_run_busy(void);
+/* Its own release, downloaded and checked, waits for the restart in its spare slot (not on its
+ * self-test): its keypads' copies of that version may be fetched meanwhile. Any task. */
+bool panel_ota_own_waiting(void);
+/* len bytes at offset of partition part through the sources' windows (panel_ota_spare_read):
+ * from a task with an internal-RAM stack. */
+esp_err_t panel_ota_source_part_read(const esp_partition_t *part, uint32_t offset, void *out,
+                                     size_t len);
 /* A check at this panel's own server and channel with a keypad's facts and want; *a gets the
  * answer. Returns its why (proto_fwsrv_check_why's, or the reach and memory classes). The update
  * task only. */

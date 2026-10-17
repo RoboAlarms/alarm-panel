@@ -89,6 +89,42 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   answer into a box) and answered with the screen's refusals and the values then stored
   (`plink_keypad_prefs_answer`); a change the screen doesn't take in 3 s is withdrawn and answered
   busy. The link task never takes `board_ui_lock` and never writes NVS for any of it.
+- **Updates through the link** (docs/features/11 "Updates through the link", BL-048): keypads
+  follow their master and nobody is asked anything. Both sides offer `PLINK_CAP_FW`.
+  - On a master (`plink_fwm_svc.c`): each link task turn sets STATUS's UPDATING (its own run or
+    its self-test) and, while keypads are paired, LINK-041's question
+    (`panel_ota_set_keypads_check`: the keypads on line when its restart came, NVS `link/kup`).
+    Once a second (every 100 ms while its restart waits for the INSTALLs' echoes) the planner
+    (`plink_fw_plan`) steps on a world made of panel_ota - the target is its own update waiting in
+    its spare slot (`panel_ota_spare_image`), else the version it runs; INFO names it only once
+    confirmed; the server, channel and key from its trust record; its image from the spare or
+    running slot; the copy for another model (`panel_ota_fetch_for`, at most every 5 s,
+    `panel_ota_copy_free`) - and the core (`plink_master_fw_keypad`); its orders go to
+    `plink_master_fw_order`, the Activity stages 9-12 (`plink_fw_log_step`, once each) to the
+    worker, which posts them, and the rows are published (`plink_service_fw`, MQTT's
+    `.../firmware` `keypads`, `plink fw`). Its own restart (`panel_ota_set_restart_with`) is held
+    while a keypad on line still downloads or receives the target (at most 30 min from when its
+    own update was ready: they download alongside it and restart with it, decision 7) and while a
+    keypad installs alone or is on its self-test (`plink_master_fw_busy`); once its gate passes,
+    INSTALL goes to every READY keypad and the echoes are waited for (5 s at most). The relay's
+    bytes come through `port.fw_read`: the spare or running slot (`panel_ota_spare_read`,
+    `panel_ota_running_read`: flash windows, the link task's internal-RAM stack) or the copy in
+    PSRAM.
+  - On a keypad (`plink_fwk_svc.c`): its master's version is kept in NVS `link/mver` and applied as
+    panel_ota's cap whenever the core's seq moves (and at the start, before the first INFO); no
+    scheduled check of its own while the session has FW (`panel_ota_set_checks(false)`). FETCH
+    and RELAY run through `panel_ota_order_fetch`/`_relay` (the order's server and key become its
+    trust record), the relay's bytes through `panel_ota_write` from the link task (`port.fw_write`)
+    and `panel_ota_end` once the last is in; INSTALL once the core holds it for the READY version
+    and the gate passes twice a second apart (`plink_keypad_fw_hold`, and no fire or CO tone kept
+    through a lost link: `plink_keypad_fw_gate` KEPT_TONE), then `panel_ota_order_install`. After
+    an install its master ordered it is on trial (`plink_keypad_fw_trial`), and panel_ota's
+    self-test asks the trial (`panel_ota_set_trial_check`). Its continuous tone takes fire and CO
+    from the STATUS flags too (`plink_keypad_continuous`). `plink_service_fw_keypad` gives the
+    screens its run (state, target, percent, paused, the banner, on trial) and its master's name
+    and version.
+  - On a PC: `host/link_sim` runs both sides with a stand-in for panel_ota (`link_fw.c`), and
+    `tools/link_fw_sim.py` runs the scenarios.
 - **The setup** of a panel that becomes a keypad pairs while it is still a master (Option C): a
   keypad manager of its own on the same socket; the setup's Done stores the record and the keypad
   role and restarts. Paired, it sends nothing more until Done (the other master keeps the keypad
@@ -101,7 +137,7 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
 ## Public API
 | Header | What it offers |
 |---|---|
-| `include/plink_service.h` | `plink_service_role()`, `plink_service_force_master()` (a start that runs the alarm panel although a keypad role is stored); on a master `plink_service_listener()` (register before `alarm_service_start()`), `plink_service_set_devices_port()` (Zigbee's numbers), `plink_service_set_home()` (the registry runs: Smart Home offered), `plink_service_keypads()` and `plink_service_prefs_set()` (the keypads' settings for Home Assistant); `plink_service_start()`; on a keypad `plink_service_keypad_home()` (the UI's partition), `plink_service_keypad_power()` (the heartbeat's power flags) and `plink_service_update_idle()` (for `panel_ota_set_idle_gate`); `plink_service_extend_backend()` (the UI's `link_*` entries, and a keypad's link-served entries); `plink_service_console_register()` |
+| `include/plink_service.h` | `plink_service_role()`, `plink_service_force_master()` (a start that runs the alarm panel although a keypad role is stored); on a master `plink_service_listener()` (register before `alarm_service_start()`), `plink_service_set_devices_port()` (Zigbee's numbers), `plink_service_set_home()` (the registry runs: Smart Home offered), `plink_service_keypads()` and `plink_service_prefs_set()` (the keypads' settings for Home Assistant), `plink_service_fw()` and `plink_service_fw_row_name()` (each keypad's update); `plink_service_start()`; on a keypad `plink_service_fw_keypad()` (its updates from its master), `plink_service_keypad_home()` (the UI's partition), `plink_service_keypad_power()` (the heartbeat's power flags) and `plink_service_update_idle()` (for `panel_ota_set_idle_gate`); `plink_service_extend_backend()` (the UI's `link_*` entries, and a keypad's link-served entries); `plink_service_console_register()` |
 | `src/plink_internal.h` (private) | the link task's hand-overs and published copies, shared by the source files |
 
 | Source | What it does |
@@ -110,6 +146,8 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
 | `plink_psa.c` | the crypto port (`plink_crypto_t`) on PSA: AES-128 ECB, X25519, the hardware RNG; proved by `plink_crypto_check` at every start; the cached AES key goes at the end of every link task turn (`plink_psa_forget`) |
 | `plink_master_svc.c` | the master: listener, worker, the manager's port, mDNS, holds, the copies the UI reads |
 | `plink_home_svc.c` | the master's Smart Home and settings for its keypads: the `plink_dev` task, its builds and device actions, the settings writes, Home Assistant's keypads list |
+| `plink_fwm_svc.c` | the master's keypad updates: the planner's world and step, its orders, the copy, `fw_read`, UPDATING, its restart's hold and INSTALLs, LINK-041's question and `link/kup`, the Activity events, the published rows, `plink fw` |
+| `plink_fwk_svc.c` | a keypad's updates: `link/mver` and the cap, the orders through panel_ota, the relay's writer, the gate and INSTALL, the trial, the published run, `plink fw` |
 | `plink_keypad_svc.c` | a keypad: discovery, commands, sounds, time, the update gate and heartbeat, the UI's copies, Smart Home's mirror and the screen's devices and actions, its settings for the master; the setup's pairing (Option C) |
 | `plink_backend.c` | the `ui_backend_t` entries |
 | `plink_console.c` | the `plink` command |
@@ -148,6 +186,10 @@ a burst from eight keypads isn't dropped.
   flight.
   Internal RAM: about 260 bytes of statics (the published signal and caps, their console copy,
   plink_dev's state) and plink_dev's task control block; its locks and queue are PSRAM.
+  Updates through the link: on a master the planner's world, step and log, panel_ota's status,
+  image and copy facts, the published rows and the event queue (16), PSRAM, allocated at the
+  start; on a keypad its run's state and the published copy, PSRAM; internal RAM: the few bytes
+  panel_ota's hooks read (the planned target and its hold, the trial).
   Smart Home on a keypad: the core's mirror (`plink_dev_mirror_t`, about 31 KB) and the screen's
   `ui_dev_t[64]` (14.3 KB), PSRAM, allocated at the start only with home control and PSRAM, with
   their three locks; the settings side needs no memory of its own beyond small statics.
@@ -155,12 +197,17 @@ a burst from eight keypads isn't dropped.
 - NVS namespace `link` (stored formats: never change a key's meaning): `role` (u8,
   `plink_service_role_t`; absent = master), `master` (blob, `plink_store_master_encode`), `keypad`
   (blob, `plink_store_keypad_encode`), `master_ip` (u32, a keypad's master set by hand, network
-  order), `otamaint` (u8 1: an update went in through the maintenance). It holds the pairing keys: never in a backup (`backup_policy.c` leaves it out), erased by a
+  order), `otamaint` (u8 1: an update went in through the maintenance), on a keypad `mver` (blob:
+  schema u8 1, the pairing's net id u16 little-endian, its master's version as len u8 and bytes;
+  erased when none is known) and on a master `kup` (u32, bit d-1: the keypads on line when its own
+  restart into an update came, erased once it runs confirmed). It holds the pairing keys: never in a backup (`backup_policy.c` leaves it out), erased by a
   factory reset.
 - One alarm listener (the tenth, `alarm_service.c` `ALARM_LISTENERS_USED`).
 - Console (keypad): `plink dev [<i>]` (the mirror - list, rows, freshness, the last device data -
-  and the screen's rows, one in full).
-- Console (master): `plink dev [<i>]` (whether Smart Home is offered and which keypads have it, the
+  and the screen's rows, one in full), `plink fw` (its run, its master's version and the cap).
+- Console (master): `plink fw` (keypad updates: the target, its image, each keypad's row, run and
+  last order), `plink fw update <n>` (ask keypad n again now: a wait, a refusal or a going back
+  forgotten); `plink dev [<i>]` (whether Smart Home is offered and which keypads have it, the
   list and records the master serves, one row in full), `plink prefs <n>` (keypad n's settings
   report) and, in development builds, `plink prefs <n> set <key> <value>` (Home Assistant's path,
   origin "console"; a delay in seconds, a switch on or off).

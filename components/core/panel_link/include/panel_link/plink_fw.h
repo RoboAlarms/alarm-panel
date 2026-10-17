@@ -189,6 +189,46 @@ bool plink_fw_fits(const plink_fw_image_t *im, const char *version, const plink_
  * still holds it). */
 void plink_fw_again(plink_fw_mem_t *m);
 
+/* A row state's name for MQTT's keypads (docs/features/11 "What people see"; stable, names are
+ * only added): "none", "up_to_date", "downloading", "receiving", "ready", "restarting",
+ * "not_updated", "newer"; "unknown" for a number this firmware doesn't know. */
+const char *plink_fw_row_name(uint8_t state);
+
+/* ---- what the master logs of its keypads' updates (Activity, firmware_update stages 9-12) ------
+ * Each stage once, from the step's rows and each keypad's FW_STATE (the service posts them from a
+ * task of its own, never the alarm task):
+ *   - installing: its row turns Restarting, once per target;
+ *   - updated, rolled back: its FW_STATE's last section turns UPDATED or ROLLED_BACK of a version -
+ *     the first last section heard since this master started is only taken as it is, so a master
+ *     restart logs nothing twice;
+ *   - failed: its row turns Not updated with a failure's why (never 0), once per target and why.
+ * RAM only (zeros to start); a keypad no longer paired is forgotten. */
+typedef struct {
+    bool seen;                                   /* its last section heard since the start ... */
+    uint8_t last;                                /* ... as last heard (plink_fw_last_t) */
+    char last_version[PLINK_FW_VERSION_MAX + 1];
+    char installing[PLINK_FW_VERSION_MAX + 1];   /* the target its installing was logged for */
+    char failed[PLINK_FW_VERSION_MAX + 1];       /* the target its failure was logged for ... */
+    uint8_t failed_why;                          /* ... with this why */
+} plink_fw_log_kp_t;
+
+typedef struct {
+    plink_fw_log_kp_t kp[PLINK_KEYPADS_MAX];
+} plink_fw_log_t;
+
+typedef struct {
+    uint8_t device;
+    uint8_t stage; /* alarm_fw_stage_t: ALARM_FW_KEYPAD_INSTALLING .. ALARM_FW_KEYPAD_FAILED */
+    uint8_t why;   /* ALARM_FW_KEYPAD_FAILED: its why (plink_fw_why_t, never 0); else 0 */
+} plink_fw_log_ev_t;
+
+#define PLINK_FW_LOG_MAX (3u * PLINK_KEYPADS_MAX) /* one step's events at most */
+
+/* The events of step s on world w (the world it was planned on): written to out (at most max),
+ * returns how many. */
+size_t plink_fw_log_step(plink_fw_log_t *log, const plink_fw_world_t *w, const plink_fw_step_t *s,
+                         plink_fw_log_ev_t *out, size_t max);
+
 #ifdef __cplusplus
 }
 #endif

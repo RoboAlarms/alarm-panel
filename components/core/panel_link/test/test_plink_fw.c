@@ -23,6 +23,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "alarm/alarm_types.h"
 #include "panel_link/plink_fw.h"
 #include "unity.h"
 
@@ -643,6 +644,76 @@ static void test_rows(void)
     TEST_ASSERT_EQUAL_UINT8(PLINK_FWR_NONE, row_of(2u));
 }
 
+/* ---- the log ---- */
+
+static plink_fw_log_t LOG;
+static plink_fw_log_ev_t EV[PLINK_FW_LOG_MAX];
+
+static size_t log_step(void)
+{
+    step();
+    return plink_fw_log_step(&LOG, &WD, &S, EV, PLINK_FW_LOG_MAX);
+}
+
+/* docs/features/11 "What people see": Activity's firmware_update stages 9-12 for a keypad, each
+ * once - installing when its row turns Restarting, updated and rolled back when its FW_STATE's last
+ * section turns so (the first one heard only taken as it is: a master restart logs nothing twice),
+ * failed with its why once per target and why; MQTT's row names are stable. */
+static void test_log_each_stage_once(void)
+{
+    memset(&LOG, 0, sizeof LOG);
+    kp_on(1u, OLD, PLINK_FWI_FETCH | PLINK_FWI_RELAY);
+    K(1u)->state.last = PLINK_FW_LAST_ROLLED_BACK; /* from before this master started */
+    snprintf(K(1u)->state.last_version, sizeof K(1u)->state.last_version, "1.2.0");
+    TEST_ASSERT_EQUAL_size_t(0u, log_step());
+    echo(1u, PLINK_FWS_READY, 0u, V);
+    WD.own_restart = true;
+    TEST_ASSERT_EQUAL_size_t(0u, log_step()); /* INSTALL sent */
+    echo(1u, PLINK_FWS_READY, 0u, V);         /* taken: it restarts once its gate passes */
+    TEST_ASSERT_EQUAL_size_t(1u, log_step());
+    TEST_ASSERT_EQUAL_UINT8(1u, EV[0].device);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_FW_KEYPAD_INSTALLING, EV[0].stage);
+    now_in(1u, PLINK_FWS_INSTALLING, 0u);
+    TEST_ASSERT_EQUAL_size_t(0u, log_step()); /* once */
+    /* back on V on its self-test, then passed: updated */
+    K(1u)->sessions++;
+    snprintf(K(1u)->info.version, sizeof K(1u)->info.version, "%s", V);
+    K(1u)->state.probation = 1u;
+    TEST_ASSERT_EQUAL_size_t(0u, log_step());
+    K(1u)->state.probation = 0u;
+    K(1u)->state.last = PLINK_FW_LAST_UPDATED;
+    snprintf(K(1u)->state.last_version, sizeof K(1u)->state.last_version, "%s", V);
+    TEST_ASSERT_EQUAL_size_t(1u, log_step());
+    TEST_ASSERT_EQUAL_UINT8(ALARM_FW_KEYPAD_UPDATED, EV[0].stage);
+    TEST_ASSERT_EQUAL_size_t(0u, log_step());
+    /* a master restart: the same last section heard again is no news */
+    memset(&LOG, 0, sizeof LOG);
+    TEST_ASSERT_EQUAL_size_t(0u, log_step());
+    TEST_ASSERT_EQUAL_size_t(0u, log_step());
+    /* a rollback of W, then a failure with its why, each once */
+    snprintf(WD.target, sizeof WD.target, "%s", W);
+    snprintf(WD.own.version, sizeof WD.own.version, "%s", W);
+    K(1u)->state.last = PLINK_FW_LAST_ROLLED_BACK;
+    snprintf(K(1u)->state.last_version, sizeof K(1u)->state.last_version, "%s", W);
+    TEST_ASSERT_EQUAL_size_t(1u, log_step());
+    TEST_ASSERT_EQUAL_UINT8(ALARM_FW_KEYPAD_ROLLED_BACK, EV[0].stage);
+    kp_on(2u, OLD, PLINK_FWI_FETCH);
+    log_step();
+    echo(2u, PLINK_FWS_FAILED, PLINK_FW_WHY_NOT_OFFERED, W);
+    const size_t n = log_step();
+    TEST_ASSERT_EQUAL_size_t(1u, n);
+    TEST_ASSERT_EQUAL_UINT8(2u, EV[0].device);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_FW_KEYPAD_FAILED, EV[0].stage);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_NOT_OFFERED, EV[0].why);
+    TEST_ASSERT_EQUAL_size_t(0u, log_step());
+    /* names */
+    TEST_ASSERT_EQUAL_STRING("up_to_date", plink_fw_row_name(PLINK_FWR_UP_TO_DATE));
+    TEST_ASSERT_EQUAL_STRING("restarting", plink_fw_row_name(PLINK_FWR_RESTARTING));
+    TEST_ASSERT_EQUAL_STRING("not_updated", plink_fw_row_name(PLINK_FWR_NOT_UPDATED));
+    TEST_ASSERT_EQUAL_STRING("newer", plink_fw_row_name(PLINK_FWR_NEWER));
+    TEST_ASSERT_EQUAL_STRING("unknown", plink_fw_row_name(200u));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -658,5 +729,6 @@ int main(void)
     RUN_TEST(test_failed_download_tried_again_after_an_hour);
     RUN_TEST(test_went_back_not_ordered_again_until_the_next_version);
     RUN_TEST(test_rows);
+    RUN_TEST(test_log_each_stage_once);
     return UNITY_END();
 }

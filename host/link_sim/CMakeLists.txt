@@ -27,6 +27,7 @@ add_library(link_sim_lib STATIC
     link_os_crypto.c
     link_console.c
     link_node.c
+    link_fw.c
     ${LINK_CORE}/zwave_host/test/zw_host_crypto.c
 )
 target_include_directories(link_sim_lib PUBLIC ${CMAKE_CURRENT_LIST_DIR}

@@ -4941,11 +4941,14 @@ static void test_fw_writer_paces_the_pull(void)
     TEST_ASSERT_TRUE(moving >= 3u);
 }
 
-/* LINK-030, LINK-034, LINK-035: the relay pauses - FW_STATE at once with PAUSED and why, nothing
- * asked for or written - while the master says UPDATING (MASTER_BUSY) or HOLD, its partition
- * isn't quiet (NOT_QUIET), a panic is still being sent (PANIC_PENDING), the service's gate says
- * no, or no STATUS came for 15 s (NO_STATUS: exactly then); and goes on when it ends. The link's
- * gate says the same. */
+static void edit_fire(plink_status_t *st);
+
+/* LINK-034 (decided 2026-10-17: downloading goes on while armed): the relay pauses - FW_STATE at
+ * once with PAUSED and why, nothing asked for or written - only while the view shows an exit or an
+ * entry time or an alarm sounding (NOT_QUIET; fire by the STATUS flag too), a panic is still being
+ * sent (PANIC_PENDING), the service's gate says no (a kept tone), or no STATUS came for 15 s
+ * (NO_STATUS: exactly then); it goes on when that ends. Never for the master's UPDATING or HOLD,
+ * nor while merely armed - though the INSTALL gate says no then. */
 static void test_fw_relay_pauses(void)
 {
     kp_fw_online();
@@ -4957,35 +4960,47 @@ static void test_fw_relay_pauses(void)
     TEST_ASSERT_TRUE(SV.got > 0u && SV.got < IMG_N);
     TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_OK, plink_keypad_fw_hold(&K, NET.now_ms));
 
-    M.updating = true;
-    fm_status();
-    plink_net_run(&NET, 20);
-    expect_paused(PLINK_FW_WHY_MASTER_BUSY);
-    TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_MASTER_BUSY, plink_keypad_fw_hold(&K, NET.now_ms));
-    TEST_ASSERT_EQUAL_HEX8(PLINK_SF_UPDATING, plink_keypad_master_flags(&K) & PLINK_SF_UPDATING);
-    expect_held(3000);
-    M.updating = false;
+    /* The master's own update and its HOLD: no pause */
+    M.updating = M.hold = true;
     fm_status();
     plink_net_run(&NET, 20);
     expect_running();
     expect_moves();
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_NOT_QUIET, plink_keypad_fw_hold(&K, NET.now_ms));
+    M.updating = M.hold = false;
+    fm_status();
+    plink_net_run(&NET, 20);
 
-    M.hold = true;
+    /* Arming: its exit time pauses it; armed, it goes on (no restart, though) */
+    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, CODE_USER, ALARM_LEVEL_STAY, 0));
     fm_status();
     plink_net_run(&NET, 20);
     expect_paused(PLINK_FW_WHY_NOT_QUIET);
-    expect_held(3000);
-    M.hold = false;
+    expect_held(2000);
+    sim_advance(&S, 61000u);
     fm_status();
     plink_net_run(&NET, 20);
     expect_running();
-
-    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, CODE_USER, ALARM_LEVEL_AWAY, 0));
+    expect_moves();
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_NOT_QUIET, plink_keypad_fw_hold(&K, NET.now_ms));
+    /* An entry time */
+    sim_fault(&S, Z_FRONT);
     fm_status();
     plink_net_run(&NET, 20);
     expect_paused(PLINK_FW_WHY_NOT_QUIET);
     expect_held(2000);
     EXPECT_RESULT(ALARM_OK, sim_disarm(&S, 1, CODE_USER));
+    sim_restore(&S, Z_FRONT);
+    fm_status();
+    plink_net_run(&NET, 20);
+    expect_running();
+    /* An alarm sounding: fire, by the STATUS flag */
+    M.edit = edit_fire;
+    fm_status();
+    plink_net_run(&NET, 20);
+    expect_paused(PLINK_FW_WHY_NOT_QUIET);
+    expect_held(2000);
+    M.edit = NULL;
     fm_status();
     plink_net_run(&NET, 20);
     expect_running();
@@ -5042,39 +5057,34 @@ static void test_fw_pause_times_out(void)
     plink_fw_order_t o = relay_of(IMG_SHA, 0u);
     expect_answer(&o, PLINK_FW_WHY_OK);
     plink_net_run(&NET, 2000);
-    M.updating = true;
-    fm_status();
+    plink_keypad_fw_gate(&K, NET.now_ms, PLINK_FW_WHY_KEPT_TONE);
     plink_net_run(&NET, 20);
-    expect_paused(PLINK_FW_WHY_MASTER_BUSY);
+    expect_paused(PLINK_FW_WHY_KEPT_TONE);
     plink_net_run(&NET, 2u * PLINK_FW_STALL_MS);
-    expect_paused(PLINK_FW_WHY_MASTER_BUSY);
-    M.updating = false;
-    fm_status();
+    expect_paused(PLINK_FW_WHY_KEPT_TONE);
+    plink_keypad_fw_gate(&K, NET.now_ms, PLINK_FW_WHY_OK);
     plink_net_run(&NET, 20);
     expect_running();
     expect_moves();
 
-    M.updating = true;
-    fm_status();
+    plink_keypad_fw_gate(&K, NET.now_ms, PLINK_FW_WHY_KEPT_TONE);
     plink_net_run(&NET, 20);
-    expect_paused(PLINK_FW_WHY_MASTER_BUSY);
+    expect_paused(PLINK_FW_WHY_KEPT_TONE);
     plink_net_run(&NET, PLINK_FW_PAUSE_MAX_MS - 1000u);
-    expect_paused(PLINK_FW_WHY_MASTER_BUSY);
+    expect_paused(PLINK_FW_WHY_KEPT_TONE);
     plink_net_run(&NET, 1500);
     TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_FAILED, last_st()->state);
     TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_TIMEOUT, last_st()->why);
     TEST_ASSERT_EQUAL_HEX8(0u, last_st()->flags);
     TEST_ASSERT_EQUAL_UINT8(PLINK_FW_OP_CANCEL, sv_last()->op);
     TEST_ASSERT_EQUAL_HEX32(0u, sv_last()->order);
-    M.updating = false;
-    fm_status();
+    plink_keypad_fw_gate(&K, NET.now_ms, PLINK_FW_WHY_OK);
     expect_held(5000);
 }
 
-/* LINK-035 (decided 2026-10-17): a relay that times out paused while its gate says no - the
- * master's HOLD, three times running - isn't a failed run, so a fourth RELAY is taken; one that
- * times out without a STATUS (the link gone) is: with two more failed runs, the next is refused
- * BUDGET. */
+/* LINK-035: a relay that times out paused while its gate says no - a kept tone, three times
+ * running - isn't a failed run, so a fourth RELAY is taken; one that times out without a STATUS
+ * (the link gone) is: with two more failed runs, the next is refused BUDGET. */
 static void test_fw_timeout_at_the_gate_isnt_counted(void)
 {
     kp_fw_online();
@@ -5084,15 +5094,13 @@ static void test_fw_timeout_at_the_gate_isnt_counted(void)
         plink_fw_order_t o = relay_of(IMG_SHA, 0u);
         expect_answer(&o, PLINK_FW_WHY_OK);
         plink_net_run(&NET, 1000);
-        M.hold = true;
-        fm_status();
+        plink_keypad_fw_gate(&K, NET.now_ms, PLINK_FW_WHY_KEPT_TONE);
         plink_net_run(&NET, 20);
-        expect_paused(PLINK_FW_WHY_NOT_QUIET);
+        expect_paused(PLINK_FW_WHY_KEPT_TONE);
         plink_net_run(&NET, PLINK_FW_PAUSE_MAX_MS + 500u);
         TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_FAILED, last_st()->state);
         TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_TIMEOUT, last_st()->why);
-        M.hold = false;
-        fm_status();
+        plink_keypad_fw_gate(&K, NET.now_ms, PLINK_FW_WHY_OK);
         plink_net_run(&NET, 20);
     }
     plink_fw_order_t o = relay_of(IMG_SHA, 0u);
@@ -5205,11 +5213,21 @@ static void test_fw_another_image_starts_over(void)
 }
 
 /* LINK-035: after 3 failed runs in 24 h - the service's or the core's own (a stall) - a new FETCH
- * or RELAY is refused BUDGET, a PROBE still taken; 24 h on, taken again. */
+ * or RELAY is refused BUDGET, a PROBE still taken; 24 h on, taken again. A FETCH whose check never
+ * reached the server, or that the server answered, wrote nothing: no failed run (the master tries
+ * again in an hour). */
 static void test_fw_budget(void)
 {
     kp_fw_online();
     SV.go = false;
+    for (unsigned i = 0; i < 3u; i++) {
+        plink_fw_order_t f = order_of(PLINK_FW_OP_FETCH, "1.3.0");
+        const uint32_t idf = expect_answer(&f, PLINK_FW_WHY_OK);
+        plink_keypad_fw_report(&K, NET.now_ms, idf, PLINK_FWS_FAILED,
+                               i == 2u ? PLINK_FW_WHY_UNKNOWN_DEVICE : PLINK_FW_WHY_NO_CONNECT);
+        plink_net_run(&NET, 20);
+        TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_FAILED, last_st()->state);
+    }
     for (unsigned i = 0; i < 2u; i++) {
         plink_fw_order_t o = relay_of(IMG_SHA, 0u);
         const uint32_t id = expect_answer(&o, PLINK_FW_WHY_OK);
@@ -5349,12 +5367,12 @@ static void test_fw_install_hold(void)
     }
 }
 
-/* LINK-034: the INSTALL hold is held only in the session it came in and while it is the newest
- * order taken. An INFO or a PROBE taken after it voids it (the master that sent them doesn't count
- * on it); so does a STATUS saying UPDATING (the master's own update voids every INSTALL it gave,
- * which a keypad off line then never heard cancelled) and a new session (a master that restarted,
- * on its old version or a new one, never finds the keypad restarting on an INSTALL of before); the
- * READY image stays. A CANCEL refused BUSY - its restart has started - leaves it. */
+/* LINK-034: the INSTALL hold is held only in the session it came in and while no order but INFO
+ * came after it. An INFO leaves it (INFO only names the master's version), and so does the
+ * master's UPDATING (keypads restart with their master); a PROBE taken after it voids it, and so
+ * does a new session (a master that restarted, on its old version or a new one, never finds the
+ * keypad restarting on an INSTALL of before); the READY image stays. A CANCEL refused BUSY - its
+ * restart has started - leaves it. */
 static void test_fw_install_hold_ends(void)
 {
     kp_fw_online();
@@ -5365,30 +5383,22 @@ static void test_fw_install_hold_ends(void)
     plink_fw_order_t in = order_of(PLINK_FW_OP_INSTALL, "1.3.0");
     expect_answer(&in, PLINK_FW_WHY_OK);
     TEST_ASSERT_TRUE(plink_keypad_fw_install_for(&K, "1.3.0"));
-    /* An INFO after it. */
+    /* An INFO after it: still held. */
     plink_fw_order_t info = order_of(PLINK_FW_OP_INFO, "1.3.0");
     expect_answer(&info, PLINK_FW_WHY_OK);
-    TEST_ASSERT_FALSE(plink_keypad_fw_install_for(&K, "1.3.0"));
-    TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_READY, kst().state);
-    in = order_of(PLINK_FW_OP_INSTALL, "1.3.0");
-    expect_answer(&in, PLINK_FW_WHY_OK);
+    TEST_ASSERT_TRUE(plink_keypad_fw_install_for(&K, "1.3.0"));
+    /* The master's own update (UPDATING): still held. */
+    M.updating = true;
+    fm_status();
+    plink_net_run(&NET, 20);
+    TEST_ASSERT_TRUE(plink_keypad_fw_install_for(&K, "1.3.0"));
+    M.updating = false;
+    fm_status();
+    plink_net_run(&NET, 20);
     TEST_ASSERT_TRUE(plink_keypad_fw_install_for(&K, "1.3.0"));
     /* A PROBE after it. */
     plink_fw_order_t pr = order_of(PLINK_FW_OP_PROBE, "1.3.0");
     expect_answer(&pr, PLINK_FW_WHY_OK);
-    TEST_ASSERT_FALSE(plink_keypad_fw_install_for(&K, "1.3.0"));
-    TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_READY, kst().state);
-    in = order_of(PLINK_FW_OP_INSTALL, "1.3.0");
-    expect_answer(&in, PLINK_FW_WHY_OK);
-    TEST_ASSERT_TRUE(plink_keypad_fw_install_for(&K, "1.3.0"));
-    /* The master's own update: its STATUS says UPDATING. */
-    M.updating = true;
-    fm_status();
-    plink_net_run(&NET, 20);
-    TEST_ASSERT_FALSE(plink_keypad_fw_install_for(&K, "1.3.0"));
-    M.updating = false;
-    fm_status();
-    plink_net_run(&NET, 20);
     TEST_ASSERT_FALSE(plink_keypad_fw_install_for(&K, "1.3.0"));
     TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_READY, kst().state);
     in = order_of(PLINK_FW_OP_INSTALL, "1.3.0");
@@ -5440,8 +5450,7 @@ static void test_fw_fetch_and_last(void)
     plink_keypad_fw_report(&K, NET.now_ms, id + 1u, PLINK_FWS_FAILED, PLINK_FW_WHY_BROKE_OFF);
     TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_FETCHING, kst().state);
     plink_keypad_fw_report(&K, NET.now_ms, id, PLINK_FWS_KEY_WAIT, PLINK_FW_WHY_OK);
-    plink_net_run(&NET, 20);
-    TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_KEY_WAIT, last_st()->state);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_FETCHING, kst().state); /* no person's step: ignored */
     plink_keypad_fw_report(&K, NET.now_ms, id, PLINK_FWS_VERIFYING, PLINK_FW_WHY_OK);
     plink_net_run(&NET, 20);
     TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_VERIFYING, last_st()->state);
@@ -5463,25 +5472,6 @@ static void test_fw_fetch_and_last(void)
     plink_keypad_fw_last(&K, NET.now_ms, 0u, PLINK_FW_LAST_ROLLED_BACK, "1.3.0", 0x24u);
     plink_net_run(&NET, 20);
     TEST_ASSERT_EQUAL_size_t(m, M.n_fw_st);
-}
-
-/* LINK-036, LINK-035: the service holds the relay in KEY_WAIT until a person accepts the new key:
- * nothing is asked for meanwhile, and the wait is no stall; RECEIVING starts the pull. */
-static void test_fw_key_wait(void)
-{
-    kp_fw_online();
-    SV.go = false;
-    plink_fw_order_t o = relay_of(IMG_SHA, 0u);
-    const uint32_t id = expect_answer(&o, PLINK_FW_WHY_OK);
-    plink_keypad_fw_report(&K, NET.now_ms, id, PLINK_FWS_KEY_WAIT, PLINK_FW_WHY_OK);
-    plink_net_run(&NET, 20);
-    TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_KEY_WAIT, last_st()->state);
-    plink_net_run(&NET, 2u * PLINK_FW_STALL_MS);
-    TEST_ASSERT_EQUAL_UINT8(PLINK_FWS_KEY_WAIT, kst().state);
-    TEST_ASSERT_EQUAL_size_t(0u, M.n_fw_req);
-    plink_keypad_fw_report(&K, NET.now_ms, id, PLINK_FWS_RECEIVING, PLINK_FW_WHY_OK);
-    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 30000, verifying, NULL));
-    expect_image();
 }
 
 /* LINK-035: a keypad removed at the master (BYE) ends its run and drops the orders waiting: the
@@ -5533,15 +5523,15 @@ static size_t fm_order_frame(plink_fw_order_t *o, uint8_t *f)
 }
 
 /* LINK-029 (Decisions, keypad updates, 5): the keypad keeps the version its master runs - the one
- * it may not pass - as the master's orders name it: INFO first of all, and every other order the
- * same - PROBE, FETCH, INSTALL and RELAY each set a newer one -, taken or refused; a CANCEL or an
- * INFO with no version (the master on its self-test) names
- * nothing, nor does an order of an op or kind the keypad doesn't know (a C6's version, say). A
- * newer version replaces it (the master was updated), an older one too (put back by cable: the cap
- * follows the master). Only the paired master's sealed frames count, in frame order: a forged one,
- * one sealed with another master's keys, one of another network, an unsealed one, a repeat of an
- * earlier order and an order from an older frame never set it. The seq moves only on a change. */
-static void test_fw_master_version_from_its_orders(void)
+ * it may not pass - as INFO names it, and only INFO: PROBE, FETCH, INSTALL and RELAY name the
+ * master's target, which may be ahead of what it runs, and change nothing; nor does an INFO with no
+ * version (the master on its self-test), or of a kind the keypad doesn't know. A newer version
+ * replaces it (the master was updated), an older one too (it went back, or was put back by cable:
+ * the cap follows the master). Only the paired master's sealed frames count, in frame order: a
+ * forged one, one sealed with another master's keys, one of another network, an unsealed one, a
+ * repeat of an earlier INFO and one from an older frame never set it. The seq moves only on a
+ * change. */
+static void test_fw_master_version_from_info(void)
 {
     kp_fw_online();
     expect_mver("", 0u);
@@ -5586,19 +5576,15 @@ static void test_fw_master_version_from_its_orders(void)
     o = order_of(PLINK_FW_OP_INFO, "1.4.0");
     expect_answer(&o, PLINK_FW_WHY_OK);
     expect_mver("1.4.0", 1u);
-    /* The same version named again, by every order: no change */
-    o = order_of(PLINK_FW_OP_INFO, "1.4.0");
+    /* The other orders name the master's target: nothing */
+    o = order_of(PLINK_FW_OP_PROBE, "1.4.2");
     expect_answer(&o, PLINK_FW_WHY_OK);
-    o = order_of(PLINK_FW_OP_PROBE, "1.4.0");
+    o = order_of(PLINK_FW_OP_FETCH, "1.4.3");
     expect_answer(&o, PLINK_FW_WHY_OK);
-    o = order_of(PLINK_FW_OP_FETCH, "1.4.0");
+    o = order_of(PLINK_FW_OP_INSTALL, "1.4.4");
     expect_answer(&o, PLINK_FW_WHY_OK);
-    o = order_of(PLINK_FW_OP_INSTALL, "1.4.0");
-    expect_answer(&o, PLINK_FW_WHY_OK);
-    o = order_of(PLINK_FW_OP_CANCEL, "");
-    expect_answer(&o, PLINK_FW_WHY_CANCELLED); /* (the fetch ended) */
-    o = relay_of(IMG_SHA, 0u);
-    snprintf(o.version, sizeof o.version, "1.4.0");
+    o = relay_of(IMG2_SHA, 0u);
+    snprintf(o.version, sizeof o.version, "1.4.5");
     expect_answer(&o, PLINK_FW_WHY_OK);
     o = order_of(PLINK_FW_OP_CANCEL, "");
     expect_answer(&o, PLINK_FW_WHY_CANCELLED);
@@ -5610,45 +5596,22 @@ static void test_fw_master_version_from_its_orders(void)
     o.kind = PLINK_FW_KIND_C6;
     expect_answer(&o, PLINK_FW_WHY_UNKNOWN_KIND);
     expect_mver("1.4.0", 1u);
-    /* Each order but CANCEL names a newer version by itself (the master was updated; the planner
-     * sends no INFO in a session one of them named it in): PROBE, FETCH, INSTALL, a RELAY taken -
-     * each newer than the keypad's own 1.2.3 */
-    o = order_of(PLINK_FW_OP_PROBE, "1.4.2");
-    expect_answer(&o, PLINK_FW_WHY_OK);
-    expect_mver("1.4.2", 2u);
-    o = order_of(PLINK_FW_OP_FETCH, "1.4.3");
-    expect_answer(&o, PLINK_FW_WHY_OK);
-    expect_mver("1.4.3", 3u);
-    o = order_of(PLINK_FW_OP_INSTALL, "1.4.4");
-    expect_answer(&o, PLINK_FW_WHY_OK);
-    expect_mver("1.4.4", 4u);
-    o = relay_of(IMG2_SHA, 0u);
-    snprintf(o.version, sizeof o.version, "1.4.5");
-    expect_answer(&o, PLINK_FW_WHY_OK);
-    expect_mver("1.4.5", 5u);
-    o = order_of(PLINK_FW_OP_CANCEL, "");
-    expect_answer(&o, PLINK_FW_WHY_CANCELLED);
-    expect_mver("1.4.5", 5u);
-    /* A newer version: the master was updated - named by a refused order too (a RELAY without a
-     * size), for the master names no other */
-    o = relay_of(IMG_SHA, 0u);
-    snprintf(o.version, sizeof o.version, "1.5.0");
-    o.size = 0u;
-    expect_answer(&o, PLINK_FW_WHY_BAD_ORDER);
-    const plink_fw_order_t newer = o;
-    expect_mver("1.5.0", 6u);
-    /* An older one: the master was put back by cable, and the cap follows it */
-    o = order_of(PLINK_FW_OP_INFO, "1.4.1");
+    /* A newer version: the master was updated */
+    o = order_of(PLINK_FW_OP_INFO, "1.5.0");
     expect_answer(&o, PLINK_FW_WHY_CANCELLED); /* (taken: the why is the run's, cancelled) */
-    expect_mver("1.4.1", 7u);
-    /* A repeat of the order that named 1.5.0: answered again, nothing taken */
+    const plink_fw_order_t newer = o;
+    expect_mver("1.5.0", 2u);
+    /* An older one: the master went back, and the cap follows it */
+    o = order_of(PLINK_FW_OP_INFO, "1.4.1");
+    expect_answer(&o, PLINK_FW_WHY_CANCELLED);
+    expect_mver("1.4.1", 3u);
+    /* A repeat of the INFO that named 1.5.0: answered again, nothing taken */
     const size_t sts = M.n_fw_st;
     fm_order_again(&newer);
     plink_net_run(&NET, 20);
     TEST_ASSERT_EQUAL_size_t(sts + 1u, M.n_fw_st);
     TEST_ASSERT_EQUAL_HEX32(newer.order, last_st()->order);
-    TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_BAD_ORDER, last_st()->why);
-    expect_mver("1.4.1", 7u);
+    expect_mver("1.4.1", 3u);
     /* Sealed in this order, arriving in the other: the newer frame's version stays */
     plink_fw_order_t a = order_of(PLINK_FW_OP_INFO, "1.6.0");
     plink_fw_order_t b = order_of(PLINK_FW_OP_INFO, "1.7.0");
@@ -5659,7 +5622,58 @@ static void test_fw_master_version_from_its_orders(void)
     deliver(fa, na);
     sv_poll(NET.now_ms);
     plink_net_run(&NET, 20);
-    expect_mver("1.7.0", 8u);
+    expect_mver("1.7.0", 4u);
+}
+
+/* LINK-034 (decided 2026-10-17: on trial with the master): after an install its master ordered,
+ * the keypad's trial passes on an INFO naming its version or a newer one, fails on an older one
+ * (the master went back) and fails with none within 10 min - judged once; only INFO counts (an
+ * order naming its version doesn't); without one started there is none. */
+static void test_fw_trial(void)
+{
+    /* Started at start-up, passed by its master's INFO in its first session */
+    M.caps = KCAPS = PLINK_CAP_FW;
+    SV.on = SV.go = true;
+    kp_init(true);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWT_NONE, plink_keypad_fw_trial_state(&K, NET.now_ms));
+    plink_keypad_fw_trial(&K, NET.now_ms, "1.4.0");
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWT_WAIT, plink_keypad_fw_trial_state(&K, NET.now_ms));
+    TEST_ASSERT_TRUE(plink_keypad_next(&K) <= NET.now_ms + PLINK_FW_TRIAL_MS);
+    const plink_fw_info_t i = kinfo("1.2.3");
+    plink_keypad_fw_info(&K, NET.now_ms, &i);
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 5000, online, NULL));
+    plink_fw_order_t o = order_of(PLINK_FW_OP_FETCH, "1.4.0");
+    expect_answer(&o, PLINK_FW_WHY_OK);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWT_WAIT, plink_keypad_fw_trial_state(&K, NET.now_ms));
+    o = order_of(PLINK_FW_OP_INFO, "1.4.0");
+    expect_answer(&o, PLINK_FW_WHY_OK);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWT_PASS, plink_keypad_fw_trial_state(&K, NET.now_ms));
+    o = order_of(PLINK_FW_OP_INFO, "1.3.0");
+    expect_answer(&o, PLINK_FW_WHY_OK);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWT_PASS, plink_keypad_fw_trial_state(&K, NET.now_ms));
+    /* An older one: failed */
+    kp_fw_online();
+    plink_keypad_fw_trial(&K, NET.now_ms, "1.4.0");
+    o = order_of(PLINK_FW_OP_INFO, "1.3.0");
+    expect_answer(&o, PLINK_FW_WHY_OK);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWT_FAIL, plink_keypad_fw_trial_state(&K, NET.now_ms));
+    /* A newer one: passed */
+    kp_fw_online();
+    plink_keypad_fw_trial(&K, NET.now_ms, "1.4.0");
+    o = order_of(PLINK_FW_OP_INFO, "1.4.1");
+    expect_answer(&o, PLINK_FW_WHY_OK);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWT_PASS, plink_keypad_fw_trial_state(&K, NET.now_ms));
+    /* None within 10 min: failed, and an INFO after that changes nothing */
+    kp_fw_online();
+    plink_keypad_fw_trial(&K, NET.now_ms, "1.4.0");
+    const uint64_t from = NET.now_ms;
+    plink_net_run(&NET, PLINK_FW_TRIAL_MS - 1000u);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWT_WAIT, plink_keypad_fw_trial_state(&K, NET.now_ms));
+    plink_net_run(&NET, from + PLINK_FW_TRIAL_MS - NET.now_ms);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWT_FAIL, plink_keypad_fw_trial_state(&K, NET.now_ms));
+    o = order_of(PLINK_FW_OP_INFO, "1.4.0");
+    expect_answer(&o, PLINK_FW_WHY_OK);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWT_FAIL, plink_keypad_fw_trial_state(&K, NET.now_ms));
 }
 
 /* A session other than sid, its first frame heard. */
@@ -5840,10 +5854,10 @@ static void edit_fire(plink_status_t *st)
     st->flags |= PLINK_SF_FIRE;
 }
 
-/* LINK-030, LINK-034, LINK-039: the link's part of the gate - NO_STATUS without a session or a
- * STATUS under 15 s old, MASTER_BUSY (the master's UPDATING), NOT_QUIET (its HOLD, or its partition
- * armed), PANIC_PENDING - and the STATUS flags as sent: fire from the master's FIRE sounds on the
- * keypad. */
+/* LINK-030, LINK-034, LINK-039: the link's part of the INSTALL gate - NO_STATUS without a session
+ * or a STATUS under 15 s old, NOT_QUIET (the master's HOLD, or its partition armed),
+ * PANIC_PENDING; never the master's UPDATING (keypads restart with their master) - and the STATUS
+ * flags as sent: fire from the master's FIRE sounds on the keypad. */
 static void test_fw_gate_and_flags(void)
 {
     M.caps = KCAPS = PLINK_CAP_FW;
@@ -5856,17 +5870,17 @@ static void test_fw_gate_and_flags(void)
                             plink_keypad_fw_hold(&K, K.status_ms + PLINK_FW_FRESH_MS - 1u));
     TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_NO_STATUS,
                             plink_keypad_fw_hold(&K, K.status_ms + PLINK_FW_FRESH_MS));
-    M.updating = M.hold = true;
+    M.updating = true;
     fm_status();
     plink_net_run(&NET, 20);
-    TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_MASTER_BUSY, plink_keypad_fw_hold(&K, NET.now_ms));
-    TEST_ASSERT_EQUAL_HEX8(PLINK_SF_UPDATING | PLINK_SF_HOLD,
-                           plink_keypad_master_flags(&K) & (PLINK_SF_UPDATING | PLINK_SF_HOLD));
-    M.updating = false;
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_OK, plink_keypad_fw_hold(&K, NET.now_ms));
+    M.hold = true;
     fm_status();
     plink_net_run(&NET, 20);
     TEST_ASSERT_EQUAL_UINT8(PLINK_FW_WHY_NOT_QUIET, plink_keypad_fw_hold(&K, NET.now_ms));
-    M.hold = false;
+    TEST_ASSERT_EQUAL_HEX8(PLINK_SF_UPDATING | PLINK_SF_HOLD,
+                           plink_keypad_master_flags(&K) & (PLINK_SF_UPDATING | PLINK_SF_HOLD));
+    M.updating = M.hold = false;
     EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, CODE_USER, ALARM_LEVEL_STAY, 0));
     fm_status();
     plink_net_run(&NET, 20);
@@ -5976,9 +5990,9 @@ int main(void)
     RUN_TEST(test_fw_install_hold);
     RUN_TEST(test_fw_install_hold_ends);
     RUN_TEST(test_fw_fetch_and_last);
-    RUN_TEST(test_fw_key_wait);
     RUN_TEST(test_fw_removed_discards);
-    RUN_TEST(test_fw_master_version_from_its_orders);
+    RUN_TEST(test_fw_master_version_from_info);
+    RUN_TEST(test_fw_trial);
     RUN_TEST(test_fw_master_version_goes_with_the_master);
     RUN_TEST(test_fw_version_cap_follows_the_pairing);
     RUN_TEST(test_fw_gate_and_flags);

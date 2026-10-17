@@ -45,31 +45,35 @@
  * INFO to its service (plink_keypad_take_fw_order), which reports back (plink_keypad_fw_report,
  * _progress, _probe, _last, _info, _gate) for the core to send as FW_STATE and FW_INFO; and runs
  * the relay itself: one FW_REQ out at a time, by image id (id8) and offset from the first byte the
- * writer lacks up to the first pages already in past it, within the order's page, count and gap
- * and a 16 KB window; resent after 300 ms doubling to 2 s (300 ms after its last page when it was
+ * writer lacks up to the first pages already in past it, within the order's page, count and gap and
+ * a 16 KB window; resent after 300 ms doubling to 2 s (300 ms after its last page when it was
  * answered in part) for the bytes still missing; the bytes go to the writer (port.fw_write) in
  * order, at most 4 KB a turn, the next write and request no sooner than the last write kept the
- * flash busy. The run pauses (FW_STATE flag PAUSED, why the reason) while the link isn't up - a
- * live session with FW and a STATUS under 15 s old - or while the link's gate
- * (plink_keypad_fw_hold) or the service's (plink_keypad_fw_gate) says no; it fails after 60 s
- * without a new byte while not paused (STALLED) or 30 min paused (TIMEOUT), and goes on across a
- * new session, the 24 h rekey and a master restart, by id8. 3 runs failed before READY within 24 h:
- * a new FETCH or RELAY is refused (BUDGET); a TIMEOUT while the gate said no (anything but a
- * missing STATUS) isn't a failed run. An INSTALL records the version it names (the INSTALL
- * hold, plink_keypad_fw_install_for), held only in the session it came in and while it is the
- * newest order: a new session, any order taken after it (but a RELAY that goes on), a STATUS
- * saying UPDATING, CANCEL and the run's end each void it - so a master that restarted, updated
- * itself or gave up that INSTALL never finds the keypad restarting on it. A CANCEL that comes once
- * the restart has started is refused BUSY and the restart goes on; put off (READY again,
- * OTA-028), the run ends as that CANCEL said (STOPPED, CANCELLED), the hold with it. A READY image is
- * discarded after 24 h without an INSTALL held, on CANCEL, on an order for another image and on
- * removal. The version the master runs - the one the keypad may not pass (LINK-029; Decisions,
- * keypad updates, 5) - is kept as its orders name it (plink_keypad_master_version): every order
- * of a known op for the application, taken or refused, from the paired master's session in frame
- * order, names it (INFO's at each session and on the master's confirmed-version change; a CANCEL
- * or an INFO with no version names nothing); a newer or an older one replaces it, and removal, a
- * new pairing or a session without PLINK_CAP_FW clears it. The cap the service applies is that
- * version while paired ("": nothing passes) and none unpaired (plink_keypad_version_cap).
+ * flash busy. Downloading goes on while armed and during the master's own update: the run pauses
+ * (FW_STATE flag PAUSED, why the reason) only while the link isn't up - a live session with FW and
+ * a STATUS under 15 s old (NO_STATUS) -, the view shows an alarm sounding or an entry or exit time
+ * (NOT_QUIET), its own panic is still being sent (PANIC_PENDING) or the service's gate says no (a
+ * kept fire or CO tone, plink_keypad_fw_gate); it fails after 60 s without a new byte while not
+ * paused (STALLED) or 30 min paused (TIMEOUT), and goes on across a new session, the 24 h rekey and
+ * a master restart, by id8. 3 runs failed before READY within 24 h: a new FETCH or RELAY is refused
+ * (BUDGET); a TIMEOUT while the gate said no (anything but a missing STATUS) isn't a failed run,
+ * nor is a fetch whose check never reached the server or that the server answered (1-19: nothing
+ * was written). An INSTALL records the version it names (the INSTALL hold,
+ * plink_keypad_fw_install_for), held only in the session it came in and while no other order but
+ * INFO came after it: a new session, a PROBE, FETCH, CANCEL or RELAY taken after it (but a RELAY
+ * that goes on) and the run's end each void it - so a master that restarted or gave up that INSTALL
+ * never finds the keypad restarting on it. A CANCEL that comes once the restart has started is
+ * refused BUSY and the restart goes on; put off (READY again, OTA-028), the run ends as that CANCEL
+ * said (STOPPED, CANCELLED), the hold with it. A READY image is discarded after 24 h without an
+ * INSTALL held, on CANCEL, on an order for another image and on removal. The version the master
+ * runs - the one the keypad may not pass (LINK-029; Decisions, keypad updates, 5) - is kept as INFO
+ * names it (plink_keypad_master_version): only INFO, from the paired master's session in frame
+ * order (the other orders name the master's target, which may be ahead of what it runs; an INFO
+ * with no version names nothing); a newer or an older one replaces it, and removal, a new pairing
+ * or a session without PLINK_CAP_FW clears it. The cap the service applies is that version while
+ * paired ("": nothing passes) and none unpaired (plink_keypad_version_cap). After an install its
+ * master ordered, the keypad is on trial with its master (plink_keypad_fw_trial): an INFO naming
+ * its version (or a newer one) passes it, an older one fails it, and none within 10 min fails it.
  */
 #ifndef PLINK_KEYPAD_H
 #define PLINK_KEYPAD_H
@@ -139,6 +143,7 @@ extern "C" {
 #define PLINK_FW_STATE_EVERY_MS  10000u    /* ... and this often while a run exists */
 #define PLINK_FW_INFO_GAP_MS     2000u     /* FW_INFO at most this often */
 #define PLINK_FW_SEEN            8u        /* order ids remembered: a repeat is answered */
+#define PLINK_FW_TRIAL_MS        600000u   /* LINK-034: on trial without an INFO this long fails */
 #define PLINK_FW_QUEUE           4u        /* orders waiting for the service */
 
 typedef enum {
@@ -284,6 +289,14 @@ typedef struct {
     uint8_t ans_refused[2u * PLINK_PREFS_REFUSED_MAX];
 } plink_kprefs_t;
 
+/* The trial with the master (plink_keypad_fw_trial_state; local: never on the wire). */
+typedef enum {
+    PLINK_FWT_NONE = 0, /* no trial */
+    PLINK_FWT_WAIT,     /* on trial: no INFO yet */
+    PLINK_FWT_PASS,     /* an INFO named its version, or a newer one: the master runs it */
+    PLINK_FWT_FAIL,     /* an INFO named an older one (the master went back), or none in 10 min */
+} plink_fw_trial_t;
+
 /* An order seen (private): a repeat is answered again, never run twice. */
 typedef struct {
     uint32_t order;
@@ -354,8 +367,12 @@ typedef struct {
     uint64_t info_ms;         /* the last FW_INFO (0: none) */
     uint32_t info_sid;        /* the session whose first STATUS asked for one */
     /* the master's version (LINK-029): the one the keypad may not pass */
-    char mver[PLINK_FW_VERSION_MAX + 1]; /* as its orders last named it ("": none) */
+    char mver[PLINK_FW_VERSION_MAX + 1]; /* as INFO last named it ("": none) */
     uint32_t mver_seq;        /* moves at each change of mver */
+    /* the trial with its master (LINK-034) */
+    char trial[PLINK_FW_VERSION_MAX + 1]; /* the version on trial ("": none) */
+    uint64_t trial_until;     /* failed then, without an INFO */
+    uint8_t trial_res;        /* plink_fw_trial_t */
     uint8_t win[PLINK_FW_WINDOW]; /* the relay's window: image byte o at win[o % PLINK_FW_WINDOW] */
 } plink_kfw_t;
 
@@ -667,9 +684,11 @@ bool plink_keypad_prefs_answer(plink_keypad_t *k, uint64_t now_ms, uint32_t req,
  *   - INFO: the keypad's facts may be asked for again (plink_keypad_fw_info); FW_INFO goes anyway.
  *   - PROBE: one check at out->server and out->channel with want = out->version; the answer
  *     through plink_keypad_fw_probe.
- *   - FETCH: the release run for exactly out->version; a new RELAY: open the writer for that image
- *     (its size, sha256 and key), then report RECEIVING for the pull to start, or KEY_WAIT, or
- *     FAILED. Either one ends whatever run the service had (out->order names the new run).
+ *   - FETCH: the release run for exactly out->version at out->server and out->channel; a new
+ *     RELAY: open the writer for that image (its size, sha256 and key), then report RECEIVING for
+ *     the pull to start, or FAILED. Either one ends whatever run the service had (out->order names
+ *     the new run). The order's server and key become the keypad's trust record when it differs
+ *     (LINK-036): no person is asked.
  *   - INSTALL: the gate may restart into the READY image if plink_keypad_fw_install_for names it.
  *   - CANCEL: stop and discard the run and any READY image. out->order 0 is the core's own: the
  *     run ended here (stalled, timed out, the READY image kept 24 h, the keypad removed or paired
@@ -681,9 +700,10 @@ bool plink_keypad_take_fw_order(plink_keypad_t *k, plink_fw_order_t *out);
 
 /* The service's run as it stands (run: the order that started it; a report about another run, or
  * one that ended, is ignored): state a plink_fw_run_state_t, why a plink_fw_why_t. RECEIVING on a
- * relay starts the pull (the writer is open), KEY_WAIT and any other state hold it; FAILED,
- * STOPPED (why STOPPED: a person at the keypad) and IDLE end the run - a FAILED one that never got
- * READY counts toward the budget. Each change of state or why goes as FW_STATE at once. */
+ * relay starts the pull (the writer is open), FETCHING, VERIFYING, READY and INSTALLING hold it;
+ * FAILED, STOPPED and IDLE end the run - a FAILED one that never got READY counts toward the
+ * budget. PROBING and KEY_WAIT are ignored. Each change of state or why goes as FW_STATE at
+ * once. */
 void plink_keypad_fw_report(plink_keypad_t *k, uint64_t now_ms, uint32_t run, uint8_t state,
                             uint8_t why);
 /* A fetch's progress: bytes of size, and the image's id8 once known (NULL keeps it). FW_STATE
@@ -706,24 +726,25 @@ void plink_keypad_fw_last(plink_keypad_t *k, uint64_t now_ms, uint8_t probation,
  * newer than info->version too (NOT_NEWER). */
 void plink_keypad_fw_info(plink_keypad_t *k, uint64_t now_ms, const plink_fw_info_t *info);
 /* The service's part of the gate (a kept fire or CO tone: KEPT_TONE; 0: it passes): the relay
- * pauses while it says no. */
+ * pauses while it says no, and the service checks it again before a restart. */
 void plink_keypad_fw_gate(plink_keypad_t *k, uint64_t now_ms, uint8_t why);
-/* The link's part of the gate (LINK-034): 0 when it passes, else why not - NO_STATUS (no live
- * session with a STATUS under 15 s old: ONLINE or the needs-update state), MASTER_BUSY (the
- * master's UPDATING), NOT_QUIET (its HOLD, or proto_fw_install_allowed() says no on the rebuilt
- * snapshot), PANIC_PENDING (a panic still being sent). */
+/* The link's part of the INSTALL gate (LINK-034): 0 when it passes, else why not - NO_STATUS (no
+ * live session with a STATUS under 15 s old: ONLINE or the needs-update state), NOT_QUIET (the
+ * master's HOLD, or proto_fw_install_allowed() says no on the rebuilt snapshot: anything armed, an
+ * alarm), PANIC_PENDING (a panic still being sent). The master's UPDATING doesn't hold it: keypads
+ * restart with their master. */
 uint8_t plink_keypad_fw_hold(const plink_keypad_t *k, uint64_t now_ms);
 /* Whether the master's INSTALL for version has arrived (the INSTALL hold, LINK-034): an INSTALL
- * naming exactly it, since the run started, in this session, and no order since. */
+ * naming exactly it, since the run started, in this session, and no order but INFO since. */
 bool plink_keypad_fw_install_for(const plink_keypad_t *k, const char *version);
 /* What FW_STATE says now (for the screen and the console). */
 void plink_keypad_fw_status(const plink_keypad_t *k, uint64_t now_ms, plink_fw_state_t *out);
 /* LINK-029 (Decisions, keypad updates, 5: never past its master): the version the master runs, as
- * the paired master's authenticated FW_ORDERs last named it - INFO's at each session and on its
- * confirmed-version change, and every other order's (the master orders no other version); only
- * orders of a known op for the application (kind 0), taken or refused, in frame order; a CANCEL
- * or an INFO with no version (the master on its self-test) names nothing. A newer one replaces it
- * (the master was updated), an older one too (it was put back by cable: the cap follows the
+ * the paired master's authenticated INFO last named it - at each session and on its
+ * confirmed-version change; only INFO for the application (kind 0), in frame order; an INFO with
+ * no version (the master on its self-test) names nothing, nor does any other order (they name the
+ * master's target, which may be ahead of what it runs). A newer one replaces it (the master was
+ * updated), an older one too (it was put back by cable, or went back: the cap follows the
  * master). "" while none is known: never heard since pairing, or cleared by removal, a new pairing
  * or a session without PLINK_CAP_FW (a master that names no version) - then the keypad offers no
  * Install while paired. *seq (NULL: not wanted) differs from its last value at each change of the
@@ -747,6 +768,16 @@ bool plink_keypad_version_cap(const plink_keypad_t *k, const char **version, uin
  * that network (a version of an earlier pairing - a power cut before the service erased it - is
  * not) and before any is heard; *seq doesn't move. */
 void plink_keypad_master_version_restore(plink_keypad_t *k, const char *version, uint16_t net_id);
+
+/* The trial with its master (LINK-034; docs/features/11 "On trial with the master"): the service
+ * starts it at its start-up, right after plink_keypad_init, when it runs an image its master
+ * ordered installed and is on probation (version: the one it runs now). From then on an INFO
+ * naming version or a newer one passes it, one naming an older version fails it (the master went
+ * back), and none within 10 min of now fails it. */
+void plink_keypad_fw_trial(plink_keypad_t *k, uint64_t now_ms, const char *version);
+/* Where the trial stands now (plink_fw_trial_t): NONE without one, WAIT, PASS or FAIL - the
+ * service's self-test passes only on PASS and goes back on FAIL. */
+uint8_t plink_keypad_fw_trial_state(const plink_keypad_t *k, uint64_t now_ms);
 
 /* Forget the master (a person made it a stand-alone panel, or paired again): the record erased,
  * the session wiped. */

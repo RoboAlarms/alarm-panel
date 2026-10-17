@@ -4227,7 +4227,7 @@ static void test_fw_needs_the_capability(void)
 
 /* LINK-035: an order goes at the next tick, then again after 300 ms doubling to 2 s until a
  * FW_STATE echoes its id; ids from a random base, then counted; a superseded order is never sent
- * again; unanswered for 30 s the keypad is away. */
+ * again, and an unanswered one is sent on and on while the keypad is heard. */
 static void test_fw_orders_resent_until_echoed(void)
 {
     master_caps(PLINK_CAP_FW);
@@ -4258,7 +4258,7 @@ static void test_fw_orders_resent_until_echoed(void)
     TEST_ASSERT_EQUAL_UINT32(id, v.order);
     TEST_ASSERT_EQUAL_UINT8(PLINK_FW_OP_PROBE, v.order_op);
     TEST_ASSERT_FALSE(v.order_acked);
-    TEST_ASSERT_FALSE(v.away);
+    TEST_ASSERT_TRUE(v.online);
     k_fw_state(k, id, PLINK_FW_OP_PROBE, PLINK_FWS_IDLE, PLINK_FW_WHY_UNKNOWN_KIND, 0u);
     run(10);
     v = fw_of(k);
@@ -4283,11 +4283,13 @@ static void test_fw_orders_resent_until_echoed(void)
         TEST_ASSERT_EQUAL_UINT32(id3, k->ords[i].order);
         TEST_ASSERT_EQUAL_UINT8(PLINK_FW_OP_CANCEL, k->ords[i].op);
     }
-    TEST_ASSERT_FALSE(fw_of(k).away);
     run(1100);
     v = fw_of(k);
-    TEST_ASSERT_TRUE(v.away); /* 30 s unanswered */
+    TEST_ASSERT_FALSE(v.order_acked); /* 30 s unanswered: still sent */
     TEST_ASSERT_TRUE(v.online);
+    const size_t at = k->n_ord;
+    run(2100);
+    TEST_ASSERT_TRUE(k->n_ord > at);
 }
 
 /* FW_INFO and FW_STATE are kept from the newest frame of the session (another session's always
@@ -4394,10 +4396,10 @@ static size_t pages_since(const fk_t *k, size_t from, size_t *bytes)
 /* LINK-032: FW_REQ is served statelessly, only to the keypad whose newest order but INFO is the
  * RELAY of that id8: count pages from its offset, each the smallest of the request's page, the
  * order's and the frame's room - 18, read through port.fw_read, never past the image and at most
- * 16 a tick; nothing while the master isn't quiet (armed, or its own update), nor to another
- * keypad, another id8, or once the RELAY is superseded by another order - an INFO naming the
- * master's version (LINK-029, once a session) leaves it served; a short read sends a short
- * page. */
+ * 16 a tick; while armed and during the master's own update too (downloading goes on: the keypad
+ * pauses itself); never to another keypad, another id8, or once the RELAY is superseded by another
+ * order - an INFO naming the master's version (LINK-029, once a session) leaves it served; a short
+ * read sends a short page. */
 static void test_fw_req_served(void)
 {
     master_caps(PLINK_CAP_FW);
@@ -4447,27 +4449,26 @@ static void test_fw_req_served(void)
     run(50);
     TEST_ASSERT_EQUAL_size_t(0u, pages_since(k, p0, NULL));
     TEST_ASSERT_EQUAL_size_t(0u, other->n_pg);
-    /* Armed: nothing; disarmed: served again. The master's own update: nothing. */
+    /* Armed: served; the master's own update: served. */
     at_now();
     EXPECT_RESULT(ALARM_OK, sim_arm(&R.sim, 1, CODE_USER, ALARM_LEVEL_AWAY, 0));
     run(300);
-    k_fw_req(k, R.img_sha, 0u, 1024u, 4u);
-    run(50);
-    TEST_ASSERT_EQUAL_size_t(0u, pages_since(k, p0, NULL));
-    at_now();
-    EXPECT_RESULT(ALARM_OK, sim_disarm(&R.sim, 1, CODE_USER));
-    run(300);
+    TEST_ASSERT_TRUE(plink_master_fw_hold(&R.m));
     k_fw_req(k, R.img_sha, 0u, 1024u, 4u);
     run(50);
     TEST_ASSERT_EQUAL_size_t(4u, pages_since(k, p0, NULL));
+    at_now();
+    EXPECT_RESULT(ALARM_OK, sim_disarm(&R.sim, 1, CODE_USER));
+    run(300);
     p0 = k->n_pg;
     plink_master_fw_self(&R.m, NOW, true);
     run(50);
     k_fw_req(k, R.img_sha, 0u, 1024u, 4u);
     run(50);
-    TEST_ASSERT_EQUAL_size_t(0u, pages_since(k, p0, NULL));
+    TEST_ASSERT_EQUAL_size_t(4u, pages_since(k, p0, NULL));
     plink_master_fw_self(&R.m, NOW, false);
     run(300);
+    p0 = k->n_pg;
     /* A short read: a short page, and nothing after it in that answer. */
     R.read_cap = 500u;
     k_fw_req(k, R.img_sha, 3000u, 1024u, 3u);
@@ -4492,6 +4493,39 @@ static void test_fw_req_served(void)
     run(50);
     TEST_ASSERT_EQUAL_size_t(0u, pages_since(k, p0, NULL));
     TEST_ASSERT_EQUAL_UINT(0u, k->pg_bad);
+}
+
+/* LINK-032: several keypads' relays run at once, each served its own image's pages in the same
+ * turn, from the one FW_PAGE bucket; the newest order of each says which image it is served. */
+static void test_fw_relays_at_once(void)
+{
+    master_caps(PLINK_CAP_FW);
+    fk_t *a = fw_kp(), *b = fw_kp();
+    (void)fw_relay(a);
+    (void)fw_relay(b);
+    run(1000);
+    plink_fw_kp_t v = fw_of(a);
+    TEST_ASSERT_TRUE(v.relay);
+    TEST_ASSERT_EQUAL_MEMORY(R.img_sha, v.relay_id8, PLINK_ID8_LEN);
+    TEST_ASSERT_TRUE(fw_of(b).relay);
+    k_fw_req(a, R.img_sha, 0u, 1024u, 4u);
+    k_fw_req(b, R.img_sha, 8192u, 1024u, 4u);
+    run(20);
+    TEST_ASSERT_EQUAL_size_t(4u, a->n_pg);
+    TEST_ASSERT_EQUAL_size_t(4u, b->n_pg);
+    TEST_ASSERT_EQUAL_UINT32(0u, a->pg_off[0]);
+    TEST_ASSERT_EQUAL_UINT32(8192u, b->pg_off[0]);
+    /* Another order but INFO ends one: the other goes on */
+    const plink_fw_order_t in = fw_order_of(PLINK_FW_OP_INSTALL);
+    TEST_ASSERT_NOT_EQUAL(0u, plink_master_fw_order(&R.m, NOW, a->rec.device, &in));
+    run(100);
+    TEST_ASSERT_FALSE(fw_of(a).relay);
+    k_fw_req(a, R.img_sha, 0u, 1024u, 4u);
+    k_fw_req(b, R.img_sha, 0u, 1024u, 4u);
+    run(20);
+    TEST_ASSERT_EQUAL_size_t(4u, a->n_pg);
+    TEST_ASSERT_EQUAL_size_t(8u, b->n_pg);
+    TEST_ASSERT_EQUAL_UINT(0u, a->pg_bad + b->pg_bad);
 }
 
 /* LINK-032: FW_PAGE has a byte bucket of its own: 16 KB at once, then 256 KB/s; on frames under
@@ -4642,32 +4676,6 @@ static void test_fw_supervision_hold(void)
     TEST_ASSERT_TRUE(fw_of(k).busy);
 }
 
-/* LINK-035: a keypad still heard counts as away once a run's FW_STATE (every 10 s while one
- * exists) is missing for 30 s - it restarted, or lost the run - and a FW_STATE ends it; with no run
- * none is due, and it never counts as away for that. */
-static void test_fw_away_without_a_runs_state(void)
-{
-    master_caps(PLINK_CAP_FW);
-    fk_t *k = fw_kp();
-    k_fw_state(k, 0u, 0u, PLINK_FWS_RECEIVING, 0u, 0u);
-    run(29000);
-    plink_fw_kp_t v = fw_of(k);
-    TEST_ASSERT_TRUE(v.online);
-    TEST_ASSERT_FALSE(v.away);
-    run(1100);
-    v = fw_of(k);
-    TEST_ASSERT_TRUE(v.online); /* its heartbeats */
-    TEST_ASSERT_TRUE(v.away);
-    k_fw_state(k, 0u, 0u, PLINK_FWS_RECEIVING, 0u, 0u);
-    run(10);
-    TEST_ASSERT_FALSE(fw_of(k).away);
-    k_fw_state(k, 0u, 0u, PLINK_FWS_IDLE, 0u, 0u);
-    run(60000);
-    v = fw_of(k);
-    TEST_ASSERT_TRUE(v.online);
-    TEST_ASSERT_FALSE(v.away);
-}
-
 /* LINK-014: a removed keypad's order is never sent again, its relay never served. */
 static void test_fw_removed_keypad(void)
 {
@@ -4764,10 +4772,10 @@ int main(void)
     RUN_TEST(test_fw_info_and_state_kept);
     RUN_TEST(test_fw_messages_bucket);
     RUN_TEST(test_fw_req_served);
+    RUN_TEST(test_fw_relays_at_once);
     RUN_TEST(test_fw_pages_byte_bucket);
     RUN_TEST(test_fw_pages_wait_behind_status);
     RUN_TEST(test_fw_supervision_hold);
-    RUN_TEST(test_fw_away_without_a_runs_state);
     RUN_TEST(test_fw_removed_keypad);
     return UNITY_END();
 }

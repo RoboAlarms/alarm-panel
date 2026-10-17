@@ -1479,11 +1479,15 @@ static void fw_end_as(plink_kfw_t *f, uint64_t now, uint8_t state, uint8_t why, 
     }
 }
 
-/* ... a run that failed before it was READY counts. */
+/* ... a run that failed before it was READY counts - but not a check that never reached the
+ * server, or that the server answered (1-19: nothing was written; the master tries again in an
+ * hour, or relays at once). */
 static void fw_end(plink_kfw_t *f, uint64_t now, uint8_t state, uint8_t why, bool abort)
 {
     const bool was_ready = f->state == PLINK_FWS_READY || f->state == PLINK_FWS_INSTALLING;
-    fw_end_as(f, now, state, why, abort, state == PLINK_FWS_FAILED && !was_ready);
+    const plink_fw_why_class_t c = plink_fw_why_class(why);
+    const bool wrote = c != PLINK_FWC_NOT_REACHED && c != PLINK_FWC_SERVER;
+    fw_end_as(f, now, state, why, abort, state == PLINK_FWS_FAILED && !was_ready && wrote);
 }
 
 /* A FETCH or RELAY starts a run from nothing (whatever run there was ends with it: the order
@@ -1509,15 +1513,20 @@ static void fw_start(plink_kfw_t *f, uint64_t now, const plink_fw_order_t *o)
 
 /* ---- updates through the link: the gate and the pause (LINK-034) -------------------------- */
 
+/* "The link is up": a live session with a STATUS under 15 s old - not ONLINE, as a keypad that
+ * can't read a newer master's configuration never gets there, and needs this most. */
+static bool fw_fresh(const plink_keypad_t *k, uint64_t now)
+{
+    return k->live.valid && k->view.have_status && now < k->status_ms + PLINK_FW_FRESH_MS;
+}
+
+/* The INSTALL gate's link part: a fresh STATUS, the master's install allowed (HOLD clear) and
+ * everything disarmed and quiet on the rebuilt snapshot, no panic still being sent. The master's
+ * UPDATING doesn't hold it: keypads restart with their master. */
 static uint8_t fw_link_hold(const plink_keypad_t *k, uint64_t now)
 {
-    /* "The link is up": a live session with a STATUS under 15 s old - not ONLINE, as a keypad
-     * that can't read a newer master's configuration never gets there, and needs this most. */
-    if (!k->live.valid || !k->view.have_status || now >= k->status_ms + PLINK_FW_FRESH_MS) {
+    if (!fw_fresh(k, now)) {
         return PLINK_FW_WHY_NO_STATUS;
-    }
-    if ((k->view.flags & PLINK_SF_UPDATING) != 0u) {
-        return PLINK_FW_WHY_MASTER_BUSY;
     }
     if ((k->view.flags & PLINK_SF_HOLD) != 0u || !proto_fw_install_allowed(&k->view.snap, NULL)) {
         return PLINK_FW_WHY_NOT_QUIET;
@@ -1528,15 +1537,42 @@ static uint8_t fw_link_hold(const plink_keypad_t *k, uint64_t now)
     return PLINK_FW_WHY_OK;
 }
 
-/* Why the relay waits now (0: it doesn't): no FW on this session or transport, the link's gate,
- * then the service's. */
+/* The view shows an alarm sounding (fire and CO by the STATUS flags too), or an entry or exit time
+ * running, on any of the master's partitions. Merely armed is none of these. */
+static bool fw_view_busy(const plink_keypad_t *k)
+{
+    const alarm_snapshot_t *s = &k->view.snap;
+    if ((k->view.flags & (PLINK_SF_FIRE | PLINK_SF_CO)) != 0u) {
+        return true;
+    }
+    for (unsigned p = 0; p < ALARM_MAX_PARTITIONS; p++) {
+        const alarm_partition_status_t *ps = &s->part[p];
+        if ((s->partitions & (1u << p)) != 0u &&
+            (ps->state == ALARM_STATE_EXIT_DELAY || ps->state == ALARM_STATE_ENTRY_DELAY ||
+             ps->bell != ALARM_PAT_OFF ||
+             (ps->sounder != ALARM_SOUND_NONE && ps->sounder != ALARM_SOUND_TROUBLE))) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Why the relay waits now (0: it doesn't; docs/features/11 "Downloading goes on while armed"):
+ * the link down (no FW on this session or transport, no fresh STATUS), an alarm sounding or an
+ * entry or exit time on the view, its own panic still being sent, then the service's gate (a kept
+ * fire or CO tone). Never the master's HOLD or UPDATING, nor merely armed. */
 static uint8_t relay_hold(const plink_keypad_t *k, uint64_t now)
 {
-    if (!cap_ok(k, PLINK_CAP_FW)) {
+    if (!cap_ok(k, PLINK_CAP_FW) || !fw_fresh(k, now)) {
         return PLINK_FW_WHY_NO_STATUS;
     }
-    const uint8_t h = fw_link_hold(k, now);
-    return h != PLINK_FW_WHY_OK ? h : k->upd.svc_hold;
+    if (fw_view_busy(k)) {
+        return PLINK_FW_WHY_NOT_QUIET;
+    }
+    if (panic_waits(k)) {
+        return PLINK_FW_WHY_PANIC_PENDING;
+    }
+    return k->upd.svc_hold;
 }
 
 /* ---- updates through the link: the relay's pull (LINK-032) -------------------------------- */
@@ -1752,8 +1788,8 @@ static void relay_pump(plink_keypad_t *k, uint64_t now)
     }
     if (f->hold != 0u) {
         if (now >= f->paused_ms + PLINK_FW_PAUSE_MAX_MS) {
-            /* Timed out while its gate said no (armed, an alarm, installer mode: anything but a
-             * missing STATUS): not a failed run, so arming never uses up its tries (LINK-035). */
+            /* Timed out while its gate said no (an alarm, an entry or exit time, a kept tone:
+             * anything but a missing STATUS): not a failed run (LINK-035). */
             fw_end_as(f, now, PLINK_FWS_FAILED, PLINK_FW_WHY_TIMEOUT, true,
                       f->hold == PLINK_FW_WHY_NO_STATUS);
         }
@@ -1945,14 +1981,10 @@ static void fw_info_pump(plink_keypad_t *k, uint64_t now)
 
 /* After a STATUS (LINK-029): a session's first asks for FW_INFO, and FW_STATE while a run exists
  * (a master that restarted learns where its keypad is); a change of what the keypad can read
- * changes FW_INFO's can. UPDATING voids the INSTALL hold (LINK-034): the master's own update
- * ends every INSTALL it gave before, which a keypad off line then never heard cancelled. */
+ * changes FW_INFO's can. */
 static void fw_on_status(plink_keypad_t *k)
 {
     plink_kfw_t *f = &k->upd;
-    if ((k->view.flags & PLINK_SF_UPDATING) != 0u) {
-        f->install[0] = '\0';
-    }
     if (f->info_sid != k->items_sid) {
         f->info_sid = k->items_sid;
         f->info_due = true;
@@ -1963,10 +1995,33 @@ static void fw_on_status(plink_keypad_t *k)
     }
 }
 
-/* Everything due: the READY image's 24 h, the relay's turn, FW_STATE, FW_INFO. */
+/* The trial with its master (LINK-034): an INFO naming the version on trial or a newer one passes
+ * it, an older one fails it; none within 10 min of its start fails it too. */
+static void trial_judge(plink_kfw_t *f, const char *master)
+{
+    if (f->trial[0] == '\0' || f->trial_res != PLINK_FWT_WAIT || master[0] == '\0') {
+        return;
+    }
+    const bool pass = strncmp(master, f->trial, sizeof f->trial) == 0 ||
+                      proto_version_is_upgrade(f->trial, master, false);
+    f->trial_res = pass ? (uint8_t)PLINK_FWT_PASS : (uint8_t)PLINK_FWT_FAIL;
+}
+
+static uint8_t trial_now(const plink_kfw_t *f, uint64_t now)
+{
+    if (f->trial[0] == '\0') {
+        return PLINK_FWT_NONE;
+    }
+    return f->trial_res == PLINK_FWT_WAIT && now >= f->trial_until ? (uint8_t)PLINK_FWT_FAIL
+                                                                     : f->trial_res;
+}
+
+/* Everything due: the trial's 10 min, the READY image's 24 h, the relay's turn, FW_STATE,
+ * FW_INFO. */
 static void fw_pump(plink_keypad_t *k, uint64_t now)
 {
     plink_kfw_t *f = &k->upd;
+    f->trial_res = trial_now(f, now);
     if (f->state == PLINK_FWS_READY && f->install[0] == '\0' &&
         now >= f->ready_ms + PLINK_FW_READY_KEEP_MS) {
         fw_end(f, now, PLINK_FWS_FAILED, PLINK_FW_WHY_TIMEOUT, true); /* discarded (LINK-035) */
@@ -1980,6 +2035,9 @@ static uint64_t fw_next(const plink_keypad_t *k)
 {
     const plink_kfw_t *f = &k->upd;
     uint64_t t = relay_next(k);
+    if (f->trial[0] != '\0' && f->trial_res == PLINK_FWT_WAIT) {
+        t = earliest(t, f->trial_until);
+    }
     if (f->state == PLINK_FWS_READY && f->install[0] == '\0') {
         t = earliest(t, f->ready_ms + PLINK_FW_READY_KEEP_MS);
     }
@@ -2034,7 +2092,8 @@ static void mver_paired(plink_kfw_t *f, uint32_t before)
 }
 
 /* What a keypad keeps across a new master (a removal, another pairing): its own facts, its last
- * result, its budget and the service's gate; the run and everything of the master's goes - the
+ * result, its budget, its trial and the service's gate; the run and everything of the master's
+ * goes - the
  * service is told to discard what it holds (LINK-035: a READY image goes on removal), and the
  * master's version with it (the seq moves on, so the service hears that it went). */
 static void fw_forget(plink_kfw_t *f)
@@ -2051,7 +2110,14 @@ static void fw_forget(plink_kfw_t *f)
     char last_version[PLINK_FW_VERSION_MAX + 1];
     memcpy(last_version, f->last_version, sizeof last_version);
     const uint8_t svc_hold = f->svc_hold;
+    char trial[PLINK_FW_VERSION_MAX + 1];
+    memcpy(trial, f->trial, sizeof trial);
+    const uint64_t trial_until = f->trial_until;
+    const uint8_t trial_res = f->trial_res;
     memset(f, 0, offsetof(plink_kfw_t, win)); /* (the window holds only image bytes) */
+    memcpy(f->trial, trial, sizeof trial);
+    f->trial_until = trial_until;
+    f->trial_res = trial_res;
     memcpy(f->fail_ms, fail, sizeof fail);
     f->have_info = have_info;
     memcpy(&f->info, &info, sizeof info);
@@ -2159,8 +2225,7 @@ static void fw_order_take(plink_keypad_t *k, uint64_t now, const plink_fw_order_
     f->cancel_busy = false; /* an order taken after it speaks for the master now */
     switch (o->op) {
     case PLINK_FW_OP_INFO:
-        f->info_due = true;
-        f->install[0] = '\0'; /* an INSTALL is held only while it is the newest order */
+        f->info_due = true; /* (the INSTALL hold stays: INFO only names the master's version) */
         break;
     case PLINK_FW_OP_PROBE:
         if (!fw_active(f)) {
@@ -2226,10 +2291,11 @@ static void on_fw_order(plink_keypad_t *k, uint64_t now, uint32_t fs, const uint
     if (o.op == PLINK_FW_OP_CANCEL && why == PLINK_FW_WHY_BUSY) {
         f->cancel_busy = true; /* its restart goes on; put off, the run ends (fw_report) */
     }
-    /* LINK-029: every order names the version the master runs, taken or refused - but one of an
-     * op or kind this keypad doesn't know may name something else (a C6's version, say). */
-    if (o.op >= PLINK_FW_OP_INFO && o.op <= PLINK_FW_OP_CANCEL && o.kind == PLINK_FW_KIND_APP) {
+    /* LINK-029: INFO names the version the master runs (the other orders name its target, which
+     * may be ahead of it); it judges the trial too. */
+    if (o.op == PLINK_FW_OP_INFO && o.kind == PLINK_FW_KIND_APP) {
         mver_take(f, o.version);
+        trial_judge(f, o.version);
     }
     if (why == PLINK_FW_WHY_OK) {
         fw_order_take(k, now, &o, cont);
@@ -3676,8 +3742,7 @@ void plink_keypad_fw_report(plink_keypad_t *k, uint64_t now_ms, uint32_t run, ui
             return;
         }
         if (!f->go) {
-            /* The writer is open (at first, or after KEY_WAIT): the pull starts, its stall clock
-             * with it. */
+            /* The writer is open: the pull starts, its stall clock with it. */
             f->go = true;
             f->progress_ms = now_ms;
             f->req_out = false;
@@ -3699,16 +3764,16 @@ void plink_keypad_fw_report(plink_keypad_t *k, uint64_t now_ms, uint32_t run, ui
         fw_set(f, state, why);
         break;
     case PLINK_FWS_FETCHING:
-    case PLINK_FWS_KEY_WAIT:
     case PLINK_FWS_VERIFYING:
     case PLINK_FWS_INSTALLING:
-        relay_stop(f); /* KEY_WAIT: nothing more is fetched until the key is accepted */
+        relay_stop(f);
         fw_set(f, state, why);
         break;
     case PLINK_FWS_FAILED:
     case PLINK_FWS_STOPPED:
     case PLINK_FWS_IDLE: fw_end(f, now_ms, state, why, false); break;
-    default: return; /* PROBING is no run's state; a later state isn't this firmware's */
+    default: return; /* PROBING and KEY_WAIT are no run's state here; a later state isn't this
+                      * firmware's */
     }
     fw_pump(k, now_ms);
 }
@@ -3851,6 +3916,22 @@ void plink_keypad_fw_status(const plink_keypad_t *k, uint64_t now_ms, plink_fw_s
         return;
     }
     fw_state_fill(k, now_ms, out);
+}
+
+void plink_keypad_fw_trial(plink_keypad_t *k, uint64_t now_ms, const char *version)
+{
+    if (k == NULL || version == NULL || version[0] == '\0') {
+        return;
+    }
+    plink_kfw_t *f = &k->upd;
+    fw_version_copy(f->trial, version);
+    f->trial_until = now_ms + PLINK_FW_TRIAL_MS;
+    f->trial_res = PLINK_FWT_WAIT;
+}
+
+uint8_t plink_keypad_fw_trial_state(const plink_keypad_t *k, uint64_t now_ms)
+{
+    return k != NULL ? trial_now(&k->upd, now_ms) : (uint8_t)PLINK_FWT_NONE;
 }
 
 const char *plink_keypad_master_version(const plink_keypad_t *k, uint32_t *seq)

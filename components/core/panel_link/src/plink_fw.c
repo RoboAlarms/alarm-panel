@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+#include "alarm/alarm_types.h"
 #include "alarm_proto/ota_profile.h"
 #include "alarm_proto/proto_fw.h"
 
@@ -424,4 +425,76 @@ void plink_fw_again(plink_fw_mem_t *m)
     m->went_back[0] = '\0';
     m->install_sid = 0u;
     m->again = true;
+}
+
+/* ---- names and the log ----------------------------------------------------------------------- */
+
+const char *plink_fw_row_name(uint8_t state)
+{
+    static const char *const NAMES[] = {"none",     "up_to_date", "downloading", "receiving",
+                                        "ready",    "restarting", "not_updated", "newer"};
+    return state < sizeof NAMES / sizeof NAMES[0] ? NAMES[state] : "unknown";
+}
+
+static void log_add(plink_fw_log_ev_t *out, size_t max, size_t *n, uint8_t device, uint8_t stage,
+                    uint8_t why)
+{
+    if (*n < max) {
+        out[*n].device = device;
+        out[*n].stage = stage;
+        out[*n].why = why;
+        (*n)++;
+    }
+}
+
+size_t plink_fw_log_step(plink_fw_log_t *log, const plink_fw_world_t *w, const plink_fw_step_t *s,
+                         plink_fw_log_ev_t *out, size_t max)
+{
+    size_t n = 0u;
+    if (log == NULL || w == NULL || s == NULL || (out == NULL && max != 0u)) {
+        return 0u;
+    }
+    for (size_t i = 0; i < PLINK_KEYPADS_MAX; i++) {
+        const plink_fw_kp_t *kp = &w->kp[i];
+        plink_fw_log_kp_t *k = &log->kp[i];
+        if (kp->device == 0u) {
+            memset(k, 0, sizeof *k); /* no longer paired */
+            continue;
+        }
+        const uint8_t d = kp->device;
+        const plink_fw_row_t *r = &s->row[i];
+        const char *v = w->target;
+        /* Its INSTALL echoed (it restarts once its gate passes, with the master or alone), or
+         * its row Restarting: the master may restart before its keypad says INSTALLING. */
+        const bool took = kp->order_op == PLINK_FW_OP_INSTALL && kp->order_acked &&
+                          kp->order_why == 0u && kp->have_state &&
+                          kp->state.order == kp->order &&
+                          same(kp->state.target, v, sizeof kp->state.target);
+        if ((took || r->state == PLINK_FWR_RESTARTING) && v[0] != '\0' &&
+            !SAME(k->installing, v)) {
+            PUT(k->installing, v);
+            log_add(out, max, &n, d, ALARM_FW_KEYPAD_INSTALLING, 0u);
+        }
+        if (kp->have_state) {
+            const plink_fw_state_t *st = &kp->state;
+            const bool moved = st->last != k->last || !SAME(k->last_version, st->last_version);
+            if (k->seen && moved && st->last_version[0] != '\0') {
+                if (st->last == PLINK_FW_LAST_UPDATED) {
+                    log_add(out, max, &n, d, ALARM_FW_KEYPAD_UPDATED, 0u);
+                } else if (st->last == PLINK_FW_LAST_ROLLED_BACK) {
+                    log_add(out, max, &n, d, ALARM_FW_KEYPAD_ROLLED_BACK, 0u);
+                }
+            }
+            k->seen = true;
+            k->last = st->last;
+            PUT(k->last_version, st->last_version);
+        }
+        if (r->state == PLINK_FWR_NOT_UPDATED && r->why != 0u && v[0] != '\0' &&
+            (!SAME(k->failed, v) || k->failed_why != r->why)) {
+            PUT(k->failed, v);
+            k->failed_why = r->why;
+            log_add(out, max, &n, d, ALARM_FW_KEYPAD_FAILED, r->why);
+        }
+    }
+    return n;
 }

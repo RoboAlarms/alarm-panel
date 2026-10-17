@@ -16,7 +16,8 @@
  *     voice through plink_vfeed (covered events only, nothing older than its last baseline,
  *     nothing while the link isn't ONLINE), as the alarm task hands an alarm panel's;
  *   - the time: the master's clock and zone, and no time server of its own while paired;
- *   - the update gate and the link's heartbeat for the update's self-test (LINK-020);
+ *   - the update gate and the link's heartbeat for the update's self-test (LINK-020); its updates
+ *     from its master (plink_fwk_svc.c, BL-048: the orders through panel_ota, the cap, the trial);
  *   - Smart Home (BL-216; docs/features/11 "Smart Home and Home Assistant on keypads"): the core's
  *     mirror of the master's devices (PSRAM, offered as PLINK_CAP_HOME only with it) and the
  *     screen's ui_dev_t copy made from it under s_dev_lock (never link_pub_lock), each tile
@@ -1305,27 +1306,6 @@ static void pset_track(uint64_t now)
 
 /* ---- sounds, time, power, the heartbeat ------------------------------------------------------ */
 
-/* The keypad's continuous pattern: fire, then CO, from any partition; else its home partition's. */
-static uint8_t continuous_of(const alarm_snapshot_t *s, uint8_t home)
-{
-    bool fire = false;
-    bool co = false;
-    for (uint8_t p = 0; p < ALARM_MAX_PARTITIONS; p++) {
-        if ((s->partitions & (1u << p)) != 0u) {
-            fire = fire || s->part[p].sounder == ALARM_SOUND_FIRE;
-            co = co || s->part[p].sounder == ALARM_SOUND_CO;
-        }
-    }
-    if (fire) {
-        return ALARM_SOUND_FIRE;
-    }
-    if (co) {
-        return ALARM_SOUND_CO;
-    }
-    return home >= 1u && home <= ALARM_MAX_PARTITIONS ? (uint8_t)s->part[home - 1u].sounder
-                                                      : (uint8_t)ALARM_SOUND_NONE;
-}
-
 static void sounds(uint64_t now, const plink_keypad_info_t *info)
 {
     plink_sound_t s;
@@ -1355,7 +1335,9 @@ static void sounds(uint64_t now, const plink_keypad_info_t *info)
     uint8_t want = ALARM_SOUND_NONE;
     if (online) {
         K.local_off = false; /* the master's state again */
-        want = continuous_of(plink_keypad_snapshot(K.k), info->home);
+        /* fire, then CO, from the STATUS flags (any of the master's partitions, LINK-039) or any
+         * partition held; else its home partition's */
+        want = plink_keypad_continuous(K.k);
     } else if ((K.cont == ALARM_SOUND_FIRE || K.cont == ALARM_SOUND_CO) && !K.local_off) {
         want = K.cont; /* no stale entry or burglary tone, but fire and CO go on */
     }
@@ -1868,6 +1850,11 @@ void ksvc_poll(uint64_t now)
         follow_time(now);
         beat(now, &info);
         maintenance_mark(now, &info);
+        /* its updates from its master (BL-048): a fire or CO tone kept through a lost link holds
+         * its restart (KEPT_TONE) */
+        const bool kept = info.state != PLINK_LINK_ONLINE &&
+                          (K.cont == ALARM_SOUND_FIRE || K.cont == ALARM_SOUND_CO) && !K.local_off;
+        kfw_poll(K.k, now, &info, kept);
     }
     copy_for_ui(now);
     home_copy(now);
@@ -2120,11 +2107,16 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
      * hardware it is (the screens never do). */
     char name[32];
     snprintf(name, sizeof name, "Keypad %s", g_link.panel_id);
-    static const plink_keypad_port_t port = {
-        .ctx = NULL, .send = port_send, .mtu = NULL, .store = port_store, .resolve = port_resolve};
+    static const plink_keypad_port_t port = {.ctx = NULL,
+                                             .send = port_send,
+                                             .mtu = NULL,
+                                             .store = port_store,
+                                             .resolve = port_resolve,
+                                             .fw_write = kfw_write}; /* the relay's writer */
     /* What it offers (LINK-043), each with the code that uses it: Smart Home with its mirror
      * (attached below; the core offers HOME only then), its settings with a screen to apply them
-     * (UI-046). The setup's pairing on a master offers nothing: that panel isn't a keypad yet. */
+     * (UI-046), updates through the link with panel_ota (BL-048). The setup's pairing on a master
+     * offers nothing: that panel isn't a keypad yet. */
     uint16_t offer = 0u;
     if (!setup_only) {
         home_prepare();
@@ -2132,6 +2124,7 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
         offer |= PLINK_CAP_PREFS;
 #endif
         offer |= s_home ? PLINK_CAP_HOME : 0u;
+        offer |= kfw_caps();
     }
     plink_keypad_init(k, &g_link.crypto, &port, have ? &rec : NULL, K.cfg_buf,
                       ALARM_CONFIG_BLOB_MAX, K.cfg, PLINK_KIND_PANEL, &caps, offer, name, g_link.fw,
@@ -2139,6 +2132,9 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     plink_wipe(&rec, sizeof rec);
     if ((offer & PLINK_CAP_HOME) != 0u) {
         plink_keypad_home_attach(k, s_mirror); /* before the first tick */
+    }
+    if (!setup_only) {
+        kfw_boot(k, now); /* its master's version and the cap, its facts, its trial (BL-048) */
     }
     K.prefs_on = (offer & PLINK_CAP_PREFS) != 0u;
     if (K.prefs_on) {

@@ -15,6 +15,8 @@
  *                    the link task itself never waits for the alarm task (LINK-027)
  *   plink_dev        Smart Home for the keypads (plink_home_svc.c, BL-216): the device builds and
  *                    the keypads' device actions, answered on the worker's result queue
+ *   keypad updates   plink_fwm_svc.c (BL-048): the planner on the link task, its keypads'
+ *                    update stages posted to Activity by the worker
  *   link task        everything else: the manager, mDNS (announced only while in use, LINK-021),
  *                    the time and its zone, the master's reporting for the Emergency words, the
  *                    network trouble bit and Wi-Fi power save while keypads are paired, the copies
@@ -252,6 +254,11 @@ static void worker_kick(void)
     }
 }
 
+void msvc_kick(void)
+{
+    worker_kick();
+}
+
 static bool take_job(job_t *out)
 {
     bool got = false;
@@ -409,6 +416,7 @@ static void worker_task(void *arg)
             refresh_others();
         }
         flush_edges();
+        fsvc_worker(); /* the keypads' update stages for Activity (they wait for the alarm task) */
         if (atomic_exchange(&s_cfg_job, false)) {
             build_config();
         }
@@ -862,6 +870,8 @@ static void publish(uint64_t now)
             g_pub.keypads_down++;
         }
     }
+    /* each keypad's update, for the screens, the console and MQTT (BL-048) */
+    const bool fw_news = fsvc_publish_locked(peers, n);
     if (!ksvc_active()) {
         /* the setup's own pairing as a keypad, while its manager exists, is published by
          * plink_keypad_svc.c; otherwise this master's own, always */
@@ -877,6 +887,13 @@ static void publish(uint64_t now)
         g_pub.pair.device = pi.device;
     }
     link_pub_unlock();
+#if CONFIG_ALARM_FEATURE_MQTT
+    if (fw_news) {
+        net_mqtt_firmware_changed(); /* .../firmware's keypads (its own task sends it) */
+    }
+#else
+    (void)fw_news;
+#endif
     hsvc_wanted(home_wanted); /* plink_dev builds only while a live keypad has HOME */
     if ((id_taken & ~s_id_taken_told) != 0u) {
         /* docs/features/11 "Settings over the link": Home Assistant gets its id as null */
@@ -919,6 +936,7 @@ void msvc_poll(uint64_t now)
         }
     }
     hsvc_poll(s_m, now); /* the settings writes queued for keypads (BL-216) */
+    fsvc_poll(s_m, now); /* keypad updates: the planner's orders go at this tick (BL-048) */
     plink_master_tick(s_m, now);
     mdns_apply();
     apply_holds();
@@ -1038,6 +1056,9 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
 #else
         return UI_LINK_REQ_REFUSED;
 #endif
+    case LINK_REQ_FW_AGAIN:
+        r = fsvc_request(s_m, now, req); /* `plink fw update <n>`: ask it again now */
+        break;
     default: return UI_LINK_REQ_REFUSED;
     }
     publish(now);
@@ -1088,6 +1109,9 @@ esp_err_t msvc_prepare(uint64_t now)
     if (home_err != ESP_OK) {
         return home_err;
     }
+    /* Keypad updates (BL-048): left out alone when there is no memory for them (keypads keep
+     * their versions; the rest of the link runs). */
+    (void)fsvc_prepare(now);
     /* on this stack: plink_master_init keeps a copy */
     plink_master_port_t port = {
         .ctx = NULL,
@@ -1108,10 +1132,11 @@ esp_err_t msvc_prepare(uint64_t now)
         .prefs_done = hsvc_prefs_done,
     };
     /* Each capability is offered with the code that uses it (LINK-043): HOME with a device side
-     * (NULL dev_run otherwise: an action is answered UNAVAILABLE), PREFS with the UI. FW is not
-     * offered yet. */
-    const uint16_t caps = hsvc_caps();
+     * (NULL dev_run otherwise: an action is answered UNAVAILABLE), PREFS with the UI, FW with the
+     * planner's service (keypad updates go live in each session whose keypad offers it too). */
+    const uint16_t caps = (uint16_t)(hsvc_caps() | fsvc_caps());
     port.dev_run = (caps & PLINK_CAP_HOME) != 0u ? hsvc_dev_run : NULL;
+    port.fw_read = (caps & PLINK_CAP_FW) != 0u ? fsvc_fw_read : NULL;
     port.ctx = s_m; /* hsvc_prefs_done reads the keypad's report back (the others need no ctx) */
     plink_master_init(s_m, &g_link.crypto, &port, have ? &rec : NULL, s_name, g_link.panel_id, caps,
                       now);
@@ -1135,10 +1160,11 @@ esp_err_t msvc_prepare(uint64_t now)
                                 &s_worker, tskNO_AFFINITY) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI(TAG, "master: %u keypad(s) paired; offers Smart Home %s, settings %s",
+    ESP_LOGI(TAG, "master: %u keypad(s) paired; offers Smart Home %s, settings %s, updates %s",
              (unsigned)__builtin_popcount(plink_master_held(s_m)),
              (caps & PLINK_CAP_HOME) != 0u ? "yes" : "no",
-             (caps & PLINK_CAP_PREFS) != 0u ? "yes" : "no");
+             (caps & PLINK_CAP_PREFS) != 0u ? "yes" : "no",
+             (caps & PLINK_CAP_FW) != 0u ? "yes" : "no");
     return ESP_OK;
 }
 

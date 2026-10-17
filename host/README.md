@@ -30,7 +30,15 @@ components the same way, through `cmake/alarm_host.cmake`.
   panel's `device_service_person_act` judges it, and `prefs N set KEY VALUE` changes a keypad's
   Screen and sound settings as Home Assistant would; the virtual keypad mirrors the devices
   (`devices`, `act REF ACTION [VALUE] [CODE]`) and keeps its own settings (`prefs`, `prefs set`).
-  `link_smoke` checks one device action and one settings change end to end. No mDNS on the PC: a keypad is given
+  `link_smoke` checks one device action and one settings change end to end. Updates through the
+  link (BL-048; `link_fw.c`, a stand-in for panel_ota on both sides: fake images of about 1 MB
+  with their SHA-256, a fake update server, a restart that takes a node off for 3 s and starts it
+  again on the new version on its self-test): the master's `fw install V` downloads its update and
+  its keypads follow it - fetching it from their own server (`fw server on|off|refuse` on the
+  keypad) or taking the master's relay - and restart with it once everything is disarmed; `fw`
+  shows the rows, `fw update N` asks a keypad again, `fw bad` fails the next self-test (the master
+  goes back, and the keypad on trial with it). `python tools/link_fw_sim.py` runs four scenarios
+  on two processes and prints the rows over time. No mDNS on the PC: a keypad is given
   `--master`, or asks by broadcast to 255.255.255.255:6056 - for pairing, the first master to
   answer is paired with (the pairing starts again addressed to it; a second master that answers
   stops it), and a paired keypad says HELLO there and follows the master's authenticated

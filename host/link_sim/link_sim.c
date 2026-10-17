@@ -3,21 +3,27 @@
  * simulator"): a virtual master or a virtual keypad on the real clock over UDP, with a console.
  *
  *   link_sim master [--bind IP] [--port 6056] [--state FILE] [--name NAME] [--id HEX6]
+ *                   [--version V] [--model M]
  *   link_sim keypad [--master IP[:PORT]] [--bind IP] [--port 0] [--state FILE] [--name NAME]
- *                   [--id HEX6]
+ *                   [--id HEX6] [--version V] [--model M]
  *
  * The master runs the real alarm engine (link_node.h has its house) and the master's link manager;
  * the keypad runs the keypad's link manager and shows the status it rebuilds. Both take the OS's
  * random numbers, so they pair with panels on the LAN as well as with each other. Both offer Smart
  * Home and settings (BL-216): the master serves its house's devices, the keypad mirrors them and
- * acts on them, and the master changes the keypad's Screen and sound settings.
+ * acts on them, and the master changes the keypad's Screen and sound settings. Both offer updates
+ * through the link (docs/features/11 "Updates through the link"; link_fw.h): the master installs a
+ * version (fw install V) and its keypads follow it, fetching it from their own update server or
+ * taking the master's relay, and restart with it.
  */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "alarm/alarm_strings.h"
+#include "alarm_proto/proto_fw.h"
 #include "link_console.h"
+#include "link_fw.h"
 #include "link_node.h"
 #include "link_os_crypto.h"
 #include "link_udp.h"
@@ -37,6 +43,8 @@ typedef struct {
     bool have_master;
     uint8_t master_ip[4];
     uint16_t master_port;
+    const char *version; /* the firmware it runs at the start (updates through the link) */
+    const char *model;
 } opts_t;
 
 static link_udp_t U;
@@ -45,6 +53,8 @@ static plink_crypto_t C;
 static link_store_t S;
 static link_master_t M;
 static link_keypad_t K;
+static link_mfw_t MF; /* updates through the link: what a panel keeps in flash and NVS */
+static link_kfw_t KF;
 static opts_t O;
 static uint64_t T0;
 static uint64_t HOLD_UNTIL; /* "wait S": no console line is taken before this */
@@ -83,13 +93,16 @@ static void usage(void)
     printf("link_sim - the panel link's PC simulator (docs/features/11 LINK-013)\n"
            "\n"
            "  link_sim master [--bind IP] [--port 6056] [--state FILE] [--name NAME] [--id HEX6]\n"
+           "                  [--version V] [--model M]\n"
            "      a virtual master: the real alarm engine with a small house and the master's\n"
            "      side of the link; its keypads are kept in FILE (default link_master.plink)\n"
            "  link_sim keypad [--master IP[:PORT]] [--bind IP] [--port 0] [--state FILE]\n"
-           "                  [--name NAME] [--id HEX6]\n"
+           "                  [--name NAME] [--id HEX6] [--version V] [--model M]\n"
            "      a virtual keypad: the keypad's side of the link and the status it rebuilds;\n"
            "      its master is kept in FILE (default link_keypad.plink); --id is its own panel\n"
            "      id in its settings report (default 1c2d3e)\n"
+           "--version is the firmware each runs at the start (default 1.4.0), --model its model\n"
+           "(default pc_panel; another model's keypad gets a copy its master fetches for it).\n"
            "\n"
            "There is no mDNS on the PC: give the master's address with --master, or the keypad\n"
            "broadcasts to 255.255.255.255:6056 to find it. The master answers a keypad on the\n"
@@ -122,6 +135,12 @@ static void help(void)
                  "  prefs N         keypad N's Screen and sound settings, as it reported them\n"
                  "  prefs N set KEY VALUE   change one on keypad N, as Home Assistant would\n"
                  "                  (KEY: brightness, saver_after, night, night_start, beeps...)\n"
+                 "  fw              this panel's firmware and each keypad's update (plink fw)\n"
+                 "  fw install V    Install version V: downloaded now, the restart once\n"
+                 "                  everything is disarmed; its keypads update with it\n"
+                 "  fw update N     ask keypad N again now (plink fw update N)\n"
+                 "  fw bad          this panel's next self-test fails: it goes back\n"
+                 "  fw server on|off|refuse   its update server (copies for another model)\n"
                  "  wait S          take no command for S seconds (for scripts)\n"
                  "  quit\n"
                  "the house: zones 1 Front Door, 2 Living Window, 3 Hall Motion, 4 Hall Smoke;\n"
@@ -144,6 +163,10 @@ static void help(void)
                  "                  mode off|heat|cool|auto, run (the master judges it)\n"
                  "  prefs           this keypad's Screen and sound settings\n"
                  "  prefs set KEY VALUE   change one here (the master hears of it)\n"
+                 "  fw              its firmware, its run, its master's version (plink fw)\n"
+                 "  fw server on|off|refuse   its own update server answers, can't be reached\n"
+                 "                  (the master relays), or refuses (it waits for the next one)\n"
+                 "  fw bad          its next self-test fails: it goes back\n"
                  "  forget          forget the master (the record erased)\n"
                  "  wait S          take no command for S seconds (for scripts)\n"
                  "  quit");
@@ -323,6 +346,22 @@ static bool prefs_field(const char *key, const char *text, uint8_t *id, uint32_t
     return true;
 }
 
+/* fw server on|off|refuse */
+static bool srv_parse(const char *s, uint8_t *out)
+{
+    if (strcmp(s, "on") == 0) {
+        *out = LINK_SRV_ON;
+    } else if (strcmp(s, "off") == 0) {
+        *out = LINK_SRV_OFF;
+    } else if (strcmp(s, "refuse") == 0) {
+        *out = LINK_SRV_REFUSE;
+    } else {
+        say_line(NULL, "fw server on|off|refuse");
+        return false;
+    }
+    return true;
+}
+
 /* One console line for the master; false: quit. */
 static bool master_line(char *line)
 {
@@ -405,6 +444,19 @@ static bool master_line(char *line)
         if (prefs_field(t[3], t[4], &id, &value)) {
             (void)link_master_prefs_set(&M, now, (uint8_t)a, id, value);
         }
+    } else if (strcmp(t[0], "fw") == 0 && n == 1u) {
+        link_mfw_say(&M, now);
+    } else if (strcmp(t[0], "fw") == 0 && n == 3u && strcmp(t[1], "install") == 0) {
+        link_mfw_install(&M, now, t[2]);
+    } else if (strcmp(t[0], "fw") == 0 && n == 3u && strcmp(t[1], "update") == 0 &&
+               parse_uint(t[2], 255u, &a)) {
+        (void)link_mfw_again(&M, now, (uint8_t)a);
+    } else if (strcmp(t[0], "fw") == 0 && n == 2u && strcmp(t[1], "bad") == 0) {
+        MF.bad_test = true;
+        say_line(NULL, "fw: this panel's next self-test fails");
+    } else if (strcmp(t[0], "fw") == 0 && n == 3u && strcmp(t[1], "server") == 0 &&
+               srv_parse(t[2], &MF.server)) {
+        say_line(NULL, "fw: its update server changed");
     } else if (strcmp(t[0], "zone") == 0 && n == 3u && parse_uint(t[1], ALARM_MAX_ZONES, &a) &&
                a > 0u && (strcmp(t[2], "open") == 0 || strcmp(t[2], "close") == 0)) {
         link_master_zone(&M, now, (uint16_t)a, strcmp(t[2], "open") == 0);
@@ -535,6 +587,14 @@ static bool keypad_line(char *line)
         if (prefs_field(t[2], t[3], &id, &value)) {
             (void)link_keypad_prefs_set(&K, now, id, value);
         }
+    } else if (strcmp(t[0], "fw") == 0 && n == 1u) {
+        link_kfw_say(&K, now);
+    } else if (strcmp(t[0], "fw") == 0 && n == 2u && strcmp(t[1], "bad") == 0) {
+        KF.bad_test = true;
+        say_line(NULL, "fw: this keypad's next self-test fails");
+    } else if (strcmp(t[0], "fw") == 0 && n == 3u && strcmp(t[1], "server") == 0 &&
+               srv_parse(t[2], &KF.srv)) {
+        say_line(NULL, "fw: its update server changed");
     } else if (strcmp(t[0], "forget") == 0) {
         say_line(NULL, plink_keypad_forget(&K.k, now) ? "the master is forgotten"
                                                       : "the record could not be erased");
@@ -561,6 +621,8 @@ static int parse_args(int argc, char **argv)
         return 1;
     }
     memcpy(O.bind_ip, ANY_IP, 4);
+    O.version = "1.4.0";
+    O.model = LINK_FW_DEVICE;
     for (int i = 2; i < argc; i++) {
         const char *opt = argv[i];
         const char *val = i + 1 < argc ? argv[i + 1] : NULL;
@@ -584,6 +646,19 @@ static int parse_args(int argc, char **argv)
             O.state = val;
         } else if (strcmp(opt, "--name") == 0) {
             O.name = val;
+        } else if (strcmp(opt, "--version") == 0) {
+            proto_version_t pv;
+            if (!proto_version_parse(val, &pv) || strlen(val) > PLINK_FW_VERSION_MAX) {
+                fprintf(stderr, "--version %s: a version like 1.4.0\n", val);
+                return 1;
+            }
+            O.version = val;
+        } else if (strcmp(opt, "--model") == 0) {
+            if (strlen(val) == 0u || strlen(val) > PLINK_FW_DEVICE_MAX) {
+                fprintf(stderr, "--model: 1 to %u characters\n", (unsigned)PLINK_FW_DEVICE_MAX);
+                return 1;
+            }
+            O.model = val;
         } else if (strcmp(opt, "--id") == 0) {
             if (strlen(val) != PLINK_PANEL_ID_LEN) {
                 fprintf(stderr, "--id: six hex characters\n");
@@ -640,12 +715,14 @@ int main(int argc, char **argv)
         return 1;
     }
     T0 = link_os_mono_ms();
-    const link_io_t io = {
+    link_io_t io = {
         .send = udp_send, .send_ctx = NULL, .say = say_line, .say_ctx = NULL,
         .epoch_ms = link_os_epoch_ms};
     printf("%s on UDP %u.%u.%u.%u:%u, records in %s\n", O.master ? "master" : "keypad",
            U.ip[0], U.ip[1], U.ip[2], U.ip[3], (unsigned)U.port, O.state);
     if (O.master) {
+        link_mfw_setup(&MF, O.name, O.id, O.model, O.version);
+        io.mfw = &MF;
         if (!link_master_init(&M, &C, &io, &S, O.name, O.id, now_ms())) {
             return 1;
         }
@@ -658,6 +735,8 @@ int main(int argc, char **argv)
                        "255.255.255.255:6056\n");
             }
         }
+        link_kfw_setup(&KF, O.name, O.id, &master, O.model, O.version);
+        io.kfw = &KF;
         link_keypad_init(&K, &C, &io, &S, O.name, O.id, &master, now_ms());
         link_keypad_report(&K, now_ms());
     }

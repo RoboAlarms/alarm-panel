@@ -118,6 +118,14 @@ size_t proto_fw_line_decode(const char *line, uint32_t *seq, uint8_t *out, size_
 
 /* ---- Home Assistant update entity (OTA-010) --------------------------------------------- */
 
+/* A master's link keypad in .../firmware's "keypads" (docs/features/11 "What people see"). */
+#define PROTO_FW_KEYPADS_MAX 8u
+typedef struct {
+    uint8_t device;    /* 1..8 */
+    char version[33];  /* what it runs, "" = not known: null */
+    char state[24];    /* plink_service_fw_row_name(): "up_to_date", "downloading", ... */
+} proto_fw_keypad_t;
+
 typedef struct {
     const char *installed;   /* running version */
     const char *latest;      /* newest known version (= installed when up to date) */
@@ -125,9 +133,14 @@ typedef struct {
     const char *release_url; /* NULL or "" = none: the key is left out */
     bool in_progress;
     int percent;             /* 0..100 while downloading, -1 = none */
+    /* A master's link keypads (appended; docs/features/11): keypad_count of them, at most
+     * PROTO_FW_KEYPADS_MAX; 0 = the key is left out (a panel without keypads, as before). */
+    const proto_fw_keypad_t *keypads;
+    size_t keypad_count;
 } proto_fw_state_t;
 
-/* State JSON for .../firmware (the keys Home Assistant's MQTT update entity reads). */
+/* State JSON for .../firmware (the keys Home Assistant's MQTT update entity reads), and a master's
+ * keypads: "keypads":[{"device":2,"version":"1.4.0","state":"up_to_date"}] (keys added only). */
 void proto_fw_state(pj_writer_t *w, const proto_fw_state_t *st);
 
 /* update entity "Firmware" (device class firmware); can_install adds the install command. */

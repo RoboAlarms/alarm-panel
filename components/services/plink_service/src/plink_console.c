@@ -10,9 +10,13 @@
  *           super <n> <seconds>        (force: without installer mode, development builds only),
  *           dev [<i>]                  Smart Home for keypads: the list and records it serves
  *           prefs <n> [set <key> <v>]  keypad n's settings report (set: development builds only)
+ *           fw                         keypad updates: each keypad's row and the planner's view
+ *           fw update <n>              ask keypad n again now (a wait, a refusal, a going back
+ *                                      forgotten)
  *   keypad: plink find, master <ip>|off, pair [<ip>], yes, no, forget, cmd away|stay|night|off|
  *           chime|panic [<code>] (as the touchscreen sends it; the status also shows what it shows)
  *           dev [<i>]                  Smart Home from its master: the mirror and the screen's rows
+ *           fw                         its updates from its master: its run, its master's version
  *   a master whose setup isn't done (the setup's keypad branch, Option C): plink kp pair [<ip>],
  *           kp yes, kp no, kp stop, kp done (stores the keypad role, keeps Wi-Fi, restarts);
  *           kp force first lets a bench panel whose setup is done do it (development builds)
@@ -748,6 +752,15 @@ static int cmd_plink(int argc, char **argv)
         if (strcmp(what, "dev") == 0) {
             return dev_show(argc, argv);
         }
+        if (strcmp(what, "fw") == 0 && argc == 2) {
+            return fsvc_console_show();
+        }
+        if (strcmp(what, "fw") == 0 && argc == 4 && strcmp(argv[2], "update") == 0 &&
+            parse_num(argv[3], 1, 8, &n)) {
+            req.kind = LINK_REQ_FW_AGAIN;
+            req.device = (uint8_t)n;
+            return ask(&req);
+        }
         if (strcmp(what, "prefs") == 0 && argc >= 3 && parse_num(argv[2], 1, 8, &n)) {
             return prefs_cmd((uint8_t)n, argc, argv);
         }
@@ -826,6 +839,9 @@ static int cmd_plink(int argc, char **argv)
         if (strcmp(what, "dev") == 0) {
             return kp_dev_show(argc, argv);
         }
+        if (strcmp(what, "fw") == 0) {
+            return kfw_console_show();
+        }
     }
     printf("plink: see `help plink`\n");
     return 1;
@@ -837,12 +853,13 @@ esp_err_t plink_service_console_register(void)
         .command = "plink",
         .help = "Panel link (docs/features/11): status; role keypad|master confirm (a factory "
                 "reset); master: pair [force], allow, reject, stop, list, remove <n>, "
-                "home <n> <p>, super <n> <s>, dev [<i>], prefs <n> [set <key> <v>]; keypad: find, "
+                "home <n> <p>, super <n> <s>, dev [<i>], prefs <n> [set <key> <v>], fw (keypad "
+                "updates), fw update <n> (ask it again now); keypad: find, "
                 "master <ip>|off, pair [<ip>], yes, no, forget, cmd "
-                "away|stay|night|off|chime|panic [<code>], dev [<i>]; a master in its setup: "
+                "away|stay|night|off|chime|panic [<code>], dev [<i>], fw; a master in its setup: "
                 "kp pair [<ip>]|yes|no|stop|done|force",
-        .hint = "[role|pair|allow|reject|stop|list|remove|home|super|dev|prefs|find|master|yes|no|"
-                "forget|cmd|kp]",
+        .hint = "[role|pair|allow|reject|stop|list|remove|home|super|dev|prefs|fw|find|master|yes|"
+                "no|forget|cmd|kp]",
         .func = cmd_plink,
     };
     return esp_console_cmd_register(&cmd);

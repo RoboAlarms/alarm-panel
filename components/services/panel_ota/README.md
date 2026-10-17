@@ -40,21 +40,30 @@ its why in `panel_ota_order_get()`), PROBE and FETCH as checks with `want` at th
 and channel for that run only (a PROBE with no server it can use is answered NO_LOOKUP 2; only a
 FETCH without one is refused, BAD_ORDER 40), RELAY as a run of `PANEL_OTA_KIND_LINK` through the
 writer (no server needed), the restart held for the master's INSTALL, no scheduled check
-(`panel_ota_set_checks`) and never past its master (`panel_ota_set_version_cap`). On a master: its
-own restart put off while a keypad installs or self-tests (`panel_ota_set_restart_hold`, which
-wakes the update task only when the hold changes), its keypads in its self-test
+(`panel_ota_set_checks`) and never past its master (`panel_ota_set_version_cap`; an ordered run is
+capped at its order's version, its master's target, instead). The order's server and key become
+its trust record when they differ (in RAM at once, stored by the update task; LINK-036, nobody is
+asked). After an install its master ordered, "ordered install of V" (NVS `ord`, with the attempt)
+puts its self-test on trial with its master (`panel_ota_set_trial_check`, `panel_ota_ordered_trial`):
+WAIT holds the confirmation, FAIL rolls back. On a master: its own restart put off while a keypad
+installs or self-tests (`panel_ota_set_restart_hold`, which wakes the update task only when the
+hold changes) or as its keypads' hook says (`panel_ota_set_restart_with`: `hold` at every gate,
+then `installs_out` asked for at most 5 s once the gate passed, `panel_ota_restart_soon()` true
+meanwhile; from then on no keypad's hold counts), its keypads in its self-test
 (`panel_ota_set_keypads_check`, `PANEL_OTA_OK_KEYPADS`: until the self-test's deadline no keypad
 back yet is waited for, never a failure, and 10 s of a keypad's answers prove it), and its image
 sources for the relay (`ota_source.c`: the running image's size, digest and facts once confirmed,
-read through 256 KB windows; one copy in PSRAM fetched with a keypad's facts,
-`panel_ota_fetch_for`, freed the moment the master's own run starts).
+read through 256 KB windows; its own release waiting in its spare slot, `panel_ota_spare_image`
+and `panel_ota_spare_read`, its digest kept as it was written; one copy in PSRAM fetched with a
+keypad's facts, `panel_ota_fetch_for` - also while its own release waits - freed the moment the
+master's own run starts). `panel_ota_device()` and `panel_ota_get_facts()` give a keypad's FW_INFO.
 
 ## Public API
 | Header | What it offers |
 |---|---|
 | `include/panel_ota.h` | `panel_ota_start(required)`, the heartbeat contract (`panel_ota_healthy()`, `panel_ota_health_stale()`, `PANEL_OTA_OK_*` bits), status and listeners, the update server (check, commit, channel, facts, wanted locales, the running version's languages) / check / install / stop / cancel / discard, the writer (`panel_ota_begin/write/end/abort/apply`), `panel_ota_system_idle()` and the gate that answers it on a panel with no engine of its own (`panel_ota_set_idle_gate()`, a link keypad, docs/features/11), remote-development probation (`panel_ota_remote_prepare/confirm/operation`, `panel_ota_cancel_remote()`), `panel_ota_cp_update()`, `panel_ota_console_register()` |
 | (in `alarm_proto`) `alarm_proto/ota_profile.h`, `alarm_proto/ota_retry.h` | which signed project names may replace the running one; the retry schedule after a failed check (moved there in docs/features/33 step 8 so they are host-tested as part of a core component) |
-| `include/panel_ota.h`, updates through the panel link | a keypad's side: `panel_ota_set_checks()`, `panel_ota_set_version_cap()`, `panel_ota_order_*()`, `panel_ota_key_trusted()`, `PANEL_OTA_KIND_LINK`; a master's: `panel_ota_set_restart_hold()`, `panel_ota_set_keypads_check()` (`PANEL_OTA_OK_KEYPADS`, `last.failed`), `panel_ota_running_image()`, `panel_ota_running_read()`, `panel_ota_fetch_for()`, `panel_ota_copy_get/read/free()` |
+| `include/panel_ota.h`, updates through the panel link | a keypad's side: `panel_ota_set_checks()`, `panel_ota_set_version_cap()`, `panel_ota_order_*()`, `panel_ota_key_trusted()`, `PANEL_OTA_KIND_LINK`, `panel_ota_set_trial_check()`, `panel_ota_ordered_trial()`, `panel_ota_get_facts()`; a master's: `panel_ota_set_restart_hold()`, `panel_ota_set_restart_with()`, `panel_ota_restart_soon()`, `panel_ota_set_keypads_check()` (`PANEL_OTA_OK_KEYPADS`, `last.failed`), `panel_ota_device()`, `panel_ota_running_image()`, `panel_ota_running_read()`, `panel_ota_spare_image()`, `panel_ota_spare_read()`, `panel_ota_fetch_for()`, `panel_ota_copy_get/read/free()` |
 | (in `alarm_proto`) `alarm_proto/proto_fw.h` (`src/fw_image.c`) | the why numbers 20-61, the cap, the header judge and the image walk those use |
 | `panel_ota_internal.h` (private) | shared between `panel_ota.c`, `cp_ota.c`, `ota_console.c`, `ota_trust.c` and `ota_source.c` |
 
@@ -78,7 +87,7 @@ are what make the checks above real.
 - Task `ota`: 8192-byte internal stack, priority 3 (`panel_ota.c:1385`); it writes the image and NVS. The serial upload runs on the console's task.
 - Heap per check or download: an 8192-byte answer (4096 for a server's keys), a 2048-byte request and a 4096-byte HTTP buffer; one HTTPS client session, verified with the certificate bundle (`:871`). Slow memory (`alarm_mem`): the idle-gate snapshot (`:192`).
 - Partitions (`firmware/crowpanel_p4/partitions.csv`): `ota_0` / `ota_1` (4608K each), `otadata`, `cp_fw` (1536K, read by `cp_ota.c:118`).
-- NVS namespaces `ota` (`trust`: the server and its accepted key; `chan`: the channel; rollback note, co-processor attempt; `rbh`: what a failed self-test missed, written only on a master that asked its keypads; the old `src` is no longer read) and `devota` (the remote probation record, `panel_ota.c:689`).
+- NVS namespaces `ota` (`trust`: the server and its accepted key, a keypad's taken from its master's orders too; `chan`: the channel; rollback note, co-processor attempt; `rbh`: what a failed self-test missed, written only on a master that asked its keypads; `ord`: a keypad's "ordered install of V", `ota_rec_t` written with the attempt, erased once confirmed or back; the old `src` is no longer read) and `devota` (the remote probation record, `panel_ota.c:689`).
 - Updates through the panel link, only when used: the order and the probe's answer in slow memory (under 1 KB); on a master, a mutex made on the first use, one 256 KB window of the running partition mapped while the relay reads it (unmapped after 30 s unused), and one copy for a keypad in PSRAM (at most `PANEL_OTA_COPY_MAX`, 4,010,803 B; freed after 30 min unused or when the master's own run starts). Mapping a window disables the cache for a moment on the P4: `panel_ota_running_read()` only from a task with an internal-RAM stack (the link task).
 
 ## Rules

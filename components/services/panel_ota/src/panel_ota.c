@@ -239,6 +239,28 @@ static uint8_t s_why;                   /* how the last ordered run ended (FW_ST
 static uint8_t s_stop_why;              /* the why a stop ends with: STOPPED, CANCELLED, TIMEOUT */
 /* The update task's own: the why of a writer failure, read by the writer's caller after it. */
 static uint8_t s_writer_why;
+/* LINK-036: an order's server and key taken into s_trust (in RAM at once): the update task stores
+ * them. */
+static volatile bool s_trust_save;
+/* LINK-030: a master's keypads restart with it (panel_ota_set_restart_with). */
+static panel_ota_with_t s_with;   /* set before the first restart */
+static volatile bool s_with_set;
+static char s_with_version[32];   /* the version the restart under way starts (the update task's) */
+static volatile bool s_with_on;   /* its restart waits for its keypads' INSTALLs */
+static volatile bool s_with_done; /* ... done: a keypad's hold no longer holds this restart */
+/* LINK-034: a keypad on trial with its master after an ordered install ("ord" in NVS). */
+static panel_ota_trial_fn s_trial_fn; /* (atomic) */
+static void *s_trial_ctx;
+static bool s_ord_trial;             /* set at the start, read by the update task */
+static char s_ord_version[32];
+#define ORD_KEY "ord"                /* ota_rec_t: "ordered install of V", with the attempt */
+/* Its own update in its spare slot (a release, downloaded and checked), for a master's relay:
+ * valid while s_ready is still that slot and waits (under the lock). */
+static struct {
+    bool ok;
+    const esp_partition_t *part;
+    panel_ota_image_t img;
+} s_spare ALARM_SLOW_BSS;
 
 /* PROBE: asked (under the lock), then its answer. */
 typedef struct {
@@ -414,8 +436,16 @@ bool panel_ota_system_idle(const char **why)
 static const char *restart_held(void)
 {
     const char *hold = __atomic_load_n(&s_restart_hold_why, __ATOMIC_ACQUIRE);
-    if (hold != NULL) {
-        return hold;
+    if (!s_with_done) { /* keypads restarting with it never hold it (LINK-030) */
+        if (hold != NULL) {
+            return hold;
+        }
+        if (s_with_set && s_with.hold != NULL) {
+            hold = s_with.hold(s_with.ctx, s_with_version); /* its keypads still get it */
+            if (hold != NULL) {
+                return hold;
+            }
+        }
     }
     return s_order_hold ? s_order.waiting : NULL;
 }
@@ -1015,9 +1045,16 @@ static bool check_header(writer_t *w, char *why, size_t why_len)
     char cap_version[sizeof(s_cap_version)];
     char buf[96];
     lock();
-    const proto_fw_cap_t cap = s_cap;
+    proto_fw_cap_t cap = s_cap;
     snprintf(cap_version, sizeof(cap_version), "%s", s_cap_version);
     cap_words_locked(buf, sizeof(buf));
+    if (s_order.op != ORDER_NONE) {
+        /* An ordered run is capped at its order's version, its master's target (LINK-029): the
+         * image must be exactly that version anyway (panel_ota_end). */
+        cap = PROTO_FW_CAP_AT;
+        snprintf(cap_version, sizeof(cap_version), "%s", s_order.version);
+        snprintf(buf, sizeof(buf), "Not the version ordered (%s)", s_order.version);
+    }
     unlock();
     const proto_fw_self_t self = {
         .chip_id = (uint16_t)CONFIG_IDF_FIRMWARE_CHIP_ID,
@@ -1377,11 +1414,27 @@ static esp_err_t writer_end(char *version, size_t version_len, char *why, size_t
         end_failed(wrong, PROTO_FW_WHY_WRONG_VERSION);
         return ESP_ERR_INVALID_VERSION;
     }
+    proto_fw_header_t hdr;
+    const bool have_hdr = proto_fw_header_read(s_w.header, sizeof(s_w.header), &hdr);
     lock();
     s_ready = s_w.part;
     s_ready_kind = s_st.kind == PANEL_OTA_KIND_RELEASE || s_st.kind == PANEL_OTA_KIND_LINK
                        ? s_st.kind
                        : PANEL_OTA_KIND_FILE;
+    /* A release of its own: its keypads' target, relayed from this slot (docs/features/11) */
+    s_spare.ok = have_hdr && s_ready_kind == PANEL_OTA_KIND_RELEASE && s_order.op == ORDER_NONE;
+    if (s_spare.ok) {
+        memset(&s_spare.img, 0, sizeof(s_spare.img));
+        s_spare.part = s_w.part;
+        s_spare.img.size = s_w.size;
+        memcpy(s_spare.img.sha256, sha, sizeof(s_spare.img.sha256));
+        snprintf(s_spare.img.version, sizeof(s_spare.img.version), "%s", s_w.version);
+        panel_ota_version_copy(s_spare.img.project, sizeof(s_spare.img.project), hdr.project,
+                               sizeof(hdr.project));
+        s_spare.img.chip_id = hdr.chip_id;
+        s_spare.img.min_rev_full = hdr.min_rev_full;
+        s_spare.img.max_rev_full = hdr.max_rev_full;
+    }
     snprintf(s_st.ready, sizeof(s_st.ready), "%s", s_w.version);
     s_busy = false;
     s_st.phase = PANEL_OTA_IDLE;
@@ -1687,6 +1740,9 @@ static void give_up_restart(const char *why, const alarm_source_t *src, uint8_t 
     }
     s_cancelled = false;
     s_restart_hold_ms = alarm_service_now() + RESTART_HOLD_MS;
+    s_with_on = false; /* its keypads restart with its next attempt (LINK-030) */
+    s_with_done = false;
+    s_with_version[0] = '\0'; /* (a Wi-Fi module's restart isn't theirs to hold) */
     unlock();
     if (disarm) {
         remote_disarm();
@@ -1717,6 +1773,28 @@ static bool restart_hold(const char **why)
     }
 }
 
+/* LINK-030 ("Restarting together"): once this panel's own restart has passed its gate, its keypads
+ * get their INSTALL (panel_ota_restart_soon() for the link's planner) - waited for at most
+ * PANEL_OTA_WITH_MS - and their "installing" goes into the log before the restart. From here a
+ * keypad's hold no longer holds this restart. false: no one asks (nothing waited). The update
+ * task. */
+static bool restart_with(void)
+{
+    if (!s_with_set || s_with.installs_out == NULL) {
+        return false;
+    }
+    s_with_done = false;
+    s_with_on = true;
+    const uint64_t until = alarm_service_now() + PANEL_OTA_WITH_MS;
+    while (!s_with.installs_out(s_with.ctx) && alarm_service_now() < until && !s_stop &&
+           !s_cancelled) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    s_with_done = true;
+    panel_log_flush(500u); /* the keypads' "installing" with this panel's */
+    return true;
+}
+
 /* Waiting for an idle system (OTA-004), then switch slots and restart.
  *
  * Order matters (R17): the announcement, the log flush and the 3 s hold all run while the old
@@ -1740,6 +1818,10 @@ static void try_restart(void)
     const uint8_t user = s_apply_user;
     const uint64_t hold = s_restart_hold_ms;
     const bool remote_install = s_remote_install;
+    /* its own release's version, for its keypads' hold ("": another restart, which they don't
+     * hold) */
+    snprintf(s_with_version, sizeof(s_with_version), "%s",
+             s_ready_kind == PANEL_OTA_KIND_RELEASE ? s_st.ready : "");
     unlock();
     if (!waiting) {
         return;
@@ -1783,6 +1865,9 @@ static void try_restart(void)
     alarm_service_firmware_event(ALARM_FW_INSTALLING, &src, user);
     run_listeners(); /* MQTT and Home Assistant see the install before the panel goes */
     bool go = restart_hold(&why) && restart_allowed(&why); /* the last gate */
+    if (go && restart_with()) {
+        go = restart_allowed(&why); /* (the keypads' hold no longer counts) */
+    }
     if (go) {
         lock();
         go = !s_stop && !s_cancelled;
@@ -1807,6 +1892,12 @@ static void try_restart(void)
     if (described) {
         rec_erase(RBH_KEY); /* what an earlier attempt's self-test missed is not this one's */
         rec_put("try", &att);
+        lock();
+        const bool ordered = s_order.op != ORDER_NONE;
+        unlock();
+        if (ordered) {
+            rec_put(ORD_KEY, &att); /* LINK-034: on trial with its master after this restart */
+        }
     }
     /* The gate once more after the NVS write (which can take tens of ms), before the slower
      * switch: an arming in that window costs nothing to undo. The last word is the alarm
@@ -1816,6 +1907,7 @@ static void try_restart(void)
         s_slot_selected = false;
         unlock();
         rec_erase("try");
+        rec_erase(ORD_KEY);
         give_up_restart(why, &src, user);
         return;
     }
@@ -1825,6 +1917,7 @@ static void try_restart(void)
         s_slot_selected = false;
         unlock();
         rec_erase("try");
+        rec_erase(ORD_KEY);
         ESP_LOGE(TAG, "set boot partition: %s", esp_err_to_name(err));
         lock();
         const panel_ota_kind_t kind = s_st.kind;
@@ -1847,6 +1940,7 @@ static void try_restart(void)
      * after the slot was switched. Back to the image that runs, then put off as above. */
     if (release_boot_slot()) {
         rec_erase("try");
+        rec_erase(ORD_KEY);
     }
     give_up_restart(why, &src, user);
 }
@@ -3591,6 +3685,137 @@ void panel_ota_set_restart_hold(const char *reason_literal)
     }
 }
 
+void panel_ota_set_restart_with(const panel_ota_with_t *with)
+{
+    s_with_set = false;
+    __sync_synchronize();
+    if (with != NULL) {
+        s_with = *with;
+        __sync_synchronize();
+        s_with_set = true;
+    }
+}
+
+bool panel_ota_restart_soon(void)
+{
+    return s_with_on;
+}
+
+void panel_ota_set_trial_check(panel_ota_trial_fn fn, void *ctx)
+{
+    s_trial_ctx = ctx;
+    __atomic_store_n(&s_trial_fn, fn, __ATOMIC_RELEASE);
+}
+
+bool panel_ota_ordered_trial(char *version)
+{
+    if (s_lock == NULL) {
+        return false;
+    }
+    lock();
+    const bool on = s_ord_trial && s_st.probation;
+    if (version != NULL) {
+        snprintf(version, sizeof(s_ord_version), "%s", on ? s_ord_version : "");
+    }
+    unlock();
+    return on;
+}
+
+const char *panel_ota_device(void)
+{
+    return device_name();
+}
+
+void panel_ota_get_facts(panel_ota_facts_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    snprintf(out->device, sizeof(out->device), "%s", device_name());
+    snprintf(out->board_rev, sizeof(out->board_rev), "%s", s_board_rev);
+    snprintf(out->chip_rev, sizeof(out->chip_rev), "%s", CHIP_REV != NULL ? CHIP_REV : "");
+    esp_chip_info_t chip;
+    esp_chip_info(&chip);
+    out->chip_rev_full = chip.revision;
+    const esp_app_desc_t *me = esp_app_get_description();
+    panel_ota_version_copy(out->project, sizeof(out->project), me->project_name,
+                           sizeof(me->project_name));
+    panel_ota_version_copy(out->version, sizeof(out->version), me->version, sizeof(me->version));
+    const esp_partition_t *slot = esp_ota_get_next_update_partition(NULL);
+    out->slot = slot != NULL ? (uint32_t)slot->size : 0u;
+    if (s_lock == NULL) {
+        return;
+    }
+    net_wifi_status_t ws;
+    net_wifi_get_status(&ws);
+    snprintf(out->cp_version, sizeof(out->cp_version), "%s", ws.coproc_fw);
+    lock();
+    if (s_own_key_ok) {
+        memcpy(out->own_key, s_own_key, sizeof(out->own_key));
+        out->has_own_key = true;
+    }
+    if (s_trust.has_key) {
+        memcpy(out->accepted_key, s_trust.key_sha256, sizeof(out->accepted_key));
+        out->has_accepted_key = true;
+    }
+    unlock();
+}
+
+/* Its own release waiting in its spare slot (call with the lock held). */
+static bool spare_valid_locked(void)
+{
+    return s_spare.ok && s_ready != NULL && s_ready == s_spare.part &&
+           s_ready_kind == PANEL_OTA_KIND_RELEASE &&
+           (s_st.phase == PANEL_OTA_WAITING || s_st.phase == PANEL_OTA_RESTARTING) &&
+           strcmp(s_st.ready, s_spare.img.version) == 0;
+}
+
+esp_err_t panel_ota_spare_image(panel_ota_image_t *out)
+{
+    if (out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memset(out, 0, sizeof(*out));
+    if (s_lock == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    lock();
+    const bool ok = spare_valid_locked();
+    if (ok) {
+        *out = s_spare.img;
+    }
+    unlock();
+    return ok ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t panel_ota_spare_read(uint32_t offset, void *out, size_t len)
+{
+    if (out == NULL || s_lock == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    lock();
+    const bool ok = spare_valid_locked();
+    const esp_partition_t *part = s_spare.part;
+    const uint32_t size = s_spare.img.size;
+    unlock();
+    if (!ok) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if ((uint64_t)offset + len > size) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    return panel_ota_source_part_read(part, offset, out, len);
+}
+
+bool panel_ota_own_waiting(void)
+{
+    if (s_lock == NULL) {
+        return false;
+    }
+    lock();
+    const bool waiting = spare_valid_locked() && !s_st.probation;
+    unlock();
+    return waiting;
+}
+
 void panel_ota_set_keypads_check(panel_ota_keypads_fn fn, void *ctx)
 {
     s_keypads_ctx = ctx;
@@ -3650,11 +3875,78 @@ static bool order_prepare(const panel_ota_order_t *o, order_t *out)
     return true;
 }
 
-/* The key an order names (NULL or zeros: not known) is one this panel trusts (LINK-036). */
-static bool order_key_ok(const uint8_t *key)
+/* LINK-036 (decision 1): the server and key a FETCH or RELAY names become this panel's trust
+ * record when they differ - in RAM at once (the signature check uses the key), stored by the
+ * update task (trust_save_tick). The running image's own key keeps no extra key. Nobody is asked:
+ * only the paired master's sealed orders get here. */
+static void order_adopt(const panel_ota_order_t *o)
 {
     static const uint8_t none[32] = {0};
-    return key == NULL || memcmp(key, none, sizeof(none)) == 0 || panel_ota_key_trusted(key);
+    const bool keyed = o->key != NULL && memcmp(o->key, none, sizeof(none)) != 0;
+    char base[PROTO_FWSRV_BASE_MAX];
+    lock();
+    proto_fwsrv_trust_t t = s_trust;
+    bool changed = false;
+    if (o->server != NULL && o->server[0] != '\0' && strlen(o->server) < sizeof(t.server) &&
+        strcmp(o->server, t.server) != 0 && proto_fwsrv_base_url(o->server, base, sizeof(base))) {
+        snprintf(t.server, sizeof(t.server), "%s", o->server);
+        changed = true;
+    }
+    if (keyed && s_own_key_ok && memcmp(o->key, s_own_key, 32u) == 0) {
+        changed = changed || t.has_key;
+        t.has_key = false; /* its own key: trusted anyway */
+        memset(t.key_sha256, 0, sizeof(t.key_sha256));
+        t.key_name[0] = '\0';
+    } else if (keyed && (!t.has_key || memcmp(o->key, t.key_sha256, 32u) != 0)) {
+        memcpy(t.key_sha256, o->key, 32u);
+        t.has_key = true;
+        t.key_name[0] = '\0';
+        changed = true;
+    }
+    if (changed) {
+        s_trust = t;
+        panel_ota_trust_set(t.has_key ? t.key_sha256 : NULL);
+        server_to_status_locked();
+        s_trust_save = true;
+        changed_locked();
+    }
+    unlock();
+    if (changed) {
+        char fp[PROTO_FWSRV_FINGERPRINT_LEN];
+        proto_fwsrv_fingerprint(t.key_sha256, fp);
+        ESP_LOGW(TAG, "update server and key from its master's order: %s%s%s", t.server,
+                 t.has_key ? ", key " : " (the running image's key)", t.has_key ? fp : "");
+        notify(NB_SERVER);
+    }
+}
+
+/* The update task: an order's trust record stored (OTA-020's record, "trust"). Tried again at the
+ * next tick when NVS refuses it. */
+static void trust_save_tick(void)
+{
+    if (!s_trust_save) {
+        return;
+    }
+    lock();
+    const proto_fwsrv_trust_t t = s_trust;
+    s_trust_save = false;
+    unlock();
+    uint8_t blob[PROTO_FWSRV_TRUST_BLOB_MAX];
+    const size_t n = proto_fwsrv_trust_encode(&t, blob, sizeof(blob));
+    esp_err_t err = n != 0u ? ESP_OK : ESP_ERR_INVALID_SIZE;
+    nvs_handle_t h;
+    if (err == ESP_OK && (err = nvs_open(NVS_NS, NVS_READWRITE, &h)) == ESP_OK) {
+        err = nvs_set_blob(h, "trust", blob, n);
+        if (err == ESP_OK) {
+            err = nvs_commit(h);
+        }
+        nvs_close(h);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "the update server from its master's order could not be stored (%s)",
+                 esp_err_to_name(err));
+        s_trust_save = n != 0u; /* tried again */
+    }
 }
 
 /* A new ordered run may start: V newer than what runs, within the cap, nothing else running
@@ -3664,9 +3956,8 @@ static uint8_t order_allowed_locked(const char *version)
     if (!proto_version_is_upgrade(s_st.running, version, false)) {
         return PROTO_FW_WHY_NOT_NEWER; /* never older or equal (OTA-014) */
     }
-    if (!proto_fw_cap_allows(s_cap, s_cap_version, version)) {
-        return PROTO_FW_WHY_WRONG_VERSION; /* never past its master, nor past one it hasn't heard */
-    }
+    /* No stored cap here: an ordered run is capped at its order's version, its master's target,
+     * which may be ahead of what its master runs (LINK-029; check_header holds it to V). */
     /* A run or the self-test (OTA-030); the language packs' brief hold of the machinery isn't one:
      * a FETCH waits for it as Install does, a RELAY's writer refuses it (BUSY). */
     if (run_busy_locked() || s_slot_selected) {
@@ -3733,11 +4024,9 @@ esp_err_t panel_ota_order_fetch(const panel_ota_order_t *o)
         return ESP_ERR_INVALID_STATE;
     }
     order_t ord;
+    order_adopt(o); /* LINK-036: its master's server and key, before the check asks any */
     if (!order_prepare(o, &ord) || !ord.has_base) { /* a FETCH asks a server: it needs one */
         return order_refused(PROTO_FW_WHY_BAD_ORDER);
-    }
-    if (!order_key_ok(o->key)) {
-        return order_refused(PROTO_FW_WHY_KEY);
     }
     ord.op = ORDER_FETCH;
     lock();
@@ -3768,9 +4057,7 @@ esp_err_t panel_ota_order_relay(const panel_ota_order_t *o, uint32_t size, const
     if (sha256 == NULL || !order_prepare(o, &ord)) { /* no server needed: the bytes come by link */
         return order_refused(PROTO_FW_WHY_BAD_ORDER);
     }
-    if (!order_key_ok(o->key)) {
-        return order_refused(PROTO_FW_WHY_KEY);
-    }
+    order_adopt(o); /* LINK-036: its master's key checks this image's signature */
     ord.op = ORDER_RELAY;
     lock();
     const uint8_t why = order_allowed_locked(ord.version);
@@ -4084,6 +4371,7 @@ static void note_updated(void)
     unlock();
     rec_put("upd", &upd);
     rec_erase("try");
+    rec_erase(ORD_KEY); /* its trial is over */
     rec_erase("rbv"); /* an install replaced the failed version */
     rec_erase(RBH_KEY);
 }
@@ -4162,8 +4450,18 @@ static void probation_tick(uint64_t now)
     char remote_op[33];
     bool remote_wait;
     panel_ota_remote_operation(remote_op, &remote_wait);
-    const panel_ota_selftest_t step = panel_ota_selftest_step(
-        missing, unproven, remote_wait, now, s_probation_until_ms, s_probation_deadline_ms);
+    /* LINK-034: after an install its master ordered, on trial with its master: WAIT holds the
+     * confirmation (the trial ends by itself within 10 min), FAIL rolls back at once. */
+    const panel_ota_trial_fn trial_fn = __atomic_load_n(&s_trial_fn, __ATOMIC_ACQUIRE);
+    const uint8_t trial = s_ord_trial && trial_fn != NULL ? trial_fn(s_trial_ctx)
+                                                          : (uint8_t)PANEL_OTA_TRIAL_NONE;
+    const bool trial_wait = trial == PANEL_OTA_TRIAL_WAIT;
+    panel_ota_selftest_t step = panel_ota_selftest_step(
+        missing, unproven, remote_wait || trial_wait, now, s_probation_until_ms,
+        trial_wait ? UINT64_MAX : s_probation_deadline_ms);
+    if (trial == PANEL_OTA_TRIAL_FAIL && now >= s_probation_until_ms) {
+        step = PANEL_OTA_SELFTEST_ROLL_BACK;
+    }
     if (step == PANEL_OTA_SELFTEST_CONFIRM) {
         const esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
         ESP_LOGI(TAG, "self-test passed: %s confirmed (%s)", s_st.running, esp_err_to_name(err));
@@ -4205,6 +4503,9 @@ static void probation_tick(uint64_t now)
             rbh_put(missing != 0u ? missing : unproven);
         }
         health_text(missing != 0u ? missing : unproven, what, sizeof(what));
+        if (trial == PANEL_OTA_TRIAL_FAIL) {
+            snprintf(what, sizeof(what), "its master doesn't run %s", s_ord_version);
+        }
         ESP_LOGE(TAG,
                  "self-test failed: %s not running (health 0x%" PRIx32 ", need 0x%" PRIx32
                  "): rolling back",
@@ -4349,7 +4650,8 @@ static void ota_task(void *arg)
         health_watch(now);
         last_tick(now);
         stop_tick();
-        commit_tick();       /* NB_SERVER wakes these three */
+        commit_tick();       /* NB_SERVER wakes these four */
+        trust_save_tick();
         channel_tick();
         server_check_tick();
         if (s_check_now) {
@@ -4521,8 +4823,16 @@ esp_err_t panel_ota_start(uint32_t required)
         ESP_LOGW(TAG, "first start of %s: confirming after a %u s self-test (need 0x%" PRIx32 ")",
                  s_st.running, (unsigned)(PANEL_OTA_CONFIRM_MS / 1000u), s_required);
         probation_load();
+        ota_rec_t ord;
+        s_ord_trial = rec_get(ORD_KEY, &ord) &&
+                      memcmp(ord.elf, me->app_elf_sha256, sizeof(ord.elf)) == 0;
+        if (s_ord_trial) {
+            snprintf(s_ord_version, sizeof(s_ord_version), "%s", ord.version);
+            ESP_LOGW(TAG, "an install its master ordered: on trial with its master (LINK-034)");
+        }
     } else {
         note_rollback();
+        rec_erase(ORD_KEY); /* confirmed, or back: no trial */
     }
     ESP_LOGI(TAG, "firmware %s in %s, updates from %s (%s)%s", s_st.running,
              running != NULL ? running->label : "?", s_st.server[0] != '\0' ? s_st.server : "nowhere",

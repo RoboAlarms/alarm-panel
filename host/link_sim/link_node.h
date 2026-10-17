@@ -64,6 +64,9 @@ typedef bool (*link_send_fn)(void *ctx, const plink_addr_t *to, const uint8_t *f
 /* One line to show (no line end). */
 typedef void (*link_say_fn)(void *ctx, const char *line);
 
+struct link_mfw; /* link_fw.h */
+struct link_kfw;
+
 typedef struct {
     link_send_fn send;
     void *send_ctx;
@@ -71,6 +74,11 @@ typedef struct {
     void *say_ctx;
     /* The wall clock in ms; NULL: a fixed virtual epoch plus the node's ms (link_smoke). */
     int64_t (*epoch_ms)(void);
+    /* Updates through the link (link_fw.h): the master's or the keypad's update state, set up with
+     * link_mfw_setup or link_kfw_setup (and kept across its restarts); NULL: neither side offers
+     * PLINK_CAP_FW. */
+    struct link_mfw *mfw;
+    struct link_kfw *kfw;
 } link_io_t;
 
 /* Where a record is kept: in a file (path) and in memory, or in memory only (path NULL). */

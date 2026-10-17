@@ -439,20 +439,66 @@ void panel_ota_set_restart_hold(const char *reason);
 typedef bool (*panel_ota_keypads_fn)(void *ctx);
 void panel_ota_set_keypads_check(panel_ota_keypads_fn fn, void *ctx);
 
+/* LINK-030 (docs/features/11 "Restarting together"): a master's keypads download alongside it and
+ * restart with it.
+ *   - hold: what holds its restart into version (its own update, waiting) for its keypads - one
+ *     still downloading it, one installing alone or on its self-test - a literal that lives for
+ *     ever, marked I18N_NOOP_C("update", ...), or NULL. Asked with every gate (the update task's,
+ *     and the alarm task's last word): quick, no waiting, no lock the alarm task may want.
+ *   - installs_out: once that restart has passed its gate (everything disarmed, after the 3 s
+ *     announcement), asked about every 100 ms for at most PANEL_OTA_WITH_MS whether its keypads
+ *     have their INSTALL; panel_ota_restart_soon() is true meanwhile (the caller's planner sends
+ *     INSTALL to every READY keypad then). Then the gate once more - hold no longer counts, nor
+ *     panel_ota_set_restart_hold's: keypads restarting with it never block it - and the restart.
+ * The update task, quick. NULL (or a NULL entry): none. Set it before the first restart; any task. */
+#define PANEL_OTA_WITH_MS 5000u
+typedef struct {
+    const char *(*hold)(void *ctx, const char *version);
+    bool (*installs_out)(void *ctx);
+    void *ctx;
+} panel_ota_with_t;
+void panel_ota_set_restart_with(const panel_ota_with_t *with);
+bool panel_ota_restart_soon(void);
+
+/* This panel's "device" as its checks name it (CONFIG_PANEL_OTA_DEVICE, else the board's id from
+ * panel_ota_set_device): the device a keypad of the same model names in its FW_INFO. Any task. */
+const char *panel_ota_device(void);
+
+/* The facts a keypad hands its master in FW_INFO (docs/features/11 "Messages"). Any task. */
+typedef struct {
+    char device[32];
+    char board_rev[16];
+    char chip_rev[4];        /* "v1", "v3"; "" when not known */
+    uint16_t chip_rev_full;  /* esp_chip_info's revision (100 for v1.0) */
+    char project[33];
+    char version[32];        /* what runs */
+    uint32_t slot;           /* the OTA slot's size */
+    uint8_t own_key[32];     /* the running image's signing key (has_own_key) */
+    bool has_own_key;
+    uint8_t accepted_key[32]; /* the key accepted for the update server (has_accepted_key) */
+    bool has_accepted_key;
+    char cp_version[24];     /* the Wi-Fi co-processor's, "" not known */
+} panel_ota_facts_t;
+void panel_ota_get_facts(panel_ota_facts_t *out);
+
 /* -- the keypad's side: its master's orders ("The keypad") -- */
 
-/* An order, as the keypad's core took it. Copied; the server and channel serve that run only and
- * never become trust (LINK-033). */
+/* An order, as the keypad's core took it. Copied. FETCH and RELAY: the order's server and key become
+ * this panel's trust record when they differ (LINK-036, decision 1: changes from the master go to
+ * its keypads; nobody is asked) - used at once, stored by the update task. The channel serves that
+ * run only. */
 typedef struct {
-    const char *version; /* V: the version its master runs and names; the image must be exactly V */
+    const char *version; /* V: the master's target; the image must be exactly V. An ordered run is
+                            capped at V, not at the version its master runs (panel_ota_set_version
+                            _cap): the master's target may be ahead of what it runs */
     const char *server;  /* PROBE, FETCH: the update server for this run (a domain, or a development
                             address as `ota server check` takes it); NULL or "": this panel's own */
     const char *channel; /* PROBE, FETCH: the channel for this run; NULL or "": this panel's own */
     const char *master;  /* its master's name, for "Waiting for <master>"; NULL or "": "the alarm
                             panel" */
     const uint8_t *key;  /* FETCH, RELAY: the image's signing key the order names (ESP-IDF digest,
-                            32 bytes); NULL or all zeros: not known. One this panel doesn't trust
-                            refuses the order before any download (KEY 30, LINK-036) */
+                            32 bytes); NULL or all zeros: not known. This panel's own key keeps no
+                            extra key; another becomes its accepted one */
 } panel_ota_order_t;
 
 /* PROBE: one check (POST /api/v1/check) with this panel's facts and want = V, at the order's
@@ -467,14 +513,14 @@ esp_err_t panel_ota_order_probe(const panel_ota_order_t *o);
 
 /* FETCH: the release run (as Install's), for V only: a check with want = V at the order's server
  * and channel, whose offer must be exactly V (else OTHER_VERSION 13, or the server's why); its
- * signing key must be this panel's own or its accepted one (else KEY 30, before any download);
- * the download into the other slot, its length, SHA-256 and signature (panel_ota_end), and the
- * image's version V (else WRONG_VERSION 41, discarded). Then READY: panel_ota_apply's wait, with
- * the restart held ("Waiting for <master>") until panel_ota_order_install(V). Stop (OTA-027)
- * works as on any release run. ESP_ERR_INVALID_ARG: BAD_ORDER (no version, a bad channel, or no
- * server it can use: neither the order's nor this panel's own); ESP_ERR_INVALID_VERSION: V not
- * newer than what runs (NOT_NEWER); ESP_ERR_NOT_ALLOWED:
- * past the cap (WRONG_VERSION) or the order's key not trusted (KEY); ESP_ERR_INVALID_STATE:
+ * signing key must be this panel's own or its accepted one - the order's, once taken (else KEY 30,
+ * before any download); the download into the other slot, its length, SHA-256 and signature
+ * (panel_ota_end), and the image's version V (else WRONG_VERSION 41, discarded). Then READY:
+ * panel_ota_apply's wait, with the restart held ("Waiting for <master>") until
+ * panel_ota_order_install(V). Stop (OTA-027) works as on any release run. ESP_ERR_INVALID_ARG:
+ * BAD_ORDER (no version, a bad channel, or no server it can use: neither the order's nor this
+ * panel's own); ESP_ERR_INVALID_VERSION: V not newer than what runs (NOT_NEWER);
+ * ESP_ERR_INVALID_STATE:
  * another run, or the self-test (BUSY): a run ended by panel_ota_order_cancel() is over within a
  * second (the update task's next tick), and an order before then is refused BUSY. */
 esp_err_t panel_ota_order_fetch(const panel_ota_order_t *o);
@@ -534,6 +580,25 @@ void panel_ota_order_get(panel_ota_order_status_t *out);
  * installer accepted (OTA-020). */
 bool panel_ota_key_trusted(const uint8_t key_sha256[32]);
 
+/* LINK-034 ("On trial with the master"): after an install its master ordered, a keypad stays on
+ * probation until its master runs that version confirmed. panel_ota keeps "ordered install of V"
+ * in NVS across the restart (written with the attempt); on the self-test that follows,
+ * panel_ota_ordered_trial() is true with V, and fn - the link's trial, PANEL_OTA_TRIAL_* (the
+ * panel link's plink_fw_trial_t numbers) - decides with the parts' heartbeats: WAIT holds the
+ * confirmation (past PANEL_OTA_CONFIRM_MAX_MS too: the trial ends by itself within 10 min), FAIL
+ * rolls back at once, PASS lets the parts decide. fn runs on the update task about once a second:
+ * quick, no waiting. NULL, or no ordered install: the self-test as on any panel. */
+enum {
+    PANEL_OTA_TRIAL_NONE = 0,
+    PANEL_OTA_TRIAL_WAIT,
+    PANEL_OTA_TRIAL_PASS,
+    PANEL_OTA_TRIAL_FAIL,
+};
+typedef uint8_t (*panel_ota_trial_fn)(void *ctx);
+void panel_ota_set_trial_check(panel_ota_trial_fn fn, void *ctx);
+/* On probation after an install its master ordered: true, and version (32 bytes, may be NULL) V. */
+bool panel_ota_ordered_trial(char *version);
+
 /* -- the master's side: its image sources ("The master") -- */
 
 /* The running image, for the relay from the master's own slot. Worked out once after the image
@@ -561,6 +626,17 @@ esp_err_t panel_ota_running_image(panel_ota_image_t *out);
  * ESP_ERR_INVALID_SIZE: past its end. */
 esp_err_t panel_ota_running_read(uint32_t offset, void *out, size_t len);
 
+/* Its own update in its spare slot - a release downloaded and checked, waiting for the restart - for
+ * the relay of the master's target (docs/features/11 "Getting the image"): its exact size, SHA-256
+ * (worked out as it was written), version, project and chip revision range. ESP_OK;
+ * ESP_ERR_NOT_FOUND: none waits (nothing downloaded, a developer's file, or the run ended). Any
+ * task. */
+esp_err_t panel_ota_spare_image(panel_ota_image_t *out);
+/* Reads that image through windows of the spare partition, as panel_ota_running_read reads the
+ * running one (only from a task with an internal-RAM stack: the link task). ESP_ERR_NOT_FOUND: no
+ * such image now; ESP_ERR_INVALID_SIZE: past its end. */
+esp_err_t panel_ota_spare_read(uint32_t offset, void *out, size_t len);
+
 /* A copy for a keypad the master's own slot can't serve: at most 85 % of the 4,718,592 B slot. */
 #define PANEL_OTA_COPY_MAX 4010803u
 
@@ -571,7 +647,9 @@ esp_err_t panel_ota_running_read(uint32_t offset, void *out, size_t len);
  * download of the one before that is still under way. Freed when panel_ota_copy_free() is
  * called, after 30 min unused, or the moment this panel's own run starts (Install, a developer's
  * file): panel_ota_copy_read() refuses from then on. ESP_ERR_INVALID_ARG: no device, chip_rev,
- * project or version; ESP_ERR_INVALID_STATE: not started, or this panel's own run is under way. */
+ * project or version; ESP_ERR_INVALID_STATE: not started, or this panel's own run is under way -
+ * but its release downloaded and checked, waiting for the restart: its keypads' copies of that
+ * version are fetched meanwhile. */
 esp_err_t panel_ota_fetch_for(const proto_fwsrv_facts_t *facts, const char *version);
 
 typedef enum {

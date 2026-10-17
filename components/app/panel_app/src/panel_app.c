@@ -252,6 +252,18 @@ static void fw_get(void *ctx, net_mqtt_fw_t *out)
                                                        stepless)
                        ? st.percent
                        : -1;
+#if CONFIG_ALARM_LINK
+    /* A master's link keypads (docs/features/11 "What people see"): the MQTT task's copy. */
+    static plink_service_fw_kp_t kps[PROTO_FW_KEYPADS_MAX] ALARM_SLOW_BSS;
+    const size_t n = plink_service_fw(NULL, kps, PROTO_FW_KEYPADS_MAX);
+    for (size_t i = 0; i < n; i++) {
+        proto_fw_keypad_t *k = &out->keypads[i];
+        k->device = kps[i].device;
+        snprintf(k->version, sizeof(k->version), "%s", kps[i].version);
+        snprintf(k->state, sizeof(k->state), "%s", plink_service_fw_row_name(kps[i].state));
+    }
+    out->keypad_count = n;
+#endif
 }
 
 static esp_err_t fw_install(void *ctx)

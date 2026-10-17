@@ -864,7 +864,7 @@ static void publish_firmware(void)
     if (!s_have_fw) {
         return;
     }
-    net_mqtt_fw_t fw;
+    static net_mqtt_fw_t fw EXT_RAM_BSS_ATTR; /* the MQTT task's: its keypads off its stack */
     memset(&fw, 0, sizeof(fw));
     fw.percent = -1;
     s_fw.get(s_fw.ctx, &fw);
@@ -875,6 +875,9 @@ static void publish_firmware(void)
         .release_url = fw.release_url,
         .in_progress = fw.in_progress,
         .percent = fw.percent,
+        .keypads = fw.keypads,
+        .keypad_count = fw.keypad_count < PROTO_FW_KEYPADS_MAX ? fw.keypad_count
+                                                               : PROTO_FW_KEYPADS_MAX,
     };
     char topic[PROTO_TOPIC_LEN];
     pj_writer_t w;

@@ -120,6 +120,93 @@ plink_service_pset_t plink_service_prefs_set(uint8_t device, uint8_t origin, con
                                              size_t len, plink_service_prefs_done_fn done,
                                              void *ctx, uint32_t ticket);
 
+/* ---- updates through the link (docs/features/11 "Updates through the link", "What people see")
+ * Keypads follow their master: it orders each keypad behind its target to fetch it or takes it the
+ * relay, and they restart together; nobody is asked anything. These are what the screens, the
+ * console and MQTT read: copies the link task publishes every 0.5 s, read under its publishing
+ * lock - never a wait for the link itself. Any task. */
+
+#define PLINK_SERVICE_FW_VERSION_MAX 32u
+
+/* A keypad's line on the master's Software update: the panel link's plink_fw_row_state_t numbers
+ * (asserted). */
+typedef enum {
+    PLINK_SERVICE_FWR_NONE = 0,    /* no updates through its link (older firmware, or not heard) */
+    PLINK_SERVICE_FWR_UP_TO_DATE,  /* "Up to date" (green) */
+    PLINK_SERVICE_FWR_DOWNLOADING, /* "Downloading · 45 %" (blue) */
+    PLINK_SERVICE_FWR_RECEIVING,   /* "Receiving from this panel · 45 %" (blue) */
+    PLINK_SERVICE_FWR_READY,       /* "Ready · restarts with this panel" (blue) */
+    PLINK_SERVICE_FWR_RESTARTING,  /* "Restarting" (blue) */
+    PLINK_SERVICE_FWR_NOT_UPDATED, /* "Not updated yet · tries again by itself" (gray) */
+    PLINK_SERVICE_FWR_NEWER,       /* newer than this panel (put back by cable): left alone */
+} plink_service_fw_row_t;
+
+/* One keypad at the master. */
+typedef struct {
+    uint8_t device;                                 /* 1..8 */
+    char version[PLINK_SERVICE_FW_VERSION_MAX + 1]; /* what it runs (its FW_INFO; else its
+                                                     * heartbeat's), "" not known */
+    uint8_t state;                                  /* plink_service_fw_row_t */
+    uint8_t percent;                                /* DOWNLOADING, RECEIVING: 0..100 */
+    uint8_t why;    /* NOT_UPDATED: the last failure's why (FW_STATE's numbers, 0 none): the
+                     * console and Activity say it; the screen doesn't */
+    bool online;    /* a live session heard within 30 s */
+    bool busy;      /* installing or on its self-test, its supervision held for up to 10 min:
+                     * Installer > Keypads and devices says "Updating" for "Not responding" */
+} plink_service_fw_kp_t;
+
+/* The master's side as a whole. */
+typedef struct {
+    bool on;          /* a master whose link offers updates (its keypads' rows follow) */
+    char target[PLINK_SERVICE_FW_VERSION_MAX + 1]; /* its keypads' target: its own update waiting
+                                                    * in its spare slot, else what it runs */
+    bool restart_waits; /* its own restart waits for a keypad (still getting the update, or
+                         * installing alone): the Software update page's wait words */
+    uint8_t keypads;  /* paired */
+} plink_service_fw_t;
+
+/* On a master: sum (may be NULL) and each keypad's row in device order (at most max; out may be
+ * NULL with max 0); returns how many. 0 and sum->on false on a keypad and while the link is off. */
+size_t plink_service_fw(plink_service_fw_t *sum, plink_service_fw_kp_t *out, size_t max);
+/* A row state's name for MQTT's .../firmware keypads ("up_to_date", "downloading", "receiving",
+ * "ready", "restarting", "not_updated", "newer", "none"): stable, names are only added. */
+const char *plink_service_fw_row_name(uint8_t state);
+
+/* A keypad's own run (the panel link's FW_STATE run states, plink_fw_run_state_t). */
+typedef enum {
+    PLINK_SERVICE_FWK_IDLE = 0,
+    PLINK_SERVICE_FWK_FETCHING = 2,   /* "Downloading · 45 %" */
+    PLINK_SERVICE_FWK_RECEIVING = 3,  /* "Receiving from <master> · 30 %" */
+    PLINK_SERVICE_FWK_VERIFYING = 5,  /* (its bar full) */
+    PLINK_SERVICE_FWK_READY = 6,      /* "Ready · restarts with <master> once everything is
+                                       * disarmed" */
+    PLINK_SERVICE_FWK_INSTALLING = 7, /* restarting */
+    PLINK_SERVICE_FWK_FAILED = 8,     /* the run ended (it is tried again by itself) */
+} plink_service_fwk_state_t;
+
+/* A keypad's updates from its master. */
+typedef struct {
+    bool follows;     /* paired with a master whose session offers updates: "Updates come from
+                       * <master>", no Install, no Check again, no Stop */
+    char master[33];  /* its master's name (the banner's "restarts with <master>") */
+    char master_version[PLINK_SERVICE_FW_VERSION_MAX + 1]; /* what its master runs ("" not heard):
+                                                            * nothing installs past it */
+    char version[PLINK_SERVICE_FW_VERSION_MAX + 1];        /* what this keypad runs */
+    uint8_t state;    /* plink_service_fwk_state_t (another FW_STATE state reads as IDLE) */
+    char target[PLINK_SERVICE_FW_VERSION_MAX + 1];  /* the run's version ("Updating to version
+                                                     * 0.6.2") */
+    uint8_t percent;  /* FETCHING, RECEIVING: 0..100 */
+    bool paused;      /* RECEIVING waits (an alarm, an entry or exit time, its link): the same
+                       * words, the bar still */
+    bool banner;      /* Home's steady update banner ("Updating · restarts with <master>"): from
+                       * the first byte to the restart */
+    bool on_trial;    /* on its self-test after an install its master ordered, until its master
+                       * runs that version confirmed */
+} plink_service_fw_keypad_t;
+
+/* On a keypad (false, out zeroed: a master, or the link off). */
+bool plink_service_fw_keypad(plink_service_fw_keypad_t *out);
+
 /* ---- both roles ------------------------------------------------------------------------------ */
 
 /* Starts the link for the stored role: the crypto check (the link stays off when it fails, said in

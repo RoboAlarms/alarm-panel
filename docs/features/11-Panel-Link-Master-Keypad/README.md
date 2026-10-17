@@ -144,7 +144,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-032 | The keypad pulls bytes by image digest (`id8`) and offset, never by session, in order into its writer, within the order's page, count and gap and a 16 KB window, with flash busy at most half the time; it continues across a new session and a master restart with the same image. The master answers statelessly, only to the keypad holding the relay, from a bucket of its own; LINK-024 holds while it runs | link (lossy) |
 | LINK-033 | A keypad checks every image itself: the header (chip, revision range, project, newer) before the first flash write, then length, SHA-256, the signature with its own keys, and the version named. Nothing is forced or older. An order's server and channel serve that run only; nothing the master sends becomes trust, except a key a person accepts (LINK-036) | unit; HIL |
 | LINK-034 | A READY keypad restarts only after an INSTALL for that version and when its gate passes, asked twice: a live session with a status under 15 s old (ONLINE or needs-update), the master's UPDATING and HOLD clear, `proto_fw_install_allowed()`, no panic still being resent, no kept fire or CO tone. The relay pauses under the same conditions. The panic and tone checks apply in maintenance too | unit; HIL |
-| LINK-035 | A relay fails after 60 s without a byte while not paused, or after 30 min paused. A READY image is discarded after 24 h without INSTALL, on CANCEL, on another image's order, or on removal. After 3 failed runs in 24 h a keypad answers BUDGET. Orders are resent after 300 ms, doubling to 2 s; the keypad counts as away after 30 s | unit |
+| LINK-035 | A relay fails after 60 s without a byte while not paused, or after 30 min paused. A READY image is discarded after 24 h without INSTALL, on CANCEL, on another image's order, or on removal. After 3 failed runs in 24 h a keypad answers BUDGET; a run that timed out while its gate said no doesn't count. Orders are resent after 300 ms, doubling to 2 s; the keypad counts as away after 30 s | unit |
 | LINK-036 | An image signed with a key the keypad doesn't trust stops before the download and shows the key's fingerprint; a hold and the installer's code (checked by the master) accept it, never while the factory installer code is in use; accepting stores the order's server and that key as the keypad's trust record | unit; preview |
 | LINK-037 | FW_* messages go only on transports whose largest frame is 250 B or more, never on 433 MHz; FW_INFO, FW_ORDER and FW_STATE fit 225 B at their longest; FW_PAGE fits the peer's frame | unit |
 | LINK-038 | The floor: a master serves every v1 message above to a protocol-1 keypad for as long as one may be paired, and a later keypad works with a v1 master; neither refuses a peer at protocol 1 or above; a HELLO stays at most 128 B | frozen fixture, frozen peer |
@@ -582,6 +582,7 @@ Decided 2026-10-17 (Decisions, keypad updates, 2): the master keeps every keypad
   | Blocked: the server refuses the keypad, or there is no image (NO_IMAGE) | probed again every 24 h, when the master's own check is answered, when it reaches its server again, and when the keypad's facts change |
   | Canary: the first keypad of a device and chip revision rolled back, or didn't return within 10 min | at the master's next version: that version failed on this model, and trying it again would restart a keypad for nothing |
   | A new signing key (KEY_WAIT) | when it is accepted at the keypad (LINK-036), or at the master's next version |
+  | The keypad refused the image (30-49) | at the master's next version: the same signed image would fail the same way |
 
 - **Try again now.** On the master's Software update (and `plink fw update [n|all]`), shown while a
   hold waits. It ends the master's holds at once. It never overrides a keypad's BUDGET or its gate.
@@ -686,7 +687,9 @@ It downloads as any panel does (OTA-003). The master orders a fetch only while t
 - **Pause.** The run pauses (FW_STATE flag PAUSED) with the writer kept open while the session has
   no STATUS under 15 s old, or while the gate below says no.
 - **Failure.** It fails after 30 min paused (TIMEOUT), or after 60 s without a new byte while not
-  paused (STALLED).
+  paused (STALLED). A TIMEOUT while the gate said no (armed, an alarm, installer mode: anything but
+  a missing STATUS) is not a failed run: it doesn't count toward BUDGET, and the master orders the
+  relay again once it is quiet, so arming never uses up a keypad's tries.
 - **"The link is up"** means a live session with a STATUS under 15 s old, not ONLINE. A keypad that
   can't read a newer master's configuration never gets ONLINE, and it is the one that most needs the
   update.

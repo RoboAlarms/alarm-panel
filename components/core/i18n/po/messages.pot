@@ -904,6 +904,235 @@ msgctxt "Zigbee device name"
 msgid "A device"
 msgstr ""
 
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The update server has nothing for it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The update server holds it back for now"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It needs another version first"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The update server has no release of this version for it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The update server doesn't offer this version"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The download broke off"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The download was too slow"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It got the wrong size"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It arrived damaged"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "No data for a minute"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It waited too long"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Not enough memory"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It couldn't store it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The new signing key must be accepted at the keypad"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It isn't for this keypad's chip"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It isn't from a project it accepts"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It isn't newer than the version it runs"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The signature check failed"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It's too big for this keypad"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It can't take this kind of update"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It doesn't know this order"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "3 tries failed, next try tomorrow"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It refused the order"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It got another version"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The system is busy"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It waits until everything is quiet"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "A panic is being sent from it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Its fire or CO alarm still sounds"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Its link is down"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Another update runs on it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Stopped at the keypad"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It can't reach the update server"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The update server won't offer it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The transfer failed"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The keypad refused it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It waits"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgctxt "keypad update"
+msgid "Stopped"
+msgstr ""
+
+#. Activity: a keypad restarts with the update its master sent it; {0} is the keypad's number. At most 63 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Keypad {0} installing an update"
+msgstr ""
+
+#. The line under "Keypad {0} installing an update". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It restarts with the new version"
+msgstr ""
+
+#. Activity: a keypad's new version passed its self-test; {0} is the keypad's number. At most 63 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Keypad {0} updated"
+msgstr ""
+
+#: components/core/notify/src/notify_words.c
+msgid "The new version passed its self-test"
+msgstr ""
+
+#. Activity: a keypad's new version failed and it went back to the one it ran; {0} is the keypad's number. At most 63 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Keypad {0} update rolled back"
+msgstr ""
+
+#: components/core/notify/src/notify_words.c
+msgid "The new version failed; the previous one runs"
+msgstr ""
+
+#. Activity: a keypad's update ended with nothing installed; the line under it says why. {0} is the keypad's number. At most 63 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Keypad {0} update failed"
+msgstr ""
+
+#. Activity: someone accepted, at a keypad, the new key its updates are signed with (it is checked before an update installs); {0} is the keypad's number. At most 63 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Keypad {0} accepted a new signing key"
+msgstr ""
+
+#. The line under "Keypad {0} accepted a new signing key". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It takes updates signed with that key now"
+msgstr ""
+
 #. Who did it, in the line under an event title: one of the panel's automations (rules the installer set up), not a person. At most 48 bytes.
 #: components/core/notify/src/notify_words.c
 #: components/ui/alarm_ui/src/ui_app.c
@@ -1559,14 +1788,6 @@ msgstr ""
 
 #: components/core/notify/src/notify_words.c
 msgid "The panel restarts with the new version"
-msgstr ""
-
-#: components/core/notify/src/notify_words.c
-msgid "The new version passed its self-test"
-msgstr ""
-
-#: components/core/notify/src/notify_words.c
-msgid "The new version failed; the previous one runs"
 msgstr ""
 
 #: components/core/notify/src/notify_words.c
@@ -2523,7 +2744,37 @@ msgstr ""
 
 #: components/services/panel_ota/src/panel_ota.c
 msgctxt "update"
+msgid "The update server has no firmware for this panel"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
+msgid "The update server offers nothing newer"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
 msgid "The new update server could not be saved"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
+msgid "Waiting for the alarm panel"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
+msgid "No data for a minute"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
+msgid "It waited too long"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
+msgid "The transfer failed"
 msgstr ""
 
 #: components/services/panel_storage/src/panel_storage.c

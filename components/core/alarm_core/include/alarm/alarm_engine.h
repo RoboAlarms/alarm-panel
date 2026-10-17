@@ -419,7 +419,8 @@ alarm_ms_t alarm_engine_recovery_left(const alarm_engine_t *e);
 
 /* Events the platform records through the engine so they are numbered, logged and reported
  * like engine events. Allowed: ALARM_EV_FACTORY_RESET (arg bit 0: event log erased too),
- * ALARM_EV_FIRMWARE_UPDATE (arg: alarm_fw_stage_t), ALARM_EV_BACKUP_MADE and
+ * ALARM_EV_FIRMWARE_UPDATE (arg: alarm_fw_stage_t; a keypad's stage only from src
+ * {ALARM_SRC_KEYPAD, its device number 1..ALARM_MAX_DEVICES}), ALARM_EV_BACKUP_MADE and
  * ALARM_EV_BACKUP_RESTORED and ALARM_EV_CLOCK_SET (arg 0; user = who set the clock). */
 alarm_result_t alarm_engine_platform_event(alarm_engine_t *e, alarm_event_type_t type,
                                            uint8_t arg, const alarm_source_t *src, uint8_t user,
@@ -434,7 +435,8 @@ alarm_result_t alarm_engine_platform_event(alarm_engine_t *e, alarm_event_type_t
  * 0), _JOIN_REFUSED (zone 0, arg 0, arg2 alarm_zb_refused_t), _CHANNEL (zone 0, arg 0, arg2 the
  * channel), _NETWORK_RESET (all 0) and _RADIO_RESTARTED (zone 0, arg 0, arg2 alarm_zb_restart_t);
  * and ALARM_EV_AUTOMATION_FAILED (docs/features/41 AUT-009: zone the triggering zone or 0, arg an
- * alarm_auto_fail_t, arg2 below ALARM_AUTO_ACT_LIMIT, src {ALARM_SRC_AUTOMATION, uid}).
+ * alarm_auto_fail_t, arg2 below ALARM_AUTO_ACT_LIMIT, src {ALARM_SRC_AUTOMATION, uid}); and
+ * ALARM_EV_FIRMWARE_UPDATE's ALARM_FW_KEYPAD_FAILED (zone 0, arg2 the link's why, not 0).
  * The two above go through here with zone 0 and arg2 0. */
 alarm_result_t alarm_engine_platform_event_ex(alarm_engine_t *e, alarm_event_type_t type,
                                               uint16_t zone, uint8_t arg, uint8_t arg2,

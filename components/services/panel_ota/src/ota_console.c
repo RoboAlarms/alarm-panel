@@ -48,7 +48,8 @@ static const char *const PHASE[] = {"idle", "checking", "receiving", "waiting to
 static const char *const STAGE[] = {"",         "downloading", "verifying",    "waiting",
                                     "installing", "stopping",  "rolling back", "Wi-Fi module",
                                     "developer file"};
-static const char *const KIND[] = {"", "release", "developer file", "Wi-Fi module"};
+static const char *const KIND[] = {"", "release", "developer file", "Wi-Fi module",
+                                   "from the alarm panel"};
 static const char *const LAST[] = {"", "updated", "rolled back", "stopped", "failed"};
 
 static const char *name_of(const char *const *names, size_t count, unsigned i)
@@ -106,6 +107,33 @@ static void print_status(void)
                NAME(LAST, st.last.result), st.last.version, st.last.from[0] ? st.last.from : "?",
                st.last.at, (unsigned)st.last.by_src.kind, (unsigned)st.last.by_src.id,
                (unsigned)st.last.by_user, st.last.reason[0] ? ": " : "", st.last.reason);
+        if (st.last.failed != 0u) {
+            printf("Self-test:     missed 0x%02" PRIx32 "%s\n", st.last.failed,
+                   (st.last.failed & PANEL_OTA_OK_KEYPADS) != 0u
+                       ? " (no keypad answered during its self-test)"
+                       : "");
+        }
+    }
+    /* A keypad of the panel link (docs/features/11): its cap and its master's orders. */
+    char cap[32];
+    char master[32];
+    const proto_fw_cap_t kind = panel_ota_get_version_cap(cap, master);
+    if (kind != PROTO_FW_CAP_NONE) {
+        printf("Updates from:  %s%s%s\n", master[0] ? master : "the alarm panel",
+               kind == PROTO_FW_CAP_AT ? ", at most " : " (its version not heard yet)",
+               kind == PROTO_FW_CAP_AT ? cap : "");
+    }
+    panel_ota_order_status_t o;
+    panel_ota_order_get(&o);
+    if (o.active || o.why != 0u) {
+        printf("Ordered:       %s %s%s%s, why %u\n", o.relay ? "relay" : "fetch",
+               o.version[0] ? o.version : "-", o.ready ? ", ready" : "",
+               o.install ? ", install" : "", (unsigned)o.why);
+    }
+    if (o.probed || o.probing) {
+        printf("Probe:         %s, why %u%s%s%s\n", o.probing ? "asking" : "answered",
+               (unsigned)o.probe_why, o.offered[0] ? ", offered " : "", o.offered,
+               o.offered[0] && !o.key_trusted ? " (a key this panel doesn't trust)" : "");
     }
 }
 
@@ -391,7 +419,14 @@ static int cmd_ota(int argc, char **argv)
     }
     if (strcmp(sub, "install") == 0) {
         const bool force = argc > 2 && strcmp(argv[2], "force") == 0;
-        if (panel_ota_install(&CONSOLE, 0, force) != ESP_OK) {
+        const esp_err_t err = panel_ota_install(&CONSOLE, 0, force);
+        if (err == ESP_ERR_NOT_ALLOWED) { /* never past its master (docs/features/11 LINK-029) */
+            char words[96];
+            panel_ota_cap_words(words, sizeof(words));
+            printf("%s\n", words);
+            return 1;
+        }
+        if (err != ESP_OK) {
             printf("An update is already running\n");
             return 1;
         }

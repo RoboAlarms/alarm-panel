@@ -419,6 +419,7 @@ static int cmd_health(int argc, char **argv)
         {PANEL_OTA_OK_ENGINE, "alarm engine"},  {PANEL_OTA_OK_LOG, "event log"},
         {PANEL_OTA_OK_UI, "screen"},            {PANEL_OTA_OK_SENSORS, "sensor input"},
         {PANEL_OTA_OK_TOUCH, "touch"},          {PANEL_OTA_OK_LINK, "panel link"},
+        {PANEL_OTA_OK_KEYPADS, "keypads"},
     };
     const uint32_t stale = panel_ota_health_stale();
     printf("%s\n", stale == 0u ? "every part of the panel reports that it is working"

@@ -25,6 +25,7 @@
 #include "esp_attr.h"
 
 #include <inttypes.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +45,7 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "esp_tls_errors.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -83,6 +85,20 @@ static const char *TAG = "ota";
 #define NB_CP      (1u << 4)
 #define NB_SERVER  (1u << 5) /* a server check, a kept server or a channel to store */
 #define NB_LANGS   (1u << 6) /* the running version's language packs were asked for */
+#define NB_PROBE   (1u << 7) /* a keypad's PROBE (docs/features/11) */
+#define NB_SOURCE  (1u << 8) /* a master's image sources: the running image, a copy */
+
+/* esp_app_format.h's layouts are what proto_fw_header_read() reads byte by byte. */
+_Static_assert(HEADER_LEN == PROTO_FW_HEADER_LEN, "image header, segment header, app description");
+_Static_assert(offsetof(esp_image_header_t, chip_id) == 12u, "esp_image_header_t.chip_id");
+_Static_assert(offsetof(esp_image_header_t, min_chip_rev_full) == 15u, "min_chip_rev_full");
+_Static_assert(offsetof(esp_image_header_t, max_chip_rev_full) == 17u, "max_chip_rev_full");
+_Static_assert(offsetof(esp_image_header_t, hash_appended) == 23u, "hash_appended");
+_Static_assert(offsetof(esp_app_desc_t, version) == 16u, "esp_app_desc_t.version");
+_Static_assert(offsetof(esp_app_desc_t, project_name) == 48u, "esp_app_desc_t.project_name");
+_Static_assert(CONFIG_IDF_FIRMWARE_CHIP_ID != ESP_CHIP_ID_ESP32P4 ||
+                   PROTO_FW_CHIP_ESP32P4 == (unsigned)ESP_CHIP_ID_ESP32P4,
+               "PROTO_FW_CHIP_ESP32P4");
 
 #if CONFIG_IDF_TARGET_ESP32P4 && CONFIG_ESP32P4_SELECTS_REV_LESS_V3
 #define CHIP_REV "v1"
@@ -193,6 +209,50 @@ static char s_parts[FACT_PARTS_MAX][16];
 static size_t s_parts_n;
 static volatile panel_ota_locales_fn s_locales_fn;
 
+/* ---- updates through the panel link (docs/features/11): under the lock unless said ---------- */
+static volatile bool s_checks_on = true; /* panel_ota_set_checks: the scheduled checks run */
+static const char *s_restart_hold_why;   /* panel_ota_set_restart_hold (atomic), NULL = none */
+static proto_fw_cap_t s_cap;             /* never past its master (LINK-029) */
+static char s_cap_version[32] ALARM_SLOW_BSS;
+static char s_master[32] ALARM_SLOW_BSS; /* its name for words, "" = "the alarm panel" */
+static panel_ota_keypads_fn s_keypads_fn; /* LINK-041 (atomic) */
+static void *s_keypads_ctx;
+
+typedef enum { ORDER_NONE = 0, ORDER_FETCH, ORDER_RELAY } order_op_t;
+
+/* The keypad's ordered run: its master's order, for this run only. In PSRAM: only tasks read it. */
+typedef struct {
+    order_op_t op;
+    char version[32];                  /* V */
+    char base[PROTO_FWSRV_BASE_MAX];   /* FETCH: the order's server as an address */
+    bool has_base;                     /* base is one: only a FETCH needs it */
+    bool own_server;                   /* that is this panel's own server */
+    char channel[8];                   /* FETCH: the order's channel */
+    bool install;                      /* the master's INSTALL for V has come */
+    bool ready;                        /* verified: waiting for INSTALL */
+    uint64_t ready_ms;                 /* since when (24 h without INSTALL: discarded) */
+    char waiting[64];                  /* "Waiting for <master>" (P2 decision 10) */
+} order_t;
+static order_t s_order ALARM_SLOW_BSS;
+static volatile bool s_order_hold;      /* an ordered run's restart waits for INSTALL (atomic) */
+static uint8_t s_why;                   /* how the last ordered run ended (FW_STATE's why) */
+static uint8_t s_stop_why;              /* the why a stop ends with: STOPPED, CANCELLED, TIMEOUT */
+/* The update task's own: the why of a writer failure, read by the writer's caller after it. */
+static uint8_t s_writer_why;
+
+/* PROBE: asked (under the lock), then its answer. */
+typedef struct {
+    bool pending;
+    bool no_server; /* the order named a server too long to be one: answered NO_LOOKUP */
+    char version[32];
+    char server[PANEL_OTA_SERVER_LEN];
+    char channel[8];
+} probe_req_t;
+static probe_req_t s_probe_req ALARM_SLOW_BSS;
+static panel_ota_order_status_t s_ost ALARM_SLOW_BSS; /* the probe's fields, why and seq */
+
+#define ORDER_READY_MAX_MS (24u * 3600u * 1000u) /* a READY image waits this long for INSTALL */
+
 static bool run_busy_locked(void);
 
 /* The run (OTA-026..OTA-031). s_stop is read without the lock by the update task between the
@@ -243,6 +303,7 @@ static volatile uint32_t s_health_stale; /* required bits not reporting (update 
 
 static const char *const HEALTH_NAME[PANEL_OTA_HEALTH_COUNT] = {
     "the alarm engine", "the event log", "the screen", "sensor input", "touch", "the panel link",
+    "the keypads",
 };
 
 static void lock(void)
@@ -347,6 +408,18 @@ bool panel_ota_system_idle(const char **why)
     return g.allowed;
 }
 
+/* What holds a restart besides the house (docs/features/11): a master's keypad installing or on
+ * its self-test (OTA-032), or a keypad's ordered image waiting for its master's INSTALL. A literal,
+ * or the order's own words; NULL when nothing does. Any task, the alarm task's final gate too. */
+static const char *restart_held(void)
+{
+    const char *hold = __atomic_load_n(&s_restart_hold_why, __ATOMIC_ACQUIRE);
+    if (hold != NULL) {
+        return hold;
+    }
+    return s_order_hold ? s_order.waiting : NULL;
+}
+
 /* The same question plus "has anyone given up on this update?" (R17). */
 static bool restart_allowed(const char **why)
 {
@@ -356,6 +429,11 @@ static bool restart_allowed(const char **why)
     }
     if (s_cancelled) {
         *why = I18N_NOOP_C("update", "Cancelled");
+        return false;
+    }
+    const char *held = restart_held();
+    if (held != NULL) {
+        *why = held;
         return false;
     }
     return panel_ota_system_idle(why);
@@ -389,6 +467,11 @@ static void restart_on_alarm_task(alarm_engine_t *e, alarm_ms_t now, void *ctx)
     }
     if (s_cancelled) {
         g->why = I18N_NOOP_C("update", "Cancelled");
+        return;
+    }
+    const char *held = restart_held();
+    if (held != NULL) {
+        g->why = held;
         return;
     }
     alarm_engine_snapshot(e, &s_gate_snap);
@@ -512,10 +595,21 @@ static void run_begin_locked(panel_ota_kind_t kind, panel_ota_stage_t stage, con
     s_st.failed_install = false;
 }
 
+/* The keypad's ordered run is over (docs/features/11): call with the lock held. */
+static void order_clear_locked(void)
+{
+    if (s_order.op != ORDER_NONE) {
+        memset(&s_order, 0, sizeof(s_order));
+        s_ost.seq++;
+    }
+    s_order_hold = false;
+}
+
 /* The run is over, whichever way: call with the lock held. During the self-test `previous`
  * stays: it is what a failure returns to. */
 static void run_end_locked(void)
 {
+    order_clear_locked();
     s_st.kind = PANEL_OTA_KIND_NONE;
     s_st.stage = PANEL_OTA_STAGE_NONE;
     s_st.target[0] = '\0';
@@ -613,6 +707,54 @@ static alarm_source_t rec_by(const ota_rec_t *r)
     return (alarm_source_t){.kind = r->by_kind, .id = r->by_id};
 }
 
+/* "rbh": the parts a failed self-test missed (OTA-005; PANEL_OTA_OK_KEYPADS: no keypad answered,
+ * docs/features/11 P2 decision 15). Written by the failing image just before it rolls back, read
+ * by the image it returns to for as long as its "rbv" stays, erased with it and when a new
+ * attempt is recorded. A key of its own, so ota_rec_t keeps its layout. */
+#define RBH_KEY    "rbh"
+#define RBH_SCHEMA 1u
+typedef struct {
+    uint8_t schema;
+    uint8_t pad[3];
+    uint32_t failed; /* panel_ota_health_t bits */
+    uint8_t elf[8];  /* the failing image's ELF digest, its first 8 bytes */
+} ota_rbh_t;
+
+static void rbh_put(uint32_t failed)
+{
+    ota_rbh_t r;
+    memset(&r, 0, sizeof(r));
+    r.schema = RBH_SCHEMA;
+    r.failed = failed;
+    memcpy(r.elf, esp_app_get_description()->app_elf_sha256, sizeof(r.elf));
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) {
+        return;
+    }
+    if (nvs_set_blob(h, RBH_KEY, &r, sizeof(r)) == ESP_OK) {
+        nvs_commit(h);
+    }
+    nvs_close(h);
+}
+
+/* The parts the image with this ELF digest missed, 0 when not known. */
+static uint32_t rbh_get(const uint8_t elf[32])
+{
+    ota_rbh_t r;
+    size_t len = sizeof(r);
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) {
+        return 0u;
+    }
+    const esp_err_t err = nvs_get_blob(h, RBH_KEY, &r, &len);
+    nvs_close(h);
+    if (err != ESP_OK || len != sizeof(r) || r.schema != RBH_SCHEMA ||
+        memcmp(r.elf, elf, sizeof(r.elf)) != 0) {
+        return 0u;
+    }
+    return r.failed;
+}
+
 /* ---- health heartbeats (OTA-005) ------------------------------------------------------------- */
 
 void panel_ota_healthy(panel_ota_health_t what)
@@ -642,11 +784,17 @@ uint32_t panel_ota_health_stale(void)
 static uint32_t s_health_seen[PANEL_OTA_HEALTH_COUNT];
 static uint64_t s_health_moved[PANEL_OTA_HEALTH_COUNT];
 
-/* Required parts that are not reporting: never did, or have gone quiet. The update task only. */
-static uint32_t health_missing(uint64_t now)
+/* The required parts' verdicts (ota_selftest.h), as bit masks: missing - not running (never
+ * reported, or gone quiet); unproven - reporting, but not long enough yet to count as running.
+ * A master's keypads (PANEL_OTA_OK_KEYPADS, LINK-041) come back only after this panel restarted:
+ * on probation, until its deadline, their part may wait - no answer yet is unproven, never
+ * missing - and answers covering PANEL_OTA_KEYPADS_SPAN_MS prove it. The update task only. */
+static uint32_t health_judge(uint64_t now, uint32_t *unproven_out)
 {
     const uint32_t now_ms = (uint32_t)now;
+    const bool keypads_may_wait = s_st.probation && now < s_probation_deadline_ms;
     uint32_t missing = 0;
+    uint32_t unproven = 0;
     for (unsigned b = 0; b < PANEL_OTA_HEALTH_COUNT; b++) {
         const uint32_t bit = 1u << b;
         const uint32_t last = s_health_last[b];
@@ -657,6 +805,7 @@ static uint32_t health_missing(uint64_t now)
         if ((s_required & bit) == 0u) {
             continue;
         }
+        const uint32_t first = s_health_first[b];
         /* The heartbeats are stamped by other tasks on the other core, so one may land after
          * now_ms was read: a signed age treats that as fresh, where the unsigned difference
          * wrapped to four billion ms and reported a working part as missing - which, on
@@ -667,27 +816,36 @@ static uint32_t health_missing(uint64_t now)
          * kept in 64 bits above, so a part that stays silent stays missing (sampled about once
          * a second, hence the generous bound). */
         const bool still = now - s_health_moved[b] > 2u * (uint64_t)PANEL_OTA_HEALTH_STALE_MS;
-        if (s_health_first[b] == 0u || age > (int32_t)PANEL_OTA_HEALTH_STALE_MS || still) {
+        const int32_t covered = (int32_t)(last - first);
+        const bool keypads = bit == (uint32_t)PANEL_OTA_OK_KEYPADS;
+        const panel_ota_part_t part = {
+            .reported = first != 0u,
+            .fresh = age <= (int32_t)PANEL_OTA_HEALTH_STALE_MS && !still,
+            .covered_ms = first != 0u && covered > 0 ? (uint32_t)covered : 0u,
+            .span_ms = keypads ? PANEL_OTA_KEYPADS_SPAN_MS : PANEL_OTA_HEALTH_SPAN_MS,
+            .may_wait = keypads && keypads_may_wait,
+        };
+        switch (panel_ota_part_judge(&part)) {
+        case PANEL_OTA_PART_MISSING:
             missing |= bit;
+            break;
+        case PANEL_OTA_PART_UNPROVEN:
+            unproven |= bit;
+            break;
+        default:
+            break;
         }
+    }
+    if (unproven_out != NULL) {
+        *unproven_out = unproven;
     }
     return missing;
 }
 
-/* Required parts that report, but haven't been reporting long enough to count as running. */
-static uint32_t health_unproven(void)
+/* Required parts that are not running: never reported, or have gone quiet. The update task. */
+static uint32_t health_missing(uint64_t now)
 {
-    uint32_t young = 0;
-    for (unsigned b = 0; b < PANEL_OTA_HEALTH_COUNT; b++) {
-        const uint32_t bit = 1u << b;
-        if ((s_required & bit) == 0u || s_health_first[b] == 0u) {
-            continue;
-        }
-        if ((uint32_t)(s_health_last[b] - s_health_first[b]) < PANEL_OTA_HEALTH_SPAN_MS) {
-            young |= bit;
-        }
-    }
-    return young;
+    return health_judge(now, NULL);
 }
 
 static void health_text(uint32_t mask, char *out, size_t cap)
@@ -829,55 +987,92 @@ void panel_ota_get_server(panel_ota_server_t *out)
 
 /* ---- the writer ------------------------------------------------------------------------------ */
 
-static bool check_header(writer_t *w, char *why, size_t why_len)
+/* The words for a cap's refusal (LINK-029): English with values, as the other reasons with a
+ * value in them. Call with the lock held. */
+static void cap_words_locked(char *out, size_t len)
 {
-    const esp_image_header_t *ih = (const esp_image_header_t *)w->header;
-    const esp_app_desc_t *d =
-        (const esp_app_desc_t *)(w->header + sizeof(esp_image_header_t) +
-                                 sizeof(esp_image_segment_header_t));
-    const esp_app_desc_t *me = esp_app_get_description();
-    char buf[96];
-    if (ih->magic != ESP_IMAGE_HEADER_MAGIC || d->magic_word != ESP_APP_DESC_MAGIC_WORD) {
-        reason(why, why_len, I18N_NOOP_C("update", "Not a firmware image"));
-        return false;
+    if (s_cap == PROTO_FW_CAP_AT) {
+        snprintf(out, len, "%s runs %s: update it first",
+                 s_master[0] != '\0' ? s_master : "The alarm panel", s_cap_version);
+    } else {
+        snprintf(out, len, "Updates come from %s",
+                 s_master[0] != '\0' ? s_master : "the alarm panel");
     }
-    if (ih->chip_id != CONFIG_IDF_FIRMWARE_CHIP_ID) {
-        reason(why, why_len, I18N_NOOP_C("update", "Firmware for another chip"));
-        return false;
-    }
-    esp_chip_info_t chip;
-    esp_chip_info(&chip);
-    if (chip.revision < ih->min_chip_rev_full ||
-        (ih->max_chip_rev_full != 0u && chip.revision > ih->max_chip_rev_full)) {
-        reason(why, why_len, I18N_NOOP_C("update", "Firmware for another chip revision"));
-        return false;
-    }
-    char candidate_project[33], running_project[33];
-    panel_ota_version_copy(candidate_project, sizeof(candidate_project), d->project_name, sizeof(d->project_name));
-    panel_ota_version_copy(running_project, sizeof(running_project), me->project_name, sizeof(me->project_name));
-    if (!ota_profile_accepts(running_project, candidate_project)) {
-        char project[33];
-        panel_ota_version_copy(project, sizeof(project), d->project_name,
-                               sizeof(d->project_name));
-        snprintf(buf, sizeof(buf), "Firmware for another device (%s)", project);
-        reason(why, why_len, buf);
-        return false;
-    }
-    panel_ota_version_copy(w->version, sizeof(w->version), d->version, sizeof(d->version));
-    if (!proto_version_is_upgrade(me->version, w->version, w->allow_older)) { /* OTA-014 */
-        snprintf(buf, sizeof(buf), "%s is not newer than %s", w->version, me->version);
-        reason(why, why_len, buf);
-        return false;
-    }
-    return true;
 }
 
-/* release: the update task's own download (its run is already under way); otherwise a developer's
- * file, which is a run of its own (stage FILE throughout, OTA-026). */
-static esp_err_t writer_begin(uint32_t size, const uint8_t *sha256, bool allow_older, bool release)
+/* The header, judged before any flash is written (OTA-014, docs/features/11 LINK-033): magic,
+ * chip, chip revision range, project, newer, then the cap. s_writer_why gets the refusal's why. */
+static bool check_header(writer_t *w, char *why, size_t why_len)
 {
+    proto_fw_header_t h;
+    (void)proto_fw_header_read(w->header, sizeof(w->header), &h);
+    const esp_app_desc_t *me = esp_app_get_description();
+    char running_project[33];
+    panel_ota_version_copy(running_project, sizeof(running_project), me->project_name,
+                           sizeof(me->project_name));
+    esp_chip_info_t chip;
+    esp_chip_info(&chip);
+    char cap_version[sizeof(s_cap_version)];
+    char buf[96];
+    lock();
+    const proto_fw_cap_t cap = s_cap;
+    snprintf(cap_version, sizeof(cap_version), "%s", s_cap_version);
+    cap_words_locked(buf, sizeof(buf));
+    unlock();
+    const proto_fw_self_t self = {
+        .chip_id = (uint16_t)CONFIG_IDF_FIRMWARE_CHIP_ID,
+        .rev_full = chip.revision,
+        .project = running_project,
+        .version = s_st.running, /* set once at the start */
+        .allow_older = w->allow_older,
+        .cap = cap,
+        .cap_version = cap_version,
+    };
+    const proto_fw_hdr_verdict_t v = proto_fw_header_judge(&h, &self);
+    s_writer_why = (uint8_t)proto_fw_header_why(v);
+    panel_ota_version_copy(w->version, sizeof(w->version), h.version, sizeof(h.version));
+    switch (v) {
+    case PROTO_FW_HDR_OK:
+        return true;
+    case PROTO_FW_HDR_NOT_AN_IMAGE:
+    default:
+        reason(why, why_len, I18N_NOOP_C("update", "Not a firmware image"));
+        return false;
+    case PROTO_FW_HDR_OTHER_CHIP:
+        reason(why, why_len, I18N_NOOP_C("update", "Firmware for another chip"));
+        return false;
+    case PROTO_FW_HDR_OTHER_REVISION:
+        reason(why, why_len, I18N_NOOP_C("update", "Firmware for another chip revision"));
+        return false;
+    case PROTO_FW_HDR_OTHER_PROJECT:
+        snprintf(buf, sizeof(buf), "Firmware for another device (%s)", h.project);
+        reason(why, why_len, buf);
+        return false;
+    case PROTO_FW_HDR_NOT_NEWER:
+        snprintf(buf, sizeof(buf), "%s is not newer than %s", w->version, s_st.running);
+        reason(why, why_len, buf);
+        return false;
+    case PROTO_FW_HDR_PAST_CAP:
+        reason(why, why_len, buf); /* never past its master (LINK-029) */
+        return false;
+    }
+}
+
+/* kind RELEASE: the update task's own download (its run is already under way); FILE: a
+ * developer's file, which is a run of its own (stage FILE throughout, OTA-026); LINK: a keypad's
+ * relay from its master (docs/features/11), a run with steps, begun here with its order. */
+static esp_err_t writer_begin(uint32_t size, const uint8_t *sha256, bool allow_older,
+                              panel_ota_kind_t kind, const order_t *order)
+{
+    const bool release = kind == PANEL_OTA_KIND_RELEASE;
+    s_writer_why = PROTO_FW_WHY_OK;
     ESP_RETURN_ON_FALSE(s_lock != NULL, ESP_ERR_INVALID_STATE, TAG, "not started");
     const esp_partition_t *part = esp_ota_get_next_update_partition(NULL);
+    if (part == NULL) {
+        s_writer_why = PROTO_FW_WHY_FLASH;
+    } else if (size <= HEADER_LEN || size > part->size) {
+        s_writer_why = size > part->size ? PROTO_FW_WHY_TOO_BIG : PROTO_FW_WHY_BAD_SIZE;
+    }
     ESP_RETURN_ON_FALSE(part != NULL, ESP_ERR_NOT_FOUND, TAG, "no update slot");
     ESP_RETURN_ON_FALSE(size > HEADER_LEN && size <= part->size, ESP_ERR_INVALID_SIZE, TAG,
                         "size %" PRIu32 " (slot %" PRIu32 ")", size, (uint32_t)part->size);
@@ -892,12 +1087,31 @@ static esp_err_t writer_begin(uint32_t size, const uint8_t *sha256, bool allow_o
                       (!release && (s_st.stage != PANEL_OTA_STAGE_NONE || s_install_pending));
     if (!busy) {
         s_busy = true;
-        if (!release) {
+        if (kind == PANEL_OTA_KIND_FILE) {
             run_begin_locked(PANEL_OTA_KIND_FILE, PANEL_OTA_STAGE_FILE, "", s_st.running);
+        } else if (kind == PANEL_OTA_KIND_LINK && order != NULL) {
+            run_begin_locked(PANEL_OTA_KIND_LINK, PANEL_OTA_STAGE_DOWNLOADING, order->version,
+                             s_st.running);
+            if (s_st.last.result == PANEL_OTA_LAST_STOPPED ||
+                s_st.last.result == PANEL_OTA_LAST_FAILED) {
+                memset(&s_st.last, 0, sizeof(s_st.last)); /* OTA-029: until the next run */
+            }
+            s_order = *order;
+            s_order_hold = !s_order.install;
+            s_why = PROTO_FW_WHY_OK;
+            s_stop = false;
+            s_ost.seq++;
+            changed_locked();
         }
     }
     unlock();
+    if (busy) {
+        s_writer_why = PROTO_FW_WHY_BUSY;
+    }
     ESP_RETURN_ON_FALSE(!busy, ESP_ERR_INVALID_STATE, TAG, "another update is running");
+    if (!release) {
+        panel_ota_source_own_run(); /* a copy for a keypad is of the version that runs now */
+    }
 
     memset(&s_w, 0, sizeof(s_w));
     s_w.part = part;
@@ -919,8 +1133,13 @@ static esp_err_t writer_begin(uint32_t size, const uint8_t *sha256, bool allow_o
     }
     if (err != ESP_OK) {
         psa_hash_abort(&s_w.hash);
+        s_writer_why = PROTO_FW_WHY_FLASH;
         lock();
         s_busy = false;
+        if (kind == PANEL_OTA_KIND_LINK) {
+            s_why = PROTO_FW_WHY_FLASH;
+            s_ost.seq++;
+        }
         if (!release) {
             run_end_locked();
         }
@@ -946,7 +1165,25 @@ static esp_err_t writer_begin(uint32_t size, const uint8_t *sha256, bool allow_o
 
 esp_err_t panel_ota_begin(uint32_t size, const uint8_t *sha256, bool allow_older)
 {
-    return writer_begin(size, sha256, allow_older, false);
+    return writer_begin(size, sha256, allow_older, PANEL_OTA_KIND_FILE, NULL);
+}
+
+/* The writer belongs to whichever task feeds it; s_wlock lets the update task close a keypad's
+ * relay on a stop (OTA-027) without racing a write. Order: s_wlock, then s_lock. */
+static SemaphoreHandle_t s_wlock;
+
+static bool wlock(void)
+{
+    if (s_wlock == NULL) {
+        return false;
+    }
+    xSemaphoreTake(s_wlock, portMAX_DELAY);
+    return true;
+}
+
+static void wunlock(void)
+{
+    xSemaphoreGive(s_wlock);
 }
 
 /* A developer's file is a run of its own: it ends when its writer fails (call with the lock held).
@@ -959,16 +1196,36 @@ static void file_run_end_locked(bool failed)
     }
 }
 
-static void writer_fail(const char *why)
+/* A keypad's relay ends with its writer (call with the lock held): failed with why's words and
+ * code, or (text NULL) given up by its owner, which says why itself. */
+static void link_run_end_locked(const char *text, uint8_t code)
+{
+    if (s_st.kind != PANEL_OTA_KIND_LINK) {
+        return;
+    }
+    if (text != NULL) {
+        const alarm_source_t sys = {.kind = ALARM_SRC_SYSTEM, .id = 0};
+        set_last_locked(PANEL_OTA_LAST_FAILED, s_st.target, s_st.running, now_unix(), text, &sys,
+                        0u);
+        s_why = code != PROTO_FW_WHY_OK ? code : PROTO_FW_WHY_FLASH;
+        s_ost.seq++;
+    }
+    run_end_locked();
+    s_st.failed_install = text != NULL;
+}
+
+static void writer_fail(const char *why, uint8_t code)
 {
     if (s_w.active) {
         esp_ota_abort(s_w.handle);
         psa_hash_abort(&s_w.hash);
         s_w.active = false;
     }
+    s_writer_why = code;
     lock();
     s_busy = false;
     file_run_end_locked(why != NULL);
+    link_run_end_locked(why, code);
     unlock();
     set_phase(why != NULL ? PANEL_OTA_FAILED : PANEL_OTA_IDLE, why);
     if (why != NULL) {
@@ -976,15 +1233,19 @@ static void writer_fail(const char *why)
     }
 }
 
-esp_err_t panel_ota_write(const void *data, size_t len, char *why, size_t why_len)
+static esp_err_t writer_write(const void *data, size_t len, char *why, size_t why_len)
 {
     if (!s_w.active) {
         reason(why, why_len, I18N_NOOP_C("update", "No update in progress"));
         return ESP_ERR_INVALID_STATE;
     }
+    if (s_stop && s_st.kind == PANEL_OTA_KIND_LINK) {
+        reason(why, why_len, "Stopped"); /* the update task closes the writer (stop_tick) */
+        return ESP_ERR_INVALID_STATE;
+    }
     if ((uint64_t)s_w.written + len > s_w.size) {
         reason(why, why_len, I18N_NOOP_C("update", "More data than announced"));
-        writer_fail("More data than announced");
+        writer_fail("More data than announced", PROTO_FW_WHY_BAD_SIZE);
         return ESP_ERR_INVALID_SIZE;
     }
     const uint8_t *p = data;
@@ -1002,7 +1263,7 @@ esp_err_t panel_ota_write(const void *data, size_t len, char *why, size_t why_le
         char buf[64];
         if (!check_header(&s_w, buf, sizeof(buf))) {
             reason(why, why_len, buf);
-            writer_fail(buf);
+            writer_fail(buf, s_writer_why);
             return ESP_ERR_INVALID_VERSION;
         }
         s_w.header_ok = true;
@@ -1021,7 +1282,7 @@ esp_err_t panel_ota_write(const void *data, size_t len, char *why, size_t why_le
     if (err != ESP_OK) {
         reason(why, why_len, I18N_NOOP_C("update", "Writing to flash failed"));
         ESP_LOGE(TAG, "write: %s", esp_err_to_name(err));
-        writer_fail("Writing to flash failed");
+        writer_fail("Writing to flash failed", PROTO_FW_WHY_FLASH);
         return err;
     }
     const int percent = (int)((uint64_t)s_w.written * 100u / s_w.size);
@@ -1037,7 +1298,30 @@ esp_err_t panel_ota_write(const void *data, size_t len, char *why, size_t why_le
     return ESP_OK;
 }
 
-esp_err_t panel_ota_end(char *version, size_t version_len, char *why, size_t why_len)
+esp_err_t panel_ota_write(const void *data, size_t len, char *why, size_t why_len)
+{
+    if (!wlock()) {
+        reason(why, why_len, I18N_NOOP_C("update", "No update in progress"));
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t err = writer_write(data, len, why, why_len);
+    wunlock();
+    return err;
+}
+
+/* A failure in panel_ota_end, after the writer is closed (it is not active any more). */
+static void end_failed(const char *text, uint8_t code)
+{
+    s_writer_why = code;
+    lock();
+    s_busy = false;
+    file_run_end_locked(true);
+    link_run_end_locked(text, code);
+    unlock();
+    set_phase(PANEL_OTA_FAILED, text);
+}
+
+static esp_err_t writer_end(char *version, size_t version_len, char *why, size_t why_len)
 {
     if (!s_w.active) {
         reason(why, why_len, I18N_NOOP_C("update", "No update in progress"));
@@ -1045,9 +1329,16 @@ esp_err_t panel_ota_end(char *version, size_t version_len, char *why, size_t why
     }
     if (s_w.written != s_w.size || !s_w.header_ok) {
         reason(why, why_len, I18N_NOOP_C("update", "The image is incomplete"));
-        writer_fail("The image is incomplete");
+        writer_fail("The image is incomplete", PROTO_FW_WHY_BAD_SIZE);
         return ESP_ERR_INVALID_SIZE;
     }
+    lock();
+    const bool link = s_st.kind == PANEL_OTA_KIND_LINK;
+    if (link) { /* a relay is verified here, by its owner (docs/features/11) */
+        s_st.stage = PANEL_OTA_STAGE_VERIFYING;
+        changed_locked();
+    }
+    unlock();
     uint8_t sha[32];
     size_t n = 0;
     const bool hashed = psa_hash_finish(&s_w.hash, sha, sizeof(sha), &n) == PSA_SUCCESS;
@@ -1055,11 +1346,7 @@ esp_err_t panel_ota_end(char *version, size_t version_len, char *why, size_t why
         esp_ota_abort(s_w.handle);
         s_w.active = false;
         reason(why, why_len, I18N_NOOP_C("update", "Checksum mismatch: the download is damaged"));
-        lock();
-        s_busy = false;
-        file_run_end_locked(true);
-        unlock();
-        set_phase(PANEL_OTA_FAILED, "Checksum mismatch: the download is damaged");
+        end_failed("Checksum mismatch: the download is damaged", PROTO_FW_WHY_BAD_SHA);
         return ESP_ERR_INVALID_CRC;
     }
     /* Checks the whole image, its hash and its signature (OTA-001). */
@@ -1071,16 +1358,30 @@ esp_err_t panel_ota_end(char *version, size_t version_len, char *why, size_t why
                                : I18N_NOOP_C("update", "Finishing the update failed");
         ESP_LOGE(TAG, "end: %s", esp_err_to_name(err));
         reason(why, why_len, text);
-        lock();
-        s_busy = false;
-        file_run_end_locked(true);
-        unlock();
-        set_phase(PANEL_OTA_FAILED, text);
+        end_failed(text, err == ESP_ERR_OTA_VALIDATE_FAILED ? PROTO_FW_WHY_SIGNATURE
+                                                            : PROTO_FW_WHY_FLASH);
         return err;
+    }
+    /* An ordered image must be the version its master named (docs/features/11 LINK-033, check 5):
+     * any other is discarded, signed or not. */
+    char wrong[64] = "";
+    lock();
+    if (s_order.op != ORDER_NONE && strcmp(s_w.version, s_order.version) != 0) {
+        snprintf(wrong, sizeof(wrong), "The image is %.20s, not %.20s", s_w.version,
+                 s_order.version);
+    }
+    unlock();
+    if (wrong[0] != '\0') {
+        reason(why, why_len, wrong);
+        ESP_LOGW(TAG, "%s: discarded", wrong);
+        end_failed(wrong, PROTO_FW_WHY_WRONG_VERSION);
+        return ESP_ERR_INVALID_VERSION;
     }
     lock();
     s_ready = s_w.part;
-    s_ready_kind = s_st.kind == PANEL_OTA_KIND_RELEASE ? PANEL_OTA_KIND_RELEASE : PANEL_OTA_KIND_FILE;
+    s_ready_kind = s_st.kind == PANEL_OTA_KIND_RELEASE || s_st.kind == PANEL_OTA_KIND_LINK
+                       ? s_st.kind
+                       : PANEL_OTA_KIND_FILE;
     snprintf(s_st.ready, sizeof(s_st.ready), "%s", s_w.version);
     s_busy = false;
     s_st.phase = PANEL_OTA_IDLE;
@@ -1094,14 +1395,34 @@ esp_err_t panel_ota_end(char *version, size_t version_len, char *why, size_t why
         snprintf(version, version_len, "%s", s_w.version);
     }
     ESP_LOGI(TAG, "image %s verified in %s", s_w.version, s_w.part->label);
+    if (link) {
+        /* READY: the restart waits for the master's INSTALL (restart_held) and the gate. */
+        const alarm_source_t sys = {.kind = ALARM_SRC_SYSTEM, .id = 0};
+        (void)panel_ota_apply(&sys, 0u);
+    }
     return ESP_OK;
+}
+
+esp_err_t panel_ota_end(char *version, size_t version_len, char *why, size_t why_len)
+{
+    if (!wlock()) {
+        reason(why, why_len, I18N_NOOP_C("update", "No update in progress"));
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t err = writer_end(version, version_len, why, why_len);
+    wunlock();
+    return err;
 }
 
 void panel_ota_abort(void)
 {
-    if (s_w.active) {
-        writer_fail(NULL);
+    if (!wlock()) {
+        return;
     }
+    if (s_w.active) {
+        writer_fail(NULL, PROTO_FW_WHY_OK);
+    }
+    wunlock();
 }
 
 esp_err_t panel_ota_apply(const alarm_source_t *src, uint8_t user)
@@ -1115,10 +1436,15 @@ esp_err_t panel_ota_apply(const alarm_source_t *src, uint8_t user)
         s_st.error[0] = '\0';
         s_cancelled = false;
         s_restart_hold_ms = 0;
-        if (s_ready_kind == PANEL_OTA_KIND_RELEASE) {
+        if (s_ready_kind == PANEL_OTA_KIND_RELEASE || s_ready_kind == PANEL_OTA_KIND_LINK) {
             s_st.stage = PANEL_OTA_STAGE_WAITING; /* the release run goes on (OTA-026) */
             s_st.bytes = 0;
             s_st.size = 0;
+            if (s_order.op != ORDER_NONE && !s_order.ready) {
+                s_order.ready = true; /* READY: waits for INSTALL, 24 h at most */
+                s_order.ready_ms = alarm_service_now();
+                s_ost.seq++;
+            }
         } else if (s_st.kind != PANEL_OTA_KIND_FILE) {
             run_begin_locked(PANEL_OTA_KIND_FILE, PANEL_OTA_STAGE_FILE, s_st.ready, s_st.running);
         }
@@ -1215,7 +1541,8 @@ void panel_ota_discard(void)
             s_busy = false;
             s_st.waiting_for[0] = '\0';
         }
-        if (s_st.kind == PANEL_OTA_KIND_FILE || s_st.kind == PANEL_OTA_KIND_RELEASE) {
+        if (s_st.kind == PANEL_OTA_KIND_FILE || s_st.kind == PANEL_OTA_KIND_RELEASE ||
+            s_st.kind == PANEL_OTA_KIND_LINK) {
             run_end_locked();
         }
         changed_locked();
@@ -1225,28 +1552,38 @@ void panel_ota_discard(void)
 
 /* ---- Stop (OTA-027) -------------------------------------------------------------------------- */
 
-esp_err_t panel_ota_stop(const alarm_source_t *src, uint8_t user)
+/* A stop (OTA-027) with the why an ordered run ends with: STOPPED for a person, CANCELLED for the
+ * keypad's master, TIMEOUT for a READY image no INSTALL came for. Call with the lock held. */
+static esp_err_t stop_locked(const alarm_source_t *src, uint8_t user, uint8_t why)
 {
-    if (s_lock == NULL) {
-        return ESP_ERR_NOT_FOUND;
-    }
-    esp_err_t err = ESP_OK;
-    lock();
     const panel_ota_stage_t stage = s_st.stage;
     if (stage == PANEL_OTA_STAGE_NONE && !s_install_pending) {
-        err = ESP_ERR_NOT_FOUND;
-    } else if (s_st.kind == PANEL_OTA_KIND_FILE || s_st.kind == PANEL_OTA_KIND_WIFI_MODULE ||
-               stage == PANEL_OTA_STAGE_ROLLING_BACK || s_slot_selected) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (s_st.kind == PANEL_OTA_KIND_FILE || s_st.kind == PANEL_OTA_KIND_WIFI_MODULE ||
+        stage == PANEL_OTA_STAGE_ROLLING_BACK || s_slot_selected) {
         /* a file, the Wi-Fi module, or past the boot slot's switch: only the self-test decides */
-        err = ESP_ERR_NOT_SUPPORTED;
-    } else if (stage != PANEL_OTA_STAGE_STOPPING) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (stage != PANEL_OTA_STAGE_STOPPING) {
         s_stop_src = src != NULL ? *src : (alarm_source_t){.kind = ALARM_SRC_SYSTEM, .id = 0};
         s_stop_user = user;
+        s_stop_why = why;
         s_stop = true;
         s_st.stage = PANEL_OTA_STAGE_STOPPING;
         s_st.reason[0] = '\0';
         changed_locked(); /* also wakes the update task */
     }
+    return ESP_OK;
+}
+
+esp_err_t panel_ota_stop(const alarm_source_t *src, uint8_t user)
+{
+    if (s_lock == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    lock();
+    const esp_err_t err = stop_locked(src, user, PROTO_FW_WHY_STOPPED);
     unlock();
     return err;
 }
@@ -1258,6 +1595,11 @@ static void finish_stop(void)
     lock();
     const alarm_source_t by = s_stop_src;
     const uint8_t user = s_stop_user;
+    if (s_order.op != ORDER_NONE) { /* a keypad's ordered run: its why (docs/features/11) */
+        s_why = s_stop_why != PROTO_FW_WHY_OK ? s_stop_why : PROTO_FW_WHY_STOPPED;
+        s_ost.seq++;
+    }
+    s_stop_why = PROTO_FW_WHY_OK;
     char target[32];
     snprintf(target, sizeof(target), "%s", s_st.target);
     s_ready = NULL;
@@ -1278,10 +1620,15 @@ static void finish_stop(void)
     alarm_service_firmware_event(ALARM_FW_STOPPED, &by, user);
 }
 
-/* An install that failed (OTA-029: the next Install or check clears it). */
-static void install_failed(const char *why)
+/* An install that failed (OTA-029: the next Install or check clears it). code: its why number,
+ * which a keypad's ordered run reports (docs/features/11). */
+static void install_failed(const char *why, uint8_t code)
 {
     lock();
+    if (s_order.op != ORDER_NONE) {
+        s_why = code != PROTO_FW_WHY_OK ? code : PROTO_FW_WHY_FLASH;
+        s_ost.seq++;
+    }
     char target[32];
     snprintf(target, sizeof(target), "%s", s_st.target);
     s_st.phase = PANEL_OTA_FAILED;
@@ -1300,10 +1647,14 @@ static void install_failed(const char *why)
 /* Shows why the restart still hasn't happened, without churning the status. */
 static void hold_back(const char *why)
 {
+    /* waiting_for is shorter than an order's "Waiting for <master>" can be: compared as it is
+     * kept (cut at a whole character), or a long name would count as a change on every try. */
+    char shown[sizeof(s_st.waiting_for)];
+    (void)i18n_utf8_copy(shown, sizeof(shown), why);
     lock();
     if (s_st.phase == PANEL_OTA_WAITING &&
-        (strcmp(s_st.waiting_for, why) != 0 || strcmp(s_st.reason, why) != 0)) {
-        snprintf(s_st.waiting_for, sizeof(s_st.waiting_for), "%s", why);
+        (strcmp(s_st.waiting_for, shown) != 0 || strcmp(s_st.reason, why) != 0)) {
+        snprintf(s_st.waiting_for, sizeof(s_st.waiting_for), "%s", shown);
         snprintf(s_st.reason, sizeof(s_st.reason), "%s", why);
         changed_locked();
     }
@@ -1327,7 +1678,7 @@ static void give_up_restart(const char *why, const alarm_source_t *src, uint8_t 
         if (cancelled) {
             run_end_locked();
         } else {
-            if (s_st.kind == PANEL_OTA_KIND_RELEASE) {
+            if (s_st.kind == PANEL_OTA_KIND_RELEASE || s_st.kind == PANEL_OTA_KIND_LINK) {
                 s_st.stage = PANEL_OTA_STAGE_WAITING;
             }
             snprintf(s_st.reason, sizeof(s_st.reason), "%s", again);
@@ -1418,7 +1769,7 @@ static void try_restart(void)
         s_st.phase = PANEL_OTA_RESTARTING;
         s_st.waiting_for[0] = '\0';
         s_st.reason[0] = '\0';
-        if (s_st.kind == PANEL_OTA_KIND_RELEASE) {
+        if (s_st.kind == PANEL_OTA_KIND_RELEASE || s_st.kind == PANEL_OTA_KIND_LINK) {
             s_st.stage = PANEL_OTA_STAGE_INSTALLING;
         }
         changed_locked();
@@ -1454,6 +1805,7 @@ static void try_restart(void)
     }
     rec_fill(&att, version, from, described ? d.app_elf_sha256 : NULL, &src, user, now_unix());
     if (described) {
+        rec_erase(RBH_KEY); /* what an earlier attempt's self-test missed is not this one's */
         rec_put("try", &att);
     }
     /* The gate once more after the NVS write (which can take tens of ms), before the slower
@@ -1477,8 +1829,8 @@ static void try_restart(void)
         lock();
         const panel_ota_kind_t kind = s_st.kind;
         unlock();
-        if (kind == PANEL_OTA_KIND_RELEASE) {
-            install_failed("The new image can't be started");
+        if (kind == PANEL_OTA_KIND_RELEASE || kind == PANEL_OTA_KIND_LINK) {
+            install_failed("The new image can't be started", PROTO_FW_WHY_FLASH);
         } else {
             lock();
             run_end_locked();
@@ -1581,15 +1933,18 @@ static void cp_try_restart(void)
 
 /* body (NULL = a GET): POSTed as JSON, again after a redirect. status (may be NULL) gets the
  * server's answer when it isn't 200, 0 when there was none (no connection, DNS, TLS, timeout).
- * stoppable: a release download, which a stop (OTA-027) ends between redirects and after each
- * blocking call (NULL; the caller sees s_stop). */
+ * stop (NULL = none): a flag that ends it between redirects and after each blocking call (NULL;
+ * the caller sees its flag): a release download's s_stop (OTA-027), a keypad's copy's. net (may
+ * be NULL) gets why it failed in the panel link's numbers (docs/features/11 the why table):
+ * NO_LOOKUP, NO_CONNECT, SERVER_ERROR or NO_MEMORY. */
 static esp_http_client_handle_t http_open(const char *url, const char *body, size_t body_len,
                                           int64_t *length, int *status_out, char *why,
-                                          size_t why_len, bool stoppable)
+                                          size_t why_len, const volatile bool *stop, uint8_t *net)
 {
     if (status_out != NULL) {
         *status_out = 0;
     }
+    uint8_t fail = PROTO_FWSRV_WHY_SERVER_ERROR; /* too many redirects, or a stop */
     esp_http_client_config_t cfg = {
         .url = url,
         .timeout_ms = 15000,
@@ -1602,6 +1957,9 @@ static esp_http_client_handle_t http_open(const char *url, const char *body, siz
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
     if (c == NULL) {
         reason(why, why_len, I18N_NOOP_C("update", "Out of memory"));
+        if (net != NULL) {
+            *net = PROTO_FW_WHY_NO_MEMORY;
+        }
         return NULL;
     }
     if (body != NULL) {
@@ -1609,11 +1967,11 @@ static esp_http_client_handle_t http_open(const char *url, const char *body, siz
         esp_http_client_set_header(c, "Content-Type", "application/json");
     }
     for (int hop = 0; hop < 6; hop++) { /* release hosts redirect to their storage */
-        if (stoppable && s_stop) {
+        if (stop != NULL && *stop) {
             break;
         }
         esp_err_t err = esp_http_client_open(c, body != NULL ? (int)body_len : 0);
-        if (stoppable && s_stop) {
+        if (stop != NULL && *stop) {
             break;
         }
         size_t sent = 0;
@@ -1628,15 +1986,22 @@ static esp_http_client_handle_t http_open(const char *url, const char *body, siz
         if (err != ESP_OK) {
             ESP_LOGW(TAG, "connect: %s", esp_err_to_name(err));
             reason(why, why_len, I18N_NOOP_C("update", "The update server can't be reached"));
+            int tls_code = 0;
+            int tls_flags = 0;
+            fail = esp_http_client_get_and_clear_last_tls_error(c, &tls_code, &tls_flags) ==
+                           ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME
+                       ? PROTO_FWSRV_WHY_NO_LOOKUP
+                       : PROTO_FWSRV_WHY_NO_CONNECT;
             break;
         }
         *length = esp_http_client_fetch_headers(c);
-        if (stoppable && s_stop) {
+        if (stop != NULL && *stop) {
             break;
         }
         const int status = esp_http_client_get_status_code(c);
         if (status <= 0) {
             reason(why, why_len, I18N_NOOP_C("update", "The update server can't be reached"));
+            fail = PROTO_FWSRV_WHY_NO_CONNECT;
             break;
         }
         if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
@@ -1668,6 +2033,9 @@ static esp_http_client_handle_t http_open(const char *url, const char *body, siz
     }
     esp_http_client_close(c);
     esp_http_client_cleanup(c);
+    if (net != NULL) {
+        *net = fail;
+    }
     return NULL;
 }
 
@@ -1702,20 +2070,20 @@ typedef enum {
     BODY_END,      /* the body ended (whether it was whole is the caller's question) */
     BODY_BROKE,    /* the connection failed */
     BODY_SLOW,     /* below the floor, or past the deadline */
-    BODY_STOPPED,  /* a stop was asked (stoppable reads only) */
+    BODY_STOPPED,  /* a stop was asked (readers with a stop flag only) */
 } body_t;
 
 typedef struct {
-    bool stoppable;        /* a release download: s_stop ends it */
+    const volatile bool *stop; /* NULL, or a flag that ends it: s_stop for a release download */
     uint64_t deadline;     /* 0 = none */
     uint64_t window_start;
     uint32_t window_bytes;
 } body_reader_t;
 
-static void body_reader_init(body_reader_t *b, bool stoppable, uint32_t total_ms)
+static void body_reader_init(body_reader_t *b, const volatile bool *stop, uint32_t total_ms)
 {
     const uint64_t now = alarm_service_now();
-    b->stoppable = stoppable;
+    b->stop = stop;
     b->deadline = total_ms != 0u ? now + total_ms : 0u;
     b->window_start = now;
     b->window_bytes = 0;
@@ -1727,7 +2095,7 @@ static body_t body_fill(esp_http_client_handle_t c, body_reader_t *b, char *buf,
 {
     *n = 0;
     while (*n < len) {
-        if (b->stoppable && s_stop) {
+        if (b->stop != NULL && *b->stop) {
             return BODY_STOPPED;
         }
         const uint64_t now = alarm_service_now();
@@ -1759,15 +2127,17 @@ static body_t body_fill(esp_http_client_handle_t c, body_reader_t *b, char *buf,
 }
 
 /* GET (body NULL) or POST url and read the whole answer into a new NUL-terminated buffer of at
- * most max - 1 bytes (*out; the caller frees it). */
+ * most max - 1 bytes (*out; the caller frees it). net (may be NULL): why it failed, in the panel
+ * link's numbers (http_open's, or NO_MEMORY, TOO_SLOW, BROKE_OFF, NOT_A_SERVER for too long). */
 static fetch_t http_fetch(const char *url, const char *body, size_t body_len, size_t max, char **out,
-                          size_t *len, char *why, size_t why_len)
+                          size_t *len, char *why, size_t why_len, uint8_t *net)
 {
     *out = NULL;
     *len = 0;
     int64_t length = 0;
     int status = 0;
-    esp_http_client_handle_t c = http_open(url, body, body_len, &length, &status, why, why_len, false);
+    esp_http_client_handle_t c =
+        http_open(url, body, body_len, &length, &status, why, why_len, NULL, net);
     if (c == NULL) {
         return status > 0 ? FETCH_REFUSED : FETCH_NO_ANSWER;
     }
@@ -1777,7 +2147,7 @@ static fetch_t http_fetch(const char *url, const char *body, size_t body_len, si
     body_t got = BODY_BROKE;
     if (buf != NULL) {
         body_reader_t rd;
-        body_reader_init(&rd, false, SMALL_BODY_MS);
+        body_reader_init(&rd, NULL, SMALL_BODY_MS);
         got = body_fill(c, &rd, buf, max - 1u, &n); /* full: too long, not an answer it reads */
         ok = got == BODY_END && esp_http_client_is_complete_data_received(c);
     }
@@ -1787,6 +2157,12 @@ static fetch_t http_fetch(const char *url, const char *body, size_t body_len, si
         reason(why, why_len, buf == NULL       ? I18N_NOOP_C("update", "Out of memory")
                              : got == BODY_SLOW ? I18N_NOOP_C("update", "The connection is too slow")
                                                 : I18N_NOOP_C("update", "The release list could not be read"));
+        if (net != NULL) {
+            *net = buf == NULL           ? PROTO_FW_WHY_NO_MEMORY
+                   : got == BODY_SLOW    ? PROTO_FW_WHY_TOO_SLOW
+                   : got == BODY_FULL    ? PROTO_FWSRV_WHY_NOT_A_SERVER /* longer than an answer */
+                                         : PROTO_FW_WHY_BROKE_OFF;
+        }
         free(buf);
         return FETCH_UNREADABLE;
     }
@@ -1796,12 +2172,20 @@ static fetch_t http_fetch(const char *url, const char *body, size_t body_len, si
     return FETCH_OK;
 }
 
-/* POST <base>/api/v1/check with this panel's facts (OTA-018). The update task only. */
-static fetch_t post_check(const char *base, const char *channel, char **json, size_t *len, char *why,
-                          size_t why_len)
+/* POST <base>/api/v1/check (OTA-018) at the server `base` with `channel`, both for this check
+ * only: with this panel's facts, or (other) a keypad's facts for its copy (docs/features/11: its
+ * device, board_rev, chip_rev, project and version; its parts and languages aren't sent). want
+ * (NULL or "": none) names the one release a keypad was told to install (FWS-028). net (may be
+ * NULL): why it failed (http_fetch's numbers). Nothing here becomes trust. The update task only. */
+static fetch_t post_check(const char *base, const char *channel, const proto_fwsrv_facts_t *other,
+                          const char *want, char **json, size_t *len, char *why, size_t why_len,
+                          uint8_t *net)
 {
     *json = NULL;
     *len = 0;
+    if (net != NULL) {
+        *net = PROTO_FW_WHY_NO_MEMORY;
+    }
     char url[PROTO_FWSRV_BASE_MAX + 16u];
     snprintf(url, sizeof(url), "%s/api/v1/check", base);
     /* The locales whose packs the panel wants (lang_packs registers the question). On the heap:
@@ -1819,7 +2203,7 @@ static fetch_t post_check(const char *base, const char *channel, char **json, si
     char (*locales)[PANEL_OTA_LOCALE_LEN] = fb->locales;
     const char **lp = fb->lp;
     const char **pp = fb->pp;
-    const panel_ota_locales_fn fn = s_locales_fn;
+    const panel_ota_locales_fn fn = other == NULL ? s_locales_fn : NULL;
     size_t nl = fn != NULL ? fn(locales, PANEL_OTA_LANGUAGES_MAX) : 0u;
     if (nl > PANEL_OTA_LANGUAGES_MAX) {
         nl = PANEL_OTA_LANGUAGES_MAX;
@@ -1836,7 +2220,7 @@ static fetch_t post_check(const char *base, const char *channel, char **json, si
     char version[sizeof(me->version) + 1u];
     panel_ota_version_copy(project, sizeof(project), me->project_name, sizeof(me->project_name));
     panel_ota_version_copy(version, sizeof(version), me->version, sizeof(me->version));
-    const proto_fwsrv_facts_t facts = {
+    proto_fwsrv_facts_t facts = {
         .channel = channel,
         .device = device_name(),
         .board_rev = s_board_rev,
@@ -1847,7 +2231,19 @@ static fetch_t post_check(const char *base, const char *channel, char **json, si
         .peripheral_count = s_parts_n,
         .languages = lp,
         .language_count = nl,
+        .want = want,
     };
+    if (other != NULL) {
+        facts = (proto_fwsrv_facts_t){
+            .channel = channel,
+            .device = other->device,
+            .board_rev = other->board_rev,
+            .chip_rev = other->chip_rev,
+            .project = other->project,
+            .version = other->version,
+            .want = want,
+        };
+    }
     char *body = malloc(REQUEST_MAX);
     if (body == NULL) {
         free(fb);
@@ -1863,7 +2259,7 @@ static fetch_t post_check(const char *base, const char *channel, char **json, si
     if (n == 0u) {
         reason(why, why_len, I18N_NOOP_C("update", "Out of memory")); /* the request didn't fit */
     } else {
-        r = http_fetch(url, body, n, ANSWER_MAX, json, len, why, why_len);
+        r = http_fetch(url, body, n, ANSWER_MAX, json, len, why, why_len, net);
     }
     free(body);
     return r;
@@ -1873,7 +2269,16 @@ static fetch_t post_check(const char *base, const char *channel, char **json, si
  * OTA-018, OTA-019, OTA-024, OTA-025). The update task only. */
 static void take_answer(const proto_fwsrv_answer_t *a, const char *json, size_t len, const char *base)
 {
-    const bool update = a->reason == PROTO_FWSRV_UPDATE;
+    /* Never past its master (docs/features/11 LINK-029): an offer the cap refuses is no offer. A
+     * server that ignores want offers its newest. */
+    lock();
+    const bool capped = a->reason == PROTO_FWSRV_UPDATE &&
+                        !proto_fw_cap_allows(s_cap, s_cap_version, a->image.version);
+    unlock();
+    if (capped) {
+        ESP_LOGI(TAG, "release %s is past this panel's master: not offered", a->image.version);
+    }
+    const bool update = a->reason == PROTO_FWSRV_UPDATE && !capped;
     if (update) {
         s_art = a->image;
         s_have_art = true;
@@ -1926,9 +2331,13 @@ static bool do_check(char *why, size_t why_len)
 {
     char base[PROTO_FWSRV_BASE_MAX];
     char channel[sizeof(s_st.channel)];
+    char want[sizeof(s_cap_version)] = ""; /* a paired keypad: its master's version (LINK-029) */
     lock();
     const bool have = s_trust.server[0] != '\0' && proto_fwsrv_base_url(s_trust.server, base, sizeof(base));
     snprintf(channel, sizeof(channel), "%s", s_st.channel);
+    if (s_cap == PROTO_FW_CAP_AT) {
+        snprintf(want, sizeof(want), "%s", s_cap_version);
+    }
     unlock();
     if (!have) {
         reason(why, why_len, I18N_NOOP_C("update", "No update source set"));
@@ -1942,11 +2351,12 @@ static bool do_check(char *why, size_t why_len)
     char *json = NULL;
     size_t len = 0;
     bool ok = false;
-    if (post_check(base, channel, &json, &len, why, why_len) == FETCH_OK) {
+    const char *wanted = want[0] != '\0' ? want : NULL;
+    if (post_check(base, channel, NULL, wanted, &json, &len, why, why_len, NULL) == FETCH_OK) {
         proto_fwsrv_answer_t *a = calloc(1, sizeof(*a));
         if (a == NULL) {
             reason(why, why_len, I18N_NOOP_C("update", "Out of memory"));
-        } else if (proto_fwsrv_check_answer(json, len, base, a) != ALARM_OK) {
+        } else if (proto_fwsrv_check_answer_want(json, len, base, wanted, a) != ALARM_OK) {
             reason(why, why_len, I18N_NOOP_C("update", "The release list is damaged"));
         } else {
             take_answer(a, json, len, base);
@@ -1962,6 +2372,224 @@ static bool do_check(char *why, size_t why_len)
     s_st.seq++;
     unlock();
     return ok;
+}
+
+/* ---- a check that names the release (docs/features/11 PROBE, FETCH, a keypad's copy) -------- */
+
+/* A check's why in words, for the status and `last` (English with its values, as the other
+ * reasons with a value; at most 63 bytes, as error and last.reason take). */
+static void check_why_words(uint8_t code, const char *want, const char *offered, char *why,
+                            size_t why_len)
+{
+    switch (code) {
+    case PROTO_FWSRV_WHY_NO_NETWORK:
+        reason(why, why_len, I18N_NOOP_C("update", "No network"));
+        break;
+    case PROTO_FWSRV_WHY_NOT_A_SERVER:
+        reason(why, why_len, I18N_NOOP_C("update", "The release list is damaged"));
+        break;
+    case PROTO_FWSRV_WHY_UNKNOWN_DEVICE:
+        reason(why, why_len,
+               I18N_NOOP_C("update", "The update server has no firmware for this panel"));
+        break;
+    case PROTO_FWSRV_WHY_HELD_BACK:
+        snprintf(why, why_len, "Held back from this panel: %.24s", want);
+        break;
+    case PROTO_FWSRV_WHY_STEPPING_STONE:
+        snprintf(why, why_len, "%.24s needs another version first", want);
+        break;
+    case PROTO_FWSRV_WHY_OTHER_VERSION:
+        snprintf(why, why_len, "The server offers %.16s, not %.16s", offered, want);
+        break;
+    case PROTO_FWSRV_WHY_UP_TO_DATE:
+        reason(why, why_len, I18N_NOOP_C("update", "The update server offers nothing newer"));
+        break;
+    case PROTO_FWSRV_WHY_UNKNOWN_VERSION:
+        snprintf(why, why_len, "No release of %.24s for this panel", want);
+        break;
+    case PROTO_FWSRV_WHY_NOT_OFFERED:
+    case PROTO_FWSRV_WHY_REFUSED:
+        snprintf(why, why_len, "%.24s is not offered to this panel", want);
+        break;
+    case PROTO_FW_WHY_NO_MEMORY:
+        reason(why, why_len, I18N_NOOP_C("update", "Out of memory"));
+        break;
+    case PROTO_FW_WHY_TOO_SLOW:
+        reason(why, why_len, I18N_NOOP_C("update", "The connection is too slow"));
+        break;
+    default: /* not reached, or broke off */
+        reason(why, why_len, I18N_NOOP_C("update", "The update server can't be reached"));
+        break;
+    }
+}
+
+/* One check with want at base and channel (with other's facts, or this panel's), read the way
+ * FWS-028 answers it. *a gets the answer (the caller's, on the heap); json_out (may be NULL)
+ * keeps the answer's text for take_answer (the caller frees it). Returns its why:
+ * proto_fwsrv_check_why's (OK only for an offer of exactly want), or the reach and memory
+ * classes. The update task only. */
+static uint8_t check_want(const char *base, const char *channel, const proto_fwsrv_facts_t *other,
+                          const char *want, proto_fwsrv_answer_t *a, char **json_out,
+                          size_t *len_out)
+{
+    if (json_out != NULL) {
+        *json_out = NULL;
+        *len_out = 0;
+    }
+    if (!network_up()) {
+        return PROTO_FWSRV_WHY_NO_NETWORK;
+    }
+    char why[64] = "";
+    char *json = NULL;
+    size_t len = 0;
+    uint8_t net = PROTO_FWSRV_WHY_SERVER_ERROR;
+    if (post_check(base, channel, other, want, &json, &len, why, sizeof(why), &net) != FETCH_OK) {
+        ESP_LOGW(TAG, "check for %s: %s", want, why);
+        free(json);
+        return net;
+    }
+    const alarm_result_t r = proto_fwsrv_check_answer_want(json, len, base, want, a);
+    const uint8_t code = (uint8_t)proto_fwsrv_check_why(r, a, want);
+    if (json_out != NULL && r == ALARM_OK) {
+        *json_out = json;
+        *len_out = len;
+    } else {
+        free(json);
+    }
+    return code;
+}
+
+bool panel_ota_key_trusted(const uint8_t key_sha256[32])
+{
+    if (key_sha256 == NULL || s_lock == NULL) {
+        return false;
+    }
+    lock();
+    const bool trusted = (s_own_key_ok && memcmp(key_sha256, s_own_key, 32u) == 0) ||
+                         (s_trust.has_key && memcmp(key_sha256, s_trust.key_sha256, 32u) == 0);
+    unlock();
+    return trusted;
+}
+
+/* PROBE (docs/features/11 "The keypad"): one check with this panel's facts and want = V at the
+ * order's server and channel; its answer is kept as any check's is. The update task. */
+static void probe_tick(void)
+{
+    probe_req_t req;
+    memset(&req, 0, sizeof(req));
+    char own_server[sizeof(s_trust.server)];
+    char own_channel[sizeof(s_st.channel)];
+    lock();
+    const bool go = s_probe_req.pending && s_st.phase != PANEL_OTA_RESTARTING;
+    if (go) {
+        req = s_probe_req;
+        s_probe_req.pending = false;
+    }
+    snprintf(own_server, sizeof(own_server), "%s", s_trust.server);
+    snprintf(own_channel, sizeof(own_channel), "%s", s_st.channel);
+    unlock();
+    if (!go) {
+        return;
+    }
+    const char *server = req.no_server ? "" : req.server[0] != '\0' ? req.server : own_server;
+    const bool own = req.server[0] == '\0' || strcmp(req.server, own_server) == 0;
+    char base[PROTO_FWSRV_BASE_MAX];
+    uint8_t code = PROTO_FWSRV_WHY_NO_LOOKUP; /* no server to ask, or none that can be one */
+    proto_fwsrv_answer_t *a = NULL;
+    if (server[0] != '\0' && proto_fwsrv_base_url(server, base, sizeof(base))) {
+        a = calloc(1, sizeof(*a));
+        if (a == NULL) {
+            code = PROTO_FW_WHY_NO_MEMORY;
+        } else {
+            char *json = NULL;
+            size_t len = 0;
+            code = check_want(base, req.channel[0] != '\0' ? req.channel : own_channel, NULL,
+                              req.version, a, &json, &len);
+            if (json != NULL) { /* an answer: kept as any check's is */
+                take_answer(a, json, len, base);
+                if (!own) {
+                    s_have_art = false; /* another server's offer is never Install's */
+                }
+                const time_t now = time(NULL);
+                lock();
+                s_st.checked = now > 1600000000 ? (uint32_t)now : 0u;
+                unlock();
+            }
+            free(json);
+        }
+    }
+    const bool offer =
+        a != NULL && code != PROTO_FWSRV_WHY_NOT_A_SERVER && a->reason == PROTO_FWSRV_UPDATE;
+    const bool trusted = !offer || !a->has_key || panel_ota_key_trusted(a->key_sha256);
+    lock();
+    s_ost.probing = s_probe_req.pending;
+    s_ost.probed = true;
+    s_ost.probe_why = code;
+    s_ost.probe_ms = alarm_service_now();
+    memset(s_ost.offered_key, 0, sizeof(s_ost.offered_key));
+    s_ost.offered_has_key = false;
+    s_ost.offered[0] = '\0';
+    if (offer) {
+        snprintf(s_ost.offered, sizeof(s_ost.offered), "%s", a->image.version);
+        memcpy(s_ost.offered_key, a->key_sha256, sizeof(s_ost.offered_key));
+        s_ost.offered_has_key = a->has_key;
+    }
+    s_ost.key_trusted = trusted;
+    s_ost.seq++;
+    changed_locked();
+    unlock();
+    ESP_LOGI(TAG, "probe for %s: why %u%s%s", req.version, (unsigned)code,
+             offer ? ", offered " : "", offer ? a->image.version : "");
+    free(a);
+}
+
+/* FETCH's check (docs/features/11): want = V at the order's server and channel; the offer must be
+ * exactly V, signed with a key this panel trusts (LINK-036: refused before any download). out
+ * gets the image. false: why and code say what stopped it. The update task. */
+static bool ordered_check(const char *version, const char *base, const char *channel,
+                          proto_fw_artifact_t *out, char *why, size_t why_len, uint8_t *code)
+{
+    proto_fwsrv_answer_t *a = calloc(1, sizeof(*a));
+    if (a == NULL) {
+        *code = PROTO_FW_WHY_NO_MEMORY;
+        reason(why, why_len, I18N_NOOP_C("update", "Out of memory"));
+        return false;
+    }
+    set_phase(PANEL_OTA_CHECKING, NULL); /* the run's stage stays DOWNLOADING (connecting) */
+    *code = check_want(base, channel, NULL, version, a, NULL, NULL);
+    bool ok = *code == PROTO_FWSRV_WHY_OK;
+    if (!ok) {
+        check_why_words(*code, version, a->reason == PROTO_FWSRV_UPDATE ? a->image.version : "",
+                        why, why_len);
+    } else if (a->has_key && !panel_ota_key_trusted(a->key_sha256)) {
+        char fp[PROTO_FWSRV_FINGERPRINT_LEN];
+        proto_fwsrv_fingerprint(a->key_sha256, fp);
+        snprintf(why, why_len, "Signed with a key not trusted here (%s)", fp);
+        *code = PROTO_FW_WHY_KEY;
+        ok = false;
+    } else {
+        *out = a->image;
+    }
+    free(a);
+    return ok;
+}
+
+/* For a master's copy (ota_source.c): a check at this panel's own server and channel with a
+ * keypad's facts and want. The update task. */
+uint8_t panel_ota_check_other(const proto_fwsrv_facts_t *facts, const char *want,
+                              proto_fwsrv_answer_t *a)
+{
+    char base[PROTO_FWSRV_BASE_MAX];
+    char channel[sizeof(s_st.channel)];
+    lock();
+    const bool have =
+        s_trust.server[0] != '\0' && proto_fwsrv_base_url(s_trust.server, base, sizeof(base));
+    snprintf(channel, sizeof(channel), "%s", s_st.channel);
+    unlock();
+    if (!have) {
+        return PROTO_FWSRV_WHY_NO_LOOKUP;
+    }
+    return check_want(base, channel, facts, want, a, NULL, NULL);
 }
 
 /* ---- another update server (OTA-018, OTA-020, OTA-021) ---------------------------------------- */
@@ -2055,7 +2683,7 @@ static panel_ota_srv_result_t server_probe(const char *server, const char *chann
     char why[64] = "";
     char *json = NULL;
     size_t len = 0;
-    fetch_t f = http_fetch(url, NULL, 0, KEYS_MAX, &json, &len, why, sizeof(why));
+    fetch_t f = http_fetch(url, NULL, 0, KEYS_MAX, &json, &len, why, sizeof(why), NULL);
     if (f != FETCH_OK) {
         ESP_LOGW(TAG, "%s: keys: %s", server, why);
         return f == FETCH_NO_ANSWER ? PANEL_OTA_SRV_UNREACHABLE : PANEL_OTA_SRV_NOT_A_SERVER;
@@ -2067,7 +2695,7 @@ static panel_ota_srv_result_t server_probe(const char *server, const char *chann
         free(keys);
         return PANEL_OTA_SRV_NOT_A_SERVER;
     }
-    f = post_check(base, channel, &json, &len, why, sizeof(why));
+    f = post_check(base, channel, NULL, NULL, &json, &len, why, sizeof(why), NULL);
     if (f != FETCH_OK) {
         free(keys);
         ESP_LOGW(TAG, "%s: check: %s", server, why);
@@ -2453,7 +3081,8 @@ static void running_langs_tick(void)
         };
         if (!proto_fwsrv_languages_url(base, &facts, url, url_cap)) {
             reason(why, sizeof(why), "This panel can't ask for its languages");
-        } else if (http_fetch(url, NULL, 0, ANSWER_MAX, &json, &len, why, sizeof(why)) == FETCH_OK) {
+        } else if (http_fetch(url, NULL, 0, ANSWER_MAX, &json, &len, why, sizeof(why), NULL) ==
+                   FETCH_OK) {
             lock(); /* the list, its count and the ticket change together */
             n = proto_fwsrv_languages(json, len, base, s_rlangs, PANEL_OTA_LANGUAGES_MAX);
             const size_t na = proto_fwsrv_assets(json, len, base, s_rassets, PANEL_OTA_ASSETS_MAX);
@@ -2480,22 +3109,32 @@ static void running_langs_tick(void)
     unlock();
 }
 
-esp_err_t panel_ota_download(const char *url, uint32_t size, const uint8_t *sha256, uint8_t *out,
-                             size_t cap, size_t *got, char *why, size_t why_len)
+/* panel_ota_download, with a flag that ends it (NULL: none; ESP_ERR_INVALID_STATE then) and its
+ * why in the panel link's numbers (code, may be NULL). */
+static esp_err_t download_into(const char *url, uint32_t size, const uint8_t *sha256, uint8_t *out,
+                               size_t cap, size_t *got, char *why, size_t why_len,
+                               const volatile bool *stop, uint8_t *code)
 {
+    uint8_t whyc = PROTO_FW_WHY_OK;
     if (got != NULL) {
         *got = 0;
     }
     if (url == NULL || out == NULL || cap == 0u || size > cap) {
         reason(why, why_len, "The download does not fit");
+        if (code != NULL) {
+            *code = PROTO_FW_WHY_TOO_BIG;
+        }
         return ESP_ERR_INVALID_ARG;
     }
     if (!network_up()) {
         reason(why, why_len, I18N_NOOP_C("update", "No network"));
+        if (code != NULL) {
+            *code = PROTO_FWSRV_WHY_NO_NETWORK;
+        }
         return ESP_ERR_INVALID_STATE;
     }
     int64_t length = 0;
-    esp_http_client_handle_t c = http_open(url, NULL, 0, &length, NULL, why, why_len, false);
+    esp_http_client_handle_t c = http_open(url, NULL, 0, &length, NULL, why, why_len, stop, code);
     if (c == NULL) {
         return ESP_FAIL;
     }
@@ -2507,6 +3146,10 @@ esp_err_t panel_ota_download(const char *url, uint32_t size, const uint8_t *sha2
         reason(why, why_len, "The download has the wrong size");
         esp_http_client_close(c);
         esp_http_client_cleanup(c);
+        if (code != NULL) {
+            *code = length > 0 && (uint64_t)length > cap ? PROTO_FW_WHY_TOO_BIG
+                                                          : PROTO_FW_WHY_BAD_SIZE;
+        }
         return ESP_ERR_INVALID_SIZE;
     }
     psa_hash_operation_t hash = psa_hash_operation_init();
@@ -2515,12 +3158,15 @@ esp_err_t panel_ota_download(const char *url, uint32_t size, const uint8_t *sha2
         reason(why, why_len, I18N_NOOP_C("update", "Out of memory"));
         esp_http_client_close(c);
         esp_http_client_cleanup(c);
+        if (code != NULL) {
+            *code = PROTO_FW_WHY_NO_MEMORY;
+        }
         return ESP_ERR_NO_MEM;
     }
     uint32_t total = 0;
     esp_err_t err = ESP_OK;
     body_reader_t rd;
-    body_reader_init(&rd, false, 0u);
+    body_reader_init(&rd, stop, 0u);
     while (total < want) {
         const uint32_t room = want - total;
         size_t n = 0;
@@ -2529,13 +3175,21 @@ esp_err_t panel_ota_download(const char *url, uint32_t size, const uint8_t *sha2
             (void)psa_hash_update(&hash, out + total, n);
         }
         total += (uint32_t)n;
+        if (b == BODY_STOPPED) {
+            reason(why, why_len, "Stopped");
+            whyc = PROTO_FW_WHY_CANCELLED;
+            err = ESP_ERR_INVALID_STATE;
+            break;
+        }
         if (b == BODY_SLOW) {
             reason(why, why_len, I18N_NOOP_C("update", "The connection is too slow"));
+            whyc = PROTO_FW_WHY_TOO_SLOW;
             err = ESP_FAIL;
             break;
         }
         if (b != BODY_FULL && total < want) {
             reason(why, why_len, "The download broke off");
+            whyc = PROTO_FW_WHY_BROKE_OFF;
             err = ESP_FAIL;
             break;
         }
@@ -2551,12 +3205,35 @@ esp_err_t panel_ota_download(const char *url, uint32_t size, const uint8_t *sha2
             if (psa_hash_finish(&hash, sha, sizeof(sha), &n) != PSA_SUCCESS || n != sizeof(sha) ||
                 memcmp(sha, sha256, sizeof(sha)) != 0) {
                 reason(why, why_len, I18N_NOOP_C("update", "Checksum mismatch: the download is damaged"));
+                whyc = PROTO_FW_WHY_BAD_SHA;
                 err = ESP_ERR_INVALID_CRC;
             }
         }
     }
     if (err == ESP_OK && got != NULL) {
         *got = total;
+    }
+    if (code != NULL) {
+        *code = whyc;
+    }
+    return err;
+}
+
+esp_err_t panel_ota_download(const char *url, uint32_t size, const uint8_t *sha256, uint8_t *out,
+                             size_t cap, size_t *got, char *why, size_t why_len)
+{
+    return download_into(url, size, sha256, out, cap, got, why, why_len, NULL, NULL);
+}
+
+esp_err_t panel_ota_download_stoppable(const char *url, uint32_t size, const uint8_t *sha256,
+                                       uint8_t *out, size_t cap, size_t *got,
+                                       const volatile bool *stop, uint8_t *code)
+{
+    char why[64] = "";
+    const esp_err_t err =
+        download_into(url, size, sha256, out, cap, got, why, sizeof(why), stop, code);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "download: %s", why);
     }
     return err;
 }
@@ -2567,10 +3244,136 @@ static bool stop_asked(void)
     return s_stop;
 }
 
-/* The release run's download, verification and hand-over to the wait (OTA-026). Every way out
- * ends the run: waiting (the image is verified), stopped (finish_stop) or failed (install_failed).
- * The stop flag is read between redirects, after each blocking call, between the 4 KB pieces,
- * before a broken read counts as a failure and after the verification. */
+/* The release run's download, verification and hand-over to the wait (OTA-026), for the image art
+ * (the release Install takes, or a keypad's ordered V). Every way out ends the run: waiting (the
+ * image is verified), stopped (finish_stop) or failed (install_failed). */
+static void install_image(const proto_fw_artifact_t *art, bool older, char *why, size_t why_len)
+{
+    lock();
+    snprintf(s_st.target, sizeof(s_st.target), "%s", art->version);
+    s_st.bytes = 0;
+    s_st.size = art->size;
+    unlock();
+    set_phase(PANEL_OTA_RECEIVING, NULL); /* stage DOWNLOADING, bytes 0: connecting */
+    run_listeners_if_changed();
+    ESP_LOGI(TAG, "downloading %s from %s", art->version, art->url);
+    int64_t length = 0;
+    uint8_t code = PROTO_FWSRV_WHY_SERVER_ERROR;
+    esp_http_client_handle_t c =
+        http_open(art->url, NULL, 0, &length, NULL, why, why_len, &s_stop, &code);
+    if (c == NULL) {
+        if (stop_asked()) {
+            finish_stop();
+        } else {
+            install_failed(why, code);
+        }
+        return;
+    }
+    uint32_t size = art->size;
+    if (size == 0u && length > 0) {
+        size = (uint32_t)length;
+    }
+    esp_err_t err = ESP_OK;
+    const char *fail = NULL;
+    if (size == 0u || (length > 0 && (uint64_t)length != size)) {
+        fail = "The download has the wrong size";
+        code = PROTO_FW_WHY_BAD_SIZE;
+        err = ESP_ERR_INVALID_SIZE;
+    }
+    if (err == ESP_OK) {
+        err = writer_begin(size, art->has_sha256 ? art->sha256 : NULL, older,
+                           PANEL_OTA_KIND_RELEASE, NULL);
+        if (err != ESP_OK) {
+            fail = "Another update is running";
+            code = s_writer_why;
+        }
+    }
+    char *buf = err == ESP_OK ? malloc(HTTP_BUF) : NULL;
+    if (err == ESP_OK && buf == NULL) {
+        panel_ota_abort();
+        fail = I18N_NOOP_C("update", "Out of memory");
+        code = PROTO_FW_WHY_NO_MEMORY;
+        err = ESP_ERR_NO_MEM;
+    }
+    uint32_t got = 0;
+    bool stopped = false;
+    body_reader_t rd;
+    body_reader_init(&rd, &s_stop, 0u);
+    while (err == ESP_OK && got < size) {
+        if (stop_asked()) {
+            stopped = true;
+            break;
+        }
+        const uint32_t room = size - got;
+        size_t n = 0;
+        const body_t b = body_fill(c, &rd, buf, room < HTTP_BUF ? room : HTTP_BUF, &n);
+        if (b == BODY_STOPPED || stop_asked()) { /* also before a stalled read counts as a failure */
+            stopped = true;
+            break;
+        }
+        if (n > 0u) {
+            err = panel_ota_write(buf, n, why, why_len); /* sets FAILED itself */
+            if (err != ESP_OK) {
+                fail = why;
+                code = s_writer_why;
+                break;
+            }
+            got += (uint32_t)n;
+            run_listeners_if_changed();
+        }
+        if (b == BODY_SLOW) {
+            panel_ota_abort();
+            fail = I18N_NOOP_C("update", "The connection is too slow");
+            code = PROTO_FW_WHY_TOO_SLOW;
+            err = ESP_FAIL;
+        } else if (b != BODY_FULL && got < size) {
+            panel_ota_abort();
+            fail = "The download broke off";
+            code = PROTO_FW_WHY_BROKE_OFF;
+            err = ESP_FAIL;
+        }
+    }
+    free(buf);
+    esp_http_client_close(c);
+    esp_http_client_cleanup(c);
+    if (stopped) {
+        panel_ota_abort();
+        finish_stop();
+        return;
+    }
+    if (err != ESP_OK) {
+        install_failed(fail != NULL ? fail : why, code);
+        return;
+    }
+    lock();
+    s_st.stage = PANEL_OTA_STAGE_VERIFYING;
+    changed_locked();
+    unlock();
+    run_listeners_if_changed();
+    char version[32];
+    if (panel_ota_end(version, sizeof(version), why, why_len) != ESP_OK) {
+        if (stop_asked()) {
+            finish_stop(); /* nothing stays ready either way */
+        } else {
+            install_failed(why, s_writer_why);
+        }
+        return;
+    }
+    if (stop_asked()) {
+        finish_stop(); /* verified, but nothing stays ready: Install downloads again */
+        return;
+    }
+    if (strcmp(version, art->version) != 0) {
+        ESP_LOGW(TAG, "the release list says %s, the image is %s", art->version, version);
+    }
+    panel_ota_apply(&s_install_src, s_install_user); /* stage WAITING */
+}
+
+/* The release run (OTA-026): Install's, or a keypad's ordered FETCH (docs/features/11), for V
+ * only at the order's server and channel. Every way out ends the run: waiting (the image is
+ * verified), stopped (finish_stop) or failed (install_failed). The stop flag is read between
+ * redirects, after each blocking call, between the 4 KB pieces, before a broken read counts as a
+ * failure and after the verification. */
 static void do_install(void)
 {
     char why[64] = "";
@@ -2578,11 +3381,59 @@ static void do_install(void)
         finish_stop();
         return;
     }
+    lock();
+    const bool ordered = s_order.op == ORDER_FETCH;
+    unlock();
+    if (ordered) {
+        /* On the heap: the TLS handshake further down needs this task's stack. */
+        typedef struct {
+            char version[sizeof(s_order.version)];
+            char base[PROTO_FWSRV_BASE_MAX];
+            char channel[sizeof(s_order.channel)];
+            proto_fw_artifact_t art;
+        } fetch_job_t;
+        fetch_job_t *job = calloc(1, sizeof(*job));
+        uint8_t code = PROTO_FW_WHY_NO_MEMORY;
+        if (job != NULL) {
+            lock();
+            snprintf(job->version, sizeof(job->version), "%s", s_order.version);
+            snprintf(job->base, sizeof(job->base), "%s", s_order.base);
+            snprintf(job->channel, sizeof(job->channel), "%s", s_order.channel);
+            unlock();
+        }
+        if (job == NULL || !ordered_check(job->version, job->base, job->channel, &job->art, why,
+                                          sizeof(why), &code)) {
+            if (job == NULL) {
+                reason(why, sizeof(why), I18N_NOOP_C("update", "Out of memory"));
+            }
+            free(job);
+            if (stop_asked()) {
+                finish_stop();
+            } else {
+                install_failed(why, code);
+            }
+            return;
+        }
+        if (stop_asked()) {
+            free(job);
+            finish_stop();
+            return;
+        }
+        install_image(&job->art, false, why, sizeof(why)); /* never allow_older when ordered */
+        free(job);
+        return;
+    }
+    if (s_have_art) { /* never past its master (LINK-029): a cap set since the last check */
+        lock();
+        const bool allowed = proto_fw_cap_allows(s_cap, s_cap_version, s_art.version);
+        unlock();
+        s_have_art = allowed;
+    }
     if (!s_have_art && !do_check(why, sizeof(why))) {
         if (stop_asked()) {
             finish_stop();
         } else {
-            install_failed(why);
+            install_failed(why, PROTO_FW_WHY_OK);
         }
         return;
     }
@@ -2601,118 +3452,10 @@ static void do_install(void)
         return;
     }
     if (!network_up()) {
-        install_failed(I18N_NOOP_C("update", "No network"));
+        install_failed(I18N_NOOP_C("update", "No network"), PROTO_FWSRV_WHY_NO_NETWORK);
         return;
     }
-    lock();
-    snprintf(s_st.target, sizeof(s_st.target), "%s", s_art.version);
-    s_st.bytes = 0;
-    s_st.size = s_art.size;
-    unlock();
-    set_phase(PANEL_OTA_RECEIVING, NULL); /* stage DOWNLOADING, bytes 0: connecting */
-    run_listeners_if_changed();
-    ESP_LOGI(TAG, "downloading %s from %s", s_art.version, s_art.url);
-    int64_t length = 0;
-    esp_http_client_handle_t c = http_open(s_art.url, NULL, 0, &length, NULL, why, sizeof(why), true);
-    if (c == NULL) {
-        if (stop_asked()) {
-            finish_stop();
-        } else {
-            install_failed(why);
-        }
-        return;
-    }
-    uint32_t size = s_art.size;
-    if (size == 0u && length > 0) {
-        size = (uint32_t)length;
-    }
-    esp_err_t err = ESP_OK;
-    const char *fail = NULL;
-    if (size == 0u || (length > 0 && (uint64_t)length != size)) {
-        fail = "The download has the wrong size";
-        err = ESP_ERR_INVALID_SIZE;
-    }
-    if (err == ESP_OK) {
-        err = writer_begin(size, s_art.has_sha256 ? s_art.sha256 : NULL, s_install_older, true);
-        if (err != ESP_OK) {
-            fail = "Another update is running";
-        }
-    }
-    char *buf = err == ESP_OK ? malloc(HTTP_BUF) : NULL;
-    if (err == ESP_OK && buf == NULL) {
-        panel_ota_abort();
-        fail = I18N_NOOP_C("update", "Out of memory");
-        err = ESP_ERR_NO_MEM;
-    }
-    uint32_t got = 0;
-    bool stopped = false;
-    body_reader_t rd;
-    body_reader_init(&rd, true, 0u);
-    while (err == ESP_OK && got < size) {
-        if (stop_asked()) {
-            stopped = true;
-            break;
-        }
-        const uint32_t room = size - got;
-        size_t n = 0;
-        const body_t b = body_fill(c, &rd, buf, room < HTTP_BUF ? room : HTTP_BUF, &n);
-        if (b == BODY_STOPPED || stop_asked()) { /* also before a stalled read counts as a failure */
-            stopped = true;
-            break;
-        }
-        if (n > 0u) {
-            err = panel_ota_write(buf, n, why, sizeof(why)); /* sets FAILED itself */
-            if (err != ESP_OK) {
-                fail = why;
-                break;
-            }
-            got += (uint32_t)n;
-            run_listeners_if_changed();
-        }
-        if (b == BODY_SLOW) {
-            panel_ota_abort();
-            fail = I18N_NOOP_C("update", "The connection is too slow");
-            err = ESP_FAIL;
-        } else if (b != BODY_FULL && got < size) {
-            panel_ota_abort();
-            fail = "The download broke off";
-            err = ESP_FAIL;
-        }
-    }
-    free(buf);
-    esp_http_client_close(c);
-    esp_http_client_cleanup(c);
-    if (stopped) {
-        panel_ota_abort();
-        finish_stop();
-        return;
-    }
-    if (err != ESP_OK) {
-        install_failed(fail != NULL ? fail : why);
-        return;
-    }
-    lock();
-    s_st.stage = PANEL_OTA_STAGE_VERIFYING;
-    changed_locked();
-    unlock();
-    run_listeners_if_changed();
-    char version[32];
-    if (panel_ota_end(version, sizeof(version), why, sizeof(why)) != ESP_OK) {
-        if (stop_asked()) {
-            finish_stop(); /* nothing stays ready either way */
-        } else {
-            install_failed(why);
-        }
-        return;
-    }
-    if (stop_asked()) {
-        finish_stop(); /* verified, but nothing stays ready: Install downloads again */
-        return;
-    }
-    if (strcmp(version, s_art.version) != 0) {
-        ESP_LOGW(TAG, "the release list says %s, the image is %s", s_art.version, version);
-    }
-    panel_ota_apply(&s_install_src, s_install_user); /* stage WAITING */
+    install_image(&s_art, s_install_older, why, sizeof(why));
 }
 
 esp_err_t panel_ota_check(void)
@@ -2733,6 +3476,28 @@ static bool run_busy_locked(void)
 
 #define INSTALL_WAIT_MS 30000u /* for update machinery held by a language pack's check (OTA-030) */
 
+/* A release run is accepted (call with the lock held, nothing busy): Install's, or a keypad's
+ * ordered FETCH (target V). */
+static void install_accept_locked(const alarm_source_t *src, uint8_t user, bool allow_older,
+                                  const char *target)
+{
+    s_install_src = src != NULL ? *src : (alarm_source_t){.kind = ALARM_SRC_SYSTEM, .id = 0};
+    s_install_user = user;
+    s_install_older = allow_older;
+    s_install_pending = true;
+    s_install_wait_until = alarm_service_now() + INSTALL_WAIT_MS;
+    s_stop = false;
+    if (s_st.last.result == PANEL_OTA_LAST_STOPPED || s_st.last.result == PANEL_OTA_LAST_FAILED) {
+        memset(&s_st.last, 0, sizeof(s_st.last)); /* OTA-029: until the next Install */
+    }
+    run_begin_locked(PANEL_OTA_KIND_RELEASE, PANEL_OTA_STAGE_DOWNLOADING, target, s_st.running);
+    s_st.error[0] = '\0';
+    if (s_st.phase == PANEL_OTA_FAILED) {
+        s_st.phase = PANEL_OTA_IDLE;
+    }
+    changed_locked();
+}
+
 esp_err_t panel_ota_install(const alarm_source_t *src, uint8_t user, bool allow_older)
 {
     ESP_RETURN_ON_FALSE(s_task != NULL, ESP_ERR_INVALID_STATE, TAG, "not started");
@@ -2740,27 +3505,384 @@ esp_err_t panel_ota_install(const alarm_source_t *src, uint8_t user, bool allow_
     /* OTA-030: one run at a time, and none during the self-test. Only the language packs' brief
      * hold (s_busy with no run) is waited for. Whoever gets here first under the lock wins. */
     const bool busy = run_busy_locked();
-    if (!busy) {
-        s_install_src = src != NULL ? *src : (alarm_source_t){.kind = ALARM_SRC_SYSTEM, .id = 0};
-        s_install_user = user;
-        s_install_older = allow_older;
-        s_install_pending = true;
-        s_install_wait_until = alarm_service_now() + INSTALL_WAIT_MS;
-        s_stop = false;
-        if (s_st.last.result == PANEL_OTA_LAST_STOPPED || s_st.last.result == PANEL_OTA_LAST_FAILED) {
-            memset(&s_st.last, 0, sizeof(s_st.last)); /* OTA-029: until the next Install */
-        }
-        run_begin_locked(PANEL_OTA_KIND_RELEASE, PANEL_OTA_STAGE_DOWNLOADING, "", s_st.running);
-        s_st.error[0] = '\0';
-        if (s_st.phase == PANEL_OTA_FAILED) {
-            s_st.phase = PANEL_OTA_IDLE;
-        }
-        changed_locked();
+    /* A keypad that hasn't heard its master's version installs nothing (LINK-029). */
+    const bool capped = s_cap == PROTO_FW_CAP_UNKNOWN;
+    if (!busy && !capped) {
+        install_accept_locked(src, user, allow_older, "");
     }
     unlock();
     ESP_RETURN_ON_FALSE(!busy, ESP_ERR_INVALID_STATE, TAG, "an update is running");
+    ESP_RETURN_ON_FALSE(!capped, ESP_ERR_NOT_ALLOWED, TAG, "its master's version isn't known yet");
+    panel_ota_source_own_run(); /* a copy for a keypad is of the version that runs now */
     notify(NB_INSTALL);
     return ESP_OK;
+}
+
+/* ---- the keypad's side of updates through the link (docs/features/11 "The keypad") ----------- */
+
+void panel_ota_set_checks(bool on)
+{
+    s_checks_on = on;
+}
+
+void panel_ota_set_version_cap(proto_fw_cap_t cap, const char *version, const char *master)
+{
+    if (s_lock == NULL) {
+        s_cap = cap; /* before the start: nobody else reads it yet */
+        snprintf(s_cap_version, sizeof(s_cap_version), "%s", version != NULL ? version : "");
+        snprintf(s_master, sizeof(s_master), "%s", master != NULL ? master : "");
+        return;
+    }
+    lock();
+    const bool changed = s_cap != cap ||
+                         strcmp(s_cap_version, version != NULL ? version : "") != 0 ||
+                         strcmp(s_master, master != NULL ? master : "") != 0;
+    s_cap = cap;
+    snprintf(s_cap_version, sizeof(s_cap_version), "%s", version != NULL ? version : "");
+    snprintf(s_master, sizeof(s_master), "%s", master != NULL ? master : "");
+    if (changed) {
+        changed_locked();
+    }
+    unlock();
+}
+
+proto_fw_cap_t panel_ota_get_version_cap(char *version, char *master)
+{
+    if (s_lock != NULL) {
+        lock();
+    }
+    const proto_fw_cap_t cap = s_cap;
+    if (version != NULL) {
+        snprintf(version, sizeof(s_cap_version), "%s", s_cap_version);
+    }
+    if (master != NULL) {
+        snprintf(master, sizeof(s_master), "%s", s_master);
+    }
+    if (s_lock != NULL) {
+        unlock();
+    }
+    return cap;
+}
+
+void panel_ota_cap_words(char *out, size_t len)
+{
+    if (s_lock != NULL) {
+        lock();
+    }
+    if (s_cap == PROTO_FW_CAP_NONE) {
+        snprintf(out, len, "%s", "");
+    } else {
+        cap_words_locked(out, len);
+    }
+    if (s_lock != NULL) {
+        unlock();
+    }
+}
+
+void panel_ota_set_restart_hold(const char *reason_literal)
+{
+    const char *was = __atomic_exchange_n(&s_restart_hold_why, reason_literal, __ATOMIC_ACQ_REL);
+    /* Only a change wakes the update task: NB_STATUS runs the listeners, and panel_app's
+     * republishes the firmware state on MQTT, which a caller's poll loop must not do each turn. */
+    const bool changed = was != reason_literal &&
+                         (was == NULL || reason_literal == NULL || strcmp(was, reason_literal) != 0);
+    if (changed) {
+        notify(NB_STATUS); /* the wait's words, at the next tick */
+    }
+}
+
+void panel_ota_set_keypads_check(panel_ota_keypads_fn fn, void *ctx)
+{
+    s_keypads_ctx = ctx;
+    __atomic_store_n(&s_keypads_fn, fn, __ATOMIC_RELEASE);
+    if (fn != NULL) {
+        __atomic_or_fetch(&s_required, (uint32_t)PANEL_OTA_OK_KEYPADS, __ATOMIC_RELEASE);
+    } else {
+        __atomic_and_fetch(&s_required, ~(uint32_t)PANEL_OTA_OK_KEYPADS, __ATOMIC_RELEASE);
+    }
+}
+
+/* An order's version, channel and server, made ready for its run: false when the version or a
+ * channel it names can't be one. The server is checked only where it is used: has_base says
+ * whether the order's server (or this panel's own) makes an address, which only a FETCH needs - a
+ * PROBE without one is answered NO_LOOKUP 2, and a RELAY uses none. */
+static bool order_prepare(const panel_ota_order_t *o, order_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    if (o == NULL || o->version == NULL || o->version[0] == '\0' ||
+        strlen(o->version) >= sizeof(out->version)) {
+        return false;
+    }
+    proto_version_t v;
+    if (!proto_version_parse(o->version, &v)) {
+        return false;
+    }
+    snprintf(out->version, sizeof(out->version), "%s", o->version);
+    const char *channel = o->channel != NULL ? o->channel : "";
+    if (channel[0] != '\0' && !proto_fwsrv_channel_valid(channel)) {
+        return false;
+    }
+    lock();
+    const char *server = o->server != NULL && o->server[0] != '\0' ? o->server : s_trust.server;
+    out->own_server = o->server == NULL || o->server[0] == '\0' ||
+                      strcmp(o->server, s_trust.server) == 0;
+    out->has_base =
+        server[0] != '\0' && proto_fwsrv_base_url(server, out->base, sizeof(out->base));
+    if (!out->has_base) {
+        out->base[0] = '\0';
+    }
+    snprintf(out->channel, sizeof(out->channel), "%s", channel[0] != '\0' ? channel : s_st.channel);
+    /* "Waiting for <master>" (P2 decision 10): the order's name for it, else the one its INFO
+     * gave; English with a value, as the other reasons with one (the keypad's page builds its own
+     * line). With no name at all, the fixed sentence, which the touchscreen translates. */
+    const char *master = o->master != NULL && o->master[0] != '\0' ? o->master
+                         : s_master[0] != '\0'                       ? s_master
+                                                                     : NULL;
+    if (master != NULL) {
+        char words[sizeof(out->waiting) + 48u];
+        snprintf(words, sizeof(words), "Waiting for %s", master);
+        (void)i18n_utf8_copy(out->waiting, sizeof(out->waiting), words); /* a whole character */
+    } else {
+        reason(out->waiting, sizeof(out->waiting),
+               I18N_NOOP_C("update", "Waiting for the alarm panel"));
+    }
+    unlock();
+    return true;
+}
+
+/* The key an order names (NULL or zeros: not known) is one this panel trusts (LINK-036). */
+static bool order_key_ok(const uint8_t *key)
+{
+    static const uint8_t none[32] = {0};
+    return key == NULL || memcmp(key, none, sizeof(none)) == 0 || panel_ota_key_trusted(key);
+}
+
+/* A new ordered run may start: V newer than what runs, within the cap, nothing else running
+ * (call with the lock held). Its why when not. */
+static uint8_t order_allowed_locked(const char *version)
+{
+    if (!proto_version_is_upgrade(s_st.running, version, false)) {
+        return PROTO_FW_WHY_NOT_NEWER; /* never older or equal (OTA-014) */
+    }
+    if (!proto_fw_cap_allows(s_cap, s_cap_version, version)) {
+        return PROTO_FW_WHY_WRONG_VERSION; /* never past its master, nor past one it hasn't heard */
+    }
+    /* A run or the self-test (OTA-030); the language packs' brief hold of the machinery isn't one:
+     * a FETCH waits for it as Install does, a RELAY's writer refuses it (BUSY). */
+    if (run_busy_locked() || s_slot_selected) {
+        return PROTO_FW_WHY_BUSY;
+    }
+    return PROTO_FW_WHY_OK;
+}
+
+static esp_err_t order_refused(uint8_t why)
+{
+    lock();
+    if (s_order.op == ORDER_NONE) { /* a run that goes on keeps its own why */
+        s_why = why;
+        s_ost.seq++;
+        changed_locked();
+    }
+    unlock();
+    switch (why) {
+    case PROTO_FW_WHY_BAD_ORDER:
+        return ESP_ERR_INVALID_ARG;
+    case PROTO_FW_WHY_NOT_NEWER:
+        return ESP_ERR_INVALID_VERSION;
+    case PROTO_FW_WHY_WRONG_VERSION:
+    case PROTO_FW_WHY_KEY:
+        return ESP_ERR_NOT_ALLOWED;
+    case PROTO_FW_WHY_TOO_BIG:
+        return ESP_ERR_INVALID_SIZE;
+    default:
+        return ESP_ERR_INVALID_STATE;
+    }
+}
+
+esp_err_t panel_ota_order_probe(const panel_ota_order_t *o)
+{
+    if (s_task == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    order_t ord;
+    if (!order_prepare(o, &ord)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    /* No usable server is no refusal: probe_tick answers NO_LOOKUP 2 (not reached), and the
+     * master relays. A name too long to keep is never cut into another one. */
+    const char *server = o->server != NULL ? o->server : "";
+    const bool fits = strlen(server) < sizeof(s_probe_req.server);
+    lock();
+    memset(&s_probe_req, 0, sizeof(s_probe_req));
+    s_probe_req.pending = true;
+    s_probe_req.no_server = !fits;
+    snprintf(s_probe_req.version, sizeof(s_probe_req.version), "%s", ord.version);
+    snprintf(s_probe_req.server, sizeof(s_probe_req.server), "%s", fits ? server : "");
+    snprintf(s_probe_req.channel, sizeof(s_probe_req.channel), "%s", ord.channel);
+    s_ost.probing = true;
+    s_ost.seq++;
+    changed_locked();
+    unlock();
+    notify(NB_PROBE);
+    return ESP_OK;
+}
+
+esp_err_t panel_ota_order_fetch(const panel_ota_order_t *o)
+{
+    if (s_task == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    order_t ord;
+    if (!order_prepare(o, &ord) || !ord.has_base) { /* a FETCH asks a server: it needs one */
+        return order_refused(PROTO_FW_WHY_BAD_ORDER);
+    }
+    if (!order_key_ok(o->key)) {
+        return order_refused(PROTO_FW_WHY_KEY);
+    }
+    ord.op = ORDER_FETCH;
+    lock();
+    const uint8_t why = order_allowed_locked(ord.version);
+    if (why == PROTO_FW_WHY_OK) {
+        const alarm_source_t sys = {.kind = ALARM_SRC_SYSTEM, .id = 0};
+        install_accept_locked(&sys, 0u, false, ord.version);
+        s_order = ord;
+        s_order_hold = !s_order.install;
+        s_why = PROTO_FW_WHY_OK;
+        s_ost.seq++;
+    }
+    unlock();
+    if (why != PROTO_FW_WHY_OK) {
+        return order_refused(why);
+    }
+    ESP_LOGI(TAG, "ordered: fetch %s", ord.version);
+    notify(NB_INSTALL);
+    return ESP_OK;
+}
+
+esp_err_t panel_ota_order_relay(const panel_ota_order_t *o, uint32_t size, const uint8_t sha256[32])
+{
+    if (s_task == NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    order_t ord;
+    if (sha256 == NULL || !order_prepare(o, &ord)) { /* no server needed: the bytes come by link */
+        return order_refused(PROTO_FW_WHY_BAD_ORDER);
+    }
+    if (!order_key_ok(o->key)) {
+        return order_refused(PROTO_FW_WHY_KEY);
+    }
+    ord.op = ORDER_RELAY;
+    lock();
+    const uint8_t why = order_allowed_locked(ord.version);
+    unlock();
+    if (why != PROTO_FW_WHY_OK) {
+        return order_refused(why);
+    }
+    /* The writer, on the caller's task (the link task: an internal-RAM stack, it writes flash) */
+    if (!wlock()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t err = writer_begin(size, sha256, false, PANEL_OTA_KIND_LINK, &ord);
+    wunlock();
+    if (err != ESP_OK) {
+        return order_refused(s_writer_why != PROTO_FW_WHY_OK ? s_writer_why : PROTO_FW_WHY_FLASH);
+    }
+    ESP_LOGI(TAG, "ordered: relay %s, %" PRIu32 " bytes", ord.version, size);
+    return ESP_OK;
+}
+
+esp_err_t panel_ota_order_install(const char *version)
+{
+    if (s_lock == NULL || version == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    lock();
+    const bool found = s_order.op != ORDER_NONE && strcmp(s_order.version, version) == 0;
+    if (found && !s_order.install) {
+        s_order.install = true;
+        s_order_hold = false;
+        s_ost.seq++;
+        changed_locked(); /* wakes the update task: the restart is tried at once */
+    }
+    unlock();
+    if (found) {
+        ESP_LOGI(TAG, "ordered: install %s", version);
+    }
+    return found ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+/* Ends the ordered run with why (CANCELLED, TIMEOUT): a stop while it runs or waits. */
+static esp_err_t order_end(uint8_t why)
+{
+    if (s_lock == NULL) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    lock();
+    esp_err_t err = ESP_ERR_NOT_FOUND;
+    if (s_order.op != ORDER_NONE) {
+        const alarm_source_t sys = {.kind = ALARM_SRC_SYSTEM, .id = 0};
+        err = stop_locked(&sys, 0u, why);
+    }
+    unlock();
+    return err;
+}
+
+esp_err_t panel_ota_order_fail(uint8_t why)
+{
+    if (!wlock()) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    lock();
+    const bool relay = s_st.kind == PANEL_OTA_KIND_LINK && s_w.active;
+    unlock();
+    if (relay) {
+        /* The words of proposal P2's keypad pages and its master's rows, which name no panel
+         * (P2 decision 10: never "the alarm panel"), so the touchscreen translates them. */
+        writer_fail(why == PROTO_FW_WHY_STALLED   ? I18N_NOOP_C("update", "No data for a minute")
+                    : why == PROTO_FW_WHY_TIMEOUT ? I18N_NOOP_C("update", "It waited too long")
+                                                  : I18N_NOOP_C("update", "The transfer failed"),
+                    why);
+    }
+    wunlock();
+    return relay ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t panel_ota_order_cancel(void)
+{
+    const esp_err_t err = order_end(PROTO_FW_WHY_CANCELLED);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "ordered run cancelled");
+    }
+    return err;
+}
+
+void panel_ota_order_get(panel_ota_order_status_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    if (s_lock == NULL) {
+        return;
+    }
+    lock();
+    *out = s_ost;
+    out->active = s_order.op != ORDER_NONE;
+    out->relay = s_order.op == ORDER_RELAY;
+    out->ready = out->active && s_order.ready && s_ready != NULL;
+    out->install = out->active && s_order.install;
+    snprintf(out->version, sizeof(out->version), "%s", s_order.version);
+    out->why = s_why;
+    unlock();
+}
+
+/* The update task: a READY image no INSTALL came for in 24 h is discarded (LINK-035). */
+static void order_tick(uint64_t now)
+{
+    lock();
+    const bool stale = s_order.op != ORDER_NONE && s_order.ready && !s_order.install &&
+                       now - s_order.ready_ms >= ORDER_READY_MAX_MS;
+    unlock();
+    if (stale && order_end(PROTO_FW_WHY_TIMEOUT) == ESP_OK) {
+        ESP_LOGW(TAG, "the ordered image waited 24 h for its master's go: discarded");
+    }
 }
 
 /* The update task: starts an accepted Install once the update machinery is free (OTA-030). */
@@ -2785,16 +3907,33 @@ static void install_tick(uint64_t now)
             lock();
             s_install_pending = false;
             unlock();
-            install_failed("Another update is running");
+            install_failed("Another update is running", PROTO_FW_WHY_BUSY);
         }
         return; /* the next tick, at most a second later */
     }
     do_install();
 }
 
-/* A stop that found no download under way (waiting, or between steps) ends on the next tick. */
+/* A stop that found no download under way (waiting, or between steps) ends on the next tick. A
+ * keypad's relay (docs/features/11) has its writer on the link task: it is closed here, between
+ * that task's writes, and its next panel_ota_write is refused. */
 static void stop_tick(void)
 {
+    lock();
+    const bool relay = s_stop && !s_install_pending && s_st.phase != PANEL_OTA_RESTARTING &&
+                       s_st.kind == PANEL_OTA_KIND_LINK;
+    unlock();
+    if (relay && wlock()) {
+        if (s_w.active) {
+            esp_ota_abort(s_w.handle);
+            psa_hash_abort(&s_w.hash);
+            s_w.active = false;
+            lock();
+            s_busy = false;
+            unlock();
+        }
+        wunlock();
+    }
     lock();
     const bool finish = s_stop && !s_install_pending && !s_w.active &&
                         s_st.phase != PANEL_OTA_RESTARTING;
@@ -2890,6 +4029,7 @@ static void note_rollback(void)
         const alarm_source_t by = rec_by(&rb);
         set_last_locked(PANEL_OTA_LAST_ROLLED_BACK, rb.version, rb.from, rb.at, "", &by,
                         rb.by_user);
+        s_st.last.failed = rbh_get(rb.elf); /* what its self-test missed, when it said so */
         return;
     }
     ota_rec_t upd;
@@ -2945,6 +4085,7 @@ static void note_updated(void)
     rec_put("upd", &upd);
     rec_erase("try");
     rec_erase("rbv"); /* an install replaced the failed version */
+    rec_erase(RBH_KEY);
 }
 
 /* OTA-029: how long `last` is kept, after a check and as time passes (the update task). */
@@ -2972,6 +4113,7 @@ static void last_after_check(bool ok)
     unlock();
     if (forget_rb) {
         rec_erase("rbv");
+        rec_erase(RBH_KEY);
     }
 }
 
@@ -3006,20 +4148,23 @@ static bool restart_rolls_back(void)
 /* OTA-005: the new image is kept only when every required part of the panel has been
  * reporting all through probation - not merely started once (R18). A part that never reports
  * or falls silent fails straight away; one that came up late gets until
- * PANEL_OTA_CONFIRM_MAX_MS to prove it keeps running. */
+ * PANEL_OTA_CONFIRM_MAX_MS to prove it keeps running, and so do a master's keypads, which come
+ * back only after this restart (LINK-041; ota_selftest.h). */
 static void probation_tick(uint64_t now)
 {
     static uint32_t shown = 0xFFFFFFFFu;
     if (!s_st.probation || now < s_probation_until_ms) {
         return;
     }
-    const uint32_t missing = health_missing(now);
-    const uint32_t unproven = health_unproven();
+    uint32_t unproven = 0;
+    const uint32_t missing = health_judge(now, &unproven);
     char what[96];
     char remote_op[33];
     bool remote_wait;
     panel_ota_remote_operation(remote_op, &remote_wait);
-    if (missing == 0u && unproven == 0u && !remote_wait) {
+    const panel_ota_selftest_t step = panel_ota_selftest_step(
+        missing, unproven, remote_wait, now, s_probation_until_ms, s_probation_deadline_ms);
+    if (step == PANEL_OTA_SELFTEST_CONFIRM) {
         const esp_err_t err = esp_ota_mark_app_valid_cancel_rollback();
         ESP_LOGI(TAG, "self-test passed: %s confirmed (%s)", s_st.running, esp_err_to_name(err));
         if (err != ESP_OK) return;
@@ -3037,7 +4182,7 @@ static void probation_tick(uint64_t now)
          * OTA success must never rotate certificates or erase workstation enrollment. */
         return;
     }
-    if (missing == 0u && now < s_probation_deadline_ms) {
+    if (step == PANEL_OTA_SELFTEST_WAIT) {
         if (unproven != shown) {
             shown = unproven;
             health_text(unproven, what, sizeof(what));
@@ -3054,6 +4199,11 @@ static void probation_tick(uint64_t now)
     }
     if (!told) {
         told = true;
+        /* for the image it returns to: "no keypad answered during its self-test" (LINK-041); only
+         * on a master that asked its keypads, so a panel without them is as before */
+        if ((s_required & (uint32_t)PANEL_OTA_OK_KEYPADS) != 0u) {
+            rbh_put(missing != 0u ? missing : unproven);
+        }
         health_text(missing != 0u ? missing : unproven, what, sizeof(what));
         ESP_LOGE(TAG,
                  "self-test failed: %s not running (health 0x%" PRIx32 ", need 0x%" PRIx32
@@ -3172,6 +4322,17 @@ static uint32_t check_interval_ms(void)
     return (uint32_t)CONFIG_PANEL_OTA_CHECK_HOURS * 3600000u;
 }
 
+/* LINK-041: a master's keypads, once it registered the question (panel_ota_set_keypads_check). On
+ * probation the part beats only while a keypad answered; otherwise always, so a keypad that is
+ * away is never a fault of the master's. The update task. */
+static void keypads_beat(void)
+{
+    const panel_ota_keypads_fn fn = __atomic_load_n(&s_keypads_fn, __ATOMIC_ACQUIRE);
+    if (fn != NULL && (!s_st.probation || fn(s_keypads_ctx))) {
+        panel_ota_healthy(PANEL_OTA_OK_KEYPADS);
+    }
+}
+
 static void ota_task(void *arg)
 {
     (void)arg;
@@ -3183,6 +4344,7 @@ static void ota_task(void *arg)
             run_listeners();
         }
         const uint64_t now = alarm_service_now();
+        keypads_beat();
         probation_tick(now);
         health_watch(now);
         last_tick(now);
@@ -3198,7 +4360,8 @@ static void ota_task(void *arg)
                 bits |= NB_CHECK;
             }
         }
-        if (CONFIG_PANEL_OTA_CHECK_HOURS > 0 && now >= next_check) {
+        /* A keypad paired with a master that orders its updates runs no schedule (LINK-029). */
+        if (CONFIG_PANEL_OTA_CHECK_HOURS > 0 && s_checks_on && now >= next_check) {
             if (s_st.server[0] == '\0') {
                 next_check = now + check_interval_ms();
             } else if (!check_can_start() || !network_up()) {
@@ -3230,7 +4393,10 @@ static void ota_task(void *arg)
             }
         }
         install_tick(alarm_service_now()); /* NB_INSTALL wakes it */
+        probe_tick();                        /* NB_PROBE wakes it */
+        order_tick(alarm_service_now());
         running_langs_tick();                /* NB_LANGS wakes it */
+        panel_ota_source_tick(alarm_service_now(), (bits & NB_SOURCE) != 0u);
         if ((bits & NB_CP) != 0u) {
             panel_ota_cp_run();
         }
@@ -3238,6 +4404,33 @@ static void ota_task(void *arg)
         try_restart();
         cp_try_restart();
     }
+}
+
+void panel_ota_notify_source(void)
+{
+    notify(NB_SOURCE);
+}
+
+bool panel_ota_confirmed(void)
+{
+    if (s_lock == NULL) {
+        return false;
+    }
+    lock();
+    const bool confirmed = !s_st.probation;
+    unlock();
+    return confirmed;
+}
+
+bool panel_ota_run_busy(void)
+{
+    if (s_lock == NULL) {
+        return true;
+    }
+    lock();
+    const bool busy = run_busy_locked();
+    unlock();
+    return busy;
 }
 
 void panel_ota_task_notify_cp(void)
@@ -3302,9 +4495,14 @@ void panel_ota_set_cp_image(const char *version)
 esp_err_t panel_ota_start(uint32_t required)
 {
     ESP_RETURN_ON_FALSE(s_lock == NULL, ESP_ERR_INVALID_STATE, TAG, "started twice");
+    s_wlock = xSemaphoreCreateMutex();
+    ESP_RETURN_ON_FALSE(s_wlock != NULL, ESP_ERR_NO_MEM, TAG, "writer lock");
     s_lock = xSemaphoreCreateMutex();
     ESP_RETURN_ON_FALSE(s_lock != NULL, ESP_ERR_NO_MEM, TAG, "lock");
-    s_required = required;
+    /* a keypads' question registered before the start keeps its part (LINK-041) */
+    s_required = required | (__atomic_load_n(&s_keypads_fn, __ATOMIC_ACQUIRE) != NULL
+                                 ? (uint32_t)PANEL_OTA_OK_KEYPADS
+                                 : 0u);
     s_start_ms = alarm_service_now();
     memset(&s_st, 0, sizeof(s_st));
     s_st.percent = -1;

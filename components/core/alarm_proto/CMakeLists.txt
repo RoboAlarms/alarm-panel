@@ -11,6 +11,7 @@ set(ALARM_PROTO_SRCS
     src/discovery.c
     src/report.c
     src/fw.c
+    src/fw_image.c
     src/fwsrv.c
     src/sha256.c
     src/link.c

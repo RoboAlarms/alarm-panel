@@ -704,6 +704,131 @@ static void test_automation_failed_words(void)
     TEST_ASSERT_EQUAL_INT(NOTIFY_ACT_SEND, notify_gate_offer(&gate, &ev, 1000u));
 }
 
+/* OTA-010, docs/features/11 "Updates through the link" (What people see, the event log) and
+ * proposal P2's Activity: a keypad's update reads on its master by the keypad's number (P2 decision
+ * 6), a failure with its why in the words of the master's Keypads rows, a key accepted at a keypad
+ * in amber as a server change (decision 8); a why this firmware doesn't know reads by its decade
+ * (LINK-039). The panel's own stages read as before. */
+static void test_keypad_update_words(void)
+{
+    notify_words_t w;
+    alarm_event_t ev = ev_of(ALARM_EV_FIRMWARE_UPDATE);
+    ev.partition = 0u;
+    ev.source.kind = ALARM_SRC_KEYPAD;
+    ev.source.id = 3u;
+    static const struct {
+        uint8_t stage;
+        uint8_t why;
+        const char *title;
+        const char *body;
+        notify_accent_t accent;
+    } LINES[] = {
+        {ALARM_FW_KEYPAD_INSTALLING, 0u, "Keypad 3 installing an update",
+         "It restarts with the new version", NOTIFY_ACCENT_BLUE},
+        {ALARM_FW_KEYPAD_UPDATED, 0u, "Keypad 3 updated", "The new version passed its self-test",
+         NOTIFY_ACCENT_BLUE},
+        {ALARM_FW_KEYPAD_ROLLED_BACK, 0u, "Keypad 3 update rolled back",
+         "The new version failed; the previous one runs", NOTIFY_ACCENT_AMBER},
+        {ALARM_FW_KEYPAD_FAILED, 24u, "Keypad 3 update failed", "No data for a minute",
+         NOTIFY_ACCENT_AMBER},
+        {ALARM_FW_KEYPAD_KEY_ACCEPTED, 0u, "Keypad 3 accepted a new signing key",
+         "It takes updates signed with that key now", NOTIFY_ACCENT_AMBER},
+    };
+    for (size_t i = 0; i < sizeof(LINES) / sizeof(LINES[0]); i++) {
+        ev.arg = LINES[i].stage;
+        ev.arg2 = LINES[i].why;
+        words_of(&ev, &w);
+        TEST_ASSERT_EQUAL_STRING(LINES[i].title, w.title);
+        TEST_ASSERT_EQUAL_STRING(LINES[i].body, w.body);
+        TEST_ASSERT_EQUAL_UINT8(LINES[i].accent, w.accent);
+        TEST_ASSERT_EQUAL_UINT8(NOTIFY_ICON_REFRESH, w.icon);
+        TEST_ASSERT_EQUAL_UINT8(NOTIFY_CAT_SYSTEM, w.cat);
+    }
+
+    /* every why, in the master's rows' words; others by their decade; 70 and up, no line */
+    static const struct {
+        uint8_t why;
+        const char *line;
+    } WHYS[] = {
+        {1u, "It can't reach the update server"},
+        {5u, "It can't reach the update server"},
+        {9u, "It can't reach the update server"},
+        {10u, "The update server has nothing for it"},
+        {11u, "The update server holds it back for now"},
+        {12u, "It needs another version first"},
+        {13u, "The update server won't offer it"},
+        {15u, "The update server has no release of this version for it"},
+        {16u, "The update server doesn't offer this version"},
+        {17u, "The update server won't offer it"},
+        {20u, "The download broke off"},
+        {21u, "The download was too slow"},
+        {22u, "It got the wrong size"},
+        {23u, "It arrived damaged"},
+        {24u, "No data for a minute"},
+        {25u, "It waited too long"},
+        {26u, "Not enough memory"},
+        {27u, "It couldn't store it"},
+        {29u, "The transfer failed"},
+        {30u, "The new signing key must be accepted at the keypad"},
+        {31u, "It isn't for this keypad's chip"},
+        {32u, "It isn't from a project it accepts"},
+        {33u, "It isn't newer than the version it runs"},
+        {34u, "The signature check failed"},
+        {35u, "It's too big for this keypad"},
+        {36u, "It can't take this kind of update"},
+        {37u, "It doesn't know this order"},
+        {38u, "3 tries failed, next try tomorrow"},
+        {39u, "The keypad refused it"},
+        {40u, "It refused the order"},
+        {41u, "It got another version"},
+        {49u, "The keypad refused it"},
+        {50u, "The system is busy"},
+        {51u, "It waits until everything is quiet"},
+        {52u, "A panic is being sent from it"},
+        {53u, "Its fire or CO alarm still sounds"},
+        {54u, "Its link is down"},
+        {55u, "Another update runs on it"},
+        {59u, "It waits"},
+        {60u, "Stopped at the keypad"},
+        {61u, "Stopped"},
+        {69u, "Stopped"},
+        {70u, ""},
+        {255u, ""},
+    };
+    ev.arg = ALARM_FW_KEYPAD_FAILED;
+    ev.source.id = (uint16_t)ALARM_MAX_DEVICES; /* the longest number */
+    for (size_t i = 0; i < sizeof(WHYS) / sizeof(WHYS[0]); i++) {
+        ev.arg2 = WHYS[i].why;
+        words_of(&ev, &w);
+        TEST_ASSERT_EQUAL_STRING("Keypad 16 update failed", w.title);
+        TEST_ASSERT_EQUAL_STRING(WHYS[i].line, w.body);
+        TEST_ASSERT_TRUE(strlen(w.body) < NOTIFY_BODY_LEN - 1u);
+    }
+    for (uint8_t s = ALARM_FW_KEYPAD_INSTALLING; s <= ALARM_FW_KEYPAD_KEY_ACCEPTED; s++) {
+        ev.arg = s;
+        ev.arg2 = (uint8_t)(s == ALARM_FW_KEYPAD_FAILED ? 15u : 0u);
+        words_of(&ev, &w);
+        TEST_ASSERT_TRUE(strlen(w.title) < NOTIFY_TITLE_LEN - 1u);
+        TEST_ASSERT_NOT_NULL(strstr(w.title, "Keypad 16 "));
+    }
+
+    /* this panel's own stages keep their words, whatever the source; a stage this firmware
+     * doesn't know (a newer writer's record) reads as an update */
+    ev.arg = ALARM_FW_UPDATED;
+    ev.arg2 = 0u;
+    words_of(&ev, &w);
+    TEST_ASSERT_EQUAL_STRING("Firmware updated", w.title);
+    TEST_ASSERT_EQUAL_STRING("The new version passed its self-test", w.body);
+    ev.arg = ALARM_FW_RESTART_PUT_OFF;
+    words_of(&ev, &w);
+    TEST_ASSERT_EQUAL_STRING("Update put off", w.title);
+    TEST_ASSERT_EQUAL_STRING("It installs once everything is quiet", w.body);
+    ev.arg = (uint8_t)(ALARM_FW_KEYPAD_KEY_ACCEPTED + 1u);
+    words_of(&ev, &w);
+    TEST_ASSERT_EQUAL_STRING("Firmware updated", w.title);
+    TEST_ASSERT_EQUAL_UINT8(NOTIFY_ACCENT_BLUE, w.accent);
+}
+
 /* NOTE-005: the buckets the event log filters by and the ones a notification is switched on by
  * are the same, and anything new falls to the system bucket, which is off by default. */
 static void test_categories(void)
@@ -1526,6 +1651,7 @@ int main(void)
     RUN_TEST(test_put_off_push_rule);
     RUN_TEST(test_automation_clause);
     RUN_TEST(test_automation_failed_words);
+    RUN_TEST(test_keypad_update_words);
     RUN_TEST(test_silent_events);
     RUN_TEST(test_a_catalog_translates_the_sentences);
     RUN_TEST(test_spanish_reaches_a_phone);

@@ -58,9 +58,10 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
   the installer guide says to put the router on backup power.
 - **Keypad updates** ("Updates through the link"): decided 2026-10-16 (the owner: "Start building
   keypad updates with the four recommended choices"):
-  1. A keypad accepts a new signing key at its own screen with the installer's code (LINK-036):
-     without it a master moved to another key would leave every keypad needing its console or a
-     cable.
+  1. A keypad takes its master's update server and signing key from its master's orders (changed
+     2026-10-17, the owner: changes from the master get pushed to the keypads; the key screen on a
+     keypad was unnecessary). The installer changes them only on the master (LINK-036). It replaces
+     the first choice, a key accepted at each keypad's screen with the installer's code.
   2. Keypads never fall behind: updating the master updates its keypads, and a keypad found behind
      later (newly paired, or back on line) is brought to the master's version by itself, with no
      person's step (changed 2026-10-17, the owner: keypad updates should be seamless, updating the
@@ -86,11 +87,10 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
      (its supervision trouble is held then).
   6. Activity names a keypad by number ("Keypad 3 updated") until a name lookup shared with Zigbee
      and Z-Wave exists.
-  7. At the key hold the installer's code is asked only when Software update was opened with
-     another code; the system master's code never accepts a key.
-  8. A key accepted at a keypad is logged on the master ("Keypad 2 accepted a new signing key",
-     stage `keypad_key_accepted` 13).
-  9. A keypad waiting for a key shows a steady amber banner, "Update waiting · accept the new key".
+  7. (Withdrawn 2026-10-17 with the key screens: decision 1.)
+  8. (Withdrawn 2026-10-17: no keypad accepts a key; the master logs its own server change,
+     OTA-023.)
+  9. (Withdrawn 2026-10-17: no keypad waits for a key.)
   10. A keypad's words name its master ("Updates come from Harbor House", "Waiting for <master>"),
       not "the alarm panel" (OTA-026).
   11. A keypad that can't follow by itself keeps its row, amber, by case: "Update it with a cable" on
@@ -180,10 +180,10 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-030 | The master keeps every keypad with `PLINK_CAP_FW` on the version it runs, with no person's step (decided 2026-10-17): it orders a keypad behind once its own update is confirmed and whenever it finds one behind (newly paired, back on line), while it runs no update and `proto_fw_install_allowed()` passes on its snapshot; every hold ends by itself (a stop after 24 h, a transfer failure's budget after 24 h, a blocked keypad probed again every 24 h; a canary at the master's next version); STATUS carries UPDATING and HOLD, and a keypad's gate refuses while either is set; one keypad installs or self-tests at a time, in device-number order; a rollback, or no return within 10 min, holds that device and chip revision on its version until the master's next version or Try again now; meanwhile the master puts off its own restart and doesn't raise that keypad's supervision trouble (up to 10 min) | unit, link |
 | LINK-031 | PROBE comes first. FETCH when the keypad's server offers exactly the target. RELAY when the keypad can't reach the server or is offered another version: from the master's running image (same device, chip range, accepted project) or a copy fetched with the keypad's facts. A refusal by the server for that keypad, or of the image itself, is never relayed. A fetch that fails for a reach or transfer reason falls back to the relay once | unit (planner table) |
 | LINK-032 | The keypad pulls bytes by image digest (`id8`) and offset, never by session, in order into its writer, within the order's page, count and gap and a 16 KB window, with flash busy at most half the time; it continues across a new session and a master restart with the same image. The master answers statelessly, only to the keypad holding the relay, from a bucket of its own; LINK-024 holds while it runs | link (lossy) |
-| LINK-033 | A keypad checks every image itself: the header (chip, revision range, project, newer) before the first flash write, then length, SHA-256, the signature with its own keys, and the version named. Nothing is forced or older. An order's server and channel serve that run only; nothing the master sends becomes trust, except a key a person accepts (LINK-036) | unit; HIL |
+| LINK-033 | A keypad checks every image itself: the header (chip, revision range, project, newer) before the first flash write, then length, SHA-256, the signature with its own keys, and the version named. Nothing is forced or older. An order's channel serves that run only; its server and key become the keypad's trust record (LINK-036); nothing else the master sends becomes trust | unit; HIL |
 | LINK-034 | A READY keypad restarts only after an INSTALL for that version and when its gate passes, asked twice: a live session with a status under 15 s old (ONLINE or needs-update), the master's UPDATING and HOLD clear, `proto_fw_install_allowed()`, no panic still being resent, no kept fire or CO tone. The relay pauses under the same conditions. The panic and tone checks apply in maintenance too | unit; HIL |
 | LINK-035 | A relay fails after 60 s without a byte while not paused, or after 30 min paused. A READY image is discarded after 24 h without INSTALL, on CANCEL, on another image's order, or on removal. After 3 failed runs in 24 h a keypad answers BUDGET; a run that timed out while its gate said no doesn't count. Orders are resent after 300 ms, doubling to 2 s; the keypad counts as away after 30 s | unit |
-| LINK-036 | An image signed with a key the keypad doesn't trust stops before the download and shows the key's fingerprint; a hold and the installer's code (checked by the master) accept it, never while the factory installer code is in use; accepting stores the order's server and that key as the keypad's trust record | unit; preview |
+| LINK-036 | A keypad takes its update server and signing key from its paired master's sealed orders, which name the ones the master trusts (decided 2026-10-17): one whose trust record differs stores the order's server and key as its own before it checks or downloads anything; the installer changes them only on the master (installer's code and a hold, never with the factory code, OTA-020, OTA-021); no keypad screen asks for a key | unit |
 | LINK-037 | FW_* messages go only on transports whose largest frame is 250 B or more, never on 433 MHz; FW_INFO, FW_ORDER and FW_STATE fit 225 B at their longest; FW_PAGE fits the peer's frame | unit |
 | LINK-038 | The floor: a master serves every v1 message above to a protocol-1 keypad for as long as one may be paired, and a later keypad works with a v1 master; neither refuses a peer at protocol 1 or above; a HELLO stays at most 128 B | frozen fixture, frozen peer |
 | LINK-039 | New types, ops, kinds and values go only to a peer with their capability bit; the master maps values a protocol-1 peer doesn't know to the nearest v1 one and answers an unknown command type UNAVAILABLE; a keypad decodes an unknown arm state as armed and an unknown sounder as the alarm, sounds fire and CO from STATUS FIRE/CO, and reads an unknown `why` by its decade | future peer, `test_plink_view.c` |
@@ -619,7 +619,6 @@ Decided 2026-10-17 (Decisions, keypad updates, 2): the master keeps every keypad
   | A transfer failure (20-29) | tried again after 2 min; after 3 failed runs in 24 h (the keypad's BUDGET), once those 24 h have passed |
   | Blocked: the server refuses the keypad, or there is no image (NO_IMAGE) | probed again every 24 h, when the master's own check is answered, when it reaches its server again, and when the keypad's facts change |
   | Canary: the first keypad of a device and chip revision rolled back, or didn't return within 10 min | at the master's next version: that version failed on this model, and trying it again would restart a keypad for nothing |
-  | A new signing key (KEY_WAIT) | when it is accepted at the keypad (LINK-036), or at the master's next version |
   | The keypad refused the image (30-49) | at the master's next version: the same signed image would fail the same way |
 
 - **Try again now.** On the master's Software update (and `plink fw update [n|all]`), shown while a
@@ -855,7 +854,7 @@ bits that failed.
 
 | Type | Name | Dir | Payload (v1) | Largest |
 |---|---|---|---|---|
-| 0x2D | `FW_INFO` | K->M | one section: can u8 (bit 0 fetch, 1 relay, 2 key accept, 3 configuration unreadable), device (≤ 31), board_rev (≤ 15), chip_rev (≤ 3), chip_rev_full u16, project (≤ 32), version (≤ 32), slot u32, own_key8[8], accepted_key8[8] (zeros: none), cp_version (≤ 23) | 166 B |
+| 0x2D | `FW_INFO` | K->M | one section: can u8 (bit 0 fetch, 1 relay, 2 takes its master's key, 3 configuration unreadable), device (≤ 31), board_rev (≤ 15), chip_rev (≤ 3), chip_rev_full u16, project (≤ 32), version (≤ 32), slot u32, own_key8[8], accepted_key8[8] (zeros: none), cp_version (≤ 23) | 166 B |
 | 0x2E | `FW_ORDER` | M->K | order section: order u32 (not 0: both sides refuse it), op u8, kind u8, version (≤ 32), size u32, sha256[32], key[32] (zeros: not known); fetch section: server (≤ 95), channel (≤ 7); relay section: page u16, count u8, gap_ms u16 | 219 B |
 | 0x2F | `FW_STATE` | K->M | run section: order u32, op u8, state u8, flags u8, why u8, bytes u32, size u32, id8[8], target (≤ 32); last section: probation u8, last u8, last_version (≤ 32), failed_mask u8; probe section: asked u8, why u8, age_s u32, offered (≤ 32), offered_key8[8], key_trusted u8 | 144 B |
 | 0x30 | `FW_REQ` | K->M | one section: id8[8], offset u32, page u16, count u8 | 16 B |
@@ -956,7 +955,7 @@ A change of any of them sends a STATUS, as a change does (LINK-006).
   `ALARM_FW_RESTART_PUT_OFF` (`alarm_fw_stage_t` in `alarm_types.h`; the catalog is in
   docs/features/01):
   - `keypad_installing` 9, `keypad_updated` 10, `keypad_rolled_back` 11, `keypad_failed` 12 (arg2 =
-    why, never 0), `keypad_key_accepted` 13 (P2 decision 8);
+    why, never 0); 13 stays unused (no keypad accepts a key: decision 1);
   - source {keypad, n}, n 1..`ALARM_MAX_DEVICES`: the engine refuses any other;
   - the master's own stages are not reused, because OTA-029 reads the master's last result from
     them.
@@ -966,18 +965,20 @@ A change of any of them sends a STATUS, as a change does (LINK-006).
     auto|fetch|relay` (bench only, RAM only);
   - keypad: `plink fw`.
 
-### A new signing key (LINK-036)
-- **When.** The order or the server's answer names the image's key. If that key is neither the
-  keypad's own nor its accepted key, the keypad stops before downloading and goes to KEY_WAIT.
-- **What it shows.** "The new software is signed with a key this keypad doesn't know yet", with the
-  fingerprint (the first 16 hex digits, in groups of four; OTA-020), a hold to accept, and the
-  installer's code.
-  - The code is checked by the master (CMD op 2).
-  - The screen is refused while STATUS says `default_codes` (OTA-021).
-- **On accept.** The keypad stores the order's server and that key as its trust record
-  (`ota`/`trust`), as a server change does on a master.
-- **Without this,** a keypad whose master moved to another key needs its service console (`ota
-  server check`, `ota server use`) or a cable.
+### The master's update server and key (LINK-036)
+Decided 2026-10-17 (Decisions, keypad updates, 1): changes made on the master go to its keypads.
+- **What the master sends.** Every PROBE, FETCH and RELAY names the update server the master uses
+  (the fetch section) and the key it trusts for the image (`key`).
+- **What the keypad does.** When its trust record (`ota`/`trust`) names another server or key, it
+  stores the order's as its own, as a server change does on a master, before it checks or
+  downloads anything. Only its paired master's sealed orders can change it.
+- **Who changes them.** The installer, on the master only: the installer's code and a hold, never
+  with the factory code (OTA-020, OTA-021). The master's event log records it (OTA-023); its keypads
+  follow at their next order.
+- **No key screen on a keypad.** A keypad still checks every image's signature with the key it
+  holds (LINK-033). KEY_WAIT (state 4) and KEY 30 stay in the v1 wire: KEY 30 means an image signed
+  with a key that neither the keypad nor its master's order names, a refused image (it waits for
+  the master's next version).
 
 ## Versions and compatibility
 The owner (2026-10-16): a newer panel must still work with an older one. Nothing of the link is

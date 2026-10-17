@@ -245,7 +245,10 @@ esp_err_t alarm_service_factory_reset(const alarm_source_t *src, uint8_t user, b
 esp_err_t alarm_service_backup_event(bool restoring, const alarm_source_t *src, uint8_t user);
 
 /* Records a firmware update step (ALARM_EV_FIRMWARE_UPDATE, logged and reported like any
- * event). src NULL = the system. */
+ * event). src NULL = the system. A keypad's stage (ALARM_FW_KEYPAD_*) takes src {ALARM_SRC_KEYPAD,
+ * its device number}; ALARM_FW_KEYPAD_FAILED carries its why in arg2, so it goes through
+ * alarm_service_platform_event (zone 0, arg the stage, arg2 the why). ESP_ERR_INVALID_ARG for a
+ * stage with the wrong fields. */
 esp_err_t alarm_service_firmware_event(alarm_fw_stage_t stage, const alarm_source_t *src,
                                        uint8_t user);
 

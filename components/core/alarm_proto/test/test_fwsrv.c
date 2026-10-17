@@ -441,6 +441,275 @@ static void test_check_answer_addresses(void)
     TEST_ASSERT_EQUAL_STRING("https://firmware.example.net/lang/fr.robolang", langs[0].url);
 }
 
+/* ---- a keypad's check with want (docs/features/11 LINK-029, LINK-031; the server's FWS-028) -- */
+
+static alarm_result_t check_want(const char *json, const char *want, proto_fwsrv_answer_t *a)
+{
+    return proto_fwsrv_check_answer_want(json, strlen(json), BASE, want, a);
+}
+
+/* LINK-029, LINK-031, OTA-018: "want" is written last and only when set; without it the request
+ * is byte for byte what it always was */
+static void test_check_request_want(void)
+{
+    static const char *const per[] = {"cc1101", "zac93"};
+    static const char *const lang[] = {"es-US"};
+    proto_fwsrv_facts_t f = {
+        .channel = "alpha", .device = "crowpanel_dhe04107d", .board_rev = "1.1",
+        .chip_rev = "v3", .project = "alarm_crowpanel_p4-release",
+        .version = "0.8.0-alpha.2", .peripherals = per, .peripheral_count = 2,
+        .languages = lang, .language_count = 1,
+    };
+    static const char without[] =
+        "{\"channel\":\"alpha\",\"device\":\"crowpanel_dhe04107d\",\"board_rev\":\"1.1\","
+        "\"chip_rev\":\"v3\",\"project\":\"alarm_crowpanel_p4-release\","
+        "\"version\":\"0.8.0-alpha.2\",\"peripherals\":[\"cc1101\",\"zac93\"],"
+        "\"languages\":[\"es-US\"]}";
+    char buf[512];
+    pj_writer_t w;
+
+    /* absent: NULL and "" alike, never "want":"" */
+    const char *absent[] = {NULL, ""};
+    for (size_t i = 0; i < sizeof(absent) / sizeof(absent[0]); i++) {
+        f.want = absent[i];
+        memset(buf, 0x5A, sizeof(buf));
+        pj_init(&w, buf, sizeof(buf));
+        proto_fwsrv_check_request(&w, &f);
+        TEST_ASSERT_EQUAL_size_t(sizeof(without) - 1u, pj_finish(&w));
+        TEST_ASSERT_EQUAL_STRING(without, buf);
+        TEST_ASSERT_NULL(strstr(buf, "want"));
+    }
+
+    /* set: appended after the lists, as the version it names */
+    f.want = "0.9.0";
+    pj_init(&w, buf, sizeof(buf));
+    proto_fwsrv_check_request(&w, &f);
+    TEST_ASSERT_NOT_EQUAL(0, pj_finish(&w));
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"channel\":\"alpha\",\"device\":\"crowpanel_dhe04107d\",\"board_rev\":\"1.1\","
+        "\"chip_rev\":\"v3\",\"project\":\"alarm_crowpanel_p4-release\","
+        "\"version\":\"0.8.0-alpha.2\",\"peripherals\":[\"cc1101\",\"zac93\"],"
+        "\"languages\":[\"es-US\"],\"want\":\"0.9.0\"}",
+        buf);
+
+    /* a pre-release or a local build's version goes as it is: the server judges it */
+    f.want = "0.9.0-rc.1+local";
+    pj_init(&w, buf, sizeof(buf));
+    proto_fwsrv_check_request(&w, &f);
+    TEST_ASSERT_NOT_EQUAL(0, pj_finish(&w));
+    TEST_ASSERT_NOT_NULL(strstr(buf, ",\"want\":\"0.9.0-rc.1+local\"}"));
+
+    /* the smallest lists and no board_rev still end with it */
+    proto_fwsrv_facts_t g = {.device = "crowpanel_dhe04107d", .chip_rev = "v1", .project = "p",
+                             .version = "0.8.0", .want = "0.9.0"};
+    pj_init(&w, buf, sizeof(buf));
+    proto_fwsrv_check_request(&w, &g);
+    TEST_ASSERT_NOT_EQUAL(0, pj_finish(&w));
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"channel\":\"stable\",\"device\":\"crowpanel_dhe04107d\",\"chip_rev\":\"v1\","
+        "\"project\":\"p\",\"version\":\"0.8.0\",\"peripherals\":[],\"languages\":[],"
+        "\"want\":\"0.9.0\"}",
+        buf);
+
+    /* a buffer with room for everything but want is reported, not cut */
+    char tight[sizeof(without)];
+    f.want = "0.9.0";
+    pj_init(&w, tight, sizeof(tight));
+    proto_fwsrv_check_request(&w, &f);
+    TEST_ASSERT_EQUAL(0, pj_finish(&w));
+}
+
+/* LINK-031 (FWS-024, FWS-028): on a check with want, the two reasons only such a check gets are
+ * read, and a reason this panel doesn't know refuses */
+static void test_check_answer_want_reasons(void)
+{
+    static const struct {
+        const char *reason;
+        proto_fwsrv_reason_t expect;
+    } cases[] = {
+        {"\"up_to_date\"", PROTO_FWSRV_UP_TO_DATE},
+        {"\"unknown_device\"", PROTO_FWSRV_UNKNOWN_DEVICE},
+        {"\"needs_stepping_stone\"", PROTO_FWSRV_STEPPING_STONE},
+        {"\"held_back\"", PROTO_FWSRV_HELD_BACK},
+        {"\"unknown_version\"", PROTO_FWSRV_UNKNOWN_VERSION},
+        {"\"not_offered\"", PROTO_FWSRV_NOT_OFFERED},
+        {"\"moon_phase\"", PROTO_FWSRV_REFUSED},
+        {"\"Not_Offered\"", PROTO_FWSRV_REFUSED}, /* the server's words are lower case */
+        {"\"\"", PROTO_FWSRV_UP_TO_DATE},         /* an empty reason is no reason */
+        {"null", PROTO_FWSRV_UP_TO_DATE},         /* a null one is left out */
+        {"\"a_reason_far_too_long_to_fit_in_the_buffer_at_all\"", PROTO_FWSRV_REFUSED},
+    };
+    proto_fwsrv_answer_t a;
+    char json[256];
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        snprintf(json, sizeof(json),
+                 "{\"installed\":{\"channel\":\"stable\",\"withdrawn\":false},\"update\":false,"
+                 "\"reason\":%s}",
+                 cases[i].reason);
+        memset(&a, 0x5A, sizeof(a));
+        TEST_ASSERT_EQUAL_MESSAGE(ALARM_OK, check_want(json, "0.9.0", &a), cases[i].reason);
+        TEST_ASSERT_EQUAL_MESSAGE(cases[i].expect, a.reason, cases[i].reason);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("stable", a.installed_channel, cases[i].reason);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("", a.image.version, cases[i].reason);
+    }
+    /* no reason at all, as before */
+    TEST_ASSERT_EQUAL(ALARM_OK, check_want("{\"update\":false}", "0.9.0", &a));
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_UP_TO_DATE, a.reason);
+
+    /* an offer is read whatever its version: the why says whether it is the one named */
+    TEST_ASSERT_EQUAL(ALARM_OK, check_want(UPDATE_ANSWER, "0.8.0", &a));
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_UPDATE, a.reason);
+    TEST_ASSERT_EQUAL_STRING("0.8.0", a.image.version);
+    TEST_ASSERT_TRUE(a.has_key);
+    TEST_ASSERT_EQUAL(ALARM_OK, check_want(UPDATE_ANSWER, "0.9.0", &a));
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_UPDATE, a.reason);
+    TEST_ASSERT_EQUAL_STRING("0.8.0", a.image.version);
+
+    /* what isn't a check answer is refused with want too */
+    memset(&a, 0x5A, sizeof(a));
+    TEST_ASSERT_EQUAL(ALARM_ERR_BAD_ARG,
+                      check_want("{\"update\":false,\"reason\":7}", "0.9.0", &a));
+    TEST_ASSERT_EQUAL_STRING("", a.image.url);
+    TEST_ASSERT_EQUAL(ALARM_ERR_BAD_ARG, check_want("{}", "0.9.0", &a));
+}
+
+/* OTA-018, LINK-031: without want nothing changes, the server's want-only words included */
+static void test_check_answer_without_want_unchanged(void)
+{
+    static const char *const answers[] = {
+        UPDATE_ANSWER,
+        "{\"update\":false,\"reason\":\"up_to_date\"}",
+        "{\"update\":false,\"reason\":\"held_back\",\"installed\":{\"channel\":\"beta\","
+        "\"withdrawn\":true}}",
+        "{\"update\":false,\"reason\":\"unknown_version\"}",
+        "{\"update\":false,\"reason\":\"not_offered\"}",
+        "{\"update\":false,\"reason\":\"moon_phase\"}",
+        "{\"update\":false}",
+        "{\"update\":true,\"version\":\"0.9.0\",\"image\":{\"url\":\"a.bin\"}}",
+        "{\"update\":\"yes\"}",
+        "not json",
+    };
+    for (size_t i = 0; i < sizeof(answers) / sizeof(answers[0]); i++) {
+        proto_fwsrv_answer_t plain;
+        proto_fwsrv_answer_t null_want;
+        proto_fwsrv_answer_t empty_want;
+        memset(&plain, 0x11, sizeof(plain));
+        memset(&null_want, 0x22, sizeof(null_want));
+        memset(&empty_want, 0x33, sizeof(empty_want));
+        const alarm_result_t r = check(answers[i], &plain);
+        TEST_ASSERT_EQUAL_MESSAGE(r, check_want(answers[i], NULL, &null_want), answers[i]);
+        TEST_ASSERT_EQUAL_MESSAGE(r, check_want(answers[i], "", &empty_want), answers[i]);
+        TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&plain, &null_want, sizeof(plain), answers[i]);
+        TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&plain, &empty_want, sizeof(plain), answers[i]);
+    }
+    /* the want-only words mean nothing to a check without want: a reason it doesn't know */
+    proto_fwsrv_answer_t a;
+    TEST_ASSERT_EQUAL(ALARM_OK, check("{\"update\":false,\"reason\":\"unknown_version\"}", &a));
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_OTHER, a.reason);
+    TEST_ASSERT_EQUAL(ALARM_OK, check("{\"update\":false,\"reason\":\"not_offered\"}", &a));
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_OTHER, a.reason);
+}
+
+/* LINK-031: a check's outcome as the link's why (docs/features/11, the why table) */
+static void test_check_why(void)
+{
+    static const struct {
+        const char *json;
+        const char *want;
+        proto_fwsrv_why_t expect;
+    } cases[] = {
+        /* the offer: exactly want, or another version */
+        {"{\"update\":true,\"version\":\"0.9.0\",\"image\":{\"url\":\"a.bin\"}}", "0.9.0",
+         PROTO_FWSRV_WHY_OK},
+        {"{\"update\":true,\"version\":\"0.9.1\",\"image\":{\"url\":\"a.bin\"}}", "0.9.0",
+         PROTO_FWSRV_WHY_OTHER_VERSION}, /* a server that ignores want offers its newest */
+        {"{\"update\":true,\"version\":\"0.9.0+local\",\"image\":{\"url\":\"a.bin\"}}", "0.9.0",
+         PROTO_FWSRV_WHY_OTHER_VERSION},
+        {"{\"update\":true,\"version\":\"0.9.0\",\"image\":{\"url\":\"a.bin\"}}", "0.9.0+local",
+         PROTO_FWSRV_WHY_OTHER_VERSION},
+        {"{\"update\":true,\"version\":\"v0.9.0\",\"image\":{\"url\":\"a.bin\"}}", "0.9.0",
+         PROTO_FWSRV_WHY_OTHER_VERSION},
+        {"{\"update\":true,\"version\":\"0.9.0-rc.1\",\"image\":{\"url\":\"a.bin\"}}",
+         "0.9.0-rc.1", PROTO_FWSRV_WHY_OK},
+        /* no update: each reason */
+        {"{\"update\":false,\"reason\":\"unknown_device\"}", "0.9.0",
+         PROTO_FWSRV_WHY_UNKNOWN_DEVICE},
+        {"{\"update\":false,\"reason\":\"held_back\"}", "0.9.0", PROTO_FWSRV_WHY_HELD_BACK},
+        {"{\"update\":false,\"reason\":\"needs_stepping_stone\"}", "0.9.0",
+         PROTO_FWSRV_WHY_STEPPING_STONE},
+        {"{\"update\":false,\"reason\":\"up_to_date\"}", "0.9.0", PROTO_FWSRV_WHY_UP_TO_DATE},
+        {"{\"update\":false}", "0.9.0", PROTO_FWSRV_WHY_UP_TO_DATE},
+        {"{\"update\":false,\"reason\":\"unknown_version\"}", "0.9.0",
+         PROTO_FWSRV_WHY_UNKNOWN_VERSION},
+        {"{\"update\":false,\"reason\":\"not_offered\"}", "0.9.0", PROTO_FWSRV_WHY_NOT_OFFERED},
+        {"{\"update\":false,\"reason\":\"moon_phase\"}", "0.9.0", PROTO_FWSRV_WHY_REFUSED},
+        /* not a check answer */
+        {"{\"update\":\"yes\"}", "0.9.0", PROTO_FWSRV_WHY_NOT_A_SERVER},
+        {"<html>", "0.9.0", PROTO_FWSRV_WHY_NOT_A_SERVER},
+        /* no want: no offer is the one named, and a reason it doesn't know is up to date */
+        {"{\"update\":true,\"version\":\"0.9.0\",\"image\":{\"url\":\"a.bin\"}}", NULL,
+         PROTO_FWSRV_WHY_OTHER_VERSION},
+        {"{\"update\":true,\"version\":\"0.9.0\",\"image\":{\"url\":\"a.bin\"}}", "",
+         PROTO_FWSRV_WHY_OTHER_VERSION},
+        {"{\"update\":false,\"reason\":\"moon_phase\"}", NULL, PROTO_FWSRV_WHY_UP_TO_DATE},
+        {"{\"update\":false,\"reason\":\"not_offered\"}", "", PROTO_FWSRV_WHY_UP_TO_DATE},
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        proto_fwsrv_answer_t a;
+        const alarm_result_t r = check_want(cases[i].json, cases[i].want, &a);
+        TEST_ASSERT_EQUAL_MESSAGE(cases[i].expect, proto_fwsrv_check_why(r, &a, cases[i].want),
+                                  cases[i].json);
+    }
+
+    /* an answer read without want still refuses a reason it doesn't know, once want is named */
+    proto_fwsrv_answer_t a;
+    alarm_result_t r = check("{\"update\":false,\"reason\":\"moon_phase\"}", &a);
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_OTHER, a.reason);
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_WHY_REFUSED, proto_fwsrv_check_why(r, &a, "0.9.0"));
+    r = check("{\"update\":false,\"reason\":\"unknown_version\"}", &a);
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_WHY_REFUSED, proto_fwsrv_check_why(r, &a, "0.9.0"));
+
+    /* a refused parse or no answer: not a server */
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_WHY_NOT_A_SERVER,
+                      proto_fwsrv_check_why(ALARM_ERR_BAD_ARG, &a, "0.9.0"));
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_WHY_NOT_A_SERVER, proto_fwsrv_check_why(ALARM_OK, NULL, "0.9.0"));
+
+    /* a reason value from a later firmware blocks */
+    memset(&a, 0, sizeof(a));
+    a.reason = (proto_fwsrv_reason_t)200;
+    TEST_ASSERT_EQUAL(PROTO_FWSRV_WHY_REFUSED, proto_fwsrv_check_why(ALARM_OK, &a, "0.9.0"));
+}
+
+/* LINK-031, LINK-039: the why numbers are the link's wire values (plink_msg.h PLINK_FW_WHY_*),
+ * never renumbered; the reasons are only appended */
+static void test_check_numbers_frozen(void)
+{
+    TEST_ASSERT_EQUAL_INT(0, PROTO_FWSRV_WHY_OK);
+    TEST_ASSERT_EQUAL_INT(1, PROTO_FWSRV_WHY_NO_NETWORK);
+    TEST_ASSERT_EQUAL_INT(2, PROTO_FWSRV_WHY_NO_LOOKUP);
+    TEST_ASSERT_EQUAL_INT(3, PROTO_FWSRV_WHY_NO_CONNECT);
+    TEST_ASSERT_EQUAL_INT(4, PROTO_FWSRV_WHY_SERVER_ERROR);
+    TEST_ASSERT_EQUAL_INT(5, PROTO_FWSRV_WHY_NOT_A_SERVER);
+    TEST_ASSERT_EQUAL_INT(10, PROTO_FWSRV_WHY_UNKNOWN_DEVICE);
+    TEST_ASSERT_EQUAL_INT(11, PROTO_FWSRV_WHY_HELD_BACK);
+    TEST_ASSERT_EQUAL_INT(12, PROTO_FWSRV_WHY_STEPPING_STONE);
+    TEST_ASSERT_EQUAL_INT(13, PROTO_FWSRV_WHY_OTHER_VERSION);
+    TEST_ASSERT_EQUAL_INT(14, PROTO_FWSRV_WHY_UP_TO_DATE);
+    TEST_ASSERT_EQUAL_INT(15, PROTO_FWSRV_WHY_UNKNOWN_VERSION);
+    TEST_ASSERT_EQUAL_INT(16, PROTO_FWSRV_WHY_NOT_OFFERED);
+    TEST_ASSERT_EQUAL_INT(17, PROTO_FWSRV_WHY_REFUSED);
+
+    TEST_ASSERT_EQUAL_INT(0, PROTO_FWSRV_UP_TO_DATE);
+    TEST_ASSERT_EQUAL_INT(1, PROTO_FWSRV_UPDATE);
+    TEST_ASSERT_EQUAL_INT(2, PROTO_FWSRV_UNKNOWN_DEVICE);
+    TEST_ASSERT_EQUAL_INT(3, PROTO_FWSRV_STEPPING_STONE);
+    TEST_ASSERT_EQUAL_INT(4, PROTO_FWSRV_HELD_BACK);
+    TEST_ASSERT_EQUAL_INT(5, PROTO_FWSRV_OTHER);
+    TEST_ASSERT_EQUAL_INT(6, PROTO_FWSRV_UNKNOWN_VERSION);
+    TEST_ASSERT_EQUAL_INT(7, PROTO_FWSRV_NOT_OFFERED);
+    TEST_ASSERT_EQUAL_INT(8, PROTO_FWSRV_REFUSED);
+}
+
 /* ---- language packs (OTA-025) ------------------------------------------------------------ */
 
 /* OTA-025 */
@@ -918,6 +1187,11 @@ int main(void)
     RUN_TEST(test_check_answer_no_update);
     RUN_TEST(test_check_answer_refused);
     RUN_TEST(test_check_answer_addresses);
+    RUN_TEST(test_check_request_want);
+    RUN_TEST(test_check_answer_want_reasons);
+    RUN_TEST(test_check_answer_without_want_unchanged);
+    RUN_TEST(test_check_why);
+    RUN_TEST(test_check_numbers_frozen);
     RUN_TEST(test_languages);
     RUN_TEST(test_assets);
     RUN_TEST(test_languages_url);

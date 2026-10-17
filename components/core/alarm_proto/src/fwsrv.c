@@ -217,6 +217,9 @@ void proto_fwsrv_check_request(pj_writer_t *w, const proto_fwsrv_facts_t *facts)
     pj_kstr(w, "version", facts->version);
     str_array(w, "peripherals", facts->peripherals, facts->peripheral_count);
     str_array(w, "languages", facts->languages, facts->language_count);
+    if (facts->want != NULL && facts->want[0] != '\0') {
+        pj_kstr(w, "want", facts->want); /* FWS-028: only on a keypad's ordered check */
+    }
     pj_obj_end(w);
 }
 
@@ -350,7 +353,14 @@ static bool read_image(pj_reader_t *r, image_raw_t *img, proto_fwsrv_answer_t *o
     return ok && !r->error;
 }
 
-static proto_fwsrv_reason_t reason_of(const char *s)
+static bool is_set(const char *s)
+{
+    return s != NULL && s[0] != '\0';
+}
+
+/* want: the check named a release (FWS-028). Only such a check gets "unknown_version" and
+ * "not_offered", and on it a reason this panel doesn't know refuses. */
+static proto_fwsrv_reason_t reason_of(const char *s, bool want)
 {
     if (s[0] == '\0' || strcmp(s, "up_to_date") == 0) {
         return PROTO_FWSRV_UP_TO_DATE;
@@ -364,11 +374,59 @@ static proto_fwsrv_reason_t reason_of(const char *s)
     if (strcmp(s, "held_back") == 0) {
         return PROTO_FWSRV_HELD_BACK;
     }
-    return PROTO_FWSRV_OTHER;
+    if (!want) {
+        return PROTO_FWSRV_OTHER;
+    }
+    if (strcmp(s, "unknown_version") == 0) {
+        return PROTO_FWSRV_UNKNOWN_VERSION;
+    }
+    if (strcmp(s, "not_offered") == 0) {
+        return PROTO_FWSRV_NOT_OFFERED;
+    }
+    return PROTO_FWSRV_REFUSED;
 }
 
 alarm_result_t proto_fwsrv_check_answer(const char *json, size_t len, const char *base_url,
                                         proto_fwsrv_answer_t *out)
+{
+    return proto_fwsrv_check_answer_want(json, len, base_url, NULL, out);
+}
+
+proto_fwsrv_why_t proto_fwsrv_check_why(alarm_result_t parsed, const proto_fwsrv_answer_t *a,
+                                        const char *want)
+{
+    if (parsed != ALARM_OK || a == NULL) {
+        return PROTO_FWSRV_WHY_NOT_A_SERVER;
+    }
+    switch (a->reason) {
+    case PROTO_FWSRV_UPDATE:
+        /* exactly the version named: a server that ignores want offers its newest (FWS-028) */
+        return (is_set(want) && strcmp(a->image.version, want) == 0)
+                   ? PROTO_FWSRV_WHY_OK
+                   : PROTO_FWSRV_WHY_OTHER_VERSION;
+    case PROTO_FWSRV_UP_TO_DATE:
+        return PROTO_FWSRV_WHY_UP_TO_DATE;
+    case PROTO_FWSRV_UNKNOWN_DEVICE:
+        return PROTO_FWSRV_WHY_UNKNOWN_DEVICE;
+    case PROTO_FWSRV_STEPPING_STONE:
+        return PROTO_FWSRV_WHY_STEPPING_STONE;
+    case PROTO_FWSRV_HELD_BACK:
+        return PROTO_FWSRV_WHY_HELD_BACK;
+    case PROTO_FWSRV_UNKNOWN_VERSION:
+        return PROTO_FWSRV_WHY_UNKNOWN_VERSION;
+    case PROTO_FWSRV_NOT_OFFERED:
+        return PROTO_FWSRV_WHY_NOT_OFFERED;
+    case PROTO_FWSRV_OTHER:
+        /* read without want; with want, a reason this panel doesn't know still refuses */
+        return is_set(want) ? PROTO_FWSRV_WHY_REFUSED : PROTO_FWSRV_WHY_UP_TO_DATE;
+    case PROTO_FWSRV_REFUSED:
+    default:
+        return PROTO_FWSRV_WHY_REFUSED; /* blocks: never relayed past the server's rules */
+    }
+}
+
+alarm_result_t proto_fwsrv_check_answer_want(const char *json, size_t len, const char *base_url,
+                                             const char *want, proto_fwsrv_answer_t *out)
 {
     memset(out, 0, sizeof(*out));
     image_raw_t img;
@@ -447,7 +505,7 @@ alarm_result_t proto_fwsrv_check_answer(const char *json, size_t len, const char
         memset(out, 0, sizeof(*out));
         memcpy(out->installed_channel, keep.installed_channel, sizeof(out->installed_channel));
         out->installed_withdrawn = keep.installed_withdrawn;
-        out->reason = reason_of(reason);
+        out->reason = reason_of(reason, is_set(want));
         return ALARM_OK;
     }
     proto_version_t parsed;
@@ -463,7 +521,7 @@ alarm_result_t proto_fwsrv_check_answer(const char *json, size_t len, const char
     }
     if (out->image.notes_url[0] != '\0') {
         /* shown as a link: the same http(s) rule as a download, or left out */
-        char notes[sizeof(out->image.notes_url)];
+        char notes[sizeof(out->image.notes_url)] = ""; /* all of it: no stack bytes in out */
         if (!resolve(base_url, out->image.notes_url, notes, sizeof(notes))) {
             notes[0] = '\0';
         }

@@ -632,7 +632,8 @@ typedef enum {
 #define ALARM_ZB_CHANNEL_MIN 11u /* ALARM_EV_ZIGBEE_CHANNEL's arg2: an IEEE 802.15.4 channel */
 #define ALARM_ZB_CHANNEL_MAX 26u
 
-/* ALARM_EV_FIRMWARE_UPDATE stages (event arg). Append only. */
+/* ALARM_EV_FIRMWARE_UPDATE stages (event arg). Stored in the event log and named in the JSON
+ * (alarm_fw_stage_name): append only. */
 typedef enum {
     ALARM_FW_INSTALLING = 0,  /* a verified image is about to be started (the panel restarts) */
     ALARM_FW_UPDATED,         /* the new image passed its self-test and is kept */
@@ -643,6 +644,18 @@ typedef enum {
     ALARM_FW_STOPPED,         /* someone stopped an update before the restart (OTA-027) */
     ALARM_FW_ROLLING_BACK,    /* the self-test failed: restarting with the previous version (OTA-031) */
     ALARM_FW_RESTART_PUT_OFF, /* "installing" was logged, but the restart was put off (OTA-028) */
+    /* A keypad's update through the panel link, logged on its master (docs/features/11 "Updates
+     * through the link", What people see; P2 decisions 6, 8): source {ALARM_SRC_KEYPAD, the
+     * keypad's device number 1..ALARM_MAX_DEVICES}, zone 0, arg2 0 but for KEYPAD_FAILED. The
+     * master's own stages above are never reused for a keypad: OTA-029 reads the master's last
+     * result from them. */
+    ALARM_FW_KEYPAD_INSTALLING,   /* 9: the keypad restarts with the version its master ordered */
+    ALARM_FW_KEYPAD_UPDATED,      /* 10: its new version passed its self-test */
+    ALARM_FW_KEYPAD_ROLLED_BACK,  /* 11: its new version failed; its previous one runs again */
+    ALARM_FW_KEYPAD_FAILED,       /* 12: its update ended with nothing installed; arg2 = why, the
+                                   * link's why number (docs/features/11, the why table: never
+                                   * 0; one this firmware doesn't know reads by its decade) */
+    ALARM_FW_KEYPAD_KEY_ACCEPTED, /* 13: a new signing key was accepted at it (LINK-036) */
 } alarm_fw_stage_t;
 
 /* How a zone was first marked in a walk test (ALARM_EV_WALK_TEST_ZONE arg, and the kind bits of

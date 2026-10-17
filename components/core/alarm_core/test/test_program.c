@@ -320,12 +320,13 @@ static void test_platform_event(void)
     TEST_ASSERT_EQUAL_STRING("firmware_update", alarm_event_name(ALARM_EV_FIRMWARE_UPDATE));
     TEST_ASSERT_EQUAL_STRING("rolled_back", alarm_fw_stage_name(ALARM_FW_ROLLED_BACK));
     TEST_ASSERT_EQUAL_STRING("coprocessor_failed", alarm_fw_stage_name(ALARM_FW_CP_FAILED));
-    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
-                  alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE, 9, NULL, 0, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE,
+                                                                 14, NULL, 0, S.now));
 }
 
 /* OTA-023, OTA-027, OTA-028, OTA-031: the appended firmware_update stages keep their names (an
- * MQTT/JSON contract) and the last of them is a valid event argument, the one after it isn't. */
+ * MQTT/JSON contract) and the last of them is a valid event argument; the one after it is a
+ * keypad's, which the panel can't log as its own. */
 static void test_firmware_update_new_stages(void)
 {
     TEST_ASSERT_EQUAL_STRING("server_changed", alarm_fw_stage_name(ALARM_FW_SERVER_CHANGED));
@@ -348,6 +349,104 @@ static void test_firmware_update_new_stages(void)
                                               (uint8_t)(ALARM_FW_RESTART_PUT_OFF + 1u), NULL, 0,
                                               S.now));
     TEST_ASSERT_EQUAL_UINT32(before + 1u, snapshot().last_event_seq);
+}
+
+/* OTA-010 and docs/features/11 "Updates through the link" (What people see, the event log; P2
+ * decisions 6 and 8): a keypad's update is logged on its master as its own firmware_update stages,
+ * appended after restart_put_off (stored in the log, named in the JSON: never renumbered), from
+ * {ALARM_SRC_KEYPAD, its device number}; only keypad_failed carries a why (any value but 0: one
+ * this firmware doesn't know is still logged, LINK-039 reads it by its decade). */
+static void test_firmware_update_keypad_stages(void)
+{
+    TEST_ASSERT_EQUAL_INT(9, ALARM_FW_KEYPAD_INSTALLING);
+    TEST_ASSERT_EQUAL_INT(10, ALARM_FW_KEYPAD_UPDATED);
+    TEST_ASSERT_EQUAL_INT(11, ALARM_FW_KEYPAD_ROLLED_BACK);
+    TEST_ASSERT_EQUAL_INT(12, ALARM_FW_KEYPAD_FAILED);
+    TEST_ASSERT_EQUAL_INT(13, ALARM_FW_KEYPAD_KEY_ACCEPTED);
+    TEST_ASSERT_EQUAL_STRING("keypad_installing", alarm_fw_stage_name(ALARM_FW_KEYPAD_INSTALLING));
+    TEST_ASSERT_EQUAL_STRING("keypad_updated", alarm_fw_stage_name(ALARM_FW_KEYPAD_UPDATED));
+    TEST_ASSERT_EQUAL_STRING("keypad_rolled_back",
+                             alarm_fw_stage_name(ALARM_FW_KEYPAD_ROLLED_BACK));
+    TEST_ASSERT_EQUAL_STRING("keypad_failed", alarm_fw_stage_name(ALARM_FW_KEYPAD_FAILED));
+    TEST_ASSERT_EQUAL_STRING("keypad_key_accepted",
+                             alarm_fw_stage_name(ALARM_FW_KEYPAD_KEY_ACCEPTED));
+    TEST_ASSERT_EQUAL_STRING("unknown", alarm_fw_stage_name((alarm_fw_stage_t)14));
+
+    const alarm_source_t kp3 = {ALARM_SRC_KEYPAD, 3u};
+    const uint32_t before = snapshot().last_event_seq;
+    static const uint8_t PLAIN[] = {ALARM_FW_KEYPAD_INSTALLING, ALARM_FW_KEYPAD_UPDATED,
+                                    ALARM_FW_KEYPAD_ROLLED_BACK, ALARM_FW_KEYPAD_KEY_ACCEPTED};
+    for (size_t i = 0; i < sizeof(PLAIN); i++) {
+        EXPECT_RESULT(ALARM_OK, alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE,
+                                                            PLAIN[i], &kp3, 0u, S.now));
+        const alarm_event_t *ev = sim_last_report(&S, ALARM_EV_FIRMWARE_UPDATE);
+        TEST_ASSERT_NOT_NULL(ev);
+        TEST_ASSERT_EQUAL_UINT8(PLAIN[i], ev->arg);
+        TEST_ASSERT_EQUAL_UINT8(0u, ev->arg2);
+        TEST_ASSERT_EQUAL_UINT8(ALARM_SRC_KEYPAD, ev->source.kind);
+        TEST_ASSERT_EQUAL_UINT16(3u, ev->source.id);
+        TEST_ASSERT_EQUAL_UINT16(0u, ev->zone);
+    }
+    /* the installer who accepted a key at the keypad is the event's user */
+    EXPECT_RESULT(ALARM_OK, alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE,
+                                                        ALARM_FW_KEYPAD_KEY_ACCEPTED, &kp3,
+                                                        ALARM_USER_INSTALLER, S.now));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_INSTALLER,
+                            sim_last_report(&S, ALARM_EV_FIRMWARE_UPDATE)->user);
+    /* keypad_failed with its why: STALLED 24, and 77, a later firmware's */
+    const alarm_source_t kp16 = {ALARM_SRC_KEYPAD, (uint16_t)ALARM_MAX_DEVICES};
+    EXPECT_RESULT(ALARM_OK,
+                  alarm_engine_platform_event_ex(&S.eng, ALARM_EV_FIRMWARE_UPDATE, 0u,
+                                                 ALARM_FW_KEYPAD_FAILED, 24u, &kp16, 0u, S.now));
+    const alarm_event_t *ev = sim_last_report(&S, ALARM_EV_FIRMWARE_UPDATE);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_FW_KEYPAD_FAILED, ev->arg);
+    TEST_ASSERT_EQUAL_UINT8(24u, ev->arg2);
+    TEST_ASSERT_EQUAL_UINT16(ALARM_MAX_DEVICES, ev->source.id);
+    EXPECT_RESULT(ALARM_OK,
+                  alarm_engine_platform_event_ex(&S.eng, ALARM_EV_FIRMWARE_UPDATE, 0u,
+                                                 ALARM_FW_KEYPAD_FAILED, 77u, &kp3, 0u, S.now));
+    const uint32_t logged = before + 7u;
+    TEST_ASSERT_EQUAL_UINT32(logged, snapshot().last_event_seq);
+
+    /* refused: a failure without its why, a why on another stage, no keypad named (the system,
+     * this panel's own screen, a number past the devices, another kind of source), a zone, and
+     * the stage after the last */
+    static const alarm_source_t sys = {ALARM_SRC_SYSTEM, 0u};
+    static const alarm_source_t local = {ALARM_SRC_KEYPAD, ALARM_KEYPAD_LOCAL};
+    const alarm_source_t past = {ALARM_SRC_KEYPAD, (uint16_t)(ALARM_MAX_DEVICES + 1u)};
+    const alarm_source_t remote = {ALARM_SRC_REMOTE, 3u};
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_platform_event_ex(&S.eng, ALARM_EV_FIRMWARE_UPDATE, 0u,
+                                                 ALARM_FW_KEYPAD_FAILED, 0u, &kp3, 0u, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_platform_event_ex(&S.eng, ALARM_EV_FIRMWARE_UPDATE, 0u,
+                                                 ALARM_FW_KEYPAD_UPDATED, 24u, &kp3, 0u, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_platform_event_ex(&S.eng, ALARM_EV_FIRMWARE_UPDATE, 0u,
+                                                 ALARM_FW_UPDATED, 24u, &kp3, 0u, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE,
+                                              ALARM_FW_KEYPAD_INSTALLING, NULL, 0u, S.now));
+    const alarm_source_t *const NOT_A_KEYPAD[] = {&sys, &local, &past, &remote};
+    for (size_t i = 0; i < sizeof(NOT_A_KEYPAD) / sizeof(NOT_A_KEYPAD[0]); i++) {
+        EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                      alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE,
+                                                  ALARM_FW_KEYPAD_UPDATED, NOT_A_KEYPAD[i], 0u,
+                                                  S.now));
+    }
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_platform_event_ex(&S.eng, ALARM_EV_FIRMWARE_UPDATE, 3u,
+                                                 ALARM_FW_KEYPAD_UPDATED, 0u, &kp3, 0u, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE,
+                                              (uint8_t)(ALARM_FW_KEYPAD_KEY_ACCEPTED + 1u), &kp3,
+                                              0u, S.now));
+    TEST_ASSERT_EQUAL_UINT32(logged, snapshot().last_event_seq);
+
+    /* the panel's own stages still take any source, a keypad's included */
+    EXPECT_RESULT(ALARM_OK, alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE,
+                                                        ALARM_FW_INSTALLING, &kp3, 0u, S.now));
+    TEST_ASSERT_EQUAL_UINT32(logged + 1u, snapshot().last_event_seq);
 }
 
 /* CORE-PROG-010, ZW-022 (docs/features/36 network.md §15): the Z-Wave network's events are
@@ -704,6 +803,7 @@ int main(void)
     RUN_TEST(test_program_set_code_rules);
     RUN_TEST(test_platform_event);
     RUN_TEST(test_firmware_update_new_stages);
+    RUN_TEST(test_firmware_update_keypad_stages);
     RUN_TEST(test_zwave_platform_events);
     RUN_TEST(test_zwave_restart_count);
     RUN_TEST(test_clock_set_event);

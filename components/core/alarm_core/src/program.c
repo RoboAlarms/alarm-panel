@@ -152,15 +152,34 @@ alarm_ms_t alarm_engine_recovery_left(const alarm_engine_t *e)
     return e->recovery_until - e->now;
 }
 
+/* A firmware update's stage with its fields: the panel's own (arg2 0, any source), or a keypad's
+ * through the link (docs/features/11, What people see), from {ALARM_SRC_KEYPAD, its device
+ * number}, with a why only when it failed. */
+static bool fw_event_ok(uint16_t zone, uint8_t arg, uint8_t arg2, const alarm_source_t *src)
+{
+    if (zone != 0u || arg > (uint8_t)ALARM_FW_KEYPAD_KEY_ACCEPTED) {
+        return false;
+    }
+    if (arg <= (uint8_t)ALARM_FW_RESTART_PUT_OFF) {
+        return arg2 == 0u;
+    }
+    if (src == NULL || src->kind != (uint8_t)ALARM_SRC_KEYPAD || src->id == 0u ||
+        src->id > ALARM_MAX_DEVICES) {
+        return false;
+    }
+    return arg == (uint8_t)ALARM_FW_KEYPAD_FAILED ? arg2 != 0u : arg2 == 0u;
+}
+
 /* Which platform events exist, with which fields. */
-static bool platform_event_ok(alarm_event_type_t type, uint16_t zone, uint8_t arg, uint8_t arg2)
+static bool platform_event_ok(alarm_event_type_t type, uint16_t zone, uint8_t arg, uint8_t arg2,
+                              const alarm_source_t *src)
 {
     if (zone > ALARM_MAX_ZONES) {
         return false;
     }
     switch (type) {
     case ALARM_EV_FACTORY_RESET: return zone == 0u && arg2 == 0u;
-    case ALARM_EV_FIRMWARE_UPDATE: return zone == 0u && arg <= ALARM_FW_RESTART_PUT_OFF && arg2 == 0u;
+    case ALARM_EV_FIRMWARE_UPDATE: return fw_event_ok(zone, arg, arg2, src);
     case ALARM_EV_ZWAVE_ADDED:
         return zone == 0u && arg2 >= ALARM_ZW_JOIN_S2_UNAUTH && arg2 <= ALARM_ZW_JOIN_S0;
     case ALARM_EV_ZWAVE_ADDED_INSECURE:
@@ -211,7 +230,7 @@ alarm_result_t alarm_engine_platform_event_ex(alarm_engine_t *e, alarm_event_typ
                                               const alarm_source_t *src, uint8_t user,
                                               alarm_ms_t now)
 {
-    if (e == NULL || !e->initialized || !platform_event_ok(type, zone, arg, arg2) ||
+    if (e == NULL || !e->initialized || !platform_event_ok(type, zone, arg, arg2, src) ||
         user > ALARM_MAX_USERS) {
         return ALARM_ERR_BAD_ARG;
     }

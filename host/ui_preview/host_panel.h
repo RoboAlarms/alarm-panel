@@ -354,6 +354,10 @@ void host_panel_device_pending(const char *ref, uint8_t action);
 /* The device's source can't reach it (HCTL-006): offline since since_ms, its state and values kept
  * as last reported; host_panel_device_settle brings it back (BL-181). */
 void host_panel_device_offline(const char *ref, int64_t since_ms);
+/* No device can be reached (HCTL-006, LINK-046: Home Assistant's link dropped; on a link keypad,
+ * its alarm panel's device data stopped): on, every device offline since since_ms; off, each back
+ * as it was (BL-216). */
+void host_panel_devices_unreachable(bool on, int64_t since_ms);
 /* How many actions the screen has asked of any device so far (ui_backend_t dev_act), refused ones
  * included: a check that a tap sent nothing (BL-181). */
 unsigned host_panel_device_acts(void);

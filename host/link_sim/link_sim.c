@@ -4,10 +4,13 @@
  *
  *   link_sim master [--bind IP] [--port 6056] [--state FILE] [--name NAME] [--id HEX6]
  *   link_sim keypad [--master IP[:PORT]] [--bind IP] [--port 0] [--state FILE] [--name NAME]
+ *                   [--id HEX6]
  *
  * The master runs the real alarm engine (link_node.h has its house) and the master's link manager;
  * the keypad runs the keypad's link manager and shows the status it rebuilds. Both take the OS's
- * random numbers, so they pair with panels on the LAN as well as with each other.
+ * random numbers, so they pair with panels on the LAN as well as with each other. Both offer Smart
+ * Home and settings (BL-216): the master serves its house's devices, the keypad mirrors them and
+ * acts on them, and the master changes the keypad's Screen and sound settings.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -77,23 +80,23 @@ static bool udp_send(void *ctx, const plink_addr_t *to, const uint8_t *frame, si
 
 static void usage(void)
 {
-    printf(
-        "link_sim - the panel link's PC simulator (docs/features/11 LINK-013)\n"
-        "\n"
-        "  link_sim master [--bind IP] [--port 6056] [--state FILE] [--name NAME] [--id HEX6]\n"
-        "      a virtual master: the real alarm engine with a small house and the master's\n"
-        "      side of the link; its keypads are kept in FILE (default link_master.plink)\n"
-        "  link_sim keypad [--master IP[:PORT]] [--bind IP] [--port 0] [--state FILE]\n"
-        "                  [--name NAME]\n"
-        "      a virtual keypad: the keypad's side of the link and the status it rebuilds;\n"
-        "      its master is kept in FILE (default link_keypad.plink)\n"
-        "\n"
-        "There is no mDNS on the PC: give the master's address with --master, or the keypad\n"
-        "broadcasts to 255.255.255.255:6056 to find it. The master answers a keypad on the\n"
-        "address of its last authenticated frame. The state files hold the pairing keys.\n"
-        "--bind 0.0.0.0 (the default) hears the LAN; Windows may ask to allow it through its\n"
-        "firewall. --bind 127.0.0.1 keeps both on this PC.\n"
-        "Type help at the console for its commands.\n");
+    printf("link_sim - the panel link's PC simulator (docs/features/11 LINK-013)\n"
+           "\n"
+           "  link_sim master [--bind IP] [--port 6056] [--state FILE] [--name NAME] [--id HEX6]\n"
+           "      a virtual master: the real alarm engine with a small house and the master's\n"
+           "      side of the link; its keypads are kept in FILE (default link_master.plink)\n"
+           "  link_sim keypad [--master IP[:PORT]] [--bind IP] [--port 0] [--state FILE]\n"
+           "                  [--name NAME] [--id HEX6]\n"
+           "      a virtual keypad: the keypad's side of the link and the status it rebuilds;\n"
+           "      its master is kept in FILE (default link_keypad.plink); --id is its own panel\n"
+           "      id in its settings report (default 1c2d3e)\n"
+           "\n"
+           "There is no mDNS on the PC: give the master's address with --master, or the keypad\n"
+           "broadcasts to 255.255.255.255:6056 to find it. The master answers a keypad on the\n"
+           "address of its last authenticated frame. The state files hold the pairing keys.\n"
+           "--bind 0.0.0.0 (the default) hears the LAN; Windows may ask to allow it through its\n"
+           "firewall. --bind 127.0.0.1 keeps both on this PC.\n"
+           "Type help at the console for its commands.\n");
 }
 
 static void help(void)
@@ -112,10 +115,17 @@ static void help(void)
                  "  status          partitions, zones, troubles, pairing\n"
                  "  zone N open|close\n"
                  "  arm away|stay|night CODE, disarm CODE   at the master's own console\n"
+                 "  devices         the house's devices, as the keypads get them\n"
+                 "  device REF online|offline   the house can reach that device, or can't\n"
+                 "  prefs N         keypad N's Screen and sound settings, as it reported them\n"
+                 "  prefs N set KEY VALUE   change one on keypad N, as Home Assistant would\n"
+                 "                  (KEY: brightness, saver_after, night, night_start, beeps...)\n"
                  "  wait S          take no command for S seconds (for scripts)\n"
                  "  quit\n"
                  "the house: zones 1 Front Door, 2 Living Window, 3 Hall Motion, 4 Hall Smoke;\n"
-                 "codes 69420 (installer), 123456 (master), 1111 (Alex)");
+                 "codes 69420 (installer), 123456 (master), 1111 (Alex); devices light.porch,\n"
+                 "light.kitchen, lock.front_door, cover.garage_door, climate.hallway,\n"
+                 "scene.good_night");
     } else {
         say_line(NULL,
                  "commands:\n"
@@ -126,6 +136,12 @@ static void help(void)
                  "  master IP[:PORT] where the master is now\n"
                  "  status          the link and the master's status as rebuilt here\n"
                  "  arm away|stay|night CODE, disarm CODE, chime CODE, panic\n"
+                 "  devices         the master's devices as mirrored here (its Smart Home)\n"
+                 "  act REF ACTION [VALUE] [CODE]   act on one: on [LEVEL], off, toggle, lock,\n"
+                 "                  unlock CODE, open CODE, close, stop, level N, temp 21.5,\n"
+                 "                  mode off|heat|cool|auto, run (the master judges it)\n"
+                 "  prefs           this keypad's Screen and sound settings\n"
+                 "  prefs set KEY VALUE   change one here (the master hears of it)\n"
                  "  forget          forget the master (the record erased)\n"
                  "  wait S          take no command for S seconds (for scripts)\n"
                  "  quit");
@@ -211,6 +227,100 @@ static void wait_cmd(const char *arg)
     HOLD_UNTIL = now_ms() + (uint64_t)s * 1000u;
 }
 
+/* "21.5" -> 2150, "-3" -> -300 (hundredths of a degree); false when it isn't one. */
+static bool parse_hundredths(const char *s, int32_t *out)
+{
+    const bool neg = s != NULL && s[0] == '-';
+    const char *p = neg ? s + 1 : s;
+    char whole[8];
+    const char *dot = p != NULL ? strchr(p, '.') : NULL;
+    const size_t wl = dot != NULL ? (size_t)(dot - p) : (p != NULL ? strlen(p) : 0u);
+    unsigned long w = 0, f = 0;
+    if (p == NULL || wl == 0u || wl >= sizeof(whole)) {
+        return false;
+    }
+    memcpy(whole, p, wl);
+    whole[wl] = '\0';
+    if (!parse_uint(whole, 999u, &w)) {
+        return false;
+    }
+    if (dot != NULL) {
+        const size_t fl = strlen(dot + 1);
+        if (fl == 0u || fl > 2u || !parse_uint(dot + 1, 99u, &f)) {
+            return false;
+        }
+        f = fl == 1u ? f * 10u : f;
+    }
+    const int32_t v = (int32_t)(w * 100u + f);
+    *out = neg ? -v : v;
+    return true;
+}
+
+static bool parse_mode(const char *s, uint8_t *bit)
+{
+    static const struct {
+        const char *word;
+        uint8_t bit;
+    } MODES[] = {{"off", PLINK_DEV_MODE_OFF},
+                 {"heat", PLINK_DEV_MODE_HEAT},
+                 {"cool", PLINK_DEV_MODE_COOL},
+                 {"auto", PLINK_DEV_MODE_AUTO}};
+    for (size_t i = 0; s != NULL && i < sizeof(MODES) / sizeof(MODES[0]); i++) {
+        if (strcmp(s, MODES[i].word) == 0) {
+            *bit = MODES[i].bit;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* act REF ACTION [VALUE] [CODE]: a device action from the keypad, as a tap on its Smart Home. */
+static void keypad_act(char *t[], unsigned n)
+{
+    static const char HOW[] = "act REF ACTION [VALUE] [CODE]: on [LEVEL], off, toggle, lock, "
+                              "unlock CODE, open CODE, close, stop, level N, temp 21.5, "
+                              "mode off|heat|cool|auto, run";
+    const uint8_t action = link_action_parse(t[2]);
+    int32_t value = action == ACT_ON ? -1 : 0; /* on: at its last level */
+    uint8_t mode = 0;
+    unsigned at = 3;
+    unsigned long x = 0;
+    bool ok = action != ACT_NONE;
+    if (ok && action == ACT_SET_LEVEL) {
+        ok = at < n && parse_uint(t[at++], 100u, &x);
+        value = (int32_t)x;
+    } else if (ok && action == ACT_SET_TEMP) {
+        ok = at < n && parse_hundredths(t[at++], &value);
+    } else if (ok && action == ACT_SET_MODE) {
+        ok = at < n && parse_mode(t[at++], &mode);
+    } else if (ok && action == ACT_ON && at < n && n == 4u) {
+        ok = parse_uint(t[at++], 100u, &x); /* a light's brightness: an on needs no code */
+        value = (int32_t)x;
+    }
+    const char *code = at < n ? t[at++] : NULL;
+    if (!ok || at < n) {
+        say_line(NULL, HOW);
+        return;
+    }
+    if (code != NULL && !code_ok(code)) {
+        return;
+    }
+    (void)link_keypad_dev_act(&K, now_ms(), t[1], action, value, mode, code);
+}
+
+/* prefs N set KEY VALUE (master) and prefs set KEY VALUE (keypad): the field and its value. */
+static bool prefs_field(const char *key, const char *text, uint8_t *id, uint32_t *value)
+{
+    const char *why = link_prefs_parse(key, text, id, value);
+    if (why != NULL) {
+        char msg[400];
+        snprintf(msg, sizeof(msg), "%s: %s", key, why);
+        say_line(NULL, msg);
+        return false;
+    }
+    return true;
+}
+
 /* One console line for the master; false: quit. */
 static bool master_line(char *line)
 {
@@ -274,6 +384,22 @@ static bool master_line(char *line)
         const bool ok = plink_master_rename(&M.m, (uint8_t)a, name);
         say_line(NULL, ok ? "renamed" : "not renamed");
         link_master_sync(&M, now);
+    } else if (strcmp(t[0], "devices") == 0) {
+        link_master_say_devices(&M, now);
+    } else if (strcmp(t[0], "device") == 0 && n == 3u &&
+               (strcmp(t[2], "online") == 0 || strcmp(t[2], "offline") == 0)) {
+        if (!link_master_device_online(&M, now, t[1], strcmp(t[2], "online") == 0)) {
+            say_line(NULL, "no such device (type devices)");
+        }
+    } else if (strcmp(t[0], "prefs") == 0 && n == 2u && parse_uint(t[1], 255u, &a)) {
+        link_master_say_prefs(&M, now, (uint8_t)a);
+    } else if (strcmp(t[0], "prefs") == 0 && n == 5u && parse_uint(t[1], 255u, &a) &&
+               strcmp(t[2], "set") == 0) {
+        uint8_t id = 0;
+        uint32_t value = 0;
+        if (prefs_field(t[3], t[4], &id, &value)) {
+            (void)link_master_prefs_set(&M, now, (uint8_t)a, id, value);
+        }
     } else if (strcmp(t[0], "zone") == 0 && n == 3u && parse_uint(t[1], ALARM_MAX_ZONES, &a) &&
                a > 0u && (strcmp(t[2], "open") == 0 || strcmp(t[2], "close") == 0)) {
         link_master_zone(&M, now, (uint16_t)a, strcmp(t[2], "open") == 0);
@@ -392,6 +518,18 @@ static bool keypad_line(char *line)
         }
     } else if (strcmp(t[0], "panic") == 0) {
         keypad_cmd(ALARM_CMD_PANIC, ALARM_LEVEL_NONE, NULL, "panic");
+    } else if (strcmp(t[0], "devices") == 0) {
+        link_keypad_say_devices(&K, now);
+    } else if (strcmp(t[0], "act") == 0 && n >= 3u) {
+        keypad_act(t, n);
+    } else if (strcmp(t[0], "prefs") == 0 && n == 1u) {
+        link_keypad_say_prefs(&K, now);
+    } else if (strcmp(t[0], "prefs") == 0 && n == 4u && strcmp(t[1], "set") == 0) {
+        uint8_t id = 0;
+        uint32_t value = 0;
+        if (prefs_field(t[2], t[3], &id, &value)) {
+            (void)link_keypad_prefs_set(&K, now, id, value);
+        }
     } else if (strcmp(t[0], "forget") == 0) {
         say_line(NULL, plink_keypad_forget(&K.k, now) ? "the master is forgotten"
                                                       : "the record could not be erased");
@@ -441,7 +579,7 @@ static int parse_args(int argc, char **argv)
             O.state = val;
         } else if (strcmp(opt, "--name") == 0) {
             O.name = val;
-        } else if (strcmp(opt, "--id") == 0 && O.master) {
+        } else if (strcmp(opt, "--id") == 0) {
             if (strlen(val) != PLINK_PANEL_ID_LEN) {
                 fprintf(stderr, "--id: six hex characters\n");
                 return 1;
@@ -515,7 +653,7 @@ int main(int argc, char **argv)
                        "255.255.255.255:6056\n");
             }
         }
-        link_keypad_init(&K, &C, &io, &S, O.name, &master, now_ms());
+        link_keypad_init(&K, &C, &io, &S, O.name, O.id, &master, now_ms());
         link_keypad_report(&K, now_ms());
     }
     printf("type help for the commands\n");

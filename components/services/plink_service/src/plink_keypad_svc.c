@@ -16,7 +16,17 @@
  *     voice through plink_vfeed (covered events only, nothing older than its last baseline,
  *     nothing while the link isn't ONLINE), as the alarm task hands an alarm panel's;
  *   - the time: the master's clock and zone, and no time server of its own while paired;
- *   - the update gate and the link's heartbeat for the update's self-test (LINK-020).
+ *   - the update gate and the link's heartbeat for the update's self-test (LINK-020);
+ *   - Smart Home (BL-216; docs/features/11 "Smart Home and Home Assistant on keypads"): the core's
+ *     mirror of the master's devices (PSRAM, offered as PLINK_CAP_HOME only with it) and the
+ *     screen's ui_dev_t copy made from it under s_dev_lock (never link_pub_lock), each tile
+ *     offline since the last device data while that isn't fresh (LINK-046); the screen's device
+ *     actions (ksvc_dev_act, a hand-over of their own, never the commands'), waited for 1 s (3 s
+ *     with a code), then shown pending until the answer or the give-up (LINK-047);
+ *   - its settings (PLINK_CAP_PREFS, with the UI): reported on every save (panel_prefs_seq) and
+ *     voice change, and a change from the master (PREFS_SET) checked here, handed to the screen
+ *     through panel_prefs' mailbox (UI-046) and answered with the values then stored (LINK-050,
+ *     LINK-051): the link task never takes board_ui_lock and never writes NVS for it.
  * A master whose setup makes it a keypad uses the same manager for that pairing only (Option C):
  * the record it makes is kept in RAM until the setup's Done stores it with the keypad role, and
  * nothing is sent to the other master after the pairing until then (no handshake: it keeps the new
@@ -47,7 +57,10 @@
 #include "panel_link/plink_view.h"
 #include "panel_ota.h"
 #include "panel_prefs.h"
+#include "panel_voice.h"
 #include "sounder.h"
+#include "ui_backend/ui_dev_model.h"
+#include "ui_backend/ui_prefs.h"
 
 static const char *TAG = "plink";
 
@@ -70,6 +83,16 @@ static const char *TAG = "plink";
 /* An OFF the master didn't run still counts for a fire or CO tone kept through a lost link when the
  * link goes LOST this soon after it (an OFF keyed while ONLINE but the master already silent). */
 #define OFF_KEEP_MS        PLINK_LOST_MS
+/* Smart Home (docs/features/11 "Device actions"): the screen's wait for a device action's answer,
+ * 3 s with a code (the master checks it on its alarm task); then the link task shows it pending
+ * and says so, within this. */
+#define DEV_WAIT_MS        1000u
+#define DEV_WAIT_CODE_MS   3000u
+#define DEV_RELEASE_MS     150u
+/* Settings (LINK-050, LINK-051): the voice's state looked at this often for the report; a change
+ * the screen took is answered by it within 2 s (UI_PREFS_LOOK_MS), and this is the safety net. */
+#define PREFS_VOICE_MS     1000u
+#define PSET_LOST_MS       10000u
 
 typedef enum { PAIR_NONE = 0, PAIR_LOOKING, PAIR_ASKED, PAIR_FAILED } pair_phase_t;
 typedef enum { FIND_NONE = 0, FIND_MASTER, FIND_PAIRING } find_t;
@@ -117,6 +140,34 @@ static struct {
     /* the voice (LINK-028; only with a voice set, the keypad role) */
     bool voiced;
     plink_vfeed_t vf;
+    /* Smart Home: the screen's device action in flight (one at a time), */
+    bool act_active;
+    uint32_t act_gen;
+    uint32_t act_ticket;
+    /* ... its answer, given once the screen's copy shows what it did */
+    bool act_due;
+    uint32_t act_due_gen;
+    uint8_t act_res, act_why;
+    bool act_released;
+    /* ... and the copy the screen reads: made again when the mirror or its freshness moves */
+    bool dev_copied;
+    uint32_t dev_seq_copied;
+    bool dev_fresh_copied;
+    /* settings (PLINK_CAP_PREFS): the report, */
+    bool prefs_on;
+    bool prefs_reported;
+    uint32_t prefs_seq;
+    uint8_t voice, prefs_voice;      /* plink_voice_t */
+    uint32_t accepts, prefs_accepts; /* proto_prefs_mask_t */
+    uint64_t voice_at;
+    /* ... and a change from the master on its way through the screen */
+    bool pset_active;
+    bool pset_cancel_tried;
+    uint32_t pset_req;
+    uint32_t pset_ticket; /* the mailbox's */
+    uint32_t pset_have;   /* the fields handed to the screen */
+    uint64_t pset_since;
+    uint8_t pset_n; /* refusals so far: (id, why) pairs in s_pset_refused */
     /* the rest */
     uint64_t clock_at, net_at, publish_at, beat_at, events_at;
     char ip[16]; /* the last address it had: kept across a drop, so a new one is told at once */
@@ -177,6 +228,55 @@ static atomic_bool s_maint_marked;
 static atomic_bool s_maint_beat;
 static uint64_t s_maint_at;
 static atomic_uint s_power_flags; /* PLINK_HB_* from the health task */
+
+/* Smart Home (BL-216): all PSRAM, allocated once at the start (ksvc_prepare), only with home
+ * control and PSRAM; s_home says they all are, set before the link task and the UI start. */
+static bool s_home;
+static plink_dev_mirror_t *s_mirror; /* the core's (about 31 KB) */
+/* The screen's copy (s_dev_lock): the rows as ui_dev_from_parts makes them, whether the device
+ * data is fresh, and the mirror's state for the console. */
+static SemaphoreHandle_t s_dev_lock;
+static ui_dev_t *s_kdevs; /* PLINK_DEV_MAX */
+static size_t s_kdev_n;
+static bool s_kdev_fresh;
+static plink_dev_info_t s_kdev_info ALARM_SLOW_BSS;
+static uint64_t s_kdev_at; /* link_now() of the copy */
+/* The screen's device actions (ksvc_dev_act): one at a time, their own hand-over - never the
+ * commands' s_cmd_mutex or slots - the code wiped once handed over. */
+static SemaphoreHandle_t s_act_mutex;
+static SemaphoreHandle_t s_act_done;
+static portMUX_TYPE s_act_mux = portMUX_INITIALIZER_UNLOCKED;
+typedef struct {
+    char ref[PLINK_REF_MAX + 1];
+    uint8_t action;
+    int32_t value;
+    uint8_t mode; /* ACT_SET_MODE: its DEV_MODE_* bit */
+    char code[ALARM_CODE_MAX_LEN + 1];
+} dev_ask_t;
+static struct {
+    bool pending;
+    uint32_t gen;
+    dev_ask_t ask;
+} s_abox ALARM_SLOW_BSS; /* PSRAM, as the master's device jobs: internal RAM is the reserve */
+typedef struct {
+    uint32_t gen;
+    uint8_t result; /* plink_dev_result_t */
+    uint8_t why;    /* CODE_REFUSED: the alarm_result_t */
+    bool released;  /* not answered in time: shown pending (or "Not confirmed") on its tile */
+} dev_ans_t;
+static dev_ans_t s_aans;
+static uint32_t s_act_gen;
+static atomic_uint s_act_abandon; /* the gen the screen stopped waiting for */
+
+/* A settings change's refusals so far, (id, why) pairs (the link task's). */
+static uint8_t s_pset_refused[2u * PLINK_PREFS_REFUSED_MAX] ALARM_SLOW_BSS;
+/* A settings change's answer from the screen's task (panel_prefs_done_fn), for the link task. */
+static portMUX_TYPE s_pset_mux = portMUX_INITIALIZER_UNLOCKED;
+static struct {
+    bool set;
+    uint32_t ticket;
+    uint8_t why[PROTO_PREFS_F_LAST];
+} s_pset_ans;
 
 bool ksvc_active(void)
 {
@@ -631,6 +731,568 @@ static alarm_result_t command(const plink_cmd_t *cmd, plink_result_t *res)
     }
     xSemaphoreGive(s_cmd_mutex);
     return r;
+}
+
+/* ---- Smart Home: the master's devices on this keypad's screen (BL-216) ----------------------- */
+
+_Static_assert((int)PLINK_DEV_OK == (int)UI_DEV_OK &&
+                   (int)PLINK_DEV_NEED_CODE == (int)UI_DEV_NEED_CODE &&
+                   (int)PLINK_DEV_CODE_REFUSED == (int)UI_DEV_CODE_REFUSED &&
+                   (int)PLINK_DEV_BUSY == (int)UI_DEV_BUSY &&
+                   (int)PLINK_DEV_UNREACHABLE == (int)UI_DEV_UNREACHABLE &&
+                   (int)PLINK_DEV_REFUSED == (int)UI_DEV_REFUSED,
+               "DEV_ACK's results are the screen's");
+_Static_assert(PLINK_DEV_MAX >= UI_DEVL_MAX, "the master's list fills the screen's");
+
+/* The screen's copy of the mirror, made again when the mirror moves (a list, a record, an action,
+ * the freshness): every row this firmware can use, in the master's order, through the one
+ * converter of both screens (ui_dev_from_parts). While the device data isn't fresh, each tile
+ * reads offline since the last device data (LINK-046). */
+static void home_copy(uint64_t now)
+{
+    if (!s_home) {
+        return;
+    }
+    plink_dev_info_t di;
+    plink_keypad_dev_info(K.k, now, &di);
+    if (K.dev_copied && di.seq == K.dev_seq_copied && di.fresh == K.dev_fresh_copied) {
+        return;
+    }
+    const int64_t epoch = link_epoch_ms();
+    const int64_t heard = di.heard_ms != 0u && epoch != 0 && now >= di.heard_ms
+                              ? epoch - (int64_t)(now - di.heard_ms)
+                              : 0; /* 0: not known, the tile says "Offline" */
+    xSemaphoreTake(s_dev_lock, portMAX_DELAY);
+    size_t n = 0u;
+    for (unsigned i = 0; i < di.count && n < PLINK_DEV_MAX; i++) {
+        plink_dev_view_t v;
+        if (!plink_keypad_dev_view(K.k, now, (uint8_t)i, &v) || !v.usable) {
+            continue; /* a row this firmware can't use: no tile to tap */
+        }
+        const ui_dev_parts_t p = {.kind = v.cat.kind,
+                                  .source = v.cat.source,
+                                  .online = v.online,
+                                  .pending = v.pending,
+                                  .failed = v.failed,
+                                  .unsure = v.unsure,
+                                  .action = v.action,
+                                  .ref = v.cat.ref,
+                                  .name = v.cat.name,
+                                  .area = v.cat.area,
+                                  .state = v.word,
+                                  .values = &v.values};
+        ui_dev_from_parts(&s_kdevs[n], &p);
+        if (v.since_last_data) {
+            s_kdevs[n].since_ms = heard;
+        }
+        n++;
+    }
+    s_kdev_n = n;
+    s_kdev_fresh = di.fresh;
+    s_kdev_info = di;
+    s_kdev_at = now;
+    xSemaphoreGive(s_dev_lock);
+    K.dev_copied = true;
+    K.dev_seq_copied = di.seq;
+    K.dev_fresh_copied = di.fresh;
+}
+
+size_t ksvc_dev_copy(ui_dev_t *out, size_t max, ksvc_dev_info_t *info)
+{
+    if (info != NULL) {
+        memset(info, 0, sizeof *info);
+        info->offered = s_home;
+    }
+    if (!s_home) {
+        return 0u;
+    }
+    xSemaphoreTake(s_dev_lock, portMAX_DELAY);
+    const size_t n = out == NULL ? 0u : s_kdev_n < max ? s_kdev_n : max;
+    if (n > 0u) {
+        memcpy(out, s_kdevs, n * sizeof *out);
+    }
+    if (info != NULL) {
+        info->fresh = s_kdev_fresh;
+        info->rows = s_kdev_n;
+        info->mirror = s_kdev_info;
+        info->copied_ms = s_kdev_at;
+    }
+    xSemaphoreGive(s_dev_lock);
+    return n;
+}
+
+/* What the screen's copy says of the device named ref (*found false: no such row), and whether
+ * the device data is fresh. */
+static bool dev_seen(const char *ref, ui_dev_t *out, bool *found)
+{
+    *found = false;
+    xSemaphoreTake(s_dev_lock, portMAX_DELAY);
+    const bool fresh = s_kdev_fresh;
+    for (size_t i = 0; i < s_kdev_n && !*found; i++) {
+        if (strcmp(s_kdevs[i].ref, ref) == 0) {
+            *out = s_kdevs[i];
+            *found = true;
+        }
+    }
+    xSemaphoreGive(s_dev_lock);
+    return fresh;
+}
+
+/* The screen's wait for the answer to gen, ms at most (a late answer to one given up on can wake
+ * it: the wait goes on for the time left). */
+static bool act_wait(uint32_t gen, uint32_t ms, dev_ans_t *out)
+{
+    const TickType_t start = xTaskGetTickCount();
+    const TickType_t wait = pdMS_TO_TICKS(ms);
+    for (TickType_t gone = 0; gone < wait; gone = xTaskGetTickCount() - start) {
+        if (xSemaphoreTake(s_act_done, wait - gone) != pdTRUE) {
+            return false;
+        }
+        bool mine = false;
+        portENTER_CRITICAL(&s_act_mux);
+        if (s_aans.gen == gen) {
+            *out = s_aans;
+            mine = true;
+        }
+        portEXIT_CRITICAL(&s_act_mux);
+        if (mine) {
+            return true;
+        }
+    }
+    return false;
+}
+
+ui_dev_result_t ksvc_dev_act(const char *ref, uint8_t action, int32_t value, const char *code,
+                             alarm_result_t *code_result)
+{
+    if (!s_home || K.k == NULL || K.setup_only || ref == NULL) {
+        return UI_DEV_UNREACHABLE;
+    }
+    const bool coded = code != NULL && code[0] != '\0';
+    /* 1-3: what the screen's copy already tells, answered at once with nothing sent (the master
+     * judges it all again) */
+    ui_dev_t d;
+    memset(&d, 0, sizeof d);
+    bool found = false;
+    if (!dev_seen(ref, &d, &found)) {
+        return UI_DEV_UNREACHABLE; /* not ONLINE, or the device data is stale (LINK-046) */
+    }
+    if (!found) {
+        return UI_DEV_REFUSED;
+    }
+    if (d.status == UI_DEV_OFFLINE) {
+        return UI_DEV_UNREACHABLE;
+    }
+    if (d.source == (uint8_t)DSRC_ZWAVE ||
+        !hc_action_valid((dev_kind_t)d.kind, (dev_action_t)action)) {
+        return UI_DEV_REFUSED; /* a Z-Wave row until BL-169 */
+    }
+    if (!coded && hc_needs_code((dev_kind_t)d.kind, (dev_action_t)action, value)) {
+        return UI_DEV_NEED_CODE; /* the pad opens with no round trip */
+    }
+    /* 4: a thermostat's mode as its DEV_MODE_* bit */
+    const uint8_t mode = action == (uint8_t)ACT_SET_MODE ? ui_dev_mode_bit(value) : 0u;
+    const size_t ref_len = strlen(ref);
+    const size_t code_len = coded ? strlen(code) : 0u;
+    if ((action == (uint8_t)ACT_SET_MODE && mode == 0u) || ref_len > PLINK_REF_MAX ||
+        code_len > ALARM_CODE_MAX_LEN) {
+        return UI_DEV_REFUSED; /* never cut: a cut ref could name another device */
+    }
+    /* 5: to the link task, which sends it (and resends it for 3 s) */
+    xSemaphoreTake(s_act_mutex, portMAX_DELAY);
+    (void)xSemaphoreTake(s_act_done, 0); /* the answer to one given up on */
+    portENTER_CRITICAL(&s_act_mux);
+    memset(&s_abox.ask, 0, sizeof s_abox.ask);
+    memcpy(s_abox.ask.ref, ref, ref_len);
+    s_abox.ask.action = action;
+    s_abox.ask.value = value;
+    s_abox.ask.mode = mode;
+    memcpy(s_abox.ask.code, code_len > 0u ? code : "", code_len);
+    if (++s_act_gen == 0u) {
+        s_act_gen = 1u;
+    }
+    const uint32_t gen = s_act_gen;
+    s_abox.gen = gen;
+    s_abox.pending = true;
+    portEXIT_CRITICAL(&s_act_mux);
+    dev_ans_t a;
+    memset(&a, 0, sizeof a);
+    uint8_t r = PLINK_DEV_OK;
+    if (act_wait(gen, coded ? DEV_WAIT_CODE_MS : DEV_WAIT_MS, &a)) {
+        r = a.result;
+    } else {
+        bool withdrawn = false;
+        portENTER_CRITICAL(&s_act_mux);
+        if (s_abox.pending && s_abox.gen == gen) {
+            s_abox.pending = false;
+            plink_wipe(&s_abox.ask, sizeof s_abox.ask);
+            withdrawn = true;
+        }
+        portEXIT_CRITICAL(&s_act_mux);
+        if (withdrawn) {
+            r = PLINK_DEV_UNREACHABLE; /* the link task never took it: nothing was sent */
+        } else {
+            /* 7: no answer in time. The link task shows it pending from now on (until the answer,
+             * a late refusal, or the give-up's "Not confirmed"); its word comes within a turn,
+             * so the screen's next look already shows it. An answer that came meanwhile counts. */
+            atomic_store(&s_act_abandon, gen);
+            r = act_wait(gen, DEV_RELEASE_MS, &a) && !a.released ? a.result : PLINK_DEV_OK;
+        }
+    }
+    xSemaphoreGive(s_act_mutex);
+    /* 6: the answer as the screen reads it (UNAVAILABLE: the master serves no devices now) */
+    if (r == PLINK_DEV_CODE_REFUSED && code_result != NULL) {
+        *code_result = (alarm_result_t)a.why; /* the pad says why, lockout included */
+    }
+    return r <= PLINK_DEV_REFUSED ? (ui_dev_result_t)r : UI_DEV_UNREACHABLE;
+}
+
+/* The link task's side of the answer (after the screen's copy shows what the action did). */
+static void act_answer(uint32_t gen, uint8_t result, uint8_t why, bool released)
+{
+    portENTER_CRITICAL(&s_act_mux);
+    s_aans.gen = gen;
+    s_aans.result = result;
+    s_aans.why = why;
+    s_aans.released = released;
+    portEXIT_CRITICAL(&s_act_mux);
+    xSemaphoreGive(s_act_done);
+}
+
+static void act_answer_later(uint32_t gen, uint8_t result, uint8_t why, bool released)
+{
+    K.act_due = true;
+    K.act_due_gen = gen;
+    K.act_res = result;
+    K.act_why = why;
+    K.act_released = released;
+}
+
+static void take_dev_act(uint64_t now)
+{
+    if (!s_home || K.act_active) {
+        return;
+    }
+    dev_ask_t ask;
+    uint32_t gen = 0;
+    bool got = false;
+    portENTER_CRITICAL(&s_act_mux);
+    if (s_abox.pending) {
+        ask = s_abox.ask;
+        gen = s_abox.gen;
+        s_abox.pending = false;
+        plink_wipe(&s_abox.ask, sizeof s_abox.ask);
+        got = true;
+    }
+    portEXIT_CRITICAL(&s_act_mux);
+    if (!got) {
+        return;
+    }
+    uint32_t ticket = 0u;
+    const uint8_t r = plink_keypad_dev_act(K.k, now, ask.ref, ask.action, ask.value, ask.mode,
+                                           ask.code[0] != '\0' ? ask.code : NULL, &ticket);
+    plink_wipe(&ask, sizeof ask); /* the manager wipes its own after the last copy (LINK-018) */
+    if (r != PLINK_DEV_OK) {
+        act_answer(gen, r, 0u, false); /* refused at once: nothing sent */
+        return;
+    }
+    K.act_active = true;
+    K.act_gen = gen;
+    K.act_ticket = ticket;
+}
+
+static void track_dev_act(void)
+{
+    if (!K.act_active) {
+        return;
+    }
+    /* The master's answer first, even when the screen's wait has just ended: one taken in this
+     * very turn (ksvc_input runs before ksvc_poll) reaches the screen's short grace wait
+     * (ksvc_dev_act), so the pad says "wrong code" or the lockout rather than closing as if the
+     * action went. Its record is in the mirror. */
+    plink_dev_answer_t ans;
+    const plink_cmd_state_t st = plink_keypad_dev_act_state(K.k, K.act_ticket, &ans);
+    if (st == PLINK_CMD_DONE) {
+        act_answer_later(K.act_gen, ans.result, ans.why, false);
+        K.act_active = false;
+        return;
+    }
+    if (st == PLINK_CMD_PENDING && atomic_load(&s_act_abandon) != K.act_gen) {
+        return;
+    }
+    /* Still being sent once the screen stopped waiting, or given up (3 s) while it still waited
+     * (its 3 s with a code): its tile shows it pending - failed for a late refusal, failed and
+     * unsure once given up ("Not confirmed") - until a later record (docs/features/11 "Device
+     * actions" 7). */
+    plink_keypad_dev_act_release(K.k, K.act_ticket);
+    act_answer_later(K.act_gen, PLINK_DEV_OK, 0u, true);
+    K.act_active = false;
+}
+
+/* After home_copy: the screen hears the answer once its copy shows what the action did. */
+static void dev_answer_flush(void)
+{
+    if (K.act_due) {
+        K.act_due = false;
+        act_answer(K.act_due_gen, K.act_res, K.act_why, K.act_released);
+    }
+}
+
+/* The mirror and the screen's copy (start-up): all or nothing. Never on a board without PSRAM. */
+static void home_prepare(void)
+{
+#if CONFIG_ALARM_HOME_CONTROL
+    if (s_home || !alarm_mem_has_psram()) {
+        return;
+    }
+    s_mirror = alarm_mem_slow_calloc(1, sizeof *s_mirror);
+    s_kdevs = alarm_mem_slow_calloc(PLINK_DEV_MAX, sizeof *s_kdevs);
+    /* PSRAM, as the buffers: internal RAM is the alarm's reserve */
+    s_dev_lock = xSemaphoreCreateMutexWithCaps(alarm_mem_slow_caps());
+    s_act_mutex = xSemaphoreCreateMutexWithCaps(alarm_mem_slow_caps());
+    s_act_done = xSemaphoreCreateBinaryWithCaps(alarm_mem_slow_caps());
+    s_home = s_mirror != NULL && s_kdevs != NULL && s_dev_lock != NULL && s_act_mutex != NULL &&
+             s_act_done != NULL;
+    if (s_home) {
+        return;
+    }
+    ESP_LOGE(TAG, "no room for Smart Home on this keypad: the link runs without it");
+    free(s_mirror);
+    free(s_kdevs);
+    s_mirror = NULL;
+    s_kdevs = NULL;
+    if (s_dev_lock != NULL) {
+        vSemaphoreDeleteWithCaps(s_dev_lock);
+        s_dev_lock = NULL;
+    }
+    if (s_act_mutex != NULL) {
+        vSemaphoreDeleteWithCaps(s_act_mutex);
+        s_act_mutex = NULL;
+    }
+    if (s_act_done != NULL) {
+        vSemaphoreDeleteWithCaps(s_act_done);
+        s_act_done = NULL;
+    }
+#endif
+}
+
+/* ---- settings: this keypad's Screen and sound for its master (LINK-050..052, UI-046) --------- */
+
+/* This keypad's voice in the link's numbers; *present: this build has one. */
+static uint8_t keypad_voice(bool *present)
+{
+    panel_voice_status_t v;
+    panel_voice_status(&v);
+    *present = v.state != PANEL_VOICE_OFF;
+    switch (v.state) {
+    case PANEL_VOICE_READY: return PLINK_VOICE_READY;
+    case PANEL_VOICE_LOADING: return PLINK_VOICE_LOADING;
+    default: return PLINK_VOICE_NONE; /* none in this build, no pack, or one it can't use */
+    }
+}
+
+/* The fields this keypad takes: every one its screen takes (UI-046), the announcements' only
+ * where its screen shows them (a build with the voice), as the master's own (ha_link). */
+static uint32_t keypad_accepts(bool voice_present)
+{
+    const proto_prefs_mask_t voice =
+        PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_VOLUME) | PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_ENABLED) |
+        PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_STATUS) | PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_CHIME);
+    return voice_present ? PROTO_PREFS_KNOWN : (PROTO_PREFS_KNOWN & ~voice);
+}
+
+static void voice_look(uint64_t now)
+{
+    bool present = false;
+    K.voice = keypad_voice(&present);
+    K.accepts = keypad_accepts(present);
+    K.voice_at = now + PREFS_VOICE_MS;
+}
+
+/* The values stored now (panel_prefs_current: the RAM copy, never NVS) as a fields body of the
+ * fields it takes: its length, 0 before the start-up's first load (nothing to report yet). */
+static size_t prefs_body(uint8_t *out, size_t cap)
+{
+    panel_prefs_t p;
+    if (!panel_prefs_current(&p)) {
+        return 0u;
+    }
+    proto_prefs_values_t v;
+    panel_prefs_to_values(&p, &v);
+    return proto_prefs_encode(&v, K.accepts, out, cap);
+}
+
+/* The report (LINK-050): after every save (panel_prefs_seq moves, whoever saved), or when the
+ * voice changes; the manager sends it at a session's first STATUS, then at most once a second. */
+static void prefs_report(uint64_t now)
+{
+    if (!K.prefs_on) {
+        return;
+    }
+    if (now >= K.voice_at) {
+        voice_look(now);
+    }
+    const uint32_t seq = panel_prefs_seq();
+    if (K.prefs_reported && seq == K.prefs_seq && K.voice == K.prefs_voice &&
+        K.accepts == K.prefs_accepts) {
+        return;
+    }
+    uint8_t body[PROTO_PREFS_ENC_MAX];
+    const size_t len = prefs_body(body, sizeof body);
+    if (len == 0u) {
+        return;
+    }
+    if (!plink_keypad_prefs_report(K.k, now, g_link.panel_id, K.voice, K.accepts, body, len)) {
+        ESP_LOGE(TAG, "this keypad's settings couldn't be reported");
+    }
+    K.prefs_reported = true;
+    K.prefs_seq = seq;
+    K.prefs_voice = K.voice;
+    K.prefs_accepts = K.accepts;
+}
+
+static void pset_refuse(uint8_t id, uint8_t why)
+{
+    if (K.pset_n < PLINK_PREFS_REFUSED_MAX) {
+        s_pset_refused[2u * K.pset_n] = id;
+        s_pset_refused[2u * K.pset_n + 1u] = why;
+        K.pset_n++;
+    }
+}
+
+static void pset_refuse_all(uint32_t have, uint8_t why)
+{
+    for (unsigned id = 1u; id <= PROTO_PREFS_F_LAST; id++) {
+        if ((have & PROTO_PREFS_BIT(id)) != 0u) {
+            pset_refuse((uint8_t)id, why);
+        }
+    }
+}
+
+/* The answer: the fields refused and the values stored now (whatever the screen applied). */
+static void pset_answer(uint64_t now)
+{
+    uint8_t body[PROTO_PREFS_ENC_MAX];
+    const size_t len = prefs_body(body, sizeof body);
+    (void)plink_keypad_prefs_answer(K.k, now, K.pset_req, s_pset_refused, K.pset_n,
+                                    len > 0u ? body : NULL, len);
+    K.pset_active = false;
+    K.pset_ticket = 0u;
+    K.pset_have = 0u;
+    K.pset_n = 0u;
+}
+
+/* The screen's answer (panel_prefs_done_fn): on its task, inside its tick - only a copy. */
+static void pset_done(void *ctx, uint32_t ticket, const uint8_t why[PROTO_PREFS_F_LAST])
+{
+    (void)ctx;
+    portENTER_CRITICAL(&s_pset_mux);
+    s_pset_ans.set = true;
+    s_pset_ans.ticket = ticket;
+    memcpy(s_pset_ans.why, why, sizeof s_pset_ans.why);
+    portEXIT_CRITICAL(&s_pset_mux);
+}
+
+static const char *origin_word(uint8_t origin)
+{
+    switch (origin) {
+    case PLINK_ORIGIN_HA: return "Home Assistant";
+    case PLINK_ORIGIN_CONSOLE: return "its console";
+    default: return "elsewhere";
+    }
+}
+
+/* A change from the master (PREFS_SET, LINK-051): each field checked here - a field this keypad
+ * doesn't take, out of range, named twice or of the wrong length is refused here - and the rest
+ * handed to the screen (panel_prefs' mailbox), which applies them through its own save or refuses
+ * them (IN_USE, HELD, VOICE_NOT_READY). One at a time; the manager keeps the others waiting. */
+static void pset_take(uint64_t now)
+{
+    if (!K.prefs_on || K.pset_active) {
+        return;
+    }
+    plink_prefs_change_t c;
+    if (!plink_keypad_take_prefs_set(K.k, &c)) {
+        return;
+    }
+    K.pset_req = c.req;
+    K.pset_n = 0u;
+    K.pset_have = 0u;
+    proto_prefs_decoded_t d;
+    if (!proto_prefs_decode(c.fields, c.len, K.accepts, &d)) {
+        ESP_LOGW(TAG, "a settings change that isn't a fields list: nothing applied");
+        pset_answer(now); /* (the link's codec lets none through) */
+        return;
+    }
+    for (unsigned id = 1u; id <= PROTO_PREFS_F_LAST; id++) {
+        if ((d.refused & PROTO_PREFS_BIT(id)) != 0u) {
+            pset_refuse((uint8_t)id, d.why[id - 1u]);
+        }
+    }
+    for (size_t i = 0; i < d.unknown_n && i < PROTO_PREFS_UNKNOWN_MAX; i++) {
+        pset_refuse(d.unknown[i], PROTO_PREFS_WHY_NOT_ALLOWED); /* a newer master's field */
+    }
+    ESP_LOGI(TAG, "settings change from %s through the alarm panel: %u field(s), %u refused here",
+             origin_word(c.origin), (unsigned)__builtin_popcount(d.values.have),
+             (unsigned)K.pset_n);
+    if (d.values.have == 0u) {
+        pset_answer(now);
+        return;
+    }
+    portENTER_CRITICAL(&s_pset_mux);
+    s_pset_ans.set = false;
+    portEXIT_CRITICAL(&s_pset_mux);
+    const uint32_t ticket = panel_prefs_remote_submit(&d.values, pset_done, NULL);
+    if (ticket == 0u) {
+        pset_refuse_all(d.values.have, PROTO_PREFS_WHY_BUSY); /* another change is under way */
+        pset_answer(now);
+        return;
+    }
+    K.pset_active = true;
+    K.pset_cancel_tried = false;
+    K.pset_ticket = ticket;
+    K.pset_have = d.values.have;
+    K.pset_since = now;
+}
+
+static void pset_track(uint64_t now)
+{
+    if (!K.pset_active) {
+        return;
+    }
+    uint8_t why[PROTO_PREFS_F_LAST];
+    bool got = false;
+    portENTER_CRITICAL(&s_pset_mux);
+    if (s_pset_ans.set && s_pset_ans.ticket == K.pset_ticket) {
+        memcpy(why, s_pset_ans.why, sizeof why);
+        s_pset_ans.set = false;
+        got = true;
+    }
+    portEXIT_CRITICAL(&s_pset_mux);
+    if (got) {
+        for (unsigned id = 1u; id <= PROTO_PREFS_F_LAST; id++) {
+            if ((K.pset_have & PROTO_PREFS_BIT(id)) != 0u && why[id - 1u] != 0u) {
+                pset_refuse((uint8_t)id, why[id - 1u]);
+            }
+        }
+        pset_answer(now);
+        return;
+    }
+    if (now - K.pset_since >= UI_PREFS_TAKE_MS && !K.pset_cancel_tried) {
+        /* Not taken in 3 s (the screen is stuck): withdrawn, every field BUSY. Taken, its answer
+         * comes within 2 s (UI_PREFS_LOOK_MS). */
+        K.pset_cancel_tried = true;
+        if (panel_prefs_remote_cancel(K.pset_ticket)) {
+            pset_refuse_all(K.pset_have, PROTO_PREFS_WHY_BUSY);
+            pset_answer(now);
+            return;
+        }
+    }
+    if (now - K.pset_since >= PSET_LOST_MS) {
+        ESP_LOGE(TAG, "the screen took a settings change and never answered: answered busy");
+        pset_refuse_all(K.pset_have, PROTO_PREFS_WHY_BUSY);
+        pset_answer(now);
+    }
 }
 
 /* ---- sounds, time, power, the heartbeat ------------------------------------------------------ */
@@ -1178,6 +1840,7 @@ void ksvc_poll(uint64_t now)
     }
     if (!K.setup_only) {
         take_command(now);
+        take_dev_act(now); /* its first copy goes now, after the alarm's command */
     }
     plink_keypad_info_t info;
     plink_keypad_info(K.k, now, &info);
@@ -1188,6 +1851,10 @@ void ksvc_poll(uint64_t now)
     plink_keypad_info(K.k, now, &info);
     if (!K.setup_only) {
         track_command();
+        track_dev_act();
+        pset_track(now);
+        pset_take(now);
+        prefs_report(now);
         network(now);
         sounds(now, &info);
         follow_time(now);
@@ -1195,6 +1862,8 @@ void ksvc_poll(uint64_t now)
         maintenance_mark(now, &info);
     }
     copy_for_ui(now);
+    home_copy(now);
+    dev_answer_flush();     /* after the copy: the screen's next look shows what its action did */
     voice_feed(now, &info); /* after the copy: the words its snapshot's config_seq names */
     if (now >= K.publish_at) {
         K.publish_at = now + PUBLISH_MS;
@@ -1445,11 +2114,28 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     snprintf(name, sizeof name, "Keypad %s", g_link.panel_id);
     static const plink_keypad_port_t port = {
         .ctx = NULL, .send = port_send, .mtu = NULL, .store = port_store, .resolve = port_resolve};
-    /* No capability is offered yet: each comes with the code that uses it (LINK-043). */
+    /* What it offers (LINK-043), each with the code that uses it: Smart Home with its mirror
+     * (attached below; the core offers HOME only then), its settings with a screen to apply them
+     * (UI-046). The setup's pairing on a master offers nothing: that panel isn't a keypad yet. */
+    uint16_t offer = 0u;
+    if (!setup_only) {
+        home_prepare();
+#if CONFIG_ALARM_FEATURE_UI
+        offer |= PLINK_CAP_PREFS;
+#endif
+        offer |= s_home ? PLINK_CAP_HOME : 0u;
+    }
     plink_keypad_init(k, &g_link.crypto, &port, have ? &rec : NULL, K.cfg_buf,
-                      ALARM_CONFIG_BLOB_MAX, K.cfg, PLINK_KIND_PANEL, &caps, 0u, name, g_link.fw,
+                      ALARM_CONFIG_BLOB_MAX, K.cfg, PLINK_KIND_PANEL, &caps, offer, name, g_link.fw,
                       now);
     plink_wipe(&rec, sizeof rec);
+    if ((offer & PLINK_CAP_HOME) != 0u) {
+        plink_keypad_home_attach(k, s_mirror); /* before the first tick */
+    }
+    K.prefs_on = (offer & PLINK_CAP_PREFS) != 0u;
+    if (K.prefs_on) {
+        voice_look(now); /* what it takes, before a change can come */
+    }
     K.k = k;
     K.next_search_at = now;
     if (!setup_only) {

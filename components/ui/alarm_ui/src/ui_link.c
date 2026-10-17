@@ -390,11 +390,8 @@ static void subjects_follow(void)
 {
     const bool keypad = ui_link_keypad();
     ui_set_int(&subject_link_role, keypad ? 1 : 0);
-#if ALARM_UI_DEVICES
-    if (keypad) {
-        ui_set_int(&subject_devices_avail, 0); /* a keypad controls no devices (ui_devices.c too) */
-    }
-#endif
+    /* Smart Home on a keypad follows the master's rule (ui_devices.c): its alarm panel's devices
+     * come through the link (BL-216) */
     ui_set_int(&subject_link_home, home_value());
     if (keypad) {
         char hint[128];

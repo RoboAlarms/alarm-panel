@@ -2366,6 +2366,7 @@ static void note(void)
     if (D.npage > 0u && offline == D.npage) {
         /* TR: Smart Home's note when no device on the page can be reached (the link is down) */
         i18n_utf8_copy(text, sizeof(text), TR("Your devices can't be reached right now"));
+        fits = note_fits(text); /* no name to shorten: whole, its room from the tabs (BL-216) */
     } else if (nf == 0u) {
         /* TR: Smart Home's note when nothing needs attention and no light is on */
         i18n_utf8_copy(text, sizeof(text), TR("Nothing needs you"));
@@ -2483,9 +2484,10 @@ static void poll(void)
         }
     }
     D.n = kept;
-    /* a keypad controls no devices: its rail has no Smart Home (BL-048) */
-    ui_set_int(&subject_devices_avail, D.n > 0u && !ui_link_keypad() ? 1 : 0);
-    if ((D.n == 0u || ui_link_keypad()) && on_view()) {
+    /* HCTL-003: Smart Home on the rail while a device is listed - a link keypad's are its alarm
+     * panel's, through the link (BL-216, proposal P1 approved 2026-10-16) */
+    ui_set_int(&subject_devices_avail, D.n > 0u ? 1 : 0);
+    if (D.n == 0u && on_view()) {
         ui_set_int(&subject_view, VIEW_HOME); /* the last device went away */
     }
 }

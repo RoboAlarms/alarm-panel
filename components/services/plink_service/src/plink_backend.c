@@ -7,7 +7,11 @@
  *
  * A keypad keeps what ui_port_esp gives it for this panel itself - Wi-Fi and addresses, the screen,
  * sound, languages and packs, updates, About, the setup and the factory reset (which makes it a
- * stand-alone panel again) - and reads the time zone without setting it (the master's, LINK-020).
+ * stand-alone panel again), a change of its Screen and sound settings from elsewhere (the
+ * prefs_remote_* pair: its master's PREFS_SET, handed to the screen by the link task through
+ * panel_prefs' mailbox, UI-046) and Smart Home's Arrange (its own layout, decision 2 of BL-216) -
+ * and reads the time zone without setting it (the master's, LINK-020). Smart Home's devices and
+ * actions are the master's, through the link (BL-216).
  * The master-only pages are left out by NULL entries; the ones the UI calls without looking
  * (installer mode, users) answer ALARM_ERR_UNAVAILABLE until the role gate hides them.
  */
@@ -206,6 +210,26 @@ static void kp_mqtt_status(void *ctx, ui_mqtt_status_t *out)
                                                   : UI_MQTT_OFF;
 }
 
+/* ---- a keypad: the master's devices on Smart Home (BL-216) -----------------------------------
+ * The master's page, unchanged: its devices and states from the link's mirror (the screen's copy
+ * the link task keeps), each tap judged again on the master as its own screen's (LINK-047,
+ * LINK-048). Arrange stays this panel's own (ui_port_esp's layout entries, decision 2). */
+
+#if CONFIG_ALARM_HOME_CONTROL
+static size_t kp_dev_list(void *ctx, ui_dev_t *out, size_t max)
+{
+    (void)ctx;
+    return ksvc_dev_copy(out, max, NULL);
+}
+
+static ui_dev_result_t kp_dev_act(void *ctx, const char *ref, uint8_t action, int32_t value,
+                                  const char *code, alarm_result_t *code_result)
+{
+    (void)ctx;
+    return ksvc_dev_act(ref, action, value, code, code_result);
+}
+#endif
+
 /* ---- a keypad: what only the master does (until the role gate hides it) ---------------------- */
 
 static alarm_result_t kp_program_enter(void *ctx, const char *code, uint8_t *user_out)
@@ -282,8 +306,9 @@ static void keypad_backend(ui_backend_t *be)
     be->user_update = kp_user_update;
     be->user_delete = kp_user_delete;
     be->set_config = NULL;
-    /* the master's: its event log, sensors, integrations, devices, automations, the zones' spoken
-     * names (the keypad's own voice, its Announcements and Voice volume stay: LINK-028) */
+    /* the master's: its event log, sensors, integrations, automations, the zones' spoken names
+     * (the keypad's own voice, its Announcements and Voice volume stay: LINK-028); its devices
+     * come through the link (below) */
     be->log_read = NULL;
     be->boot_id = NULL;
     be->log_loss = NULL;
@@ -311,10 +336,15 @@ static void keypad_backend(ui_backend_t *be)
     be->ntfy_new_topic = NULL;
     be->pushover_get = NULL;
     be->pushover_set = NULL;
+#if CONFIG_ALARM_HOME_CONTROL
+    /* Smart Home from the master through the link (BL-216); the layout entries stay ui_port_esp's:
+     * Arrange is each panel's own (decision 2) */
+    be->dev_list = kp_dev_list;
+    be->dev_act = kp_dev_act;
+#else
     be->dev_list = NULL;
     be->dev_act = NULL;
-    be->dev_layout_get = NULL;
-    be->dev_layout_set = NULL;
+#endif
     be->auto_list = NULL;
     be->auto_gen = NULL;
     be->auto_read_only = NULL;

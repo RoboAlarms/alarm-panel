@@ -18,9 +18,9 @@ on a panel, `host/link_sim` on a PC) and drives the managers here with frames an
 | `plink_store.h` | the master's and the keypad's records in NVS `link` (stored contracts) |
 | `plink_pair.h` | pairing on both sides: commit-then-reveal, the code, the keys |
 | `plink_session.h` | the handshake and the sessions it makes |
-| `plink_home.h` | Smart Home on keypads, both sides: the device list blob built from `home_control`'s registry rows (`plink_home_list_build`, `plink_home_recs_build`), `list_crc` (never 0) and `states_crc`, the records by index (`plink_dev_recs_t`), a keypad's lenient walk of a pulled blob (`plink_home_list_check`, `_next`, `_find`), and a row's record carried over by ref at a new list's install (`plink_home_list_keys`, `plink_home_carry`) |
+| `plink_home.h` | Smart Home on keypads, both sides: the device list blob built from `home_control`'s registry rows (`plink_home_list_build`, `plink_home_recs_build`), `list_crc` (never 0) and `states_crc`, the records by index (`plink_dev_recs_t`) and their values for a screen (`plink_home_values_of`), a keypad's lenient walk of a pulled blob (`plink_home_list_check`, `_next`, `_find`), and a row's record carried over by ref at a new list's install (`plink_home_list_keys`, `plink_home_carry`) |
 | `plink_master.h` | the master's link manager: keypads, sessions, pairing, status, commands, supervision; Smart Home and settings on keypads (`plink_master_home`, `plink_master_dev_answer`, `plink_master_prefs_set`, `plink_master_keypad_home`, `port.dev_run`, `port.prefs_done`) |
-| `plink_keypad.h` | a keypad's link manager: its master, the handshake, status, configuration, events, commands and panic; Smart Home and settings on keypads: the mirror of the master's devices in the caller's memory (`plink_keypad_home_attach`, `plink_dev_mirror_t`; without one HOME is never offered), the list pulled as the configuration is (one `plink_pull_t` each), the rows, records and freshness (`plink_keypad_dev_info`, `_dev_row`, `_dev_rec`), device actions and what a device shows meanwhile (`plink_keypad_dev_act`, `_dev_act_state`, `_dev_act_release`, `_dev_overlay`), the settings report and each change applied once (`plink_keypad_prefs_report`, `plink_keypad_take_prefs_set`, `plink_keypad_prefs_answer`) |
+| `plink_keypad.h` | a keypad's link manager: its master, the handshake, status, configuration, events, commands and panic; Smart Home and settings on keypads: the mirror of the master's devices in the caller's memory (`plink_keypad_home_attach`, `plink_dev_mirror_t`; without one HOME is never offered), the list pulled as the configuration is (one `plink_pull_t` each), the rows, records and freshness (`plink_keypad_dev_info`, `_dev_row`, `_dev_rec`), device actions and what a device shows meanwhile (`plink_keypad_dev_act`, `_dev_act_state`, `_dev_act_release`, `_dev_overlay`), a row as the screen shows it - the record with this keypad's action over it, offline while the device data is stale (`plink_keypad_dev_view`), the settings report and each change applied once (`plink_keypad_prefs_report`, `plink_keypad_take_prefs_set`, `plink_keypad_prefs_answer`) |
 | `plink_vfeed.h` | what a keypad's voice hears (LINK-028): the keypad's events, sounds and snapshot turned into the voice's baseline, pause, facts and commits - covered events only, never older than its baseline, held for a STATUS on its way, settled for a late tone |
 
 ## Depends on
@@ -85,7 +85,8 @@ already past - at most 2 frames per keypad and 8 per tick.
 `test_plink_home.c` checks the shared pieces: the blob from the registry's rows (rows whose ref
 the wire can't carry left out of the blob and the records alike, at most 64, the longest list
 within `PLINK_DEV_BLOB_MAX`), `list_crc` never 0, a newer master's blob read leniently and a newer
-compat refused, the records' flags and `states_crc`, and records carried over by ref.
+compat refused, the records' flags and `states_crc`, the registry's values given back from a
+record's bytes (`plink_home_values_of`), and records carried over by ref.
 
 `test_plink_keypad.c` runs the keypad's manager against a scripted master made of the real pieces
 (pairing, the handshake answer, sessions, the codecs, STATUS from snapshots of the real engine)
@@ -96,12 +97,15 @@ looks for the master again before every handshake retry after the first failure.
 master also builds a device list and records from a fake registry with `plink_home.h` and offers
 HOME and PREFS when a test asks: HOME offered only with a mirror, nothing of either capability
 without its bit or on frames under 250 B; the list pulled (its first page alone, then two out),
-installed whole, a list that fails remembered, records carried over by ref; records in frame order
+installed whole, a list that fails remembered, records carried over by ref, the list dropped at a
+session without HOME (Smart Home hidden) and pulled again once HOME is back; records in frame order
 per device and only under the installed list, caught up 250 ms after a mismatch then 1 s apart
 doubling to 30 s; device data stale after 30 s, kept fresh only by data under the installed list
 (a list that fails leaves the old one reading offline); device actions refused at once, resent
 every 500 ms and given up at 3 s (the code wiped after the last copy), late answers and what the
-device shows, 2 slots apart from the commands; list and state requests held while a panic is
+device shows, a row as the screen gets it (`plink_keypad_dev_view`: the record, this keypad's own
+action over it once released, every row offline since the last data once stale), 2 slots apart
+from the commands; list and state requests held while a panic is
 sent; the settings report's timing, the HEARTBEAT's settings CRC, a PREFS_SET applied once.
 
 `test_plink_link.c` runs the real master and up to eight real keypads together over the pretend

@@ -5242,7 +5242,8 @@ static void test_a_settings_write_applies_once_and_times_out_when_the_keypad_is_
  * are written; a write to it is UNSUPPORTED, the master holds no settings for it, and its HEARTBEAT
  * carries no settings section (5 B shorter than the other's). Then the master restarts as a v1
  * master (FW only): the new keypad sends and receives nothing new either, not even its HEARTBEAT's
- * section, and its taps and writes to it are refused at once. */
+ * section, its taps and writes to it are refused at once, and its Smart Home is hidden (the list
+ * it mirrored before went with the session). */
 static void test_a_keypad_offering_only_fw_gets_nothing_new(void)
 {
     home_master(PLINK_CAPS_KNOWN);
@@ -5325,6 +5326,9 @@ static void test_a_keypad_offering_only_fw_gets_nothing_new(void)
     TEST_ASSERT_TRUE(di.attached);
     TEST_ASSERT_FALSE(di.shared);
     TEST_ASSERT_FALSE(di.fresh);
+    /* its list from before went with the session: Smart Home hidden, as with any v1 master */
+    TEST_ASSERT_EQUAL_HEX32(0u, di.list_crc);
+    TEST_ASSERT_EQUAL_UINT8(0u, di.count);
 }
 
 /* ---- the storm (LINK-049) ---- */

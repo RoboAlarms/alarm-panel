@@ -7,9 +7,12 @@
  *   plink                              the role, the link's state, the keypads or the master
  *   plink role keypad|master confirm   factory reset into that role (everything stored is erased)
  *   master: plink pair [force], allow, reject, stop, list, remove <n>, home <n> <p>,
- *           super <n> <seconds>        (force: without installer mode, development builds only)
+ *           super <n> <seconds>        (force: without installer mode, development builds only),
+ *           dev [<i>]                  Smart Home for keypads: the list and records it serves
+ *           prefs <n> [set <key> <v>]  keypad n's settings report (set: development builds only)
  *   keypad: plink find, master <ip>|off, pair [<ip>], yes, no, forget, cmd away|stay|night|off|
  *           chime|panic [<code>] (as the touchscreen sends it; the status also shows what it shows)
+ *           dev [<i>]                  Smart Home from its master: the mirror and the screen's rows
  *   a master whose setup isn't done (the setup's keypad branch, Option C): plink kp pair [<ip>],
  *           kp yes, kp no, kp stop, kp done (stores the keypad role, keeps Wi-Fi, restarts);
  *           kp force first lets a bench panel whose setup is done do it (development builds)
@@ -24,10 +27,12 @@
 #include <string.h>
 
 #include "alarm/alarm_strings.h"
+#include "alarm_mem.h"
 #include "esp_attr.h"
 #include "esp_console.h"
 #include "esp_netif.h"
 #include "esp_timer.h"
+#include "freertos/semphr.h"
 #include "mdns.h"
 
 static const char *const LINK_STATE[] = {"not paired", "connecting", "online",
@@ -214,7 +219,8 @@ static void print_status(void)
     printf("  panel %s, UDP %u, stack minimum free: link %u bytes", g_link.panel_id,
            (unsigned)PLINK_UDP_PORT, (unsigned)uxTaskGetStackHighWaterMark(g_link.task));
     if (!keypad) {
-        printf(", worker %u", (unsigned)msvc_stack_free());
+        printf(", worker %u, plink_dev %u", (unsigned)msvc_stack_free(),
+               (unsigned)hsvc_stack_free());
     }
     printf("\n");
     if (keypad) {
@@ -268,6 +274,370 @@ static int list_keypads(void)
         printf("  %u  %4u  %9us  %-15s  %-15s  %-8s  %s\n", (unsigned)k->device, (unsigned)k->home,
                (unsigned)k->supervision_s, state, k->addr, k->fw, name);
     }
+    return 0;
+}
+
+/* ---- Smart Home and settings on the master's keypads (BL-216) -------------------------------- */
+
+static const char *const KIND_WORD[] = {"-",     "light", "switch", "lock",  "climate",
+                                        "cover", "fan",   "valve",  "scene", "script"};
+static const char *const SOURCE_WORD[] = {"-", "ha", "zigbee", "zwave"};
+
+static const char *kind_word(uint8_t k)
+{
+    return k < sizeof KIND_WORD / sizeof KIND_WORD[0] ? KIND_WORD[k] : "?";
+}
+
+static const char *source_word(uint8_t s)
+{
+    return s < sizeof SOURCE_WORD / sizeof SOURCE_WORD[0] ? SOURCE_WORD[s] : "?";
+}
+
+/* The console task's copies (one command at a time): the records of the list the master serves
+ * now, one keypad's settings side. */
+static plink_dev_recs_t s_recs EXT_RAM_BSS_ATTR;
+static plink_keypad_home_t s_kh EXT_RAM_BSS_ATTR;
+
+/* `plink dev [<i>]` on a master: whether Smart Home is offered and which keypads have it, then
+ * the list and the records the manager serves (plink_dev's newest build): every row in brief, or
+ * row i in full. */
+static int dev_show(int argc, char **argv)
+{
+    unsigned long only = 0;
+    if (argc >= 3 && !parse_num(argv[2], 0, PLINK_DEV_MAX - 1u, &only)) {
+        printf("plink dev [<index 0..%u>]\n", (unsigned)PLINK_DEV_MAX - 1u);
+        return 1;
+    }
+    uint8_t *blob = alarm_mem_slow_malloc(PLINK_DEV_BLOB_MAX);
+    if (blob == NULL) {
+        printf("not enough PSRAM for a copy of the list\n");
+        return 1;
+    }
+    hsvc_dev_info_t info;
+    const bool have = hsvc_dev_copy(blob, PLINK_DEV_BLOB_MAX, &s_recs, &info);
+    printf("Smart Home for keypads: %s; %s; %" PRIu32 " build(s) handed to the link\n",
+           info.offered ? "offered" : "not offered (no home control, or the registry didn't start)",
+           info.wanted ? "a keypad has it" : "no keypad has it now (no builds)", info.builds);
+    const link_pub_t *pub = published();
+    for (size_t i = 0; i < pub->keypads; i++) {
+        printf("  keypad %u: %s, Smart Home %s, settings %s\n", (unsigned)pub->keypad[i].device,
+               pub->caps[i] != 0u ? "in session" : "no session",
+               (pub->caps[i] & PLINK_CAP_HOME) != 0u ? "yes" : "no",
+               (pub->caps[i] & PLINK_CAP_PREFS) != 0u ? "yes" : "no");
+    }
+    if (!have) {
+        printf("  no list built yet\n");
+        free(blob);
+        return 0;
+    }
+    const uint64_t now = (uint64_t)alarm_service_now();
+    printf("  list %08" PRIx32 ", %u bytes, %u row(s) from %u in the registry, states %08" PRIx32
+           ", built %u s ago\n",
+           info.list_crc, (unsigned)info.len, (unsigned)s_recs.count, (unsigned)info.rows,
+           info.states_crc, (unsigned)((now > info.built_ms ? now - info.built_ms : 0u) / 1000u));
+    if (argc < 3) {
+        printf("   i  kind     source  flags  state         name (area)  ref\n");
+    }
+    plink_home_walk_t w;
+    memset(&w, 0, sizeof w);
+    uint8_t index = 0;
+    plink_dev_cat_t cat;
+    bool usable = false;
+    while (plink_home_list_next(blob, info.len, &w, &index, &cat, &usable)) {
+        if (argc >= 3 && index != only) {
+            continue;
+        }
+        plink_dev_rec_t rec;
+        const bool hr = plink_home_rec(&s_recs, index, &rec);
+        if (!hr) {
+            memset(&rec, 0, sizeof rec);
+        }
+        const char flags[5] = {(rec.flags & PLINK_DEVF_ONLINE) != 0u ? 'o' : '-',
+                               (rec.flags & PLINK_DEVF_PENDING) != 0u ? 'p' : '-',
+                               (rec.flags & PLINK_DEVF_FAILED) != 0u ? 'f' : '-',
+                               (rec.flags & PLINK_DEVF_UNSURE) != 0u ? 'u' : '-', '\0'};
+        if (argc < 3) {
+            printf("  %2u  %-7s  %-6s  %-5s  %-12s  %s (%s)  %s%s\n", (unsigned)index,
+                   kind_word(cat.kind), source_word(cat.source), hr ? flags : "none", rec.word,
+                   cat.name, cat.area, cat.ref, usable ? "" : " [can't be used]");
+            continue;
+        }
+        printf("  %u: %s from %s, \"%s\" in \"%s\", ref %s%s\n", (unsigned)index,
+               kind_word(cat.kind), source_word(cat.source), cat.name, cat.area, cat.ref,
+               usable ? "" : " [can't be used]");
+        if (!hr) {
+            printf("  no record yet\n");
+            continue;
+        }
+        printf("  flags %s (online, pending, failed, unsure), action %u, state \"%s\"\n", flags,
+               (unsigned)rec.action, rec.word);
+        printf("  values 0x%02x: level %u, modes 0x%02x, hvac %u, setpoint %" PRId32
+               ", temp %" PRId32 ", since %" PRIu32 ", caps 0x%02x\n",
+               (unsigned)rec.vflags, (unsigned)rec.level, (unsigned)rec.modes,
+               (unsigned)rec.hvac_action, rec.setpoint, rec.temp, rec.since, (unsigned)rec.caps);
+    }
+    free(blob);
+    return 0;
+}
+
+/* Keypad device's settings side as the link task last published it, into s_kh. */
+static bool keypad_home(uint8_t device, int8_t *rssi)
+{
+    bool found = false;
+    link_pub_lock();
+    for (size_t i = 0; g_pub.home != NULL && i < g_pub.keypads; i++) {
+        if (g_pub.keypad[i].device == device) {
+            s_kh = g_pub.home[i];
+            *rssi = g_pub.rssi[i];
+            found = s_kh.device == device;
+        }
+    }
+    link_pub_unlock();
+    return found;
+}
+
+/* A field's value as Home Assistant writes it: a delay in seconds, a switch on or off. */
+static void print_field(const proto_prefs_field_t *f, uint32_t v)
+{
+    if ((f->flags & PROTO_PREFS_FL_SWITCH) != 0u) {
+        printf("%s=%s", f->key, v != 0u ? "on" : "off");
+    } else if ((f->flags & PROTO_PREFS_FL_DELAY) != 0u) {
+        printf("%s=%" PRIu32 "s", f->key, v / 1000u);
+    } else {
+        printf("%s=%" PRIu32, f->key, v);
+    }
+}
+
+#if CONFIG_ALARM_BUILD_DEV
+static const char *pset_word(plink_service_pset_t r)
+{
+    switch (r) {
+    case PLINK_SERVICE_PSET_OK: return "answered";
+    case PLINK_SERVICE_PSET_NOT_FOUND: return "no such keypad";
+    case PLINK_SERVICE_PSET_OFFLINE: return "offline (no session, or not heard for 30 s)";
+    case PLINK_SERVICE_PSET_UNSUPPORTED: return "unsupported (no settings over its link)";
+    case PLINK_SERVICE_PSET_BUSY: return "busy (a write in flight), try again";
+    case PLINK_SERVICE_PSET_TIMEOUT: return "sent, never answered (6 s)";
+    default: return "not a settings body";
+    }
+}
+
+/* `plink prefs <n> set`: the console waits for the write's end (the link task's done). */
+static SemaphoreHandle_t s_set_done;
+static portMUX_TYPE s_set_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t s_set_ticket;
+static plink_service_pset_t s_set_result;
+static uint8_t s_set_why[PROTO_PREFS_F_LAST];
+
+static void console_set_done(void *ctx, uint32_t ticket, plink_service_pset_t result,
+                             const uint8_t why[PROTO_PREFS_F_LAST])
+{
+    (void)ctx;
+    bool mine = false;
+    portENTER_CRITICAL(&s_set_mux);
+    if (ticket == s_set_ticket) {
+        s_set_result = result;
+        memcpy(s_set_why, why, sizeof s_set_why);
+        mine = true;
+    }
+    portEXIT_CRITICAL(&s_set_mux);
+    if (mine) {
+        xSemaphoreGive(s_set_done);
+    }
+}
+
+static int prefs_set(uint8_t device, const char *key, const char *text)
+{
+    const uint8_t id = proto_prefs_id(key);
+    const proto_prefs_field_t *f = id != 0u ? proto_prefs_field(id) : NULL;
+    if (f == NULL) {
+        printf("no such setting: %s\n", key);
+        return 1;
+    }
+    int8_t rssi = 0;
+    if (!keypad_home(device, &rssi) || !s_kh.prefs.have) {
+        printf("no settings report from keypad %u yet\n", (unsigned)device);
+        return 1;
+    }
+    if ((s_kh.prefs.accepts & PROTO_PREFS_BIT(id)) == 0u) {
+        printf("keypad %u doesn't take %s\n", (unsigned)device, key);
+        return 1;
+    }
+    const bool delay = (f->flags & PROTO_PREFS_FL_DELAY) != 0u;
+    unsigned long v = 0;
+    if ((f->flags & PROTO_PREFS_FL_SWITCH) != 0u &&
+        (strcmp(text, "on") == 0 || strcmp(text, "off") == 0)) {
+        v = text[1] == 'n' ? 1u : 0u;
+    } else if (!parse_num(text, 0, delay ? 86400u : f->max, &v)) {
+        printf("%s: a whole number%s, at most %lu\n", key, delay ? " of seconds" : "",
+               delay ? 86400ul : (unsigned long)f->max);
+        return 1;
+    }
+    if (delay) {
+        v *= 1000u; /* seconds, as Home Assistant writes them, to the wire's ms */
+    }
+    proto_prefs_values_t vals;
+    memset(&vals, 0, sizeof vals);
+    if (proto_prefs_put(&vals, id, (uint32_t)v) != PROTO_PREFS_WHY_NONE) {
+        printf("%s: out of range\n", key);
+        return 1;
+    }
+    uint8_t body[PLINK_SERVICE_PREFS_BODY_MAX];
+    const size_t len = proto_prefs_encode(&vals, vals.have, body, sizeof body);
+    if (s_set_done == NULL) {
+        s_set_done = xSemaphoreCreateBinaryWithCaps(alarm_mem_slow_caps());
+        if (s_set_done == NULL) {
+            printf("no memory\n");
+            return 1;
+        }
+    }
+    (void)xSemaphoreTake(s_set_done, 0); /* the end of an earlier write given up on */
+    portENTER_CRITICAL(&s_set_mux);
+    const uint32_t ticket = ++s_set_ticket;
+    portEXIT_CRITICAL(&s_set_mux);
+    plink_service_pset_t r = plink_service_prefs_set(device, PLINK_SERVICE_ORIGIN_CONSOLE, body,
+                                                     len, console_set_done, NULL, ticket);
+    if (r == PLINK_SERVICE_PSET_OK) {
+        if (xSemaphoreTake(s_set_done, pdMS_TO_TICKS(8000)) != pdTRUE) {
+            printf("no end within 8 s\n");
+            return 1;
+        }
+        portENTER_CRITICAL(&s_set_mux);
+        r = s_set_result;
+        const uint8_t why = s_set_why[id - 1u];
+        portEXIT_CRITICAL(&s_set_mux);
+        if (r == PLINK_SERVICE_PSET_OK) {
+            if (why == 0u) {
+                printf("applied\n");
+                return 0;
+            }
+            printf("refused: %s\n", proto_prefs_why_word(why));
+            return 1;
+        }
+    }
+    printf("%s\n", pset_word(r));
+    return 1;
+}
+#endif /* CONFIG_ALARM_BUILD_DEV */
+
+/* `plink prefs <n> [set <key> <value>]` on a master: keypad n's settings report as the master
+ * keeps it (LINK-050), or a change to one field (development builds: Home Assistant's path, its
+ * origin the console's). */
+static int prefs_cmd(uint8_t device, int argc, char **argv)
+{
+    if (argc >= 4) {
+#if CONFIG_ALARM_BUILD_DEV
+        if (argc == 6 && strcmp(argv[3], "set") == 0) {
+            return prefs_set(device, argv[4], argv[5]);
+        }
+        printf("plink prefs <n> [set <key> <value>] (a delay in seconds, a switch on|off)\n");
+#else
+        printf("plink prefs <n> set: development builds only\n");
+#endif
+        return 1;
+    }
+    int8_t rssi = 0;
+    if (!keypad_home(device, &rssi)) {
+        printf("no keypad %u\n", (unsigned)device);
+        return 1;
+    }
+    printf("keypad %u: %s, signal %d dBm, Smart Home %s, settings %s\n", (unsigned)device,
+           s_kh.online ? "online" : "not heard for 30 s", (int)rssi,
+           (s_kh.caps & PLINK_CAP_HOME) != 0u ? "yes" : "no",
+           (s_kh.caps & PLINK_CAP_PREFS) != 0u ? "yes" : "no");
+    const plink_prefs_report_t *r = &s_kh.prefs;
+    if (!r->have) {
+        printf("  no settings report yet\n");
+        return 0;
+    }
+    printf("  report %" PRIu32 ": panel id %s%s, voice %u, accepts 0x%05" PRIx32 ", crc %08" PRIx32
+           ", %u bytes\n",
+           r->count, r->panel_id[0] != '\0' ? r->panel_id : "-",
+           s_kh.id_taken ? " (a lower keypad number reports the same)" : "", (unsigned)r->voice,
+           r->accepts, r->crc, (unsigned)r->fields_len);
+    proto_prefs_decoded_t dec;
+    if (!proto_prefs_decode(r->fields, r->fields_len, PROTO_PREFS_KNOWN, &dec)) {
+        printf("  its fields don't decode\n");
+        return 1;
+    }
+    printf(" ");
+    for (unsigned id = 1u; id <= PROTO_PREFS_F_LAST; id++) {
+        uint32_t v = 0;
+        const proto_prefs_field_t *f = proto_prefs_field(id);
+        if (f != NULL && proto_prefs_get(&dec.values, id, &v)) {
+            printf(" ");
+            print_field(f, v);
+        }
+    }
+    printf("\n");
+    if (dec.unknown_n != 0u) {
+        printf("  %u field(s) this firmware doesn't know\n", (unsigned)dec.unknown_n);
+    }
+    return 0;
+}
+
+/* ---- Smart Home on a keypad (BL-216) ------------------------------------------------------- */
+
+static const char *const STATUS_WORD[] = {"idle", "pending", "failed", "offline"};
+
+/* `plink dev [<i>]` on a keypad: its mirror of the alarm panel's devices and what its screen shows
+ * of them (the copy ui_backend_t.dev_list reads), every row in brief or row i in full. */
+static int kp_dev_show(int argc, char **argv)
+{
+    unsigned long only = 0;
+    if (argc >= 3 && !parse_num(argv[2], 0, PLINK_DEV_MAX - 1u, &only)) {
+        printf("plink dev [<row 0..%u>]\n", (unsigned)PLINK_DEV_MAX - 1u);
+        return 1;
+    }
+    ui_dev_t *devs = alarm_mem_slow_malloc(PLINK_DEV_MAX * sizeof *devs);
+    if (devs == NULL) {
+        printf("not enough PSRAM for a copy of the devices\n");
+        return 1;
+    }
+    ksvc_dev_info_t info;
+    const size_t n = ksvc_dev_copy(devs, PLINK_DEV_MAX, &info);
+    if (!info.offered) {
+        printf("Smart Home: not offered (no home control in this build, or no PSRAM for it)\n");
+        free(devs);
+        return 0;
+    }
+    const plink_dev_info_t *m = &info.mirror;
+    const uint64_t now = link_now();
+    printf("Smart Home from the alarm panel: %s; list %08" PRIx32 " with %u row(s); device data %s",
+           m->shared ? "in this session" : "not in this session (no HOME, or no session)",
+           m->list_crc, (unsigned)m->count,
+           info.fresh ? "fresh" : "stale or the link isn't online (every tile offline)");
+    if (m->heard_ms != 0u && now >= m->heard_ms) {
+        printf(", last %u s ago", (unsigned)((now - m->heard_ms) / 1000u));
+    }
+    printf("\n  the screen shows %u device(s), copied %u s ago\n", (unsigned)n,
+           (unsigned)(info.copied_ms != 0u && now >= info.copied_ms ? (now - info.copied_ms) / 1000u
+                                                                    : 0u));
+    if (argc < 3 && n > 0u) {
+        printf("   i  kind     status   state  action  name (area)  ref\n");
+    }
+    for (size_t i = 0; i < n; i++) {
+        const ui_dev_t *d = &devs[i];
+        if (argc >= 3 && i != only) {
+            continue;
+        }
+        const char *status =
+            d->status < sizeof STATUS_WORD / sizeof STATUS_WORD[0] ? STATUS_WORD[d->status] : "?";
+        if (argc < 3) {
+            printf("  %2u  %-7s  %-7s  %5u  %6u  %s (%s)  %s%s\n", (unsigned)i, kind_word(d->kind),
+                   status, (unsigned)d->state, (unsigned)d->action, d->name, d->area, d->ref,
+                   d->unsure != 0u ? " [not confirmed]" : "");
+            continue;
+        }
+        printf("  %u: %s from %s, \"%s\" in \"%s\", ref %s\n", (unsigned)i, kind_word(d->kind),
+               source_word(d->source), d->name, d->area, d->ref);
+        printf("  %s%s, state %u, action %u, level %d, modes 0x%02x, hvac %u, setpoint %" PRId32
+               ", temp %" PRId32 ", caps 0x%02x, since %lld ms\n",
+               status, d->unsure != 0u ? " (not confirmed)" : "", (unsigned)d->state,
+               (unsigned)d->action, (int)d->level, (unsigned)d->modes, (unsigned)d->hvac_action,
+               d->setpoint, d->temperature, (unsigned)d->caps, (long long)d->since_ms);
+    }
+    free(devs);
     return 0;
 }
 
@@ -375,6 +745,12 @@ static int cmd_plink(int argc, char **argv)
         if (strcmp(what, "list") == 0) {
             return list_keypads();
         }
+        if (strcmp(what, "dev") == 0) {
+            return dev_show(argc, argv);
+        }
+        if (strcmp(what, "prefs") == 0 && argc >= 3 && parse_num(argv[2], 1, 8, &n)) {
+            return prefs_cmd((uint8_t)n, argc, argv);
+        }
         if (strcmp(what, "remove") == 0 && argc == 3 && parse_num(argv[2], 1, 8, &n)) {
             req.kind = UI_LINK_REQ_KEYPAD_REMOVE;
             req.device = (uint8_t)n;
@@ -447,6 +823,9 @@ static int cmd_plink(int argc, char **argv)
         if (strcmp(what, "cmd") == 0) {
             return keypad_cmd(argc, argv);
         }
+        if (strcmp(what, "dev") == 0) {
+            return kp_dev_show(argc, argv);
+        }
     }
     printf("plink: see `help plink`\n");
     return 1;
@@ -458,10 +837,12 @@ esp_err_t plink_service_console_register(void)
         .command = "plink",
         .help = "Panel link (docs/features/11): status; role keypad|master confirm (a factory "
                 "reset); master: pair [force], allow, reject, stop, list, remove <n>, "
-                "home <n> <p>, super <n> <s>; keypad: find, master <ip>|off, pair [<ip>], yes, "
-                "no, forget, cmd away|stay|night|off|chime|panic [<code>]; a master in its setup: "
+                "home <n> <p>, super <n> <s>, dev [<i>], prefs <n> [set <key> <v>]; keypad: find, "
+                "master <ip>|off, pair [<ip>], yes, no, forget, cmd "
+                "away|stay|night|off|chime|panic [<code>], dev [<i>]; a master in its setup: "
                 "kp pair [<ip>]|yes|no|stop|done|force",
-        .hint = "[role|pair|allow|reject|stop|list|remove|home|super|find|master|yes|no|forget|cmd|kp]",
+        .hint = "[role|pair|allow|reject|stop|list|remove|home|super|dev|prefs|find|master|yes|no|"
+                "forget|cmd|kp]",
         .func = cmd_plink,
     };
     return esp_console_cmd_register(&cmd);

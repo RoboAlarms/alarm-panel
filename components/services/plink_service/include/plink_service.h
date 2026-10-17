@@ -3,7 +3,8 @@
  * keypad, NVS "link"), one task that owns the UDP socket on port 6056 and the link manager of the
  * role (components/core/panel_link), the crypto port on PSA, mDNS, and around them:
  *   - on a master: the alarm listener, a worker that runs the keypads' commands on the alarm task,
- *     supervision through alarm_service_device_reachable, the device numbers shared with Zigbee;
+ *     supervision through alarm_service_device_reachable, the device numbers shared with Zigbee,
+ *     its Smart Home devices and actions for its keypads and their settings (Home Assistant);
  *   - on a keypad: the UI backend that shows the master's status and sends its commands, the
  *     sounds, what its voice hears, the time and the update gate;
  *   - the UI's link entries for either role and the `plink` console command.
@@ -19,6 +20,8 @@
 
 #include "alarm/alarm_config.h"
 #include "alarm/alarm_snapshot.h"
+#include "alarm_proto/proto_link.h"
+#include "alarm_proto/proto_prefs.h"
 #include "alarm_service.h"
 #include "esp_err.h"
 #include "sdkconfig.h"
@@ -61,6 +64,61 @@ const alarm_listener_t *plink_service_listener(void);
 void plink_service_set_devices_port(uint32_t (*others_held)(void),
                                     bool (*others_held_now)(uint32_t *out),
                                     void (*link_held)(uint32_t mask));
+
+/* ---- the master: Smart Home and settings on its keypads (docs/features/11 "Smart Home and Home
+ * Assistant on keypads", BL-216) ------------------------------------------------------------- */
+
+/* Whether the device registry runs (device_service_start() succeeded): only then, and only in a
+ * build with home control, does this master offer its devices to its keypads (PLINK_CAP_HOME,
+ * docs/features/11 "Capabilities"). Before plink_service_start(); never called: not offered. */
+void plink_service_set_home(bool registry_runs);
+
+/* The link keypads for Home Assistant's keypads list (ha_link_settings_port_t.keypads; docs/
+ * features/23 HAI-018), in device order: the master's name for each ("Keypad <n>" when it has
+ * none), its home partition, online (a live session heard in the last 30 s), its firmware and
+ * signal, and once it reported its settings (LINK-050) its own panel id ("" while another keypad
+ * with a lower number reports the same, as plink_master_keypad_home says), the values it stores,
+ * the fields it accepts and its voice - its id alone while it is online in a session without
+ * PLINK_CAP_PREFS (its report is from before: nothing of it settable). A copy under the link's
+ * publishing lock, which the link task refreshes every 0.5 s: never a wait for the link itself.
+ * At most max; 0 on a keypad and while the link is off. Any task. */
+size_t plink_service_keypads(proto_link_keypad_t *out, size_t max);
+
+/* Who asked for a settings write: PREFS_SET's origin (docs/features/11 "Frozen values"). */
+#define PLINK_SERVICE_ORIGIN_HA      1u /* Home Assistant */
+#define PLINK_SERVICE_ORIGIN_CONSOLE 2u /* the master's service console */
+
+/* A fields body: count u8 and the TLVs (proto_prefs_encode), every field v1 knows at most. */
+#define PLINK_SERVICE_PREFS_BODY_MAX PROTO_PREFS_ENC_MAX
+
+/* How a settings write to a keypad went: the panel link's plink_pset_t numbers (asserted). */
+typedef enum {
+    PLINK_SERVICE_PSET_OK = 0,      /* queued; at its end, answered (perhaps with refusals) */
+    PLINK_SERVICE_PSET_NOT_FOUND,   /* no keypad has that number (or the link isn't a master's) */
+    PLINK_SERVICE_PSET_OFFLINE,     /* no live session, or not heard for 30 s; or removed since */
+    PLINK_SERVICE_PSET_UNSUPPORTED, /* no settings over its link (no PREFS: older firmware) */
+    PLINK_SERVICE_PSET_BUSY,        /* a write to it is in flight, or the queue is full */
+    PLINK_SERVICE_PSET_TIMEOUT,     /* sent, and no answer within 6 s */
+    PLINK_SERVICE_PSET_BAD,         /* not a fields body of at most PLINK_SERVICE_PREFS_BODY_MAX */
+} plink_service_pset_t;
+
+/* A write's end, from the link task: OK with why[id - 1] the PROTO_PREFS_WHY_* of each field the
+ * keypad refused and 0 for each it applied (its report, in plink_service_keypads, already holds
+ * the values it stores now); any other result for the whole write, why all 0. Copies and
+ * returns: never blocks, never calls back into the link. */
+typedef void (*plink_service_prefs_done_fn)(void *ctx, uint32_t ticket, plink_service_pset_t result,
+                                            const uint8_t why[PROTO_PREFS_F_LAST]);
+
+/* Changes keypad device's settings (LINK-051; the keypad checks each value and applies it through
+ * its screen, UI-046). fields is a fields body holding only fields this master knows and the
+ * keypad accepts (its "can"). Never blocks: the write is queued for the link task (4 deep), and
+ * PLINK_SERVICE_PSET_OK means exactly one done(ctx, ticket, ...) follows - OK with the keypad's
+ * answer, or NOT_FOUND, OFFLINE, UNSUPPORTED, BUSY (one in flight to it already), TIMEOUT. Any
+ * other return is the refusal now, and nothing follows: BAD, NOT_FOUND (device not 1..8, or the
+ * link isn't running as a master), BUSY (the queue is full). Any task. */
+plink_service_pset_t plink_service_prefs_set(uint8_t device, uint8_t origin, const uint8_t *fields,
+                                             size_t len, plink_service_prefs_done_fn done,
+                                             void *ctx, uint32_t ticket);
 
 /* ---- both roles ------------------------------------------------------------------------------ */
 

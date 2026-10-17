@@ -13,6 +13,8 @@
  *                    using one while the other is made), and the supervision edges
  *                    (alarm_service_device_reachable may wait for the alarm task's queue);
  *                    the link task itself never waits for the alarm task (LINK-027)
+ *   plink_dev        Smart Home for the keypads (plink_home_svc.c, BL-216): the device builds and
+ *                    the keypads' device actions, answered on the worker's result queue
  *   link task        everything else: the manager, mDNS (announced only while in use, LINK-021),
  *                    the time and its zone, the master's reporting for the Emergency words, the
  *                    network trouble bit and Wi-Fi power save while keypads are paired, the copies
@@ -52,7 +54,9 @@ static const char *TAG = "plink";
 #define EV_QUEUE        16u
 #define SOUND_QUEUE     8u
 #define JOB_SLOTS       16u /* 8 keypads, one command and one panic each (LINK-027) */
-#define RES_QUEUE       (JOB_SLOTS + 2u)
+/* The worker's answers and config builds, and plink_dev's: an answer per device job, and at most
+ * two builds (two buffers: one the manager uses, one waiting here). */
+#define RES_QUEUE       (JOB_SLOTS + 2u + LINK_DEV_JOBS + 2u)
 #define WORKER_STACK    4096u
 #define WORKER_PRIORITY 4
 #define TIME_CHECK_MS   5000u
@@ -103,6 +107,7 @@ static bool s_holding;     /* NET_WIFI_REQ_LINK and the low-latency hold */
 static bool s_pair_forced; /* `plink pair force`: not closed with installer mode */
 static bool s_kp_forced;   /* `plink kp force`: Option C on a bench although the setup is done */
 static uint32_t s_dropped_told;
+static uint32_t s_id_taken_told; /* keypads (bit d-1) whose panel id another one reports too */
 
 /* ---- the worker's ---------------------------------------------------------------------------- */
 typedef struct {
@@ -113,16 +118,18 @@ typedef struct {
     plink_cmd_t cmd; /* holds codes until the worker wipes it */
 } job_t;
 
-enum { RES_CMD = 1, RES_CONFIG };
+enum { RES_CMD = 1, RES_CONFIG, RES_DEVICES, RES_DEV_ACK };
 typedef struct {
     uint8_t kind;
-    uint32_t ticket;    /* RES_CMD */
+    uint32_t ticket;    /* RES_CMD, RES_DEV_ACK */
     plink_result_t res; /* RES_CMD */
     bool ok;            /* RES_CONFIG */
-    uint8_t blob;
-    size_t len;
-    uint32_t crc;
+    uint8_t blob;       /* RES_CONFIG, RES_DEVICES: the buffer */
+    size_t len;         /* RES_CONFIG, RES_DEVICES */
+    uint32_t crc;       /* RES_CONFIG, RES_DEVICES */
     uint32_t cfg_seq;
+    uint8_t dev_result; /* RES_DEV_ACK: plink_dev_result_t */
+    uint8_t dev_why;    /* RES_DEV_ACK: the alarm_result_t of a refused code */
     char name[PLINK_NAME_MAX + 1];
 } wres_t;
 
@@ -275,6 +282,17 @@ static void lockout_on_alarm_task(alarm_engine_t *e, alarm_ms_t now, void *ctx)
     c->left = alarm_engine_lockout_left(e, &c->src, now);
 }
 
+void msvc_lockout_refresh(uint8_t device)
+{
+    lockout_ctx_t lc = {.src = {.kind = ALARM_SRC_KEYPAD, .id = device}, .left = 0};
+    if (device <= PLINK_KEYPADS_MAX && alarm_service_call(lockout_on_alarm_task, &lc) == ESP_OK) {
+        portENTER_CRITICAL(&s_lock_mux);
+        s_lockout[device].left_ms = lc.left > UINT32_MAX ? UINT32_MAX : (uint32_t)lc.left;
+        s_lockout[device].at_ms = link_now();
+        portEXIT_CRITICAL(&s_lock_mux);
+    }
+}
+
 static void run_job(job_t *job)
 {
     const alarm_source_t src = {.kind = ALARM_SRC_KEYPAD, .id = job->device};
@@ -323,16 +341,22 @@ static void run_job(job_t *job)
     plink_wipe(c, sizeof *c);
     res.result = (uint8_t)r;
     /* This keypad's lockout now (a wrong code may have started it): its STATUS says so. */
-    lockout_ctx_t lc = {.src = src, .left = 0};
-    if (job->device <= PLINK_KEYPADS_MAX &&
-        alarm_service_call(lockout_on_alarm_task, &lc) == ESP_OK) {
-        portENTER_CRITICAL(&s_lock_mux);
-        s_lockout[job->device].left_ms = lc.left > UINT32_MAX ? UINT32_MAX : (uint32_t)lc.left;
-        s_lockout[job->device].at_ms = link_now();
-        portEXIT_CRITICAL(&s_lock_mux);
-    }
+    msvc_lockout_refresh(job->device);
     const wres_t out = {.kind = RES_CMD, .ticket = job->ticket, .res = res};
     xQueueSend(s_res_q, &out, portMAX_DELAY); /* the link task drains it every turn */
+}
+
+void msvc_post_devices(uint8_t buf, size_t len, uint32_t crc)
+{
+    const wres_t out = {.kind = RES_DEVICES, .blob = buf, .len = len, .crc = crc};
+    xQueueSend(s_res_q, &out, portMAX_DELAY); /* the link task drains it every turn */
+}
+
+void msvc_post_dev_ack(uint32_t ticket, uint8_t result, uint8_t why)
+{
+    const wres_t out = {
+        .kind = RES_DEV_ACK, .ticket = ticket, .dev_result = result, .dev_why = why};
+    xQueueSend(s_res_q, &out, portMAX_DELAY);
 }
 
 static void build_config(void)
@@ -688,6 +712,15 @@ static void take_results(uint64_t now)
             plink_master_result(s_m, now, r.ticket, &r.res);
             continue;
         }
+        if (r.kind == RES_DEVICES) {
+            hsvc_devices_in(s_m, now, r.blob, r.len, r.crc);
+            continue;
+        }
+        if (r.kind == RES_DEV_ACK) {
+            /* after the build plink_dev posted before it: the DEV_ACK's record shows the act */
+            plink_master_dev_answer(s_m, now, r.ticket, r.dev_result, r.dev_why);
+            continue;
+        }
         s_cfg_busy = false;
         if (!r.ok) {
             s_cfg_retry_at = now + CFG_RETRY_MS;
@@ -793,6 +826,8 @@ static void publish(uint64_t now)
     plink_pair_info_t pi;
     plink_master_pair_info(s_m, now, &pi);
     const int64_t epoch = link_epoch_ms();
+    bool home_wanted = false;
+    uint32_t id_taken = 0u;
     link_pub_lock();
     g_pub.net_id = plink_master_net_id(s_m);
     g_pub.pairing_open = plink_master_pairing(s_m);
@@ -815,6 +850,14 @@ static void publish(uint64_t now)
         link_addr_ip(&p->addr, k->addr);
         snprintf(k->fw, sizeof k->fw, "%s", p->hb.fw);
         g_pub.kind[i] = p->kind;
+        g_pub.rssi[i] = p->hb.rssi;
+        g_pub.caps[i] = p->caps;
+        home_wanted = home_wanted || (p->caps & PLINK_CAP_HOME) != 0u;
+        /* its Smart Home and settings side, the newest settings report with it (BL-216) */
+        if (g_pub.home != NULL && plink_master_keypad_home(s_m, now, p->device, &g_pub.home[i]) &&
+            g_pub.home[i].id_taken && p->device >= 1u && p->device <= 32u) {
+            id_taken |= 1u << (p->device - 1u);
+        }
         if (p->down) {
             g_pub.keypads_down++;
         }
@@ -834,6 +877,15 @@ static void publish(uint64_t now)
         g_pub.pair.device = pi.device;
     }
     link_pub_unlock();
+    hsvc_wanted(home_wanted); /* plink_dev builds only while a live keypad has HOME */
+    if ((id_taken & ~s_id_taken_told) != 0u) {
+        /* docs/features/11 "Settings over the link": Home Assistant gets its id as null */
+        ESP_LOGW(TAG,
+                 "keypad %u reports the panel id a lower keypad number reports: left out "
+                 "of Home Assistant's list until that changes",
+                 (unsigned)__builtin_ctz(id_taken & ~s_id_taken_told) + 1u);
+    }
+    s_id_taken_told = id_taken;
 }
 
 void msvc_poll(uint64_t now)
@@ -866,6 +918,7 @@ void msvc_poll(uint64_t now)
             }
         }
     }
+    hsvc_poll(s_m, now); /* the settings writes queued for keypads (BL-216) */
     plink_master_tick(s_m, now);
     mdns_apply();
     apply_holds();
@@ -1030,7 +1083,13 @@ esp_err_t msvc_prepare(uint64_t now)
     plink_wipe(buf, sizeof buf);
     snprintf(s_name, sizeof s_name, "%s", LINK_DEFAULT_NAME); /* until the configuration is read */
     refresh_others();
-    static const plink_master_port_t port = {
+    /* Smart Home and settings on keypads (BL-216): before the manager, which takes the offer. */
+    const esp_err_t home_err = hsvc_prepare();
+    if (home_err != ESP_OK) {
+        return home_err;
+    }
+    /* on this stack: plink_master_init keeps a copy */
+    plink_master_port_t port = {
         .ctx = NULL,
         .send = port_send,
         .mtu = NULL,
@@ -1046,9 +1105,15 @@ esp_err_t msvc_prepare(uint64_t now)
         .lockout_left = port_lockout_left,
         .events_after = port_events_after,
         .note = port_note,
+        .prefs_done = hsvc_prefs_done,
     };
-    /* No capability is offered yet: each comes with the code that uses it (LINK-043). */
-    plink_master_init(s_m, &g_link.crypto, &port, have ? &rec : NULL, s_name, g_link.panel_id, 0u,
+    /* Each capability is offered with the code that uses it (LINK-043): HOME with a device side
+     * (NULL dev_run otherwise: an action is answered UNAVAILABLE), PREFS with the UI. FW is not
+     * offered yet. */
+    const uint16_t caps = hsvc_caps();
+    port.dev_run = (caps & PLINK_CAP_HOME) != 0u ? hsvc_dev_run : NULL;
+    port.ctx = s_m; /* hsvc_prefs_done reads the keypad's report back (the others need no ctx) */
+    plink_master_init(s_m, &g_link.crypto, &port, have ? &rec : NULL, s_name, g_link.panel_id, caps,
                       now);
     plink_wipe(&rec, sizeof rec);
     /* The manager starts with the network up; the service says how it is now, so supervision
@@ -1070,8 +1135,10 @@ esp_err_t msvc_prepare(uint64_t now)
                                 &s_worker, tskNO_AFFINITY) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI(TAG, "master: %u keypad(s) paired",
-             (unsigned)__builtin_popcount(plink_master_held(s_m)));
+    ESP_LOGI(TAG, "master: %u keypad(s) paired; offers Smart Home %s, settings %s",
+             (unsigned)__builtin_popcount(plink_master_held(s_m)),
+             (caps & PLINK_CAP_HOME) != 0u ? "yes" : "no",
+             (caps & PLINK_CAP_PREFS) != 0u ? "yes" : "no");
     return ESP_OK;
 }
 

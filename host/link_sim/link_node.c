@@ -14,6 +14,13 @@
 #define VIRTUAL_EPOCH_MS 1790000000000LL /* link_smoke's wall clock at ms 0 */
 #define LINK_FW          "link_sim 1"
 #define LINK_TZ          "UTC0"
+/* What both sides offer (LINK-043): Smart Home and settings on keypads (BL-216). */
+#define LINK_CAPS        (PLINK_CAP_HOME | PLINK_CAP_PREFS)
+/* A keypad's announcements' fields: the PC keypad has no voice, so it doesn't take them (as a
+ * panel built without one). */
+#define LINK_PREFS_VOICE                                                                           \
+    (PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_VOLUME) | PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_ENABLED) |  \
+     PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_STATUS) | PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_CHIME))
 
 _Static_assert(ALARM_CODE_HASH_LEN == PLINK_SHA256_LEN, "the code hash is one SHA-256");
 
@@ -121,6 +128,178 @@ static void event_text(const alarm_event_t *ev, char *out, size_t cap)
                  alarm_source_name((alarm_source_kind_t)ev->source.kind),
                  (unsigned)ev->source.id);
     }
+}
+
+/* ---- Smart Home and settings, both sides ---------------------------------------------------- */
+
+static const char *const ACTION_NAMES[] = {"none",   "on",   "off",   "toggle", "lock",
+                                           "unlock", "open", "close", "stop",   "level",
+                                           "temp",   "mode", "run"};
+_Static_assert(sizeof(ACTION_NAMES) / sizeof(ACTION_NAMES[0]) == (size_t)ACT_COUNT,
+               "a word for every dev_action_t");
+
+const char *link_action_name(uint8_t action)
+{
+    return action < (uint8_t)ACT_COUNT ? ACTION_NAMES[action] : "action";
+}
+
+uint8_t link_action_parse(const char *word)
+{
+    for (uint8_t a = 1; word != NULL && a < (uint8_t)ACT_COUNT; a++) {
+        if (strcmp(word, ACTION_NAMES[a]) == 0) {
+            return a;
+        }
+    }
+    return (uint8_t)ACT_NONE;
+}
+
+const char *link_dev_result_name(uint8_t result)
+{
+    switch (result) {
+    case PLINK_DEV_OK: return "done";
+    case PLINK_DEV_NEED_CODE: return "needs a code";
+    case PLINK_DEV_CODE_REFUSED: return "the code was refused";
+    case PLINK_DEV_BUSY: return "busy";
+    case PLINK_DEV_UNREACHABLE: return "can't be reached";
+    case PLINK_DEV_REFUSED: return "refused";
+    case PLINK_DEV_UNAVAILABLE: return "the master serves no devices";
+    default: return "refused";
+    }
+}
+
+static const char *kind_word(uint8_t kind)
+{
+    static const char *const t[] = {"device", "light", "switch", "lock",  "thermostat",
+                                    "cover",  "fan",   "valve",  "scene", "script"};
+    return kind < sizeof(t) / sizeof(t[0]) ? t[kind] : "device";
+}
+
+/* Appends to out (at *at, cap bytes) as snprintf would. */
+static void add_text(char *out, size_t cap, size_t *at, const char *fmt, ...) LINK_PRINTF(4, 5);
+static void add_text(char *out, size_t cap, size_t *at, const char *fmt, ...)
+{
+    if (*at >= cap) {
+        return;
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    const int n = vsnprintf(out + *at, cap - *at, fmt, ap);
+    va_end(ap);
+    if (n > 0) {
+        *at += (size_t)n < cap - *at ? (size_t)n : cap - *at - 1u;
+    }
+}
+
+/* label then hundredths of a degree as a number: "21.50", "-1.25". */
+static void add_hundredths(char *out, size_t cap, size_t *at, const char *label, int32_t x)
+{
+    const uint32_t a = x < 0 ? 0u - (uint32_t)x : (uint32_t)x;
+    add_text(out, cap, at, "%s%s%u.%02u", label, x < 0 ? "-" : "", (unsigned)(a / 100u),
+             (unsigned)(a % 100u));
+}
+
+void link_prefs_text(const proto_prefs_values_t *v, char *out, size_t cap)
+{
+    size_t at = 0;
+    if (cap == 0u) {
+        return;
+    }
+    out[0] = '\0';
+    for (unsigned id = 1; id <= PROTO_PREFS_F_LAST; id++) {
+        const proto_prefs_field_t *f = proto_prefs_field(id);
+        uint32_t x = 0;
+        if (f == NULL || !proto_prefs_get(v, id, &x)) {
+            continue;
+        }
+        add_text(out, cap, &at, "%s%s ", at > 0u ? ", " : "", f->key);
+        if ((f->flags & PROTO_PREFS_FL_SWITCH) != 0u) {
+            add_text(out, cap, &at, "%s", x != 0u ? "on" : "off");
+        } else if ((f->flags & PROTO_PREFS_FL_DELAY) != 0u) {
+            if (x == 0u) {
+                add_text(out, cap, &at, "never");
+            } else {
+                add_text(out, cap, &at, "%u s", (unsigned)(x / 1000u));
+            }
+        } else if (id == PROTO_PREFS_F_NIGHT_START || id == PROTO_PREFS_F_NIGHT_END) {
+            add_text(out, cap, &at, "%02u:%02u", (unsigned)(x / 60u), (unsigned)(x % 60u));
+        } else {
+            add_text(out, cap, &at, "%u", (unsigned)x);
+        }
+    }
+    if (at == 0u) {
+        snprintf(out, cap, "none");
+    }
+}
+
+/* A whole number of at most max (false: not one). */
+static bool whole(const char *s, unsigned long max, unsigned long *out)
+{
+    if (s == NULL || *s == '\0') {
+        return false;
+    }
+    unsigned long v = 0;
+    for (const char *p = s; *p != '\0'; p++) {
+        if (*p < '0' || *p > '9') {
+            return false;
+        }
+        const unsigned long d = (unsigned long)(*p - '0');
+        if (d > max || v > (max - d) / 10u) {
+            return false; /* past max (and never wraps) */
+        }
+        v = v * 10u + d;
+    }
+    *out = v;
+    return true;
+}
+
+const char *link_prefs_parse(const char *key, const char *text, uint8_t *id, uint32_t *value)
+{
+    const uint8_t i = key != NULL ? proto_prefs_id(key) : 0u;
+    const proto_prefs_field_t *f = proto_prefs_field(i);
+    if (f == NULL) {
+        return "not a settings key (brightness, saver_level, saver_after, off_after, night, "
+               "night_start, night_end, night_level, night_off, clock, appearance, contrast, "
+               "beeps, chime_vol, voice_vol, key_click, voice, voice_stat, voice_chime)";
+    }
+    unsigned long v = 0;
+    if ((f->flags & PROTO_PREFS_FL_SWITCH) != 0u) {
+        if (text != NULL && (strcmp(text, "on") == 0 || strcmp(text, "1") == 0)) {
+            v = 1u;
+        } else if (text != NULL && (strcmp(text, "off") == 0 || strcmp(text, "0") == 0)) {
+            v = 0u;
+        } else {
+            return "on or off";
+        }
+    } else if ((f->flags & PROTO_PREFS_FL_DELAY) != 0u) {
+        if (text != NULL && strcmp(text, "never") == 0) {
+            v = 0u;
+        } else if (whole(text, 86400u, &v)) {
+            v *= 1000u;
+        } else {
+            return "seconds (0 or never: never)";
+        }
+    } else if (i == PROTO_PREFS_F_NIGHT_START || i == PROTO_PREFS_F_NIGHT_END) {
+        const char *colon = text != NULL ? strchr(text, ':') : NULL;
+        unsigned long h = 0, m = 0;
+        char hh[4];
+        if (colon == NULL || colon - text < 1 || colon - text > 2) {
+            return "a time of day, HH:MM";
+        }
+        memcpy(hh, text, (size_t)(colon - text));
+        hh[colon - text] = '\0';
+        if (!whole(hh, 23u, &h) || strlen(colon + 1) != 2u || !whole(colon + 1, 59u, &m)) {
+            return "a time of day, HH:MM";
+        }
+        v = h * 60u + m;
+    } else if (!whole(text, 0xFFFFFFFFul, &v)) {
+        return "a whole number";
+    }
+    if (proto_prefs_check(i, (uint32_t)v) != PROTO_PREFS_WHY_NONE) {
+        return "out of range";
+    }
+    *id = i;
+    *value = (uint32_t)v;
+    return NULL;
 }
 
 /* ---- records ------------------------------------------------------------------------------- */
@@ -535,6 +714,542 @@ static void say_pairing(link_master_t *v, uint64_t now)
     }
 }
 
+/* ---- the virtual master: Smart Home and settings on keypads (BL-216) ------------------------- */
+
+static dev_info_t *house_add(link_house_t *h, uint8_t kind, const char *ref, const char *name,
+                             const char *area, const char *state)
+{
+    dev_info_t *d = &h->dev[h->n++];
+    memset(d, 0, sizeof(*d));
+    d->source = (uint8_t)DSRC_HA;
+    d->kind = kind;
+    snprintf(d->ref, sizeof(d->ref), "%s", ref);
+    snprintf(d->name, sizeof(d->name), "%s", name);
+    snprintf(d->area, sizeof(d->area), "%s", area);
+    snprintf(d->state, sizeof(d->state), "%s", state);
+    d->online = true;
+    return d;
+}
+
+/* The house's devices (link_node.h), as Home Assistant would report them. */
+static void house_init(link_house_t *h, uint32_t epoch_s)
+{
+    memset(h, 0, sizeof(*h));
+    dev_info_t *d = house_add(h, DEV_LIGHT, "light.porch", "Porch Light", "Outside", "on");
+    d->values.flags = DEV_VAL_LEVEL | DEV_VAL_LEVEL_SET;
+    d->values.level = 80u;
+    d->values.caps = DEV_CAP_KNOWN | DEV_CAP_DIM;
+    d = house_add(h, DEV_LIGHT, "light.kitchen", "Kitchen Lights", "Kitchen", "off");
+    d->values.flags = DEV_VAL_LEVEL_SET;
+    d->values.caps = DEV_CAP_KNOWN | DEV_CAP_DIM;
+    (void)house_add(h, DEV_LOCK, "lock.front_door", "Front Door", "Living room", "locked");
+    d = house_add(h, DEV_COVER, "cover.garage_door", "Garage Door", "Outside", "closed");
+    d->values.flags = DEV_VAL_LEVEL | DEV_VAL_LEVEL_SET;
+    d->values.caps = DEV_CAP_KNOWN | DEV_CAP_STOP | DEV_CAP_POSITION;
+    d = house_add(h, DEV_CLIMATE, "climate.hallway", "Hallway", "Living room", "heat");
+    d->values.flags = DEV_VAL_SETPOINT | DEV_VAL_TEMP;
+    d->values.setpoint = 2150;
+    d->values.temp = 2100;
+    d->values.modes = DEV_MODE_OFF | DEV_MODE_HEAT | DEV_MODE_COOL | DEV_MODE_AUTO;
+    d->values.hvac_action = (uint8_t)DEV_HVAC_HEATING;
+    d = house_add(h, DEV_SCENE, "scene.good_night", "Good Night", "Living room", "");
+    d->values.since = epoch_s - 7200u; /* it ran two hours ago */
+}
+
+static dev_info_t *house_find(link_house_t *h, const char *ref)
+{
+    for (size_t i = 0; ref != NULL && i < h->n; i++) {
+        if (strcmp(h->dev[i].ref, ref) == 0) {
+            return &h->dev[i];
+        }
+    }
+    return NULL;
+}
+
+/* What an action did, as the house reports it afterwards. */
+static void house_apply(dev_info_t *d, const link_house_act_t *a, uint32_t epoch_s)
+{
+    const char *word = NULL;
+    dev_values_t *x = &d->values;
+    switch (a->action) {
+    case ACT_ON:
+        word = "on";
+        if (d->kind == DEV_LIGHT && a->value >= 0) {
+            x->level = (uint8_t)(a->value > 100 ? 100 : a->value);
+            x->flags |= DEV_VAL_LEVEL;
+            word = a->value > 0 ? "on" : "off"; /* a brightness of 0 is off (B030) */
+        }
+        break;
+    case ACT_OFF: word = "off"; break;
+    case ACT_TOGGLE: word = strcmp(d->state, "on") == 0 ? "off" : "on"; break;
+    case ACT_LOCK: word = "locked"; break;
+    case ACT_UNLOCK: word = "unlocked"; break;
+    case ACT_OPEN:
+        word = "open";
+        x->level = 100u;
+        break;
+    case ACT_CLOSE:
+        word = "closed";
+        x->level = 0u;
+        break;
+    case ACT_STOP: break; /* stopped where it was */
+    case ACT_SET_LEVEL: {
+        const int32_t l = a->value < 0 ? 0 : a->value > 100 ? 100 : a->value;
+        x->level = (uint8_t)l;
+        x->flags |= DEV_VAL_LEVEL;
+        word = d->kind == DEV_COVER ? (l > 0 ? "open" : "closed") : (l > 0 ? "on" : "off");
+        break;
+    }
+    case ACT_SET_TEMP:
+        x->setpoint = a->value;
+        x->flags |= DEV_VAL_SETPOINT;
+        break;
+    case ACT_SET_MODE:
+        word = a->mode;
+        x->hvac_action = strcmp(a->mode, "off") == 0    ? (uint8_t)DEV_HVAC_OFF
+                         : strcmp(a->mode, "cool") == 0 ? (uint8_t)DEV_HVAC_COOLING
+                         : strcmp(a->mode, "heat") == 0 ? (uint8_t)DEV_HVAC_HEATING
+                                                        : (uint8_t)DEV_HVAC_IDLE;
+        break;
+    case ACT_RUN: x->since = epoch_s; break;
+    default: break;
+    }
+    if (word != NULL) {
+        snprintf(d->state, sizeof(d->state), "%s", word);
+    }
+}
+
+static bool hs_online(void *ctx)
+{
+    (void)ctx;
+    return true; /* the house's Home Assistant link: up */
+}
+
+static size_t hs_list(void *ctx, dev_info_t *out, size_t max)
+{
+    link_master_t *v = ctx;
+    const size_t n = v->house.n < max ? v->house.n : max;
+    memcpy(out, v->house.dev, n * sizeof(out[0]));
+    return n;
+}
+
+/* The source's act: sent on, answered LINK_HOUSE_MS later (house_tick). */
+static bool hs_act(void *ctx, const char *ref, dev_action_t action, int32_t value, const char *mode,
+                   uint32_t request_id)
+{
+    link_master_t *v = ctx;
+    const dev_info_t *d = house_find(&v->house, ref);
+    if (d == NULL || !d->online || request_id == 0u) {
+        return false;
+    }
+    for (size_t i = 0; i < LINK_HOUSE_ACTS; i++) {
+        link_house_act_t *a = &v->house.acts[i];
+        if (a->req == 0u) {
+            memset(a, 0, sizeof(*a));
+            a->req = request_id;
+            snprintf(a->ref, sizeof(a->ref), "%s", ref);
+            a->action = (uint8_t)action;
+            a->value = value;
+            snprintf(a->mode, sizeof(a->mode), "%s", mode != NULL ? mode : "");
+            a->due = v->now + LINK_HOUSE_MS;
+            return true;
+        }
+    }
+    return false;
+}
+
+static const device_source_ops_t HOUSE_OPS = {
+    .kind = (uint8_t)DSRC_HA,
+    .name = "house",
+    .online = hs_online,
+    .list = hs_list,
+    .act = hs_act,
+};
+
+/* The house answers the actions whose time has come: the device changed, then the answer. */
+static void house_tick(link_master_t *v, uint64_t now)
+{
+    for (size_t i = 0; i < LINK_HOUSE_ACTS; i++) {
+        link_house_act_t *a = &v->house.acts[i];
+        if (a->req == 0u || a->due > now) {
+            continue;
+        }
+        dev_info_t *d = house_find(&v->house, a->ref);
+        const bool ok = d != NULL && d->online;
+        if (ok) {
+            house_apply(d, a, (uint32_t)(m_epoch(v) / 1000));
+        }
+        const uint32_t req = a->req;
+        memset(a, 0, sizeof(*a));
+        v->house.sink->changed(v->house.sink->ctx, (uint8_t)DSRC_HA);
+        v->house.sink->result(v->house.sink->ctx, req, ok, ok ? "" : "unavailable", false);
+    }
+}
+
+static uint64_t house_next(const link_master_t *v)
+{
+    uint64_t t = UINT64_MAX;
+    for (size_t i = 0; i < LINK_HOUSE_ACTS; i++) {
+        if (v->house.acts[i].req != 0u && v->house.acts[i].due < t) {
+            t = v->house.acts[i].due;
+        }
+    }
+    return t;
+}
+
+static void h_changed(void *ctx)
+{
+    link_master_t *v = ctx;
+    v->dev_dirty = true;
+}
+
+static void h_result(void *ctx, uint32_t request_id, const char *ref, bool ok, const char *error)
+{
+    (void)request_id;
+    link_master_t *v = ctx;
+    v->dev_dirty = true;
+    if (ok) {
+        say(&v->io, "device %s: done", ref);
+    } else {
+        say(&v->io, "device %s: failed (%s)", ref, error != NULL ? error : "");
+    }
+}
+
+/* The registry's list and records to the link, as the plink_dev task builds them: into the blob
+ * the link isn't reading (it keeps the last one handed in). */
+static void dev_build(link_master_t *v, uint64_t now)
+{
+    hc_refresh(&v->hc);
+    const hc_device_t *p[HC_MAX_DEVICES];
+    const size_t n = hc_list(&v->hc, p, HC_MAX_DEVICES);
+    for (size_t i = 0; i < n; i++) {
+        v->rows[i] = *p[i];
+    }
+    const unsigned next = v->dblob_cur ^ 1u;
+    size_t len = 0;
+    uint32_t crc = 0;
+    v->dev_build_at = now + LINK_DEV_BUILD_MS;
+    if (!plink_home_list_build(v->rows, n, v->dblob[next], sizeof(v->dblob[next]), &len, &crc)) {
+        say(&v->io, "the keypads' device list could not be made");
+        return;
+    }
+    plink_home_recs_build(v->rows, n, &v->drecs);
+    v->dblob_cur = next;
+    if (crc != v->dev_list_crc) {
+        say(&v->io, "devices: %u listed for the keypads (list %08x)", (unsigned)n, (unsigned)crc);
+    }
+    v->dev_list_crc = crc;
+    v->dev_count = n;
+    plink_master_home(&v->m, now, v->dblob[next], len, crc, &v->drecs);
+}
+
+/* port.dev_run: copied for the judge, which runs between two calls of the link manager. */
+static bool m_dev_run(void *ctx, uint32_t ticket, uint8_t device, uint8_t home,
+                      const plink_dev_act_t *act)
+{
+    link_master_t *v = ctx;
+    for (size_t i = 0; i < LINK_DEV_JOBS; i++) {
+        link_dev_job_t *j = &v->jobs[i];
+        if (!j->used) {
+            j->used = true;
+            j->ticket = ticket;
+            j->device = device;
+            j->home = home;
+            j->act = *act;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* The one judge of both screens, as device_service_person_act (LINK-048): a keypad's action as
+ * {ALARM_SRC_KEYPAD, n} for its home partition. */
+static uint8_t dev_judge(link_master_t *v, uint64_t now, const link_dev_job_t *j, uint8_t *why)
+{
+    *why = 0u;
+    const plink_dev_act_t *a = &j->act;
+    const hc_device_t *d = hc_get(&v->hc, a->ref);
+    if (d == NULL || d->info.source == (uint8_t)DSRC_ZWAVE ||
+        !hc_action_valid((dev_kind_t)d->info.kind, (dev_action_t)a->action)) {
+        return PLINK_DEV_REFUSED;
+    }
+    if (hc_needs_code((dev_kind_t)d->info.kind, (dev_action_t)a->action, a->value)) {
+        if (a->code[0] == '\0') {
+            return PLINK_DEV_NEED_CODE;
+        }
+        const alarm_source_t src = {ALARM_SRC_KEYPAD, j->device};
+        uint8_t user = 0;
+        alarm_result_t r = alarm_engine_authenticate(&v->eng, &src, a->code, j->home, now, &user);
+        /* an arm-only or a guest code may not unlock (BL-045) */
+        if (r == ALARM_OK && user >= 1u && user <= ALARM_MAX_USERS) {
+            const alarm_authority_t au = alarm_engine_config(&v->eng)->users[user - 1u].authority;
+            if (au == ALARM_AUTH_ARM_ONLY || au == ALARM_AUTH_GUEST) {
+                r = ALARM_ERR_NOT_AUTHORIZED;
+            }
+        }
+        if (r != ALARM_OK) {
+            *why = (uint8_t)r;
+            return PLINK_DEV_CODE_REFUSED;
+        }
+    }
+    const char *mode = NULL;
+    if (a->action == (uint8_t)ACT_SET_MODE) {
+        mode = hc_mode_word(a->mode);
+        if (mode == NULL) {
+            return PLINK_DEV_REFUSED;
+        }
+    }
+    switch (hc_act(&v->hc, a->ref, (dev_action_t)a->action, a->value, mode)) {
+    case HC_OK: v->dev_dirty = true; return PLINK_DEV_OK; /* the row shows it pending */
+    case HC_ERR_BUSY: return PLINK_DEV_BUSY;
+    case HC_ERR_OFFLINE: return PLINK_DEV_UNREACHABLE;
+    default: return PLINK_DEV_REFUSED;
+    }
+}
+
+/* The keypads' device actions: each judged (its code wiped), then the registry built, then the
+ * answers - so a DEV_ACK's record already shows the action under way, as the plink_dev task posts
+ * RES_DEVICES before RES_DEV_ACK. */
+static void dev_jobs(link_master_t *v, uint64_t now)
+{
+    struct {
+        uint32_t ticket;
+        uint8_t result, why;
+    } ans[LINK_DEV_JOBS];
+    size_t n = 0;
+    for (size_t i = 0; i < LINK_DEV_JOBS; i++) {
+        link_dev_job_t *j = &v->jobs[i];
+        if (!j->used) {
+            continue;
+        }
+        uint8_t why = 0;
+        const uint8_t r = dev_judge(v, now, j, &why);
+        v->dev_runs++;
+        say(&v->io, "keypad %u: %s %s%s: %s%s%s", (unsigned)j->device,
+            link_action_name(j->act.action), j->act.ref,
+            j->act.code[0] != '\0' ? " with a code" : "", link_dev_result_name(r),
+            r == PLINK_DEV_CODE_REFUSED ? ": " : "",
+            r == PLINK_DEV_CODE_REFUSED ? alarm_result_name((alarm_result_t)why) : "");
+        ans[n].ticket = j->ticket;
+        ans[n].result = r;
+        ans[n].why = why;
+        n++;
+        plink_wipe(j, sizeof(*j));
+    }
+    if (n == 0u) {
+        return;
+    }
+    dev_build(v, now);
+    v->dev_dirty = false;
+    for (size_t i = 0; i < n; i++) {
+        plink_master_dev_answer(&v->m, now, ans[i].ticket, ans[i].result, ans[i].why);
+    }
+}
+
+static void m_prefs_done(void *ctx, uint8_t device, const plink_prefs_done_t *d)
+{
+    link_master_t *v = ctx;
+    link_pset_end_t *e = &v->pset_end;
+    const unsigned count = e->count + 1u;
+    memset(e, 0, sizeof(*e));
+    e->count = count;
+    e->device = device;
+    e->req = d->req;
+    e->result = d->result;
+    e->refused_count = d->refused_count < PLINK_PREFS_REFUSED_MAX
+                           ? d->refused_count
+                           : (uint8_t)PLINK_PREFS_REFUSED_MAX;
+    if (e->refused_count > 0u && d->refused != NULL) {
+        memcpy(e->refused, d->refused, 2u * (size_t)e->refused_count);
+    }
+    proto_prefs_decoded_t kept;
+    if (d->result == PLINK_PSET_OK && d->fields != NULL &&
+        proto_prefs_decode(d->fields, d->fields_len, PROTO_PREFS_KNOWN, &kept)) {
+        e->values = kept.values;
+    }
+    switch (d->result) {
+    case PLINK_PSET_OK:
+        say(&v->io, "keypad %u answered the settings change: %u field%s refused", (unsigned)device,
+            (unsigned)e->refused_count, e->refused_count == 1u ? "" : "s");
+        for (size_t i = 0; i < e->refused_count; i++) {
+            const proto_prefs_field_t *f = proto_prefs_field(e->refused[2u * i]);
+            say(&v->io, "  %s refused: %s", f != NULL ? f->key : "a newer field",
+                proto_prefs_why_word(e->refused[2u * i + 1u]));
+        }
+        break;
+    case PLINK_PSET_TIMEOUT:
+        say(&v->io, "keypad %u didn't answer the settings change in 6 s", (unsigned)device);
+        break;
+    default:
+        say(&v->io, "keypad %u: the settings change ended, the keypad offline or removed",
+            (unsigned)device);
+        break;
+    }
+}
+
+/* Each keypad's settings report, said when a new one came. */
+static void say_reports(link_master_t *v, uint64_t now)
+{
+    if (v->io.say == NULL) {
+        return;
+    }
+    for (uint8_t d = 1; d <= PLINK_KEYPADS_MAX; d++) {
+        plink_keypad_home_t kh;
+        if (!plink_master_keypad_home(&v->m, now, d, &kh) || !kh.prefs.have ||
+            kh.prefs.count == v->said_report[d - 1u]) {
+            continue;
+        }
+        v->said_report[d - 1u] = kh.prefs.count;
+        link_master_say_prefs(v, now, d);
+    }
+}
+
+const hc_device_t *link_master_device(const link_master_t *v, const char *ref)
+{
+    return hc_get(&v->hc, ref);
+}
+
+bool link_master_device_online(link_master_t *v, uint64_t now_ms, const char *ref, bool online)
+{
+    dev_info_t *d = house_find(&v->house, ref);
+    if (d == NULL) {
+        return false;
+    }
+    v->now = now_ms;
+    d->online = online;
+    d->values.since = online ? 0u : (uint32_t)(m_epoch(v) / 1000);
+    v->house.sink->changed(v->house.sink->ctx, (uint8_t)DSRC_HA);
+    link_master_sync(v, now_ms);
+    return true;
+}
+
+/* A row's words: "on, level 80 %, pending (unlock)". */
+static void row_text(const hc_device_t *r, char *out, size_t cap)
+{
+    size_t at = 0;
+    const dev_values_t *x = &r->info.values;
+    add_text(out, cap, &at, "%s", r->info.state[0] != '\0' ? r->info.state : "-");
+    if ((x->flags & DEV_VAL_LEVEL) != 0u) {
+        add_text(out, cap, &at, ", level %u %%", (unsigned)x->level);
+    }
+    if ((x->flags & DEV_VAL_SETPOINT) != 0u) {
+        add_hundredths(out, cap, &at, ", set to ", x->setpoint);
+    }
+    if (!r->info.online) {
+        add_text(out, cap, &at, ", offline");
+    } else if (r->pending != 0u) {
+        add_text(out, cap, &at, ", pending (%s)", link_action_name(r->action));
+    } else if (r->failed) {
+        add_text(out, cap, &at, ", %s (%s)", hc_outcome_unknown(r) ? "not confirmed" : "failed",
+                 link_action_name(r->action));
+    }
+}
+
+void link_master_say_devices(link_master_t *v, uint64_t now_ms)
+{
+    link_master_sync(v, now_ms);
+    say(&v->io, "%u device%s for the keypads (list %08x):", (unsigned)v->dev_count,
+        v->dev_count == 1u ? "" : "s", (unsigned)v->dev_list_crc);
+    for (size_t i = 0; i < v->dev_count; i++) {
+        const hc_device_t *r = &v->rows[i];
+        char text[160];
+        text[0] = '\0';
+        row_text(r, text, sizeof(text));
+        say(&v->io, "  %u %s \"%s\" (%s, %s): %s", (unsigned)i, r->info.ref, r->info.name,
+            r->info.area[0] != '\0' ? r->info.area : "no area", kind_word(r->info.kind), text);
+    }
+}
+
+static const char *voice_word(uint8_t voice)
+{
+    switch (voice) {
+    case PLINK_VOICE_READY: return "ready";
+    case PLINK_VOICE_LOADING: return "loading";
+    case PLINK_VOICE_NONE: return "none";
+    default: return "not known";
+    }
+}
+
+void link_master_say_prefs(link_master_t *v, uint64_t now_ms, uint8_t device)
+{
+    plink_keypad_home_t kh;
+    if (!plink_master_keypad_home(&v->m, now_ms, device, &kh)) {
+        say(&v->io, "no keypad %u", (unsigned)device);
+        return;
+    }
+    if (!kh.prefs.have) {
+        say(&v->io, "keypad %u: no settings report yet (%s)", (unsigned)device,
+            (kh.caps & PLINK_CAP_PREFS) != 0u ? "it shares settings"
+                                              : "its session doesn't share settings");
+        return;
+    }
+    proto_prefs_decoded_t d;
+    char text[400];
+    if (proto_prefs_decode(kh.prefs.fields, kh.prefs.fields_len, PROTO_PREFS_KNOWN, &d)) {
+        link_prefs_text(&d.values, text, sizeof(text));
+    } else {
+        snprintf(text, sizeof(text), "(not a fields list)");
+    }
+    unsigned takes = 0;
+    for (uint32_t m = kh.prefs.accepts; m != 0u; m &= m - 1u) {
+        takes++;
+    }
+    say(&v->io, "keypad %u settings (panel id %s, voice %s, takes %u field%s): %s",
+        (unsigned)device, kh.prefs.panel_id[0] != '\0' ? kh.prefs.panel_id : "none",
+        voice_word(kh.prefs.voice), takes, takes == 1u ? "" : "s", text);
+}
+
+bool link_master_prefs_set(link_master_t *v, uint64_t now_ms, uint8_t device, uint8_t id,
+                           uint32_t value)
+{
+    v->now = now_ms;
+    const proto_prefs_field_t *f = proto_prefs_field(id);
+    plink_keypad_home_t kh;
+    if (f == NULL || !plink_master_keypad_home(&v->m, now_ms, device, &kh)) {
+        say(&v->io, "no keypad %u", (unsigned)device);
+        return false;
+    }
+    /* Only a field both sides know (LINK-051): what the keypad takes is in its report. */
+    if (!kh.prefs.have) {
+        say(&v->io, "keypad %u hasn't reported its settings yet", (unsigned)device);
+        return false;
+    }
+    if ((kh.prefs.accepts & PROTO_PREFS_BIT(id)) == 0u) {
+        say(&v->io, "keypad %u doesn't take %s", (unsigned)device, f->key);
+        return false;
+    }
+    proto_prefs_values_t pv;
+    memset(&pv, 0, sizeof(pv));
+    if (proto_prefs_put(&pv, id, value) != PROTO_PREFS_WHY_NONE) {
+        say(&v->io, "%s: out of range", f->key);
+        return false;
+    }
+    uint8_t body[PROTO_PREFS_ENC_MAX];
+    const size_t len = proto_prefs_encode(&pv, PROTO_PREFS_BIT(id), body, sizeof(body));
+    uint32_t req = v->pset_req + 1u;
+    if (req == 0u) {
+        req = 1u; /* 0 is no write */
+    }
+    uint8_t why = 0;
+    if (!plink_master_prefs_set(&v->m, now_ms, device, req, PLINK_ORIGIN_CONSOLE, body, len,
+                                &why)) {
+        static const char *const t[] = {"sent",
+                                        "no such keypad",
+                                        "it is offline",
+                                        "its session doesn't share settings",
+                                        "a change to it is under way",
+                                        "",
+                                        "not a fields list"};
+        say(&v->io, "keypad %u: the settings change wasn't sent: %s", (unsigned)device,
+            why < sizeof(t) / sizeof(t[0]) ? t[why] : "refused");
+        return false;
+    }
+    v->pset_req = req;
+    say(&v->io, "keypad %u: settings change sent (%s)", (unsigned)device, f->key);
+    link_master_sync(v, now_ms);
+    return true;
+}
+
 void link_master_sync(link_master_t *v, uint64_t now_ms)
 {
     v->now = now_ms;
@@ -547,6 +1262,12 @@ void link_master_sync(link_master_t *v, uint64_t now_ms)
         const uint32_t gen = alarm_engine_config_generation(&v->eng);
         if (!v->cfg_known || gen != v->cfg_gen) {
             push_config(v, gen);
+        }
+        /* The keypads' device actions, then a registry that moved (or the compare build). */
+        dev_jobs(v, now_ms);
+        if (v->dev_dirty || now_ms >= v->dev_build_at) {
+            v->dev_dirty = false;
+            dev_build(v, now_ms);
         }
         /* Events first, then the status that carries their seq (docs/features/11 "Event
          * record"), then the answers. */
@@ -573,15 +1294,19 @@ void link_master_sync(link_master_t *v, uint64_t now_ms)
             plink_master_result(&v->m, now_ms, v->answers[i].ticket, &v->answers[i].res);
         }
         v->answer_count = 0u;
-        bool more = v->dirty || v->fresh_count > 0u;
+        bool more = v->dirty || v->fresh_count > 0u || v->dev_dirty;
         for (size_t i = 0; i < LINK_MASTER_RUNS; i++) {
             more = more || v->runs[i].used;
+        }
+        for (size_t i = 0; i < LINK_DEV_JOBS; i++) {
+            more = more || v->jobs[i].used;
         }
         if (!more) {
             break;
         }
     }
     say_pairing(v, now_ms);
+    say_reports(v, now_ms);
 }
 
 bool link_master_init(link_master_t *v, const plink_crypto_t *c, const link_io_t *io,
@@ -634,6 +1359,19 @@ bool link_master_init(link_master_t *v, const plink_crypto_t *c, const link_io_t
     port.lockout_left = m_lockout;
     port.events_after = m_events;
     port.note = m_note;
+    port.dev_run = m_dev_run;
+    port.prefs_done = m_prefs_done;
+
+    /* The registry and its one source (BL-216), before the first build. */
+    house_init(&v->house, (uint32_t)(m_epoch(v) / 1000));
+    const hc_port_t hp = {.ctx = v, .changed = h_changed, .result = h_result};
+    hc_init(&v->hc, &hp);
+    (void)hc_register(&v->hc, &HOUSE_OPS, v);
+    v->house.sink = hc_sink(&v->hc);
+    v->dev_dirty = true;
+    if (!plink_random(c, &v->pset_req, sizeof(v->pset_req))) {
+        v->pset_req = 0x5E770000u; /* writes' ids start from a random base (LINK-018) */
+    }
 
     plink_master_rec_t rec;
     memset(&rec, 0, sizeof(rec));
@@ -647,7 +1385,8 @@ bool link_master_init(link_master_t *v, const plink_crypto_t *c, const link_io_t
     }
     char id[PLINK_PANEL_ID_LEN + 1];
     snprintf(id, sizeof(id), "%s", panel_id != NULL ? panel_id : "0ac5e1");
-    plink_master_init(&v->m, c, &port, have, name != NULL ? name : "PC master", id, 0u, now_ms);
+    plink_master_init(&v->m, c, &port, have, name != NULL ? name : "PC master", id, LINK_CAPS,
+                      now_ms);
     const unsigned count = have != NULL ? rec.count : 0u;
     plink_wipe(&rec, sizeof(rec));
     plink_master_net(&v->m, now_ms, true);
@@ -673,6 +1412,8 @@ void link_master_tick(link_master_t *v, uint64_t now_ms)
     if (alarm_engine_next_deadline(&v->eng) <= now_ms) {
         alarm_engine_tick(&v->eng, now_ms);
     }
+    house_tick(v, now_ms);
+    hc_tick(&v->hc, now_ms);
     if (plink_master_next(&v->m) <= now_ms) {
         plink_master_tick(&v->m, now_ms);
     }
@@ -681,9 +1422,12 @@ void link_master_tick(link_master_t *v, uint64_t now_ms)
 
 uint64_t link_master_next(const link_master_t *v)
 {
-    const uint64_t a = alarm_engine_next_deadline(&v->eng);
-    const uint64_t b = plink_master_next(&v->m);
-    return a < b ? a : b;
+    uint64_t t = alarm_engine_next_deadline(&v->eng);
+    const uint64_t more[3] = {plink_master_next(&v->m), house_next(v), v->dev_build_at};
+    for (size_t i = 0; i < 3u; i++) {
+        t = more[i] < t ? more[i] : t;
+    }
+    return t;
 }
 
 alarm_result_t link_master_command(link_master_t *v, uint64_t now_ms, const alarm_cmd_t *cmd)
@@ -870,15 +1614,139 @@ static void k_resolve(void *ctx)
     }
 }
 
+/* The PC keypad's settings as a panel's come from the factory (panel_prefs_defaults), without
+ * the announcements' fields: it has no voice. */
+static void kp_prefs_defaults(link_keypad_t *v)
+{
+    static const struct {
+        uint8_t id;
+        uint32_t value;
+    } F[] = {
+        {PROTO_PREFS_F_BRIGHTNESS, 80u},
+        {PROTO_PREFS_F_SAVER_BRIGHTNESS, 25u},
+        {PROTO_PREFS_F_SAVER_AFTER, 60000u},
+        {PROTO_PREFS_F_OFF_AFTER, 0u},
+        {PROTO_PREFS_F_NIGHT_ON, 0u},
+        {PROTO_PREFS_F_NIGHT_START, 22u * 60u},
+        {PROTO_PREFS_F_NIGHT_END, 7u * 60u},
+        {PROTO_PREFS_F_NIGHT_BRIGHTNESS, 20u},
+        {PROTO_PREFS_F_NIGHT_OFF_AFTER, 60000u},
+        {PROTO_PREFS_F_CLOCK_MODE, 0u},
+        {PROTO_PREFS_F_APPEARANCE, 0u},
+        {PROTO_PREFS_F_HIGH_CONTRAST, 0u},
+        {PROTO_PREFS_F_VOLUME, 70u},
+        {PROTO_PREFS_F_CHIME_VOLUME, 70u},
+        {PROTO_PREFS_F_KEY_CLICK, 1u},
+    };
+    memset(&v->prefs, 0, sizeof(v->prefs));
+    for (size_t i = 0; i < sizeof(F) / sizeof(F[0]); i++) {
+        (void)proto_prefs_put(&v->prefs, F[i].id, F[i].value);
+    }
+    v->accepts = PROTO_PREFS_KNOWN & ~(uint32_t)LINK_PREFS_VOICE;
+}
+
+/* Its settings report (LINK-050): the manager sends it at a session's first STATUS, after a change
+ * at most once a second, and on PREFS_REQ. */
+static void kp_prefs_report(link_keypad_t *v, uint64_t now)
+{
+    uint8_t body[PROTO_PREFS_ENC_MAX];
+    const size_t len = proto_prefs_encode(&v->prefs, v->accepts, body, sizeof(body));
+    if (!plink_keypad_prefs_report(&v->k, now, v->panel_id, (uint8_t)PLINK_VOICE_NONE, v->accepts,
+                                   body, len)) {
+        say(&v->io, "this keypad's settings couldn't be reported");
+    }
+}
+
+/* Its home partition is in an alarm, entry time or exit time: a change from elsewhere waits
+ * (UI-046's HELD). */
+static bool kp_held(const link_keypad_t *v, uint64_t now)
+{
+    const alarm_snapshot_t *s = plink_keypad_snapshot(&v->k);
+    const uint8_t p = link_keypad_home(v, now);
+    if ((s->partitions & (1u << (p - 1u))) == 0u) {
+        return false;
+    }
+    const alarm_partition_status_t *st = &s->part[p - 1u];
+    return st->triggered || st->state == ALARM_STATE_EXIT_DELAY ||
+           st->state == ALARM_STATE_ENTRY_DELAY;
+}
+
+static const char *origin_word(uint8_t origin)
+{
+    switch (origin) {
+    case PLINK_ORIGIN_HA: return "Home Assistant";
+    case PLINK_ORIGIN_CONSOLE: return "the master's console";
+    default: return "elsewhere";
+    }
+}
+
+/* A settings change from the master (PREFS_SET, LINK-051), applied as the screen applies one:
+ * each field checked, a field it doesn't take refused, all held during an alarm, entry or exit
+ * time; then answered with the values it keeps now. */
+static void kp_prefs_take(link_keypad_t *v, uint64_t now)
+{
+    plink_prefs_change_t c;
+    if (!plink_keypad_take_prefs_set(&v->k, &c)) {
+        return;
+    }
+    uint8_t refused[2u * PLINK_PREFS_REFUSED_MAX];
+    uint8_t n = 0;
+    proto_prefs_decoded_t d;
+    if (!proto_prefs_decode(c.fields, c.len, v->accepts, &d)) {
+        memset(&d, 0, sizeof(d)); /* (the link's codec lets none through) */
+    }
+    for (unsigned id = 1; id <= PROTO_PREFS_F_LAST && n < PLINK_PREFS_REFUSED_MAX; id++) {
+        if ((d.refused & PROTO_PREFS_BIT(id)) != 0u) {
+            refused[2u * n] = (uint8_t)id;
+            refused[2u * n + 1u] = d.why[id - 1u];
+            n++;
+        }
+    }
+    for (size_t i = 0;
+         i < d.unknown_n && i < PROTO_PREFS_UNKNOWN_MAX && n < PLINK_PREFS_REFUSED_MAX; i++) {
+        refused[2u * n] = d.unknown[i]; /* a newer master's field */
+        refused[2u * n + 1u] = (uint8_t)PROTO_PREFS_WHY_NOT_ALLOWED;
+        n++;
+    }
+    const bool held = kp_held(v, now);
+    for (unsigned id = 1; id <= PROTO_PREFS_F_LAST; id++) {
+        uint32_t x = 0;
+        if (!proto_prefs_get(&d.values, id, &x)) {
+            continue;
+        }
+        if (held) {
+            if (n < PLINK_PREFS_REFUSED_MAX) {
+                refused[2u * n] = (uint8_t)id;
+                refused[2u * n + 1u] = (uint8_t)PROTO_PREFS_WHY_HELD;
+                n++;
+            }
+        } else {
+            (void)proto_prefs_put(&v->prefs, id, x);
+        }
+    }
+    if (!held && d.values.have != 0u) {
+        v->prefs_applied++;
+    }
+    char text[200];
+    link_prefs_text(&d.values, text, sizeof(text));
+    say(&v->io, "settings change from %s: %s%s; %u refused", origin_word(c.origin),
+        held ? "held (an alarm, entry or exit time) " : "", text, (unsigned)n);
+    uint8_t body[PROTO_PREFS_ENC_MAX];
+    const size_t len = proto_prefs_encode(&v->prefs, v->accepts, body, sizeof(body));
+    (void)plink_keypad_prefs_answer(&v->k, now, c.req, refused, n, body, len);
+}
+
 void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t *io,
-                      link_store_t *store, const char *name, const plink_addr_t *master,
-                      uint64_t now_ms)
+                      link_store_t *store, const char *name, const char *panel_id,
+                      const plink_addr_t *master, uint64_t now_ms)
 {
     memset(v, 0, sizeof(*v));
     v->c = c;
     v->io = *io;
     v->store = store;
     v->now = now_ms;
+    snprintf(v->panel_id, sizeof(v->panel_id), "%s", panel_id != NULL ? panel_id : "1c2d3e");
+    kp_prefs_defaults(v);
     if (master != NULL) {
         v->have_find = true;
         v->find = *master;
@@ -909,9 +1777,11 @@ void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t
         .users = ALARM_MAX_USERS,
         .devices = ALARM_MAX_DEVICES,
     };
-    plink_keypad_init(&v->k, c, &port, have, v->cfg_buf, sizeof(v->cfg_buf), &v->cfg,
-                      PLINK_KIND_PC, &cap, 0u, name != NULL ? name : "PC keypad", LINK_FW, now_ms);
+    plink_keypad_init(&v->k, c, &port, have, v->cfg_buf, sizeof(v->cfg_buf), &v->cfg, PLINK_KIND_PC,
+                      &cap, LINK_CAPS, name != NULL ? name : "PC keypad", LINK_FW, now_ms);
     plink_wipe(&rec, sizeof(rec));
+    plink_keypad_home_attach(&v->k, &v->mirror); /* before the first tick: HOME is offered */
+    kp_prefs_report(v, now_ms);
     if (master != NULL) {
         plink_keypad_master_addr(&v->k, now_ms, master, plink_addr_is_broadcast(master));
     }
@@ -948,6 +1818,7 @@ void link_keypad_tick(link_keypad_t *v, uint64_t now_ms)
     if (plink_keypad_next(&v->k) <= now_ms) {
         plink_keypad_tick(&v->k, now_ms);
     }
+    kp_prefs_take(v, now_ms);
 }
 
 uint64_t link_keypad_next(const link_keypad_t *v)
@@ -1020,6 +1891,117 @@ static void say_keypad_pairing(link_keypad_t *v, uint64_t now_ms)
     case PLINK_PS_DONE: say(&v->io, "pairing done: keypad %u", (unsigned)pi.device); break;
     case PLINK_PS_FAILED: say(&v->io, "pairing failed: %s", link_fail_name(pi.fail)); break;
     default: break;
+    }
+}
+
+/* A row as this keypad's screen shows it: "unlocked, level 80 %, not confirmed (unlock)". */
+static void view_text(const plink_dev_view_t *d, char *out, size_t cap)
+{
+    size_t at = 0;
+    out[0] = '\0';
+    if (!d->have_rec) {
+        add_text(out, cap, &at, "no record yet, offline");
+        return;
+    }
+    add_text(out, cap, &at, "%s", d->word[0] != '\0' ? d->word : "-");
+    if ((d->values.flags & DEV_VAL_LEVEL) != 0u) {
+        add_text(out, cap, &at, ", level %u %%", (unsigned)d->values.level);
+    }
+    if ((d->values.flags & DEV_VAL_SETPOINT) != 0u) {
+        add_hundredths(out, cap, &at, ", set to ", d->values.setpoint);
+    }
+    if (!d->online) {
+        add_text(out, cap, &at, ", offline%s",
+                 d->since_last_data ? " since the last device data" : "");
+    } else if (d->pending) {
+        add_text(out, cap, &at, ", pending (%s)", link_action_name(d->action));
+    } else if (d->failed) {
+        add_text(out, cap, &at, ", %s (%s)", d->unsure ? "not confirmed" : "failed",
+                 link_action_name(d->action));
+    }
+}
+
+static uint32_t view_key(const plink_dev_view_t *d)
+{
+    char text[160];
+    view_text(d, text, sizeof(text));
+    uint32_t h = 2166136261u; /* FNV-1a: what the line says changed */
+    for (const char *p = text; *p != '\0'; p++) {
+        h = (h ^ (uint8_t)*p) * 16777619u;
+    }
+    return h;
+}
+
+/* The mirror's news: a list installed, the device data fresh or not (LINK-046), a row's state
+ * changed while fresh, and the answers to this keypad's own device actions. */
+static void say_devices_news(link_keypad_t *v, uint64_t now)
+{
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&v->k, now, &di);
+    bool rebase = false;
+    if (di.list_seq != v->said_list_seq) {
+        v->said_list_seq = di.list_seq;
+        rebase = true;
+        if (di.list_crc != 0u) {
+            say(&v->io, "devices: %u from the master (list %08x)", (unsigned)di.count,
+                (unsigned)di.list_crc);
+        }
+    }
+    if (di.list_crc != 0u && di.fresh != v->said_fresh) {
+        v->said_fresh = di.fresh;
+        rebase = true;
+        say(&v->io, di.fresh ? "devices: device data from the master"
+                             : "devices: no device data from the master: every device reads "
+                               "offline (LINK-046)");
+    }
+    if (rebase) {
+        v->said_dev_set = 0u;
+    }
+    if (di.seq != v->said_dev_seq || rebase) {
+        v->said_dev_seq = di.seq;
+        for (uint8_t i = 0; i < di.count && i < PLINK_DEV_MAX; i++) {
+            plink_dev_view_t d;
+            if (!plink_keypad_dev_view(&v->k, now, i, &d) || !d.usable || !d.have_rec) {
+                continue;
+            }
+            const uint32_t key = view_key(&d);
+            const uint64_t bit = 1ull << i;
+            const bool known = (v->said_dev_set & bit) != 0u;
+            if (known && v->said_dev[i] == key) {
+                continue;
+            }
+            v->said_dev[i] = key;
+            v->said_dev_set |= bit;
+            if (known && di.fresh) {
+                char text[160];
+                view_text(&d, text, sizeof(text));
+                say(&v->io, "device \"%s\": %s", d.cat.name, text);
+            }
+        }
+    }
+    for (size_t i = 0; i < PLINK_DEV_ACTS_MAX; i++) {
+        link_dev_pending_t *p = &v->acts[i];
+        if (p->ticket == 0u) {
+            continue;
+        }
+        plink_dev_answer_t ans;
+        const plink_cmd_state_t st = plink_keypad_dev_act_state(&v->k, p->ticket, &ans);
+        if (st == PLINK_CMD_PENDING) {
+            continue;
+        }
+        if (st == PLINK_CMD_DONE) {
+            if (ans.result == PLINK_DEV_CODE_REFUSED) {
+                say(&v->io, "%s: %s (%s)", p->what, link_dev_result_name(ans.result),
+                    alarm_result_name((alarm_result_t)ans.why));
+            } else {
+                say(&v->io, "%s: %s", p->what, link_dev_result_name(ans.result));
+            }
+        } else if (st == PLINK_CMD_NO_ANSWER) {
+            say(&v->io, "%s: no answer from the master in 3 s: not confirmed", p->what);
+        }
+        /* as the screen stops waiting: a refusal or the give-up shows on the device's row */
+        plink_keypad_dev_act_release(&v->k, p->ticket);
+        p->ticket = 0u;
     }
 }
 
@@ -1127,6 +2109,95 @@ void link_keypad_report(link_keypad_t *v, uint64_t now_ms)
         plink_keypad_command_release(&v->k, p->req);
         p->req = 0u;
     }
+    say_devices_news(v, now_ms);
+}
+
+void link_keypad_say_devices(link_keypad_t *v, uint64_t now_ms)
+{
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&v->k, now_ms, &di);
+    if (!di.attached) {
+        say(&v->io, "this keypad has no device mirror");
+        return;
+    }
+    if (di.list_crc == 0u) {
+        say(&v->io, "no device list from the master yet (%s)",
+            di.shared ? "its session shares Smart Home" : "its session doesn't share Smart Home");
+        return;
+    }
+    char heard[40];
+    if (di.heard_ms == 0u) {
+        snprintf(heard, sizeof(heard), "no device data yet");
+    } else {
+        snprintf(heard, sizeof(heard), "the last device data %u s ago",
+                 (unsigned)((now_ms - di.heard_ms) / 1000u));
+    }
+    say(&v->io, "%u device%s from the master (list %08x), %s, %s:", (unsigned)di.count,
+        di.count == 1u ? "" : "s", (unsigned)di.list_crc, di.fresh ? "fresh" : "NOT fresh", heard);
+    for (uint8_t i = 0; i < di.count && i < PLINK_DEV_MAX; i++) {
+        plink_dev_view_t d;
+        if (!plink_keypad_dev_view(&v->k, now_ms, i, &d)) {
+            continue;
+        }
+        if (!d.usable) {
+            say(&v->io, "  %u (a device this firmware can't use)", (unsigned)i);
+            continue;
+        }
+        char text[160];
+        view_text(&d, text, sizeof(text));
+        say(&v->io, "  %u %s \"%s\" (%s, %s): %s", (unsigned)i, d.cat.ref, d.cat.name,
+            d.cat.area[0] != '\0' ? d.cat.area : "no area", kind_word(d.cat.kind), text);
+    }
+}
+
+uint32_t link_keypad_dev_act(link_keypad_t *v, uint64_t now_ms, const char *ref, uint8_t action,
+                             int32_t value, uint8_t mode, const char *code)
+{
+    v->now = now_ms;
+    uint32_t ticket = 0;
+    const uint8_t r = plink_keypad_dev_act(&v->k, now_ms, ref, action, value, mode, code, &ticket);
+    if (r != PLINK_DEV_OK) {
+        say(&v->io, "%s %s: %s (nothing sent)", link_action_name(action), ref,
+            link_dev_result_name(r));
+        return 0u;
+    }
+    for (size_t i = 0; i < PLINK_DEV_ACTS_MAX; i++) {
+        if (v->acts[i].ticket == 0u) {
+            v->acts[i].ticket = ticket;
+            snprintf(v->acts[i].what, sizeof(v->acts[i].what), "%s %.*s", link_action_name(action),
+                     (int)(sizeof(v->acts[i].what) - 16u), ref);
+            break;
+        }
+    }
+    return ticket;
+}
+
+void link_keypad_say_prefs(link_keypad_t *v, uint64_t now_ms)
+{
+    plink_keypad_info_t in;
+    plink_keypad_info(&v->k, now_ms, &in);
+    char text[400];
+    link_prefs_text(&v->prefs, text, sizeof(text));
+    say(&v->io, "settings of this keypad (panel id %s, no voice; %s): %s", v->panel_id,
+        (in.caps & PLINK_CAP_PREFS) != 0u ? "its master holds them"
+                                          : "its session doesn't share them",
+        text);
+}
+
+bool link_keypad_prefs_set(link_keypad_t *v, uint64_t now_ms, uint8_t id, uint32_t value)
+{
+    const proto_prefs_field_t *f = proto_prefs_field(id);
+    if (f == NULL || (v->accepts & PROTO_PREFS_BIT(id)) == 0u) {
+        say(&v->io, "this keypad doesn't have %s", f != NULL ? f->key : "that setting");
+        return false;
+    }
+    if (proto_prefs_put(&v->prefs, id, value) != PROTO_PREFS_WHY_NONE) {
+        say(&v->io, "%s: out of range", f->key);
+        return false;
+    }
+    kp_prefs_report(v, now_ms); /* as a save on its screen: the master hears of it */
+    say(&v->io, "%s changed here: reported to the master", f->key);
+    return true;
 }
 
 uint32_t link_keypad_command(link_keypad_t *v, uint64_t now_ms, plink_cmd_t *cmd,

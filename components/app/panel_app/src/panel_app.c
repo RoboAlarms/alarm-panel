@@ -539,6 +539,52 @@ static bool zw_ha_command(void *ctx, const char *key, int level, uint64_t receiv
 }
 #endif
 
+#if CONFIG_ALARM_LINK && CONFIG_ALARM_FEATURE_HA
+/* The link keypads' settings for Home Assistant (docs/features/23 HAI-016..019, docs/features/11
+ * "Smart Home and Home Assistant on keypads"): ha_link's port onto plink_service, which owns the
+ * keypads. ha_link calls these on its own task; plink_service ends a write from the link task. */
+static size_t ha_kp_list(void *ctx, proto_link_keypad_t *out, size_t max)
+{
+    (void)ctx;
+    return plink_service_keypads(out, max);
+}
+
+static ha_link_set_t ha_kp_error(plink_service_pset_t r)
+{
+    switch (r) {
+    case PLINK_SERVICE_PSET_NOT_FOUND: return HA_LINK_SET_NOT_FOUND;
+    case PLINK_SERVICE_PSET_OFFLINE: return HA_LINK_SET_OFFLINE;
+    case PLINK_SERVICE_PSET_UNSUPPORTED: return HA_LINK_SET_UNSUPPORTED;
+    case PLINK_SERVICE_PSET_TIMEOUT: return HA_LINK_SET_TIMEOUT;
+    default: return HA_LINK_SET_BUSY; /* busy, or a body that couldn't go: nothing applied */
+    }
+}
+
+static void ha_kp_done(void *ctx, uint32_t ticket, plink_service_pset_t result,
+                       const uint8_t why[PROTO_PREFS_F_LAST])
+{
+    (void)ctx;
+    if (result == PLINK_SERVICE_PSET_OK) {
+        ha_link_settings_done(ticket, why, PROTO_PREFS_F_LAST);
+    } else {
+        ha_link_settings_failed(ticket, ha_kp_error(result));
+    }
+}
+
+static ha_link_set_t ha_kp_set(void *ctx, uint8_t device, uint32_t ticket,
+                               const proto_prefs_values_t *values)
+{
+    (void)ctx;
+    uint8_t body[PLINK_SERVICE_PREFS_BODY_MAX];
+    const size_t len = proto_prefs_encode(values, values->have, body, sizeof body);
+    const plink_service_pset_t r =
+        len == 0u ? PLINK_SERVICE_PSET_BAD
+                  : plink_service_prefs_set(device, PLINK_SERVICE_ORIGIN_HA, body, len, ha_kp_done,
+                                            NULL, ticket);
+    return r == PLINK_SERVICE_PSET_OK ? HA_LINK_SET_SENT : ha_kp_error(r);
+}
+#endif
+
 #if CONFIG_ALARM_ZSRC_ZIGBEE && CONFIG_ALARM_FEATURE_MQTT
 /* The Zigbee network for MQTT (ZB-026, docs/features/20 devices.md §15): zigbee_service's answers
  * in net_mqtt's shapes. From the MQTT task only. */
@@ -2045,7 +2091,8 @@ void panel_app_run(const panel_app_config_t *cfg)
         ESP_LOGE(TAG, "notifications failed to start: no alerts to a phone");
     }
 #endif
-    if (device_service_start() != ESP_OK) {
+    const bool devices_ok = device_service_start() == ESP_OK;
+    if (!devices_ok) {
         ESP_LOGE(TAG, "device registry failed to start: no Devices screen");
     }
     /* the stored automations (docs/features/41): loaded on this internal-stack task; their "auto"
@@ -2063,11 +2110,8 @@ void panel_app_run(const panel_app_config_t *cfg)
 #endif
     /* Panel settings (docs/features/23 HAI-016..019): the master's own need nothing here (ha_link
      * reports them and hands a change to the screen's mailbox, panel_prefs). The link keypads'
-     * come through a port; until it is set the keypads list is empty and a keypad target is
-     * not_found.
-     * TODO(BL-216 S2b): with CONFIG_ALARM_LINK, ha_link_set_settings() with plink_service's
-     * keypads and set (a port: plink_service already depends on ha_link), and plink_service
-     * answering through ha_link_settings_done / _failed. */
+     * come through a port, set once the panel link runs (below); until then the keypads list is
+     * empty and a keypad target is not_found. */
     if (ha_link_start() != ESP_OK) {
         ESP_LOGE(TAG, "Home Assistant link failed to start");
     }
@@ -2077,10 +2121,21 @@ void panel_app_run(const panel_app_config_t *cfg)
         /* the keypad numbers 1-8 shared with the Zigbee keypads (LINK-001) */
         plink_service_set_devices_port(zigbee_service_devices_held, zigbee_service_devices_held_now,
                                        zigbee_service_set_link_devices);
+        /* its devices on the keypads' Smart Home only with a running registry (BL-216) */
+        plink_service_set_home(devices_ok);
         if (plink_service_start(board_name()) != ESP_OK) {
             ESP_LOGE(TAG, "panel link failed to start: no keypads");
+        } else {
+#if CONFIG_ALARM_FEATURE_HA
+            /* the keypads and their settings for Home Assistant (HAI-016..019) */
+            static const ha_link_settings_port_t ha_kp_port = {
+                .ctx = NULL, .keypads = ha_kp_list, .set = ha_kp_set};
+            ha_link_set_settings(&ha_kp_port);
+#endif
         }
     }
+#else
+    (void)devices_ok; /* no keypads to show its devices to */
 #endif
 #if CONFIG_ALARM_SERVICE_CONSOLE
     START_OR_LOG(panel_console_start());

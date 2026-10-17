@@ -6243,6 +6243,28 @@ void host_panel_devices_range_thermostat(bool on)
     t->modes = UI_DEV_MODE_OFF | UI_DEV_MODE_HEAT | UI_DEV_MODE_COOL | UI_DEV_MODE_AUTO;
 }
 
+void host_panel_devices_unreachable(bool on, int64_t since_ms)
+{
+    static ui_dev_t was[DEV_WORLD_MAX];
+    static size_t was_n;
+    static bool saved;
+    if (on && !saved) {
+        memcpy(was, s_dev.dev, sizeof(was));
+        was_n = s_dev.n;
+        saved = true;
+        for (size_t i = 0; i < s_dev.n; i++) {
+            s_dev.dev[i].status = UI_DEV_OFFLINE;
+            s_dev.dev[i].action = ACT_NONE;
+            s_dev.dev[i].unsure = 0u;
+            s_dev.dev[i].since_ms = since_ms;
+        }
+    } else if (!on && saved) {
+        memcpy(s_dev.dev, was, sizeof(was));
+        s_dev.n = was_n;
+        saved = false;
+    }
+}
+
 /* Takes a device out of the world by its ref, if it is there. */
 static void dev_remove(const char *ref)
 {

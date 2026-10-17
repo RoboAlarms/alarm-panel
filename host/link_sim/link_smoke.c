@@ -8,13 +8,18 @@
  *
  * It proves, in order: pairing (both confirm after checking the codes are equal); the keypad
  * syncs to ONLINE; arm away with the master code from the keypad and the keypad shows it;
- * disarm; a wrong code answered INVALID_CODE; the keypad stopped (no heartbeats) raises the
+ * disarm; a wrong code answered INVALID_CODE; Smart Home and settings on the keypad (BL-216,
+ * LINK-044..051): the keypad mirrors the master's devices - its records the master's, byte for
+ * byte - an unlock without a code is answered NEED_CODE at once with nothing sent, an unlock with
+ * Alex's code is judged once on the master as the keypad's and the keypad shows the lock unlocked,
+ * the keypad's settings report reaches the master and a settings write from the master is taken on
+ * the keypad and answered with what it keeps; the keypad stopped (no heartbeats) raises the
  * master's supervision trouble after the supervision time and clears it when it is back
  * (LINK-007); the master restarted from its stored record has the keypad ONLINE again within
- * 15 s (docs/features/11 "Test and acceptance"); a removed keypad is told and is NOT_PAIRED with
- * its record erased (LINK-014); it pairs again asking by broadcast, as link_sim does without
- * mDNS (here the test's LAN hands a broadcast to the master's socket); no AES-CCM key and nonce
- * was used twice on either side (LINK-003).
+ * 15 s (docs/features/11 "Test and acceptance") and its devices mirrored again; a removed keypad
+ * is told and is NOT_PAIRED with its record erased (LINK-014); it pairs again asking by
+ * broadcast, as link_sim does without mDNS (here the test's LAN hands a broadcast to the master's
+ * socket); no AES-CCM key and nonce was used twice on either side (LINK-003).
  *
  * The crypto port is the seeded test port (deterministic), so the sockets are loopback only
  * (link_udp.h). Exit 0: passed; 1: failed (the message says where); 77: no UDP socket here
@@ -271,6 +276,70 @@ static bool answered(void)
 static alarm_arm_state_t WANT_STATE;
 static alarm_arm_level_t WANT_LEVEL;
 
+/* The keypad mirrors the master's devices: the list it was last handed, every record in, fresh,
+ * and the records the master's byte for byte (their states_crc). */
+static bool keypad_has_devices(void)
+{
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&K.k, NOW, &di);
+    if (!di.shared || !di.fresh || di.list_crc == 0u || di.list_crc != M.dev_list_crc ||
+        di.count != M.dev_count) {
+        return false;
+    }
+    for (uint8_t i = 0; i < di.count; i++) {
+        plink_dev_view_t d;
+        if (!plink_keypad_dev_view(&K.k, NOW, i, &d) || !d.have_rec) {
+            return false;
+        }
+    }
+    return plink_home_states_crc(&K.mirror.recs) == plink_home_states_crc(&M.drecs);
+}
+
+/* Row ref as the keypad's screen would show it (false: no such row). */
+static bool keypad_row(const char *ref, plink_dev_view_t *out)
+{
+    plink_dev_info_t di;
+    plink_keypad_dev_info(&K.k, NOW, &di);
+    for (uint8_t i = 0; i < di.count; i++) {
+        if (plink_keypad_dev_view(&K.k, NOW, i, out) && out->usable &&
+            strcmp(out->cat.ref, ref) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static const char *WANT_WORD;
+
+static bool keypad_lock_shows(void)
+{
+    plink_dev_view_t d;
+    return keypad_row("lock.front_door", &d) && d.online && !d.pending && !d.failed &&
+           strcmp(d.word, WANT_WORD) == 0;
+}
+
+static uint32_t DEV_TICKET;
+
+static bool dev_answered(void)
+{
+    const plink_cmd_state_t st = plink_keypad_dev_act_state(&K.k, DEV_TICKET, NULL);
+    return st == PLINK_CMD_DONE || st == PLINK_CMD_NO_ANSWER;
+}
+
+static bool master_has_report(void)
+{
+    plink_keypad_home_t kh;
+    return plink_master_keypad_home(&M.m, NOW, DEVICE, &kh) && kh.prefs.have &&
+           strcmp(kh.prefs.panel_id, "1c2d3e") == 0;
+}
+
+static unsigned WRITES_ENDED;
+
+static bool write_ended(void)
+{
+    return M.pset_end.count > WRITES_ENDED;
+}
+
 static bool keypad_shows(void)
 {
     const alarm_snapshot_t *s = plink_keypad_snapshot(&K.k);
@@ -357,7 +426,7 @@ int main(int argc, char **argv)
     if (!link_master_init(&M, &SM.c, &io_m, &SM.store, "Smoke master", "5a0c3e", NOW)) {
         return fail("the virtual master did not start");
     }
-    link_keypad_init(&K, &SK.c, &io_k, &SK.store, "Smoke keypad", &maddr, NOW);
+    link_keypad_init(&K, &SK.c, &io_k, &SK.store, "Smoke keypad", "1c2d3e", &maddr, NOW);
     run_for(1000u);
     if (kinfo().state != PLINK_LINK_NOT_PAIRED) {
         return fail("a new keypad is %s, not \"not paired\"", link_state_text(kinfo().state));
@@ -409,6 +478,18 @@ int main(int argc, char **argv)
         return fail("the master doesn't see keypad %u online", (unsigned)DEVICE);
     }
 
+    /* BL-216, LINK-044 and LINK-045: the master's devices mirrored on the keypad. */
+    STAGE = "devices";
+    if (!run_until(keypad_has_devices, 10000u)) {
+        plink_dev_info_t di;
+        plink_keypad_dev_info(&K.k, NOW, &di);
+        return fail("the keypad didn't mirror the master's %u devices (list %08x: it has %u of "
+                    "list %08x, %s)",
+                    (unsigned)M.dev_count, (unsigned)M.dev_list_crc, (unsigned)di.count,
+                    (unsigned)di.list_crc, di.fresh ? "fresh" : "not fresh");
+    }
+    const uint64_t devices_ms = NOW - (paired_at + online_ms);
+
     /* LINK-002: the master checks the code; the keypad shows the master's state. */
     STAGE = "arm away";
     if (!keypad_command(ALARM_CMD_ARM, ALARM_LEVEL_AWAY, ALARM_DEFAULT_MASTER_CODE)) {
@@ -453,6 +534,79 @@ int main(int argc, char **argv)
     WANT_STATE = ALARM_STATE_DISARMED;
     if (!keypad_shows()) {
         return fail("a wrong code changed the state");
+    }
+
+    /* BL-216, LINK-045: still the master's devices, as they are. */
+    STAGE = "device state";
+    WANT_WORD = "locked";
+    if (!keypad_has_devices() || M.dev_count < 6u || !keypad_lock_shows()) {
+        return fail("the keypad doesn't show the house's Front Door locked");
+    }
+
+    /* LINK-047 and LINK-048: an unlock from the keypad, judged once on the master as the keypad's
+     * for its home partition. Without a code it is answered at once, with nothing sent. */
+    STAGE = "device action";
+    const unsigned judged = M.dev_runs;
+    uint32_t none = 0;
+    if (plink_keypad_dev_act(&K.k, NOW, "lock.front_door", ACT_UNLOCK, 0, 0u, NULL, &none) !=
+            PLINK_DEV_NEED_CODE ||
+        none != 0u) {
+        return fail("an unlock without a code wasn't answered NEED_CODE at once");
+    }
+    run_for(200u);
+    if (M.dev_runs != judged) {
+        return fail("an unlock without a code reached the master");
+    }
+    const uint64_t act_at = NOW;
+    DEV_TICKET = link_keypad_dev_act(&K, NOW, "lock.front_door", ACT_UNLOCK, 0, 0u, "1111");
+    if (DEV_TICKET == 0u) {
+        return fail("the keypad refused an unlock with Alex's code at once");
+    }
+    if (!run_until(dev_answered, 5000u)) {
+        return fail("no answer to the unlock in 5 s");
+    }
+    plink_dev_answer_t ans;
+    if (plink_keypad_dev_act_state(&K.k, DEV_TICKET, &ans) != PLINK_CMD_DONE ||
+        ans.result != PLINK_DEV_OK) {
+        return fail("the unlock was answered %s, not done", link_dev_result_name(ans.result));
+    }
+    WANT_WORD = "unlocked";
+    if (!run_until(keypad_lock_shows, 3000u)) {
+        return fail("the keypad doesn't show Front Door unlocked");
+    }
+    const uint64_t act_ms = NOW - act_at;
+    const hc_device_t *lock = link_master_device(&M, "lock.front_door");
+    if (M.dev_runs != judged + 1u || lock == NULL || strcmp(lock->info.state, "unlocked") != 0) {
+        return fail("the master judged the unlock %u times and its lock is %s", M.dev_runs - judged,
+                    lock != NULL ? lock->info.state : "gone");
+    }
+
+    /* LINK-050 and LINK-051: the keypad's settings at the master, and a write from it. */
+    STAGE = "settings";
+    if (!run_until(master_has_report, 5000u)) {
+        return fail("the keypad's settings report never reached the master");
+    }
+    WRITES_ENDED = M.pset_end.count;
+    const uint64_t set_at = NOW;
+    if (!link_master_prefs_set(&M, NOW, DEVICE, PROTO_PREFS_F_BRIGHTNESS, 60u)) {
+        return fail("the master didn't send a settings change to keypad %u", (unsigned)DEVICE);
+    }
+    if (!run_until(write_ended, 10000u)) {
+        return fail("the settings change never ended");
+    }
+    const uint64_t set_ms = NOW - set_at;
+    uint32_t kept = 0, mine = 0;
+    if (M.pset_end.result != PLINK_PSET_OK || M.pset_end.req != M.pset_req ||
+        M.pset_end.refused_count != 0u ||
+        !proto_prefs_get(&M.pset_end.values, PROTO_PREFS_F_BRIGHTNESS, &kept) || kept != 60u) {
+        return fail("the settings change ended %u with %u refused, brightness %u",
+                    (unsigned)M.pset_end.result, (unsigned)M.pset_end.refused_count,
+                    (unsigned)kept);
+    }
+    if (!proto_prefs_get(&K.prefs, PROTO_PREFS_F_BRIGHTNESS, &mine) || mine != 60u ||
+        K.prefs_applied != 1u) {
+        return fail("the keypad's brightness is %u after %u change(s)", (unsigned)mine,
+                    K.prefs_applied);
     }
 
     /* LINK-007: a keypad that stops is a supervision trouble after its supervision time. */
@@ -514,6 +668,11 @@ int main(int argc, char **argv)
     const uint64_t restart_ms = NOW - restarted;
     if (trouble_raised()) {
         return fail("the restarted master raised a trouble for keypad %u", (unsigned)DEVICE);
+    }
+    /* Its house again from the start (the lock locked): mirrored again on the keypad. */
+    WANT_WORD = "locked";
+    if (!run_until(keypad_has_devices, 15000u) || !keypad_lock_shows()) {
+        return fail("the keypad didn't mirror the restarted master's devices");
     }
 
     /* LINK-014: removed at the master, the keypad is told and forgets the master. */
@@ -585,13 +744,16 @@ int main(int argc, char **argv)
     }
 
     printf("link_smoke: OK - paired (code %s) and ONLINE in %.1f s; arm away, disarm and a wrong "
-           "code from keypad %u; supervision trouble %.1f s after it stopped, cleared %.1f s after "
-           "it was back; ONLINE %.1f s after the master restarted; removed; paired again by "
-           "broadcast and ONLINE in %.1f s. %.0f s of link time in %u ms%s\n",
-           code, (double)online_ms / 1000.0, (unsigned)first_device,
+           "code from keypad %u; %u devices mirrored %.1f s after ONLINE, an unlock shown "
+           "unlocked %.1f s after it was keyed, a settings change answered in %.1f s; "
+           "supervision trouble %.1f s after it stopped, cleared %.1f s after it was back; ONLINE "
+           "%.1f s after the master restarted; removed; paired again by broadcast and ONLINE in "
+           "%.1f s. %.0f s of link time in %u ms%s\n",
+           code, (double)online_ms / 1000.0, (unsigned)first_device, (unsigned)M.dev_count,
+           (double)devices_ms / 1000.0, (double)act_ms / 1000.0, (double)set_ms / 1000.0,
            (double)trouble_ms / 1000.0, (double)back_ms / 1000.0, (double)restart_ms / 1000.0,
-           (double)broadcast_ms / 1000.0,
-           (double)(NOW - 1000000u) / 1000.0, (unsigned)(link_os_mono_ms() - real0),
+           (double)broadcast_ms / 1000.0, (double)(NOW - 1000000u) / 1000.0,
+           (unsigned)(link_os_mono_ms() - real0),
            LOST != 0u ? " (some loopback datagrams were lost)" : "");
     link_udp_close(&SM.udp);
     link_udp_close(&SK.udp);

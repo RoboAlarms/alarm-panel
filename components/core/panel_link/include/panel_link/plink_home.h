@@ -68,6 +68,9 @@ uint32_t plink_home_list_crc(const uint8_t *blob, size_t len);
 uint32_t plink_home_states_crc(const plink_dev_recs_t *recs);
 /* Record index decoded (false: no such record, or it has no bytes). */
 bool plink_home_rec(const plink_dev_recs_t *recs, uint8_t index, plink_dev_rec_t *out);
+/* A record's values as the registry's dev_values_t, what plink_home_rec_of took from it: a
+ * keypad's screen reads them as the master's reads its registry's (rec NULL: nothing known). */
+void plink_home_values_of(const plink_dev_rec_t *rec, dev_values_t *out);
 /* A record section as received (its length byte first, len bytes) kept for index: false when
  * index is past the list or the section isn't whole or is longer than PLINK_DEV_REC_MAX. */
 bool plink_home_rec_put(plink_dev_recs_t *recs, uint8_t index, const uint8_t *sec, size_t len);

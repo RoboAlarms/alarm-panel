@@ -8,9 +8,34 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "home_control/home_control.h"
+#include "ui_backend/ui_dev_model.h"
+
 #define WINDOW_S  120u /* the alarm panel's pairing window (LINK-016) */
 #define KEYPADS   8u   /* numbers 1-8 (LINK-001) */
 #define PAIR_CODE "588460"
+/* A keypad's Smart Home (BL-216): plink_keypad.h's numbers. */
+#define DEV_ACTS     2u    /* PLINK_DEV_ACTS_MAX: its device actions in flight */
+#define DEV_GIVE_UP  3000  /* PLINK_DEV_ACT_GIVE_UP_MS: an unanswered action is given up */
+#define DEV_STALE_MS 30000 /* PLINK_DEV_STALE_MS: no device data this long reads offline */
+
+/* A keypad's own action on a device, once the screen stopped waiting (plink_keypad.h's overlay). */
+typedef struct {
+    bool used;
+    bool given_up;  /* no answer in 3 s: failed and not confirmed */
+    uint8_t action; /* dev_action_t */
+    int64_t at;     /* sent then (the pretend panel's clock) */
+    ui_dev_t was;   /* its device as the alarm panel had it: a later record clears the overlay */
+} dev_ovl_t;
+
+/* The alarm panel's own dev_list and dev_act (the pretend house): host_link_demo_backend wraps
+ * them, and host_link_demo_init leaves them be. */
+static struct {
+    size_t (*list)(void *ctx, ui_dev_t *out, size_t max);
+    ui_dev_result_t (*act)(void *ctx, const char *ref, uint8_t action, int32_t value,
+                           const char *code, alarm_result_t *code_result);
+} P;
+static ui_dev_t s_rows[UI_DEVL_MAX]; /* kp_dev_act's look at the screen's copy */
 
 static struct {
     bool on;
@@ -27,6 +52,11 @@ static struct {
     ui_link_req_t last;
     bool (*allowed)(void);
     int64_t (*epoch_ms)(void);
+    /* Smart Home on a keypad (BL-216) */
+    bool dev_stopped;    /* the device data stopped, the alarm panel still answering */
+    bool dev_unanswered; /* the alarm panel's answers to device actions are lost */
+    int64_t dev_heard;   /* the last device data (0 none) */
+    dev_ovl_t ovl[DEV_ACTS];
 } D;
 
 static int64_t now_ms(void)
@@ -113,6 +143,16 @@ void host_link_demo_state(host_link_demo_t what)
         break;
     default: master_info(); break; /* off, fresh, the alarm panel alone */
     }
+    /* The device data: coming while connected; its last before the alarm panel went silent; none
+     * before the list is in, or once forgotten (BL-216). */
+    if (what == HOST_LINK_KEYPAD_ONLINE) {
+        D.dev_heard = now_ms();
+    } else if (what == HOST_LINK_KEYPAD_LOST) {
+        D.dev_heard = D.info.since_epoch_ms;
+    } else {
+        D.dev_heard = 0;
+        memset(D.ovl, 0, sizeof(D.ovl));
+    }
 }
 
 /* The lowest number nobody holds (LINK-001), 0 when all eight are taken. */
@@ -164,6 +204,16 @@ void host_link_demo_advance(uint32_t ms)
     if (!D.on) {
         D.ms = 0;
         return;
+    }
+    /* A keypad's device data keeps coming while connected; its unanswered actions are given up
+     * 3 s after they went (BL-216). */
+    if (D.info.role == UI_LINK_ROLE_KEYPAD && D.info.state == UI_LINK_ONLINE && !D.dev_stopped) {
+        D.dev_heard = now_ms();
+    }
+    for (size_t i = 0; i < DEV_ACTS; i++) {
+        if (D.ovl[i].used && !D.ovl[i].given_up && now_ms() - D.ovl[i].at >= DEV_GIVE_UP) {
+            D.ovl[i].given_up = true;
+        }
     }
     D.ms += ms;
     while (D.ms >= 1000u) {
@@ -377,12 +427,152 @@ static uint8_t be_request(void *ctx, const ui_link_req_t *req)
     return D.info.role == UI_LINK_ROLE_MASTER ? master_request(req) : keypad_request(req);
 }
 
+/* ---- Smart Home on a keypad (BL-216) -------------------------------------------------------- */
+
+static bool keypad_role(void)
+{
+    return D.on && D.info.role == UI_LINK_ROLE_KEYPAD;
+}
+
+/* The alarm panel's list is in: from the first sync, kept through a loss, gone once forgotten. */
+static bool dev_listed(void)
+{
+    return keypad_role() && (D.info.state == UI_LINK_ONLINE || D.info.state == UI_LINK_LOST);
+}
+
+/* LINK-046: connected, with device data within 30 s. */
+static bool dev_fresh(void)
+{
+    return dev_listed() && D.info.state == UI_LINK_ONLINE && D.dev_heard != 0 &&
+           now_ms() - D.dev_heard < DEV_STALE_MS;
+}
+
+static dev_ovl_t *ovl_of(const char *ref)
+{
+    for (size_t i = 0; i < DEV_ACTS; i++) {
+        if (D.ovl[i].used && strcmp(D.ovl[i].was.ref, ref) == 0) {
+            return &D.ovl[i];
+        }
+    }
+    return NULL;
+}
+
+/* plink_backend.c's kp_dev_list: the alarm panel's devices as the keypad's mirror shows them -
+ * its own action over a device until that device's next record (plink_keypad_dev_view), and every
+ * device offline since the last device data while that isn't fresh. */
+static size_t kp_dev_list(void *ctx, ui_dev_t *out, size_t max)
+{
+    if (!keypad_role()) {
+        return P.list(ctx, out, max);
+    }
+    if (!dev_listed()) {
+        return 0; /* no list yet: no Smart Home on the rail */
+    }
+    const size_t n = P.list(ctx, out, max);
+    const bool fresh = dev_fresh();
+    for (size_t i = 0; i < n; i++) {
+        ui_dev_t *d = &out[i];
+        dev_ovl_t *o = ovl_of(d->ref);
+        if (o != NULL && memcmp(&o->was, d, sizeof(*d)) != 0) {
+            memset(o, 0, sizeof(*o)); /* a later record: it shows what the alarm panel says */
+        } else if (o != NULL && d->status != UI_DEV_OFFLINE) {
+            d->status = o->given_up ? UI_DEV_FAILED : UI_DEV_PENDING;
+            d->action = o->action;
+            d->unsure = o->given_up ? 1u : 0u;
+        }
+        if (!fresh) {
+            if (d->status != UI_DEV_OFFLINE) {
+                d->since_ms = D.dev_heard; /* since the last device data */
+            }
+            d->status = UI_DEV_OFFLINE;
+            d->action = ACT_NONE;
+            d->unsure = 0u;
+        }
+    }
+    return n;
+}
+
+/* plink_backend.c's kp_dev_act: steps 1-4 answered at once from the screen's copy, then the
+ * alarm panel's judge - or, its answers lost, the device pending until the give-up. */
+static ui_dev_result_t kp_dev_act(void *ctx, const char *ref, uint8_t action, int32_t value,
+                                  const char *code, alarm_result_t *code_result)
+{
+    if (!keypad_role()) {
+        return P.act(ctx, ref, action, value, code, code_result);
+    }
+    if (!dev_fresh() || ref == NULL) {
+        return UI_DEV_UNREACHABLE; /* nothing sent */
+    }
+    const size_t n = kp_dev_list(ctx, s_rows, UI_DEVL_MAX);
+    const ui_dev_t *d = NULL;
+    for (size_t i = 0; i < n && d == NULL; i++) {
+        d = strcmp(s_rows[i].ref, ref) == 0 ? &s_rows[i] : NULL;
+    }
+    if (d == NULL) {
+        return UI_DEV_REFUSED;
+    }
+    if (d->status == UI_DEV_OFFLINE) {
+        return UI_DEV_UNREACHABLE;
+    }
+    if (d->source == (uint8_t)DSRC_ZWAVE ||
+        !hc_action_valid((dev_kind_t)d->kind, (dev_action_t)action) ||
+        (action == (uint8_t)ACT_SET_MODE && ui_dev_mode_bit(value) == 0u)) {
+        return UI_DEV_REFUSED;
+    }
+    const bool coded = code != NULL && code[0] != '\0';
+    if (!coded && hc_needs_code((dev_kind_t)d->kind, (dev_action_t)action, value)) {
+        return UI_DEV_NEED_CODE; /* the pad opens with no round trip */
+    }
+    dev_ovl_t *o = ovl_of(ref);
+    if (o != NULL && !o->given_up) {
+        return UI_DEV_BUSY; /* one at a time on a device */
+    }
+    if (o != NULL) {
+        memset(o, 0, sizeof(*o)); /* the next action clears the last one's words */
+    }
+    if (!D.dev_unanswered) {
+        return P.act(ctx, ref, action, value, code, code_result);
+    }
+    for (size_t i = 0; i < DEV_ACTS; i++) {
+        if (!D.ovl[i].used) {
+            const size_t k = (size_t)(d - s_rows);
+            (void)P.list(ctx, s_rows, UI_DEVL_MAX); /* the alarm panel's own row, untouched */
+            D.ovl[i].used = true;
+            D.ovl[i].action = action;
+            D.ovl[i].at = now_ms();
+            D.ovl[i].was = s_rows[k];
+            return UI_DEV_OK; /* the screen stopped waiting: pending until the give-up */
+        }
+    }
+    return UI_DEV_BUSY;
+}
+
+void host_link_demo_devices_stop(bool on)
+{
+    D.dev_stopped = on;
+    if (!on && D.info.state == UI_LINK_ONLINE) {
+        D.dev_heard = now_ms();
+    }
+}
+
+void host_link_demo_devices_unanswered(bool on)
+{
+    D.dev_unanswered = on;
+}
+
 void host_link_demo_backend(ui_backend_t *out)
 {
     out->link_info = be_info;
     out->link_pair_status = be_pair_status;
     out->link_keypads = be_keypads;
     out->link_request = be_request;
+    /* Smart Home: the alarm panel's own, through the link on a keypad (BL-216) */
+    if (out->dev_list != NULL && out->dev_act != NULL && out->dev_list != kp_dev_list) {
+        P.list = out->dev_list;
+        P.act = out->dev_act;
+        out->dev_list = kp_dev_list;
+        out->dev_act = kp_dev_act;
+    }
 }
 
 void host_link_demo_keypad_asks(void)

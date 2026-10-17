@@ -338,6 +338,36 @@ static void test_records_hold_the_registrys_facts(void)
     TEST_ASSERT_EQUAL_UINT8(RECS.len[0] - 1u, RECS.rec[0][0]);
 }
 
+/* LINK-045 (BL-216): a record gives a keypad's screen back the registry's values it was made
+ * from, through its bytes, so both screens read the same; nothing known without one. */
+static void test_records_give_back_the_values(void)
+{
+    hc_device_t *d = row(0, DEV_CLIMATE, DSRC_HA, "climate.hall", "Hall", "", "heat_cool");
+    d->info.values.flags = DEV_VAL_SETPOINT | DEV_VAL_TEMP | DEV_VAL_LEVEL;
+    d->info.values.level = 40u;
+    d->info.values.modes = DEV_MODE_OFF | DEV_MODE_HEAT_COOL;
+    d->info.values.hvac_action = DEV_HVAC_COOLING;
+    d->info.values.setpoint = 2150;
+    d->info.values.temp = -1234;
+    d->info.values.since = 1790000000u;
+    d->info.values.caps = DEV_CAP_KNOWN;
+    plink_home_recs_build(ROWS, 1u, &RECS);
+    plink_dev_rec_t r;
+    TEST_ASSERT_TRUE(plink_home_rec(&RECS, 0u, &r));
+    dev_values_t v;
+    memset(&v, 0xA5, sizeof(v));
+    plink_home_values_of(&r, &v);
+    TEST_ASSERT_EQUAL_MEMORY(&d->info.values, &v, sizeof(v));
+
+    memset(&v, 0xA5, sizeof(v));
+    plink_home_values_of(NULL, &v);
+    TEST_ASSERT_EQUAL_HEX8(0u, v.flags);
+    TEST_ASSERT_EQUAL_HEX8(0u, v.modes);
+    TEST_ASSERT_EQUAL_UINT8(DEV_HVAC_UNKNOWN, v.hvac_action);
+    TEST_ASSERT_EQUAL_UINT32(0u, v.since);
+    TEST_ASSERT_EQUAL_HEX8(0u, v.caps);
+}
+
 /* LINK-045: states_crc is the CRC-32 over each record that has bytes, its index then its section,
  * in index order - the bytes DEV_STATE carries - and changes with any record; a record a keypad
  * receives is kept only whole, for an index of the list, and within PLINK_DEV_REC_MAX. */
@@ -432,6 +462,7 @@ int main(void)
     RUN_TEST(test_at_most_64_rows_within_the_blob);
     RUN_TEST(test_a_newer_masters_blob_is_read_leniently);
     RUN_TEST(test_records_hold_the_registrys_facts);
+    RUN_TEST(test_records_give_back_the_values);
     RUN_TEST(test_states_crc_and_records_received);
     RUN_TEST(test_records_carried_over_by_ref);
     return UNITY_END();

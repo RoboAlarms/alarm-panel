@@ -77,12 +77,13 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
       (LINK-020).
   12. The Panel Manager's lost update (docs/bugs/B031) is its own row (BL-218), fixed on BL-216's
       mailbox.
-  13. Proposal P1, `docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-216-keypad-smart-home.js`,
-      is approved: on the 10.1" keypad, its rail with Smart Home, Smart Home live, the code pad
-      "Unlock {0}", link lost ("Offline since 9:12 PM" on every tile, the note "Your devices
-      can't be reached right now") and a give-up ("Not confirmed"), from today's parts and words
-      only, its pictures from the preview's `host_link_demo`. `ui_devices.c` and `ui_link.c`
-      change as it shows, and `screens/panel-link.js` is updated once it is built.
+  13. Proposal P1 is approved: on the 10.1" keypad, its rail with Smart Home, Smart Home live,
+      the code pad "Unlock {0}", link lost ("Offline since 9:12 PM" on every tile, the note
+      "Your devices can't be reached right now") and a give-up ("Not confirmed"), from today's
+      parts and words only, its pictures from the preview's `host_link_demo`. `ui_devices.c`
+      and `ui_link.c` change as it shows, and its screens move into
+      `docs/features/07-UI-LVGL-Pro/mockup/screens/panel-link.js` once it is built
+      (`kp-devices`, `kp-device-unlock`, `kp-devices-lost`, `kp-devices-unconfirmed`).
 
 ## Requirements
 | ID | Requirement | Verified by |
@@ -895,9 +896,9 @@ master's and the keypad's managers; "Where the code goes"). Not built yet: the s
 keypad's page and Home Assistant. No panel offers HOME or PREFS yet, so nothing new is sent.
 
 The owner decided the 13 questions this design needs on 2026-10-16 ("Approve P1, recommendations
-OK"): each as recommended, listed in Decisions. The keypad's Smart Home screens are proposal P1
-(`docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-216-keypad-smart-home.js`), approved that
-day.
+OK"): each as recommended, listed in Decisions. The keypad's Smart Home screens are proposal P1,
+approved that day, now in the mockup as `kp-devices`, `kp-device-unlock`, `kp-devices-lost` and
+`kp-devices-unconfirmed` (`docs/features/07-UI-LVGL-Pro/mockup/screens/panel-link.js`).
 
 ### What people get
 

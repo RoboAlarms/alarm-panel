@@ -1571,6 +1571,33 @@ static void update_state(plink_keypad_t *k, uint64_t now)
     }
 }
 
+/* The master's device list and what came under it (LINK-044..046): gone, the pull with it, so
+ * Smart Home hides until a list installs again. The actions keep their slots and run their course
+ * (their copies go only in a session with HOME). */
+static void dev_list_drop(plink_keypad_t *k)
+{
+    pull_stop(&k->dev_pull);
+    k->dev_pull.bad_crc = 0u;
+    if (k->home != NULL) {
+        plink_dev_mirror_t *h = k->home;
+        h->list_crc = 0u;
+        h->blob_len = 0u;
+        memset(h->keys, 0, sizeof h->keys);
+        memset(h->off, 0, sizeof h->off);
+        memset(&h->recs, 0, sizeof h->recs);
+        memset(h->frame_seq, 0, sizeof h->frame_seq);
+        k->dev_list_seq++;
+    }
+    k->dev_named_crc = k->dev_named_states = 0u;
+    k->dev_want = false;
+    k->dev_next_ms = 0u;
+    k->dev_gap_ms = PLINK_DEV_REQ_GAP_MS;
+    k->dev_req_ms = 0u;
+    k->dev_heard_ms = 0u;
+    k->dev_fresh = false;
+    k->dev_seq++;
+}
+
 /* What a master said goes: sessions, commands, status, configuration, events, sounds, time. */
 static void forget_data(plink_keypad_t *k, uint64_t now)
 {
@@ -1608,26 +1635,7 @@ static void forget_data(plink_keypad_t *k, uint64_t now)
     k->session_started_ms = 0u;
     /* Its devices and their actions, and what it was asked to change; the keypad's own settings
      * report stays. */
-    pull_stop(&k->dev_pull);
-    k->dev_pull.bad_crc = 0u;
-    if (k->home != NULL) {
-        plink_dev_mirror_t *h = k->home;
-        h->list_crc = 0u;
-        h->blob_len = 0u;
-        memset(h->keys, 0, sizeof h->keys);
-        memset(h->off, 0, sizeof h->off);
-        memset(&h->recs, 0, sizeof h->recs);
-        memset(h->frame_seq, 0, sizeof h->frame_seq);
-        k->dev_list_seq++;
-    }
-    k->dev_named_crc = k->dev_named_states = 0u;
-    k->dev_want = false;
-    k->dev_next_ms = 0u;
-    k->dev_gap_ms = PLINK_DEV_REQ_GAP_MS;
-    k->dev_req_ms = 0u;
-    k->dev_heard_ms = 0u;
-    k->dev_fresh = false;
-    k->dev_seq++;
+    dev_list_drop(k);
     for (size_t i = 0; i < PLINK_DEV_ACTS_MAX; i++) {
         act_free(&k->acts[i]);
     }
@@ -1789,6 +1797,14 @@ static void on_sealed(plink_keypad_t *k, uint64_t now, const plink_addr_t *from,
     }
     if (s->sid != k->items_sid) {
         items_reset(k, s->sid);
+        /* LINK-043 ("Versions"): a session without HOME - a master that serves no devices now,
+         * such as a v1 one - drops the list, so Smart Home hides instead of every tile reading
+         * offline until the keypad restarts. */
+        if (k->home != NULL && (s->caps & PLINK_CAP_HOME) == 0u &&
+            (k->home->list_crc != 0u || k->dev_pull.pulling || k->dev_named_crc != 0u ||
+             k->dev_heard_ms != 0u)) {
+            dev_list_drop(k);
+        }
     }
     const uint32_t fs = h->seq;
     /* LINK-043: a capability's frames only from a session holding its bit (Smart Home's only
@@ -2437,6 +2453,53 @@ uint8_t plink_keypad_dev_overlay(const plink_keypad_t *k, uint8_t index, uint8_t
         }
     }
     return PLINK_DEV_OVL_NONE;
+}
+
+bool plink_keypad_dev_view(const plink_keypad_t *k, uint64_t now_ms, uint8_t index,
+                           plink_dev_view_t *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+    memset(out, 0, sizeof *out);
+    out->action = ACT_NONE;
+    plink_home_values_of(NULL, &out->values);
+    if (k == NULL || k->home == NULL || k->home->list_crc == 0u || index >= k->home->recs.count) {
+        return false;
+    }
+    out->usable = dev_cat(k->home, index, &out->cat);
+    if (!out->usable) {
+        memset(&out->cat, 0, sizeof out->cat);
+        return true;
+    }
+    plink_dev_rec_t rec;
+    out->have_rec = plink_home_rec(&k->home->recs, index, &rec);
+    if (out->have_rec) {
+        memcpy(out->word, rec.word, sizeof out->word);
+        plink_home_values_of(&rec, &out->values);
+        out->online = (rec.flags & PLINK_DEVF_ONLINE) != 0u;
+        out->pending = (rec.flags & PLINK_DEVF_PENDING) != 0u;
+        out->failed = (rec.flags & PLINK_DEVF_FAILED) != 0u;
+        out->unsure = (rec.flags & PLINK_DEVF_UNSURE) != 0u;
+        out->action = rec.action;
+    }
+    /* This keypad's own action, once its caller stopped waiting, until a later record or the next
+     * action on the device (the overlay is gone then). */
+    uint8_t action = ACT_NONE;
+    const uint8_t ovl = plink_keypad_dev_overlay(k, index, &action);
+    if (ovl != PLINK_DEV_OVL_NONE) {
+        out->pending = ovl == PLINK_DEV_OVL_PENDING;
+        out->failed = !out->pending;
+        out->unsure = ovl == PLINK_DEV_OVL_UNSURE;
+        out->action = action;
+    }
+    /* LINK-046: stale device data, or a link that isn't ONLINE, shows every row offline since the
+     * last device data; a row the master already said is offline keeps its own time. */
+    if (k->state != PLINK_LINK_ONLINE || !dev_fresh_at(k, now_ms)) {
+        out->since_last_data = out->online || out->values.since == 0u;
+        out->online = false;
+    }
+    return true;
 }
 
 /* ACT_SET_MODE's mode: exactly one of the four the wire knows. */

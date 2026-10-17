@@ -189,6 +189,26 @@ bool plink_home_rec(const plink_dev_recs_t *recs, uint8_t index, plink_dev_rec_t
     return plink_dec_dev_rec(recs->rec[index], recs->len[index], out, NULL);
 }
 
+void plink_home_values_of(const plink_dev_rec_t *rec, dev_values_t *out)
+{
+    if (out == NULL) {
+        return;
+    }
+    memset(out, 0, sizeof(*out));
+    out->hvac_action = DEV_HVAC_UNKNOWN;
+    if (rec == NULL) {
+        return;
+    }
+    out->flags = rec->vflags;
+    out->level = rec->level;
+    out->modes = rec->modes;
+    out->hvac_action = rec->hvac_action;
+    out->setpoint = rec->setpoint;
+    out->temp = rec->temp;
+    out->since = rec->since;
+    out->caps = rec->caps;
+}
+
 bool plink_home_rec_put(plink_dev_recs_t *recs, uint8_t index, const uint8_t *sec, size_t len)
 {
     if (recs == NULL || sec == NULL || index >= recs->count || index >= PLINK_DEV_MAX ||

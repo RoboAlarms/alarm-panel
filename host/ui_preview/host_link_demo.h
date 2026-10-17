@@ -13,6 +13,19 @@
  * 588460 on both screens. KEYPAD_SET and KEYPAD_REMOVE change the model's keypads, KP_DONE makes
  * this panel a keypad (connecting).
  *
+ * Smart Home on a keypad (BL-216; docs/features/11 "Smart Home and Home Assistant on keypads",
+ * proposal P1): host_link_demo_backend also wraps the backend's dev_list and dev_act, which are the
+ * pretend panel's own devices (host_panel.c's house). Off, or as the alarm panel, they answer as
+ * they are. As a keypad they answer as plink_backend.c's kp_dev_list and kp_dev_act do, over that
+ * house as its alarm panel's: no device before the list is in (connecting, not paired - no Smart
+ * Home on the rail); while the link is lost, or no device data came for 30 s (LINK-046), every
+ * device offline since the last device data (one its alarm panel already said is offline keeps
+ * its own time) and a tap answered at once with nothing sent; otherwise a tap answered at once
+ * where the keypad can tell (unreachable, refused, a code needed) and else judged by the alarm
+ * panel (its dev_act). With the alarm panel's answers lost, a tap shows its device pending and,
+ * 3 s on, failed and not confirmed (the keypad's give-up, HCTL-012), until the device's next
+ * record or the next tap on it. (On a panel a tap with a code holds the pad for those 3 s.)
+ *
  * Interim: plink_service and the PC virtual master and keypad (host/link_sim) replace it; the
  * calls below are what host_panel.c and the preview's walk rely on.
  */
@@ -68,6 +81,11 @@ void host_link_demo_needs_update(bool on);
 /* A keypad: the alarm panel moved it to partition home (any number, to try the range check), a new
  * home_gen. */
 void host_link_demo_home(uint8_t home);
+/* A keypad (BL-216): its alarm panel still answers but its device data stops (on), so 30 s on
+ * every device reads offline (LINK-046); off, the data comes again. */
+void host_link_demo_devices_stop(bool on);
+/* A keypad: the alarm panel's answers to its device actions are lost (on). */
+void host_link_demo_devices_unanswered(bool on);
 /* The last request the UI made, kind 0 before any (the walk's checks). */
 void host_link_demo_last_request(ui_link_req_t *out);
 /* How many keypads the alarm panel has, and one of them by number (false: none). */

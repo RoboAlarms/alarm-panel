@@ -3777,7 +3777,12 @@ static lv_obj_t *spilled_from(lv_obj_t *label, const lv_area_t *text)
             (row == label || outside(&row_box, &box, false))) {
             return NULL;
         }
-        if (across && scrolls && dir == LV_DIR_HOR && row != label &&
+        /* Smart Home's area tabs scroll across on purpose: a long note takes its room from them,
+         * the open tab kept in view (UI-020, BL-171), so a tab past their edge is scrolled, not
+         * cut. Their box is a scrollable row that LVGL lets scroll either way (BL-216). */
+        const char *box_name = lv_obj_get_name(a);
+        const bool tabs = box_name != NULL && strcmp(box_name, "device_areas") == 0;
+        if (across && scrolls && (dir == LV_DIR_HOR || tabs) && row != label &&
             outside(&row_box, &box, true)) {
             return NULL;
         }
@@ -5942,6 +5947,31 @@ static void walk_smart_home(void)
         run(1200);
         expect(find_label(by_name("device_grid"), "Ran at 8:30 PM") != NULL,
                "HCTL-006 (BL-179): Good Night's time didn't come back");
+    }
+    /* HCTL-006, LINK-046 (BL-216, proposal P1's bl-216-kp-devices-lost): no device can be reached
+     * (Home Assistant's link dropped; on a link keypad, its alarm panel's device data stopped):
+     * every tile offline since then, and the note says so whole on its one line beside Favorites'
+     * four tabs, its room taken from the tabs as the other notes take it (UI-020) */
+    {
+        lv_obj_t *tabs = by_name("device_areas");
+        const int32_t widest = lv_obj_get_style_max_width(tabs, LV_PART_MAIN);
+        host_panel_devices_unreachable(true, host_panel_device("switch.pool_pump")->since_ms);
+        run(1200);
+        printf("  note, nothing reachable: %s (tabs at most %d px, %d px with every device)\n",
+               lv_subject_get_string(&subject_devices_note),
+               (int)lv_obj_get_style_max_width(tabs, LV_PART_MAIN), (int)widest);
+        expect(note_shows("Your devices can't be reached right now") && note_drawn_whole(),
+               "UI-020 (BL-216): \"Your devices can't be reached right now\" isn't whole");
+        expect(find_label(device_tile_of("Front Door"), "Offline since 9:12 PM") != NULL &&
+                   find_label(device_tile_of("Hallway"), "Offline since 9:12 PM") != NULL,
+               "HCTL-006 (BL-216): with nothing reachable, a tile isn't offline since 9:12 PM");
+        /* no shot here: the link keypad's bl-216-kp-devices-lost is this page in this state */
+        host_panel_devices_unreachable(false, 0);
+        run(1200);
+        expect(strcmp(lv_subject_get_string(&subject_devices_note),
+                      "Back Door unlocked · 2 lights on") == 0 &&
+                   lv_obj_get_style_max_width(tabs, LV_PART_MAIN) == widest,
+               "UI-020 (BL-216): the note or the tabs didn't come back once the devices did");
     }
 
     /* HCTL-004: a tap switches a light; B030: an off light's tap turns it on (the simulator, as
@@ -10351,14 +10381,116 @@ static void walk_link_setup(const ui_options_t *start)
     shot("bl-048-kp-home-connecting");
 }
 
+#if CONFIG_ALARM_HOME_CONTROL
+/* BL-216 (docs/features/11 "Smart Home and Home Assistant on keypads"; proposal P1, approved
+ * 2026-10-16): a keypad's Smart Home is its alarm panel's page unchanged - the same tiles, note,
+ * pad and words, from Harbor House's devices through the link (host_link_demo.h) - each tap judged
+ * on the alarm panel, an unlock's code pad opened with no round trip. An unlock whose answer is
+ * lost reads "Not confirmed" once the keypad gives it up (HCTL-012, LINK-047). Without device data
+ * - the alarm panel answering but its device data stopped for 30 s, or the link lost - every tile
+ * reads offline since the last of it, the note says so, and a tap sends nothing (LINK-046). Shots
+ * named as the proposal's screens. */
+static void walk_link_keypad_devices(void)
+{
+    printf("A keypad: Smart Home, its alarm panel's devices (BL-216)\n");
+    const lv_color_t connected = lv_subject_get_color(&subject_tone_color); /* the frame's tone */
+    tap_name("nav_devices");
+    run(300);
+    expect(note_shows("Back Door unlocked · 2 lights on") &&
+               tile_says("Front Door", "Locked", false) && tile_says("Back Door", "Unlocked", true),
+           "BL-216: a keypad's Smart Home isn't its alarm panel's page");
+    shot("bl-216-kp-devices");
+    const unsigned acts = host_panel_device_acts();
+    tap_device("Front Door");
+    run(300);
+    expect(lv_subject_get_int(&subject_modal_pad) == 1 && host_panel_device_acts() == acts,
+           "BL-216, HCTL-005: a keypad's unlock didn't open the pad at once, with nothing sent");
+    shot("bl-216-kp-device-unlock");
+    /* the alarm panel's answers lost: pending, then given up after 3 s; Back Door locked meanwhile
+     * at the alarm panel */
+    host_link_demo_devices_unanswered(true);
+    type("123456k");
+    run(300);
+    expect(lv_subject_get_int(&subject_modal_pad) == 0 &&
+               tile_says("Front Door", "Unlocking…", false) &&
+               host_panel_device("lock.front_door")->state == UI_DEV_ST_LOCKED,
+           "BL-216: an unanswered unlock isn't shown under way, or reached the alarm panel");
+    host_panel_device_state("lock.back_door", UI_DEV_ST_LOCKED);
+    run(3100);
+    expect(tile_says("Front Door", "Not confirmed", true) &&
+               note_shows("Couldn't confirm Front Door unlocked") && note_drawn_whole(),
+           "HCTL-012, LINK-047 (BL-216): an unlock given up doesn't read \"Not confirmed\", or the "
+           "note doesn't say it whole");
+    shot("bl-216-kp-devices-unconfirmed");
+    /* a tap tries it again, with the pad; answered, the tile is the alarm panel's again */
+    host_link_demo_devices_unanswered(false);
+    tap_device("Front Door");
+    run(300);
+    type("123456k");
+    run(300);
+    expect(host_panel_device("lock.front_door")->state == UI_DEV_ST_UNLOCKED &&
+               tile_says("Front Door", "Unlocked", true),
+           "BL-216: the retried unlock didn't unlock Front Door at the alarm panel");
+    tap_device("Front Door"); /* locking asks no code */
+    run(300);
+    host_panel_device_state("lock.back_door", UI_DEV_ST_UNLOCKED);
+    run(1200);
+    expect(host_panel_device("lock.front_door")->state == UI_DEV_ST_LOCKED &&
+               note_shows("Back Door unlocked · 2 lights on"),
+           "BL-216: the keypad's Smart Home didn't follow the alarm panel back");
+    /* LINK-046: the alarm panel still answers, but no device data for 30 s */
+    host_link_demo_devices_stop(true);
+    run(29000);
+    expect(tile_says("Front Door", "Locked", false),
+           "LINK-046: device data read stale before 30 s");
+    run(2000);
+    expect(note_shows("Your devices can't be reached right now") &&
+               find_label_with(device_tile_of("Front Door"), "Offline since") != NULL &&
+               lv_color_eq(lv_subject_get_color(&subject_tone_color), connected),
+           "LINK-046 (BL-216): 30 s without device data doesn't read offline, or the frame isn't "
+           "the connected one");
+    tap_device("Kitchen Lights");
+    run(300);
+    expect(host_panel_device_acts() == acts + 2u,
+           "LINK-046 (BL-216): a tap without device data reached the alarm panel");
+    host_link_demo_devices_stop(false);
+    run(1200);
+    expect(note_shows("Back Door unlocked · 2 lights on"),
+           "LINK-046 (BL-216): the devices didn't come back with their data");
+    /* the link lost: every tile offline since the last word, the keypad's frame without system
+     * communication */
+    link_state(HOST_LINK_KEYPAD_LOST);
+    {
+        lv_obj_t *door = find_label_with(device_tile_of("Front Door"), "Offline since");
+        printf("  a keypad without its alarm panel: \"%s\", the note \"%s\"\n",
+               door != NULL ? lv_label_get_text(door) : "-",
+               lv_subject_get_string(&subject_devices_note));
+        expect(door != NULL && note_shows("Your devices can't be reached right now") &&
+                   note_drawn_whole() && find_visible(lv_screen_active(), "nav_devices") != NULL,
+               "LINK-046 (BL-216): a keypad without its alarm panel doesn't read its devices "
+               "offline whole, or hides Smart Home");
+    }
+    shot("bl-216-kp-devices-lost");
+    tap_device("Porch Light");
+    run(300);
+    expect(host_panel_device_acts() == acts + 2u && device_sheet_open() == NULL,
+           "LINK-046 (BL-216): a tap without the alarm panel did something");
+    tap_name("nav_home");
+    run(300);
+}
+#endif
+
 static void walk_link_keypad(void)
 {
     printf("A keypad: Home, Emergency, Settings and About (BL-048)\n");
     link_state(HOST_LINK_KEYPAD_ONLINE);
     run(3000); /* the rail's Smart Home follows within a few seconds */
     expect(!link_tile_dimmed(), "BL-048: the arming tiles stay dimmed once connected");
-    expect(find_visible(lv_screen_active(), "nav_devices") == NULL,
-           "BL-048: a keypad's rail has Smart Home");
+    /* BL-216 (proposal P1, approved 2026-10-16): a keypad's rail shows Smart Home under the alarm
+     * panel's rule, a listed device that isn't from Z-Wave (here the house's, as its backend's
+     * dev_list gives them) */
+    expect(find_visible(lv_screen_active(), "nav_devices") != NULL,
+           "BL-216: a keypad whose alarm panel lists devices has no Smart Home on its rail");
     expect(lv_subject_get_int(&subject_bar_banner) == 8 ||
                lv_subject_get_int(&subject_bar_banner) == 0,
            "BL-048: a keypad's factory-code reminder doesn't point to the alarm panel");
@@ -10380,6 +10512,9 @@ static void walk_link_keypad(void)
         expect(host_panel_saved_options(&o) && o.partition == 1u,
                "BL-048: the keypad didn't come back to partition 1");
     }
+#if CONFIG_ALARM_HOME_CONTROL
+    walk_link_keypad_devices();
+#endif
     link_state(HOST_LINK_KEYPAD_LOST);
     link_has("No system communication",
              "BL-048: a keypad without the alarm panel doesn't say so (LINK-008)");
@@ -10475,6 +10610,11 @@ static void walk_link_keypad(void)
     tap_name("nav_home");
     run(300);
     link_state(HOST_LINK_KEYPAD_REMOVED);
+#if CONFIG_ALARM_HOME_CONTROL
+    run(4000); /* off its view the rail looks every 5 s */
+    expect(find_visible(lv_screen_active(), "nav_devices") == NULL,
+           "BL-216: a removed keypad keeps its alarm panel's Smart Home");
+#endif
     link_has("Not paired", "BL-048: a removed keypad doesn't say so (LINK-014)");
     link_has("Harbor House removed this keypad",
              "BL-048: a removed keypad doesn't say who removed it");
@@ -10548,6 +10688,11 @@ static void walk_link_keypad_kept(const ui_options_t *start)
     link_state(HOST_LINK_KEYPAD_CONNECTING);
     host_link_demo_needs_update(true);
     run(1100);
+#if CONFIG_ALARM_HOME_CONTROL
+    run(4000); /* off its view the rail looks every 5 s */
+    expect(find_visible(lv_screen_active(), "nav_devices") == NULL,
+           "BL-216: a keypad connecting has Smart Home before its list is in");
+#endif
     link_has("Update this keypad: Settings > About",
              "BL-048: a keypad that needs an update doesn't say so");
     shot("bl-048-kp-home-update");

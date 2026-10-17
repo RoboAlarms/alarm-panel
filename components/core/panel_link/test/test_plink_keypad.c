@@ -3589,6 +3589,108 @@ static void test_dev_act_answered(void)
     TEST_ASSERT_EQUAL_UINT8(PLINK_DEV_REFUSED, ans.result);
 }
 
+/* Row i as the keypad's screen gets it. */
+static plink_dev_view_t view(uint8_t i)
+{
+    plink_dev_view_t v;
+    TEST_ASSERT_TRUE(plink_keypad_dev_view(&K, NET.now_ms, i, &v));
+    TEST_ASSERT_TRUE(v.usable);
+    return v;
+}
+
+/* LINK-046, LINK-047, docs/features/11 "Device actions" step 7: the screen shows a row as the
+ * master's record says - its fields, words, values and flags, an action under way whoever started
+ * it - with this keypad's own action over it once its caller stopped waiting: pending while it is
+ * sent, failed for a late refusal, failed and unsure once given up ("Not confirmed"), until a later
+ * record. Once the device data is stale every row reads offline since the last device data; a row
+ * the master already said is offline keeps its own time. */
+static void test_dev_view_for_the_screen(void)
+{
+    home_rig();
+    M.rows[R_CLIMATE].info.values.flags = DEV_VAL_SETPOINT;
+    M.rows[R_CLIMATE].info.values.setpoint = 2150;
+    M.rows[R_CLIMATE].info.values.hvac_action = DEV_HVAC_HEATING;
+    M.rows[R_ATTIC].info.values.since = 1790000000u;
+    fm_dev_build();
+    plink_dev_view_t v;
+    TEST_ASSERT_FALSE(plink_keypad_dev_view(&K, NET.now_ms, 0u, &v)); /* no list yet */
+    kp_home_online();
+    v = view(R_CLIMATE);
+    TEST_ASSERT_TRUE(v.have_rec && v.online);
+    TEST_ASSERT_FALSE(v.pending || v.failed || v.unsure || v.since_last_data);
+    TEST_ASSERT_EQUAL_STRING("climate.living", v.cat.ref);
+    TEST_ASSERT_EQUAL_STRING("Ground floor", v.cat.area);
+    TEST_ASSERT_EQUAL_UINT8(DEV_CLIMATE, v.cat.kind);
+    TEST_ASSERT_EQUAL_UINT8(DSRC_HA, v.cat.source);
+    TEST_ASSERT_EQUAL_STRING("heat", v.word);
+    TEST_ASSERT_EQUAL_HEX8(DEV_VAL_SETPOINT, v.values.flags);
+    TEST_ASSERT_EQUAL_INT32(2150, v.values.setpoint);
+    TEST_ASSERT_EQUAL_UINT8(DEV_HVAC_HEATING, v.values.hvac_action);
+    TEST_ASSERT_EQUAL_UINT8(ACT_NONE, v.action);
+    v = view(R_ATTIC);
+    TEST_ASSERT_FALSE(v.online || v.since_last_data);
+    TEST_ASSERT_EQUAL_UINT32(1790000000u, v.values.since);
+    TEST_ASSERT_FALSE(plink_keypad_dev_view(&K, NET.now_ms, R_COUNT, &v));
+
+    /* The master's record of an action under way, whoever started it */
+    M.rows[R_HALL].pending = 5u;
+    M.rows[R_HALL].action = ACT_OFF;
+    fm_dev_build();
+    fm_dev_state(1u << R_HALL);
+    plink_net_run(&NET, 10);
+    v = view(R_HALL);
+    TEST_ASSERT_TRUE(v.pending && v.online);
+    TEST_ASSERT_EQUAL_UINT8(ACT_OFF, v.action);
+    M.rows[R_HALL].pending = 0u;
+    fm_dev_build();
+    fm_dev_state(1u << R_HALL);
+    plink_net_run(&NET, 10);
+    TEST_ASSERT_FALSE(view(R_HALL).pending);
+
+    /* This keypad's own: nothing over the record while its caller waits; pending once released;
+     * a late refusal failed (definite) until a later record */
+    M.dev_answer = 0u;
+    const uint32_t t1 = act("switch.porch", ACT_ON, 0, NULL, PLINK_DEV_OK);
+    v = view(R_PORCH);
+    TEST_ASSERT_FALSE(v.pending || v.failed);
+    TEST_ASSERT_EQUAL_UINT8(ACT_NONE, v.action);
+    plink_keypad_dev_act_release(&K, t1);
+    v = view(R_PORCH);
+    TEST_ASSERT_TRUE(v.pending && v.online);
+    TEST_ASSERT_FALSE(v.failed || v.unsure);
+    TEST_ASSERT_EQUAL_UINT8(ACT_ON, v.action);
+    fm_dev_ack(t1, PLINK_DEV_REFUSED, 0u, "switch.porch");
+    plink_net_run(&NET, 10);
+    v = view(R_PORCH);
+    TEST_ASSERT_TRUE(v.failed && v.online);
+    TEST_ASSERT_FALSE(v.pending || v.unsure);
+    TEST_ASSERT_EQUAL_UINT8(ACT_ON, v.action);
+    fm_dev_state(1u << R_PORCH);
+    plink_net_run(&NET, 10);
+    v = view(R_PORCH);
+    TEST_ASSERT_FALSE(v.pending || v.failed);
+    TEST_ASSERT_EQUAL_UINT8(ACT_NONE, v.action);
+
+    /* Given up: failed, and whether it happened isn't known */
+    const uint32_t t2 = act("switch.porch", ACT_OFF, 0, NULL, PLINK_DEV_OK);
+    plink_keypad_dev_act_release(&K, t2);
+    plink_net_run(&NET, PLINK_DEV_ACT_GIVE_UP_MS + 100u);
+    v = view(R_PORCH);
+    TEST_ASSERT_TRUE(v.failed && v.unsure && v.online);
+    TEST_ASSERT_FALSE(v.pending);
+    TEST_ASSERT_EQUAL_UINT8(ACT_OFF, v.action);
+
+    /* Stale: every row offline since the last device data, the attic since its own time */
+    M.dev_auto = false;
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, PLINK_DEV_STALE_MS + 1000u, stale, NULL));
+    v = view(R_HALL);
+    TEST_ASSERT_TRUE(v.have_rec && !v.online && v.since_last_data);
+    v = view(R_PORCH);
+    TEST_ASSERT_TRUE(!v.online && v.since_last_data && v.failed && v.unsure);
+    v = view(R_ATTIC);
+    TEST_ASSERT_FALSE(v.online || v.since_last_data);
+}
+
 /* LINK-049: device actions have 2 slots of their own: with both being sent a third is BUSY while
  * a command still goes, and with every command slot taken an action still goes; their request
  * ids never meet. */
@@ -3888,6 +3990,72 @@ static void test_home_frames_need_their_capability(void)
     TEST_ASSERT_FALSE(M.hb.has_prefs);
 }
 
+/* LINK-043, docs/features/11 "Versions": a keypad that mirrored its master's list drops it at the
+ * first frame of a session without HOME (a master that serves no devices now, a v1 one): no rows,
+ * so Smart Home hides rather than every tile reading offline until the keypad restarts; nothing is
+ * asked and a tap is refused at once. The session before it kept the list, and once a session
+ * shares HOME again the list is pulled and installed again. */
+static bool session_after(void *ctx)
+{
+    const unsigned *promoted = ctx;
+    return M.promotions > *promoted && K.items_sid == K.live.sid && !K.tentative;
+}
+
+static void test_dev_list_dropped_without_home(void)
+{
+    home_rig();
+    kp_home_online();
+    plink_dev_info_t d = dev_info();
+    TEST_ASSERT_EQUAL_UINT8(R_COUNT, d.count);
+    const uint32_t list_seq = d.list_seq;
+
+    /* A new session with HOME keeps it. */
+    unsigned promoted = M.promotions;
+    fm_rekey(K.live.sid, NET_ID);
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 2000, session_after, &promoted));
+    d = dev_info();
+    TEST_ASSERT_TRUE(d.shared);
+    TEST_ASSERT_EQUAL_HEX32(M.list_crc, d.list_crc);
+    TEST_ASSERT_EQUAL_UINT8(R_COUNT, d.count);
+    TEST_ASSERT_EQUAL_UINT32(list_seq, d.list_seq);
+
+    /* One without it drops it. */
+    plink_net_run(&NET, PLINK_REKEY_GAP_MS);
+    M.caps = PLINK_CAP_PREFS;
+    promoted = M.promotions;
+    fm_rekey(K.live.sid, NET_ID);
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 2000, session_after, &promoted));
+    plink_net_run(&NET, 3000);
+    TEST_ASSERT_TRUE(online(NULL));
+    d = dev_info();
+    TEST_ASSERT_TRUE(d.attached);
+    TEST_ASSERT_FALSE(d.shared);
+    TEST_ASSERT_FALSE(d.fresh);
+    TEST_ASSERT_EQUAL_HEX32(0u, d.list_crc);
+    TEST_ASSERT_EQUAL_UINT8(0u, d.count);
+    TEST_ASSERT_EQUAL_UINT64(0u, d.heard_ms);
+    TEST_ASSERT_NOT_EQUAL(list_seq, d.list_seq);
+    plink_dev_view_t v;
+    TEST_ASSERT_FALSE(plink_keypad_dev_view(&K, NET.now_ms, 0u, &v));
+    TEST_ASSERT_FALSE(plink_keypad_dev_row(&K, 0u, NULL, NULL));
+    const size_t lists = M.n_list, sreqs = M.n_sreq;
+    act("light.hall", ACT_ON, -1, NULL, PLINK_DEV_UNREACHABLE);
+    plink_net_run(&NET, 5000);
+    TEST_ASSERT_EQUAL_size_t(lists, M.n_list);
+    TEST_ASSERT_EQUAL_size_t(sreqs, M.n_sreq);
+    TEST_ASSERT_EQUAL_UINT8(0u, dev_info().count);
+
+    /* HOME again: pulled and installed again. */
+    M.caps = HOME_CAPS;
+    TEST_ASSERT_EQUAL_HEX32(0u, KMIR.list_crc);
+    fm_rekey(K.live.sid, NET_ID);
+    TEST_ASSERT_TRUE(plink_net_run_until(&NET, 5000, home_synced, NULL));
+    d = dev_info();
+    TEST_ASSERT_TRUE(d.shared);
+    TEST_ASSERT_EQUAL_UINT8(R_COUNT, d.count);
+    TEST_ASSERT_TRUE(M.n_list > lists);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -3938,6 +4106,7 @@ int main(void)
     RUN_TEST(test_dev_list_bad_blob_remembered);
     RUN_TEST(test_dev_list_that_fails_reads_offline);
     RUN_TEST(test_dev_list_change_carries_records_by_ref);
+    RUN_TEST(test_dev_list_dropped_without_home);
     RUN_TEST(test_dev_records_in_frame_order);
     RUN_TEST(test_dev_records_only_under_installed_list);
     RUN_TEST(test_dev_records_kept_as_they_came);
@@ -3946,6 +4115,7 @@ int main(void)
     RUN_TEST(test_dev_act_refused_at_once);
     RUN_TEST(test_dev_act_resent_then_given_up);
     RUN_TEST(test_dev_act_answered);
+    RUN_TEST(test_dev_view_for_the_screen);
     RUN_TEST(test_dev_act_slots_apart_from_commands);
     RUN_TEST(test_dev_requests_wait_for_panic);
     RUN_TEST(test_prefs_report_timing);

@@ -7,9 +7,12 @@
   over UDP, with a console:
 
     master  the real alarm engine with a small house and the master's side of the link: open
-            pairing, allow a keypad, list and remove keypads, open zones, arm and disarm.
+            pairing, allow a keypad, list and remove keypads, open zones, arm and disarm; the
+            house's devices for the keypads' Smart Home (devices, device) and a keypad's Screen
+            and sound settings (prefs N, prefs N set KEY VALUE), as Home Assistant changes them.
     keypad  the keypad's side of the link and the master's status as the keypad rebuilds it:
-            pair, arm, disarm, chime, panic.
+            pair, arm, disarm, chime, panic; the master's devices as it mirrors them (devices)
+            and acts on them (act REF ACTION [VALUE] [CODE]); its own settings (prefs).
 
   The two pair with each other, and with panels on the LAN: they use the OS's random numbers.
   There is no mDNS on the PC: give the keypad --master <ip>[:port], or it asks by broadcast to
@@ -21,7 +24,8 @@
   Delete a file to start that side afresh.
 
   -BuildOnly builds and stops. -Smoke runs link_smoke instead: the test CI runs, a master and a
-  keypad in one process over 127.0.0.1 on a virtual clock (add -v after it for both logs).
+  keypad in one process over 127.0.0.1 on a virtual clock - pairing, commands, Smart Home and
+  settings, supervision, a master restart, removal (add -v after it for both logs).
 
 .EXAMPLE
   pwsh tools/link_sim.ps1 master

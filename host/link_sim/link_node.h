@@ -16,6 +16,26 @@
  *
  * Records (the master's keypads, the keypad's master) live in a link_store_t: a file for link_sim
  * (the record holds the pairing keys: a bench tool's file, not a panel's NVS) or memory only.
+ *
+ * Smart Home and settings on keypads (BL-216; docs/features/11 "Smart Home and Home Assistant on
+ * keypads"): both sides offer PLINK_CAP_HOME and PLINK_CAP_PREFS. The virtual master's devices are
+ * home_control's real registry over one fake source, a small house's Home Assistant:
+ *   light.porch "Porch Light" (Outside, dimmable, on at 80 %), light.kitchen "Kitchen Lights"
+ *   (Kitchen, off), lock.front_door "Front Door" (Living room, locked), cover.garage_door "Garage
+ *   Door" (Outside, closed), climate.hallway "Hallway" (Living room, heating to 21.5 from 21.0),
+ *   scene.good_night "Good Night" (Living room).
+ * The source answers an action LINK_HOUSE_MS after it was sent. The registry's list and records go
+ * to the link as the plink_dev task builds them (when the registry moves, at once after an action,
+ * every 2 s to compare), and a keypad's device action is judged as device_service_person_act
+ * judges it: by ref, a Z-Wave row or an action its kind doesn't take refused, the code an unlock or
+ * an opening needs checked by the engine as {ALARM_SRC_KEYPAD, n} for the keypad's home partition
+ * (arm-only and guest codes refused), a thermostat's mode bit made its word (hc_mode_word). A
+ * settings write (link_master_prefs_set) goes as Home Assistant's would, from the master's console.
+ * The virtual keypad attaches a mirror (the master's devices, as its screen would read them) and
+ * keeps its own Screen and sound settings, the factory ones of a panel without a voice: it reports
+ * them (PREFS) and takes a write from the master (PREFS_SET) as its screen would - each field
+ * checked (proto_prefs), all held during an alarm, entry or exit time on its home partition
+ * (UI-046) - and answers with the values it keeps then.
  */
 #ifndef LINK_NODE_H
 #define LINK_NODE_H
@@ -27,6 +47,9 @@
 #include "alarm/alarm_codec.h"
 #include "alarm/alarm_engine.h"
 #include "alarm/alarm_snapshot.h"
+#include "alarm_proto/proto_prefs.h"
+#include "home_control/home_control.h"
+#include "panel_link/plink_home.h"
 #include "panel_link/plink_keypad.h"
 #include "panel_link/plink_master.h"
 
@@ -68,6 +91,19 @@ void link_code_text(const char *code, char out[8]);
 const char *link_fail_name(uint8_t reason);
 const char *link_state_text(uint8_t state); /* plink_link_state_t */
 
+/* ---- Smart Home and settings, both sides --------------------------------------------------- */
+/* A dev_action_t's console word ("unlock"), and back (ACT_NONE: none such). */
+const char *link_action_name(uint8_t action);
+uint8_t link_action_parse(const char *word);
+/* A plink_dev_result_t as words ("refused: a wrong code" needs why: the alarm_result_t). */
+const char *link_dev_result_name(uint8_t result);
+/* The fields v holds, as the console shows them: "brightness 80, saver_after 60 s, night off". */
+void link_prefs_text(const proto_prefs_values_t *v, char *out, size_t cap);
+/* A field named by its JSON key (proto_prefs.h) and a value as typed - a delay in seconds (0:
+ * never), a switch on/off, a time of day HH:MM, the rest whole numbers - in the wire's units.
+ * NULL when taken, else why not. */
+const char *link_prefs_parse(const char *key, const char *text, uint8_t *id, uint32_t *value);
+
 /* ---- the virtual master -------------------------------------------------------------------- */
 #define LINK_MASTER_EVENTS 256u
 #define LINK_MASTER_FRESH  64u
@@ -84,6 +120,49 @@ typedef struct {
     uint32_t ticket;
     plink_result_t res;
 } link_answer_t;
+
+#define LINK_HOUSE_DEVICES 8u
+#define LINK_HOUSE_ACTS    8u
+#define LINK_HOUSE_MS      300u  /* the fake source answers an action this long after it is sent */
+#define LINK_DEV_JOBS      8u    /* keypads' device actions waiting for the judge (port.dev_run) */
+#define LINK_DEV_BUILD_MS  2000u /* the registry built and compared at least this often */
+
+/* An action the fake source was sent: answered at due. */
+typedef struct {
+    uint32_t req; /* hc's request id; 0: free */
+    char ref[DEV_REF_LEN];
+    uint8_t action;
+    int32_t value;
+    char mode[DEV_MODE_LEN];
+    uint64_t due;
+} link_house_act_t;
+
+/* The registry's one source: a fictional house's Home Assistant (private). */
+typedef struct {
+    dev_info_t dev[LINK_HOUSE_DEVICES];
+    size_t n;
+    link_house_act_t acts[LINK_HOUSE_ACTS];
+    const dsrc_sink_t *sink;
+} link_house_t;
+
+/* A keypad's device action handed over by port.dev_run (private; the code wiped once judged). */
+typedef struct {
+    bool used;
+    uint32_t ticket;
+    uint8_t device, home;
+    plink_dev_act_t act;
+} link_dev_job_t;
+
+/* How the last settings write ended (port.prefs_done). */
+typedef struct {
+    unsigned count; /* writes ended so far */
+    uint8_t device;
+    uint32_t req;
+    uint8_t result; /* plink_pset_t */
+    uint8_t refused_count;
+    uint8_t refused[2u * PLINK_PREFS_REFUSED_MAX];
+    proto_prefs_values_t values; /* OK: what the keypad keeps now (values.have: the fields) */
+} link_pset_end_t;
 
 typedef struct {
     /* private */
@@ -115,6 +194,22 @@ typedef struct {
     char said_code[PLINK_CODE_LEN];
     uint32_t down;              /* keypads the supervision port said are down (bit d-1) */
     unsigned reachable_calls;
+    /* Smart Home and settings on keypads (BL-216) */
+    hc_t hc; /* the registry, as device_service's */
+    link_house_t house;
+    bool dev_dirty;                       /* the registry moved: build at the next sync */
+    uint64_t dev_build_at;                /* the next compare build */
+    hc_device_t rows[HC_MAX_DEVICES];     /* the build's copy of the registry */
+    uint8_t dblob[2][PLINK_DEV_BLOB_MAX]; /* the link keeps the last one handed in */
+    unsigned dblob_cur;
+    plink_dev_recs_t drecs;
+    uint32_t dev_list_crc; /* the list handed in last (0: none yet) */
+    size_t dev_count;
+    link_dev_job_t jobs[LINK_DEV_JOBS];
+    unsigned dev_runs; /* actions judged so far */
+    uint32_t pset_req; /* the last settings write's req */
+    link_pset_end_t pset_end;
+    uint32_t said_report[PLINK_KEYPADS_MAX]; /* each keypad's settings report said (its count) */
 } link_master_t;
 
 /* name: shown on keypads (NULL "PC master"); panel_id: six hex characters (NULL "0ac5e1"). The
@@ -134,6 +229,21 @@ alarm_result_t link_master_command(link_master_t *v, uint64_t now_ms, const alar
 void link_master_zone(link_master_t *v, uint64_t now_ms, uint16_t zone, bool open);
 void link_master_say_status(link_master_t *v, uint64_t now_ms);
 void link_master_say_keypads(link_master_t *v, uint64_t now_ms);
+/* The registry's devices as the keypads get them. */
+void link_master_say_devices(link_master_t *v, uint64_t now_ms);
+/* The house's device ref can't be reached (online false) or can again: false when there is no
+ * such device. */
+bool link_master_device_online(link_master_t *v, uint64_t now_ms, const char *ref, bool online);
+/* Keypad device's settings as it last reported them. */
+void link_master_say_prefs(link_master_t *v, uint64_t now_ms, uint8_t device);
+/* A settings write to keypad device (LINK-051), as Home Assistant's would go through the master,
+ * from its console (PLINK_ORIGIN_CONSOLE): field id (proto_prefs.h) to value, the wire's units.
+ * false (said why) when refused at once; otherwise its end comes through port.prefs_done into
+ * link_master_t.pset_end (its req: link_master_t.pset_req). */
+bool link_master_prefs_set(link_master_t *v, uint64_t now_ms, uint8_t device, uint8_t id,
+                           uint32_t value);
+/* The house's device ref as the registry has it now (NULL: none). */
+const hc_device_t *link_master_device(const link_master_t *v, const char *ref);
 
 /* ---- the virtual keypad -------------------------------------------------------------------- */
 typedef struct {
@@ -141,12 +251,28 @@ typedef struct {
     char what[40];
 } link_pending_t;
 
+/* A device action sent from the keypad's console (private). */
+typedef struct {
+    uint32_t ticket; /* 0: none */
+    char what[DEV_NAME_LEN + 24];
+} link_dev_pending_t;
+
 typedef struct {
     /* private */
     const plink_crypto_t *c;
     link_io_t io;
     link_store_t *store;
     plink_keypad_t k;
+    plink_dev_mirror_t mirror; /* the master's devices (about 31 KB) */
+    char panel_id[PLINK_PANEL_ID_LEN + 1];
+    proto_prefs_values_t prefs; /* its Screen and sound settings */
+    uint32_t accepts;           /* the fields it takes (a panel without a voice) */
+    unsigned prefs_applied;     /* settings changes from the master applied */
+    link_dev_pending_t acts[PLINK_DEV_ACTS_MAX];
+    uint32_t said_list_seq, said_dev_seq;
+    bool said_fresh;
+    uint64_t said_dev_set; /* bit i: said_dev[i] holds row i's last word */
+    uint32_t said_dev[PLINK_DEV_MAX];
     uint8_t cfg_buf[ALARM_CONFIG_BLOB_MAX];
     alarm_config_t cfg;
     bool said_any;
@@ -164,12 +290,13 @@ typedef struct {
     plink_addr_t find;
 } link_keypad_t;
 
-/* name: what the keypad calls itself (NULL "PC keypad"); master: where to look for the master
- * (an address, or 255.255.255.255 to ask by broadcast; port.resolve looks there again), NULL
- * when not known (a paired keypad then says HELLO to no one until link_keypad_master). */
+/* name: what the keypad calls itself (NULL "PC keypad"); panel_id: its own panel id for its
+ * settings report, six lowercase hex characters (NULL "1c2d3e"); master: where to look for the
+ * master (an address, or 255.255.255.255 to ask by broadcast; port.resolve looks there again),
+ * NULL when not known (a paired keypad then says HELLO to no one until link_keypad_master). */
 void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t *io,
-                      link_store_t *store, const char *name, const plink_addr_t *master,
-                      uint64_t now_ms);
+                      link_store_t *store, const char *name, const char *panel_id,
+                      const plink_addr_t *master, uint64_t now_ms);
 void link_keypad_master(link_keypad_t *v, uint64_t now_ms, const plink_addr_t *master);
 /* A person started pairing with the master at that address. 255.255.255.255 asks every master
  * on the LAN: the first to answer is paired with, and a second one stops it. */
@@ -187,5 +314,15 @@ uint32_t link_keypad_command(link_keypad_t *v, uint64_t now_ms, plink_cmd_t *cmd
                              const char *what);
 uint8_t link_keypad_home(const link_keypad_t *v, uint64_t now_ms);
 void link_keypad_say_status(link_keypad_t *v, uint64_t now_ms);
+/* The master's devices as this keypad mirrors them, each row as its screen would show it. */
+void link_keypad_say_devices(link_keypad_t *v, uint64_t now_ms);
+/* A device action from this keypad (plink_keypad_dev_act; mode: a PLINK_DEV_MODE_* bit for
+ * ACT_SET_MODE; code NULL or the user's code). Its answer is said by link_keypad_report; returns
+ * its ticket, 0 when refused at once (said why). */
+uint32_t link_keypad_dev_act(link_keypad_t *v, uint64_t now_ms, const char *ref, uint8_t action,
+                             int32_t value, uint8_t mode, const char *code);
+/* Its own settings, and a change made here (as on its screen: reported to the master). */
+void link_keypad_say_prefs(link_keypad_t *v, uint64_t now_ms);
+bool link_keypad_prefs_set(link_keypad_t *v, uint64_t now_ms, uint8_t id, uint32_t value);
 
 #endif /* LINK_NODE_H */

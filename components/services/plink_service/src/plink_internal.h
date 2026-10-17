@@ -5,10 +5,13 @@
  * ports touch; the other tasks reach it through hand-overs that never make it wait:
  *   - requests (the UI's link_request, the console): one at a time, answered within 2 s
  *     (link_request);
- *   - on a master: the alarm listener's flag and queues, the worker's results (plink_master_svc.c);
- *   - on a keypad: commands from the UI (plink_keypad_svc.c).
- * What the others read - the keypads, the pairing, the keypad's view of its master - the link task
- * publishes in g_pub under link_pub_lock(), and the UI and the console copy it from there.
+ *   - on a master: the alarm listener's flag and queues, the worker's and plink_dev's results
+ *     (plink_master_svc.c, plink_home_svc.c), the settings writes (plink_service_prefs_set);
+ *   - on a keypad: commands and device actions from the UI, and the screen's answers to a settings
+ *     change (plink_keypad_svc.c).
+ * What the others read - the keypads, the pairing, the keypad's view of its master, the keypads'
+ * settings reports - the link task publishes in g_pub under link_pub_lock(), and the UI, the
+ * console and Home Assistant's link copy it from there.
  */
 #pragma once
 
@@ -79,7 +82,13 @@ typedef struct {
     uint16_t net_id;
     size_t keypads;
     ui_link_keypad_t keypad[PLINK_KEYPADS_MAX];
-    uint8_t kind[PLINK_KEYPADS_MAX]; /* plink_kind_t, for the console */
+    uint8_t kind[PLINK_KEYPADS_MAX];  /* plink_kind_t, for the console */
+    int8_t rssi[PLINK_KEYPADS_MAX];   /* its last heartbeat's, dBm (0: none yet) */
+    uint16_t caps[PLINK_KEYPADS_MAX]; /* its live session's common capabilities (0: none) */
+    /* PLINK_KEYPADS_MAX, PSRAM (NULL before the start): each keypad's Smart Home and settings
+     * side, its newest settings report with it (plink_master_keypad_home), index for index with
+     * keypad[]. Read only under link_pub_lock: a copy of g_pub carries the pointer, not them. */
+    plink_keypad_home_t *home;
     uint8_t keypads_down;
     bool pairing_open; /* mDNS says pair=1 */
     bool setup_keypad; /* the setup's own pairing as a keypad runs (Option C): only while its
@@ -155,6 +164,52 @@ void msvc_poll(uint64_t now); /* hand-overs, timers, mDNS, publishing */
 uint64_t msvc_next(void);
 uint8_t msvc_request(uint64_t now, const link_req_t *req);
 uint32_t msvc_stack_free(void); /* the worker's, for the console */
+/* Keypad device's lockout now, read on the alarm task and kept for its STATUS (LINK-027,
+ * KPD-008): after a command or a device action that carried a code. Waits for the alarm task:
+ * the worker and plink_dev only, never the link task. */
+void msvc_lockout_refresh(uint8_t device);
+/* plink_dev's hand-overs to the link task, on the worker's result queue (they wait while it is
+ * full, as the worker's do): a build in device buffer buf (the link task then calls
+ * hsvc_devices_in), and a device action's answer (plink_master_dev_answer). Posted in that order
+ * after an action, so its DEV_ACK carries the record that shows it. */
+void msvc_post_devices(uint8_t buf, size_t len, uint32_t crc);
+void msvc_post_dev_ack(uint32_t ticket, uint8_t result, uint8_t why);
+
+/* ---- plink_home_svc.c: Smart Home and settings on the master's keypads (BL-216) --------------
+ * docs/features/11 "Smart Home and Home Assistant on keypads". The link task unless said. */
+#define LINK_DEV_JOBS 8u /* device actions waiting or running: one in flight per keypad */
+/* The start-up, before the manager: the settings queue and the published reports; with home
+ * control and a running registry (plink_service_set_home) the device buffers and the plink_dev
+ * task. ESP_ERR_NO_MEM: the link stays off; Smart Home alone failing leaves it out (logged). */
+esp_err_t hsvc_prepare(void);
+/* What this master offers its keypads (LINK-043): PLINK_CAP_HOME once hsvc_prepare started the
+ * device side, PLINK_CAP_PREFS in a build with the UI. */
+uint16_t hsvc_caps(void);
+/* The manager's port.dev_run and port.prefs_done. */
+bool hsvc_dev_run(void *ctx, uint32_t ticket, uint8_t device, uint8_t home,
+                  const plink_dev_act_t *act);
+void hsvc_prefs_done(void *ctx, uint8_t device, const plink_prefs_done_t *done);
+/* A build plink_dev posted (msvc_post_devices): to the manager, and the buffer it used before
+ * back to plink_dev. */
+void hsvc_devices_in(plink_master_t *m, uint64_t now, uint8_t buf, size_t len, uint32_t crc);
+/* Each turn, before the manager's tick: the settings writes queued by plink_service_prefs_set. */
+void hsvc_poll(plink_master_t *m, uint64_t now);
+/* Whether a live keypad has PLINK_CAP_HOME (publish): plink_dev builds only then. */
+void hsvc_wanted(bool wanted);
+/* For the console (its task): plink_dev's stack minimum free (0: no such task), and a copy of
+ * the device list the manager serves now and its records (false: none yet). */
+uint32_t hsvc_stack_free(void);
+typedef struct {
+    bool offered;      /* PLINK_CAP_HOME offered */
+    bool wanted;       /* a live keypad has it */
+    uint32_t builds;   /* builds handed to the manager since the start */
+    uint32_t list_crc; /* the copy's */
+    uint32_t states_crc;
+    size_t len;        /* the blob's bytes */
+    size_t rows;       /* the registry's rows it was built from */
+    uint64_t built_ms; /* link_now() of its build */
+} hsvc_dev_info_t;
+bool hsvc_dev_copy(uint8_t *blob, size_t cap, plink_dev_recs_t *recs, hsvc_dev_info_t *info);
 
 /* ---- plink_keypad_svc.c: a keypad's side - the role's, or a master's setup pairing ----------- */
 esp_err_t ksvc_prepare(uint64_t now, bool setup_only);
@@ -179,5 +234,22 @@ size_t ksvc_ui_events(alarm_event_t *out, size_t max);
 /* A keypad's commands from the UI: waits up to 3 s for the master's answer (the codes are wiped
  * once handed over). A panic not answered by then is still being sent: ALARM_OK. */
 alarm_result_t ksvc_command(const plink_cmd_t *cmd, plink_result_t *res);
+/* Smart Home on a keypad (BL-216; docs/features/11 "Device actions"). ksvc_dev_copy: the master's
+ * devices as the screen shows them (ui_backend_t.dev_list; 0 without a mirror, or before the
+ * list is in - the rail's Smart Home stays hidden), and (info, may be NULL) the mirror's state for
+ * the console. Any task; a copy under its own lock, never link_pub_lock. */
+typedef struct {
+    bool offered;            /* a mirror: PLINK_CAP_HOME offered */
+    bool fresh;              /* ONLINE, with device data within 30 s (LINK-046) */
+    size_t rows;             /* the screen's rows */
+    plink_dev_info_t mirror; /* as of the copy */
+    uint64_t copied_ms;      /* link_now() of the copy (0: none yet) */
+} ksvc_dev_info_t;
+size_t ksvc_dev_copy(ui_dev_t *out, size_t max, ksvc_dev_info_t *info);
+/* ui_backend_t.dev_act on a keypad (the LVGL task): steps 1-4 answered at once from the copy
+ * (UNREACHABLE, REFUSED, NEED_CODE), else handed to the link task and waited for 1 s (3 s with a
+ * code); no answer by then is UI_DEV_OK, the tile pending until the answer or the give-up. */
+ui_dev_result_t ksvc_dev_act(const char *ref, uint8_t action, int32_t value, const char *code,
+                             alarm_result_t *code_result);
 
 #endif /* CONFIG_ALARM_LINK */

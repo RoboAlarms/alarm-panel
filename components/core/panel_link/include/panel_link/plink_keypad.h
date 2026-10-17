@@ -21,8 +21,9 @@
  * Smart Home and settings (LINK-043..052; docs/features/11 "Smart Home and Home Assistant on
  * keypads"). With a mirror attached (plink_keypad_home_attach; without one the keypad never offers
  * PLINK_CAP_HOME), the keypad mirrors its master's device list: pulled by the list_crc a DEV_STATE
- * names, page by page as the configuration is, kept installed until a new one is whole, each row's
- * record carried over by ref at an install, then every record asked for. A record applies only
+ * names, page by page as the configuration is, kept installed until a new one is whole (or until a
+ * session without HOME starts: dropped then, so Smart Home hides), each row's record carried over
+ * by ref at an install, then every record asked for. A record applies only
  * under the installed list and from a newer frame of the session for its device (LINK-026); while
  * the records' CRC differs from the master's, DEV_STATE_REQ goes 250 ms on, then at least 1 s
  * apart, doubling to 30 s. Device data (a DEV_STATE, or a DEV_ACK's record, under the installed
@@ -439,6 +440,32 @@ bool plink_keypad_dev_row(const plink_keypad_t *k, uint8_t index, plink_dev_cat_
 bool plink_keypad_dev_rec(const plink_keypad_t *k, uint8_t index, plink_dev_rec_t *rec);
 /* Row index's overlay (plink_dev_overlay_t) and the action it is about (*action, may be NULL). */
 uint8_t plink_keypad_dev_overlay(const plink_keypad_t *k, uint8_t index, uint8_t *action);
+
+/* Row index as the keypad's screen shows it (docs/features/11 "Device actions" step 7, LINK-046):
+ * the master's record, with this keypad's own action over it once its caller stopped waiting
+ * (its overlay: pending while it is sent, failed for a late refusal, failed and unsure once given
+ * up - "Not confirmed"), and offline while the device data isn't fresh. The screen's ui_dev_t is
+ * made from these by ui_dev_from_parts, as the master's from its registry. */
+typedef struct {
+    plink_dev_cat_t cat; /* its catalog fields (zeros when !usable) */
+    bool usable;         /* false: a row this firmware can't use (a ref the codecs refuse) */
+    bool have_rec;       /* its record has come (none yet: offline, nothing known) */
+    char word[PLINK_DEV_WORD_MAX + 1]; /* the source's state word */
+    dev_values_t values;               /* what the record knows (plink_home_values_of) */
+    bool online;          /* false: offline - its record says so, it has none yet, or stale */
+    bool since_last_data; /* offline because the device data isn't fresh (not ONLINE, or none for
+                           * 30 s): since the last device data (plink_dev_info_t.heard_ms), not
+                           * values.since - unless its record already said offline since a time */
+    bool pending;         /* an action under way: the record's, or this keypad's still being sent */
+    bool failed;          /* the last action failed: the record's, or this keypad's */
+    bool unsure;          /* ... and whether it happened isn't known (HCTL-012) */
+    uint8_t action;       /* dev_action_t pending or failed (ACT_NONE: none) */
+} plink_dev_view_t;
+
+/* Row index of the installed list for the screen (false, *out zeroed: past the last row or no list
+ * installed). */
+bool plink_keypad_dev_view(const plink_keypad_t *k, uint64_t now_ms, uint8_t index,
+                           plink_dev_view_t *out);
 
 /* A device action, naming its device by ref (LINK-047; docs/features/11 "Device actions"): action
  * a dev_action_t, value its value, mode one PLINK_DEV_MODE_* bit for ACT_SET_MODE (ignored

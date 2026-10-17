@@ -378,6 +378,11 @@ typedef enum {
     PLINK_FW_WHY_STEPPING_STONE = 12,
     PLINK_FW_WHY_OTHER_VERSION = 13,
     PLINK_FW_WHY_UP_TO_DATE = 14,
+    /* The update server's answers to a check with want (FWS-028): no release of that version for
+     * this panel (a build of the owner's own: the master relays its own slot), or not offered to
+     * it. */
+    PLINK_FW_WHY_UNKNOWN_VERSION = 15,
+    PLINK_FW_WHY_NOT_OFFERED = 16,
     /* 20-29: the transfer (tried again, or the relay instead) */
     PLINK_FW_WHY_BROKE_OFF = 20,
     PLINK_FW_WHY_TOO_SLOW = 21,

@@ -29,6 +29,7 @@ void plink_net_init(plink_net_t *net, uint64_t seed)
     net->cut_from = -1;
     net->cut_to = -1;
     net->lose_next_from = -1;
+    net->lose_type_from = -1;
 }
 
 int plink_net_node(plink_net_t *net, const uint8_t ip[4], void *ctx, plink_net_input_fn input,
@@ -110,10 +111,12 @@ static bool lose(plink_net_t *net, int from, int to, const uint8_t *frame, size_
         net->lose_next--;
         return true;
     }
-    if (net->lose_type != 0u && len > 3u && frame[3] == net->lose_type) {
+    if (net->lose_type != 0u && len > 3u && frame[3] == net->lose_type &&
+        (net->lose_type_from < 0 || net->lose_type_from == from)) {
         if (net->lose_type_count > 0u) {
             if (--net->lose_type_count == 0u) {
                 net->lose_type = 0u;
+                net->lose_type_from = -1;
             }
         }
         return true;
@@ -204,7 +207,7 @@ static void deliver_due(plink_net_t *net)
 
 static uint64_t next_event(const plink_net_t *net, uint64_t limit)
 {
-    uint64_t t = net->now_ms + 50u;
+    uint64_t t = net->now_ms + (net->step_ms != 0u ? net->step_ms : 50u);
     for (int i = 0; i < net->nodes; i++) {
         if (!net->node[i].down && net->node[i].next != NULL) {
             const uint64_t n = net->node[i].next(net->node[i].ctx);

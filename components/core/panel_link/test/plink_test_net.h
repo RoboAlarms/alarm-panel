@@ -85,7 +85,11 @@ typedef struct {
     int lose_next_from;      /* ... only those from this node (-1 any) */
     uint8_t lose_type;       /* datagrams of this message type are lost (0 none) */
     uint32_t lose_type_count;/* ... this many times (0 = always while lose_type is set) */
+    int lose_type_from;      /* ... only those from this node (-1 any) */
     uint8_t subnet_bcast[4]; /* a subnet's broadcast, e.g. x.y.z.127 on a /25 (0: none) */
+    /* The longest wait between two steps when nothing is due (0: 50 ms). A test may lengthen it
+     * for hours with nothing to do, when every node's next() names all its deadlines. */
+    uint32_t step_ms;
 } plink_net_t;
 
 void plink_net_init(plink_net_t *net, uint64_t seed);
@@ -98,7 +102,7 @@ const plink_addr_t *plink_net_addr(const plink_net_t *net, int node);
 bool plink_net_send(plink_net_t *net, int from, const plink_addr_t *to, const uint8_t *frame,
                     size_t len);
 /* Runs ms of fake time: delivers due datagrams in time order and ticks every node at its next
- * deadline (at least every 50 ms). */
+ * deadline (at least every 50 ms, or step_ms). */
 void plink_net_run(plink_net_t *net, uint64_t ms);
 /* Runs until cond(ctx) is true or ms passed; true when it became true. */
 bool plink_net_run_until(plink_net_t *net, uint64_t ms, bool (*cond)(void *ctx), void *ctx);

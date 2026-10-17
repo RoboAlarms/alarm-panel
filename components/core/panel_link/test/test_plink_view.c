@@ -5,15 +5,18 @@
  * a countdown that never goes up whatever the network's delay does, the keypad's own lockout,
  * the walk test's start mapped once per test, the partitions mask, the zones and their CRC (made
  * independently by vectors_plink_view.py); the configuration copy with no code material, duress
- * shown as standard, and its lenient decode.
- * Requirements: LINK-002, LINK-008, LINK-019 (docs/features/11); UI-023's countdowns
- * (docs/features/11 "STATUS")
+ * shown as standard, and its lenient decode. The STATUS flags for updates and for fire and CO
+ * anywhere on the master, and the keypad's fail-safe reading of what a later master sends.
+ * Requirements: LINK-002, LINK-008, LINK-019, LINK-030, LINK-039 (docs/features/11); UI-023's
+ * countdowns (docs/features/11 "STATUS")
  */
 #include <stdio.h>
 #include <string.h>
 
 #include "alarm/alarm_codec.h"
 #include "alarm/alarm_snapshot.h"
+#include "alarm_proto/proto_fw.h"
+#include "panel_link/plink_frame.h"
 #include "panel_link/plink_view.h"
 #include "sim.h"
 
@@ -203,6 +206,173 @@ static void test_quick_exit_and_engine_time_reach_the_keypad(void)
     TEST_ASSERT_EQUAL_HEX8(0u, ST.part[0].flags & PLINK_PF_QUICK_EXIT);
     plink_view_apply_status(&V, &ST, KP_CLOCK + 1000u);
     TEST_ASSERT_FALSE(V.snap.part[0].quick_exit);
+}
+
+/* ---- updates, fire and CO, fail-safes (LINK-030, LINK-039) ---------------------------------- */
+
+#define SF_NEW (PLINK_SF_UPDATING | PLINK_SF_HOLD | PLINK_SF_FIRE | PLINK_SF_CO)
+
+/* LINK-030, LINK-039: the master's STATUS says UPDATING and HOLD as its service says, and FIRE or
+ * CO while either sounds on any of its enabled partitions; the keypad's view keeps the flags as
+ * sent and sounds fire or CO from them. */
+static void test_status_flags_updates_fire_co(void)
+{
+    plink_status_extra_t x = extra();
+    take_snap();
+    plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
+    TEST_ASSERT_EQUAL_HEX8(0u, ST.flags & SF_NEW);
+    x.updating = true;
+    plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_SF_UPDATING, ST.flags & SF_NEW);
+    x.updating = false;
+    x.hold = true;
+    plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_SF_HOLD, ST.flags & SF_NEW);
+    plink_view_apply_status(&V, &ST, 1000u);
+    TEST_ASSERT_EQUAL_HEX8(ST.flags, V.flags);
+    /* No extra: none of the service's bits */
+    plink_status_build(&SNAP, SNAP.taken_ms, NULL, &ST);
+    TEST_ASSERT_EQUAL_HEX8(0u, ST.flags & SF_NEW);
+
+    /* Fire on partition 1 */
+    x.hold = false;
+    sim_fault(&S, Z_SMOKE);
+    EXPECT_SOUNDER(&S, 1, ALARM_SOUND_FIRE);
+    take_snap();
+    plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_SF_FIRE, ST.flags & SF_NEW);
+    plink_view_apply_status(&V, &ST, 2000u);
+    TEST_ASSERT_EQUAL_HEX8(ST.flags, V.flags);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_FIRE, plink_view_continuous(&V, 1u));
+
+    /* CO on partition 1 */
+    sim_start(&S, NULL, NULL);
+    sim_fault(&S, Z_CO);
+    EXPECT_SOUNDER(&S, 1, ALARM_SOUND_CO);
+    take_snap();
+    plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_SF_CO, ST.flags & SF_NEW);
+    plink_view_apply_status(&V, &ST, 3000u);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_CO, plink_view_continuous(&V, 1u));
+
+    /* A partition that isn't enabled doesn't count */
+    SNAP.part[2].sounder = ALARM_SOUND_FIRE;
+    TEST_ASSERT_EQUAL_HEX8(0x01u, SNAP.partitions);
+    plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_SF_CO, ST.flags & SF_NEW);
+}
+
+/* LINK-039: a later master with more partitions than this keypad holds: fire or CO on one of
+ * them (its record ignored here) still sounds, from the STATUS flags; fire before CO, either
+ * before the home partition's own pattern, which plays otherwise. */
+static void test_keypad_sounds_fire_co_of_partitions_it_lacks(void)
+{
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_NONE, plink_view_continuous(&V, 1u)); /* no status yet */
+    const plink_status_extra_t x = extra();
+    sim_arm_away_and_leave(&S, CODE_USER);
+    sim_fault(&S, Z_FRONT);
+    take_snap();
+    plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
+    plink_status_t st = ST;
+    st.partitions = 0x41u; /* partitions 1 and 7 */
+    st.count = 2u;
+    st.part[1] = ST.part[0];
+    st.part[1].number = 7u;
+    st.part[1].state = ALARM_STATE_DISARMED;
+    st.part[1].sounder = ALARM_SOUND_FIRE;
+    plink_view_apply_status(&V, &st, 1000u);
+    TEST_ASSERT_EQUAL_HEX8(0x01u, V.snap.partitions);
+    /* without the flag (a v1 master): partition 1's entry beeps */
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_ENTRY, plink_view_continuous(&V, 1u));
+    st.flags = (uint8_t)(st.flags | PLINK_SF_FIRE);
+    plink_view_apply_status(&V, &st, 1100u);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_FIRE, plink_view_continuous(&V, 1u));
+    st.flags = (uint8_t)((st.flags & ~PLINK_SF_FIRE) | PLINK_SF_CO);
+    plink_view_apply_status(&V, &st, 1200u);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_CO, plink_view_continuous(&V, 1u));
+    st.flags = (uint8_t)(st.flags | PLINK_SF_FIRE);
+    plink_view_apply_status(&V, &st, 1300u);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_FIRE, plink_view_continuous(&V, 1u));
+    /* Fire on a partition held beats CO from the flags, whatever the home */
+    st.flags = (uint8_t)(st.flags & ~PLINK_SF_FIRE);
+    st.part[0].sounder = ALARM_SOUND_FIRE;
+    plink_view_apply_status(&V, &st, 1400u);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_FIRE, plink_view_continuous(&V, 7u));
+    /* A home it doesn't hold plays nothing of its own */
+    st.flags = 0u;
+    st.part[0].sounder = ALARM_SOUND_ENTRY;
+    plink_view_apply_status(&V, &st, 1500u);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_ENTRY, plink_view_continuous(&V, 1u));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_NONE, plink_view_continuous(&V, 2u));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_NONE, plink_view_continuous(&V, 0u));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_NONE, plink_view_continuous(NULL, 1u));
+}
+
+/* One partition record for partition 1 with these raw values, through the codecs as a later
+ * master would send them, applied at t. */
+static void apply_raw(uint8_t state, uint8_t level, uint8_t sounder, uint64_t t)
+{
+    plink_status_t st = ST;
+    st.part[0].state = state;
+    st.part[0].level = level;
+    st.part[0].sounder = sounder;
+    uint8_t p[PLINK_PAYLOAD_MAX];
+    size_t n = 0;
+    uint8_t written = 0;
+    TEST_ASSERT_TRUE(plink_enc_status(&st, 0u, p, sizeof(p), &n, &written));
+    plink_status_t back;
+    TEST_ASSERT_TRUE(plink_dec_status(p, n, &back));
+    plink_view_apply_status(&V, &back, t);
+}
+
+/* LINK-039: a value this firmware doesn't know reads on the safe side - an arm state as armed
+ * (Away when the level is unknown or none), a level of a partition that isn't disarmed as Away,
+ * a sounder as the alarm - so the keypad shows no Ready, isn't silent, and lets no update start
+ * (proto_fw_install_allowed says no). Known values go through as sent. */
+static void test_unknown_values_read_safe(void)
+{
+    take_snap();
+    const plink_status_extra_t x = extra();
+    plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
+    const alarm_partition_status_t *p1 = &V.snap.part[0];
+
+    apply_raw(7u, 9u, ALARM_SOUND_NONE, 1000u); /* a later state and level */
+    TEST_ASSERT_EQUAL_INT(ALARM_STATE_ARMED, p1->state);
+    TEST_ASSERT_EQUAL_INT(ALARM_LEVEL_AWAY, p1->level);
+    TEST_ASSERT_FALSE(proto_fw_install_allowed(&V.snap, NULL));
+    apply_raw(7u, ALARM_LEVEL_NONE, ALARM_SOUND_NONE, 1100u);
+    TEST_ASSERT_EQUAL_INT(ALARM_STATE_ARMED, p1->state);
+    TEST_ASSERT_EQUAL_INT(ALARM_LEVEL_AWAY, p1->level);
+    apply_raw(200u, ALARM_LEVEL_STAY, ALARM_SOUND_NONE, 1200u); /* its level is known */
+    TEST_ASSERT_EQUAL_INT(ALARM_STATE_ARMED, p1->state);
+    TEST_ASSERT_EQUAL_INT(ALARM_LEVEL_STAY, p1->level);
+    apply_raw(ALARM_STATE_EXIT_DELAY, 4u, ALARM_SOUND_EXIT, 1300u); /* a later level */
+    TEST_ASSERT_EQUAL_INT(ALARM_STATE_EXIT_DELAY, p1->state);
+    TEST_ASSERT_EQUAL_INT(ALARM_LEVEL_AWAY, p1->level);
+    apply_raw(ALARM_STATE_DISARMED, 4u, ALARM_SOUND_NONE, 1400u);
+    TEST_ASSERT_EQUAL_INT(ALARM_STATE_DISARMED, p1->state);
+    TEST_ASSERT_EQUAL_INT(ALARM_LEVEL_NONE, p1->level);
+    TEST_ASSERT_TRUE(proto_fw_install_allowed(&V.snap, NULL));
+
+    apply_raw(ALARM_STATE_DISARMED, ALARM_LEVEL_NONE, 15u, 1500u); /* a later pattern */
+    TEST_ASSERT_EQUAL_INT(ALARM_SOUND_ALARM, p1->sounder);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SOUND_ALARM, plink_view_continuous(&V, 1u));
+    TEST_ASSERT_FALSE(proto_fw_install_allowed(&V.snap, NULL));
+    apply_raw(ALARM_STATE_DISARMED, ALARM_LEVEL_NONE, ALARM_SOUND_ACK, 1600u); /* never one */
+    TEST_ASSERT_EQUAL_INT(ALARM_SOUND_ALARM, p1->sounder);
+
+    /* Known values as sent */
+    apply_raw(ALARM_STATE_ENTRY_DELAY, ALARM_LEVEL_NIGHT, ALARM_SOUND_ENTRY, 1700u);
+    TEST_ASSERT_EQUAL_INT(ALARM_STATE_ENTRY_DELAY, p1->state);
+    TEST_ASSERT_EQUAL_INT(ALARM_LEVEL_NIGHT, p1->level);
+    TEST_ASSERT_EQUAL_INT(ALARM_SOUND_ENTRY, p1->sounder);
+    apply_raw(ALARM_STATE_ARMED, ALARM_LEVEL_NONE, ALARM_SOUND_FIRE, 1800u);
+    TEST_ASSERT_EQUAL_INT(ALARM_STATE_ARMED, p1->state);
+    TEST_ASSERT_EQUAL_INT(ALARM_LEVEL_NONE, p1->level);
+    TEST_ASSERT_EQUAL_INT(ALARM_SOUND_FIRE, p1->sounder);
+    apply_raw(ALARM_STATE_DISARMED, ALARM_LEVEL_NONE, ALARM_SOUND_NONE, 1900u);
+    TEST_ASSERT_EQUAL_INT(ALARM_STATE_DISARMED, p1->state);
+    TEST_ASSERT_EQUAL_INT(ALARM_SOUND_NONE, p1->sounder);
 }
 
 /* ---- the keypad's view --------------------------------------------------------------------- */
@@ -974,6 +1144,9 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_status_build_works_out_durations);
     RUN_TEST(test_quick_exit_and_engine_time_reach_the_keypad);
+    RUN_TEST(test_status_flags_updates_fire_co);
+    RUN_TEST(test_keypad_sounds_fire_co_of_partitions_it_lacks);
+    RUN_TEST(test_unknown_values_read_safe);
     RUN_TEST(test_keypad_countdown_never_goes_up);
     RUN_TEST(test_countdown_rises_only_for_real);
     RUN_TEST(test_keypad_lockout);

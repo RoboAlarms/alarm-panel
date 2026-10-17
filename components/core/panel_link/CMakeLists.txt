@@ -16,6 +16,7 @@ set(PANEL_LINK_SRCS
     src/plink_pair.c
     src/plink_session.c
     src/plink_home.c
+    src/plink_fw.c
     src/plink_master.c
     src/plink_keypad.c
     src/plink_vfeed.c

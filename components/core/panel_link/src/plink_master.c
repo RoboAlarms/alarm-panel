@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "alarm/alarm_codec.h"       /* alarm_crc32 */
+#include "alarm_proto/proto_fw.h"    /* proto_fw_install_allowed: STATUS's HOLD */
 #include "alarm_proto/proto_prefs.h" /* prefs_crc */
 #include "panel_link/plink_keypad.h" /* how long a keypad resends a command */
 #include "panel_link/plink_wire.h"
@@ -45,6 +46,9 @@
 #define DEV_ACT_EVERY_MS   500u
 #define PREFS_BURST        4u     /* PREFS: a burst of 4, then one a second */
 #define PREFS_EVERY_MS     1000u
+/* Updates through the link: a bucket of their own too. */
+#define FW_MSG_BURST       8u     /* FW_INFO and FW_STATE: a burst of 8, then one per 250 ms */
+#define FW_MSG_EVERY_MS    250u
 
 /* ---- small helpers --------------------------------------------------------------------------- */
 
@@ -265,6 +269,9 @@ static void peer_start(plink_peer_t *p, uint64_t now)
     p->home.act_tokens_at = now;
     p->home.prefs_tokens = PREFS_BURST;
     p->home.prefs_tokens_at = now;
+    p->fw.tokens = FW_MSG_BURST;
+    p->fw.tokens_at = now;
+    p->fw.retry_ms = PLINK_FW_ORDER_RETRY_MS;
     p->provisional_until = is_provisional(p) ? now + PLINK_PROVISIONAL_MS : 0u;
 }
 
@@ -328,13 +335,21 @@ static uint64_t period_ms(const plink_peer_t *p)
     return (uint64_t)p->rec.supervision_s * 1000u;
 }
 
+/* LINK-030: a keypad installing or on its self-test (its FW_STATE says so) - for up to 10 min
+ * from when it first said so. */
+static bool fw_holding(const plink_peer_t *p, uint64_t now)
+{
+    return p->fw.hold_on && p->fw.hold_ms != 0u && now < p->fw.hold_ms + PLINK_FW_HOLD_MS;
+}
+
 /* Level-based: a supervised keypad is down when nothing authenticated came from it for its
  * period, or it has reported a status older than 30 s for that long. Raising pauses while the
- * master's own network is down and counts again from when it came back; a keypad that is down
- * comes back up only when both directions are fresh again. */
+ * master's own network is down and counts again from when it came back, and while the keypad
+ * installs or is on its self-test (up to 10 min, LINK-030); a keypad that is down comes back up
+ * only when both directions are fresh again. */
 static void supervise(plink_master_t *m, plink_peer_t *p, uint64_t now)
 {
-    if (!p->used || is_provisional(p)) {
+    if (!p->used || is_provisional(p) || (!p->down && fw_holding(p, now))) {
         return;
     }
     const uint64_t per = period_ms(p);
@@ -368,6 +383,9 @@ static uint64_t supervise_next(const plink_master_t *m, const plink_peer_t *p)
     uint64_t t = max64(p->heard_ms, m->net_up_since_ms) + per;
     if (p->stale_since_ms != 0u) {
         t = min64(t, max64(p->stale_since_ms, m->net_up_since_ms) + per);
+    }
+    if (p->fw.hold_on && p->fw.hold_ms != 0u) {
+        t = max64(t, p->fw.hold_ms + PLINK_FW_HOLD_MS); /* not before the hold ends (if it does) */
     }
     return t;
 }
@@ -509,6 +527,12 @@ static void send_zones(plink_master_t *m, plink_peer_t *p, uint16_t first, uint1
     }
 }
 
+/* STATUS's HOLD: proto_fw_install_allowed() says no on the snapshot (LINK-030). */
+static bool hold_of(const alarm_snapshot_t *s)
+{
+    return !proto_fw_install_allowed(s, NULL);
+}
+
 /* What a STATUS carries besides the snapshot, for keypad p at now. */
 static void status_extra(const plink_master_t *m, const plink_peer_t *p, uint64_t now,
                          plink_status_extra_t *x)
@@ -525,6 +549,8 @@ static void status_extra(const plink_master_t *m, const plink_peer_t *p, uint64_
         x->cfg_len = (uint32_t)m->cfg_len;
     }
     x->zones_cap = p->live.peer_cap.zones; /* zones_crc over the zones it can hold */
+    x->updating = m->fw_updating;
+    x->hold = !m->have_snap || hold_of(&m->snap);
 }
 
 /* p's STATUS now: first the events it carries and the zones that changed, then the status in
@@ -734,15 +760,15 @@ static void results_flush(plink_master_t *m)
 }
 
 /* A command's checks before anything runs (LINK-017, LINK-027): an op this master doesn't
- * serve is UNAVAILABLE, an unknown command BAD_ARG, a partition other than the keypad's home
- * NOT_AUTHORIZED. */
+ * serve is UNAVAILABLE, and so is a command type it doesn't know - a later keypad's (LINK-039);
+ * a partition other than the keypad's home NOT_AUTHORIZED. */
 static alarm_result_t cmd_check(const plink_peer_t *p, const plink_cmd_t *c)
 {
     if (c->op != PLINK_OP_COMMAND && c->op != PLINK_OP_AUTH && c->op != PLINK_OP_CHANGE_CODE) {
         return ALARM_ERR_UNAVAILABLE;
     }
     if (c->op == PLINK_OP_COMMAND && (unsigned)c->cmd.type > (unsigned)ALARM_CMD_CODE_CHECK) {
-        return ALARM_ERR_BAD_ARG;
+        return ALARM_ERR_UNAVAILABLE;
     }
     if (c->cmd.partition != p->rec.home) {
         return ALARM_ERR_NOT_AUTHORIZED;
@@ -1569,6 +1595,221 @@ static uint64_t home_next(const plink_master_t *m, const plink_peer_t *p)
     return min64(t, due);
 }
 
+/* ---- updates through the link (LINK-029..037) ------------------------------------------------ */
+
+/* The master is quiet: a snapshot that allows an install, and no update of its own (FW_REQ is
+ * served only then; the keypad's relay pauses otherwise anyway). */
+static bool fw_quiet(const plink_master_t *m)
+{
+    return m->have_snap && !hold_of(&m->snap) && !m->fw_updating;
+}
+
+/* A frame came in a newer frame of the session than the one held for that item (LINK-026's rule):
+ * another session's always replaces it. */
+static bool fw_newer(bool have, uint32_t sid, uint32_t seq, const plink_hdr_t *h)
+{
+    return !have || sid != h->sid || h->seq > seq;
+}
+
+static void on_fw_info(plink_master_t *m, plink_peer_t *p, uint64_t now, const plink_hdr_t *h,
+                       size_t n)
+{
+    plink_fw_peer_t *f = &p->fw;
+    plink_fw_info_t in;
+    if (!plink_dec_fw_info(m->pt, n, &in) || !fw_newer(f->have_info, f->info_sid, f->info_seq, h)) {
+        return;
+    }
+    f->info = in;
+    f->have_info = true;
+    f->info_sid = h->sid;
+    f->info_seq = h->seq;
+    f->info_ms = now;
+}
+
+/* A FW_STATE: an echo of the order outstanding ends its resends (whatever the frame's order); the
+ * newest is kept. Installing, or a self-test under way (probation), holds supervision for up to
+ * 10 min from when it was first seen (LINK-030); a FW_STATE saying neither ends it. One hold a
+ * session: not begun again while its FW_STATEs go on saying so (a keypad stuck installing, or
+ * asked again and again on its self-test, holds nothing for ever), nor by a FW_STATE saying
+ * neither within its 10 min (its core before its service gave its last result); the next begins
+ * in a new session (it restarted: its self-test), after a FW_STATE saying neither once the 10 min
+ * are over, or after a new INSTALL. */
+static void on_fw_state(plink_master_t *m, plink_peer_t *p, uint64_t now, const plink_hdr_t *h,
+                        size_t n)
+{
+    plink_fw_peer_t *f = &p->fw;
+    plink_fw_state_t st;
+    if (!plink_dec_fw_state(m->pt, n, &st)) {
+        return;
+    }
+    if (f->order.order != 0u && st.order == f->order.order && !f->acked) {
+        f->acked = true;
+        f->why = st.why;
+    }
+    if (!fw_newer(f->have_state, f->state_sid, f->state_seq, h)) {
+        return;
+    }
+    f->state = st;
+    f->have_state = true;
+    f->state_sid = h->sid;
+    f->state_seq = h->seq;
+    f->state_ms = now;
+    if (st.state == PLINK_FWS_INSTALLING || st.probation != 0u) {
+        if (f->hold_ms == 0u || f->hold_renew) {
+            f->hold_ms = now != 0u ? now : 1u;
+            f->hold_renew = false;
+        }
+        f->hold_on = true;
+    } else {
+        f->hold_on = false;
+        if (f->hold_ms != 0u && now >= f->hold_ms + PLINK_FW_HOLD_MS) {
+            f->hold_ms = 0u;
+        }
+    }
+}
+
+/* A FW_REQ (LINK-032): kept for the tick (the newest replaces one still waiting) only when it
+ * names the image of the relay served to this keypad (its newest order but INFO); anything else
+ * is dropped. */
+static void on_fw_req(plink_master_t *m, plink_peer_t *p, size_t n)
+{
+    plink_fw_peer_t *f = &p->fw;
+    plink_fw_req_t r;
+    if (plink_dec_fw_req(m->pt, n, &r) && f->relay &&
+        memcmp(r.id8, f->relay_id8, PLINK_ID8_LEN) == 0 && r.count > 0u && r.page > 0u) {
+        f->req = true;
+        f->req_q = r;
+    }
+}
+
+static void send_fw_order(plink_master_t *m, plink_peer_t *p, uint64_t now)
+{
+    plink_fw_peer_t *f = &p->fw;
+    size_t len = 0u;
+    if (plink_enc_fw_order(&f->order, m->pt, pt_cap(m, p), &len)) {
+        (void)send_sealed(m, p, PLINK_T_FW_ORDER, len);
+    }
+    f->next_ms = now + f->retry_ms;
+    f->retry_ms = f->retry_ms * 2u < PLINK_FW_ORDER_RETRY_MAX_MS ? f->retry_ms * 2u
+                                                                 : PLINK_FW_ORDER_RETRY_MAX_MS;
+}
+
+/* FW_PAGE's byte bucket (LINK-032), kept in thousandths of a byte so nothing is lost between
+ * refills: refilled at the rate (bytes a second) of the transport the pages go on. */
+static void fw_refill(plink_master_t *m, uint64_t now, uint32_t rate)
+{
+    if (now <= m->fw_bytes_at) {
+        return;
+    }
+    const uint64_t b = (uint64_t)m->fw_mbytes + (now - m->fw_bytes_at) * rate;
+    const uint64_t full = (uint64_t)PLINK_FW_BURST * 1000u;
+    m->fw_mbytes = (uint32_t)(b < full ? b : full);
+    m->fw_bytes_at = now;
+}
+
+/* The FW_REQ waiting for p, served statelessly (as CFG_REQ is): count pages from its offset, each
+ * min(its page, the order's page, the frame's room - 18) bytes read through port.fw_read, never
+ * past the image, while the bucket and room (pages this tick) last; the rest is dropped and the
+ * keypad asks again. Returns the pages sent. */
+static unsigned fw_serve(plink_master_t *m, plink_peer_t *p, uint64_t now, unsigned room)
+{
+    plink_fw_peer_t *f = &p->fw;
+    const plink_fw_req_t r = f->req_q;
+    f->req = false;
+    if (m->port.fw_read == NULL || !f->relay || memcmp(r.id8, f->relay_id8, PLINK_ID8_LEN) != 0 ||
+        !fw_quiet(m)) {
+        return 0u;
+    }
+    const uint32_t size = f->relay_size;
+    const size_t cap = pt_cap(m, p);
+    size_t page = cap > PLINK_FW_PAGE_HDR ? cap - PLINK_FW_PAGE_HDR : 0u;
+    if (page > r.page) {
+        page = r.page;
+    }
+    if (f->relay_page != 0u && page > f->relay_page) {
+        page = f->relay_page;
+    }
+    fw_refill(m, now,
+              frame_cap(m, &p->addr) < PLINK_FRAME_MAX ? PLINK_FW_RATE_SMALL : PLINK_FW_RATE);
+    unsigned sent = 0u;
+    uint32_t off = r.offset;
+    for (unsigned k = 0; k < r.count && sent < room && page > 0u && off < size; k++) {
+        const size_t len = size - off < page ? size - off : page;
+        if (m->fw_mbytes / 1000u < len) {
+            break;
+        }
+        /* The bytes are read into m->out, copied into the payload (m->pt), then sealed in m->out. */
+        size_t got = m->port.fw_read(m->port.ctx, r.id8, off, m->out, len);
+        if (got == 0u || got > len) {
+            break;
+        }
+        plink_fw_page_t pg;
+        memcpy(pg.id8, r.id8, sizeof pg.id8);
+        pg.total = size;
+        pg.offset = off;
+        pg.data = m->out;
+        pg.len = (uint16_t)got;
+        size_t n = 0u;
+        if (!plink_enc_fw_page(&pg, m->pt, cap, &n) || !send_sealed(m, p, PLINK_T_FW_PAGE, n)) {
+            break;
+        }
+        m->fw_mbytes -= (uint32_t)got * 1000u;
+        off += (uint32_t)got;
+        sent++;
+        if (got < len) {
+            break; /* a short read: the keypad asks again for the rest */
+        }
+    }
+    return sent;
+}
+
+/* Every tick, after the alarm traffic: each keypad's order (resent until echoed) and its FW_REQ,
+ * only in a session with FW on frames of 250 B or more, and only when no STATUS change waits for
+ * it nor a RESULT is due; at most 16 pages in all. A FW_REQ that can't be served now is dropped
+ * (its keypad asks again), except one waiting behind a STATUS. */
+static void fw_service(plink_master_t *m, uint64_t now)
+{
+    unsigned room = PLINK_FW_PAGES_PER_TICK;
+    for (size_t i = 0; i < PLINK_KEYPADS_MAX; i++) {
+        plink_peer_t *p = &m->peer[i];
+        plink_fw_peer_t *f = &p->fw;
+        if (!p->used) {
+            continue;
+        }
+        const bool ok = home_ok(m, p, PLINK_CAP_FW);
+        if (ok && (p->change_ms != 0u || p->result_due != 0u)) {
+            continue; /* alarm traffic first */
+        }
+        if (ok && f->order.order != 0u && !f->acked && now >= f->next_ms) {
+            send_fw_order(m, p, now);
+        }
+        if (f->req) {
+            if (ok && room > 0u) {
+                room -= fw_serve(m, p, now, room);
+            }
+            f->req = false;
+        }
+    }
+}
+
+/* When p's update work is next due (UINT64_MAX: none): its order's resend, a FW_REQ waiting
+ * (behind a STATUS change that waits for it, as home_next's). */
+static uint64_t fw_next(const plink_master_t *m, const plink_peer_t *p)
+{
+    const plink_fw_peer_t *f = &p->fw;
+    if (!home_ok(m, p, PLINK_CAP_FW)) {
+        return f->req ? 0u : UINT64_MAX; /* dropped at the next tick */
+    }
+    uint64_t due = f->req ? 0u : UINT64_MAX;
+    if (f->order.order != 0u && !f->acked) {
+        due = min64(due, f->next_ms);
+    }
+    if (due != UINT64_MAX && p->change_ms != 0u) {
+        due = m->have_snap ? max64(due, status_next(p)) : UINT64_MAX;
+    }
+    return due;
+}
+
 /* ---- sessions (LINK-015) --------------------------------------------------------------------- */
 
 /* The pending session proved itself with a sealed frame from `from`: it becomes the live one
@@ -1598,6 +1839,9 @@ static void promote(plink_master_t *m, plink_peer_t *p, uint64_t now, const plin
     p->change_ms = p->repeat1_ms = p->repeat2_ms = 0u;
     p->last_status_ms = 0u;
     p->rekey_at = 0u;
+    p->fw.sessions++; /* the planner tells a keypad's restart by it */
+    p->fw.req = false;
+    p->fw.hold_renew = true; /* (a restart's self-test holds anew) */
     if (is_provisional(p)) {
         /* Its first handshake: supervised from now on, and kept across a restart. */
         p->rec.flags = (uint8_t)(p->rec.flags & ~PLINK_PEER_PROVISIONAL);
@@ -1786,6 +2030,24 @@ static void on_sealed(plink_master_t *m, uint64_t now, const plink_addr_t *from,
             on_prefs(m, p, h, n);
         }
         break;
+    /* LINK-037: updates through the link only in a session with FW, on frames of 250 B or more;
+     * FW_REQ is served from the FW_PAGE byte bucket, never the requests' (LINK-032). */
+    case PLINK_T_FW_INFO:
+    case PLINK_T_FW_STATE:
+        if (home_ok(m, p, PLINK_CAP_FW) &&
+            bucket_take(&p->fw.tokens, &p->fw.tokens_at, now, FW_MSG_BURST, FW_MSG_EVERY_MS)) {
+            if (h->type == PLINK_T_FW_INFO) {
+                on_fw_info(m, p, now, h, n);
+            } else {
+                on_fw_state(m, p, now, h, n);
+            }
+        }
+        break;
+    case PLINK_T_FW_REQ:
+        if (home_ok(m, p, PLINK_CAP_FW)) {
+            on_fw_req(m, p, n);
+        }
+        break;
     default: break; /* LINK-017: nothing else is the master's to take */
     }
     plink_wipe(m->pt, n);
@@ -1951,6 +2213,8 @@ void plink_master_init(plink_master_t *m, const plink_crypto_t *c, const plink_m
                      sizeof m->panel_id);
     m->net_up = true;
     m->net_up_since_ms = now_ms;
+    m->fw_mbytes = PLINK_FW_BURST * 1000u;
+    m->fw_bytes_at = now_ms;
     m->caps = (uint16_t)(caps & PLINK_CAPS_KNOWN);
     plink_pm_init(&m->pair, c, m->caps);
     if (rec != NULL && rec->net_id != 0u) {
@@ -2064,6 +2328,7 @@ void plink_master_tick(plink_master_t *m, uint64_t now_ms)
         supervise(m, p, now_ms);
     }
     home_service(m, now_ms); /* after every keypad's alarm traffic */
+    fw_service(m, now_ms);
 }
 
 uint64_t plink_master_next(const plink_master_t *m)
@@ -2106,6 +2371,7 @@ uint64_t plink_master_next(const plink_master_t *m)
         }
         t = min64(t, supervise_next(m, p));
         t = min64(t, home_next(m, p));
+        t = min64(t, fw_next(m, p));
     }
     return t;
 }
@@ -2129,6 +2395,8 @@ void plink_master_snapshot(plink_master_t *m, uint64_t now_ms, const alarm_snaps
         plink_status_build(&m->snap, now_ms, &x, &m->st_a);
         plink_status_build(snap, now_ms, &x, &m->st_b);
         changed = changed || !status_same(&m->st_a, &m->st_b);
+        /* HOLD isn't built from an empty extra: a change of it is a change (LINK-030). */
+        changed = changed || hold_of(&m->snap) != hold_of(snap);
         const uint16_t a = zones_used(&m->snap), b = zones_used(snap);
         for (uint16_t z = 1u; z <= (a > b ? a : b); z++) {
             if (!zone_same(&m->snap.zone[z - 1u], &snap->zone[z - 1u])) {
@@ -2445,6 +2713,139 @@ bool plink_master_keypad_home(const plink_master_t *m, uint64_t now_ms, uint8_t 
     return true;
 }
 
+/* ---- updates through the link ---------------------------------------------------------------- */
+
+void plink_master_fw_self(plink_master_t *m, uint64_t now_ms, bool updating)
+{
+    if (m == NULL || updating == m->fw_updating) {
+        return;
+    }
+    m->fw_updating = updating;
+    for (size_t i = 0; i < PLINK_KEYPADS_MAX; i++) {
+        plink_peer_t *p = &m->peer[i];
+        if (is_live(p)) {
+            status_changed(p, now_ms); /* UPDATING changed (LINK-006, LINK-030) */
+            status_service(m, p, now_ms);
+        }
+    }
+}
+
+bool plink_master_fw_hold(const plink_master_t *m)
+{
+    return m == NULL || !m->have_snap || hold_of(&m->snap);
+}
+
+uint32_t plink_master_fw_order(plink_master_t *m, uint64_t now_ms, uint8_t device,
+                               const plink_fw_order_t *order)
+{
+    plink_peer_t *p = m != NULL ? peer_of(m, device) : NULL;
+    if (p == NULL || order == NULL || order->op < PLINK_FW_OP_INFO ||
+        order->op > PLINK_FW_OP_CANCEL) {
+        return 0u;
+    }
+    if (m->fw_next_order == 0u) {
+        /* Order ids: a random base drawn at the first order since start, then counted, so a
+         * keypad never takes a new order for a repeat of an old one (LINK-035). */
+        uint8_t b[4];
+        uint32_t base = 0u;
+        if (plink_random(m->c, b, sizeof b)) {
+            base = (uint32_t)b[0] | ((uint32_t)b[1] << 8) | ((uint32_t)b[2] << 16) |
+                   ((uint32_t)b[3] << 24);
+        }
+        m->fw_next_order = base != 0u ? base : 1u;
+    }
+    uint32_t id = m->fw_next_order++;
+    if (id == 0u) {
+        id = m->fw_next_order++;
+    }
+    plink_fw_peer_t *f = &p->fw;
+    f->order = *order;
+    f->order.order = id;
+    f->acked = false;
+    f->why = 0u;
+    f->order_ms = now_ms;
+    f->next_ms = now_ms; /* at the next tick */
+    f->retry_ms = PLINK_FW_ORDER_RETRY_MS;
+    if (order->op == PLINK_FW_OP_RELAY) {
+        /* The relay served from now on: this image's (a request for another is of no use now). */
+        if (!f->relay || memcmp(f->relay_id8, order->sha256, PLINK_ID8_LEN) != 0) {
+            f->req = false;
+        }
+        f->relay = true;
+        memcpy(f->relay_id8, order->sha256, PLINK_ID8_LEN);
+        f->relay_size = order->size;
+        f->relay_page = order->page;
+    } else if (order->op != PLINK_FW_OP_INFO) {
+        /* Any order but INFO (the master's version named, LINK-029) ends the relay served. */
+        f->relay = false;
+        f->req = false;
+    }
+    if (order->op == PLINK_FW_OP_INSTALL && !fw_holding(p, now_ms)) {
+        f->hold_ms = 0u; /* a new install: its own hold */
+    }
+    return id;
+}
+
+/* A run under way by the keypad's FW_STATE: it sends one at least every 10 s then. */
+static bool fw_run_exists(uint8_t s)
+{
+    return s == PLINK_FWS_PROBING || s == PLINK_FWS_FETCHING || s == PLINK_FWS_RECEIVING ||
+           s == PLINK_FWS_KEY_WAIT || s == PLINK_FWS_VERIFYING || s == PLINK_FWS_READY ||
+           s == PLINK_FWS_INSTALLING;
+}
+
+bool plink_master_fw_keypad(const plink_master_t *m, uint64_t now_ms, uint8_t device,
+                            plink_fw_kp_t *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+    memset(out, 0, sizeof *out);
+    if (m == NULL || device < PLINK_DEVICE_FIRST || device > PLINK_DEVICE_LAST ||
+        !m->peer[device - 1u].used) {
+        return false;
+    }
+    const plink_peer_t *p = &m->peer[device - 1u];
+    const plink_fw_peer_t *f = &p->fw;
+    out->device = device;
+    out->fw_cap = is_live(p) && (p->live.caps & PLINK_CAP_FW) != 0u;
+    out->fw = home_ok(m, p, PLINK_CAP_FW);
+    out->online = is_live(p) && p->live_heard_ms != 0u &&
+                  now_ms - p->live_heard_ms < PLINK_FW_AWAY_MS;
+    out->sessions = f->sessions;
+    out->have_info = f->have_info;
+    out->info_now = f->have_info && p->live.valid && f->info_sid == p->live.sid;
+    out->info = f->info;
+    out->info_ms = f->info_ms;
+    out->have_state = f->have_state;
+    out->state_now = f->have_state && p->live.valid && f->state_sid == p->live.sid;
+    out->state = f->state;
+    out->state_ms = f->state_ms;
+    out->order = f->order.order;
+    out->order_op = f->order.op;
+    out->order_acked = f->acked;
+    out->order_why = f->why;
+    out->order_ms = f->order_ms;
+    /* LINK-035: away after 30 s - an order unanswered, a run's FW_STATE (every 10 s) missing, or
+     * nothing heard. */
+    out->away = !out->online ||
+                (f->order.order != 0u && !f->acked && now_ms >= f->order_ms + PLINK_FW_AWAY_MS) ||
+                (f->have_state && fw_run_exists(f->state.state) &&
+                 now_ms >= f->state_ms + PLINK_FW_AWAY_MS);
+    out->busy = fw_holding(p, now_ms);
+    return true;
+}
+
+bool plink_master_fw_busy(const plink_master_t *m, uint64_t now_ms)
+{
+    for (size_t i = 0; m != NULL && i < PLINK_KEYPADS_MAX; i++) {
+        if (m->peer[i].used && fw_holding(&m->peer[i], now_ms)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* ---- the keypads ----------------------------------------------------------------------------- */
 
 size_t plink_master_peers(const plink_master_t *m, uint64_t now_ms, plink_peer_info_t *out,
@@ -2511,6 +2912,7 @@ bool plink_master_remove(plink_master_t *m, uint64_t now_ms, uint8_t device)
      * settings go. */
     prefs_end(m, p, PLINK_PSET_OFFLINE);
     plink_wipe(&p->home, sizeof p->home);
+    plink_wipe(&p->fw, sizeof p->fw); /* its order is never sent again, its relay never served */
     const bool bye = p->live.valid && p->have_addr;
     note(m, PLINK_NOTE_REMOVED, device);
     const bool stored = store_or_retry(m, now_ms);

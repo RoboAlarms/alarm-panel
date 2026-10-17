@@ -1,6 +1,7 @@
 /*
  * plink_view.c - see include/panel_link/plink_view.h (docs/features/11 "STATUS", "Zone record",
- * "Configuration", "Roles on a P4 panel"; LINK-002, LINK-008, LINK-019).
+ * "Configuration", "Roles on a P4 panel", "Versions and compatibility"; LINK-002, LINK-008,
+ * LINK-019, LINK-030, LINK-039).
  *
  * The master turns its snapshot into a keypad's STATUS, every duration worked out at the moment
  * the frame is sealed; the keypad turns STATUS and ZONES back into an alarm_snapshot_t on its own
@@ -131,6 +132,24 @@ static void part_build(const alarm_partition_status_t *s, uint8_t number, uint64
     r->walk_src_id = s->walk_started_src.id;
 }
 
+/* FIRE and CO: fire or CO sounding on any of the master's enabled partitions (LINK-039), so a
+ * keypad sounds them whatever partitions it holds. */
+static uint8_t sounding_flags(const alarm_snapshot_t *snap)
+{
+    uint8_t f = 0u;
+    for (unsigned p = 0; p < ALARM_MAX_PARTITIONS; p++) {
+        if ((snap->partitions & (1u << p)) == 0u) {
+            continue;
+        }
+        if (snap->part[p].sounder == ALARM_SOUND_FIRE) {
+            f = (uint8_t)(f | PLINK_SF_FIRE);
+        } else if (snap->part[p].sounder == ALARM_SOUND_CO) {
+            f = (uint8_t)(f | PLINK_SF_CO);
+        }
+    }
+    return f;
+}
+
 void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
                         const plink_status_extra_t *x, plink_status_t *out)
 {
@@ -141,6 +160,7 @@ void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
     if (snap == NULL) {
         return;
     }
+    uint8_t fw_flags = 0u;
     if (x != NULL) {
         out->epoch_ms = x->epoch_ms;
         out->home = x->home;
@@ -148,6 +168,8 @@ void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
         out->report = x->report;
         out->cfg_crc = x->cfg_crc;
         out->cfg_len = x->cfg_len;
+        fw_flags = (uint8_t)((x->updating ? PLINK_SF_UPDATING : 0u) |
+                             (x->hold ? PLINK_SF_HOLD : 0u));
     }
     const uint64_t taken = snap->taken_ms;
     out->partitions = (uint8_t)(snap->partitions & ALL_PARTS);
@@ -156,7 +178,8 @@ void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
     out->dev_troubles = snap->dev_troubles;
     out->default_codes = snap->default_codes;
     out->flags = (uint8_t)((snap->program ? PLINK_SF_PROGRAM : 0u) |
-                           (snap->exit_sounds ? PLINK_SF_EXIT_SOUNDS : 0u));
+                           (snap->exit_sounds ? PLINK_SF_EXIT_SOUNDS : 0u) |
+                           sounding_flags(snap) | fw_flags);
     out->recovery_left_ms = sat32(left_at(snap->recovery_left_ms, taken, now_ms));
     out->zones_used = snap->zones_used <= ALARM_MAX_ZONES ? snap->zones_used : ALARM_MAX_ZONES;
     out->last_event_seq = snap->last_event_seq;
@@ -196,6 +219,32 @@ static uint64_t steady(uint64_t before, uint64_t sent, bool same)
     return same && sent > before && sent - before < JITTER_MS ? before : sent;
 }
 
+/* ---- fail-safe decoding (LINK-039; docs/features/11 "Versions and compatibility") ------------ */
+
+/* An arm state this firmware doesn't know is armed: a keypad never shows Ready for it. */
+static alarm_arm_state_t state_of(uint8_t v)
+{
+    return v <= (uint8_t)ALARM_STATE_ENTRY_DELAY ? (alarm_arm_state_t)v : ALARM_STATE_ARMED;
+}
+
+/* A level this firmware doesn't know is Away on a partition that isn't disarmed (none on one
+ * that is); an armed state this firmware didn't know (state_known false) without a level it knows
+ * is Away too. */
+static alarm_arm_level_t level_of(uint8_t v, alarm_arm_state_t state, bool state_known)
+{
+    const bool known = v <= (uint8_t)ALARM_LEVEL_NIGHT;
+    if (known && (state_known || v != (uint8_t)ALARM_LEVEL_NONE)) {
+        return (alarm_arm_level_t)v;
+    }
+    return state == ALARM_STATE_DISARMED ? ALARM_LEVEL_NONE : ALARM_LEVEL_AWAY;
+}
+
+/* A continuous pattern this firmware doesn't know sounds as the alarm: never silence. */
+static alarm_sound_t sounder_of(uint8_t v)
+{
+    return v <= (uint8_t)ALARM_SOUND_FIRE ? (alarm_sound_t)v : ALARM_SOUND_ALARM;
+}
+
 static void part_apply(plink_view_t *v, const plink_part_t *r, uint64_t now)
 {
     const unsigned p = r->number - 1u;
@@ -205,8 +254,8 @@ static void part_apply(plink_view_t *v, const plink_part_t *r, uint64_t now)
     const bool had = v->have_status && (v->snap.partitions & (1u << p)) != 0u;
 
     memset(s, 0, sizeof(*s));
-    s->state = (alarm_arm_state_t)r->state;
-    s->level = (alarm_arm_level_t)r->level;
+    s->state = state_of(r->state);
+    s->level = level_of(r->level, s->state, r->state <= (uint8_t)ALARM_STATE_ENTRY_DELAY);
     s->arm_flags = r->arm_flags;
     s->armed_by = r->armed_by;
     s->arm_source.kind = r->arm_src_kind;
@@ -219,7 +268,7 @@ static void part_apply(plink_view_t *v, const plink_part_t *r, uint64_t now)
     s->exit_error = (r->flags & PLINK_PF_EXIT_ERROR) != 0u;
     s->trouble_unack = (r->flags & PLINK_PF_TROUBLE_UNACK) != 0u;
     s->quick_exit = (r->flags & PLINK_PF_QUICK_EXIT) != 0u;
-    s->sounder = (alarm_sound_t)r->sounder;
+    s->sounder = sounder_of(r->sounder);
     s->bell = (alarm_pattern_t)r->bell;
     s->delay_remaining_ms =
         steady(left_at(was.delay_remaining_ms, old_taken, now), r->delay_left_ms,
@@ -329,6 +378,33 @@ void plink_view_apply_status(plink_view_t *v, const plink_status_t *st, uint64_t
     v->zones_crc = st->zones_crc;
     v->mono_ms = st->mono_ms;
     v->mono_at_ms = now_ms;
+    v->flags = st->flags;
+}
+
+uint8_t plink_view_continuous(const plink_view_t *v, uint8_t home)
+{
+    if (v == NULL || !v->have_status) {
+        return ALARM_SOUND_NONE;
+    }
+    bool fire = (v->flags & PLINK_SF_FIRE) != 0u;
+    bool co = (v->flags & PLINK_SF_CO) != 0u;
+    for (unsigned p = 0; p < ALARM_MAX_PARTITIONS; p++) {
+        if ((v->snap.partitions & (1u << p)) != 0u) {
+            fire = fire || v->snap.part[p].sounder == ALARM_SOUND_FIRE;
+            co = co || v->snap.part[p].sounder == ALARM_SOUND_CO;
+        }
+    }
+    if (fire) {
+        return ALARM_SOUND_FIRE;
+    }
+    if (co) {
+        return ALARM_SOUND_CO;
+    }
+    if (home < 1u || home > ALARM_MAX_PARTITIONS ||
+        (v->snap.partitions & (1u << (home - 1u))) == 0u) {
+        return ALARM_SOUND_NONE;
+    }
+    return (uint8_t)v->snap.part[home - 1u].sounder;
 }
 
 void plink_view_apply_zones(plink_view_t *v, const plink_zones_t *z)

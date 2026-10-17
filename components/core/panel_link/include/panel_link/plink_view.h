@@ -30,6 +30,9 @@ typedef struct {
     uint32_t cfg_crc;
     uint32_t cfg_len;
     uint16_t zones_cap;       /* the keypad's zone slots (its HELLO's capacities); 0 = not known */
+    /* Updates through the link (LINK-030), filled by the master's service: */
+    bool updating;            /* its own update runs, or it is on its self-test: UPDATING */
+    bool hold;                /* proto_fw_install_allowed() says no on its snapshot: HOLD */
 } plink_status_extra_t;
 
 /* A keypad's STATUS from the master's snapshot at engine time now (the clock of
@@ -37,7 +40,9 @@ typedef struct {
  * "STATUS"); walk_id is the raw walk start (0 none; a start whose low 32 bits are 0 reads 1);
  * zones_crc covers zones 1..min(zones_used, x->zones_cap) - the zones that keypad can hold, all
  * of them when zones_cap is 0 (docs/features/11 "Zone record"); one record per enabled
- * partition. */
+ * partition. The flags: PROGRAM and EXIT_SOUNDS from the snapshot; FIRE and CO when fire or CO
+ * sounds on any of the master's enabled partitions, so a keypad hears them whatever partitions
+ * it holds (LINK-039); UPDATING and HOLD from x (LINK-030). */
 void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
                         const plink_status_extra_t *x, plink_status_t *out);
 
@@ -59,6 +64,8 @@ typedef struct {
     uint64_t mono_at_ms;  /* local time it arrived */
     uint32_t walk_id[ALARM_MAX_PARTITIONS]; /* the master's walk start last mapped ... */
     alarm_ms_t walk_local[ALARM_MAX_PARTITIONS]; /* ... to this local start (0 none) */
+    uint8_t flags;        /* the last status's flags as sent (PLINK_SF_*): FIRE, CO, UPDATING and
+                           * HOLD are read from here (plink_view_continuous, the keypad's gate) */
 } plink_view_t;
 
 void plink_view_init(plink_view_t *v);
@@ -71,8 +78,19 @@ void plink_view_init(plink_view_t *v);
  * frame doesn't carry keeps its last one, counted down to now. Within one countdown (the same
  * delay state, a walk test still running, a lockout not yet over) a frame that reads less than a
  * second longer than what is showing - the network's delay varied - keeps the count, so what the
- * keypad shows never goes up (UI-023). Does not touch seq or config_seq. */
+ * keypad shows never goes up (UI-023). Does not touch seq or config_seq.
+ *
+ * Fail-safe (LINK-039): a value a later master sends that this firmware doesn't know reads on the
+ * safe side - an arm state as armed (Away when the level is unknown or none too), an unknown
+ * level of a partition that isn't disarmed as Away (none when disarmed), a sounder as the alarm -
+ * so a keypad never shows Ready, nor stays silent, for a state it can't name. */
 void plink_view_apply_status(plink_view_t *v, const plink_status_t *st, uint64_t now_ms);
+
+/* The continuous pattern the keypad plays (docs/features/11 "Roles on a P4 panel"; LINK-039):
+ * fire when the status says FIRE or a partition the keypad holds sounds fire, then CO the same
+ * way - so a later master's partitions beyond this build's are heard - else partition home's
+ * sounder. ALARM_SOUND_NONE before the first status. */
+uint8_t plink_view_continuous(const plink_view_t *v, uint8_t home);
 
 /* Applies the records of a ZONES message (zones beyond ALARM_MAX_ZONES ignored). */
 void plink_view_apply_zones(plink_view_t *v, const plink_zones_t *z);

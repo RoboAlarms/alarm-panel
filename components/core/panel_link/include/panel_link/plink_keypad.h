@@ -36,6 +36,40 @@
  * HEARTBEAT carries their CRC), takes each PREFS_SET once (plink_keypad_take_prefs_set) and
  * answers it (plink_keypad_prefs_answer), a repeat from the answer kept 30 s. Nothing of this goes
  * on a transport whose frames are under 250 B.
+ *
+ * Updates through the link (LINK-029..037; docs/features/11 "Updates through the link", "The
+ * keypad"), in a session with PLINK_CAP_FW on a transport of 250 B or more. The core takes the
+ * master's orders and answers each with FW_STATE at once (an order seen before is answered again
+ * and never runs twice; a new one from an older frame of the session than the newest taken is
+ * dropped); refuses what it can tell is wrong; hands PROBE, FETCH, a new RELAY, INSTALL, CANCEL and
+ * INFO to its service (plink_keypad_take_fw_order), which reports back (plink_keypad_fw_report,
+ * _progress, _probe, _last, _info, _gate) for the core to send as FW_STATE and FW_INFO; and runs
+ * the relay itself: one FW_REQ out at a time, by image id (id8) and offset from the first byte the
+ * writer lacks up to the first pages already in past it, within the order's page, count and gap
+ * and a 16 KB window; resent after 300 ms doubling to 2 s (300 ms after its last page when it was
+ * answered in part) for the bytes still missing; the bytes go to the writer (port.fw_write) in
+ * order, at most 4 KB a turn, the next write and request no sooner than the last write kept the
+ * flash busy. The run pauses (FW_STATE flag PAUSED, why the reason) while the link isn't up - a
+ * live session with FW and a STATUS under 15 s old - or while the link's gate
+ * (plink_keypad_fw_hold) or the service's (plink_keypad_fw_gate) says no; it fails after 60 s
+ * without a new byte while not paused (STALLED) or 30 min paused (TIMEOUT), and goes on across a
+ * new session, the 24 h rekey and a master restart, by id8. 3 runs failed before READY within 24 h:
+ * a new FETCH or RELAY is refused (BUDGET); a TIMEOUT while the gate said no (anything but a
+ * missing STATUS) isn't a failed run. An INSTALL records the version it names (the INSTALL
+ * hold, plink_keypad_fw_install_for), held only in the session it came in and while it is the
+ * newest order: a new session, any order taken after it (but a RELAY that goes on), a STATUS
+ * saying UPDATING, CANCEL and the run's end each void it - so a master that restarted, updated
+ * itself or gave up that INSTALL never finds the keypad restarting on it. A CANCEL that comes once
+ * the restart has started is refused BUSY and the restart goes on; put off (READY again,
+ * OTA-028), the run ends as that CANCEL said (STOPPED, CANCELLED), the hold with it. A READY image is
+ * discarded after 24 h without an INSTALL held, on CANCEL, on an order for another image and on
+ * removal. The version the master runs - the one the keypad may not pass (LINK-029; Decisions,
+ * keypad updates, 5) - is kept as its orders name it (plink_keypad_master_version): every order
+ * of a known op for the application, taken or refused, from the paired master's session in frame
+ * order, names it (INFO's at each session and on the master's confirmed-version change; a CANCEL
+ * or an INFO with no version names nothing); a newer or an older one replaces it, and removal, a
+ * new pairing or a session without PLINK_CAP_FW clears it. The cap the service applies is that
+ * version while paired ("": nothing passes) and none unpaired (plink_keypad_version_cap).
  */
 #ifndef PLINK_KEYPAD_H
 #define PLINK_KEYPAD_H
@@ -90,6 +124,22 @@ extern "C" {
 #define PLINK_PREFS_KEEP_MS      30000u  /* LINK-051: a PREFS_SET's answer kept for its repeats */
 #define PLINK_PREFS_OWN_MAX      128u    /* the keypad's own fields body (v1's 19 fields: 69 B) */
 #define PLINK_PREFS_REFUSED_MAX  32u     /* refusals an answer carries, at most */
+/* Updates through the link (LINK-032..035); a FW_REQ's resend is PLINK_PULL_RETRY_MS doubling to
+ * PLINK_PULL_RETRY_MAX_MS. */
+#define PLINK_FW_WINDOW          16384u    /* LINK-032: bytes asked for ahead of the writer */
+#define PLINK_FW_WRITE_MAX       4096u     /* in-order bytes handed to the writer in one turn */
+#define PLINK_FW_ISLANDS         8u        /* runs of pages kept past a missing one */
+#define PLINK_FW_FRESH_MS        15000u    /* LINK-034: the link is up - a STATUS this recent */
+#define PLINK_FW_STALL_MS        60000u    /* LINK-035: no new byte this long, not paused */
+#define PLINK_FW_PAUSE_MAX_MS    1800000u  /* ... paused this long */
+#define PLINK_FW_READY_KEEP_MS   86400000u /* a READY image without an INSTALL this long */
+#define PLINK_FW_BUDGET          3u        /* failed runs within PLINK_FW_BUDGET_MS: BUDGET */
+#define PLINK_FW_BUDGET_MS       86400000u
+#define PLINK_FW_STATE_GAP_MS    1000u     /* FW_STATE for bytes at most this often, ... */
+#define PLINK_FW_STATE_EVERY_MS  10000u    /* ... and this often while a run exists */
+#define PLINK_FW_INFO_GAP_MS     2000u     /* FW_INFO at most this often */
+#define PLINK_FW_SEEN            8u        /* order ids remembered: a repeat is answered */
+#define PLINK_FW_QUEUE           4u        /* orders waiting for the service */
 
 typedef enum {
     PLINK_LINK_NOT_PAIRED = 0,
@@ -122,6 +172,15 @@ typedef struct {
      * plink_keypad_master_addr: called before every handshake retry after the first failure
      * (docs/features/11 "Sessions"). May be NULL. */
     void (*resolve)(void *ctx);
+    /* The relay's writer (LINK-032): bytes [offset, offset + len) of the image, in order - offset
+     * is always the first byte it hasn't taken, len at most PLINK_FW_WRITE_MAX. Returns how many it
+     * took now (0: busy, tried again later); *busy_ms (0 when not set) how long the write kept the
+     * flash busy: the next write and the next FW_REQ wait at least that long, so the flash is busy
+     * at most half the time. The last byte taken ends the transfer: the service checks the image
+     * and reports READY or FAILED. Must not call into the keypad. NULL: this keypad takes no relay
+     * (a RELAY is refused BAD_ORDER, and FW_INFO says it can't). */
+    size_t (*fw_write)(void *ctx, uint32_t offset, const uint8_t *data, size_t len,
+                       uint32_t *busy_ms);
 } plink_keypad_port_t;
 
 typedef struct {
@@ -225,6 +284,81 @@ typedef struct {
     uint8_t ans_refused[2u * PLINK_PREFS_REFUSED_MAX];
 } plink_kprefs_t;
 
+/* An order seen (private): a repeat is answered again, never run twice. */
+typedef struct {
+    uint32_t order;
+    uint8_t op;
+    uint8_t why; /* its refusal (0: taken) */
+} plink_kfw_seen_t;
+
+/* The keypad's side of updates through the link (private; LINK-029..037). */
+typedef struct {
+    /* orders */
+    plink_kfw_seen_t seen[PLINK_FW_SEEN];
+    uint8_t seen_next;
+    uint32_t order;           /* the newest order taken (0: none): every FW_STATE echoes it ... */
+    uint8_t op;               /* ... with its op ... */
+    uint8_t refused;          /* ... and its refusal as the why, until the run moves (0: taken) */
+    bool cancel_busy;         /* a CANCEL refused BUSY (its restart under way), no order taken
+                               * since: its restart put off (READY again), the run ends as that
+                               * CANCEL said - the INSTALL hold with it (OTA-028) */
+    uint32_t order_fs;        /* LINK-026: the frame the newest order came in (this session) */
+    plink_fw_order_t q[PLINK_FW_QUEUE]; /* for the service, oldest first (take_fw_order) */
+    uint8_t q_count;
+    bool abort;               /* the core ended the run: an order-0 CANCEL for the service */
+    /* the run: FETCH or RELAY, and FW_STATE's run section */
+    uint32_t run;             /* the order that started it (0: none yet) */
+    uint8_t run_op;
+    uint8_t state, flags, why;
+    uint32_t bytes, size;
+    uint8_t id8[PLINK_ID8_LEN];
+    char target[PLINK_FW_VERSION_MAX + 1];
+    char install[PLINK_FW_VERSION_MAX + 1]; /* the version an INSTALL named ("": none) */
+    uint64_t ready_ms;        /* READY since */
+    uint64_t fail_ms[PLINK_FW_BUDGET]; /* when the last runs failed (0: none) */
+    /* the relay (RELAY, RECEIVING): the pull and the window */
+    bool go;                  /* the service's writer is open: the pull runs */
+    uint16_t page;            /* the order's page, count and gap */
+    uint8_t count;
+    uint16_t gap_ms;
+    uint8_t hold;             /* why it is paused (0: it isn't) */
+    uint8_t svc_hold;         /* the service's gate (plink_keypad_fw_gate; 0 passes) */
+    uint64_t progress_ms;     /* the last new byte, the start, or the end of a pause */
+    uint64_t paused_ms;       /* paused since */
+    uint32_t wrote;           /* bytes the writer took */
+    uint32_t have;            /* bytes in from offset 0 (those past wrote wait in win) */
+    uint32_t ask_hi;          /* the end of what was asked for */
+    uint32_t isl_lo[PLINK_FW_ISLANDS], isl_hi[PLINK_FW_ISLANDS]; /* pages in past have, sorted */
+    uint8_t isl_n;
+    bool req_out;             /* a FW_REQ waits for its bytes, ... */
+    uint32_t req_end;         /* ... up to here; ... */
+    uint64_t req_due;         /* ... it is sent again then, ... */
+    uint32_t req_retry;       /* ... after 300 ms, doubling to 2 s */
+    uint64_t req_ms;          /* the last FW_REQ (0: none) */
+    uint64_t write_ms;        /* the next write and FW_REQ no sooner (the flash was busy) */
+    /* FW_STATE's last section (the service's) and probe section */
+    uint8_t probation, last, failed_mask;
+    char last_version[PLINK_FW_VERSION_MAX + 1];
+    uint8_t asked, probe_why, key_trusted;
+    char offered[PLINK_FW_VERSION_MAX + 1];
+    uint8_t offered_key8[PLINK_KEY8_LEN];
+    uint64_t probe_ms;
+    /* sending */
+    bool st_due;              /* a change to report: FW_STATE */
+    uint64_t st_ms;           /* the last FW_STATE (0: none) ... */
+    uint32_t st_bytes;        /* ... and its bytes */
+    bool have_info;
+    plink_fw_info_t info;     /* the keypad's facts (the service's) */
+    bool info_due;
+    uint8_t info_can;         /* the can bits the last FW_INFO carried */
+    uint64_t info_ms;         /* the last FW_INFO (0: none) */
+    uint32_t info_sid;        /* the session whose first STATUS asked for one */
+    /* the master's version (LINK-029): the one the keypad may not pass */
+    char mver[PLINK_FW_VERSION_MAX + 1]; /* as its orders last named it ("": none) */
+    uint32_t mver_seq;        /* moves at each change of mver */
+    uint8_t win[PLINK_FW_WINDOW]; /* the relay's window: image byte o at win[o % PLINK_FW_WINDOW] */
+} plink_kfw_t;
+
 typedef struct {
     /* private */
     const plink_crypto_t *c;
@@ -316,6 +450,7 @@ typedef struct {
     uint32_t dev_list_seq;       /* moves at every install */
     plink_kact_t acts[PLINK_DEV_ACTS_MAX];
     plink_kprefs_t prefs;        /* settings (LINK-050, LINK-051) */
+    plink_kfw_t upd;             /* updates through the link (LINK-029..037) */
     plink_out_t out;             /* frame scratch: pairing's answers and sealed frames */
     uint8_t pt[PLINK_FRAME_MAX]; /* an opened frame's payload */
     union {
@@ -399,6 +534,12 @@ int64_t plink_keypad_epoch_ms(const plink_keypad_t *k, uint64_t now_ms);
 uint64_t plink_keypad_mono_ms(const plink_keypad_t *k, uint64_t now_ms);
 /* The master's reporting state (PLINK_REPORT_*). */
 uint8_t plink_keypad_report(const plink_keypad_t *k);
+/* The newest STATUS's flags as sent (PLINK_SF_*: FIRE and CO sound on any of the master's
+ * partitions, UPDATING and HOLD; LINK-030, LINK-039); 0 before the first. */
+uint8_t plink_keypad_master_flags(const plink_keypad_t *k);
+/* The continuous pattern to play (alarm_sound_t): fire, then CO, from the STATUS flags or any
+ * partition held, else the home partition's (plink_view_continuous). */
+uint8_t plink_keypad_continuous(const plink_keypad_t *k);
 
 /* ---- commands ---- */
 /* Sends a command (ops of plink_op_t; req filled in here). Returns its req, or 0 when it was
@@ -519,6 +660,93 @@ bool plink_keypad_take_prefs_set(plink_keypad_t *k, plink_prefs_change_t *out);
 bool plink_keypad_prefs_answer(plink_keypad_t *k, uint64_t now_ms, uint32_t req,
                                const uint8_t *refused, uint8_t refused_count, const uint8_t *fields,
                                size_t len);
+
+/* ---- updates through the link (LINK-029..037) ---- */
+/* The next order for the service, in the order they came (false: none waiting): what to do is
+ * out->op.
+ *   - INFO: the keypad's facts may be asked for again (plink_keypad_fw_info); FW_INFO goes anyway.
+ *   - PROBE: one check at out->server and out->channel with want = out->version; the answer
+ *     through plink_keypad_fw_probe.
+ *   - FETCH: the release run for exactly out->version; a new RELAY: open the writer for that image
+ *     (its size, sha256 and key), then report RECEIVING for the pull to start, or KEY_WAIT, or
+ *     FAILED. Either one ends whatever run the service had (out->order names the new run).
+ *   - INSTALL: the gate may restart into the READY image if plink_keypad_fw_install_for names it.
+ *   - CANCEL: stop and discard the run and any READY image. out->order 0 is the core's own: the
+ *     run ended here (stalled, timed out, the READY image kept 24 h, the keypad removed or paired
+ *     again) - the same.
+ * A RELAY that continues the run (the same id8 and size) isn't handed out. Orders wait in a queue
+ * of PLINK_FW_QUEUE: one that finds it full isn't taken (nor answered), and the master's resend
+ * brings it back. */
+bool plink_keypad_take_fw_order(plink_keypad_t *k, plink_fw_order_t *out);
+
+/* The service's run as it stands (run: the order that started it; a report about another run, or
+ * one that ended, is ignored): state a plink_fw_run_state_t, why a plink_fw_why_t. RECEIVING on a
+ * relay starts the pull (the writer is open), KEY_WAIT and any other state hold it; FAILED,
+ * STOPPED (why STOPPED: a person at the keypad) and IDLE end the run - a FAILED one that never got
+ * READY counts toward the budget. Each change of state or why goes as FW_STATE at once. */
+void plink_keypad_fw_report(plink_keypad_t *k, uint64_t now_ms, uint32_t run, uint8_t state,
+                            uint8_t why);
+/* A fetch's progress: bytes of size, and the image's id8 once known (NULL keeps it). FW_STATE
+ * for bytes goes at most once a second. A relay's bytes are the core's: ignored for one. */
+void plink_keypad_fw_progress(plink_keypad_t *k, uint64_t now_ms, uint32_t run, uint32_t bytes,
+                              uint32_t size, const uint8_t *id8);
+/* A PROBE's answer: why (plink_fw_why_t; OK when the server offers one), the version offered
+ * ("" none), the key it is signed with (key8, NULL: not known) and whether the keypad trusts that
+ * key. FW_STATE's probe section from now on (asked 1, age_s counted from now). */
+void plink_keypad_fw_probe(plink_keypad_t *k, uint64_t now_ms, uint8_t why, const char *offered,
+                           const uint8_t *key8, bool key_trusted);
+/* FW_STATE's last section: probation (1 while the new image's self-test runs), the last result
+ * (plink_fw_last_t) for version, and the health bits that failed. */
+void plink_keypad_fw_last(plink_keypad_t *k, uint64_t now_ms, uint8_t probation, uint8_t last,
+                          const char *version, uint8_t failed_mask);
+/* The keypad's facts for FW_INFO: sent at each session's first STATUS, after a change and on
+ * INFO, at most once every 2 s. The core clears PLINK_FWI_RELAY without a writer and sets
+ * PLINK_FWI_CFG_UNREADABLE while the newest status names a configuration it couldn't read; a
+ * RELAY larger than info->slot is refused (TOO_BIG), a FETCH or RELAY for a version that isn't
+ * newer than info->version too (NOT_NEWER). */
+void plink_keypad_fw_info(plink_keypad_t *k, uint64_t now_ms, const plink_fw_info_t *info);
+/* The service's part of the gate (a kept fire or CO tone: KEPT_TONE; 0: it passes): the relay
+ * pauses while it says no. */
+void plink_keypad_fw_gate(plink_keypad_t *k, uint64_t now_ms, uint8_t why);
+/* The link's part of the gate (LINK-034): 0 when it passes, else why not - NO_STATUS (no live
+ * session with a STATUS under 15 s old: ONLINE or the needs-update state), MASTER_BUSY (the
+ * master's UPDATING), NOT_QUIET (its HOLD, or proto_fw_install_allowed() says no on the rebuilt
+ * snapshot), PANIC_PENDING (a panic still being sent). */
+uint8_t plink_keypad_fw_hold(const plink_keypad_t *k, uint64_t now_ms);
+/* Whether the master's INSTALL for version has arrived (the INSTALL hold, LINK-034): an INSTALL
+ * naming exactly it, since the run started, in this session, and no order since. */
+bool plink_keypad_fw_install_for(const plink_keypad_t *k, const char *version);
+/* What FW_STATE says now (for the screen and the console). */
+void plink_keypad_fw_status(const plink_keypad_t *k, uint64_t now_ms, plink_fw_state_t *out);
+/* LINK-029 (Decisions, keypad updates, 5: never past its master): the version the master runs, as
+ * the paired master's authenticated FW_ORDERs last named it - INFO's at each session and on its
+ * confirmed-version change, and every other order's (the master orders no other version); only
+ * orders of a known op for the application (kind 0), taken or refused, in frame order; a CANCEL
+ * or an INFO with no version (the master on its self-test) names nothing. A newer one replaces it
+ * (the master was updated), an older one too (it was put back by cable: the cap follows the
+ * master). "" while none is known: never heard since pairing, or cleared by removal, a new pairing
+ * or a session without PLINK_CAP_FW (a master that names no version) - then the keypad offers no
+ * Install while paired. *seq (NULL: not wanted) differs from its last value at each change of the
+ * cap below: of this version (the clearing included), and at each pairing and each removal even
+ * while none is known; restoring doesn't move it. Whenever *seq moves the service stores the
+ * version with the pairing's net_id (NVS link/mver, erased when "": plink_keypad_version_cap gives
+ * both) and applies the cap - so a restart writes nothing. Never NULL. */
+const char *plink_keypad_master_version(const plink_keypad_t *k, uint32_t *seq);
+/* The cap on every update of this keypad (docs/features/11 "Never past its master";
+ * panel_ota_set_version_cap), from its pairing and the version above:
+ *   - false: no cap - not paired (never, removed, or made a stand-alone panel: no master);
+ *   - true: paired - nothing past *version; "" while its master's version isn't known: nothing
+ *     passes (no Install, every offer refused); a version the service can't parse: nothing passes.
+ * *version (never NULL) and *net_id (the pairing's network, 0 unpaired) may be NULL: not wanted.
+ * The service applies it right after plink_keypad_master_version_restore, whatever *seq says (a
+ * restart moves no seq: the version restored is capped from the first moment), then whenever *seq
+ * moves (a version named or cleared, a pairing, a removal). */
+bool plink_keypad_version_cap(const plink_keypad_t *k, const char **version, uint16_t *net_id);
+/* At start-up, right after plink_keypad_init: the version the service stored (NVS link/mver) and
+ * the net_id stored with it, so the cap holds before the first INFO. Taken only while paired on
+ * that network (a version of an earlier pairing - a power cut before the service erased it - is
+ * not) and before any is heard; *seq doesn't move. */
+void plink_keypad_master_version_restore(plink_keypad_t *k, const char *version, uint16_t net_id);
 
 /* Forget the master (a person made it a stand-alone panel, or paired again): the record erased,
  * the session wiped. */

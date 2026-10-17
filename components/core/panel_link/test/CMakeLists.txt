@@ -5,7 +5,7 @@ set(PLINK_TEST_INC ${CMAKE_CURRENT_LIST_DIR}/../../zwave_host/test ${CMAKE_CURRE
 
 # Each suite is added once its file exists, so the pieces can land one by one.
 foreach(suite plink_crypto plink_frame plink_msg plink_view plink_store plink_pair plink_session
-              plink_vfeed plink_home)
+              plink_vfeed plink_home plink_fw)
     if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/test_${suite}.c)
         alarm_add_test(${suite} SOURCES test_${suite}.c plink_test_port.c ${PLINK_HOST_CRYPTO}
                        LIBS panel_link alarm_sim alarm_proto zwave_host unity

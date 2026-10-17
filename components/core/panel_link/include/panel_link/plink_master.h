@@ -37,6 +37,28 @@
  * frame budget with the alarm traffic: it goes only to a session with its capability bit, on a
  * transport whose frames are 250 B or more, and only in a tick where that keypad has no STATUS
  * change waiting and no RESULT due - at most 2 frames per keypad and 8 per tick.
+ *
+ * Updates through the link (LINK-029..037; docs/features/11 "The master"): every STATUS carries
+ * UPDATING (plink_master_fw_self: the master's own update runs, or it is on its self-test) and
+ * HOLD (proto_fw_install_allowed() says no on the snapshot), a change of either sending a STATUS
+ * as any change does. The service's planner (plink_fw.h) hands in orders (plink_master_fw_order):
+ * one outstanding per keypad - a new one supersedes it and the old one is never sent again -
+ * numbered from a random base drawn at the first, sent at the next tick and again after 300 ms,
+ * doubling to 2 s, until a FW_STATE echoes its id. FW_INFO and FW_STATE are kept (a newer frame
+ * of the session replaces them; plink_master_fw_keypad). FW_REQ is served statelessly, as CFG_REQ
+ * is, only to the keypad whose newest order but INFO is a RELAY of that id8 (an INFO naming the
+ * master's version doesn't stop a relay; any other order does), while the master is quiet (HOLD
+ * and UPDATING clear): from the request's offset, count pages of min(the request's page, the
+ * order's, the frame's room - 18) bytes read through port.fw_read, never past the image, from a
+ * byte bucket of its own (256 KB/s, 16 KB/s on frames under 1,200 B, 16 KB at once) and at most 16
+ * pages a tick; anything else is dropped, the keypad's resend comes back. A keypad installing or
+ * on its self-test (a FW_STATE saying INSTALLING or probation) isn't raised by supervision for up
+ * to 10 min from when its FW_STATE first said so, and plink_master_fw_busy tells the service to put
+ * off the master's own restart meanwhile - one such hold in each of its sessions (a restart is a
+ * new one), not begun again while its FW_STATEs go on saying so, nor by a FW_STATE saying neither
+ * within it; one saying neither after it, or a new INSTALL, lets the next begin. All of it only in
+ * a session with PLINK_CAP_FW, on frames of 250 B or more, behind the alarm traffic as the Smart
+ * Home frames are.
  */
 #ifndef PLINK_MASTER_H
 #define PLINK_MASTER_H
@@ -48,6 +70,7 @@
 #include "alarm/alarm_snapshot.h"
 #include "panel_link/plink_crypto.h"
 #include "panel_link/plink_frame.h"
+#include "panel_link/plink_fw.h"
 #include "panel_link/plink_home.h"
 #include "panel_link/plink_msg.h"
 #include "panel_link/plink_pair.h"
@@ -89,6 +112,16 @@ extern "C" {
 #define PLINK_PREFS_SET_RETRY_MS     1000u
 #define PLINK_PREFS_SET_GIVE_UP_MS   6000u
 /* A fields body's sizes, PLINK_PREFS_BODY_MAX and PLINK_PREFS_SET_BODY_MAX: plink_msg.h. */
+
+/* Updates through the link (LINK-030, LINK-032, LINK-035). */
+#define PLINK_FW_ORDER_RETRY_MS     300u    /* an order is sent again after this, doubling ... */
+#define PLINK_FW_ORDER_RETRY_MAX_MS 2000u   /* ... to this, until a FW_STATE echoes it */
+#define PLINK_FW_AWAY_MS            30000u  /* unanswered (or unheard) this long: away */
+#define PLINK_FW_HOLD_MS            600000u /* installing or on its self-test: not raised so long */
+#define PLINK_FW_RATE               262144u /* FW_PAGE bytes a second, ... */
+#define PLINK_FW_RATE_SMALL         16384u  /* ... on frames under 1,200 B, ... */
+#define PLINK_FW_BURST              16384u  /* ... at most this at once */
+#define PLINK_FW_PAGES_PER_TICK     16u
 
 /* How plink_master_prefs_set went (local: never on the wire). */
 typedef enum {
@@ -165,6 +198,12 @@ typedef struct {
      * plink_master_keypad_home (which already holds the newest report), and must call nothing
      * else here. May be NULL. */
     void (*prefs_done)(void *ctx, uint8_t device, const plink_prefs_done_t *done);
+    /* Bytes [offset, offset + len) of the image whose SHA-256 starts with id8 (the running slot,
+     * or a copy fetched for keypads): returns how many it read into out (fewer: the page goes
+     * shorter, the keypad asks for the rest; 0: none, nothing goes). Must not block for long nor
+     * call into the master. NULL: no relay is served. */
+    size_t (*fw_read)(void *ctx, const uint8_t id8[PLINK_ID8_LEN], uint32_t offset, uint8_t *out,
+                      size_t len);
 } plink_master_port_t;
 
 typedef struct {
@@ -233,6 +272,36 @@ typedef struct {
     uint64_t set_started_ms, set_next_ms;
 } plink_home_peer_t;
 
+/* One keypad's updates through the link (private). */
+typedef struct {
+    bool have_info;
+    plink_fw_info_t info;       /* its newest FW_INFO ... */
+    uint32_t info_sid, info_seq; /* ... the frame it came in ... */
+    uint64_t info_ms;           /* ... and when */
+    bool have_state;
+    plink_fw_state_t state;     /* its newest FW_STATE, the same way */
+    uint32_t state_sid, state_seq;
+    uint64_t state_ms;
+    plink_fw_order_t order;     /* the order outstanding (order.order 0: none) */
+    bool acked;                 /* a FW_STATE echoed it: no more resends */
+    uint8_t why;                /* ... with this why */
+    uint64_t order_ms;          /* given then */
+    uint64_t next_ms;           /* sent again then */
+    uint32_t retry_ms;          /* 300 ms, doubling to 2 s */
+    bool relay;                 /* a relay is served: its RELAY is the newest order but INFO */
+    uint8_t relay_id8[PLINK_ID8_LEN];
+    uint32_t relay_size;
+    uint16_t relay_page;
+    bool req;                   /* a FW_REQ waits for the tick: */
+    plink_fw_req_t req_q;
+    uint32_t sessions;          /* moves with each new session */
+    uint64_t hold_ms;           /* installing or on its self-test: this hold began then (0: none) */
+    bool hold_on;               /* ... and its newest FW_STATE still says so */
+    bool hold_renew;            /* a new session since the hold began: one more may begin */
+    uint8_t tokens;             /* FW_INFO and FW_STATE (token bucket) */
+    uint64_t tokens_at;
+} plink_fw_peer_t;
+
 /* One keypad at run time (private). */
 typedef struct {
     bool used;
@@ -284,6 +353,7 @@ typedef struct {
     uint64_t hs_tokens_at;      /* its fresh handshakes (token bucket) */
     uint8_t hs_tokens;
     plink_home_peer_t home;     /* Smart Home and settings */
+    plink_fw_peer_t fw;         /* updates through the link */
 } plink_peer_t;
 
 typedef struct {
@@ -331,6 +401,11 @@ typedef struct {
     uint32_t dev_rec_crc[PLINK_DEV_MAX]; /* each record's CRC-32: what changed */
     uint32_t dev_states_crc;
     uint8_t home_first;             /* the keypad whose home frames go first at the next tick */
+    /* Updates through the link. */
+    bool fw_updating;               /* STATUS's UPDATING (plink_master_fw_self) */
+    uint32_t fw_next_order;         /* the next order's id (0: the random base not drawn yet) */
+    uint32_t fw_mbytes;             /* FW_PAGE's byte bucket, in thousandths of a byte */
+    uint64_t fw_bytes_at;
 } plink_master_t;
 
 /* rec: the stored record (NULL or a zero net_id: none yet; a net id is chosen at the first
@@ -449,6 +524,27 @@ typedef struct {
 /* Keypad device's (false: no such keypad). */
 bool plink_master_keypad_home(const plink_master_t *m, uint64_t now_ms, uint8_t device,
                               plink_keypad_home_t *out);
+
+/* ---- updates through the link (LINK-029..037) ---- */
+/* The master's own update runs, or it is on its self-test: STATUS's UPDATING (LINK-030); a change
+ * sends a STATUS to every live keypad, as any change does (LINK-006). */
+void plink_master_fw_self(plink_master_t *m, uint64_t now_ms, bool updating);
+/* STATUS's HOLD now: proto_fw_install_allowed() says no on the master's snapshot (true before the
+ * first snapshot). The planner's quiet is its opposite. */
+bool plink_master_fw_hold(const plink_master_t *m);
+/* An order for keypad device (the planner's: everything but its id): numbered here (a random base
+ * drawn at the first order since start, then counted, never 0), it supersedes the one outstanding
+ * - which is never sent again - and goes at the next tick in a session with PLINK_CAP_FW on frames
+ * of 250 B or more (held until there is one), then again after 300 ms, doubling to 2 s, until a
+ * FW_STATE echoes its id. Returns the id; 0: no such keypad, or op isn't one of plink_fw_op_t. */
+uint32_t plink_master_fw_order(plink_master_t *m, uint64_t now_ms, uint8_t device,
+                               const plink_fw_order_t *order);
+/* Keypad device as the planner sees it (false, *out zeroed: no such keypad). */
+bool plink_master_fw_keypad(const plink_master_t *m, uint64_t now_ms, uint8_t device,
+                            plink_fw_kp_t *out);
+/* A keypad installs or is on its self-test (each for up to 10 min): the master puts off its own
+ * restart (LINK-030). */
+bool plink_master_fw_busy(const plink_master_t *m, uint64_t now_ms);
 
 /* The numbers the link holds (bit d-1). */
 uint32_t plink_master_held(const plink_master_t *m);

@@ -89,9 +89,11 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
      most installers included, who are gone once it is installed): no screen asks anyone to act, and
      the master does what it can itself (it fetches the image for another model of keypad).
 - **Keypad updates' screens** (proposal P2, `docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-048-keypad-updates.js`):
-  the 31 screens approved 2026-10-17 ("Approve P2, recommendations OK") were replaced the same day,
-  when the owner found them too complicated (keypad updates, 1 and 8); the simpler drawing waits
-  for the owner's approval.
+  eight screens with nothing to tap, approved 2026-10-17 (the owner: "Approve, recommendations OK";
+  they replace the 31 approved earlier that day, found too complicated). Its two questions, as
+  recommended: the master keeps today's "Stop the update" for whoever chose to install, which stops
+  its keypads' downloads too; a keypad's banner names its master ("Updating · restarts with Harbor
+  House"), its Software update page showing the name whole.
 - **Smart Home and Home Assistant on keypads** (BL-216): decided 2026-10-16 (the owner: "Approve
   P1, recommendations OK"), each as the design recommended. The numbers stay, so other documents
   can name them:
@@ -1678,7 +1680,7 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   `link/mver`, the master's server and key from the orders, FIRE/CO sounding from STATUS) (LINK-029
   to -036, -041) (BL-048)
 - [ ] MQTT `keypads`, `plink fw` console (BL-048)
-- [ ] Screens: the simpler drawing, once approved (BL-048)
+- [ ] Screens as the approved drawing has them (8 screens, 2026-10-17) (BL-048)
 - [x] `proto_fwsrv`: `want` in the check, the server's `unknown_version` and `not_offered`, an
   unknown reason on a check with `want` taken as a refusal, `proto_fwsrv_check_why` (LINK-031)
   (BL-048, b387e1e)

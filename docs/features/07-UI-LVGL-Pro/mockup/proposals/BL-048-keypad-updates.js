@@ -47,7 +47,7 @@
 //     with "..." and a name can be 47 bytes. Recommended: keep the name (the page says it whole); else
 //     "Updating · restarts with the alarm panel".
 
-const P2 = (replaces, why) => ({bl: 'BL-048', status: 'draft', ...(replaces ? {replaces} : {}), why});
+const P2 = (replaces, why) => ({bl: 'BL-048', status: 'approved', decided: '2026-10-17: Approve, recommendations OK', ...(replaces ? {replaces} : {}), why});
 // A banner with new words: outline it as changed.
 const newBanner = (html) => html.replace('class="bar_banner', 'class="changed bar_banner');
 // A confirm dialog whose note has new words: outline the note (its only body text).

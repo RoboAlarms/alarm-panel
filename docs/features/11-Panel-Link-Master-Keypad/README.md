@@ -83,8 +83,11 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
      master"; chosen: restart together).
   8. The simple way (2026-10-17, the owner: "I feel you are doing this the complicated way"): no
      turn-taking between keypads, no first-keypad-per-model check, no Stop or Try again on any
-     screen, no image fetched for another model, no keypad that waits for a person ("Updates
-     through the link", Not done).
+     screen, no keypad that waits for a person ("Updates through the link", Not done).
+  9. Nobody steps in (2026-10-17, the owner: the people using the alarm system want something that
+     works without having to do anything; 99.9 % would not know what to do when asked by the panel,
+     most installers included, who are gone once it is installed): no screen asks anyone to act, and
+     the master does what it can itself (it fetches the image for another model of keypad).
 - **Keypad updates' screens** (proposal P2, `docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-048-keypad-updates.js`):
   the 31 screens approved 2026-10-17 ("Approve P2, recommendations OK") were replaced the same day,
   when the owner found them too complicated (keypad updates, 1 and 8); the simpler drawing waits
@@ -592,8 +595,10 @@ a keypad found behind later (newly paired, back on line): FETCH or RELAY, then I
     (13-15). The master then relays its image of V (the one it just downloaded, in its spare slot,
     or the one it runs) when the keypad is the same device, within the image's chip revisions and of
     a project it accepts.
-  - Otherwise the keypad isn't updated, and its row says why: the server refuses it (10-12, 16-19),
-    or it is another model without internet ("Connect it to the internet").
+  - Another model without internet: the master downloads that model's image itself
+    (`panel_ota_fetch_for`, one at a time, in PSRAM) and relays it.
+  - Only a refusal by the server (10-12, 16-19) leaves a keypad behind; it is asked again at the
+    master's next version.
 - **Downloading goes on while armed.** It pauses only while an alarm sounds, an entry or exit time
   runs, a panic is being sent, a fire or CO tone is kept on the keypad, or the link is down.
   Nothing restarts while anything is armed.
@@ -610,9 +615,11 @@ a keypad found behind later (newly paired, back on line): FETCH or RELAY, then I
   waits for the master's next version, so it never restarts in a loop.
 - **The master's self-test needs a keypad back** (Decisions, keypad updates, 3; LINK-041). Keypads
   restarting with it come back on V, on trial, and count.
+- **Nobody steps in** (decision 9). Nothing on any screen asks anyone to do anything: the people
+  who live with a panel, and most installers (who are gone once it is installed), would not know
+  what to do. Whatever the master can do itself, it does; what it can't, it tries again by itself.
 - **Not done** (the simple way): no turn-taking between keypads, no first-keypad-per-model check,
-  no Stop or Try again on any screen, no image fetched for another model, no keypad that waits for
-  a person. The console keeps `plink fw` (each keypad's state) and `plink fw update <n>` (ask again
+  no Stop or Try again on any screen, no keypad that waits for a person. The console keeps `plink fw` (each keypad's state) and `plink fw update <n>` (ask again
   now).
 
 ### The keypad
@@ -764,9 +771,8 @@ Simple, as the owner asked (2026-10-17); the screens are drawn as a proposal fir
 approved (docs/features/07 mockup, BL-048-keypad-updates.js).
 - **Master's Software update:** a Keypads list under its own update, one row per keypad: name,
   version and one status line ("Up to date", "Downloading 45 %", "Receiving from this panel 45 %",
-  "Ready · restarts with this panel", "Restarting", "Not updated: <reason>"). No buttons.
-- **Master's About:** the Software update row says "1 keypad not updated" while a keypad can't
-  follow (it needs a cable, or the internet, or went back on this version).
+  "Ready · restarts with this panel", "Restarting", "Not updated yet · tries again by itself"). No
+  buttons, and nothing that asks anyone to act.
 - **Master's Install question:** "... then its keypads update."
 - **Keypad's Software update:** "Updates come from <master>", its version, and while an update runs
   the run's line and stepped bar. No Install, no Stop.

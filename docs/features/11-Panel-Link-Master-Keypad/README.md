@@ -56,6 +56,17 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
   partitions" and GOTO wait for KPD-006.
 - **Until ESP-NOW exists a Wi-Fi keypad works only while the router and the master have power**:
   the installer guide says to put the router on backup power.
+- **Keypad updates** ("Updates through the link"): decided 2026-10-16 (the owner: "Start building
+  keypad updates with the four recommended choices"):
+  1. A keypad accepts a new signing key at its own screen with the installer's code (LINK-036):
+     without it a master moved to another key would leave every keypad needing its console or a
+     cable.
+  2. A keypad found behind later (newly paired, or back on line) waits for Update keypads until
+     BL-190 decides automatic updates.
+  3. A master's self-test needs one of its keypads back (LINK-041), accepting the risk that a
+     master whose only keypad is off during its update goes back to its old version.
+  4. The update server takes `want` (BL-050): without it a keypad offered a newer version than
+     its master's would take the relay.
 - **Smart Home and Home Assistant on keypads** (BL-216): decided 2026-10-16 (the owner: "Approve
   P1, recommendations OK"), each as the design recommended. The numbers stay, so other documents
   can name them:
@@ -1616,15 +1627,9 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
 - The result cache keeps a command from running twice, but every CMD frame gets a RESULT (a
   refusal, or the cached answer to a copy): a device with a keypad's keys gets one RESULT for each
   CMD it sends, though its commands and requests stay within LINK-027's limits.
-- Keypad updates, for the owner (designed 2026-10-16; built as recommended unless decided
-  otherwise): a keypad accepts a new signing key at its own screen with the installer's code
-  (LINK-036; without it a master moved to another key leaves every keypad needing its console or a
-  cable); a keypad found behind later waits for Update keypads until BL-190 decides automatic
-  updates; a master's self-test needs one of its keypads back (LINK-041; the risk: a master whose
-  only keypad is off during its update goes back to its old version); the update server takes
-  `want` (BL-050; without it a keypad offered a newer version than its master's takes the relay).
-  Estimates, not measured yet: the relay's speed, `esp_partition_mmap` windows of the running
-  slot, the slot's exact length with its signature sector, free PSRAM on a master for a copy.
+- Keypad updates (its four choices decided 2026-10-16, in Decisions). Estimates, not measured
+  yet: the relay's speed, `esp_partition_mmap` windows of the running slot, the slot's exact length
+  with its signature sector, free PSRAM on a master for a copy.
 - Smart Home and Home Assistant on keypads (BL-216; its 13 questions were decided 2026-10-16, in
   Decisions). Not designed, only if the owner asks (each needs its own proposal): a notice on a
   panel when a setting changed from elsewhere (new words); a keypad's Screen and sound rows on the

@@ -1843,13 +1843,13 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   the cap, `panel_ota_set_checks`, `_set_restart_hold` and `_set_keypads_check`
   (`PANEL_OTA_OK_KEYPADS`, `ota`/`rbh`), the master's image sources (`ota_source.c`); in
   `alarm_proto` the header judge and the image walk (`fw_image.c`) and the self-test's rule
-  (`ota_selftest.h`) (LINK-029, -031, -033, -041) (BL-048, U2a)
+  (`ota_selftest.h`) (LINK-029, -031, -033, -041) (BL-048, b387e1e)
 - [ ] Keypad service: dispatch, the own Install refused in the keypad backend, the key screen
   (LINK-029, -036) (BL-048)
 - [ ] Master: `plink_fw.c` planner, FW_REQ serving and buckets, `fw_read` over mmap or PSRAM,
   `link/fwgo`, the supervision hold (LINK-030, -031, -032) (BL-048)
 - [x] Event stages on the master: `firmware_update` 9-13 from {keypad, n}, `keypad_failed`'s why in
-  the JSON and Activity's words (docs/features/01 CORE-PROG-009) (BL-048, U2a)
+  the JSON and Activity's words (docs/features/01 CORE-PROG-009) (BL-048, b387e1e)
 - [ ] MQTT `keypads`, `plink fw` console (BL-048)
 - [ ] Screens as proposal P2 has them (approved 2026-10-17): the master's Keypads block, About and
   Installer rows, Activity; the keypad's pages, banners and key screen (BL-048)
@@ -1858,7 +1858,7 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   console capped); a TIMEOUT while the gate said no isn't a failed run (LINK-029, -035) (BL-048)
 - [x] `proto_fwsrv`: `want` in the check, the server's `unknown_version` and `not_offered`, an
   unknown reason on a check with `want` taken as a refusal, `proto_fwsrv_check_why` (LINK-031)
-  (BL-048, U2a)
+  (BL-048, b387e1e)
 - [ ] `host/link_sim/link_peer.c`, the future peer (`-DPLINK_FUTURE_TEST=1`), `tools/link_compat.py`
   (LINK-042) (BL-048)
 - [ ] The update server takes `want` (update-server repository, BL-050): built on its local branch

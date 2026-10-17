@@ -74,6 +74,44 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
   5. A keypad never updates past its master (2026-10-17, the owner: the keypads must not update to
      a version past the master). Every way a paired keypad can update is capped at the version its
      master runs ("The keypad", Never past its master); only a cable goes past, for development.
+- **Keypad updates' screens** (proposal P2,
+  `docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-048-keypad-updates.js`): approved 2026-10-17
+  (the owner: "Approve P2, recommendations OK"), each question as recommended. The numbers stay:
+  1. A keypad's row on the master has three lines (name; number and version; the state in words)
+     and no bar of its own.
+  2. Try again now asks no question: it only ends the master's holds.
+  3. On a master with keypads, its Install question says "... then its n keypads update."
+  4. No banner on the master while only its keypads update; its About row stays.
+  5. Installer > Keypads and devices says "Updating" for a keypad installing or on its self-test
+     (its supervision trouble is held then).
+  6. Activity names a keypad by number ("Keypad 3 updated") until a name lookup shared with Zigbee
+     and Z-Wave exists.
+  7. At the key hold the installer's code is asked only when Software update was opened with
+     another code; the system master's code never accepts a key.
+  8. A key accepted at a keypad is logged on the master ("Keypad 2 accepted a new signing key",
+     stage `keypad_key_accepted` 13).
+  9. A keypad waiting for a key shows a steady amber banner, "Update waiting · accept the new key".
+  10. A keypad's words name its master ("Updates come from Harbor House", "Waiting for <master>"),
+      not "the alarm panel" (OTA-026).
+  11. A keypad that can't follow by itself keeps its row, amber, by case: "Update it with a cable" on
+      a link that can't carry updates; on firmware from before keypad updates, "Update it at the
+      keypad: Settings > About" while the master is up to date with its server, otherwise "Install
+      this panel's update first" (so it can't go past the master).
+  12. One Stop and one Try again now for all keypads; one keypad alone at the console, or for Stop
+      at that keypad.
+  13. Settled by LINK-030: a canary's model waits for the master's next version or Try again now,
+      which starts with that keypad again.
+  14. The waiting banners: the master's "Update waiting · installs once the keypad is back", a
+      keypad's "Update paused · goes on by itself".
+  15. A master that went back because no keypad answered during its self-test (LINK-041) says so on
+      its rolled-back page: "Back on <old> · no keypad answered during its self-test".
+  16. A keypad that reaches the server but finds no release of the master's version
+      (UNKNOWN_VERSION 15) gets the master's own image when it fits, never a copy; NOT_OFFERED 16 is
+      never relayed.
+  17. The master's About says "<n> keypads stay behind" (amber), with the Settings tag "Keypads
+      behind", while a keypad needs a person or a new version: a canary hold, no image, a server
+      refusal, a key to accept, a refused image, or a keypad that can't follow by itself. Holds that
+      end by themselves within a day don't count.
 - **Smart Home and Home Assistant on keypads** (BL-216): decided 2026-10-16 (the owner: "Approve
   P1, recommendations OK"), each as the design recommended. The numbers stay, so other documents
   can name them:
@@ -608,7 +646,7 @@ Decided 2026-10-17 (Decisions, keypad updates, 2): the master keeps every keypad
 | the server offers exactly V | - | FETCH |
 | the server refuses this keypad (unknown device, held back, stepping stone, not offered; any other 10-12 or 16-19) | - | BLOCKED: never relayed past the server's rules |
 | the server offers another version, or nothing newer (13, 14) | its own slot, or a copy | RELAY |
-| the server has no release of V for this keypad (UNKNOWN_VERSION 15: a build of the owner's own, or a release without this keypad's image) | its own slot only | RELAY (P2 Q16, recommended) |
+| the server has no release of V for this keypad (UNKNOWN_VERSION 15: a build of the owner's own, or a release without this keypad's image) | its own slot only | RELAY (P2 decision 16) |
 | not reached (1-9) | its own slot | RELAY |
 | not reached | a copy, when the master reaches its server for the keypad's facts | RELAY |
 | not reached | none | BLOCKED (NO_IMAGE): "Connect keypad n to the internet, or update it with a cable" |
@@ -706,8 +744,8 @@ It downloads as any panel does (OTA-003). The master orders a fetch only while t
 
 Nothing the master sends replaces a check. The server and channel in an order serve that run only.
 
-**READY.** `panel_ota_apply` runs, and then the keypad's gate holds the restart ("Waiting for the
-alarm panel") until an INSTALL names that version. A READY image is discarded on any of these:
+**READY.** `panel_ota_apply` runs, and then the keypad's gate holds the restart ("Waiting for
+<master>", P2 decision 10) until an INSTALL names that version. A READY image is discarded on any of these:
 - CANCEL;
 - an order for another image;
 - removal;
@@ -860,19 +898,30 @@ A change of any of them sends a STATUS, as a change does (LINK-006).
   - States: "Up to date", "Waiting for its turn", "Downloading 45 %", "Receiving from this panel 45
     %", "Ready", "Waits: the system is armed", "Installing", "Self-test", "Updated", "Accept the new
     key at keypad n", "Not updated: <reason>".
-  - Buttons: Stop updating keypads while a keypad runs; Try again now while a hold waits.
-  - It is drawn as a proposal first: the touchscreen per
-    `docs/features/07-UI-LVGL-Pro/mockup/README.md`, the Panel Manager per
-    `docs/features/31-Browser-Panel-Manager/mockup/README.md`.
+  - Buttons: Stop updating keypads while a keypad runs; Try again now while a hold waits (one for
+    all keypads, no question; P2 decisions 2, 12).
+  - The touchscreen's screens are proposal P2 (approved 2026-10-17; Decisions, keypad updates'
+    screens). The Panel Manager's are still to be drawn
+    (`docs/features/31-Browser-Panel-Manager/mockup/README.md`).
+  - A keypad that can't follow by itself keeps its row, by case (P2 decision 11).
+  - On a master with keypads, its Install question says the keypads update afterwards; its own
+    restart waits while a keypad self-tests ("Update waiting · installs once the keypad is back");
+    a rollback because no keypad answered names that (P2 decisions 3, 14, 15).
+  - About says "<n> keypads stay behind" while a keypad needs a person or a new version (P2
+    decision 17); no banner while keypads only update (decision 4).
+- **Installer > Keypads and devices:** "Updating" for a keypad installing or on its self-test (P2
+  decision 5).
   - Bars are stepped and words change at most once a second (UI-020).
   - `ui_link_keypad_t` (`ui_backend.h:1615-1626`) gains `fw_state`, `fw_why`, `fw_path`,
     `fw_percent` and `fw_behind`.
 - **Keypad's Software update:** "Updates come from <master>", the run with the existing steps, Stop,
-  and the key screen (below).
+  and the key screen (below). Its banners: "Receiving an update", "Update paused · goes on by
+  itself", "Update waiting · installs when its turn comes", and amber "Update waiting · accept the
+  new key" (P2 decisions 9, 14).
 - **Event log, on the master.** `firmware_update` stages are appended after
   `ALARM_FW_RESTART_PUT_OFF` (`alarm_types.h:636-646`):
   - `keypad_installing` 9, `keypad_updated` 10, `keypad_rolled_back` 11, `keypad_failed` 12 (arg2 =
-    why);
+    why), `keypad_key_accepted` 13 (P2 decision 8);
   - source {keypad, n};
   - the master's own stages are not reused, because OTA-029 reads the master's last result from
     them.
@@ -1764,10 +1813,17 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
 - [ ] Master: `plink_fw.c` planner, FW_REQ serving and buckets, `fw_read` over mmap or PSRAM,
   `link/fwgo`, the supervision hold (LINK-030, -031, -032) (BL-048)
 - [ ] Event stages (docs/features/05), MQTT `keypads`, `plink fw` console (BL-048)
-- [ ] Screens: a proposal first, then the master's Keypads block and the keypad's view (BL-048)
+- [ ] Screens as proposal P2 has them (approved 2026-10-17): the master's Keypads block, About and
+  Installer rows, Activity; the keypad's pages, banners and key screen (BL-048)
+- [ ] Never past the master: INFO names the master's version at each session, the keypad keeps it
+  (`link/mver`) and caps its own Install (`want`) and its console; a TIMEOUT while the gate said no
+  isn't a failed run (LINK-029, -035) (BL-048)
+- [ ] `proto_fwsrv`: the server's `unknown_version` and `not_offered`, an unknown reason on a check
+  with `want` taken as a refusal (LINK-031) (BL-048)
 - [ ] `host/link_sim/link_peer.c`, the future peer (`-DPLINK_FUTURE_TEST=1`), `tools/link_compat.py`
   (LINK-042) (BL-048)
-- [ ] The update server takes `want` (update-server repository, BL-050)
+- [ ] The update server takes `want` (update-server repository, BL-050): built on its local branch
+  `bl-050-want`, not merged or deployed
 - [ ] On the panels: the fetch path; the keypad's WAN blocked at the router, so it relays; the 10.1"
   keypad of the 7" master, from a copy; armed mid-relay; a panic pending; a kept fire tone; power
   pulled mid-relay and mid-write; a master restart during a keypad's self-test; a v1.x image ordered

@@ -93,7 +93,7 @@
 //      whoever opens About sees a keypad left behind, without an amber tag for what fixes itself). Drawn
 //      on bl-048-fw-master-about only; the other screens leave the tag off.
 
-const P2 = (replaces, why) => ({bl: 'BL-048', status: 'draft', ...(replaces ? {replaces} : {}), why});
+const P2 = (replaces, why) => ({bl: 'BL-048', status: 'approved', decided: '2026-10-17: Approve P2, recommendations OK', ...(replaces ? {replaces} : {}), why});
 // A page drawn scrolled down by y pixels (the viewer and the bare view honour data-scroll).
 const scrolledTo = (html, y) => (y ? html.replace('class="page_body scroll"', `class="page_body scroll" data-scroll="${y}"`) : html);
 // Every update banner this proposal draws has new words: outline it as changed.

@@ -656,16 +656,18 @@ a keypad found behind later (newly paired, back on line): FETCH or RELAY, then I
   doubling to 2 s; it writes them with `panel_ota_write` from the link task (internal stack), flash
   busy at most half the time; it goes on across a new session and a master restart; it fails after
   60 s without a byte while not paused (STALLED) or 30 min paused (TIMEOUT, not counted while paused
-  for an alarm, entry or exit time).
+  for an alarm, entry or exit time). A fetch that never reached the server, or that the server
+  answered, isn't a failed run either (the keypad's 3 failed runs in 24 h count only transfers).
 - **Checks, on both paths:** only the paired master's sealed frames; the header before any flash
   write (`proto_fw_header_judge`: magic, chip, chip revision range, project, newer, the cap); length
   and SHA-256; the signature with the keypad's keys (`esp_ota_end`); the version must be V.
 - **READY** waits for INSTALL{V} ("Waiting for <master>"); it is discarded on CANCEL, another
-  image's order, removal, or 24 h without INSTALL.
-- **The gate** before the restart, asked twice: a live session with a status under 15 s old; the
-  master's UPDATING and HOLD clear, except the INSTALL that comes with the master's own restart;
-  `proto_fw_install_allowed()` (everything disarmed); no panic still being resent; no fire or CO tone
-  kept.
+  image's order, removal, or 24 h without INSTALL. An INSTALL taken stays taken through INFO and the
+  master's UPDATING: it comes with the master's own restart.
+- **The gate** before the restart, asked twice about a second apart: a live session with a status
+  under 15 s old; the master's HOLD clear and `proto_fw_install_allowed()` (everything disarmed, no
+  alarm); no panic still being resent; no fire or CO tone kept. UPDATING doesn't hold it: keypads
+  restart with their master.
 
 ### The master
 - **Planner.** `plink_fw_plan(world, now, steps)`, a small pure function run from the master
@@ -673,7 +675,8 @@ a keypad found behind later (newly paired, back on line): FETCH or RELAY, then I
   FW_INFO and FW_STATE, and sends FETCH, RELAY, INSTALL and INFO as the rules say. Orders are resent
   after 300 ms, doubling to 2 s, until a FW_STATE echoes them.
 - **Serving FW_REQ.** Stateless (`on_cfg_req`'s way), only to a keypad holding a RELAY with that
-  `id8`, from a bucket of its own behind alarm traffic: 256 KB/s on UDP, 16 KB/s on frames under
+  `id8`, armed or not and during the master's own update, several keypads at once, from a bucket of
+  its own behind alarm traffic: 256 KB/s on UDP, 16 KB/s on frames under
   1,200 B, at most 16 pages a turn, read through `fw_read` (`panel_ota_running_read` or the spare
   slot's, on the link task: mapping a window disables the cache for a moment).
 - **While a keypad restarts:** its supervision trouble isn't raised, for up to 10 min; a keypad that

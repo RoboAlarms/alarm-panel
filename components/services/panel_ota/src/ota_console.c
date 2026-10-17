@@ -10,6 +10,10 @@
  *   host: END (or ABORT)
  *   panel: OTA DONE <version>  |  OTA FAIL <reason>
  * Anything else the panel prints (log lines) is to be ignored by the host.
+ *
+ * `ota copy <size> <sha256 hex>` (development builds only; tools/ota_serial.py --copy) receives the
+ * same way into the master's copy for a keypad of another model (panel_ota_copy_load_*: the link
+ * judges the header, nothing is written to flash, nothing restarts); OTA DONE <version> keypad <n>.
  */
 #include <inttypes.h>
 #include <stdio.h>
@@ -233,13 +237,63 @@ static bool parse_sha(const char *hex, uint8_t out[32])
     return true;
 }
 
-static int receive(uint32_t size, const uint8_t sha[32], bool force)
+/* `copy`: into the master's copy for a keypad (development builds), else this panel's spare slot. */
+static esp_err_t sink_begin(bool copy, uint32_t size, const uint8_t sha[32], bool force)
+{
+#if CONFIG_ALARM_BUILD_DEV
+    if (copy) {
+        return panel_ota_copy_load_begin(size, sha);
+    }
+#endif
+    (void)copy;
+    return panel_ota_begin(size, sha, force);
+}
+
+static esp_err_t sink_write(bool copy, const void *data, size_t len, char *why, size_t why_len)
+{
+#if CONFIG_ALARM_BUILD_DEV
+    if (copy) {
+        return panel_ota_copy_load_write(data, len, why, why_len);
+    }
+#endif
+    (void)copy;
+    return panel_ota_write(data, len, why, why_len);
+}
+
+static esp_err_t sink_end(bool copy, char *version, size_t version_len, uint8_t *keypad, char *why,
+                          size_t why_len)
+{
+#if CONFIG_ALARM_BUILD_DEV
+    if (copy) {
+        return panel_ota_copy_load_end(version, version_len, keypad, why, why_len);
+    }
+#endif
+    (void)copy;
+    (void)keypad;
+    return panel_ota_end(version, version_len, why, why_len);
+}
+
+static void sink_abort(bool copy)
+{
+#if CONFIG_ALARM_BUILD_DEV
+    if (copy) {
+        panel_ota_copy_load_abort();
+        return;
+    }
+#endif
+    (void)copy;
+    panel_ota_abort();
+}
+
+static int receive(uint32_t size, const uint8_t sha[32], bool force, bool copy)
 {
     grow_rx_buffer();
-    const esp_err_t err = panel_ota_begin(size, sha, force);
+    const esp_err_t err = sink_begin(copy, size, sha, force);
     if (err != ESP_OK) {
-        printf("OTA FAIL %s\n", err == ESP_ERR_INVALID_STATE ? "busy or not confirmed yet"
-                                                            : esp_err_to_name(err));
+        printf("OTA FAIL %s\n",
+               copy && err == ESP_ERR_INVALID_STATE ? "not a master offering keypad updates"
+               : err == ESP_ERR_INVALID_STATE       ? "busy or not confirmed yet"
+                                                    : esp_err_to_name(err));
         return 1;
     }
     char *line = malloc(UPLOAD_LINE);
@@ -247,7 +301,7 @@ static int receive(uint32_t size, const uint8_t sha[32], bool force)
     if (line == NULL || data == NULL) {
         free(line);
         free(data);
-        panel_ota_abort();
+        sink_abort(copy);
         printf("OTA FAIL out of memory\n");
         return 1;
     }
@@ -261,17 +315,22 @@ static int receive(uint32_t size, const uint8_t sha[32], bool force)
 
     uint32_t expected = 0;
     int rc = 1;
-    char why[64] = "";
+    char why[96] = "";
     char version[32] = "";
+    uint8_t keypad = 0;
     for (;;) {
         if (!read_line(line, UPLOAD_LINE, LINE_TIMEOUT)) {
-            panel_ota_abort();
+            sink_abort(copy);
             printf("OTA FAIL timeout\n");
             break;
         }
         if (strcmp(line, "END") == 0) {
-            if (panel_ota_end(version, sizeof(version), why, sizeof(why)) == ESP_OK) {
-                printf("OTA DONE %s\n", version);
+            if (sink_end(copy, version, sizeof(version), &keypad, why, sizeof(why)) == ESP_OK) {
+                if (copy) {
+                    printf("OTA DONE %s keypad %u\n", version, (unsigned)keypad);
+                } else {
+                    printf("OTA DONE %s\n", version);
+                }
                 rc = 0;
             } else {
                 printf("OTA FAIL %s\n", why);
@@ -279,7 +338,7 @@ static int receive(uint32_t size, const uint8_t sha[32], bool force)
             break;
         }
         if (strcmp(line, "ABORT") == 0) {
-            panel_ota_abort();
+            sink_abort(copy);
             printf("OTA FAIL aborted\n");
             break;
         }
@@ -289,7 +348,7 @@ static int receive(uint32_t size, const uint8_t sha[32], bool force)
             printf("OTA RETRY %" PRIu32 "\n", expected);
         } else if (seq < expected) {
             printf("OTA OK %" PRIu32 "\n", seq); /* our answer got lost: already written */
-        } else if (panel_ota_write(data, n, why, sizeof(why)) != ESP_OK) {
+        } else if (sink_write(copy, data, n, why, sizeof(why)) != ESP_OK) {
             printf("OTA FAIL %s\n", why);
             break;
         } else {
@@ -302,7 +361,10 @@ static int receive(uint32_t size, const uint8_t sha[32], bool force)
     esp_log_level_set("*", level);
     free(line);
     free(data);
-    if (rc == 0) {
+    if (rc == 0 && copy) {
+        ESP_LOGW(TAG, "bench copy %s: relayed to keypad %u now (plink fw shows it)", version,
+                 (unsigned)keypad);
+    } else if (rc == 0) {
         ESP_LOGI(TAG, "uploaded %s: restarting when the system is idle", version);
         panel_ota_apply(&CONSOLE, 0);
     }
@@ -463,14 +525,35 @@ static int cmd_ota(int argc, char **argv)
             printf("usage: ota recv <size> <sha256 hex> [force]  (use tools/ota_serial.py)\n");
             return 1;
         }
-        return receive((uint32_t)size, sha, argc > 4 && strcmp(argv[4], "force") == 0);
+        return receive((uint32_t)size, sha, argc > 4 && strcmp(argv[4], "force") == 0, false);
 #else
         printf("Serial upload needs the UART console\n");
         return 1;
 #endif
     }
+    if (strcmp(sub, "copy") == 0) {
+        /* The bench only: a keypad of another model's image into the master's copy (docs/features
+         * 11, the bench copy). */
+#if HAVE_UART_UPLOAD && CONFIG_ALARM_BUILD_DEV
+        uint8_t sha[32];
+        char *end = NULL;
+        const unsigned long size = argc > 3 ? strtoul(argv[2], &end, 10) : 0u;
+        if (argc < 4 || end == NULL || *end != '\0' || size == 0u || size > UINT32_MAX ||
+            !parse_sha(argv[3], sha)) {
+            printf("usage: ota copy <size> <sha256 hex>  (use tools/ota_serial.py --copy)\n");
+            return 1;
+        }
+        return receive((uint32_t)size, sha, false, true);
+#else
+        printf("ota copy: development builds with the UART console only\n");
+        return 1;
+#endif
+    }
     printf("usage: ota [status | server [check <domain>|use] | channel [name] | check |\n"
            "            install [force] | apply | cancel | recv <size> <sha256> [force]]\n");
+#if CONFIG_ALARM_BUILD_DEV
+    printf("  the bench: ota copy <size> <sha256>  (a keypad of another model's image)\n");
+#endif
     return 1;
 }
 

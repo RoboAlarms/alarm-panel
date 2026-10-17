@@ -300,6 +300,13 @@ static void decide(plan_t *p, size_t i)
         return;
     }
     m->retry_at = 0u;
+    /* A copy loaded on the bench that fits it: relayed at once (its server has no such build). */
+    if (w->copy.bench && (kp->info.can & PLINK_FWI_RELAY) != 0u &&
+        image_for(w, &kp->info) == &w->copy.image) {
+        send_image(p, i, PLINK_FW_OP_RELAY, &w->copy.image);
+        p->need_copy[i] = true;
+        return;
+    }
     if ((kp->info.can & PLINK_FWI_FETCH) != 0u) {
         send_image(p, i, PLINK_FW_OP_FETCH, NULL);
     } else {

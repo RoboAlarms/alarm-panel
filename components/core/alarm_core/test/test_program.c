@@ -362,20 +362,18 @@ static void test_firmware_update_keypad_stages(void)
     TEST_ASSERT_EQUAL_INT(10, ALARM_FW_KEYPAD_UPDATED);
     TEST_ASSERT_EQUAL_INT(11, ALARM_FW_KEYPAD_ROLLED_BACK);
     TEST_ASSERT_EQUAL_INT(12, ALARM_FW_KEYPAD_FAILED);
-    TEST_ASSERT_EQUAL_INT(13, ALARM_FW_KEYPAD_KEY_ACCEPTED);
     TEST_ASSERT_EQUAL_STRING("keypad_installing", alarm_fw_stage_name(ALARM_FW_KEYPAD_INSTALLING));
     TEST_ASSERT_EQUAL_STRING("keypad_updated", alarm_fw_stage_name(ALARM_FW_KEYPAD_UPDATED));
     TEST_ASSERT_EQUAL_STRING("keypad_rolled_back",
                              alarm_fw_stage_name(ALARM_FW_KEYPAD_ROLLED_BACK));
     TEST_ASSERT_EQUAL_STRING("keypad_failed", alarm_fw_stage_name(ALARM_FW_KEYPAD_FAILED));
-    TEST_ASSERT_EQUAL_STRING("keypad_key_accepted",
-                             alarm_fw_stage_name(ALARM_FW_KEYPAD_KEY_ACCEPTED));
-    TEST_ASSERT_EQUAL_STRING("unknown", alarm_fw_stage_name((alarm_fw_stage_t)14));
+    /* 13 is reserved (never used) */
+    TEST_ASSERT_EQUAL_STRING("unknown", alarm_fw_stage_name((alarm_fw_stage_t)13));
 
     const alarm_source_t kp3 = {ALARM_SRC_KEYPAD, 3u};
     const uint32_t before = snapshot().last_event_seq;
     static const uint8_t PLAIN[] = {ALARM_FW_KEYPAD_INSTALLING, ALARM_FW_KEYPAD_UPDATED,
-                                    ALARM_FW_KEYPAD_ROLLED_BACK, ALARM_FW_KEYPAD_KEY_ACCEPTED};
+                                    ALARM_FW_KEYPAD_ROLLED_BACK};
     for (size_t i = 0; i < sizeof(PLAIN); i++) {
         EXPECT_RESULT(ALARM_OK, alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE,
                                                             PLAIN[i], &kp3, 0u, S.now));
@@ -387,12 +385,6 @@ static void test_firmware_update_keypad_stages(void)
         TEST_ASSERT_EQUAL_UINT16(3u, ev->source.id);
         TEST_ASSERT_EQUAL_UINT16(0u, ev->zone);
     }
-    /* the installer who accepted a key at the keypad is the event's user */
-    EXPECT_RESULT(ALARM_OK, alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE,
-                                                        ALARM_FW_KEYPAD_KEY_ACCEPTED, &kp3,
-                                                        ALARM_USER_INSTALLER, S.now));
-    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_INSTALLER,
-                            sim_last_report(&S, ALARM_EV_FIRMWARE_UPDATE)->user);
     /* keypad_failed with its why: STALLED 24, and 77, a later firmware's */
     const alarm_source_t kp16 = {ALARM_SRC_KEYPAD, (uint16_t)ALARM_MAX_DEVICES};
     EXPECT_RESULT(ALARM_OK,
@@ -405,12 +397,12 @@ static void test_firmware_update_keypad_stages(void)
     EXPECT_RESULT(ALARM_OK,
                   alarm_engine_platform_event_ex(&S.eng, ALARM_EV_FIRMWARE_UPDATE, 0u,
                                                  ALARM_FW_KEYPAD_FAILED, 77u, &kp3, 0u, S.now));
-    const uint32_t logged = before + 7u;
+    const uint32_t logged = before + 5u;
     TEST_ASSERT_EQUAL_UINT32(logged, snapshot().last_event_seq);
 
     /* refused: a failure without its why, a why on another stage, no keypad named (the system,
      * this panel's own screen, a number past the devices, another kind of source), a zone, and
-     * the stage after the last */
+     * the stage after the last (13, reserved) */
     static const alarm_source_t sys = {ALARM_SRC_SYSTEM, 0u};
     static const alarm_source_t local = {ALARM_SRC_KEYPAD, ALARM_KEYPAD_LOCAL};
     const alarm_source_t past = {ALARM_SRC_KEYPAD, (uint16_t)(ALARM_MAX_DEVICES + 1u)};
@@ -439,7 +431,7 @@ static void test_firmware_update_keypad_stages(void)
                                                  ALARM_FW_KEYPAD_UPDATED, 0u, &kp3, 0u, S.now));
     EXPECT_RESULT(ALARM_ERR_BAD_ARG,
                   alarm_engine_platform_event(&S.eng, ALARM_EV_FIRMWARE_UPDATE,
-                                              (uint8_t)(ALARM_FW_KEYPAD_KEY_ACCEPTED + 1u), &kp3,
+                                              (uint8_t)(ALARM_FW_KEYPAD_FAILED + 1u), &kp3,
                                               0u, S.now));
     TEST_ASSERT_EQUAL_UINT32(logged, snapshot().last_event_seq);
 

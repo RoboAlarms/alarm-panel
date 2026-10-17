@@ -243,7 +243,7 @@ static const char *keypad_fw_why(const i18n_catalog_t *cat, uint8_t why)
     case 25u: return i18n_text(cat, NULL, "It waited too long");
     case 26u: return i18n_text(cat, NULL, "Not enough memory");
     case 27u: return i18n_text(cat, NULL, "It couldn't store it");
-    case 30u: return i18n_text(cat, NULL, "The new signing key must be accepted at the keypad");
+    case 30u: return i18n_text(cat, NULL, "Its signing key isn't trusted");
     case 31u: return i18n_text(cat, NULL, "It isn't for this keypad's chip");
     case 32u: return i18n_text(cat, NULL, "It isn't from a project it accepts");
     case 33u: return i18n_text(cat, NULL, "It isn't newer than the version it runs");
@@ -279,8 +279,7 @@ static const char *keypad_fw_why(const i18n_catalog_t *cat, uint8_t why)
 
 /* A keypad's update through the panel link, as its master logs it (docs/features/11 "Updates
  * through the link", What people see; proposal P2's Activity): the keypad by its number (P2
- * decision 6) until a name lookup shared with Zigbee and Z-Wave exists; a key accepted at it is
- * amber, as a server change is (decision 8, OTA-023). */
+ * decision 6) until a name lookup shared with Zigbee and Z-Wave exists. */
 static void keypad_fw_words(const i18n_catalog_t *cat, const alarm_event_t *ev, notify_words_t *out)
 {
     const unsigned n = ev->source.id;
@@ -312,7 +311,7 @@ static void keypad_fw_words(const i18n_catalog_t *cat, const alarm_event_t *ev, 
         put(out->body, sizeof(out->body),
             i18n_text(cat, NULL, "The new version failed; the previous one runs"));
         break;
-    case ALARM_FW_KEYPAD_FAILED: {
+    default: { /* ALARM_FW_KEYPAD_FAILED */
         out->accent = NOTIFY_ACCENT_AMBER;
         /* TR: Activity: a keypad's update ended with nothing installed; the line under it says
          * why. {0} is the keypad's number. At most 63 bytes. */
@@ -324,17 +323,6 @@ static void keypad_fw_words(const i18n_catalog_t *cat, const alarm_event_t *ev, 
         }
         break;
     }
-    default: /* ALARM_FW_KEYPAD_KEY_ACCEPTED */
-        out->accent = NOTIFY_ACCENT_AMBER;
-        /* TR: Activity: someone accepted, at a keypad, the new key its updates are signed with
-         * (it is checked before an update installs); {0} is the keypad's number. At most 63
-         * bytes. */
-        (void)I18N_FORMAT(out->title, sizeof(out->title),
-                          i18n_text(cat, NULL, "Keypad {0} accepted a new signing key"), n);
-        /* TR: The line under "Keypad {0} accepted a new signing key". At most 95 bytes. */
-        put(out->body, sizeof(out->body),
-            i18n_text(cat, NULL, "It takes updates signed with that key now"));
-        break;
     }
 }
 
@@ -888,7 +876,7 @@ bool notify_words(const i18n_catalog_t *cat, const alarm_config_t *cfg, const al
             I18N_NOOP("The panel keeps the version it runs"),
             I18N_NOOP("The new version failed its self-test; the previous one returns"),
             I18N_NOOP("It installs once everything is quiet")};
-        if (ev->arg >= ALARM_FW_KEYPAD_INSTALLING && ev->arg <= ALARM_FW_KEYPAD_KEY_ACCEPTED) {
+        if (ev->arg >= ALARM_FW_KEYPAD_INSTALLING && ev->arg <= ALARM_FW_KEYPAD_FAILED) {
             keypad_fw_words(cat, ev, out);
             break;
         }

@@ -10,13 +10,20 @@ Needs pyserial (it comes with ESP-IDF's Python):
     C:\\Espressif\\tools\\python\\v6.1\\venv\\Scripts\\python.exe tools/ota_serial.py -p COM4 \\
         firmware/crowpanel_p4/build_v1/alarm_crowpanel_p4.bin
 
+The bench only (a development build on the master; docs/features/11, the bench copy): --copy sends
+a keypad of another model's image into the master's copy in memory instead - nothing is written to
+flash and nothing restarts there - and the master relays it to that keypad at once. For a bench
+whose update server has no development builds: update the master first (without --copy), then:
+    ... tools/ota_serial.py -p COM6 --copy \
+        firmware/crowpanel_10/build_v1_<version>_dev/alarm_crowpanel_10.bin
+
 Protocol (one line each way, stop-and-wait):
-    host:  ota recv <size> <sha256 hex> [force]
+    host:  ota recv <size> <sha256 hex> [force]   (--copy: ota copy <size> <sha256 hex>)
     panel: OTA READY <max bytes per line>
     host:  <seq> <crc32 hex8> <base64>   (seq from 0; zlib CRC-32 of the decoded bytes)
     panel: OTA OK <seq> | OTA RETRY <expected seq> | OTA FAIL <reason>
     host:  END
-    panel: OTA DONE <version> | OTA FAIL <reason>
+    panel: OTA DONE <version> | OTA FAIL <reason>   (--copy: OTA DONE <version> keypad <n>)
 """
 import argparse
 import base64
@@ -88,12 +95,17 @@ def main():
     ap.add_argument("-b", "--baud", type=int, default=115200)
     ap.add_argument("--force", action="store_true",
                     help="also install an older or equal version (installer's choice)")
+    ap.add_argument("--copy", action="store_true",
+                    help="the bench: a keypad of another model's image into the master's copy "
+                         "(development builds; the master relays it to that keypad)")
     ap.add_argument("--tamper", action="store_true",
                     help="test only: flip one byte in the middle; the panel must refuse it")
     ap.add_argument("--watch", type=int, default=0, metavar="S",
                     help="print the panel's output for S seconds afterwards (restart, self-test)")
     ap.add_argument("--log", help="write everything the panel printed to this file")
     args = ap.parse_args()
+    if args.copy and args.force:
+        ap.error("--force is for this panel's own image, not --copy")
 
     data = bytearray(open(args.image, "rb").read())
     if args.tamper:
@@ -107,7 +119,10 @@ def main():
     link.ser.reset_input_buffer()
     link.buf = b""
     print(f"Sending {args.image}: {len(data)} bytes, sha256 {sha[:16]}...")
-    link.send(f"ota recv {len(data)} {sha}{' force' if args.force else ''}\r")
+    if args.copy:
+        link.send(f"ota copy {len(data)} {sha}\r")
+    else:
+        link.send(f"ota recv {len(data)} {sha}{' force' if args.force else ''}\r")
     r = link.reply(20, {"READY", "FAIL"})
     if r is None:
         sys.exit("The panel didn't answer (is the service console on this port?)")
@@ -154,6 +169,9 @@ def main():
     if r[0] == "FAIL":
         print(f"The panel refused the image: {r[1]}")
         code = 2
+    elif args.copy:
+        print(f"Held: version {r[1]}. The master relays it now ('plink fw' there shows it).")
+        code = 0
     else:
         print(f"Verified: version {r[1]}. The panel restarts into it once the system is idle.")
         code = 0

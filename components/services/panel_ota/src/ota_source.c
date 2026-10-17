@@ -490,6 +490,171 @@ void panel_ota_source_own_run(void)
     }
 }
 
+/* ---- the bench copy (`ota copy`, development builds; the console task) ------------------------- */
+
+static panel_ota_copy_bench_t s_bench_port;
+static volatile bool s_bench_port_set;
+
+static struct {
+    bool active;
+    uint8_t *buf;
+    uint32_t size;
+    uint32_t written;
+    uint8_t sha[32];
+    bool judged;
+    panel_ota_copy_for_t f;
+} s_bench ALARM_SLOW_BSS;
+
+void panel_ota_set_copy_bench(const panel_ota_copy_bench_t *b)
+{
+    __atomic_store_n(&s_bench_port_set, false, __ATOMIC_RELEASE);
+    if (b != NULL && b->judge != NULL) {
+        s_bench_port = *b;
+        __atomic_store_n(&s_bench_port_set, true, __ATOMIC_RELEASE);
+    }
+}
+
+void panel_ota_copy_load_abort(void)
+{
+    free(s_bench.buf);
+    memset(&s_bench, 0, sizeof(s_bench));
+}
+
+esp_err_t panel_ota_copy_load_begin(uint32_t size, const uint8_t sha256[32])
+{
+    panel_ota_copy_load_abort();
+    if (!__atomic_load_n(&s_bench_port_set, __ATOMIC_ACQUIRE) || sha256 == NULL) {
+        return ESP_ERR_INVALID_STATE; /* not a master whose link offers updates */
+    }
+    if (size == 0u || size > PANEL_OTA_COPY_MAX) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    s_bench.buf = alarm_mem_slow_malloc(size);
+    if (s_bench.buf == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    s_bench.active = true;
+    s_bench.size = size;
+    memcpy(s_bench.sha, sha256, sizeof(s_bench.sha));
+    return ESP_OK;
+}
+
+static void bench_why(char *why, size_t why_len, const char *text)
+{
+    if (why != NULL && why_len > 0u) {
+        snprintf(why, why_len, "%s", text);
+    }
+}
+
+esp_err_t panel_ota_copy_load_write(const void *data, size_t len, char *why, size_t why_len)
+{
+    if (!s_bench.active || data == NULL) {
+        bench_why(why, why_len, "No copy being received");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if ((uint64_t)s_bench.written + len > s_bench.size) {
+        bench_why(why, why_len, "More bytes than announced");
+        panel_ota_copy_load_abort();
+        return ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(s_bench.buf + s_bench.written, data, len);
+    s_bench.written += (uint32_t)len;
+    if (!s_bench.judged && s_bench.written >= PROTO_FW_HEADER_LEN) {
+        proto_fw_header_t h;
+        (void)proto_fw_header_read(s_bench.buf, PROTO_FW_HEADER_LEN, &h);
+        char words[96] = "";
+        if (!s_bench_port.judge(s_bench_port.ctx, &h, s_bench.size, &s_bench.f, words,
+                                sizeof(words))) {
+            bench_why(why, why_len, words[0] != '\0' ? words : "Not for a keypad here");
+            panel_ota_copy_load_abort();
+            return ESP_ERR_INVALID_VERSION;
+        }
+        s_bench.judged = true;
+    }
+    return ESP_OK;
+}
+
+typedef struct {
+    const uint8_t *b;
+    uint32_t n;
+} ram_image_t;
+
+static bool ram_read(void *ctx, uint32_t offset, void *out, size_t len)
+{
+    const ram_image_t *r = ctx;
+    if ((uint64_t)offset + len > r->n) {
+        return false;
+    }
+    memcpy(out, r->b + offset, len);
+    return true;
+}
+
+esp_err_t panel_ota_copy_load_end(char *version, size_t version_len, uint8_t *keypad, char *why,
+                                  size_t why_len)
+{
+    if (!s_bench.active || s_bench.written != s_bench.size || !s_bench.judged) {
+        bench_why(why, why_len, "The image is incomplete");
+        panel_ota_copy_load_abort();
+        return ESP_ERR_INVALID_SIZE;
+    }
+    uint8_t sha[32];
+    size_t n = 0;
+    if (psa_hash_compute(PSA_ALG_SHA_256, s_bench.buf, s_bench.size, sha, sizeof(sha), &n) !=
+            PSA_SUCCESS ||
+        n != sizeof(sha) || memcmp(sha, s_bench.sha, sizeof(sha)) != 0) {
+        bench_why(why, why_len, "Checksum mismatch: the transfer is damaged");
+        panel_ota_copy_load_abort();
+        return ESP_ERR_INVALID_CRC;
+    }
+    /* Exactly one application image with its signature sector (a Secure Boot v2 block, 0xE7):
+     * the keypad checks the signature itself, with its own keys. */
+    proto_fw_header_t h;
+    (void)proto_fw_header_read(s_bench.buf, PROTO_FW_HEADER_LEN, &h);
+    ram_image_t r = {.b = s_bench.buf, .n = s_bench.size};
+    const uint32_t isz = proto_fw_image_size(ram_read, &r, s_bench.size, h.chip_id);
+    if (isz != s_bench.size || s_bench.size <= 4096u || s_bench.buf[s_bench.size - 4096u] != 0xE7u) {
+        bench_why(why, why_len, "Not exactly one signed application image");
+        panel_ota_copy_load_abort();
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (!take()) {
+        bench_why(why, why_len, "Out of memory");
+        panel_ota_copy_load_abort();
+        return ESP_ERR_NO_MEM;
+    }
+    (void)copy_drop_locked(); /* whatever copy was held or fetched: this one replaces it */
+    S.copy_buf = s_bench.buf;
+    s_copy.state = PANEL_OTA_COPY_READY;
+    s_copy.why = PROTO_FWSRV_WHY_OK;
+    snprintf(s_copy.device, sizeof(s_copy.device), "%s", s_bench.f.device);
+    snprintf(s_copy.chip_rev, sizeof(s_copy.chip_rev), "%s", s_bench.f.chip_rev);
+    snprintf(s_copy.project, sizeof(s_copy.project), "%s", s_bench.f.project);
+    snprintf(s_copy.version, sizeof(s_copy.version), "%s", s_bench.f.version);
+    s_copy.size = s_bench.size;
+    memcpy(s_copy.sha256, sha, sizeof(s_copy.sha256));
+    s_copy.has_key = false;
+    s_copy.bench = true;
+    s_copy.seq++;
+    S.copy_used_ms = alarm_service_now();
+    give();
+    const panel_ota_copy_for_t f = s_bench.f;
+    const uint32_t size = s_bench.size;
+    s_bench.buf = NULL; /* the copy's now */
+    panel_ota_copy_load_abort();
+    if (version != NULL && version_len > 0u) {
+        snprintf(version, version_len, "%s", f.version);
+    }
+    if (keypad != NULL) {
+        *keypad = f.keypad;
+    }
+    ESP_LOGW(TAG, "bench copy %s for %s (%s), %" PRIu32 " bytes: held for keypad %u", f.version,
+             f.device, f.chip_rev, size, (unsigned)f.keypad);
+    if (s_bench_port.loaded != NULL) {
+        s_bench_port.loaded(s_bench_port.ctx, f.keypad);
+    }
+    return ESP_OK;
+}
+
 void panel_ota_source_tick(uint64_t now, bool asked)
 {
     (void)asked;

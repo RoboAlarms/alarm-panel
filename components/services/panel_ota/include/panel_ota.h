@@ -629,7 +629,8 @@ esp_err_t panel_ota_running_read(uint32_t offset, void *out, size_t len);
 /* Its own update in its spare slot - a release downloaded and checked, waiting for the restart - for
  * the relay of the master's target (docs/features/11 "Getting the image"): its exact size, SHA-256
  * (worked out as it was written), version, project and chip revision range. ESP_OK;
- * ESP_ERR_NOT_FOUND: none waits (nothing downloaded, a developer's file, or the run ended). Any
+ * ESP_ERR_NOT_FOUND: none waits (nothing downloaded, a developer's file - but in a development
+ * build `ota recv`'s file leads its keypads as a release does: the bench - or the run ended). Any
  * task. */
 esp_err_t panel_ota_spare_image(panel_ota_image_t *out);
 /* Reads that image through windows of the spare partition, as panel_ota_running_read reads the
@@ -671,12 +672,52 @@ typedef struct {
     uint8_t key_sha256[32];   /* the signing key the server named */
     bool has_key;
     uint32_t seq;             /* changes with each of the above */
+    bool bench;               /* READY: loaded at the service console (`ota copy`, below) */
 } panel_ota_copy_t;
 void panel_ota_copy_get(panel_ota_copy_t *out);
 /* Reads the READY copy whose digest starts with id8 (NULL: whichever is ready). ESP_ERR_NOT_FOUND:
  * no such copy; ESP_ERR_INVALID_SIZE: past its end. Any task. */
 esp_err_t panel_ota_copy_read(const uint8_t *id8, uint32_t offset, void *out, size_t len);
 void panel_ota_copy_free(void);
+
+/* The bench copy (development builds only: the service console's `ota copy`, tools/ota_serial.py
+ * --copy; docs/features/11 "Updates through the link", the bench). An image for another model is
+ * received over the serial console into the copy, as if panel_ota_fetch_for had fetched it, for a
+ * bench whose update server has no development builds. The link judges its header (the keypad it
+ * is for: another device's image, of a project that keypad accepts, for its chip revision and
+ * slot, newer than what it runs, and the keypads' target), whose facts become the copy's; at the
+ * end its length, SHA-256 and signature block are checked (the keypad checks the signature itself)
+ * and it replaces the copy, marked bench - kept while no keypad needs a copy, and relayed to that
+ * keypad without a FETCH first. Never on a screen. */
+typedef struct {
+    uint8_t keypad;   /* the keypad it is for, 1..8 */
+    char device[32];  /* that keypad's facts, the copy's */
+    char chip_rev[8];
+    char project[33];
+    char version[32]; /* the image's: V */
+} panel_ota_copy_for_t;
+typedef struct {
+    /* The header's verdict: true with out filled, else false with why (the console's words). The
+     * console task: quick, no waiting for the link. */
+    bool (*judge)(void *ctx, const proto_fw_header_t *h, uint32_t size, panel_ota_copy_for_t *out,
+                  char *why, size_t why_len);
+    /* The copy is held for keypad: ask it again now. The console task: quick. */
+    void (*loaded)(void *ctx, uint8_t keypad);
+    void *ctx;
+} panel_ota_copy_bench_t;
+/* The link's judge, once at its start (NULL: none; `ota copy` refuses). Any task. */
+void panel_ota_set_copy_bench(const panel_ota_copy_bench_t *b);
+/* begin (size bytes and their SHA-256), the bytes in order, then end (ESP_OK: held, version V and
+ * keypad its number) or abort; the console task. Any failure ends the load and frees its buffer.
+ * begin: ESP_ERR_INVALID_STATE (no judge), ESP_ERR_INVALID_SIZE (0 or over PANEL_OTA_COPY_MAX),
+ * ESP_ERR_NO_MEM; write: ESP_ERR_INVALID_VERSION (the judge refused: why), ESP_ERR_INVALID_SIZE
+ * (past its size); end: ESP_ERR_INVALID_SIZE (incomplete, or not exactly one signed image),
+ * ESP_ERR_INVALID_CRC (its SHA-256). */
+esp_err_t panel_ota_copy_load_begin(uint32_t size, const uint8_t sha256[32]);
+esp_err_t panel_ota_copy_load_write(const void *data, size_t len, char *why, size_t why_len);
+esp_err_t panel_ota_copy_load_end(char *version, size_t version_len, uint8_t *keypad, char *why,
+                                  size_t why_len);
+void panel_ota_copy_load_abort(void);
 
 /* Registers the "ota" and "c6" service console commands (after the console started). */
 esp_err_t panel_ota_console_register(void);

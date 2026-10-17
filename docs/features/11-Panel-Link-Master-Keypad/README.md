@@ -88,6 +88,11 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
      works without having to do anything; 99.9 % would not know what to do when asked by the panel,
      most installers included, who are gone once it is installed): no screen asks anyone to act, and
      the master does what it can itself (it fetches the image for another model of keypad).
+  10. The master waits for its keypads still getting its update (2026-10-17, the owner: "Yes, OK:
+     the master waits for keypads still downloading (up to 30 min), with the line "Its keypads are
+     getting the update""): its own restart waits while a keypad on line still downloads or
+     receives it, at most 30 min from when its own update was ready ("Updates through the link",
+     Restarting together).
 - **Keypad updates' screens** (proposal P2, built: `docs/features/07-UI-LVGL-Pro/mockup/screens/panel-link.js` D):
   eight screens with nothing to tap, approved 2026-10-17 (the owner: "Approve, recommendations OK";
   they replace the 31 approved earlier that day, found too complicated). Its two questions, as
@@ -604,12 +609,16 @@ a keypad found behind later (newly paired, back on line): FETCH or RELAY, then I
 - **Downloading goes on while armed.** It pauses only while an alarm sounds, an entry or exit time
   runs, a panic is being sent, a fire or CO tone is kept on the keypad, or the link is down.
   Nothing restarts while anything is armed.
-- **Restarting together.** When the master's own restart is allowed (everything disarmed, no alarm,
-  OTA-004), it sends INSTALL{V} to every READY keypad, waits up to 5 s for their answers, and
-  restarts. Each keypad restarts as soon as its gate passes. A keypad found behind while the master
-  already runs V installs as soon as it is READY and its gate passes.
-- **On trial with the master.** A keypad that installed V stays on probation until its master runs
-  V confirmed: an INFO naming V. An INFO naming an older version, or none within 10 minutes of its
+- **Restarting together.** While a keypad on line still downloads or receives V, the master's own
+  restart waits, at most 30 min from when its own update was ready; its Software update says "Its
+  keypads are getting the update" (decision 10). When its restart is allowed (everything disarmed,
+  no alarm, OTA-004), it sends INSTALL{V} to every READY keypad, waits up to 5 s for their answers,
+  and restarts. Each keypad's "installing" (`keypad_installing`) is logged on its INSTALL's echo, and
+  the log is flushed before the master restarts. Each keypad restarts as soon as its gate passes. A
+  keypad found behind while the master already runs V installs as soon as it is READY and its gate
+  passes.
+- **On trial with the master.** A keypad that installed V (kept across the restart in NVS
+  `ota`/`ord`) stays on probation until its master runs V confirmed: an INFO naming V. An INFO naming an older version, or none within 10 minutes of its
   restart, sends the keypad back to its old version (its self-test fails). So no keypad stays past
   its master. Its own self-test (UI, touch, the link) applies as before.
 - **Failures.** A failed download is tried again after an hour, and at the master's next version.
@@ -677,11 +686,16 @@ a keypad found behind later (newly paired, back on line): FETCH or RELAY, then I
 - **Serving FW_REQ.** Stateless (`on_cfg_req`'s way), only to a keypad holding a RELAY with that
   `id8`, armed or not and during the master's own update, several keypads at once, from a bucket of
   its own behind alarm traffic: 256 KB/s on UDP, 16 KB/s on frames under
-  1,200 B, at most 16 pages a turn, read through `fw_read` (`panel_ota_running_read` or the spare
-  slot's, on the link task: mapping a window disables the cache for a moment).
+  1,200 B, at most 16 pages a turn, read through `fw_read`: the running slot
+  (`panel_ota_running_read`) or the spare slot (`panel_ota_spare_read`), on the link task (mapping
+  a window disables the cache for a moment), or the copy in PSRAM (`panel_ota_copy_read`).
+- **Its own restart** (`panel_ota_set_restart_with`, `plink_fwm_svc.c`): `hold` says what holds it
+  ("Its keypads are getting the update", "A keypad is checking its update"), asked at every gate;
+  once it may go, `installs_out` waits for the INSTALLs' echoes (5 s at most). The keypads on line
+  when its restart came are kept in NVS `link/kup` for its self-test (LINK-041).
 - **While a keypad restarts:** its supervision trouble isn't raised, for up to 10 min; a keypad that
   installs alone (it caught up later) holds the master's own restart until it is back
-  (`panel_ota_set_restart_hold`, "A keypad is checking its update").
+  ("A keypad is checking its update").
 - **INFO** names the version the master runs, at each keypad session's start and when its confirmed
   version changes: the keypads' cap and their trial depend on it.
 
@@ -793,8 +807,26 @@ mockup, screens/panel-link.js D).
   `keypad_rolled_back` 11, `keypad_failed` 12 (arg2 = why, never 0); 13 stays unused; source
   {keypad, n}, n 1..`ALARM_MAX_DEVICES`.
 - **MQTT:** `…/firmware` gains `keypads` [{device, version, state}]. Keys are added only.
-- **Console:** master `plink fw`, `plink fw update <n>` (ask again now); keypad `plink fw`.
+- **Console:** master `plink fw`, `plink fw update <n>` (ask again now); keypad `plink fw`; on a
+  development build's master, `ota copy` (the bench, below).
 - Bars are stepped and words change at most once a second (UI-020).
+
+### The bench (development builds)
+The update server has releases only. For a bench, a development build's master takes images over
+its service console (never on a screen):
+- **`ota recv`** (`tools/ota_serial.py`): in a development build a developer's file leads the
+  master's keypads as a release does: their target while it waits, relayed to keypads of its own
+  model, and they restart with it.
+- **`ota copy <size> <sha256>`** (`tools/ota_serial.py --copy`): another model's image into the
+  master's copy in PSRAM (`panel_ota_copy_load_*`), as if `panel_ota_fetch_for` had fetched it;
+  nothing is written to flash. The link judges its header first: another device's image, of a
+  project a paired keypad accepts, for its chip revision and slot, newer than what that keypad runs,
+  and the keypads' target (so it goes after the master's own `ota recv`, whose start frees any
+  copy). Its length, SHA-256 and signature block are checked at the end; the keypad checks the
+  signature itself. The copy is marked bench (`plink_fw_copy_t.bench`): kept while no keypad needs
+  one, and relayed to that keypad at once, without a FETCH first.
+- The master's restart waits until everything is disarmed: armed, it waits for the copy's ~7 min
+  over the console.
 
 ### The master's update server and key (LINK-036)
 Decided 2026-10-17 (Decisions, keypad updates, 1): changes made on the master go to its keypads.

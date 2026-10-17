@@ -27,6 +27,9 @@
  * restarts. The relay's bytes (port.fw_read): the spare slot (panel_ota_spare_read) or the
  * running one (panel_ota_running_read) - both map flash windows: the link task's stack is internal
  * RAM - or the copy in PSRAM (panel_ota_copy_read).
+ * The bench (development builds): `ota copy` loads a keypad of another model's image into the copy
+ * (panel_ota_copy_load_*); bench_judge names the keypad from the published rows, and the planner
+ * relays a bench copy at once (plink_fw_copy_t.bench); it is kept while no keypad needs a copy.
  */
 #include "plink_internal.h"
 
@@ -37,6 +40,8 @@
 #include <string.h>
 
 #include "alarm_mem.h"
+#include "alarm_proto/ota_profile.h"
+#include "esp_app_desc.h"
 #include "esp_attr.h"
 #include "esp_log.h"
 #include "freertos/queue.h"
@@ -115,6 +120,7 @@ static uint64_t s_unplanned_at; /* a target not planned yet was first asked abou
 static char s_unplanned[PLINK_FW_VERSION_MAX + 1];
 static volatile bool s_installs_out; /* its restart came and its INSTALLs are echoed */
 static volatile uint32_t s_answering; /* LINK-041: keypads on line now (bit d-1) */
+static volatile uint32_t s_bench_again; /* the bench: keypads asked again (bit d-1) */
 static volatile uint32_t s_kup_need;  /* ... the ones its self-test waits for (link/kup) */
 
 /* ---- what the others read (link_pub_lock; PSRAM) ---------------------------------------------- */
@@ -206,6 +212,7 @@ static void copy_of(plink_fw_copy_t *c, const panel_ota_copy_t *pc)
     PUT(c->facts.device, pc->device);
     PUT(c->facts.chip_rev, pc->chip_rev);
     PUT(c->facts.project, pc->project);
+    c->bench = pc->state == PANEL_OTA_COPY_READY && pc->bench;
     if (pc->state == PANEL_OTA_COPY_READY) {
         plink_fw_image_t *im = &c->image;
         im->src = PLINK_FWSRC_COPY;
@@ -284,7 +291,7 @@ static void copy_act(uint64_t now)
 {
     const plink_fw_facts_t *want = &F.s->copy;
     if (want->version[0] == '\0') {
-        if (F.copy->state != PANEL_OTA_COPY_NONE) {
+        if (F.copy->state != PANEL_OTA_COPY_NONE && !F.w->copy.bench) { /* a bench copy waits */
             panel_ota_copy_free();
             ESP_LOGI(TAG, "the copy for keypads is freed (none needs it)");
         }
@@ -429,6 +436,14 @@ void fsvc_poll(plink_master_t *m, uint64_t now)
     if (want != F.check_on) {
         F.check_on = want;
         panel_ota_set_keypads_check(want ? keypads_back : NULL, NULL);
+    }
+    const uint32_t again = __atomic_exchange_n(&s_bench_again, 0u, __ATOMIC_ACQ_REL);
+    for (size_t i = 0; i < PLINK_KEYPADS_MAX; i++) {
+        if ((again & (1u << i)) != 0u) {
+            plink_fw_again(&F.w->mem[i]); /* the bench copy: relayed at once */
+            F.plan_at = now;
+            ESP_LOGW(TAG, "keypad %u: a bench copy is held for it", (unsigned)(i + 1u));
+        }
     }
     if (now >= F.plan_at || (panel_ota_restart_soon() && !F.with_step)) {
         plan(m, now);
@@ -652,10 +667,10 @@ int fsvc_console_show(void)
            own.src != 0u ? own.version : "",
            soon ? "under way (INSTALL to its READY keypads)" : "not now",
            sum.restart_waits ? ", waits for a keypad" : "");
-    printf("  copy: state %u, %s for %s %s; %" PRIu32 " step(s), %" PRIu32 " event(s), %" PRIu32
+    printf("  copy: state %u%s, %s for %s %s; %" PRIu32 " step(s), %" PRIu32 " event(s), %" PRIu32
            " lost\n",
-           (unsigned)copy.state, copy.facts.version, copy.facts.device, copy.facts.chip_rev, steps,
-           events, lost);
+           (unsigned)copy.state, copy.bench ? " (bench)" : "", copy.facts.version,
+           copy.facts.device, copy.facts.chip_rev, steps, events, lost);
     for (size_t i = 0; i < PLINK_KEYPADS_MAX; i++) {
         const plink_fw_kp_t *k = &raw[i];
         if (k->device == 0u) {
@@ -690,6 +705,81 @@ int fsvc_console_show(void)
     }
     return 0;
 }
+
+/* ---- the bench copy (development builds: `ota copy`, the console task) ------------------------- */
+
+#if CONFIG_ALARM_BUILD_DEV
+/* The image's header against the keypads as last published: the first one it is for - another
+ * device than this panel, a project that keypad accepts, its chip revision, its slot, newer than
+ * what it runs - and only the keypads' target (the planner relays nothing else). */
+static bool bench_judge(void *ctx, const proto_fw_header_t *h, uint32_t size,
+                        panel_ota_copy_for_t *out, char *why, size_t why_len)
+{
+    (void)ctx;
+    static plink_fw_kp_t raw[PLINK_KEYPADS_MAX] EXT_RAM_BSS_ATTR; /* the console task's */
+    static char target[PLINK_SERVICE_FW_VERSION_MAX + 1] EXT_RAM_BSS_ATTR;
+    memset(out, 0, sizeof *out);
+    if (!h->image_magic || !h->app_magic) {
+        snprintf(why, why_len, "Not an application image");
+        return false;
+    }
+    const esp_app_desc_t *me = esp_app_get_description();
+    if (ota_profile_accepts(me->project_name, h->project)) {
+        snprintf(why, why_len, "%s is this panel's own model: send it without --copy", h->project);
+        return false;
+    }
+    link_pub_lock();
+    const bool on = s_out.sum.on;
+    memcpy(raw, s_out.raw, sizeof raw);
+    memcpy(target, s_out.sum.target, sizeof target);
+    link_pub_unlock();
+    if (!on) {
+        snprintf(why, why_len, "Keypad updates are off on this panel (plink fw)");
+        return false;
+    }
+    const plink_fw_kp_t *k = NULL;
+    for (size_t i = 0; i < PLINK_KEYPADS_MAX && k == NULL; i++) {
+        const plink_fw_kp_t *c = &raw[i];
+        if (c->device != 0u && c->have_info && strcmp(c->info.device, panel_ota_device()) != 0 &&
+            ota_profile_accepts(c->info.project, h->project) &&
+            proto_fw_chip_rev_fits(c->info.chip_rev_full, h->min_rev_full, h->max_rev_full)) {
+            k = c;
+        }
+    }
+    if (k == NULL) {
+        snprintf(why, why_len, "No keypad of another model takes %s (plink fw)", h->project);
+        return false;
+    }
+    if (k->info.slot != 0u && size > k->info.slot) {
+        snprintf(why, why_len, "Too big for keypad %u's slot", (unsigned)k->device);
+        return false;
+    }
+    if (!proto_version_is_upgrade(k->info.version, h->version, false)) {
+        snprintf(why, why_len, "Keypad %u runs %s: %s isn't newer", (unsigned)k->device,
+                 k->info.version, h->version);
+        return false;
+    }
+    if (strcmp(h->version, target) != 0) {
+        snprintf(why, why_len, "The keypads' target is %s, not %s: update this panel first",
+                 target, h->version);
+        return false;
+    }
+    out->keypad = k->device;
+    PUT(out->device, k->info.device);
+    PUT(out->chip_rev, k->info.chip_rev);
+    PUT(out->project, k->info.project);
+    PUT(out->version, h->version);
+    return true;
+}
+
+static void bench_loaded(void *ctx, uint8_t keypad)
+{
+    (void)ctx;
+    if (keypad >= PLINK_DEVICE_FIRST && keypad <= PLINK_DEVICE_LAST) {
+        __atomic_or_fetch(&s_bench_again, 1u << (keypad - 1u), __ATOMIC_ACQ_REL);
+    }
+}
+#endif
 
 /* ---- the start-up ----------------------------------------------------------------------------- */
 
@@ -728,6 +818,11 @@ esp_err_t fsvc_prepare(uint64_t now)
     static const panel_ota_with_t with = {
         .hold = with_hold, .installs_out = with_installs_out, .ctx = NULL};
     panel_ota_set_restart_with(&with);
+#if CONFIG_ALARM_BUILD_DEV
+    static const panel_ota_copy_bench_t bench = {
+        .judge = bench_judge, .loaded = bench_loaded, .ctx = NULL};
+    panel_ota_set_copy_bench(&bench); /* `ota copy` on the bench */
+#endif
     F.on = true;
     ESP_LOGI(TAG, "keypads follow %s%s; %s", F.st->running,
              F.st->probation ? " once its self-test passes" : "",

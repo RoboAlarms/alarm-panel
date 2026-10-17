@@ -115,6 +115,10 @@ typedef struct {
     uint8_t why;             /* FAILED: a plink_fw_why_t */
     plink_fw_facts_t facts;  /* what it was fetched with */
     plink_fw_image_t image;  /* READY: the image (src COPY) */
+    bool bench;              /* READY: loaded at the master's service console (a development
+                              * build's `ota copy`, for a bench whose update server has no
+                              * development builds): relayed to a keypad it fits without a FETCH
+                              * first */
 } plink_fw_copy_t;
 
 /* What the planner remembers of one keypad between steps (the caller keeps it, RAM; zeros to

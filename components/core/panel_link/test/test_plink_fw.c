@@ -416,6 +416,51 @@ static void test_copy_for_another_model(void)
     TEST_ASSERT_EQUAL_UINT8(PLINK_FW_OP_FETCH, op_to(1u));
 }
 
+/* The bench (docs/features/11, the bench copy): a copy loaded at the master's console is relayed to
+ * the keypad it fits without a FETCH first, and kept while it receives; a keypad it doesn't fit
+ * still fetches. */
+static void test_bench_copy_relayed_without_a_fetch(void)
+{
+    kp_on(1u, OLD, PLINK_FWI_FETCH | PLINK_FWI_RELAY);
+    snprintf(K(1u)->info.device, sizeof K(1u)->info.device, P10);
+    kp_on(2u, OLD, PLINK_FWI_FETCH | PLINK_FWI_RELAY); /* the master's own model */
+    WD.copy.state = PLINK_FWCOPY_READY;
+    WD.copy.bench = true;
+    snprintf(WD.copy.facts.version, sizeof WD.copy.facts.version, "%s", V);
+    snprintf(WD.copy.facts.device, sizeof WD.copy.facts.device, P10);
+    snprintf(WD.copy.facts.chip_rev, sizeof WD.copy.facts.chip_rev, "v1");
+    snprintf(WD.copy.facts.project, sizeof WD.copy.facts.project, PRJ);
+    plink_fw_image_t *c = &WD.copy.image;
+    *c = WD.own;
+    c->src = PLINK_FWSRC_COPY;
+    snprintf(c->device, sizeof c->device, P10);
+    c->chip_min = 0u;
+    c->chip_max = 0xFFFFu;
+    c->size = 1400005u;
+    memset(c->sha256, 0xB7, sizeof c->sha256);
+    step();
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FW_OP_RELAY, op_to(1u));
+    TEST_ASSERT_EQUAL_HEX8(0xB7u, S.send[0].sha256[0]);
+    TEST_ASSERT_EQUAL_UINT32(1400005u, S.send[0].size);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FW_OP_FETCH, op_to(2u));
+    TEST_ASSERT_EQUAL_STRING(P10, S.copy.device); /* kept */
+    echo(1u, PLINK_FWS_RECEIVING, 0u, V);
+    memcpy(K(1u)->state.id8, c->sha256, PLINK_ID8_LEN);
+    step();
+    TEST_ASSERT_EQUAL_STRING(P10, S.copy.device); /* kept while it receives */
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FWR_RECEIVING, row_of(1u));
+    /* the same copy, not loaded on the bench: the FETCH first, as ever */
+    const plink_fw_image_t held = *c;
+    setUp();
+    kp_on(1u, OLD, PLINK_FWI_FETCH | PLINK_FWI_RELAY);
+    snprintf(K(1u)->info.device, sizeof K(1u)->info.device, P10);
+    WD.copy.state = PLINK_FWCOPY_READY;
+    snprintf(WD.copy.facts.device, sizeof WD.copy.facts.device, P10);
+    WD.copy.image = held;
+    step();
+    TEST_ASSERT_EQUAL_UINT8(PLINK_FW_OP_FETCH, op_to(1u));
+}
+
 /* ---- restarting together ---- */
 
 /* LINK-030, LINK-034: INSTALL goes to every READY keypad once the master's own restart is
@@ -723,6 +768,7 @@ int main(void)
     RUN_TEST(test_relay_at_once_and_refused_orders);
     RUN_TEST(test_relay_only_an_image_that_fits);
     RUN_TEST(test_copy_for_another_model);
+    RUN_TEST(test_bench_copy_relayed_without_a_fetch);
     RUN_TEST(test_install_with_the_masters_restart);
     RUN_TEST(test_install_at_once_when_the_master_runs_v);
     RUN_TEST(test_relay_sent_again_after_a_master_restart);

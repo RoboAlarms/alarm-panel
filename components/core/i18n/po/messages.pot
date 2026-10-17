@@ -971,7 +971,7 @@ msgstr ""
 
 #. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
 #: components/core/notify/src/notify_words.c
-msgid "The new signing key must be accepted at the keypad"
+msgid "Its signing key isn't trusted"
 msgstr ""
 
 #. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
@@ -1121,16 +1121,6 @@ msgstr ""
 #. Activity: a keypad's update ended with nothing installed; the line under it says why. {0} is the keypad's number. At most 63 bytes.
 #: components/core/notify/src/notify_words.c
 msgid "Keypad {0} update failed"
-msgstr ""
-
-#. Activity: someone accepted, at a keypad, the new key its updates are signed with (it is checked before an update installs); {0} is the keypad's number. At most 63 bytes.
-#: components/core/notify/src/notify_words.c
-msgid "Keypad {0} accepted a new signing key"
-msgstr ""
-
-#. The line under "Keypad {0} accepted a new signing key". At most 95 bytes.
-#: components/core/notify/src/notify_words.c
-msgid "It takes updates signed with that key now"
 msgstr ""
 
 #. Who did it, in the line under an event title: one of the panel's automations (rules the installer set up), not a person. At most 48 bytes.

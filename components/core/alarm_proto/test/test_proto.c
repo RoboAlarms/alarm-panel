@@ -951,14 +951,14 @@ static void test_keypad_firmware_event_golden(void)
         done());
 
     /* the other stages carry no why */
-    ev.arg = ALARM_FW_KEYPAD_KEY_ACCEPTED;
+    ev.arg = ALARM_FW_KEYPAD_UPDATED;
     ev.arg2 = 0;
     ev.user = 1;
     pj_init(&W, BUF, sizeof(BUF));
     proto_event(&W, &CFG, &ev, false);
     const char *doc = done();
     TEST_ASSERT_NOT_NULL(strstr(doc, "\"source\":\"keypad\",\"source_id\":2,"
-                                     "\"stage\":\"keypad_key_accepted\",\"silent\":false"));
+                                     "\"stage\":\"keypad_updated\",\"silent\":false"));
     TEST_ASSERT_NULL(strstr(doc, "\"why\""));
 
     /* every why has its name, the why table's in lower case */
@@ -1040,7 +1040,7 @@ static void test_keypad_firmware_event_golden(void)
         {PROTO_FW_WHY_TIMEOUT, "It waited too long"},
         {PROTO_FW_WHY_NO_MEMORY, "Not enough memory"},
         {PROTO_FW_WHY_FLASH, "It couldn't store it"},
-        {PROTO_FW_WHY_KEY, "The new signing key must be accepted at the keypad"},
+        {PROTO_FW_WHY_KEY, "Its signing key isn't trusted"},
         {PROTO_FW_WHY_CHIP, "It isn't for this keypad's chip"},
         {PROTO_FW_WHY_PROJECT, "It isn't from a project it accepts"},
         {PROTO_FW_WHY_NOT_NEWER, "It isn't newer than the version it runs"},

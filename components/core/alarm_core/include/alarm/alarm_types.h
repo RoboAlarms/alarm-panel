@@ -655,7 +655,8 @@ typedef enum {
     ALARM_FW_KEYPAD_FAILED,       /* 12: its update ended with nothing installed; arg2 = why, the
                                    * link's why number (docs/features/11, the why table: never
                                    * 0; one this firmware doesn't know reads by its decade) */
-    ALARM_FW_KEYPAD_KEY_ACCEPTED, /* 13: a new signing key was accepted at it (LINK-036) */
+    /* 13 is reserved, never used: a key accepted at a keypad was dropped before any release (a
+     * keypad takes its master's key, LINK-036). The next stage is 14. */
 } alarm_fw_stage_t;
 
 /* How a zone was first marked in a walk test (ALARM_EV_WALK_TEST_ZONE arg, and the kind bits of

@@ -254,6 +254,14 @@ static void *s_trial_ctx;
 static bool s_ord_trial;             /* set at the start, read by the update task */
 static char s_ord_version[32];
 #define ORD_KEY "ord"                /* ota_rec_t: "ordered install of V", with the attempt */
+/* What leads a master's keypads (its target, the relay from its spare slot, their restart with
+ * it): its own release. In a development build a developer's file (`ota recv`) leads them too: the
+ * bench, whose update server has no development builds (docs/features/11, the bench copy). */
+#if CONFIG_ALARM_BUILD_DEV
+#define LEADS_KEYPADS(kind) ((kind) == PANEL_OTA_KIND_RELEASE || (kind) == PANEL_OTA_KIND_FILE)
+#else
+#define LEADS_KEYPADS(kind) ((kind) == PANEL_OTA_KIND_RELEASE)
+#endif
 /* Its own update in its spare slot (a release, downloaded and checked), for a master's relay:
  * valid while s_ready is still that slot and waits (under the lock). */
 static struct {
@@ -1422,7 +1430,7 @@ static esp_err_t writer_end(char *version, size_t version_len, char *why, size_t
                        ? s_st.kind
                        : PANEL_OTA_KIND_FILE;
     /* A release of its own: its keypads' target, relayed from this slot (docs/features/11) */
-    s_spare.ok = have_hdr && s_ready_kind == PANEL_OTA_KIND_RELEASE && s_order.op == ORDER_NONE;
+    s_spare.ok = have_hdr && LEADS_KEYPADS(s_ready_kind) && s_order.op == ORDER_NONE;
     if (s_spare.ok) {
         memset(&s_spare.img, 0, sizeof(s_spare.img));
         s_spare.part = s_w.part;
@@ -1821,7 +1829,7 @@ static void try_restart(void)
     /* its own release's version, for its keypads' hold ("": another restart, which they don't
      * hold) */
     snprintf(s_with_version, sizeof(s_with_version), "%s",
-             s_ready_kind == PANEL_OTA_KIND_RELEASE ? s_st.ready : "");
+             LEADS_KEYPADS(s_ready_kind) ? s_st.ready : "");
     unlock();
     if (!waiting) {
         return;
@@ -3763,7 +3771,7 @@ void panel_ota_get_facts(panel_ota_facts_t *out)
 static bool spare_valid_locked(void)
 {
     return s_spare.ok && s_ready != NULL && s_ready == s_spare.part &&
-           s_ready_kind == PANEL_OTA_KIND_RELEASE &&
+           LEADS_KEYPADS(s_ready_kind) &&
            (s_st.phase == PANEL_OTA_WAITING || s_st.phase == PANEL_OTA_RESTARTING) &&
            strcmp(s_st.ready, s_spare.img.version) == 0;
 }

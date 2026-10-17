@@ -157,7 +157,7 @@ alarm_ms_t alarm_engine_recovery_left(const alarm_engine_t *e)
  * number}, with a why only when it failed. */
 static bool fw_event_ok(uint16_t zone, uint8_t arg, uint8_t arg2, const alarm_source_t *src)
 {
-    if (zone != 0u || arg > (uint8_t)ALARM_FW_KEYPAD_KEY_ACCEPTED) {
+    if (zone != 0u || arg > (uint8_t)ALARM_FW_KEYPAD_FAILED) {
         return false;
     }
     if (arg <= (uint8_t)ALARM_FW_RESTART_PUT_OFF) {

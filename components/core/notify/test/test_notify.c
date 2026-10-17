@@ -731,8 +731,6 @@ static void test_keypad_update_words(void)
          "The new version failed; the previous one runs", NOTIFY_ACCENT_AMBER},
         {ALARM_FW_KEYPAD_FAILED, 24u, "Keypad 3 update failed", "No data for a minute",
          NOTIFY_ACCENT_AMBER},
-        {ALARM_FW_KEYPAD_KEY_ACCEPTED, 0u, "Keypad 3 accepted a new signing key",
-         "It takes updates signed with that key now", NOTIFY_ACCENT_AMBER},
     };
     for (size_t i = 0; i < sizeof(LINES) / sizeof(LINES[0]); i++) {
         ev.arg = LINES[i].stage;
@@ -769,7 +767,7 @@ static void test_keypad_update_words(void)
         {26u, "Not enough memory"},
         {27u, "It couldn't store it"},
         {29u, "The transfer failed"},
-        {30u, "The new signing key must be accepted at the keypad"},
+        {30u, "Its signing key isn't trusted"},
         {31u, "It isn't for this keypad's chip"},
         {32u, "It isn't from a project it accepts"},
         {33u, "It isn't newer than the version it runs"},
@@ -804,7 +802,7 @@ static void test_keypad_update_words(void)
         TEST_ASSERT_EQUAL_STRING(WHYS[i].line, w.body);
         TEST_ASSERT_TRUE(strlen(w.body) < NOTIFY_BODY_LEN - 1u);
     }
-    for (uint8_t s = ALARM_FW_KEYPAD_INSTALLING; s <= ALARM_FW_KEYPAD_KEY_ACCEPTED; s++) {
+    for (uint8_t s = ALARM_FW_KEYPAD_INSTALLING; s <= ALARM_FW_KEYPAD_FAILED; s++) {
         ev.arg = s;
         ev.arg2 = (uint8_t)(s == ALARM_FW_KEYPAD_FAILED ? 15u : 0u);
         words_of(&ev, &w);
@@ -823,7 +821,7 @@ static void test_keypad_update_words(void)
     words_of(&ev, &w);
     TEST_ASSERT_EQUAL_STRING("Update put off", w.title);
     TEST_ASSERT_EQUAL_STRING("It installs once everything is quiet", w.body);
-    ev.arg = (uint8_t)(ALARM_FW_KEYPAD_KEY_ACCEPTED + 1u);
+    ev.arg = 13u; /* reserved, never written */
     words_of(&ev, &w);
     TEST_ASSERT_EQUAL_STRING("Firmware updated", w.title);
     TEST_ASSERT_EQUAL_UINT8(NOTIFY_ACCENT_BLUE, w.accent);

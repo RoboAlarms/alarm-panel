@@ -5,6 +5,11 @@
  * The page opens for the installer and the system master only (ui_settings.c asks for the code;
  * BL-188). About's row says a little to anyone. The panel installs only when everything is
  * disarmed and quiet, so "Install" can be pressed at any time.
+ *
+ * With the panel link (docs/features/11 "Updates through the link", proposal P2): the alarm
+ * panel's page lists its keypads, which update with it (ui_link_update_keypads); a keypad that
+ * follows its alarm panel has a page of its own - where its updates come from and how far one is,
+ * nothing to tap - and its About row and banner name the alarm panel.
  */
 #include <stdio.h>
 #include <string.h>
@@ -19,6 +24,12 @@ static uint32_t s_polled;
 static void fwsrv_tick(void);
 static bool s_asking;   /* the "Stop the update?" question is up */
 static uint8_t s_step;  /* the step the run was at (a stop leaves the steps where it found them) */
+static bool s_gap;      /* the Keypads section was drawn: what follows it stands apart */
+/* A keypad's page that follows its alarm panel (proposal P2) */
+static bool s_kp;           /* it is the page open */
+static lv_obj_t *s_kp_run;  /* its run row, NULL while no update runs */
+static uint32_t s_kp_page;  /* what the page was built from (kp_page_sig) */
+static uint32_t s_kp_words; /* what the run row says, as drawn */
 
 /* What the page shows (and what the bar's banner and the tag follow). */
 typedef enum {
@@ -197,6 +208,16 @@ void ui_update_banner_tick(void)
     default:
         kind = 0;
         break;
+    }
+    /* A keypad that follows its alarm panel: the same words from the first byte to the restart,
+     * armed or not (proposal P2). */
+    const char *master = ui_link_fw_master();
+    if (master != NULL && (v == V_DOWNLOAD || v == V_VERIFY || v == V_WAIT || v == V_INSTALL)) {
+        /* TR: the status bar on a keypad from the moment it gets an update from its alarm panel
+         * until it restarts with it; {0} is the alarm panel's name (up to 47 bytes). At most 48
+         * bytes */
+        I18N_FORMAT(text, sizeof(text), TR("Updating · restarts with {0}"), master);
+        glyph = UI_ICON_DOWNLOAD;
     }
     if (kind != s_ban || (kind != 0u && strcmp(text, s_ban_text) != 0)) {
         s_ban = kind;
@@ -577,10 +598,14 @@ static bool about_unlocked(void)
     return ui_settings_allowed(ACCESS_SYSTEM);
 }
 
-/* 0 plain, 1 offered, 2 rolled back, 3 a run for anyone, 4 a run with its step (after the code). */
+/* 0 plain, 1 offered, 2 rolled back, 3 a run for anyone, 4 a run with its step (after the code);
+ * a keypad that follows its alarm panel: 5, 6 while a run goes. */
 static uint8_t about_kind(const ui_fw_status_t *st)
 {
     const view_t v = view_of(st);
+    if (ui_link_fw_master() != NULL) {
+        return is_run(v) || v == V_FILE ? 6u : 5u;
+    }
     if (is_run(v) || v == V_FILE) {
         return about_unlocked() ? 4u : 3u;
     }
@@ -606,10 +631,39 @@ static void about_words(const ui_fw_status_t *st, char *step, size_t slen, char 
     }
 }
 
+/* About's row on a keypad that follows its alarm panel: where its updates come from, and
+ * "Updating" while one runs, as on any panel (proposal P2). */
+static lv_obj_t *about_row_follows(lv_obj_t *body, const ui_fw_status_t *st, const char *master,
+                                   ui_click_fn fn, void *ctx)
+{
+    const view_t v = view_of(st);
+    const bool running = is_run(v) || v == V_FILE;
+    char from[96];
+    /* TR: About on a keypad, the line under Software update: its updates come from its alarm
+     * panel, {0} its name (up to 47 bytes). At most 48 bytes */
+    I18N_FORMAT(from, sizeof(from), TR("From {0}"), master);
+    /* TR: Settings > About, Software update's value while an update is being installed. At most
+     * 23 bytes */
+    const char *value = running ? TR("Updating") : NULL;
+    lv_obj_t *row = ui_row_link(body, running ? UI_ICON_DOWNLOAD : UI_ICON_REFRESH, ui_tone_blue(),
+                                TR("Software update"), from, value, UI_ICON_CHEVRON_RIGHT, fn, ctx);
+    if (running) {
+        lv_obj_set_style_text_color(ui_find(row, "value_label"), ui_tone_blue(), 0);
+    }
+    return row;
+}
+
 lv_obj_t *ui_update_about_row(lv_obj_t *body, ui_click_fn fn, void *ctx)
 {
     ui_fw_status_t st;
     read_status(&st);
+    const char *master = ui_link_fw_master();
+    if (master != NULL) {
+        s_about_row = about_row_follows(body, &st, master, fn, ctx);
+        s_about_kind = about_kind(&st);
+        s_about_polled = lv_tick_get();
+        return s_about_row;
+    }
     const view_t v = view_of(&st);
     const bool running = is_run(v) || v == V_FILE;
     const bool rolled = v == V_ROLLED;
@@ -685,27 +739,20 @@ static void about_tick(void)
     }
 }
 
-static void show_status(void)
+/* A status row's words, chip and level bar (bar -1: none). */
+static void row_words(lv_obj_t *row, const char *title, const char *detail, const char *glyph,
+                      lv_color_t tone, int bar)
 {
-    if (s_row == NULL) {
-        return;
-    }
-    char title[64];
-    char detail[112];
-    const char *glyph;
-    lv_color_t tone;
-    int bar;
-    status_words(&s_shown, title, sizeof(title), detail, sizeof(detail), &glyph, &tone, &bar);
-    ui_set_label(s_row, "title_label", title);
-    ui_set_label(s_row, "detail_label", detail);
-    lv_obj_t *dl = ui_find(s_row, "detail_label");
+    ui_set_label(row, "title_label", title);
+    ui_set_label(row, "detail_label", detail);
+    lv_obj_t *dl = ui_find(row, "detail_label");
     if (detail[0] != '\0') {
         lv_obj_remove_flag(dl, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(dl, LV_OBJ_FLAG_HIDDEN);
     }
-    ui_chip_tone(ui_find(s_row, "chip"), glyph, tone);
-    lv_obj_t *level = ui_find(s_row, "level");
+    ui_chip_tone(ui_find(row, "chip"), glyph, tone);
+    lv_obj_t *level = ui_find(row, "level");
     if (level != NULL) {
         if (bar >= 0) {
             lv_obj_remove_flag(level, LV_OBJ_FLAG_HIDDEN);
@@ -717,12 +764,163 @@ static void show_status(void)
     }
 }
 
+static void show_status(void)
+{
+    if (s_row == NULL) {
+        return;
+    }
+    char title[64];
+    char detail[112];
+    const char *glyph;
+    lv_color_t tone;
+    int bar;
+    status_words(&s_shown, title, sizeof(title), detail, sizeof(detail), &glyph, &tone, &bar);
+    row_words(s_row, title, detail, glyph, tone, bar);
+}
+
 void ui_update_stop(void)
 {
     s_row = NULL;
     s_about_row = NULL;
     s_asking = false;
+    s_kp = false;
+    s_kp_run = NULL;
+    ui_link_update_keypads_stop();
     ui_fwsrv_stop();
+}
+
+/* ---- a keypad that follows its alarm panel (proposal P2) ---------------------------------------
+ * Where its updates come from and, while one runs, today's run row with its stepped bar and one
+ * line. No Install, Check again, Stop or steps: its alarm panel tells it which version to have. */
+
+static uint32_t fnv(uint32_t h, const char *s)
+{
+    for (; s != NULL && *s != '\0'; s++) {
+        h = (h ^ (uint8_t)*s) * 16777619u;
+    }
+    return (h ^ 0xFFu) * 16777619u;
+}
+
+static bool kp_runs(const ui_fw_status_t *st)
+{
+    const view_t v = view_of(st);
+    return is_run(v) || v == V_FILE;
+}
+
+/* What the page is made of: a run row or none, under whose name, with which version. */
+static uint32_t kp_page_sig(const ui_fw_status_t *st, const char *master)
+{
+    return fnv(fnv(kp_runs(st) ? 2166136261u : 84696351u, master), st->running);
+}
+
+/* The run row's words: downloading (or receiving from the alarm panel), checking, then ready to
+ * restart with it; the restart and the self-test as on any panel. */
+static void kp_run_words(const ui_fw_status_t *st, const char *master, char *title, size_t tlen,
+                         char *detail, size_t dlen, const char **glyph, lv_color_t *tone, int *bar)
+{
+    const view_t v = view_of(st);
+    if (v != V_DOWNLOAD && v != V_VERIFY && v != V_WAIT) {
+        status_words(st, title, tlen, detail, dlen, glyph, tone, bar);
+        return;
+    }
+    const char *target = st->target[0] != '\0' ? st->target : st->latest;
+    /* TR: Software update on a keypad while it gets the update its alarm panel sent for; {0} is
+     * the version. At most 50 bytes */
+    I18N_FORMAT(title, tlen, TR("Updating to version {0}"), target);
+    *tone = ui_tone_blue();
+    *glyph = UI_ICON_DOWNLOAD;
+    *bar = -1;
+    if (v == V_DOWNLOAD) {
+        int p = percent_of(st);
+        p = p < 0 ? 0 : p;
+        char pct[16];
+        pct_text(p, pct, sizeof(pct));
+        if (ui_link_fw_from_master()) {
+            /* TR: Software update on a keypad, the line under the run while its alarm panel sends
+             * the update; {0} is the alarm panel's name (up to 47 bytes), {1} the percent done
+             * ("30 %"). At most 56 bytes */
+            I18N_FORMAT(detail, dlen, TR("Receiving from {0} · {1}"), master, pct);
+        } else {
+            /* TR: a keypad's status line in Software update while it downloads the update itself;
+             * {0} is the percent done ("45 %"). At most 80 bytes */
+            I18N_FORMAT(detail, dlen, TR("Downloading · {0}"), pct);
+        }
+        *bar = p;
+    } else if (v == V_VERIFY) {
+        i18n_utf8_copy(detail, dlen, TR("Checking the download"));
+        *glyph = UI_ICON_SHIELD_CHECK;
+        *bar = 100;
+    } else {
+        /* TR: Software update on a keypad, the line under the run once it has the update; {0} is
+         * the alarm panel's name (up to 47 bytes). At most 64 bytes */
+        I18N_FORMAT(detail, dlen, TR("Ready · restarts with {0} once everything is disarmed"),
+                    master);
+        *glyph = UI_ICON_CLOCK;
+    }
+}
+
+static uint32_t kp_show(const ui_fw_status_t *st, const char *master, bool draw)
+{
+    char title[64];
+    char detail[112];
+    const char *glyph;
+    lv_color_t tone;
+    int bar;
+    kp_run_words(st, master, title, sizeof(title), detail, sizeof(detail), &glyph, &tone, &bar);
+    uint32_t h = fnv(fnv(fnv(2166136261u, title), detail), glyph);
+    h = (h ^ (uint32_t)(bar + 1)) * 16777619u;
+    h = (h ^ lv_color_to_u32(tone)) * 16777619u;
+    if (draw && s_kp_run != NULL) {
+        row_words(s_kp_run, title, detail, glyph, tone, bar);
+    }
+    return h;
+}
+
+static void kp_build(lv_obj_t *body, const ui_fw_status_t *st, const char *master)
+{
+    s_kp = true;
+    s_kp_run = NULL;
+    s_kp_page = kp_page_sig(st, master);
+    s_polled = lv_tick_get();
+    char title[96];
+    char version[64];
+    /* TR: Software update on a keypad: its updates come from its alarm panel, {0} its name (up to
+     * 47 bytes). At most 48 bytes */
+    I18N_FORMAT(title, sizeof(title), TR("Updates come from {0}"), master);
+    /* TR: the line under it; {0} is the installed version number. At most 80 bytes */
+    I18N_FORMAT(version, sizeof(version), TR("Version {0}"), st->running);
+    ui_row_link(body, UI_ICON_HOUSE, ui_tone_blue(), title, version, NULL, NULL, NULL, NULL);
+    if (kp_runs(st)) {
+        s_kp_run = ui_row_link(body, UI_ICON_DOWNLOAD, ui_tone_blue(), " ", " ", NULL, NULL, NULL,
+                               NULL);
+        s_kp_words = kp_show(st, master, true);
+    }
+}
+
+/* Once a second: the run row's words in place; a run that began or ended, or another alarm panel
+ * or version, builds the page again. */
+static void kp_tick(void)
+{
+    if (lv_tick_elaps(s_polled) < POLL_MS) {
+        return;
+    }
+    s_polled = lv_tick_get();
+    ui_fw_status_t st;
+    read_status(&st);
+    const char *master = ui_link_fw_master();
+    const bool quiet = lv_subject_get_int(&subject_sheet) == SHEET_NONE && S.pad == PAD_NONE;
+    if (master == NULL || kp_page_sig(&st, master) != s_kp_page) {
+        if (quiet) {
+            ui_page_rebuild();
+        }
+        return;
+    }
+    if (s_kp_run != NULL) {
+        const uint32_t words = kp_show(&st, master, false);
+        if (words != s_kp_words) {
+            s_kp_words = kp_show(&st, master, true);
+        }
+    }
 }
 
 /* Everything that changes what the page is made of (not only what its status row says). */
@@ -741,6 +939,10 @@ void ui_update_tick(void)
 {
     about_tick();
     fwsrv_tick();
+    if (s_kp) {
+        kp_tick();
+        return;
+    }
     if (s_row == NULL || lv_tick_elaps(s_polled) < POLL_MS) {
         return;
     }
@@ -755,7 +957,9 @@ void ui_update_tick(void)
             s_asking = false;
         }
     }
-    const bool buttons = page_changed(&st, &s_shown);
+    /* a keypad began to follow its alarm panel; the alarm panel's keypads came or went */
+    const bool buttons = page_changed(&st, &s_shown) || ui_link_fw_master() != NULL ||
+                         ui_link_update_keypads_tick();
     if (buttons && lv_subject_get_int(&subject_sheet) == SHEET_NONE && S.pad == PAD_NONE) {
         ui_page_rebuild(); /* other buttons now */
         return;
@@ -788,6 +992,16 @@ static void on_install(void *ctx)
     /* TR: the question before installing an update; {0} is the version number. At most 32
      * bytes */
     I18N_FORMAT(title, sizeof(title), TR("Install version {0}?"), s_shown.latest);
+    if (ui_link_keypad_count() > 0u) {
+        /* TR: the question before installing an update on an alarm panel with keypads, which
+         * update with it (the sheet's note). At most 190 bytes */
+        ui_confirm_primary(title,
+                           TR("The panel downloads it now and keeps protecting meanwhile; you can "
+                              "stop the update until it restarts. It restarts once everything is "
+                              "disarmed, then its keypads update with it."),
+                           TR("Install"), install_confirmed);
+        return;
+    }
     /* TR: the question before installing an update (the sheet's note). At most 190 bytes */
     ui_confirm_primary(title,
                        TR("The panel downloads it now and restarts once everything is disarmed. It "
@@ -881,43 +1095,76 @@ static void steps(lv_obj_t *body, const ui_fw_status_t *st, unsigned now)
     }
 }
 
+/* After the Keypads section, what follows stands apart under a gap (proposal P2). */
+static void gap(lv_obj_t *body)
+{
+    if (s_gap) {
+        ui_section(body, "");
+        s_gap = false;
+    }
+}
+
 void ui_update_build(lv_obj_t *body)
 {
     s_row = NULL;
     s_asking = false;
+    s_kp = false;
+    s_kp_run = NULL;
+    s_gap = false;
     if (S.be.fw_status == NULL) {
         return;
     }
     read_status(&s_shown);
     s_polled = lv_tick_get();
+    const char *master = ui_link_fw_master();
+    if (master != NULL) {
+        kp_build(body, &s_shown, master); /* a keypad that follows its alarm panel */
+        return;
+    }
     const view_t v = view_of(&s_shown);
     s_row = ui_row_link(body, UI_ICON_REFRESH, ui_tone_gray(), " ", " ", NULL, NULL, NULL, NULL);
     show_status();
+    if (s_shown.available && !busy(&s_shown) && S.be.fw_install != NULL && v != V_UPDATED) {
+        char text[64];
+        /* TR: a button in Software update; {0} is the version number. At most 32 bytes */
+        I18N_FORMAT(text, sizeof(text), TR("Install version {0}"), s_shown.latest);
+        ui_row_action(body, UI_ICON_DOWNLOAD, text, ui_tone_blue(), on_install, NULL);
+        if (v == V_PLAIN || v == V_ROLLED || v == V_STOPPED) {
+            ui_paragraph(body, TR("The panel restarts once everything is disarmed. It takes about a minute."),
+                         ui_tone_gray());
+        }
+    }
+    s_gap = ui_link_update_keypads(body); /* the alarm panel's keypads update with it */
     const bool stop = stoppable(v, &s_shown);
     if (stop) {
+        gap(body);
         ui_row_action(body, UI_ICON_CIRCLE_X, TR("Stop the update"), ui_tone_red(), on_stop, NULL);
     }
     unsigned step = 0;
     switch (v) {
     case V_DOWNLOAD:
+        gap(body);
         /* TR: Software update, under Stop while the update downloads. At most 111 bytes */
         ui_paragraph(body, TR("The alarm keeps working while it downloads. You can stop the update until the panel restarts."),
                      ui_tone_gray());
         step = 0;
         break;
     case V_VERIFY:
+        gap(body);
         /* TR: Software update, under Stop while the download is checked. At most 111 bytes */
         ui_paragraph(body, TR("The alarm keeps working while it checks. You can stop the update until the panel restarts."),
                      ui_tone_gray());
         step = 1;
         break;
     case V_WAIT:
+        gap(body);
         ui_paragraph(body, wait_paragraph(why_kind(s_shown.reason)), ui_tone_gray());
         step = 2;
         break;
     case V_INSTALL: step = 3; break;
     case V_STOPPING: step = s_step; break;
     case V_SELFTEST:
+        gap(body);
         if (s_shown.previous[0] != '\0') {
             char text[160];
             /* TR: Software update, during the self-test; {0} is the version it goes back to. At
@@ -935,6 +1182,7 @@ void ui_update_build(lv_obj_t *body)
         break;
     case V_WIFI:
         if (s_shown.phase != UI_FW_WAITING) {
+            gap(body);
             /* TR: Software update, while the Wi-Fi module is updated. At most 111 bytes */
             ui_paragraph(body, TR("The alarm keeps working while it sends the update to the module."),
                          ui_tone_gray());
@@ -952,18 +1200,9 @@ void ui_update_build(lv_obj_t *body)
     } else if (v != V_BACK) {
         s_step = 0;
     }
-    if (s_shown.available && !busy(&s_shown) && S.be.fw_install != NULL && v != V_UPDATED) {
-        char text[64];
-        /* TR: a button in Software update; {0} is the version number. At most 32 bytes */
-        I18N_FORMAT(text, sizeof(text), TR("Install version {0}"), s_shown.latest);
-        ui_row_action(body, UI_ICON_DOWNLOAD, text, ui_tone_blue(), on_install, NULL);
-        if (v == V_PLAIN || v == V_ROLLED || v == V_STOPPED) {
-            ui_paragraph(body, TR("The panel restarts once everything is disarmed. It takes about a minute."),
-                         ui_tone_gray());
-        }
-    }
     if (s_shown.has_source && S.be.fw_check != NULL && s_shown.stage == UI_FW_STAGE_NONE &&
         !s_shown.confirming) {
+        gap(body);
         const bool checking = v == V_CHECKING;
         char checked[48];
         checked_words(checking ? 0u : s_shown.checked, checked, sizeof(checked));

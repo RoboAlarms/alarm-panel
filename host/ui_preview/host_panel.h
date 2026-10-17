@@ -85,6 +85,10 @@ void host_panel_net_clear_faults(void);
 void host_panel_log_loss(uint32_t records, uint32_t reports);
 /* The simulated firmware update state (Settings > About). */
 void host_panel_fw_preset(const ui_fw_status_t *st);
+/* An update's stage logged now (ALARM_EV_FIRMWARE_UPDATE, alarm_fw_stage_t), as the firmware logs
+ * it: the panel's own (keypad 0), or a keypad's through the panel link (keypad 1..8, its stages
+ * ALARM_FW_KEYPAD_*; why: ALARM_FW_KEYPAD_FAILED's reason, the link's why table). */
+void host_panel_fw_event(uint8_t stage, uint8_t keypad, uint8_t why);
 /* BL-186: the update server in use (a fictional one: example.net), and whether RoboAlarms' key is
  * trusted. A check of example.net answers OK with an untrusted key "Example Builds" after a moment,
  * example.org NOT_A_SERVER, example.com NO_FIRMWARE, anything else UNREACHABLE. */

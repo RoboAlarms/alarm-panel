@@ -130,6 +130,17 @@ void host_link_demo_state(host_link_demo_t what)
         add_keypad(3, "Bedroom keypad", false, true, now_ms() - 35LL * 60000LL);
         master_info();
         break;
+    case HOST_LINK_MASTER_THREE:
+        add_keypad(2, "Hall keypad", true, false, now_ms() - 5000);
+        add_keypad(3, "Bedroom keypad", true, false, now_ms() - 5000);
+        add_keypad(4, "Kitchen", true, false, now_ms() - 5000);
+        for (size_t i = 0; i < D.n; i++) {
+            snprintf(D.kps[i].fw, sizeof(D.kps[i].fw), "0.6.1");
+            D.kps[i].fw_state = UI_LINK_FW_UP_TO_DATE;
+        }
+        D.held = 0x0001u;
+        master_info();
+        break;
     case HOST_LINK_KEYPAD_CONNECTING: keypad_info(UI_LINK_CONNECTING); break;
     case HOST_LINK_KEYPAD_ONLINE: keypad_info(UI_LINK_ONLINE); break;
     case HOST_LINK_KEYPAD_LOST:
@@ -657,6 +668,35 @@ void host_link_demo_home(uint8_t home)
 {
     D.info.home = home;
     D.info.home_gen++;
+}
+
+void host_link_demo_keypad_fw(uint8_t device, const char *fw, uint8_t state, uint8_t percent)
+{
+    ui_link_keypad_t *k = find(device);
+    if (k == NULL) {
+        return;
+    }
+    const bool was_restarting = k->fw_state == UI_LINK_FW_RESTARTING;
+    if (fw != NULL) {
+        snprintf(k->fw, sizeof(k->fw), "%s", fw);
+    }
+    k->fw_state = state;
+    k->fw_percent = percent > 100u ? 100u : percent;
+    if (state == UI_LINK_FW_RESTARTING) {
+        k->connected = false; /* off the link while it restarts; its trouble is held */
+        k->down = false;
+        k->waiting = false;
+    } else if (was_restarting) {
+        k->connected = true;
+        k->heard_epoch_ms = now_ms();
+    }
+    master_info();
+}
+
+void host_link_demo_fw_follows(bool follows, bool from_master)
+{
+    D.info.fw_follows = follows;
+    D.info.fw_from_master = from_master;
 }
 
 void host_link_demo_last_request(ui_link_req_t *out)

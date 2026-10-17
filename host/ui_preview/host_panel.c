@@ -4353,6 +4353,16 @@ void host_panel_log_loss(uint32_t records, uint32_t reports)
     s_log_lost_reports = reports;
 }
 
+void host_panel_fw_event(uint8_t stage, uint8_t keypad, uint8_t why)
+{
+    const alarm_source_t src = keypad != 0u
+                                   ? (alarm_source_t){.kind = ALARM_SRC_KEYPAD, .id = keypad}
+                                   : (alarm_source_t){.kind = ALARM_SRC_SYSTEM, .id = 0};
+    (void)alarm_engine_platform_event_ex(&H.eng, ALARM_EV_FIRMWARE_UPDATE, 0, stage, why, &src, 0,
+                                         H.now);
+    H.dirty = true;
+}
+
 static void be_log_loss(void *ctx, uint32_t *records, uint32_t *reports)
 {
     (void)ctx;

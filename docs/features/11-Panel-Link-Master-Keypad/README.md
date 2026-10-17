@@ -88,7 +88,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
      works without having to do anything; 99.9 % would not know what to do when asked by the panel,
      most installers included, who are gone once it is installed): no screen asks anyone to act, and
      the master does what it can itself (it fetches the image for another model of keypad).
-- **Keypad updates' screens** (proposal P2, `docs/features/07-UI-LVGL-Pro/mockup/proposals/BL-048-keypad-updates.js`):
+- **Keypad updates' screens** (proposal P2, built: `docs/features/07-UI-LVGL-Pro/mockup/screens/panel-link.js` D):
   eight screens with nothing to tap, approved 2026-10-17 (the owner: "Approve, recommendations OK";
   they replace the 31 approved earlier that day, found too complicated). Its two questions, as
   recommended: the master keeps today's "Stop the update" for whoever chose to install, which stops
@@ -772,16 +772,22 @@ A change of any of them sends a STATUS, as a change does (LINK-006).
 - **No FW_* frame** goes on a transport whose largest frame is under 250 B.
 
 ### What people see
-Simple, as the owner asked (2026-10-17); the screens are drawn as a proposal first and built once
-approved (docs/features/07 mockup, BL-048-keypad-updates.js).
+Simple, as the owner asked (2026-10-17); drawn as proposal P2, approved and built (docs/features/07
+mockup, screens/panel-link.js D).
 - **Master's Software update:** a Keypads list under its own update, one row per keypad: name,
-  version and one status line ("Up to date", "Downloading 45 %", "Receiving from this panel 45 %",
-  "Ready · restarts with this panel", "Restarting", "Not updated yet · tries again by itself"). No
-  buttons, and nothing that asks anyone to act.
-- **Master's Install question:** "... then its keypads update."
+  version and one status line ("Up to date", "Downloading · 45 %", "Receiving from this panel ·
+  30 %", "Ready · restarts with this panel", "Restarting", "Not updated yet · tries again by
+  itself", "Newer than this panel"; `ui_link_keypad_t.fw_state`, `fw_percent`, `fw`). No buttons,
+  and nothing that asks anyone to act. Keypads and devices says "Updating" for a keypad restarting
+  with its update, instead of "Not responding".
+- **Master's Install question:** "... It restarts once everything is disarmed, then its keypads
+  update with it."
 - **Keypad's Software update:** "Updates come from <master>", its version, and while an update runs
-  the run's line and stepped bar. No Install, no Stop.
-- **Keypad's Home:** today's steady update banner while it downloads or restarts.
+  the run's line ("Downloading · 45 %", "Receiving from <master> · 30 %", "Ready · restarts with
+  <master> once everything is disarmed") and stepped bar. No Install, no Check again, no Stop
+  (`ui_link_info_t.fw_follows`, `fw_from_master`). About's Software update row: "From <master>".
+- **Keypad's Home:** today's steady update banner while it downloads or restarts: "Updating ·
+  restarts with <master>".
 - **Event log, on the master.** `firmware_update` stages appended after `ALARM_FW_RESTART_PUT_OFF`
   (the catalog is in docs/features/01): `keypad_installing` 9, `keypad_updated` 10,
   `keypad_rolled_back` 11, `keypad_failed` 12 (arg2 = why, never 0); 13 stays unused; source

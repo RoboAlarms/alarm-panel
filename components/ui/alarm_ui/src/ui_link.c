@@ -440,7 +440,8 @@ typedef struct {
     const char *value;
     char sub[64];
     lv_color_t tone;
-    bool alert; /* not responding: its trouble is raised (amber) */
+    bool alert;    /* not responding: its trouble is raised (amber) */
+    bool updating; /* restarting with its update: the value in blue */
 } kp_words_t;
 
 static void heard_words(const ui_link_keypad_t *k, char *out, size_t len)
@@ -478,6 +479,13 @@ static void kp_words(const ui_link_keypad_t *k, kp_words_t *w)
         w->tone = ui_tone_blue();
         /* TR: a keypad on Wi-Fi just added, not heard yet; the value of its row (keep it short) */
         w->value = TR_C("keypad state", "Connecting");
+    } else if (k->fw_state == UI_LINK_FW_RESTARTING) {
+        /* restarting with its update (up to 10 minutes): its trouble is held meanwhile */
+        w->tone = ui_tone_blue();
+        w->updating = true;
+        /* TR: a keypad on Wi-Fi restarting with a software update this panel sent it; the value
+         * of its row instead of "Not responding" (keep it short) */
+        w->value = TR_C("keypad state", "Updating");
     } else {
         w->tone = k->down ? ui_tone_amber() : ui_tone_gray();
         w->alert = k->down;
@@ -496,7 +504,7 @@ static uint32_t keypads_sig(void)
         kp_words(&s_kps[i], &w);
         h = hash_int(h, s_kps[i].device);
         h = hash_str(hash_str(hash_str(hash_str(h, w.title), w.detail), w.value), w.sub);
-        h = hash_int(h, w.alert ? 1u : 0u);
+        h = hash_int(h, (w.alert ? 1u : 0u) | (w.updating ? 2u : 0u));
     }
     return h;
 }
@@ -518,10 +526,10 @@ static lv_obj_t *keypad_row(lv_obj_t *body, const ui_link_keypad_t *k)
     kp_words(k, &w);
     lv_obj_t *row = ui_row_link(body, UI_ICON_KEYBOARD, w.tone, w.title, w.detail, w.value,
                                 UI_ICON_CHEVRON_RIGHT, open_keypad, (void *)(intptr_t)k->device);
-    if (w.alert) {
+    if (w.alert || w.updating) {
         lv_obj_t *value = ui_find(row, "value_label");
         if (value != NULL) {
-            lv_obj_set_style_text_color(value, ui_tone_amber(), 0);
+            lv_obj_set_style_text_color(value, w.tone, 0);
         }
     }
     if (w.sub[0] != '\0') {
@@ -871,6 +879,12 @@ static void status_words(const ui_link_keypad_t *k, const char **title, char *de
         *tone = ui_tone_blue();
         *title = TR_C("keypad state", "Connecting");
         i18n_utf8_copy(detail, len, k->addr);
+    } else if (k->fw_state == UI_LINK_FW_RESTARTING) {
+        *tone = ui_tone_blue();
+        *title = TR_C("keypad state", "Updating");
+        /* TR: a keypad's page while it restarts with a software update this panel sent it, the
+         * line under "Updating". At most 95 bytes */
+        i18n_utf8_copy(detail, len, TR("Restarting with the new version"));
     } else {
         *tone = k->down ? ui_tone_amber() : ui_tone_gray();
         *title = TR_C("keypad state", "Not responding");
@@ -1185,6 +1199,171 @@ void ui_link_about_end(lv_obj_t *body)
     ui_row_link(body, UI_ICON_ROTATE_CCW, ui_tone_red(), TR("Make it a stand-alone panel"),
                 TR("A factory reset: erases the pairing and every setting"), NULL,
                 UI_ICON_CHEVRON_RIGHT, open_standalone, NULL);
+}
+
+/* ---- keypad updates (docs/features/11 "Updates through the link", proposal P2) ---------------- *
+ * Keypads follow their alarm panel: it tells each one which version to have, each gets it while it
+ * keeps protecting, and they restart together once everything is disarmed. Nobody acts on any of
+ * it, so nothing here can be tapped; a percent changes at most once a second (UI-020). */
+
+const char *ui_link_fw_master(void)
+{
+    if (!ui_link_keypad() || !L.info.fw_follows || ui_link_update_open()) {
+        return NULL; /* its own Install stays in maintenance and when it needs an update */
+    }
+    return ui_link_master_name();
+}
+
+bool ui_link_fw_from_master(void)
+{
+    return ui_link_fw_master() != NULL && L.info.fw_from_master;
+}
+
+/* The alarm panel's Software update: one row per keypad, its status line in its tone. */
+typedef struct {
+    char title[ALARM_NAME_LEN + 48];
+    char detail[96];
+    char state[96];
+    lv_color_t tone;
+} upd_words_t;
+
+static struct {
+    lv_obj_t *rows[LINK_KEYPADS];
+    uint8_t devices[LINK_KEYPADS];
+    uint32_t sigs[LINK_KEYPADS];
+    size_t n;
+} U;
+
+static void upd_words(const ui_link_keypad_t *k, upd_words_t *w)
+{
+    memset(w, 0, sizeof(*w));
+    keypad_name(k, w->title, sizeof(w->title));
+    if (k->name[0] != '\0' && k->fw[0] != '\0') {
+        /* TR: the alarm panel's Software update, a keypad's line under its name: its number {0}
+         * and the version {1} it runs ("Keypad 2 · version 0.6.1"). At most 63 bytes */
+        I18N_FORMAT(w->detail, sizeof(w->detail), TR("Keypad {0} · version {1}"),
+                    (unsigned)k->device, k->fw);
+    } else if (k->name[0] != '\0') {
+        keypad_name(&(ui_link_keypad_t){.device = k->device}, w->detail, sizeof(w->detail));
+    } else if (k->fw[0] != '\0') {
+        I18N_FORMAT(w->detail, sizeof(w->detail), TR("Version {0}"), k->fw);
+    }
+    char pct[16];
+    /* TR: a percent done ("45 %"); {0} is the number */
+    I18N_FORMAT(pct, sizeof(pct), TR_C("percent", "{0} %"),
+                (unsigned)(k->fw_percent > 100u ? 100u : k->fw_percent));
+    w->tone = ui_tone_blue();
+    switch (k->fw_state) {
+    case UI_LINK_FW_UP_TO_DATE:
+        /* TR: the alarm panel's Software update, a keypad's status line: it runs this panel's
+         * version. At most 95 bytes */
+        i18n_utf8_copy(w->state, sizeof(w->state), TR("Up to date"));
+        w->tone = ui_tone_green();
+        break;
+    case UI_LINK_FW_DOWNLOADING:
+        /* TR: a keypad's status line in Software update while it downloads the update itself;
+         * {0} is the percent done ("45 %"). At most 80 bytes */
+        I18N_FORMAT(w->state, sizeof(w->state), TR("Downloading · {0}"), pct);
+        break;
+    case UI_LINK_FW_RECEIVING:
+        /* TR: the alarm panel's Software update, a keypad's status line while this panel sends it
+         * the update; {0} is the percent done ("30 %"). At most 80 bytes */
+        I18N_FORMAT(w->state, sizeof(w->state), TR("Receiving from this panel · {0}"), pct);
+        break;
+    case UI_LINK_FW_READY:
+        /* TR: the alarm panel's Software update, a keypad's status line: it has the update and
+         * restarts together with this panel. At most 95 bytes */
+        i18n_utf8_copy(w->state, sizeof(w->state), TR("Ready · restarts with this panel"));
+        break;
+    case UI_LINK_FW_RESTARTING:
+        /* TR: the alarm panel's Software update, a keypad's status line while it restarts with
+         * the update. At most 95 bytes */
+        i18n_utf8_copy(w->state, sizeof(w->state), TR_C("keypad update", "Restarting"));
+        break;
+    case UI_LINK_FW_NOT_UPDATED:
+        /* TR: the alarm panel's Software update, a keypad's status line when it missed this
+         * panel's version: nobody has to do anything. At most 95 bytes */
+        i18n_utf8_copy(w->state, sizeof(w->state), TR("Not updated yet · tries again by itself"));
+        w->tone = ui_tone_gray();
+        break;
+    case UI_LINK_FW_NEWER:
+        /* TR: the alarm panel's Software update, a keypad's status line when it runs a newer
+         * version than this panel (it is left alone). At most 95 bytes */
+        i18n_utf8_copy(w->state, sizeof(w->state), TR("Newer than this panel"));
+        w->tone = ui_tone_gray();
+        break;
+    default: w->tone = ui_tone_gray(); break; /* not known yet: no status line */
+    }
+}
+
+static uint32_t upd_sig(const upd_words_t *w)
+{
+    uint32_t h = hash_str(hash_str(hash_str(2166136261u, w->title), w->detail), w->state);
+    return hash_int(h, lv_color_to_u32(w->tone));
+}
+
+bool ui_link_update_keypads(lv_obj_t *body)
+{
+    U.n = 0;
+    if (!ui_link_master() || read_keypads() == 0u) {
+        return false;
+    }
+    /* TR: the alarm panel's Software update, the heading over its keypads. At most 47 bytes */
+    ui_section(body, TR("Keypads"));
+    /* TR: the alarm panel's Software update, under the Keypads heading. At most 127 bytes */
+    ui_paragraph(body,
+                 TR("Keypads update with this panel. They restart together once everything is "
+                    "disarmed."),
+                 ui_tone_gray());
+    for (size_t i = 0; i < s_nkps; i++) {
+        upd_words_t w;
+        upd_words(&s_kps[i], &w);
+        lv_obj_t *row = ui_row_link(body, UI_ICON_KEYBOARD, w.tone, w.title,
+                                    w.detail[0] != '\0' ? w.detail : NULL, NULL, NULL, NULL, NULL);
+        ui_row_sub(row, w.state, w.tone);
+        U.rows[U.n] = row;
+        U.devices[U.n] = s_kps[i].device;
+        U.sigs[U.n] = upd_sig(&w);
+        U.n++;
+    }
+    return true;
+}
+
+bool ui_link_update_keypads_tick(void)
+{
+    if (U.n == 0u) {
+        return ui_link_master() && read_keypads() != 0u; /* the first keypad came */
+    }
+    if (read_keypads() != U.n) {
+        return true;
+    }
+    for (size_t i = 0; i < U.n; i++) {
+        if (s_kps[i].device != U.devices[i]) {
+            return true;
+        }
+    }
+    for (size_t i = 0; i < U.n; i++) {
+        upd_words_t w;
+        upd_words(&s_kps[i], &w);
+        const uint32_t sig = upd_sig(&w);
+        if (sig == U.sigs[i]) {
+            continue; /* nothing new: the row is not drawn again */
+        }
+        U.sigs[i] = sig;
+        lv_obj_t *row = U.rows[i];
+        ui_set_label(row, "title_label", w.title);
+        if (w.detail[0] != '\0') {
+            ui_row_set_detail(row, w.detail, false, w.tone);
+        }
+        ui_chip_tone(ui_find(row, "chip"), UI_ICON_KEYBOARD, w.tone);
+        ui_row_sub(row, w.state, w.tone);
+    }
+    return false;
+}
+
+void ui_link_update_keypads_stop(void)
+{
+    memset(&U, 0, sizeof(U));
 }
 
 static bool standalone_code(const char *code)

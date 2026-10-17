@@ -3064,11 +3064,13 @@ msgstr ""
 msgid "{0} pictures/second"
 msgstr ""
 
+#. the alarm panel's Software update, a keypad's status line: it runs this panel's version. At most 95 bytes
 #. Software update status when the newest version is installed. At most 63 bytes
 #. Settings > About, Software update's value when nothing is waiting. At most 23 bytes
 #. A list row's value, at its right end (keep it short).
 #: components/services/panel_web/web/panel-keypad.js
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_update.c
 #: components/ui/alarm_ui/src/ui_zwave.c
 msgid "Up to date"
@@ -6585,6 +6587,7 @@ msgstr ""
 msgid "Language file"
 msgstr ""
 
+#. the question before installing an update on an alarm panel with keypads, which update with it (the sheet's note). At most 190 bytes
 #. the question before installing an update (the sheet's note). At most 190 bytes
 #. A confirmation sheet. At most 127 bytes.
 #: components/services/panel_web/web/panel-pages.js
@@ -18977,6 +18980,12 @@ msgctxt "keypad state"
 msgid "Connected"
 msgstr ""
 
+#. a keypad on Wi-Fi restarting with a software update this panel sent it; the value of its row instead of "Not responding" (keep it short)
+#: components/ui/alarm_ui/src/ui_link.c
+msgctxt "keypad state"
+msgid "Updating"
+msgstr ""
+
 #. a keypad on Wi-Fi that stopped answering (a trouble); the value of its row (keep it short)
 #: components/ui/alarm_ui/src/ui_link.c
 msgctxt "keypad state"
@@ -18984,6 +18993,7 @@ msgid "Not responding"
 msgstr ""
 
 #. Installer > Keypads and devices, the heading over the keypads on Wi-Fi (other RoboAlarms panels). At most 47 bytes
+#. the alarm panel's Software update, the heading over its keypads. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Keypads"
 msgstr ""
@@ -19170,6 +19180,11 @@ msgstr ""
 msgid "Leaving this page closes pairing."
 msgstr ""
 
+#. a keypad's page while it restarts with a software update this panel sent it, the line under "Updating". At most 95 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Restarting with the new version"
+msgstr ""
+
 #. The sheet's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Keypad name"
@@ -19234,6 +19249,59 @@ msgstr ""
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "A factory reset: erases the pairing and every setting"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's line under its name: its number {0} and the version {1} it runs ("Keypad 2 · version 0.6.1"). At most 63 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Keypad {0} · version {1}"
+msgstr ""
+
+#. a percent done ("45 %"); {0} is the number
+#. a light's level in the list of levels; {0} is 25, 50 or 75. At most 15 bytes
+#. a dimmer's level on a device's page, a row's value; {0} is 1 to 99. At most 15 bytes
+#. a row's value on a device's page: its battery's charge; {0} is 0 to 100. At most 15 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+#: components/ui/alarm_ui/src/ui_update.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgctxt "percent"
+msgid "{0} %"
+msgstr ""
+
+#. a keypad's status line in Software update while it downloads the update itself; {0} is the percent done ("45 %"). At most 80 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "Downloading · {0}"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line while this panel sends it the update; {0} is the percent done ("30 %"). At most 80 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Receiving from this panel · {0}"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line: it has the update and restarts together with this panel. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Ready · restarts with this panel"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line while it restarts with the update. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgctxt "keypad update"
+msgid "Restarting"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line when it missed this panel's version: nobody has to do anything. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Not updated yet · tries again by itself"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line when it runs a newer version than this panel (it is left alone). At most 95 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Newer than this panel"
+msgstr ""
+
+#. the alarm panel's Software update, under the Keypads heading. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Keypads update with this panel. They restart together once everything is disarmed."
 msgstr ""
 
 #. Make it a stand-alone panel, the line under the title. At most 127 bytes
@@ -19598,7 +19666,9 @@ msgid "Set"
 msgstr ""
 
 #. a keypad's Time and language, under the date and time: it comes from the alarm panel named {0}. At most 80 bytes
+#. About on a keypad, the line under Software update: its updates come from its alarm panel, {0} its name (up to 47 bytes). At most 48 bytes
 #: components/ui/alarm_ui/src/ui_net.c
+#: components/ui/alarm_ui/src/ui_update.c
 msgid "From {0}"
 msgstr ""
 
@@ -21563,13 +21633,9 @@ msgstr ""
 msgid "Wi-Fi module update ready · installs once disarmed"
 msgstr ""
 
-#. a light's level in the list of levels; {0} is 25, 50 or 75. At most 15 bytes
-#. a dimmer's level on a device's page, a row's value; {0} is 1 to 99. At most 15 bytes
-#. a row's value on a device's page: its battery's charge; {0} is 0 to 100. At most 15 bytes
+#. the status bar on a keypad from the moment it gets an update from its alarm panel until it restarts with it; {0} is the alarm panel's name (up to 47 bytes). At most 48 bytes
 #: components/ui/alarm_ui/src/ui_update.c
-#: components/ui/alarm_ui/src/ui_zwave.c
-msgctxt "percent"
-msgid "{0} %"
+msgid "Updating · restarts with {0}"
 msgstr ""
 
 #. Software update, the line under the download before the first bytes (the panel asks the server first). At most 63 bytes
@@ -21764,9 +21830,34 @@ msgstr ""
 msgid "Rolled back"
 msgstr ""
 
+#. Software update on a keypad while it gets the update its alarm panel sent for; {0} is the version. At most 50 bytes
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "Updating to version {0}"
+msgstr ""
+
+#. Software update on a keypad, the line under the run while its alarm panel sends the update; {0} is the alarm panel's name (up to 47 bytes), {1} the percent done ("30 %"). At most 56 bytes
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "Receiving from {0} · {1}"
+msgstr ""
+
+#. Software update on a keypad, the line under the run once it has the update; {0} is the alarm panel's name (up to 47 bytes). At most 64 bytes
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "Ready · restarts with {0} once everything is disarmed"
+msgstr ""
+
+#. Software update on a keypad: its updates come from its alarm panel, {0} its name (up to 47 bytes). At most 48 bytes
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "Updates come from {0}"
+msgstr ""
+
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_update.c
 msgid "An update is already running"
+msgstr ""
+
+#. the question before installing an update on an alarm panel with keypads, which update with it (the sheet's note). At most 190 bytes
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "The panel downloads it now and keeps protecting meanwhile; you can stop the update until it restarts. It restarts once everything is disarmed, then its keypads update with it."
 msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
@@ -21803,6 +21894,11 @@ msgstr ""
 msgid "About a minute; the self-test starts at once"
 msgstr ""
 
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "The panel restarts once everything is disarmed. It takes about a minute."
+msgstr ""
+
 #. Software update, under Stop while the download is checked. At most 111 bytes
 #: components/ui/alarm_ui/src/ui_update.c
 msgid "The alarm keeps working while it checks. You can stop the update until the panel restarts."
@@ -21821,11 +21917,6 @@ msgstr ""
 #. Software update, while the Wi-Fi module is updated. At most 111 bytes
 #: components/ui/alarm_ui/src/ui_update.c
 msgid "The alarm keeps working while it sends the update to the module."
-msgstr ""
-
-#. An explanation under a group of rows (wraps over several lines).
-#: components/ui/alarm_ui/src/ui_update.c
-msgid "The panel restarts once everything is disarmed. It takes about a minute."
 msgstr ""
 
 #. Software update, the row that looks for a new version. At most 47 bytes

@@ -1578,6 +1578,19 @@ typedef struct {
     /* The home partition's name as the alarm panel calls it, "" not known: the setup's last step
      * on a panel becoming a keypad (its own configuration is not the alarm panel's). */
     char home_name[ALARM_NAME_LEN];
+    /* Appended (keypad updates, docs/features/11 "Updates through the link", proposal P2): a
+     * keypad whose alarm panel sends it its updates (paired with a master whose session offers
+     * the link's updates, PLINK_CAP_FW): it installs only at its master's order. While true,
+     * and outside LINK-025's maintenance and the needs_update state (where its own Install
+     * stays), Software update says "Updates come from <master_name>" with no Install, Check
+     * again or Stop, About's Software update row says "From <master_name>", and the status bar's
+     * update banner says it restarts with master_name. The keypad's own run (stage, bytes, size,
+     * target) is read through fw_status as on any panel. */
+    bool fw_follows;
+    /* With fw_follows, while fw_status reports a download (UI_FW_STAGE_DOWNLOADING): true when
+     * the image comes from the alarm panel over the link (a relay, "Receiving from <master>"),
+     * false when the keypad downloads it from the update server itself ("Downloading"). */
+    bool fw_from_master;
 } ui_link_info_t;
 
 /* ui_link_pair_t.state: either side's pairing (plink_pair_state_t). */
@@ -1622,6 +1635,30 @@ typedef struct {
     uint8_t device;      /* DONE: the keypad's number */
 } ui_link_pair_t;
 
+/* ui_link_keypad_t.fw_state: a keypad's part in this panel's updates (docs/features/11 "Updates
+ * through the link"; proposal P2), one status line of its row in the master's Software update. The
+ * master gives its keypads a target version: the one it installs, or the one it runs when it runs
+ * no update. */
+enum {
+    UI_LINK_FW_NONE = 0,    /* not known yet (not heard, or it doesn't take the link's updates):
+                             * its row has no status line */
+    UI_LINK_FW_UP_TO_DATE,  /* it runs the target: "Up to date" (green) */
+    UI_LINK_FW_DOWNLOADING, /* it downloads the target from the update server itself, fw_percent
+                             * done: "Downloading · 45 %" (blue) */
+    UI_LINK_FW_RECEIVING,   /* it receives the target from this panel over the link, fw_percent
+                             * done: "Receiving from this panel · 30 %" (blue) */
+    UI_LINK_FW_READY,       /* it has the target, checked, and restarts together with this panel
+                             * once everything is disarmed: "Ready · restarts with this panel" */
+    UI_LINK_FW_RESTARTING,  /* it restarts with the update (up to 10 minutes, its supervision
+                             * trouble held meanwhile): "Restarting" here, and "Updating" instead of
+                             * "Not responding" in Installer > Keypads and devices */
+    UI_LINK_FW_NOT_UPDATED, /* behind the target and not getting it now, whatever the reason (a
+                             * failed download, a refusal, it went back): it tries again by itself.
+                             * "Not updated yet · tries again by itself" (gray) */
+    UI_LINK_FW_NEWER,       /* it runs a newer version than the target: left alone. "Newer than
+                             * this panel" (gray) */
+};
+
 /* One keypad at the master (Installer > Keypads and devices). */
 typedef struct {
     uint8_t device;         /* 1..8 */
@@ -1633,7 +1670,12 @@ typedef struct {
     bool waiting;           /* paired, never connected yet */
     int64_t heard_epoch_ms; /* last heard (0 not known) */
     char addr[24];
-    char fw[32];
+    char fw[32];            /* the version it runs, "" not known; its row in Software update says
+                             * "Keypad 2 · version 0.6.1" */
+    /* Appended (keypad updates, proposal P2): its part in this panel's updates. */
+    uint8_t fw_state;       /* UI_LINK_FW_* */
+    uint8_t fw_percent;     /* DOWNLOADING and RECEIVING: 0..100 done; the screen reads it at most
+                             * once a second (UI-020) */
 } ui_link_keypad_t;
 
 typedef enum {

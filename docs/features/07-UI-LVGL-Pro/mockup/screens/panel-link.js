@@ -4,7 +4,7 @@
 // ends the add flow, the section is "Keypads", a keypad that answers is "Connected", a new keypad is
 // "Keypad N" until renamed, removing is a hold with no dialog, supervision is 1 min, 5 min (the default),
 // 15 min or Not supervised, a keypad shows the factory-code reminder pointing to the alarm panel, and a
-// removed keypad has no Panic. Three places:
+// removed keypad has no Panic. Four places:
 //   A. the setup on a panel's first start: the role after Welcome and, for a keypad, Wi-Fi it can't skip
 //      and the pairing step (docs/features/09 NET-001);
 //   B. the alarm panel, installer mode, Keypads and devices: the keypads on Wi-Fi, adding one (the code
@@ -12,7 +12,9 @@
 //   C. a panel in the keypad role: Home while it connects, without the alarm panel ("No system
 //      communication", LINK-008) and not paired, Emergency, Smart Home (the alarm panel's devices,
 //      BL-216), the Settings it keeps, About and how it becomes a stand-alone panel again (a factory
-//      reset, LINK-020, LINK-025).
+//      reset, LINK-020, LINK-025);
+//   D. keypad updates (from the approved proposal P2, 2026-10-17): the alarm panel's Software update
+//      with its keypads, and a keypad's own pages while it follows its alarm panel's updates.
 // Nothing blinks; every countdown and live word changes at most once a second (UI-020, UI-023). The
 // screens never name how the link works. A firmware without the link (NULL link entries) shows none of
 // this. The preview draws them over a demo link backend (host/ui_preview/host_link_demo.c), Harbor House
@@ -434,7 +436,7 @@ kpSet({id: 'kp-time', shot: 'bl-048-kp-time', title: 'Keypad: Settings, Time and
 
 // ---- About on a keypad ----
 kpSet({id: 'kp-about', shot: 'bl-048-kp-about', title: 'Keypad: About'},
-  'A keypad\'s settings-about. Under the panel\'s own row, what it is a keypad of: Connected, Connecting, or "No system communication" (amber), at most once a second. Then the details as today, with an "Alarm panel" section (Name, Address, Keypad number; the address from link_info.master_addr) instead of Set up (zones, users and the event log are Harbor House\'s). Software update works as on any panel (a keypad updates itself, LINK-020).',
+  'A keypad\'s settings-about. Under the panel\'s own row, what it is a keypad of: Connected, Connecting, or "No system communication" (amber), at most once a second. Then the details as today, with an "Alarm panel" section (Name, Address, Keypad number; the address from link_info.master_addr) instead of Set up (zones, users and the event log are Harbor House\'s). Software update works as on any panel while its alarm panel doesn\'t send it its updates (one that does: kp-about-updates).',
   {section: 'about', title: 'About this panel', body: [
     M.row_status({glyph: 'shield-check', color: 'green', title: 'RoboAlarms Panel', detail: 'Version 0.6.0 · Panel ID b7c8d9e0f1a2'}),
     M.row_status({glyph: 'keyboard', color: 'green', title: 'Keypad 2 of Harbor House', detail: 'Connected · shows and arms Home'}),
@@ -466,3 +468,136 @@ kpSet({id: 'kp-standalone', shot: 'bl-048-kp-standalone', title: 'Keypad: make i
     M.paragraph('Harbor House shows a trouble for this keypad until it is removed there.', 'amber'),
     M.row_hold({text: 'Hold to erase everything', held: 0.53}),
   ].join('')});
+
+
+// ================================ D. Keypad updates ================================
+// Built from the approved proposal BL-048-keypad-updates.js (P2, redrawn simple; 2026-10-17: "Approve,
+// recommendations OK"; docs/features/11 "Updates through the link", What people see). Keypads follow
+// their alarm panel: it tells each keypad which version to have; each gets it (downloads it, or
+// receives it from the alarm panel) while it keeps protecting, armed or not, and they restart together
+// once everything is disarmed. A keypad that misses an update tries again by itself. Nobody acts on any
+// of it: nothing here can be tapped and no screen asks anyone to do anything. The alarm panel keeps its
+// own Stop the update, which ends its keypads' download too (Q1); a keypad's banner names its alarm
+// panel, cut with "..." where a long name doesn't fit, its page saying it whole (Q3). Words, steady
+// tones and today's stepped bar; a percent changes at most once a second (UI-020, UI-023). What the
+// screens read: each keypad's ui_link_keypad_t.fw_state, fw_percent and fw (the alarm panel), and
+// ui_link_info_t.fw_follows and fw_from_master (a keypad); the preview draws them over the demo link
+// (host_link_demo_keypad_fw, host_link_demo_fw_follows).
+
+// ---- the alarm panel ----
+// Software update as today (updates-run.js), the Settings list as BL-189 has it.
+const fwMaster = ({id, shot, title, notes, body, bar, tags = {}, over}) => M.screen({
+  id, area: 'Settings', title, shot, notes,
+  render: () => M.main({view: 'settings', rail: {}, bar, over,
+    content: M.settings({section: 'about', sections: LINK_INST_SECTIONS, title: 'Software update', back: 'settings-about', tags, body: body.join('')})}),
+});
+
+// One keypad's row: its name; its number and version; one status line in its tone. Not tappable.
+const fwKpRow = (name, n, version, state, tone) => M.row_link_alert({glyph: 'keyboard', color: tone, title: name,
+  detail: `Keypad ${n} · version ${version}`, sub: state, subColor: tone === 'gray' ? 'text_2' : tone, trail: ''});
+// The Keypads section (ui_link_update_keypads): its heading, one line, a row per keypad; no buttons.
+const fwKeypads = (...rows) => [M.section('Keypads'),
+  M.paragraph('Keypads update with this panel. They restart together once everything is disarmed.'), ...rows].join('');
+const FW_UP_TO_DATE = (name, n, v) => fwKpRow(name, n, v, 'Up to date', 'green');
+
+// Today's steps (updates-run.js), the first running.
+const FW_STEPS = [M.section('Steps'), ...[
+  ['Download', '2.7 MB'],
+  ['Check the download', 'Its signature and checksum'],
+  ['Wait until everything is disarmed', 'Right away when it already is'],
+  ['Restart with the new version', 'About a minute; the self-test starts at once'],
+  ['Self-test', 'Usually a minute, at most three · restarts with 0.6.1 if it fails'],
+].map(([title, detail], i) => M.row_link({glyph: i === 0 ? 'circle-dot' : 'circle', color: i === 0 ? 'blue' : 'gray', title, detail, trail: ''}))].join('');
+
+fwMaster({id: 'settings-update-keypads', shot: 'bl-048-fw-master-keypads', title: 'Software update downloading, its keypads with it',
+  notes: 'On an alarm panel with keypads (link_keypads), the Keypads section under the run row; today\'s Stop, its paragraph and the steps follow below it, apart under a gap. A row per keypad: its name, "Keypad 2 · version 0.6.1" (the version it runs) and one status line in its tone, from ui_link_keypad_t.fw_state: "Downloading · 45 %" and "Receiving from this panel · 30 %" (fw_percent), "Ready · restarts with this panel", "Restarting" (blue), "Up to date" (green), "Not updated yet · tries again by itself", "Newer than this panel" (gray); none while not known. Read once a second and changed in place, so a percent changes at most once a second. Armed, downloading goes on and the rows say the same. Without keypads the page is today\'s (settings-update-downloading).',
+  bar: {banner: {glyph: 'download', tone: 'blue', text: 'Downloading an update'}, time: '6:52', ampm: 'AM'},
+  tags: {about: {text: 'Updating', tone: 'blue'}},
+  body: [
+    M.row_status({glyph: 'download', color: 'blue', title: 'Downloading version 0.6.2', detail: '1.1 of 2.7 MB · 42 %', level: 42}),
+    fwKeypads(
+      fwKpRow('Hall keypad', 2, '0.6.1', 'Downloading · 45 %', 'blue'),
+      fwKpRow('Bedroom keypad', 3, '0.6.1', 'Receiving from this panel · 30 %', 'blue'),
+      fwKpRow('Kitchen', 4, '0.6.1', 'Ready · restarts with this panel', 'blue')),
+    M.section(''),
+    M.row_action({glyph: 'circle-x', text: 'Stop the update', color: 'red', goTo: 'settings-update-stop-question'}),
+    M.paragraph('The alarm keeps working while it downloads. You can stop the update until the panel restarts.'),
+    FW_STEPS,
+  ]});
+
+fwMaster({id: 'settings-update-keypads-done', shot: 'bl-048-fw-master-keypads-done', title: 'Software update after the update: one keypad not yet',
+  notes: 'One gray line for every keypad that missed the version, whatever the reason: "Not updated yet · tries again by itself". It does: a failed download after an hour and at this panel\'s next version; one that went back, at the next version. The reason is in Activity and the console only. No amber, no trouble, no banner. Check again stands apart under a gap.',
+  bar: {banner: null, time: '7:31', ampm: 'AM'},
+  body: [
+    M.row_status({glyph: 'circle-check', color: 'green', title: 'Updated to version 0.6.2', detail: '7:14 AM · it passed its self-test'}),
+    fwKeypads(
+      FW_UP_TO_DATE('Hall keypad', 2, '0.6.2'),
+      FW_UP_TO_DATE('Bedroom keypad', 3, '0.6.2'),
+      fwKpRow('Kitchen', 4, '0.6.1', 'Not updated yet · tries again by itself', 'gray')),
+    M.section(''),
+    M.row_link({glyph: 'refresh-cw', title: 'Check again', detail: 'Checked 7:17 AM', trail: ''}),
+  ]});
+
+fwMaster({id: 'settings-update-install-question-keypads', shot: 'bl-048-fw-master-install-question', title: 'Install: the question on an alarm panel with keypads',
+  notes: 'Today\'s question (settings-update-install-question) with a note of its own on an alarm panel with keypads: they update with it. Behind it, the page with its Keypads section under Install, all up to date on 0.6.1.',
+  bar: {banner: null, time: '6:50', ampm: 'AM'},
+  tags: {about: {text: 'Update', tone: 'violet'}},
+  body: [
+    M.row_link({glyph: 'sparkles', color: 'violet', title: 'Version 0.6.2 is ready to install', detail: 'You have 0.6.1 · the alarm keeps working while it downloads', trail: ''}),
+    M.row_action({glyph: 'download', text: 'Install version 0.6.2', color: 'blue'}),
+    M.paragraph('The panel restarts once everything is disarmed. It takes about a minute.'),
+    fwKeypads(FW_UP_TO_DATE('Hall keypad', 2, '0.6.1'), FW_UP_TO_DATE('Bedroom keypad', 3, '0.6.1'), FW_UP_TO_DATE('Kitchen', 4, '0.6.1')),
+  ],
+  over: M.confirm_dialog({title: 'Install version 0.6.2?', tone: 'primary', ok: 'Install',
+    note: 'The panel downloads it now and keeps protecting meanwhile; you can stop the update until it restarts. It restarts once everything is disarmed, then its keypads update with it.'})});
+
+linkInst({id: 'installer-devices-keypad-updating', shot: 'bl-048-fw-installer-keypads', title: 'Installer: Keypads and devices, a keypad restarting for its update'},
+  'While a keypad restarts with the update (fw_state RESTARTING, up to 10 minutes, its trouble held meanwhile), its row says "Updating" (blue) instead of "Not responding", and so does its page. After 10 minutes without it, today\'s row and trouble (installer-devices-keypads).',
+  {...DEVICES_PAGE, body: [
+    M.section('Keypads'), ADD_ROW, HALL,
+    M.row_link_alert({glyph: 'keyboard', color: 'blue', title: 'Bedroom keypad', detail: 'Keypad 3 · Home', value: 'Updating', valueColor: 'blue', goTo: 'keypad-page'}),
+    M.section('Supervised devices'),
+    tableRows([2, 3]),
+  ].join('')});
+
+M.screen({id: 'activity-keypad-updates', area: 'Views', title: 'Activity on the alarm panel: keypad updates', shot: 'bl-048-fw-master-activity',
+  notes: 'Another morning than settings-update-keypads-done: the keypads restarted with this panel at 7:12; Kitchen, off then, caught up later and its download broke off. The keypad by its number, as "Keypad 3 not responding" (notify_words.c, ALARM_FW_KEYPAD_*). A failed update says why on its line; nothing to do: it tries again by itself. "Keypad 3 installing an update" is logged at the restart too (not drawn). The System filter.',
+  render: () => M.main({view: 'activity', rail: {}, bar: {banner: null, time: '7:31', ampm: 'AM'}, content: `<div class="view column">
+    ${M.view_header({title: 'Activity', note: 'Everything the panel did, newest first'})}
+    <div class="row" style="flex:none">${M.segments(['All', 'Alarms', 'Troubles', 'Arming', 'Bypass', 'System'], 5)}</div>
+    <div class="list scroll">${[
+      M.event_row({glyph: 'refresh-cw', title: 'Keypad 4 update failed', detail: 'The download broke off', time: '7:25 AM', tone: 'amber'}),
+      M.event_row({glyph: 'refresh-cw', title: 'Keypad 2 update rolled back', detail: 'The new version failed; the previous one runs', time: '7:14 AM', tone: 'amber'}),
+      M.event_row({glyph: 'refresh-cw', title: 'Keypad 3 updated', detail: 'The new version passed its self-test', time: '7:14 AM', tone: 'blue'}),
+      M.event_row({glyph: 'refresh-cw', title: 'Firmware updated', detail: 'The new version passed its self-test', time: '7:14 AM', tone: 'blue'}),
+      M.event_row({glyph: 'refresh-cw', title: 'Installing an update', detail: 'The panel restarts with the new version', time: '7:12 AM', tone: 'blue'}),
+    ].join('')}</div></div>`}),
+});
+
+// ---- a keypad (Hall keypad) that follows Harbor House's updates ----
+const FW_KP_BANNER = {glyph: 'download', tone: 'blue', text: 'Updating · restarts with Harbor House', goTo: 'kp-update'};
+
+kp({id: 'kp-about-updates', shot: 'bl-048-fw-kp-about', title: 'Keypad: About, its updates from Harbor House'},
+  'kp-about on a keypad whose alarm panel sends it its updates (link_info.fw_follows): the Software update row says "From Harbor House" on its line (a long name wraps there). While an update runs the row\'s value says "Updating" (blue), as on any panel. In LINK-025\'s maintenance, or when it needs an update to read its alarm panel\'s settings, its own Software update returns (kp-about).',
+  () => ({view: 'settings', bar: {banner: null, time: '6:52', ampm: 'AM'},
+    content: M.settings({sections: KP_SECTIONS, section: 'about', title: 'About this panel', body: [
+      M.row_status({glyph: 'shield-check', color: 'green', title: 'RoboAlarms Panel', detail: 'Version 0.6.1 · Panel ID b7c8d9e0f1a2'}),
+      M.row_status({glyph: 'keyboard', color: 'green', title: 'Keypad 2 of Harbor House', detail: 'Connected · shows and arms Home'}),
+      M.row_link({glyph: 'refresh-cw', title: 'Software update', detail: 'From Harbor House', goTo: 'kp-update'}),
+      M.row_link({glyph: 'hard-drive', color: 'violet', title: 'SD card', detail: '44.7 GB free of 59.6 GB', value: 'Ready'}),
+      M.section('This panel'),
+      M.row_value({title: 'Built', value: 'Sep 19, 2026'}),
+      M.row_value({title: 'Running for', value: '3 days'}),
+    ].join('')})}));
+
+kp({id: 'kp-update', shot: 'bl-048-fw-kp-update', title: 'Keypad: Software update, updating with Harbor House'},
+  'A keypad runs its alarm panel\'s version, by itself: the page says where updates come from and how far one is. No Install, no Check again, no Stop, no steps. With no update running, the first row alone. While one runs, today\'s run row with its stepped bar and one line: "Downloading · 45 %" (or "Receiving from Harbor House · 30 %", link_info.fw_from_master), "Checking the download", then "Ready · restarts with Harbor House once everything is disarmed"; the restart and the self-test say what they say on any panel. The percent at most once a second.',
+  () => ({view: 'settings', bar: {banner: FW_KP_BANNER, time: '6:52', ampm: 'AM'},
+    content: M.settings({sections: KP_SECTIONS, section: 'about', title: 'Software update', back: 'kp-about-updates', tags: {about: {text: 'Updating', tone: 'blue'}}, body: [
+      M.row_status({glyph: 'house', color: 'blue', title: 'Updates come from Harbor House', detail: 'Version 0.6.1'}),
+      M.row_status({glyph: 'download', color: 'blue', title: 'Updating to version 0.6.2', detail: 'Downloading · 45 %', level: 45}),
+    ].join('')})}));
+
+kp({id: 'kp-home-updating', shot: 'bl-048-fw-kp-home', title: 'Keypad: Home, the update banner'},
+  'Today\'s steady blue update banner, on a keypad that follows its alarm panel: "Updating · restarts with Harbor House", from the first byte to the restart, armed or not; the same words throughout. It gives way to an alarm as today. A tap opens Software update (with the code). Nothing covers Home, the pad or Panic.',
+  () => ({bar: {banner: FW_KP_BANNER, time: '6:52', ampm: 'AM'}, content: M.home(READY, M.panel_arm())}));

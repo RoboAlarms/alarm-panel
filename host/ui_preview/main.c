@@ -10855,12 +10855,279 @@ static void walk_link_master(const ui_options_t *start)
     run(300);
 }
 
+/* Keypad updates (docs/features/11 "Updates through the link"; proposal P2, approved 2026-10-17):
+ * the alarm panel's Software update lists its keypads, which update with it, each with one status
+ * line and nothing to tap; Install's question says they update with it; Keypads and devices says
+ * "Updating" for a keypad restarting with its update; Activity has their stages. On a keypad that
+ * follows its alarm panel: Software update says where its updates come from and how far one is
+ * (no Install, Check again or Stop), About's row names the alarm panel, and Home has the steady
+ * banner. Each scene starts at the drawing's time; shots named as the proposal's screens. */
+#define KU_650AM 1789887000000LL /* Sep 20, 6:50 AM */
+
+static ui_fw_status_t ku_fw(uint8_t stage)
+{
+    ui_fw_status_t st = fw_run(stage);
+    snprintf(st.running, sizeof(st.running), "0.6.1");
+    snprintf(st.latest, sizeof(st.latest), "0.6.2");
+    snprintf(st.target, sizeof(st.target), "0.6.2");
+    snprintf(st.previous, sizeof(st.previous), "0.6.1");
+    if (stage == UI_FW_STAGE_NONE) {
+        st.phase = UI_FW_IDLE;
+    }
+    return st;
+}
+
+static void ku_scene(const ui_options_t *start, int64_t at, host_link_demo_t link)
+{
+    host_panel_init(at);
+    ui_app_apply_options(start);
+    run(500);
+    wake();
+    tap_name("nav_home");
+    run(300);
+    link_state(link);
+}
+
+/* The clock moves on, the panel left alone (the screen saver may come: woken after). */
+static void ku_minutes(unsigned minutes)
+{
+    for (unsigned m = 0; m < minutes; m++) {
+        s_ms += 60000u;
+        host_panel_advance(60000u);
+    }
+    run(1500);
+    wake();
+    run(300);
+}
+
+static bool ku_page_has(const char *text)
+{
+    return find_label(by_name("page_body"), text) != NULL;
+}
+
+static void walk_keypad_updates(const ui_options_t *start)
+{
+    printf("Keypad updates: the alarm panel's keypads, a keypad's own pages (BL-048, P2)\n");
+    /* the alarm panel, 0.6.2 offered, its three keypads up to date on 0.6.1 */
+    ku_scene(start, KU_650AM, HOST_LINK_MASTER_THREE);
+    ui_fw_status_t st = ku_fw(UI_FW_STAGE_NONE);
+    host_panel_fw_preset(&st);
+    fw_open_page();
+    run(1500);
+    expect(ku_page_has("Keypads update with this panel. They restart together once everything is "
+                       "disarmed.") &&
+               ku_page_has("Hall keypad") && ku_page_has("Keypad 2 · version 0.6.1") &&
+               ku_page_has("Up to date"),
+           "BL-048 P2: the alarm panel's Software update doesn't list its keypads");
+    tap_text("Install version 0.6.2");
+    run(300);
+    expect(find_label_with(lv_screen_active(), "then its keypads update with it") != NULL,
+           "BL-048 P2: Install's question doesn't say the keypads update with it");
+    shot("bl-048-fw-master-install-question");
+    tap_name("dialog_cancel");
+    run(300);
+
+    /* downloading, the keypads with it: one downloads, one receives, one is ready */
+    ku_scene(start, KU_650AM + 2LL * 60000LL, HOST_LINK_MASTER_THREE);
+    st = ku_fw(UI_FW_STAGE_DOWNLOADING);
+    st.percent = 42;
+    st.size = 2831155u;
+    st.bytes = 1153434u;
+    host_panel_fw_preset(&st);
+    host_link_demo_keypad_fw(2, NULL, UI_LINK_FW_DOWNLOADING, 45);
+    host_link_demo_keypad_fw(3, NULL, UI_LINK_FW_RECEIVING, 30);
+    host_link_demo_keypad_fw(4, NULL, UI_LINK_FW_READY, 0);
+    fw_open_page();
+    run(1500);
+    expect(ku_page_has("Downloading · 45 %") && ku_page_has("Receiving from this panel · 30 %") &&
+               ku_page_has("Ready · restarts with this panel") &&
+               ku_page_has("Stop the update"),
+           "BL-048 P2: the keypads' rows don't follow the update, or Stop is gone");
+    shot("bl-048-fw-master-keypads");
+    /* UI-020: a percent follows once a second, in place */
+    host_link_demo_keypad_fw(2, NULL, UI_LINK_FW_DOWNLOADING, 46);
+    run(1100);
+    expect(ku_page_has("Downloading · 46 %"), "BL-048 P2: a keypad's percent doesn't follow");
+    /* every other status line */
+    host_link_demo_keypad_fw(2, NULL, UI_LINK_FW_RESTARTING, 0);
+    host_link_demo_keypad_fw(3, NULL, UI_LINK_FW_NEWER, 0);
+    host_link_demo_keypad_fw(4, NULL, UI_LINK_FW_NOT_UPDATED, 0);
+    run(1100);
+    expect(ku_page_has("Restarting") && ku_page_has("Newer than this panel") &&
+               ku_page_has("Not updated yet · tries again by itself"),
+           "BL-048 P2: a keypad's status line lacks its words");
+
+    /* after the update: two up to date, one not yet */
+    ku_scene(start, KU_650AM + 41LL * 60000LL, HOST_LINK_MASTER_THREE);
+    st = ku_fw(UI_FW_STAGE_NONE);
+    st.available = false;
+    snprintf(st.running, sizeof(st.running), "0.6.2");
+    st.last.result = UI_FW_LAST_UPDATED;
+    snprintf(st.last.version, sizeof(st.last.version), "0.6.2");
+    st.last.at = (uint32_t)((KU_650AM + 24LL * 60000LL) / 1000);
+    st.checked = (uint32_t)((KU_650AM + 27LL * 60000LL) / 1000);
+    host_panel_fw_preset(&st);
+    host_link_demo_keypad_fw(2, "0.6.2", UI_LINK_FW_UP_TO_DATE, 0);
+    host_link_demo_keypad_fw(3, "0.6.2", UI_LINK_FW_UP_TO_DATE, 0);
+    host_link_demo_keypad_fw(4, "0.6.1", UI_LINK_FW_NOT_UPDATED, 0);
+    fw_open_page();
+    run(1500);
+    expect(ku_page_has("Updated to version 0.6.2") && ku_page_has("Keypad 4 · version 0.6.1") &&
+               ku_page_has("Not updated yet · tries again by itself"),
+           "BL-048 P2: after the update the keypads' rows don't say which have it");
+    shot("bl-048-fw-master-keypads-done");
+
+    /* Installer > Keypads and devices: a keypad restarting with its update */
+    ku_scene(start, 1789857660000LL + 17LL * 60000LL, HOST_LINK_MASTER_TWO); /* 10:58 PM */
+    host_link_demo_keypad_fw(3, NULL, UI_LINK_FW_RESTARTING, 0);
+    st = ku_fw(UI_FW_STAGE_NONE);
+    st.available = false;
+    host_panel_fw_preset(&st);
+    tap_name("bar_settings");
+    run(300);
+    open_installer();
+    run(300);
+    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
+        tap_text("Enter the installer code");
+        type("69420k");
+        run(300);
+    }
+    tap_link("Keypads and devices");
+    run(1100);
+    expect(ku_page_has("Updating") && !ku_page_has("Not responding"),
+           "BL-048 P2: a keypad restarting with its update isn't \"Updating\"");
+    shot("bl-048-fw-installer-keypads");
+    tap_name("page_back");
+    run(300);
+    scroll_to_text("page_body", "Leave installer mode");
+    tap_text("Leave installer mode");
+    run(300);
+    tap_name("nav_home");
+    run(300);
+
+    /* Activity: the keypads' stages in the alarm panel's log */
+    ku_scene(start, KU_650AM + 22LL * 60000LL, HOST_LINK_MASTER_THREE); /* 7:12 AM */
+    host_panel_fw_event(ALARM_FW_INSTALLING, 0, 0);
+    ku_minutes(2);
+    host_panel_fw_event(ALARM_FW_UPDATED, 0, 0);
+    host_panel_fw_event(ALARM_FW_KEYPAD_UPDATED, 3, 0);
+    host_panel_fw_event(ALARM_FW_KEYPAD_ROLLED_BACK, 2, 0);
+    ku_minutes(11);
+    host_panel_fw_event(ALARM_FW_KEYPAD_FAILED, 4, 20); /* BROKE_OFF */
+    ku_minutes(6);
+    tap_name("nav_activity");
+    run(500);
+    tap_text("System"); /* the filter the drawing shows */
+    run(500);
+    expect(lv_subject_get_int(&subject_event_filter) == 5 &&
+               find_label(by_name("event_list"), "Keypad 4 update failed") != NULL &&
+               find_label(by_name("event_list"), "The download broke off") != NULL &&
+               find_label(by_name("event_list"), "Keypad 2 update rolled back") != NULL &&
+               find_label(by_name("event_list"), "Keypad 3 updated") != NULL,
+           "BL-048 P2: Activity lacks the keypads' update stages");
+    shot("bl-048-fw-master-activity");
+    tap_text("All");
+    run(300);
+    tap_name("nav_home");
+    run(300);
+
+    /* a keypad (Hall keypad, 2) following Harbor House's updates */
+    ku_scene(start, KU_650AM + 2LL * 60000LL, HOST_LINK_KEYPAD_ONLINE);
+    host_link_demo_fw_follows(true, false);
+    st = ku_fw(UI_FW_STAGE_NONE);
+    st.available = false;
+    snprintf(st.latest, sizeof(st.latest), "0.6.1");
+    host_panel_fw_preset(&st);
+    run(3000); /* the rail's Smart Home follows within a few seconds */
+    tap_name("bar_settings");
+    run(300);
+    tap_name("set_about");
+    run(1100);
+    expect(ku_page_has("From Harbor House"),
+           "BL-048 P2: a keypad's About doesn't say its updates come from Harbor House");
+    shot("bl-048-fw-kp-about");
+    st = ku_fw(UI_FW_STAGE_DOWNLOADING);
+    st.available = false;
+    st.percent = 45;
+    st.size = 2831155u;
+    st.bytes = 1274020u;
+    host_panel_fw_preset(&st);
+    run(1500);
+    expect(ku_page_has("Updating"),
+           "BL-048 P2: a keypad's About doesn't say Updating while it runs");
+    tap_text("Software update");
+    run(300);
+    if (lv_subject_get_int(&subject_settings_pad) == 1) {
+        type("123456k");
+        run(1200);
+    }
+    expect(ku_page_has("Updates come from Harbor House") && ku_page_has("Version 0.6.1") &&
+               ku_page_has("Updating to version 0.6.2") && ku_page_has("Downloading · 45 %"),
+           "BL-048 P2: a keypad's Software update doesn't say where updates come from, or how far");
+    expect(!ku_page_has("Install version 0.6.2") && !ku_page_has("Check again") &&
+               !ku_page_has("Stop the update") && !ku_page_has("Steps"),
+           "BL-048 P2: a keypad's Software update offers Install, Check again, Stop or steps");
+    {
+        lv_obj_t *body = by_name("page_body");
+        lv_obj_t *row = find_label(body, "Updating to version 0.6.2");
+        while (row != NULL && lv_obj_get_parent(row) != body) {
+            row = lv_obj_get_parent(row);
+        }
+        lv_obj_t *level = row != NULL ? lv_obj_find_by_name(row, "level") : NULL;
+        expect(level != NULL && !lv_obj_has_flag(level, LV_OBJ_FLAG_HIDDEN) &&
+                   lv_bar_get_value(level) == 45,
+               "BL-048 P2: a keypad's run row has no stepped bar at 45");
+    }
+    shot("bl-048-fw-kp-update");
+    host_link_demo_fw_follows(true, true);
+    st.percent = 46;
+    host_panel_fw_preset(&st);
+    run(2100); /* the link is read once a second, and the page once a second after it */
+    expect(ku_page_has("Receiving from Harbor House · 46 %"),
+           "BL-048 P2: a keypad receiving from Harbor House doesn't say so");
+    st = ku_fw(UI_FW_STAGE_WAITING);
+    st.available = false;
+    st.size = 2831155u;
+    host_panel_fw_preset(&st);
+    run(1100);
+    expect(ku_page_has("Ready · restarts with Harbor House once everything is disarmed"),
+           "BL-048 P2: a keypad with its update doesn't say it restarts with Harbor House");
+    /* Home: the steady banner, the same words from the first byte to the restart */
+    host_link_demo_fw_follows(true, false);
+    st = ku_fw(UI_FW_STAGE_DOWNLOADING);
+    st.available = false;
+    st.percent = 45;
+    st.size = 2831155u;
+    st.bytes = 1274020u;
+    host_panel_fw_preset(&st);
+    tap_name("nav_home");
+    run(1500);
+    expect(lv_subject_get_int(&subject_bar_banner) == 6 &&
+               strcmp(lv_subject_get_string(&subject_update_banner),
+                      "Updating · restarts with Harbor House") == 0,
+           "BL-048 P2: a keypad's Home has no banner naming Harbor House");
+    shot("bl-048-fw-kp-home");
+    st = ku_fw(UI_FW_STAGE_WAITING);
+    st.available = false;
+    host_panel_fw_preset(&st);
+    run(1500);
+    expect(strcmp(lv_subject_get_string(&subject_update_banner),
+                  "Updating · restarts with Harbor House") == 0,
+           "BL-048 P2: a keypad's banner changes its words while it waits");
+    host_link_demo_fw_follows(false, false);
+    st = ku_fw(UI_FW_STAGE_NONE);
+    st.available = false;
+    host_panel_fw_preset(&st);
+    run(1500);
+}
+
 static void walk_panel_link(const ui_options_t *start)
 {
     walk_link_setup(start);
     walk_link_keypad();
     walk_link_keypad_kept(start);
     walk_link_master(start);
+    walk_keypad_updates(start); /* proposal P2, appended: the shots before keep their numbers */
     host_link_demo_state(HOST_LINK_OFF); /* as without the link, for what follows */
     run(1100);
 }

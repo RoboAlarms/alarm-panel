@@ -26,6 +26,11 @@
  * 3 s on, failed and not confirmed (the keypad's give-up, HCTL-012), until the device's next
  * record or the next tap on it. (On a panel a tap with a code holds the pad for those 3 s.)
  *
+ * Keypad updates (docs/features/11 "Updates through the link", proposal P2): each keypad of the
+ * alarm panel has a part in its updates (ui_link_keypad_t.fw_state, fw_percent and the version it
+ * runs), set by host_link_demo_keypad_fw to any UI_LINK_FW_* state; a keypad follows its alarm
+ * panel's updates once host_link_demo_fw_follows says so (its own run is host_panel_fw_preset's).
+ *
  * Interim: plink_service and the PC virtual master and keypad (host/link_sim) replace it; the
  * calls below are what host_panel.c and the preview's walk rely on.
  */
@@ -48,6 +53,8 @@ typedef enum {
     HOST_LINK_KEYPAD_ONLINE,     /* ... connected */
     HOST_LINK_KEYPAD_LOST,       /* ... no system communication for 6 minutes */
     HOST_LINK_KEYPAD_REMOVED,    /* ... Harbor House removed it */
+    HOST_LINK_MASTER_THREE, /* the alarm panel with Hall keypad (2), Bedroom keypad (3) and
+                             * Kitchen (4), all connected, on 0.6.1 and up to date */
 } host_link_demo_t;
 
 /* Starts the model (off). allowed: may the alarm panel change its keypads now (installer mode with
@@ -86,6 +93,13 @@ void host_link_demo_home(uint8_t home);
 void host_link_demo_devices_stop(bool on);
 /* A keypad: the alarm panel's answers to its device actions are lost (on). */
 void host_link_demo_devices_unanswered(bool on);
+/* The alarm panel: keypad `device`'s part in its updates (UI_LINK_FW_*), percent done while it
+ * downloads or receives, and the version it runs (NULL: as it was). RESTARTING takes it off the
+ * link (not connected, its trouble held); the next state brings it back connected. */
+void host_link_demo_keypad_fw(uint8_t device, const char *fw, uint8_t state, uint8_t percent);
+/* A keypad: its alarm panel sends it its updates (follows), the download coming from the alarm
+ * panel over the link (from_master) or from the update server. */
+void host_link_demo_fw_follows(bool follows, bool from_master);
 /* The last request the UI made, kind 0 before any (the walk's checks). */
 void host_link_demo_last_request(ui_link_req_t *out);
 /* How many keypads the alarm panel has, and one of them by number (false: none). */

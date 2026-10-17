@@ -1052,6 +1052,17 @@ void ui_link_stop(void); /* a page is being dropped: leaving Add a keypad closes
 void ui_link_about_row(lv_obj_t *body);
 void ui_link_about_details(lv_obj_t *body);
 void ui_link_about_end(lv_obj_t *body);
+/* Keypad updates (docs/features/11 "Updates through the link", proposal P2). On a keypad whose
+ * alarm panel sends it its updates (outside LINK-025's maintenance and an update it needs, where
+ * its own Install stays): the alarm panel's name, else NULL. */
+const char *ui_link_fw_master(void);
+bool ui_link_fw_from_master(void); /* ... and its download comes from the alarm panel (a relay) */
+/* The alarm panel's Software update: its Keypads section (a heading, one line, a row per keypad;
+ * nothing to tap). False, and nothing drawn, without keypads. The tick follows their status lines
+ * once a second, in place; true when the page must be built again (a keypad came or went). */
+bool ui_link_update_keypads(lv_obj_t *body);
+bool ui_link_update_keypads_tick(void);
+void ui_link_update_keypads_stop(void);
 
 /* ---- ui_tz.c ------------------------------------------------------------------------------- */
 typedef struct {

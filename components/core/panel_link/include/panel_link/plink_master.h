@@ -47,11 +47,13 @@
  * doubling to 2 s, until a FW_STATE echoes its id. FW_INFO and FW_STATE are kept (a newer frame
  * of the session replaces them; plink_master_fw_keypad). FW_REQ is served statelessly, as CFG_REQ
  * is, only to the keypad whose newest order but INFO is a RELAY of that id8 (an INFO naming the
- * master's version doesn't stop a relay; any other order does), while the master is quiet (HOLD
- * and UPDATING clear): from the request's offset, count pages of min(the request's page, the
- * order's, the frame's room - 18) bytes read through port.fw_read, never past the image, from a
- * byte bucket of its own (256 KB/s, 16 KB/s on frames under 1,200 B, 16 KB at once) and at most 16
- * pages a tick; anything else is dropped, the keypad's resend comes back. A keypad installing or
+ * master's version doesn't stop a relay; any other order does), whatever the master's state (the
+ * keypad pauses its relay itself; downloading goes on while armed and during the master's own
+ * update): from the request's offset, count pages of min(the request's page, the order's, the
+ * frame's room - 18) bytes read through port.fw_read, never past the image, from a byte bucket of
+ * its own that every keypad's relay shares (256 KB/s, 16 KB/s on frames under 1,200 B, 16 KB at
+ * once) and at most 16 pages a tick; anything else is dropped, the keypad's resend comes back. A
+ * keypad installing or
  * on its self-test (a FW_STATE saying INSTALLING or probation) isn't raised by supervision for up
  * to 10 min from when its FW_STATE first said so, and plink_master_fw_busy tells the service to put
  * off the master's own restart meanwhile - one such hold in each of its sessions (a restart is a
@@ -116,7 +118,7 @@ extern "C" {
 /* Updates through the link (LINK-030, LINK-032, LINK-035). */
 #define PLINK_FW_ORDER_RETRY_MS     300u    /* an order is sent again after this, doubling ... */
 #define PLINK_FW_ORDER_RETRY_MAX_MS 2000u   /* ... to this, until a FW_STATE echoes it */
-#define PLINK_FW_AWAY_MS            30000u  /* unanswered (or unheard) this long: away */
+#define PLINK_FW_HEARD_MS           30000u  /* heard this recently: online for the planner */
 #define PLINK_FW_HOLD_MS            600000u /* installing or on its self-test: not raised so long */
 #define PLINK_FW_RATE               262144u /* FW_PAGE bytes a second, ... */
 #define PLINK_FW_RATE_SMALL         16384u  /* ... on frames under 1,200 B, ... */
@@ -275,17 +277,14 @@ typedef struct {
 /* One keypad's updates through the link (private). */
 typedef struct {
     bool have_info;
-    plink_fw_info_t info;       /* its newest FW_INFO ... */
-    uint32_t info_sid, info_seq; /* ... the frame it came in ... */
-    uint64_t info_ms;           /* ... and when */
+    plink_fw_info_t info;       /* its newest FW_INFO, ... */
+    uint32_t info_sid, info_seq; /* ... the frame it came in */
     bool have_state;
     plink_fw_state_t state;     /* its newest FW_STATE, the same way */
     uint32_t state_sid, state_seq;
-    uint64_t state_ms;
     plink_fw_order_t order;     /* the order outstanding (order.order 0: none) */
     bool acked;                 /* a FW_STATE echoed it: no more resends */
     uint8_t why;                /* ... with this why */
-    uint64_t order_ms;          /* given then */
     uint64_t next_ms;           /* sent again then */
     uint32_t retry_ms;          /* 300 ms, doubling to 2 s */
     bool relay;                 /* a relay is served: its RELAY is the newest order but INFO */

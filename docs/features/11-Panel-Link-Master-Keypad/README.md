@@ -170,7 +170,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-033 | A keypad checks every image itself: the header (chip, revision range, project, newer) before the first flash write, then length, SHA-256, the signature with its own keys, and the version named. Nothing is forced or older. An order's channel serves that run only; its server and key become the keypad's trust record (LINK-036); nothing else the master sends becomes trust | unit; HIL |
 | LINK-034 | A READY keypad restarts only after an INSTALL for that version and when its gate passes, asked twice: a live session with a status under 15 s old, the master's UPDATING and HOLD clear (except the INSTALL sent with the master's own restart), `proto_fw_install_allowed()`, no panic still being resent, no kept fire or CO tone. Downloading and the relay go on while armed (decided 2026-10-17) and pause only while an alarm sounds, an entry or exit time runs, a panic is being sent, a fire or CO tone is kept, or the link is down. A keypad that installed with its master stays on trial until an INFO names that version; an older one, or none within 10 min, sends it back | unit; HIL |
 | LINK-035 | A relay fails after 60 s without a byte while not paused, or after 30 min paused (not counted while paused for an alarm, entry or exit time). A READY image is discarded after 24 h without INSTALL, on CANCEL, on another image's order, or on removal. After 3 failed runs in 24 h a keypad answers BUDGET. Orders are resent after 300 ms, doubling to 2 s; the keypad counts as away after 30 s | unit |
-| LINK-036 | A keypad takes its update server and signing key from its paired master's sealed orders, which name the ones the master trusts (decided 2026-10-17): one whose trust record differs stores the order's server and key as its own before it checks or downloads anything; the installer changes them only on the master (installer's code and a hold, never with the factory code, OTA-020, OTA-021); no keypad screen asks for a key | unit |
+| LINK-036 | A keypad takes its update server, channel and signing key from its paired master's sealed orders, which name the ones the master trusts (decided 2026-10-17): one whose trust record differs stores the order's server and key as its own before it checks or downloads anything; the installer changes them only on the master (installer's code and a hold, never with the factory code, OTA-020, OTA-021); no keypad screen asks for a key | unit |
 | LINK-037 | FW_* messages go only on transports whose largest frame is 250 B or more, never on 433 MHz; FW_INFO, FW_ORDER and FW_STATE fit 225 B at their longest; FW_PAGE fits the peer's frame | unit |
 | LINK-038 | The floor: a master serves every v1 message above to a protocol-1 keypad for as long as one may be paired, and a later keypad works with a v1 master; neither refuses a peer at protocol 1 or above; a HELLO stays at most 128 B | frozen fixture, frozen peer |
 | LINK-039 | New types, ops, kinds and values go only to a peer with their capability bit; the master maps values a protocol-1 peer doesn't know to the nearest v1 one and answers an unknown command type UNAVAILABLE; a keypad decodes an unknown arm state as armed and an unknown sounder as the alarm, sounds fire and CO from STATUS FIRE/CO, and reads an unknown `why` by its decade | future peer, `test_plink_view.c` |
@@ -834,7 +834,9 @@ Decided 2026-10-17 (Decisions, keypad updates, 1): changes made on the master go
   (the fetch section) and the key it trusts for the image (`key`).
 - **What the keypad does.** When its trust record (`ota`/`trust`) names another server or key, it
   stores the order's as its own, as a server change does on a master, before it checks or
-  downloads anything. Only its paired master's sealed orders can change it.
+  downloads anything; it takes the order's channel too (`ota`/`chan`), so its own Install in
+  maintenance asks for its master's release on the right channel. Only its paired master's sealed
+  orders can change them.
 - **Who changes them.** The installer, on the master only: the installer's code and a hold, never
   with the factory code (OTA-020, OTA-021). The master's event log records it (OTA-023); its keypads
   follow at their next order.
@@ -1708,20 +1710,12 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   b387e1e)
 - [x] Event stages on the master: `firmware_update` 9-12 from {keypad, n}, `keypad_failed`'s why in
   the JSON and Activity's words (docs/features/01 CORE-PROG-009) (BL-048, b387e1e)
-- [ ] The simple design (decisions 6-8): a small planner in place of `plink_fw.c` (FETCH to every
-  keypad behind as soon as the master has its target, RELAY when needed, INSTALL with the master's
-  own restart, a keypad found behind later, a failed download again after an hour, no loop); the
-  keypad on trial until its master's INFO names V, the master's version from INFO only, downloads
-  paused only for an alarm, entry or exit time, a panic or a kept tone; `panel_ota`: an ordered run
-  capped at its order's version, the trial, the spare slot read for the relay; no Stop on a keypad,
-  no key wait (LINK-029..036) (BL-048)
-- [ ] Services: the master (the planner each poll, FW_REQ from its running or spare slot, INSTALL
-  before its own restart, the restart and supervision holds, the keypads part of its self-test,
-  STATUS UPDATING and HOLD) and the keypad (orders to `panel_ota`, the gate, the cap and
-  `link/mver`, the master's server and key from the orders, FIRE/CO sounding from STATUS) (LINK-029
-  to -036, -041) (BL-048)
-- [ ] MQTT `keypads`, `plink fw` console (BL-048)
-- [ ] Screens as the approved drawing has them (8 screens, 2026-10-17) (BL-048)
+- [x] The simple design: the small planner, the keypad on trial with its master, downloads paused only for
+  an alarm, entry or exit time, a panic or a kept tone (LINK-029..036) (BL-048, 2421ee0)
+- [x] Services: the master and the keypad, the PC simulation (`host/link_sim`, `tools/link_fw_sim.py`)
+  (LINK-029 to -036, -041) (BL-048, 8e29ac5)
+- [x] MQTT `keypads`, `plink fw` console (BL-048, 8e29ac5)
+- [x] Screens as the approved drawing has them, their data on the panels (BL-048, 3e9ef1d, 74eb4b4)
 - [x] `proto_fwsrv`: `want` in the check, the server's `unknown_version` and `not_offered`, an
   unknown reason on a check with `want` taken as a refusal, `proto_fwsrv_check_why` (LINK-031)
   (BL-048, b387e1e)
@@ -1729,10 +1723,14 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   (LINK-042) (BL-048)
 - [ ] The update server takes `want` (update-server repository, BL-050): built on its local branch
   `bl-050-want`, not merged or deployed
-- [ ] On the panels: the master and the keypad updated together (the keypad downloading itself);
-  the keypad's WAN blocked at the router, so it gets the master's image over the link; armed while
-  it downloads, restarting only once disarmed; the master going back, and the keypad with it; power
-  pulled mid-download; `display watch` and touch on the keypad while it writes (BL-048)
+- [x] On the panels (2026-10-17, muted): the 7" master and the 10.1" keypad updated together from
+  0.7.0 to 0.7.1-bench.1, the keypad relayed from a bench copy while the master was armed (3.6 MB in
+  about a minute), both restarted within 4 s of the disarm, the master passed its self-test with
+  its keypad back, the keypad's trial passed once its master ran the version, Activity logged
+  installing and updated; the keypad took its master's update server by itself (BL-048)
+- [ ] On the panels, still: the keypad downloading itself (needs an update server with the
+  release); the master going back and the keypad with it; power pulled mid-download; `display
+  watch` and touch on the keypad while it writes (BL-048)
 - [x] Run-time caps: the offered caps an argument of `plink_master_init` and `plink_keypad_init`,
   each session keeping both offers ANDed under `PLINK_CAPS_KNOWN` (LINK-043) (BL-048,
   a97a745)

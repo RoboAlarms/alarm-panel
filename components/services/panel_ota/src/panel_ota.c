@@ -239,9 +239,10 @@ static uint8_t s_why;                   /* how the last ordered run ended (FW_ST
 static uint8_t s_stop_why;              /* the why a stop ends with: STOPPED, CANCELLED, TIMEOUT */
 /* The update task's own: the why of a writer failure, read by the writer's caller after it. */
 static uint8_t s_writer_why;
-/* LINK-036: an order's server and key taken into s_trust (in RAM at once): the update task stores
- * them. */
+/* LINK-036: an order's server and key taken into s_trust, and its channel into s_st.channel (in
+ * RAM at once): the update task stores them. */
 static volatile bool s_trust_save;
+static volatile bool s_chan_order_save;
 /* LINK-030: a master's keypads restart with it (panel_ota_set_restart_with). */
 static panel_ota_with_t s_with;   /* set before the first restart */
 static volatile bool s_with_set;
@@ -3918,6 +3919,14 @@ static void order_adopt(const panel_ota_order_t *o)
         s_trust_save = true;
         changed_locked();
     }
+    /* Its master's channel too: a keypad's own Install (maintenance, the needs-update state) then
+     * asks the server on the channel its master's release is on. */
+    if (o->channel != NULL && proto_fwsrv_channel_valid(o->channel) &&
+        strcmp(o->channel, s_st.channel) != 0) {
+        snprintf(s_st.channel, sizeof(s_st.channel), "%s", o->channel);
+        s_chan_order_save = true;
+        changed_locked();
+    }
     unlock();
     if (changed) {
         char fp[PROTO_FWSRV_FINGERPRINT_LEN];
@@ -3932,6 +3941,29 @@ static void order_adopt(const panel_ota_order_t *o)
  * next tick when NVS refuses it. */
 static void trust_save_tick(void)
 {
+    if (s_chan_order_save) {
+        char channel[sizeof(s_st.channel)];
+        lock();
+        s_chan_order_save = false;
+        snprintf(channel, sizeof(channel), "%s", s_st.channel);
+        unlock();
+        nvs_handle_t h;
+        esp_err_t err = nvs_open(NVS_NS, NVS_READWRITE, &h);
+        if (err == ESP_OK) {
+            err = nvs_set_str(h, "chan", channel);
+            if (err == ESP_OK) {
+                err = nvs_commit(h);
+            }
+            nvs_close(h);
+        }
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "the channel from its master's order could not be stored (%s)",
+                     esp_err_to_name(err));
+            s_chan_order_save = true; /* tried again */
+        } else {
+            ESP_LOGI(TAG, "update channel from its master's order: %s", channel);
+        }
+    }
     if (!s_trust_save) {
         return;
     }

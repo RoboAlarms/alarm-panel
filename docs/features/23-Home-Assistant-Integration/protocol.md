@@ -198,8 +198,8 @@ it arrived. Suggested entities on the integration's side: `switch`, `light` (bri
 
 ### Panel settings and keypads (API 1 addition, 2026-10-16; docs/features/11, BL-216)
 
-Designed. Built so far: only the panel's `values` writer and parser (`proto_prefs.h`); neither
-side sends or reads these messages yet. Paired connections only. A client that doesn't know these
+Built on the panel (`proto_link.h`, `ha_link`) and in the integration's 0.3.0 (not released); the
+two not yet tried together (BL-216). Paired connections only. A client that doesn't know these
 types ignores them. One that knows them makes entities only once they arrive, so an older panel
 gets none and is never sent a `settings_set`. The panel's link keypads run no connection of their
 own: the master relays them (docs/features/11 "Smart Home and Home Assistant on keypads").

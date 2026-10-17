@@ -16,8 +16,10 @@ How the note keeps its outcome beside long room tabs (the open tab shortened, th
 was fixed after that test: host tests and preview only until a panel runs it. A thermostat at
 rest (Idle, Off only in mode Off), an offline device that stays readable and long names that
 stay inside their tiles were built on 2026-10-07 (BL-171, BL-181, BL-184): host tests and
-preview, not on a panel yet.
-Left: a cover's class
+preview, not on a panel yet. A link keypad's Smart Home (HCTL-013, BL-216) is built and tried in
+the PC simulator and the preview; on the panels only with an empty list, as Home Assistant wasn't
+connected (2026-10-16).
+Left: a link keypad's tiles on the panels (BL-216), a cover's class
 and presets (BL-171), the
 catalog staged (BL-178), Arrange's sizes (BL-180) - a light's warmth and a thermostat's fan mode and humidity, Settings > Devices, the
 unlock and open events, and an unlock with a code typed at the panel (BL-045); the built-in automations are
@@ -54,7 +56,7 @@ panel's Z-Wave network show up. We do the same job source-agnostically.
 | HCTL-010 | Compiled only with `CONFIG_ALARM_HOME_CONTROL` (needs `SPIRAM`); without it the rail and Settings entries don't exist | build profiles |
 | HCTL-011 | An automation may do what the system master or installer who saved it could do at the panel: turn things on or off, lock and unlock, open and close, arm and disarm (docs/features/41 AUT-002, AUT-011; ADR-050). It asks no code when it runs (HCTL-005 is for a person at the screen): it acts as that person, re-checked each time. The less secure actions - disarm, unlock, open, stop - run only while the installer allows them (AUT-015) and, after a door, window, motion or alarm trigger, only once confirmed at save (AUT-016); a script never | host tests |
 | HCTL-012 | A pending action has a bounded lifetime and is tied to the connection generation it was sent on: a reply that never comes times out, and a source that drops and reconnects fails whatever was in flight as an unknown outcome instead of leaving the device busy forever. Nothing here replays a command automatically - a person retries on purpose, which matters most for unlock and open. The screen says an unknown outcome is one: "Couldn't confirm Garage Door opened" on the page's note and "Not confirmed" on the tile and sheet - never "didn't" | host tests |
-| HCTL-013 | A link keypad's Smart Home works as the master's: the same page, words and states from the master's registry (docs/features/11 LINK-044..049), actions judged by the master as `{KEYPAD, n}` with the keypad's home partition's codes (LINK-048; the owner's decision 1, decided 2026-10-16); Arrange is the keypad's own (HCTL-008; decision 2, the same). Designed 2026-10-16, screens approved (proposal P1), not built (BL-216) | link tests, preview, HIL |
+| HCTL-013 | A link keypad's Smart Home works as the master's: the same page, words and states from the master's registry (docs/features/11 LINK-044..049), actions judged by the master as `{KEYPAD, n}` with the keypad's home partition's codes (LINK-048; the owner's decision 1, decided 2026-10-16); Arrange is the keypad's own (HCTL-008; decision 2, the same). Designed 2026-10-16, screens approved (proposal P1); built (BL-216, 787c2da) and tried in the PC simulator (`link_sim`, `link_smoke`) and the preview (`bl-216-kp-devices`, `-kp-device-unlock`, `-kp-devices-lost`, `-kp-devices-unconfirmed`); on the two development panels (2026-10-16) the keypad and the master shared Smart Home with an empty list (Home Assistant not connected), so no tile was tried on a panel yet | link tests, preview, HIL |
 
 ## Design
 
@@ -150,9 +152,9 @@ rail's Smart Home (a house with Wi-Fi), Favorites and the rooms as tabs, tiles o
 cells with the control on the tile, the state in words, detail sheets, and Arrange.
 Tiles use the same design language as Home (colour means state, 64 px targets, words plus
 icons). An unlock opens the code pad titled "Unlock Front Door".
-A link keypad will show the same view, from its master's registry over the link (HCTL-013;
-designed, BL-216, its screens in proposal P1, approved 2026-10-16), and a lost link will look as
-a dropped Home Assistant does: every tile "Offline since" the last device data.
+A link keypad shows the same view, from its master's registry over the link (HCTL-013; BL-216,
+built as proposal P1 shows, approved 2026-10-16), and a lost link looks as a dropped Home
+Assistant does: every tile "Offline since" the last device data.
 
 The page's note is a short summary of the open page, not a log: each tile keeps its own outcome.
 It picks at most two facts in four passes - jammed devices; unlocked locks and open entrance
@@ -323,5 +325,7 @@ as the person who saved them, and an installer option can take the less secure o
       change keeps a failed action's words and an action under way (HCTL-006, HCTL-012) (BL-178)
 - [ ] Arrange: no Small and Wide for a fan without speeds, and a way back to a kind's own size
       (HCTL-008) (BL-180)
-- [ ] A link keypad's Smart Home as the master's, as proposal P1 shows (approved 2026-10-16):
-      docs/features/11's tasks for it (HCTL-013) (BL-216)
+- [x] A link keypad's Smart Home as the master's, as proposal P1 shows (approved 2026-10-16), in
+      the PC simulator and the preview (HCTL-013) (BL-216, 787c2da)
+- [ ] A link keypad's Smart Home on the panels with Home Assistant connected and devices:
+      docs/features/11 Test and acceptance (HCTL-013) (BL-216)

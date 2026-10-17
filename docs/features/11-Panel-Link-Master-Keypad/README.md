@@ -6,14 +6,18 @@ and the keypad's service (`plink_service`), the keypad role on the P4 panels, th
 the two development panels (2026-10-16) pairing, commands, lockout, supervision, a master restart,
 removal and pairing again, and a PC keypad with a panel worked, a change shown on the keypad in
 about 0.3 s. A keypad's own voice (LINK-028, decided 2026-10-16) works on the panels, tried with
-both speakers muted. Left: the bench cases below that need a person or a network change, ESP-NOW
-through our C6 build, 433 MHz, keypad inputs, GOTO, keypad updates at the master's order (M8,
-designed 2026-10-16: "Updates through the link"). Smart Home and Home Assistant on keypads
-designed 2026-10-16 (BL-216), its decisions and screens approved that day. The v1 wire of both
-(types 0x2D-0x3A, run-time capabilities, the frozen fixture) is built and host-tested, and so is
-Smart Home's and settings' link core (`plink_home`, the master's and the keypad's managers); its
-services, the keypad's page and Home Assistant are not built yet. Nothing new is sent, as no
-panel offers a capability yet ·
+both speakers muted. Smart Home and Home Assistant on keypads (BL-216, designed and approved
+2026-10-16) is built: the wire, the link core, the master's and the keypad's services, the
+keypad's Smart Home page as proposal P1 shows, the PC simulator and the preview. On the two
+panels (2026-10-16, both speakers muted) the keypad and the master share HOME and PREFS, a
+settings change from the master reaches the keypad's screen and its report within a second (held
+during an exit time), the keypad's commands still answer in 150-190 ms, and its device data stays
+0-10 s old on the master's summaries; the device tiles were tried only on the PC, as the bench
+master had no devices (Home Assistant not connected). The integration's 0.3.0 is built in
+`RoboAlarms/ha-addon` on a local branch, not released. Left:
+the bench cases below that need a person or a network change, Smart Home and settings on the
+panels with Home Assistant connected, ESP-NOW through our C6 build, 433 MHz, keypad inputs, GOTO,
+keypad updates at the master's order (M8, designed 2026-10-16: "Updates through the link") ·
 **Milestone:** M7 (keypad updates M8) · **Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
@@ -80,10 +84,10 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
   13. Proposal P1 is approved: on the 10.1" keypad, its rail with Smart Home, Smart Home live,
       the code pad "Unlock {0}", link lost ("Offline since 9:12 PM" on every tile, the note
       "Your devices can't be reached right now") and a give-up ("Not confirmed"), from today's
-      parts and words only, its pictures from the preview's `host_link_demo`. `ui_devices.c`
-      and `ui_link.c` change as it shows, and its screens move into
-      `docs/features/07-UI-LVGL-Pro/mockup/screens/panel-link.js` once it is built
-      (`kp-devices`, `kp-device-unlock`, `kp-devices-lost`, `kp-devices-unconfirmed`).
+      parts and words only, its pictures from the preview's `host_link_demo`. Built as it shows
+      (`ui_devices.c`, `ui_link.c`; 787c2da), its screens now in
+      `docs/features/07-UI-LVGL-Pro/mockup/screens/panel-link.js` (`kp-devices`,
+      `kp-device-unlock`, `kp-devices-lost`, `kp-devices-unconfirmed`).
 
 ## Requirements
 | ID | Requirement | Verified by |
@@ -107,7 +111,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-017 | Version skew: every payload section carries its length and a receiver takes what it knows and skips the rest; fields are only appended; the session uses the lower protocol version and the common capabilities (this side's offer, masked with `PLINK_CAPS_KNOWN`, AND the peer's, so a bit either side doesn't know is never shared), and a request the master can't serve is answered UNAVAILABLE; an unknown message type is dropped; v1's header never changes; the rules for later versions are LINK-038..042 | unit |
 | LINK-018 | Every command carries a request id (a random base drawn at each keypad start, then counted); the master answers a retry from its cache keyed on (keypad, request id) with a digest of the command, kept 90 s after the last copy arrived, and never runs a command twice; the same id with a different command runs as a new one; codes are never stored or logged, and every copy is wiped after use | unit |
 | LINK-019 | The keypad's copy of the configuration holds no code material (each code hash replaced by a filler unique to its slot, the salt zeroed) and shows duress users as standard users | unit |
-| LINK-020 | A panel in the keypad role runs no alarm engine, event log, zone sources, device sources or integrations; it shows and controls its master's devices through the link (LINK-044..049; designed, BL-216); it updates itself only at its master's order (LINK-029) or through LINK-025, only while its link is up and the master's partitions allow it (OTA-004), and its update self-test needs the link | HIL |
+| LINK-020 | A panel in the keypad role runs no alarm engine, event log, zone sources, device sources or integrations; it shows and controls its master's devices through the link (LINK-044..049; built, BL-216); it updates itself only at its master's order (LINK-029) or through LINK-025, only while its link is up and the master's partitions allow it (OTA-004), and its update self-test needs the link | HIL |
 | LINK-021 | On Wi-Fi the master is found by mDNS `_roboalarms-link._udp` on UDP port 6056, announced only while it has a keypad or pairing is open (NET-007), and by a subnet broadcast when mDNS finds nothing; a peer's address moves only on a sealed frame that passes the tag and replay checks | HIL |
 | LINK-022 | The link keys are never in a backup (the `link` namespace is not in the backup policy); a factory reset erases them | unit |
 | LINK-023 | Panic keyed on a keypad is resent with the same request id every 1 s until answered or 60 s have passed, whatever the link state, and runs once (KPD-007) | unit |
@@ -130,16 +134,16 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-040 | Fields are appended only, and absence is known from a section's length; a configuration field is never widened in place; a link record never raises compat and stays at most 1024 B; new per-keypad facts go in new NVS keys | `test_plink_msg.c`, `test_plink_store.c` |
 | LINK-041 | With keypads, a master's self-test needs one: `PANEL_OTA_OK_KEYPADS` (bit 1 << 6, `PANEL_OTA_HEALTH_COUNT` 7) beats while a keypad that was online in the minute before "installing" (NVS `link/kup`) has a session again and sends heartbeats; with no such keypad it always beats. A newer master that can't talk to its keypads goes back | HIL |
 | LINK-042 | CI runs the frozen v1 message fixture, a future peer and, once released, the frozen v1 binaries in both roles, including a v1 keypad updated on each path | CI |
-| LINK-043 | Capabilities are chosen at run time: what a panel offers is an argument of `plink_master_init` and `plink_keypad_init`, masked with `PLINK_CAPS_KNOWN` (0x0007), and each session keeps its own offer AND the peer's, so an unknown bit is never shared (built; no panel offers a bit yet). `PLINK_CAP_HOME` (0x0002) is to be offered by a build with home control, and on a keypad only with its mirror allocated. `PLINK_CAP_PREFS` (0x0004) by every build with the UI. Types 0x32-0x3A go only in a session with their bit and only on a transport whose largest frame is 250 B or more, never 433 MHz. Every payload fits 225 B except DEV_LIST_PAGE, which fits the peer's frame (the codecs, the frozen fixture and the link core's sending built, HOME offered only with a mirror; offering by a panel designed, BL-216) | unit (`test_plink_session.c`, `test_plink_link.c`, `test_plink_msg.c`), frozen fixture |
-| LINK-044 | A keypad mirrors its master's device list: a catalog blob pulled by `list_crc` and paged as the configuration, at most 64 devices (v1; more needs a new bit), decoded leniently. A blob that fails is not pulled again and asks for no update. The old list is kept until a new one installs, with each row's state carried over by ref. RAM only (the link core built; the rest designed, BL-216) | unit, link |
-| LINK-045 | The master pushes changed device records at most one round per 500 ms per keypad (1 s on frames under 1,200 B), the full set at each new session and on DEV_STATE_REQ, and a summary every 10 s. A keypad whose `states_crc` differs asks after 250 ms, then at least 1 s apart, doubling to 30 s. A record applies only under the installed list and from a newer frame of the session for its device (LINK-026). On a working Wi-Fi network a keypad shows a change within 1 s of the master's own screen (the link core built; the rest designed, BL-216) | unit, link, HIL |
-| LINK-046 | While a keypad isn't ONLINE, or has had no device data for 30 s, every mirrored device reads offline since its last device data, as the master's do when Home Assistant drops (HCTL-006). Device data is data under the installed list: data under a list the keypad can't install keeps nothing fresh. A tap then sends nothing (the link core built; the rest designed, BL-216) | unit, preview |
-| LINK-047 | DEV_ACT names a device by ref, never by index; the ref and code are zero-padded, so every DEV_ACT has the same size. The master answers copies from its own cache (8 per keypad; an entry is reused 3 s after its last copy and kept up to 90 s) and runs an action at most once. The keypad resends every 500 ms for 3 s, never after, and shows an unanswered action as "Not confirmed" (HCTL-012). The keypad asks for the code itself; the master judges again (the link core built; the rest designed, BL-216) | unit, link |
-| LINK-048 | One judge for both screens (`device_service_person_act`). A keypad's action runs as `{KEYPAD, n}` with n from the session, its code checked for the keypad's home partition (decision 1, decided 2026-10-16). A wrong code counts toward that keypad's lockout and its STATUS shows it. Arm-only and guest codes are refused; Z-Wave rows are refused until BL-169 (designed, BL-216; the link core hands `port.dev_run` the keypad's number and home partition) | unit, HIL |
-| LINK-049 | Device and settings traffic shares no cache, slot, bucket, task or turn with alarm commands, and goes only in a turn with no STATUS change or RESULT due for that keypad. With 64 devices changing every 100 ms, disarm and panic answer as fast as without it (the link core built, its storm run on the PC; the rest designed, BL-216) | link (storm), HIL |
-| LINK-050 | A keypad with `PLINK_CAP_PREFS` reports its settings (field ids frozen in `proto_prefs.h`), its panel id, its voice state and the fields it accepts: at each session's first STATUS, after each save (at most 1 a second), and on PREFS_REQ. HEARTBEAT appends the settings CRC; the master asks again while it differs, at most every 2 s. The master keeps the report in RAM only (the link core built; the rest designed, BL-216) | unit, link |
-| LINK-051 | PREFS_SET carries only listed fields to change. One is in flight per keypad, resent every 1 s and given up at 6 s. The answer is a PREFS with its req, the refusals per field and the values now stored. A req is applied once (the answer is kept 30 s). The keypad checks every value itself and applies it through its screen (UI-046) (the link core built; the rest designed, BL-216) | unit, link |
-| LINK-052 | Never set over the link: codes, role, pairing, home partition, name, supervision, Wi-Fi and IP, time, language and region, updates, factory reset, the setup, the Panel Manager, developer access. PREFS_SET and PREFS_REQ come from the master only (designed, BL-216) | unit (`test_plink_frame.c`) |
+| LINK-043 | Capabilities are chosen at run time: what a panel offers is an argument of `plink_master_init` and `plink_keypad_init`, masked with `PLINK_CAPS_KNOWN` (0x0007), and each session keeps its own offer AND the peer's, so an unknown bit is never shared (built). `PLINK_CAP_HOME` (0x0002) is offered by a master in a build with home control whose device registry runs, and by a keypad only with its mirror allocated. `PLINK_CAP_PREFS` (0x0004) by every build with the UI. No panel offers `PLINK_CAP_FW` yet. Types 0x32-0x3A go only in a session with their bit and only on a transport whose largest frame is 250 B or more, never 433 MHz. Every payload fits 225 B except DEV_LIST_PAGE, which fits the peer's frame (built, BL-216; on the two panels both sessions shared HOME and PREFS, 2026-10-16) | unit (`test_plink_session.c`, `test_plink_link.c`, `test_plink_msg.c`), frozen fixture |
+| LINK-044 | A keypad mirrors its master's device list: a catalog blob pulled by `list_crc` and paged as the configuration, at most 64 devices (v1; more needs a new bit), decoded leniently. A blob that fails is not pulled again and asks for no update. The old list is kept until a new one installs, with each row's state carried over by ref. RAM only (built, BL-216; tried on the PC, and on the panels with an empty list only) | unit, link |
+| LINK-045 | The master pushes changed device records at most one round per 500 ms per keypad (1 s on frames under 1,200 B), the full set at each new session and on DEV_STATE_REQ, and a summary every 10 s. A keypad whose `states_crc` differs asks after 250 ms, then at least 1 s apart, doubling to 30 s. A record applies only under the installed list and from a newer frame of the session for its device (LINK-026). On a working Wi-Fi network a keypad shows a change within 1 s of the master's own screen (built, BL-216; on the panels the summaries kept the keypad's device data 0-10 s old, a device's change not yet seen there) | unit, link, HIL |
+| LINK-046 | While a keypad isn't ONLINE, or has had no device data for 30 s, every mirrored device reads offline since its last device data, as the master's do when Home Assistant drops (HCTL-006). Device data is data under the installed list: data under a list the keypad can't install keeps nothing fresh. A tap then sends nothing (built, BL-216; tried on the PC and in the preview) | unit, preview |
+| LINK-047 | DEV_ACT names a device by ref, never by index; the ref and code are zero-padded, so every DEV_ACT has the same size. The master answers copies from its own cache (8 per keypad; an entry is reused 3 s after its last copy and kept up to 90 s) and runs an action at most once. The keypad resends every 500 ms for 3 s, never after, and shows an unanswered action as "Not confirmed" (HCTL-012). The keypad asks for the code itself; the master judges again (built, BL-216; tried on the PC and in the preview) | unit, link |
+| LINK-048 | One judge for both screens (`device_service_person_act`). A keypad's action runs as `{KEYPAD, n}` with n from the session, its code checked for the keypad's home partition (decision 1, decided 2026-10-16). A wrong code counts toward that keypad's lockout and its STATUS shows it. Arm-only and guest codes are refused; Z-Wave rows are refused until BL-169 (built, BL-216: the judge in 8abf492, the keypads' actions through it in 787c2da; tried on the PC, not yet on a panel) | unit, HIL |
+| LINK-049 | Device and settings traffic shares no cache, slot, bucket, task or turn with alarm commands, and goes only in a turn with no STATUS change or RESULT due for that keypad. With 64 devices changing every 100 ms, disarm and panic answer as fast as without it (built, BL-216; the storm run on the PC; on the panels, with HOME and PREFS shared and no devices, the keypad's commands answered in 150-190 ms) | link (storm), HIL |
+| LINK-050 | A keypad with `PLINK_CAP_PREFS` reports its settings (field ids frozen in `proto_prefs.h`), its panel id, its voice state and the fields it accepts: at each session's first STATUS, after each save (at most 1 a second), and on PREFS_REQ. HEARTBEAT appends the settings CRC; the master asks again while it differs, at most every 2 s. The master keeps the report in RAM only (built, BL-216; on the panels a change's report reached the master within 1 s) | unit, link |
+| LINK-051 | PREFS_SET carries only listed fields to change. One is in flight per keypad, resent every 1 s and given up at 6 s. The answer is a PREFS with its req, the refusals per field and the values now stored. A req is applied once (the answer is kept 30 s). The keypad checks every value itself and applies it through its screen (UI-046) (built, BL-216; on the panels from the master's console: on the keypad's screen within 1 s, refused as held during an exit time) | unit, link |
+| LINK-052 | Never set over the link: codes, role, pairing, home partition, name, supervision, Wi-Fi and IP, time, language and region, updates, factory reset, the setup, the Panel Manager, developer access. PREFS_SET and PREFS_REQ come from the master only (built, BL-216) | unit (`test_plink_frame.c`) |
 
 ## Frame format (v1)
 
@@ -202,7 +206,7 @@ followed by fields, so later fields can be appended (LINK-017).
 | 0x27 | `CMD` | K->M | sealed | req u32, op u8, op section, code (len u8 + ALARM_CODE_MAX_LEN bytes, zero-padded), new code (the same) |
 | 0x28 | `RESULT` | M->K | sealed | req u32, result u8, user u8, not_ready_zone u16, may_disarm u8 |
 | 0x29 | `SOUND` | M->K | sealed | partition u8, sound u8, zone u16 |
-| 0x2A | `HEARTBEAT` | K->M | sealed | flags u8 (bit 0 mains lost, 1 battery low, 2 battery present), rssi i8, uptime_s u32, status_age_s u16 (0xFFFF none yet), fw (≤ 31); in a session with `PLINK_CAP_PREFS`, an appended section with prefs_crc u32 (its codec built, not sent yet: BL-216), read only when bytes remain |
+| 0x2A | `HEARTBEAT` | K->M | sealed | flags u8 (bit 0 mains lost, 1 battery low, 2 battery present), rssi i8, uptime_s u32, status_age_s u16 (0xFFFF none yet), fw (≤ 31); in a session with `PLINK_CAP_PREFS`, an appended section with prefs_crc u32 (BL-216), read only when bytes remain |
 | 0x2B | `TIME` | M->K | sealed | epoch_ms i64, tz (≤ 63, POSIX TZ) |
 | 0x2C | `BYE` | M->K | sealed | reason u8 (removed at the master) |
 | 0x32 | `DEV_LIST_REQ` | K->M | sealed | list_crc u32, offset u32, max u16 (CFG_REQ's layout and codec) |
@@ -217,8 +221,9 @@ followed by fields, so later fields can be appended (LINK-017).
 
 Types 0x2D-0x31 are in "Updates through the link". Types 0x32-0x3A and the HEARTBEAT section, with
 their capability bits, sizes, values and rules, are in "Smart Home and Home Assistant on keypads".
-Their codecs, goldens and frozen fixture are built (`plink_msg.h`), and so is the link core that
-sends and takes them (BL-216); nothing sends them yet, as no panel offers a capability (LINK-043).
+Their codecs, goldens and frozen fixture are built (`plink_msg.h`), and so are the link core and
+the services that send and take them (BL-216). The panels send 0x32-0x3A and the HEARTBEAT
+section; nothing sends 0x2D-0x31 yet, as no panel offers `PLINK_CAP_FW` (LINK-043).
 
 **STATUS.** System section: epoch_ms i64, partitions u8 (mask), home u8 (this keypad's home
 partition), sys_troubles u32, sys_restored u32, dev_troubles u32, default_codes u8, flags u8 (bit 0
@@ -423,9 +428,9 @@ After pairing, and at every (re)connection, the keypad starts a handshake:
 | PREFS_SET retry / give up / keypad's answer kept | 1 s / 6 s / 30 s |
 | A remote change of how the screen looks | ≤ 1 per 2 s per panel; waits up to 2 s |
 
-Of the last eight rows, from "Device data build", the link core's timers are built and
-host-tested (BL-216); the device data build, the screen's wait and a remote change of how the
-screen looks are designed, not built ("Smart Home and Home Assistant on keypads").
+The last eight rows, from "Device data build", are built and host-tested (BL-216; "Smart Home
+and Home Assistant on keypads"). On the panels the summary every 10 s kept the keypad's device
+data 0-10 s old, and a settings change reached the keypad within 1 s (2026-10-16).
 
 ## Transports
 
@@ -457,14 +462,13 @@ goes to its HELLO's source without moving it). Firmware with the link sets
   Keypads update at the master's order, after the master has confirmed its own update (LINK-030),
   and restart only at its INSTALL ("Updates through the link").
 - **The keypad backend** serves from the link: snapshot, configuration, recent events, commands,
-  code checks and code changes; locally: Wi-Fi, screen, sound (its Voice volume and Announcements
-  too, LINK-028), language, updates, About. The master-only pages (installer mode, users, zone
-  sources, integrations, event log, automations, the zones' spoken-name editor, and devices until
-  BL-216 is built) are hidden by a role gate the UI reads (`ui_link_keypad`,
+  code checks and code changes, and the master's devices and their actions; locally: Wi-Fi,
+  screen, sound (its Voice volume and Announcements too, LINK-028), language, updates, About. The
+  master-only pages (installer mode, users, zone sources, integrations, event log, automations,
+  the zones' spoken-name editor) are hidden by a role gate the UI reads (`ui_link_keypad`,
   `ui_voice_editor_present`); `program_enter` and `user_*` answer UNAVAILABLE. User editing never
-  goes over the link. Designed for BL-216, its link core built, its service and page not: Smart
-  Home from the master's registry, and its own Arrange (LINK-044..049; "Smart Home and Home
-  Assistant on keypads").
+  goes over the link. Smart Home (BL-216, built) shows under the master's rule, from the master's
+  registry, with its own Arrange (LINK-044..049; "Smart Home and Home Assistant on keypads").
 - **Counters the UI relies on**: snap.seq rises with every status or zone record applied and
   equals `snapshot_seq()`; config_seq rises only when a newly decoded configuration is installed;
   `get_config` is true once one is.
@@ -890,10 +894,24 @@ touching keypads. It still ships in v1, because the same firmware runs both role
 ## Smart Home and Home Assistant on keypads
 The owner (2026-10-16): "we need to make sure that the Smart Home controls work on the Slave as
 they do on the Master. Home Assistant should also be able to control the settings of the slave
-panel as well." Designed 2026-10-16 (BL-216). Built and host-tested: its wire (the codecs, the
-run-time capabilities, `proto_prefs` and the frozen fixture) and its link core (`plink_home`, the
-master's and the keypad's managers; "Where the code goes"). Not built yet: the services, the
-keypad's page and Home Assistant. No panel offers HOME or PREFS yet, so nothing new is sent.
+panel as well." Designed 2026-10-16 (BL-216), and built: the wire (the codecs, the run-time
+capabilities, `proto_prefs` and the frozen fixture; a97a745), the link core (`plink_home`, the
+master's and the keypad's managers; ed58b12), the one device judge and the path of a change from
+elsewhere through the screen (UI-046; 8abf492), the master's and the keypad's services, the
+keypad's Smart Home page as proposal P1 shows, the PC simulator and the preview (787c2da;
+"Where the code goes"). On the two development panels (2026-10-16, both speakers muted, the
+7" master and the 10.1" keypad):
+- the keypad and the master agree on HOME and PREFS;
+- a settings change from the master's console reaches the keypad's screen and its report within
+  a second, and one during an exit time is refused as held;
+- the keypad's commands still answer in 150-190 ms;
+- the master's summaries every 10 s keep the keypad's device data 0-10 s old (the keypad's
+  `plink dev` showed an older age, its screen copy's, until 77e1f93; the link was right).
+
+The device tiles were not tried on the panels: the bench master's registry was empty, as Home
+Assistant was not connected. They were tried in the PC simulator and the preview only. Home
+Assistant's side, the integration's 0.3.0, is built in `RoboAlarms/ha-addon` on a local branch,
+not released and not yet tried with a panel (docs/features/23).
 
 The owner decided the 13 questions this design needs on 2026-10-16 ("Approve P1, recommendations
 OK"): each as recommended, listed in Decisions. The keypad's Smart Home screens are proposal P1,
@@ -941,14 +959,14 @@ Built with BL-048's wire, so v1 ships with it:
 - Each session keeps its own offer AND the peer's (`plink_session_t.caps`), so a bit either side
   doesn't know is never shared. `plink_master_peers` and `plink_keypad_info` give a live session's
   caps.
-- Every panel offers 0 for now (both services and `host/link_sim`): a bit is offered only with the
-  code that uses it.
+- A bit is offered only with the code that uses it: the services and `host/link_sim` offer HOME
+  and PREFS as below (BL-216, 787c2da); no panel offers FW yet.
 
-Who offers each bit (designed):
+Who offers each bit (built):
 
 | Bit | Name | Offered by the master | Offered by a keypad |
 |---|---|---|---|
-| 0x0002 | `PLINK_CAP_HOME` | Built with `CONFIG_ALARM_HOME_CONTROL`. The list is empty while `device_service` isn't running, so the keypad's rail stays hidden, as on such a master. | Built with `CONFIG_ALARM_HOME_CONTROL` and its mirror allocated in PSRAM. Never on the 4" board. |
+| 0x0002 | `PLINK_CAP_HOME` | Built with `CONFIG_ALARM_HOME_CONTROL` and its device registry running (`plink_service_set_home`, from `panel_app`). The list is empty until Home Assistant's catalog arrives, so the keypad's rail stays hidden, as on such a master. | Built with `CONFIG_ALARM_HOME_CONTROL` and its mirror allocated in PSRAM. Never on the 4" board. |
 | 0x0004 | `PLINK_CAP_PREFS` | Every build with the UI | Every build with the UI |
 
 Next free: bit 0x0008 and type 0x3B.
@@ -1043,6 +1061,8 @@ v1, frozen once released, and in `test/plink_wire_fixture_v1.h`:
   keeps the last record of the old row with the same ref until its own record arrives, so a
   rename never blinks. Then DEV_STATE_REQ asks for all.
 - **Storage.** RAM only. After a keypad restart, Smart Home appears once the list is in.
+- **A session without HOME.** The keypad drops its list at the session's start, so Smart Home
+  hides and no old list is kept, and pulls it again once a session has HOME.
 
 ### Device state
 
@@ -1087,7 +1107,9 @@ v1, frozen once released, and in `test/plink_wire_fixture_v1.h`:
    The master judges again.
 4. ACT_SET_MODE: `UI_DEV_ST_OFF/HEAT/COOL/AUTO` becomes the `DEV_MODE_*` bit.
 5. Hand it to the link task (`ksvc_dev_act`: its own box, mutex and semaphore, never
-   `s_cmd_mutex`, `plink_keypad_svc.c:152`). Wait at most 1 s, or 3 s with a code.
+   `s_cmd_mutex`). Wait at most 1 s, or 3 s with a code. Then wait up to 150 ms more
+   (`DEV_RELEASE_MS`): an answer the link task takes in the turn the wait ends still reaches the
+   pad, so it says "wrong code" or the lockout rather than closing as if the action went.
 6. Map the answer. For CODE_REFUSED, `*code_result = why`, so the pad says why, lockout included.
 7. No answer in time: return UI_DEV_OK and mark the device PENDING in an overlay. The core keeps
    resending every 500 ms. The overlay changes as follows:
@@ -1288,15 +1310,19 @@ HOME and PREFS, then restarts the master as a v1 master (FW only).
 
 ### Where the code goes
 
-**`panel_link` (portable), built and host-tested** (BL-216 S1; no panel offers HOME or PREFS yet):
+All of it is built (BL-216): the link core in ed58b12, the parts without the link in 8abf492
+(stage S2a), the services, the screen and the PC's tools in 787c2da (stage S2b), and the keypad's
+device data age in 77e1f93.
+
+**`panel_link` (portable), host-tested:**
 - **The wire:** run-time caps; the codecs in `plink_msg.h/.c` (DEV_LIST_* reuse
   `plink_enc/dec_cfg_req/_page`), with the device record and catalog record codecs and
   `plink_dev_act_digest`.
 - **`plink_home.h/.c`, both sides:** the catalog blob from the registry's rows
   (`plink_home_list_build`, `plink_home_recs_build`), `list_crc` (never 0) and `states_crc`, the
-  records by index (`plink_dev_recs_t`), a keypad's lenient walk of a pulled blob
-  (`plink_home_list_check`, `_next`, `_find`), and a row's record carried over by ref at an
-  install (`plink_home_list_keys`, `plink_home_carry`).
+  records by index (`plink_dev_recs_t`) and their values for a screen (`plink_home_values_of`), a
+  keypad's lenient walk of a pulled blob (`plink_home_list_check`, `_next`, `_find`), and a row's
+  record carried over by ref at an install (`plink_home_list_keys`, `plink_home_carry`).
 - **The master (`plink_master.h`):** `plink_master_home` takes the list and its records from one
   copy of the registry; `port.dev_run` runs an action off the link task and
   `plink_master_dev_answer` brings its answer back; `plink_master_prefs_set` starts a write and
@@ -1304,33 +1330,42 @@ HOME and PREFS, then restarts the master as a v1 master (FW only).
   and its settings report. Each keypad's state is a `plink_home_peer_t` in its `plink_peer_t`.
 - **The keypad (`plink_keypad.h`):** `plink_keypad_home_attach` gives it the mirror
   (`plink_dev_mirror_t`, the caller's memory; HOME is offered only with one); one `plink_pull_t`
-  each for the configuration and the list. `plink_keypad_dev_info`, `_dev_row`, `_dev_rec` and
-  `_dev_overlay` read the mirror; `plink_keypad_dev_act`, `_dev_act_state` and `_dev_act_release`
-  run an action; `plink_keypad_prefs_report`, `plink_keypad_take_prefs_set` and
-  `plink_keypad_prefs_answer` carry the settings.
+  each for the configuration and the list, which a session without HOME drops.
+  `plink_keypad_dev_info`, `_dev_row`, `_dev_rec` and `_dev_overlay` read the mirror, and
+  `plink_keypad_dev_view` gives a row as the screen shows it (the record, this keypad's own action
+  over it once released, offline while the data is stale); `plink_keypad_dev_act`,
+  `_dev_act_state` and `_dev_act_release` run an action; `plink_keypad_prefs_report`,
+  `plink_keypad_take_prefs_set` and `plink_keypad_prefs_answer` carry the settings.
 
-The rest is still to build, except `alarm_proto`'s part:
+**On the panels and the PC:**
 
-| Area | Change |
+| Area | What it does |
 |---|---|
-| `alarm_proto` | Built: `proto_prefs.h/.c`, the settings fields' table, the TLV list and its CRC, and Home Assistant's `values` writer and parser (docs/features/23 HAI-017). |
-| `plink_service` | New `plink_home_svc.c`: the `plink_dev` task via `alarm_mem_task_create` (4 KB PSRAM stack), builds into `s_dblob[2]` and records, device jobs (8 slots), RES_DEVICES and RES_DEV_ACK. `plink_service_prefs_set()` (non-blocking, a 4-deep queue to the link task). `plink_service_keypads()` under `link_pub_lock`. `g_pub` gains rssi, caps and each peer's report. Console: `plink dev [n]` and `plink prefs <n> [set <key> <v>]` (`set` in development builds only). |
-| Keypad service | The core's mirror (`plink_dev_mirror_t`, about 31 KB) and `ui_dev_t[64]` (14.3 KB), all PSRAM, under its own `s_dev_lock`, never `link_pub_lock`. `ksvc_dev_act`, modelled on `command()` (`:592-634`). PREFS report on `panel_prefs_seq()`. Mailbox hand-over. |
-| `plink_backend.c` | `be->dev_list = kp_dev_list` and `be->dev_act = kp_dev_act` replace the NULLs at `:314-315`. Lines `:316-317` are deleted, so `ui_port_esp`'s layout entries stay (Arrange per panel). These are set before `ui_app_start` (`panel_app.c:1584` < `:1627`), which matters because `ui_devices_init` returns early without `dev_list` (`ui_devices.c:2498`). |
-| `device_service` | `device_service_seq()`, bumped in `port_changed`, `port_result`, and after `device_service_act` or `_act_auto` return HC_OK. `device_service_person_act()`, returning `ds_person_t` with the same numbers as `ui_dev_result_t` (asserted). |
-| `home_control` | `hc_mode_word(bit)` |
-| `ui_backend` | `ui_dev_from_parts()` in `ui_dev_model.h` (moved from `ui_port_esp.c:1227-1253`). New `ui_prefs.h`: `UI_PREFS_F_*` (= proto ids, asserted), `UI_PREFS_LOOK`, `ui_prefs_merge`. New entries `prefs_remote_take` and `prefs_remote_done`. The comment at `ui_backend.h:1875` changes. |
-| `ui_port_esp` | `dev_list` uses `ui_dev_from_parts`. `dev_act` becomes a wrapper over `device_service_person_act`. It implements the two `prefs_remote_*` entries for both roles. |
-| `platform_esp` | `panel_prefs_seq()`, `panel_prefs_current()`, `panel_prefs_remote_submit`, `_take`, `_done` and `_cancel`. The seq and RAM copy are updated in `panel_prefs_save` (`panel_prefs.c:134`), so every writer is caught. |
-| UI | Drop `&& !ui_link_keypad()` and `\|\| ui_link_keypad()` at `ui_devices.c:2486-2490`, and the forced 0 at `ui_link.c:392-396` (P1, approved 2026-10-16). `prefs_remote_tick` in `ui_settings.c`. `ui_app_held()`. Unchanged: `ui_settings.c:136-138` and `:171` (Integrations and Automations stay master-only). |
+| `alarm_proto` | `proto_prefs.h/.c` (a97a745): the settings fields' table, the TLV list and its CRC, and Home Assistant's `values` writer and parser. `proto_link`'s `settings`, `keypads`, `settings_set` and `settings_result` (8abf492; docs/features/23 HAI-016..019). |
+| `plink_service`, the master | `plink_home_svc.c`: the `plink_dev` task (`alarm_mem_task_create`, a 4 KB PSRAM stack, priority 3, below `plink_work`'s 4) builds the list and its records into two alternating PSRAM buffers, and runs the keypads' device actions (8 job slots) through `device_service_person_act`; the build after an action (RES_DEVICES) is queued before its answer (RES_DEV_ACK). `plink_service_set_home(registry_runs)`, called by `panel_app`: HOME is offered only with a running registry. `plink_service_prefs_set()`: never blocks, a 4-deep queue to the link task, exactly one `done` once queued. `plink_service_keypads()`, under `link_pub_lock` from what the link task publishes every 0.5 s: Home Assistant's keypads list, in which a keypad online in a session without PREFS is listed with its id and settings null. `g_pub` gains each keypad's signal, caps and settings report. Console: `plink dev [n]` and `plink prefs <n> [set <key> <v>]` (`set` in development builds only). |
+| `plink_service`, the keypad | `plink_keypad_svc.c`: the core's mirror and the screen's `ui_dev_t[64]`, all PSRAM, allocated once at the start (HOME is offered only with them). The screen's copy is made again under its own `s_dev_lock` (never `link_pub_lock`) whenever the mirror moves; its device data's age is copied every link turn (77e1f93). `ksvc_dev_act`: its own box, mutex and semaphore; 1 s, 3 s with a code, then 150 ms of grace ("Device actions" step 5). The settings report when `panel_prefs_seq()` or the voice's state moves; a change from the master through the screen's mailbox (UI-046). Console: `plink dev [n]`. |
+| `plink_backend.c` | `be->dev_list = kp_dev_list` and `be->dev_act = kp_dev_act` on a keypad with the mirror; `ui_port_esp`'s layout entries stay (Arrange per panel, decision 2). Set before `ui_app_start`, because `ui_devices_init` returns early without `dev_list`. |
+| `device_service` | `device_service_seq()`, moved on every change a reader may need; `device_service_person_act()`, the one judge, returning `ds_person_t` with the numbers of `ui_dev_result_t` (asserted) (8abf492). |
+| `home_control` | `hc_mode_word(bit)` (8abf492) |
+| `ui_backend` | `ui_dev_from_parts()` in `ui_dev_model.h`, byte-identical to the master's old conversion over 21 rows; `ui_prefs.h`: `UI_PREFS_F_*` (= the proto ids, asserted), `UI_PREFS_LOOK`, `ui_prefs_merge`; the entries `prefs_remote_take` and `prefs_remote_done` (8abf492). |
+| `ui_port_esp` | `dev_list` through `ui_dev_from_parts`, `dev_act` a wrapper over `device_service_person_act`, and the two `prefs_remote_*` entries for both roles (8abf492). |
+| `platform_esp` | `panel_prefs_seq()`, `panel_prefs_current()`, `panel_prefs_remote_submit`, `_take`, `_done` and `_cancel`. The seq and RAM copy are updated in `panel_prefs_save`, so every writer is caught (8abf492). |
+| `ha_link` | The `settings` and `keypads` pushes, the `settings_set` queue and the settings port (`ha_link_set_settings`); the master's own settings go to the screen's mailbox (8abf492). |
+| `panel_app` | `plink_service_set_home` from the registry's start, and `ha_link`'s settings port set onto `plink_service_keypads` and `plink_service_prefs_set` once the link runs (787c2da). |
+| UI | The keypad's rail shows Smart Home under the master's rule, as P1 shows (`ui_devices.c`, `ui_link.c`); the note "Your devices can't be reached right now" takes room from the tabs, so it is never cut (787c2da). `prefs_remote_tick` in `ui_settings.c` and `ui_app_held()` (8abf492). Integrations and Automations stay master-only. |
+| `host/` | `link_sim`: home_control's registry over a fake Home Assistant source on the virtual master (`devices`, `device REF online\|offline`, `house off\|on`), Smart Home and settings on the virtual keypad; `link_smoke`: one device action and one settings change end to end; the preview's `host_link_demo`: the keypad's Smart Home live, with the link lost and "Not confirmed" (787c2da, 77e1f93). `prefs_smoke` walks UI-046 (8abf492). |
 
-Today no device change is signalled: `port_changed` in `device_service.c:93-96` does nothing, and
-the screen polls every 1 s (`ui_devices.c:40`). Hence `device_service_seq()` above, also bumped
-where `hc_act` sets pending without calling `port.changed` (`home_control.c:563-568`) and where a
-timeout in `hc_tick` only calls `port.result` (`:614-620`).
+The screens still poll the devices every 1 s (`ui_devices.c`, UI-023); `device_service_seq()`
+tells the master's `plink_dev` task when to build.
 
-### Memory (estimates)
+### Memory
 
+Measured on both panels (787c2da, 2026-10-16):
+- **Internal RAM:** +264 B of statics at start-up on both boards. At run time the keypad's free
+  internal RAM is about 355 KB, and the master's about 167 KB with HOME offered.
+- **Image size:** 76.5 % of the slot on the 7" and 77.9 % on the 10.1", under the 85 % limit.
+
+Estimates, not measured:
 - **Master:** about 70 KB of PSRAM:
   - the registry copy, `hc_device_t[64]`, about 19 KB;
   - catalog blobs, 2 × 12.5 KB;
@@ -1345,17 +1380,15 @@ timeout in `hc_tick` only calls `port.result` (`:614-620`).
   build: the installed list and the one being pulled, the records and an install's scratch), the
   service's `ui_dev_t[64]` (14.3 KB), and `ui_devices`' own buffers, now allocated on a keypad too
   (about 16 KB).
-- **Internal RAM:** small statics only, under 1 KB. Check at start-up on both panels.
-- **Image size:** run the 85 % check after the build.
 
-Sizes are exact from the field widths. Latencies, ESP-NOW air time and PSRAM figures are
-estimates, not measured. A keypad unlock's code check holds the alarm task for about 150 ms, as
-any keypad code does: a disarm at that moment waits for it, within LINK-024's 1 s. During packet
-loss a keypad's screen waits up to 1 s on a tap (3 s with a code); commands already wait up to
-3 s (`CMD_WAIT_MS`, `plink_keypad_svc.c:68`). This design and "Updates through the link" freeze
-together: `OWN_PAYLOAD_MAX` (225) and the v1 fixture serve both, and freeze at the first release.
-Home Assistant's changes to how a screen looks are rate-limited on the panel, never trusted to
-Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
+Sizes are exact from the field widths. Latencies other than those measured on the panels, ESP-NOW
+air time and the PSRAM figures are estimates. A keypad unlock's code check holds the alarm task
+for about 150 ms, as any keypad code does: a disarm at that moment waits for it, within
+LINK-024's 1 s. During packet loss a keypad's screen waits up to 1 s on a tap (3 s with a code);
+commands already wait up to 3 s (`CMD_WAIT_MS`, `plink_keypad_svc.c`). This design and "Updates
+through the link" freeze together: `OWN_PAYLOAD_MAX` (225) and the v1 fixture serve both, and
+freeze at the first release. Home Assistant's changes to how a screen looks are rate-limited on
+the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
 
 ## Design
 - **`components/core/panel_link`** (portable, host-tested, prefix `plink_`): the crypto helpers
@@ -1385,8 +1418,8 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   read the state and the configuration's names. A keypad that completes a handshake from a new
   address while its live session was heard in the last 15 s is logged ("a second device is using
   keypad n's keys").
-- Once Smart Home and Home Assistant on keypads is built (BL-216; its link core is), a device with a
-  keypad's keys can also do in Smart Home what a person at that keypad can: switch what Home
+- With Smart Home and Home Assistant on keypads (BL-216, built), a device with a keypad's keys
+  can also do in Smart Home what a person at that keypad can: switch what Home
   Assistant's options allow, and unlock or open only with a valid code for the keypad's home
   partition (lockout after 5).
 - It can also forge that keypad's PREFS, which changes what the master and Home Assistant show
@@ -1417,7 +1450,8 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   `voice` counters and the development build's `says` lines on both panels: arm, disarm, entry,
   not ready, a chime, a walk test; the keypad's own switches and Voice volume; a keypad restart in
   an exit time and a cut over 30 s saying nothing old).
-- The v1 wire of updates, Smart Home and settings (built, on the PC; nothing sends it yet):
+- The v1 wire of updates, Smart Home and settings (built, on the PC; nothing sends the updates'
+  types yet):
   - `test_plink_msg.c` and `vectors_plink_msg.py`: goldens for the 14 types 0x2D-0x3A and both
     record sections; every new section grown with appended bytes, and cut short; each payload's
     longest size (static asserts and `test_longest_payloads`); HEARTBEAT with and without its
@@ -1435,28 +1469,34 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   - `alarm_proto`'s `prefs` suite (`test_prefs.c`): the frozen ids, ranges and keys (each 11 bytes
     or less), the TLV golden and its CRC, wrong lengths, unknown ids, ranges, the JSON values and
     their parser (a request refused whole as `bad`), random input.
-- The link core of Smart Home and settings (BL-216 S1; built, on the PC; no panel offers it yet):
-  - `test_plink_home.c`, 8 tests: the blob from the registry's rows (a row whose ref the wire
+- The link core of Smart Home and settings (BL-216; built and host-tested in ed58b12, with
+  787c2da's and 77e1f93's additions):
+  - `test_plink_home.c`, 9 tests: the blob from the registry's rows (a row whose ref the wire
     can't carry left out of the blob and the records alike), at most 64 rows within
     `PLINK_DEV_BLOB_MAX`, `list_crc` never 0, a newer master's blob read leniently and a newer
-    compat refused, the records' flags and `states_crc`, records carried over by ref.
-  - `test_plink_master.c`, 20 tests (`test_home_needs_the_capability` to
+    compat refused, the records' flags and `states_crc`, the registry's values given back from a
+    record's bytes (`plink_home_values_of`), records carried over by ref.
+  - `test_plink_master.c`, 21 tests (`test_home_needs_the_capability` to
     `test_home_frames_per_tick`): nothing without the bit or on frames under 250 B; the list's
-    pages; the full set at a new session; changed records in rounds, the summary every 10 s, state
-    requests; a list change named at once and again at +250 ms and +1 s; an action run once from
-    its cache, one at a time from its own bucket; DEV_ACK's record as it is when it goes; an
-    unlisted ref REFUSED, no list UNAVAILABLE; no code kept; the settings report, PREFS_REQ while
-    the CRC differs, writes, and `port.prefs_done` starting the next write; all of it behind a
-    waiting STATUS or RESULT and the engine's first snapshot, at most 2 frames per keypad and 8
-    per tick.
-  - `test_plink_keypad.c`, 21 tests (`test_home_offered_only_with_a_mirror` to
+    pages; the full set at a new session; changed records in rounds, the summary every 10 s (an
+    empty list's too, `test_dev_summary_of_an_empty_list_every_10_s`), state requests; a list
+    change named at once and again at +250 ms and +1 s; an action run once from its cache, one at
+    a time from its own bucket; DEV_ACK's record as it is when it goes; an unlisted ref REFUSED,
+    no list UNAVAILABLE; no code kept; the settings report, PREFS_REQ while the CRC differs,
+    writes, and `port.prefs_done` starting the next write; all of it behind a waiting STATUS or
+    RESULT and the engine's first snapshot, at most 2 frames per keypad and 8 per tick.
+  - `test_plink_keypad.c`, 23 tests (`test_home_offered_only_with_a_mirror` to
     `test_prefs_set_applied_once`): HOME offered only with a mirror; nothing of either capability
     without its bit or on frames under 250 B; the list pulled, installed whole, a list that fails
-    remembered and read offline 30 s after its last data, records carried over by ref; records in
-    frame order and only under the installed list, kept as they came; the catch-up; freshness at
-    30 s; actions refused at once, resent every 500 ms, given up at 3 s, answered late, in 2 slots
-    apart from the commands; list and state requests held while a panic is sent; the settings
-    report's timing, the HEARTBEAT's section, a PREFS_SET applied once.
+    remembered and read offline 30 s after its last data, records carried over by ref, the list
+    dropped at a session without HOME and pulled again once HOME is back
+    (`test_dev_list_dropped_without_home`); records in frame order and only under the installed
+    list, kept as they came; the catch-up; freshness at 30 s, each summary moving the data's age
+    but not its seq; actions refused at once, resent every 500 ms, given up at 3 s, answered late,
+    in 2 slots apart from the commands; a row as the screen gets it (`test_dev_view_for_the_screen`:
+    the record, this keypad's own action over it once released, every row offline since the last
+    data once stale); list and state requests held while a panic is sent; the settings report's
+    timing, the HEARTBEAT's section, a PREFS_SET applied once.
   - `test_plink_link.c`, the real master and keypads together: `test_home_and_settings_end_to_end`,
     `test_home_list_and_states_converge_through_loss` (10 % loss, 2 % copies, 1 % damaged, 300 ms
     of jitter, the list itself changing every 20 s), `test_home_converges_on_frames_of_250`,
@@ -1464,6 +1504,9 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
     `test_a_renamed_or_reordered_list_never_acts_on_another_device`,
     `test_a_master_restart_during_a_pull_never_mixes_lists`,
     `test_a_45_s_cut_shows_offline_since_the_cut_and_replays_nothing`,
+    `test_an_empty_list_stays_fresh_on_summaries` and
+    `test_twenty_idle_devices_stay_fresh_on_summaries` (2 minutes on summaries alone, never more
+    than 10 s without a DEV_STATE, the data never stale),
     `test_a_settings_write_applies_once_and_times_out_when_the_keypad_is_gone`,
     `test_a_keypad_offering_only_fw_gets_nothing_new` (a v1 keypad, then a v1 master) and
     `test_the_storm_never_delays_disarm_or_panic`.
@@ -1475,24 +1518,41 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
     100 ms, an action every 500 ms and a settings write every second, while a keypad arms,
     disarms, keys a panic and disarms again. Arm, disarm and panic are answered in 24 ms with and
     without the storm.
-- Smart Home and Home Assistant on keypads (designed, BL-216), still to come on the PC:
-  - The future peer (`link_peer.c`, `-DPLINK_FUTURE_TEST=1`, LINK-039 and LINK-042): a v1 keypad
-    (caps 0x0001) never receives type 0x32 or above, and Home Assistant gets `unsupported` for
-    it; a newer keypad with a caps-0x0001 master sends nothing new; bit 0x8000, type 0x3B, field
-    id 25, kind 10, action 13, result 9, why 20 and catalog compat 2 are each handled as
-    "Versions" (in "Smart Home and Home Assistant on keypads") says.
-  - `home_control/test`: `hc_mode_word`. `ui_backend/test`: `ui_dev_from_parts` gives
-    byte-identical output to today's conversion on a fixture table (no regression on the
-    master); `ui_prefs_merge`.
-  - The real `ui_app` through the loopback link backend: the IN_USE, HELD and look-wait paths.
-  - Preview: `host_link_demo` with devices in the keypad role (live, link lost, "Not
-    confirmed"); `ui_preview.ps1` passes with no cut-off text. CI: `link_smoke` with a fake
-    registry on the virtual master, one DEV_ACT and one PREFS_SET.
-- Smart Home and Home Assistant on keypads (designed, BL-216), on the panels: the 7" master and
-  the 10.1" keypad, both speakers muted. Flash only on the word of the person you work for in
-  that session, with each panel disarmed; ports and silicon come from `PANEL.local.md`. Home
-  Assistant is paired and allows a dimmable light, a switch, a lock, a cover, a thermostat and a
-  scene.
+- The rest of Smart Home and settings on the PC (BL-216; built in 8abf492 and 787c2da):
+  - `home_control/test`: `hc_mode_word`. `ui_backend/test`: `ui_dev_from_parts` byte-identical
+    to the master's old conversion over 21 rows in every status (no regression on the master);
+    `ui_prefs_merge` (`test_ui_prefs.c`).
+  - `alarm_proto`'s `link` suite (`test_link.c`): the goldens of `settings`, `keypads` and
+    `settings_result`, the `settings_set` parser, and the set queue (HAI-019).
+  - `prefs_smoke` (in CI): the real touch UI takes a change from elsewhere through its own copy:
+    IN_USE, HELD, VOICE_NOT_READY, RANGE, the look and the backlight at most once per 2 s, the
+    mailbox's BUSY and cancel (UI-046).
+  - Preview: `host_link_demo` with devices in the keypad role: `bl-216-kp-devices`,
+    `bl-216-kp-device-unlock`, `bl-216-kp-devices-unconfirmed` and `bl-216-kp-devices-lost`; the
+    walk passes with no cut-off text (444 shots). CI: `link_smoke` with home_control's registry on
+    the virtual master, one device action and one settings change end to end.
+  - Still to come: the future peer (`link_peer.c`, `-DPLINK_FUTURE_TEST=1`, LINK-039 and
+    LINK-042): a v1 keypad (caps 0x0001) never receives type 0x32 or above, and Home Assistant
+    gets `unsupported` for it; a newer keypad with a caps-0x0001 master sends nothing new; bit
+    0x8000, type 0x3B, field id 25, kind 10, action 13, result 9, why 20 and catalog compat 2 are
+    each handled as "Versions" (in "Smart Home and Home Assistant on keypads") says.
+- Smart Home and settings on the two development panels (BL-216, 2026-10-16, with 787c2da; both
+  speakers muted; the 7" master and the 10.1" keypad; Home Assistant not connected, so the
+  master's registry was empty and offered an empty list):
+  - the keypad and the master agree on HOME and PREFS;
+  - a settings change from the master reaches the keypad's screen and its report within a
+    second; one during an exit time is refused as held;
+  - the keypad's commands still answer in 150-190 ms;
+  - the master's summaries every 10 s keep the keypad's device data 0-10 s old (the keypad's
+    `plink dev` showed an older age, its screen copy's: fixed in 77e1f93);
+  - internal RAM at start-up +264 B on both boards; at run time the keypad's free internal RAM
+    about 355 KB, the master's about 167 KB with HOME offered;
+  - not tried there: the device tiles (only in the PC simulator and the preview).
+- Smart Home and Home Assistant on keypads, still to do on the panels with Home Assistant
+  connected: the 7" master and the 10.1" keypad, both speakers muted. Flash only on the word of
+  the person you work for in that session, with each panel disarmed; ports and silicon come from
+  `PANEL.local.md`. Home Assistant is paired with integration 0.3.0 and allows a dimmable light,
+  a switch, a lock, a cover, a thermostat and a scene.
   1. The keypad's rail shows Smart Home. Tiles, areas and states match the master's side by
      side. Arrange on the keypad leaves the master's layout alone.
   2. Each kind from the keypad: Home Assistant and the master follow, and the keypad shows the
@@ -1516,8 +1576,7 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
      device.
   8. Versions: the 0.2.0 integration with the new firmware: nothing new, nothing broken. 0.3.0
      with today's firmware: no settings entities and no timeouts.
-  9. Internal RAM at start-up on both panels compared with before, and `plink_dev`'s stack
-     high-water mark after the storm.
+  9. `plink_dev`'s stack high-water mark after the storm.
 
 ## Open questions
 - Keypad-attached inputs (LINK-011), cross-partition GOTO (KPD-006) and partitions beyond home:
@@ -1663,8 +1722,8 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   to a v3 keypad (refused before any write); `display watch` and touch on the keypad while it writes
   (BL-048)
 - [x] Run-time caps: the offered caps an argument of `plink_master_init` and `plink_keypad_init`,
-  each session keeping both offers ANDed under `PLINK_CAPS_KNOWN`; no panel offers a bit yet
-  (LINK-043) (BL-048, a97a745)
+  each session keeping both offers ANDed under `PLINK_CAPS_KNOWN` (LINK-043) (BL-048,
+  a97a745)
 - [x] Wire: 0x32-0x3A, the HEARTBEAT section, the codecs and Python goldens, in the frozen v1
   fixture; `proto_prefs` (LINK-043, -050, -051, -052; HAI-017) (BL-216, a97a745)
 - [x] Master core: list, pushes, summary, catch-up, DEV_ACT cache and buckets, PREFS report and
@@ -1672,25 +1731,35 @@ Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).
   (BL-216, ed58b12)
 - [x] Keypad core: `plink_pull_t` from the configuration pull, mirror and catch-up, freshness,
   DEV_ACT slots and overlay, PREFS report and set answers (LINK-044..051) (BL-216, ed58b12)
-- [ ] One judge and one converter: `device_service_person_act`, `device_service_seq`,
+- [x] One judge and one converter: `device_service_person_act`, `device_service_seq`,
   `hc_mode_word`, `ui_dev_from_parts`; `ui_port_esp` moved onto them with the master's screen
-  unchanged (LINK-048; HCTL-005, -006, -012) (BL-216)
-- [ ] Master service: the `plink_dev` task, builds and jobs, `plink_service_prefs_set`,
-  `plink_service_keypads`, `g_pub`, the console (LINK-049) (BL-216)
-- [ ] Keypad service and backend: mirror, `ksvc_dev_act`, `kp_dev_list`, `kp_dev_act`, layout
-  entries kept, PREFS report, mailbox hand-over (LINK-046, -047, -050, -051) (BL-216)
-- [ ] UI-046: `panel_prefs_seq`, `_current` and the mailbox; `prefs_remote_*`; `ui_prefs_merge`;
-  `prefs_remote_tick`; `ui_app_held` (BL-216)
-- [ ] The role gates removed as proposal P1 shows (approved 2026-10-16); `host_link_demo` with
-  devices; preview shots compared (HCTL-013, UI-044) (BL-216)
-- [ ] `host/link_sim`: a fake registry on the virtual master, `devices` and `prefs` on the virtual
-  keypad; `link_smoke` extended (LINK-013) (BL-216)
-- [ ] Home Assistant: `alarm_proto`'s four JSON messages (`proto_link`; `proto_prefs` is in the
-  Wire box), `ha_link`, `panel_app` wiring (docs/features/23 HAI-016..019); ha-addon 0.3.0
-  (BL-216)
-- [ ] On the panels: the Smart Home and settings list in Test and acceptance (BL-216)
-- [ ] Docs: the 11, 23, 24, 07 and 15 status lines; docs/features/README "Current status"; the
-  pull request notes for the documentation repository's `UPDATING.md` (BL-216)
+  unchanged (LINK-048; HCTL-005, -006, -012) (BL-216, 8abf492)
+- [x] Master service: the `plink_dev` task, builds and jobs, `plink_service_set_home`,
+  `plink_service_prefs_set`, `plink_service_keypads`, `g_pub`, the console (LINK-049) (BL-216,
+  787c2da)
+- [x] Keypad service and backend: mirror, `ksvc_dev_act`, `kp_dev_list`, `kp_dev_act`, layout
+  entries kept, PREFS report, mailbox hand-over (LINK-046, -047, -050, -051) (BL-216, 787c2da,
+  77e1f93)
+- [x] UI-046: `panel_prefs_seq`, `_current` and the mailbox; `prefs_remote_*`; `ui_prefs_merge`;
+  `prefs_remote_tick`; `ui_app_held`; `prefs_smoke` (BL-216, 8abf492)
+- [x] The role gates removed as proposal P1 shows (approved 2026-10-16); `host_link_demo` with
+  devices; preview shots compared (HCTL-013, UI-044) (BL-216, 787c2da)
+- [x] `host/link_sim`: a fake registry on the virtual master, `devices` and `prefs` on the virtual
+  keypad; `link_smoke` extended (LINK-013) (BL-216, 787c2da, 77e1f93)
+- [x] Home Assistant on the panel: `alarm_proto`'s four JSON messages (`proto_link`; `proto_prefs`
+  is in the Wire box) and the set queue, `ha_link`'s pushes and settings port, `panel_app`'s
+  keypads port (docs/features/23 HAI-016..019) (BL-216, 8abf492, 787c2da)
+- [ ] Home Assistant's integration 0.3.0 in `RoboAlarms/ha-addon` (built on the local branch
+  `bl-216-settings`, 285 tests pass on Home Assistant 2026.10.1): tried with a panel, then
+  released after BL-173's 0.2.0, on the maintainers' go (docs/features/23 HAI-016..019) (BL-216)
+- [x] On the two panels without devices (2026-10-16, both speakers muted): HOME and PREFS shared,
+  a settings change from the master on the keypad's screen and in its report within a second,
+  one during an exit time held, commands in 150-190 ms, device data 0-10 s old, internal RAM
+  +264 B (LINK-043, -045, -049, -050, -051) (BL-216, 787c2da, 77e1f93)
+- [ ] On the panels with Home Assistant connected and devices: the tile states, an unlock with a
+  code and the keypad's lockout, link lost, the storm, Home Assistant's settings entities, the
+  rest of the list in Test and acceptance (BL-216)
+- [ ] Docs: the pull request notes for the documentation repository's `UPDATING.md` (BL-216)
 
 Covered by boxes in other documents (all BL-048):
 - Keypad-attached inputs as zones (LINK-011): docs/features/02.

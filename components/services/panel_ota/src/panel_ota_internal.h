@@ -36,6 +36,9 @@ void panel_ota_cp_init(void);       /* at start: looks at the "cp_fw" partition 
 void panel_ota_cp_tick(void);       /* update task, once a second: automatic update (OTA-007) */
 void panel_ota_cp_run(void);        /* update task: a requested co-processor update */
 void panel_ota_cp_prepare_restart(void); /* final idle gate: activate during shutdown */
+/* Development console only: one signed transfer stopped halfway, no activation.
+ * Definition and caller are omitted entirely from release builds. */
+esp_err_t panel_ota_cp_test_interrupt(const alarm_source_t *src, char *why, size_t why_len);
 void panel_ota_task_notify_cp(void); /* wake the update task for panel_ota_cp_run() */
 
 /* ---- updates through the panel link (docs/features/11) ---- */

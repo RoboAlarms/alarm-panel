@@ -47,6 +47,9 @@ typedef struct {
 static const esp_partition_t *s_part;
 static cp_image_t s_img;
 static bool s_requested;
+#if CONFIG_ALARM_BUILD_DEV
+static bool s_interrupt_test; /* only the explicitly requested transfer; never persisted */
+#endif
 static alarm_source_t s_src;
 static uint8_t s_user;
 static atomic_bool s_activate_pending, s_activate_committed;
@@ -205,6 +208,11 @@ static bool cp_version(char *out, size_t cap)
 /* Streams the image; on success the update task restarts the panel once the system is idle. */
 static void run_update(void)
 {
+#if CONFIG_ALARM_BUILD_DEV
+    const bool interrupt_test = s_interrupt_test;
+    s_interrupt_test = false; /* consume even when verification/begin fails */
+    (void)interrupt_test;     /* development boards without Hosted have no transfer */
+#endif
 #if CONFIG_ESP_HOSTED_HOST && CONFIG_ESP_HOSTED_HOST_FEAT_OTA_READY
     if (!verify_image(s_part, &s_img)) {
         panel_ota_set_progress(PANEL_OTA_FAILED, -1, "The Wi-Fi module image failed verification");
@@ -226,6 +234,15 @@ static void run_update(void)
         if (err == ESP_OK) {
             err = esp_hosted_cp_ota_write(buf, n);
         }
+#if CONFIG_ALARM_BUILD_DEV
+        if (err == ESP_OK && interrupt_test && off + n >= s_img.size / 2u && off + n < s_img.size) {
+            ESP_LOGW(TAG,
+                     "CP-005: interrupted after %" PRIu32 "/%" PRIu32
+                     " acknowledged bytes; no END or ACTIVATE",
+                     off + n, s_img.size);
+            err = ESP_FAIL;
+        }
+#endif
         const int percent = (int)((uint64_t)(off + n) * 100u / s_img.size);
         if (percent >= shown + 5) {
             shown = percent;
@@ -264,8 +281,8 @@ static void run_update(void)
 #endif
 }
 
-esp_err_t panel_ota_cp_update(const alarm_source_t *src, uint8_t user, bool force, char *why,
-                              size_t why_len)
+static esp_err_t request_update(const alarm_source_t *src, uint8_t user, bool force,
+                                bool interrupt_test, char *why, size_t why_len)
 {
     char running[24] = "";
     const char *text = NULL;
@@ -286,11 +303,36 @@ esp_err_t panel_ota_cp_update(const alarm_source_t *src, uint8_t user, bool forc
     }
     s_src = src != NULL ? *src : (alarm_source_t){.kind = ALARM_SRC_SYSTEM, .id = 0};
     s_user = user;
+#if CONFIG_ALARM_BUILD_DEV
+    s_interrupt_test = interrupt_test;
+#else
+    (void)interrupt_test;
+#endif
     panel_ota_cp_started(s_img.version, running);
     s_requested = true;
     panel_ota_task_notify_cp();
     return ESP_OK;
 }
+
+esp_err_t panel_ota_cp_update(const alarm_source_t *src, uint8_t user, bool force, char *why,
+                              size_t why_len)
+{
+    return request_update(src, user, force, false, why, why_len);
+}
+
+#if CONFIG_ALARM_BUILD_DEV
+esp_err_t panel_ota_cp_test_interrupt(const alarm_source_t *src, char *why, size_t why_len)
+{
+    /* No delayed surprise test after someone later disarms the system. The
+     * ordinary worker still rechecks idle before writing to the C6. */
+    const char *reason = "";
+    if (!panel_ota_system_idle(&reason)) {
+        snprintf(why, why_len, "%s", reason);
+        return ESP_ERR_INVALID_STATE;
+    }
+    return request_update(src, 0, true, true, why, why_len);
+}
+#endif
 
 void panel_ota_cp_run(void)
 {

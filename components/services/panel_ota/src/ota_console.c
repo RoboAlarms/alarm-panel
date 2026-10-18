@@ -566,6 +566,17 @@ static int cmd_c6(int argc, char **argv)
         printf("Image in cp_fw:     %s\n", st.cp_image[0] ? st.cp_image : "none");
         return 0;
     }
+#if CONFIG_ALARM_BUILD_DEV
+    if (argc == 2 && strcmp(argv[1], "test-interrupt") == 0) {
+        char why[64];
+        if (panel_ota_cp_test_interrupt(&CONSOLE, why, sizeof why) != ESP_OK) {
+            printf("%s\n", why);
+            return 1;
+        }
+        printf("CP-005: signed transfer will stop halfway; no activation or automatic restart\n");
+        return 0;
+    }
+#endif
     if (strcmp(argv[1], "update") == 0) {
         char why[64];
         const bool force = argc > 2 && strcmp(argv[2], "force") == 0;
@@ -577,6 +588,9 @@ static int cmd_c6(int argc, char **argv)
         return 0;
     }
     printf("usage: c6 [status | update [force]]\n");
+#if CONFIG_ALARM_BUILD_DEV
+    printf("  the bench: c6 test-interrupt (one transfer, stops halfway)\n");
+#endif
     return 1;
 }
 

@@ -35,6 +35,13 @@ panel restarts, and that restart waits for an idle system and goes through the s
 and last gate on the alarm task as a release's (OTA-004, OTA-028), keeping the update machinery until then. Every
 step is an event in the log and on MQTT (OTA-010).
 
+Development builds expose `c6 test-interrupt` for explicitly authorized CP-005 bench tests.
+It verifies the signed image normally, stops after half the bytes are acknowledged and skips
+END/ACTIVATE. The one-shot injection is consumed before verification and never persisted.
+The normal `c6 update` path never injects a fault. Release builds omit the test command and
+implementation. After recording the failure, restart normally to verify the old radio boots.
+Hardware results and the remaining failure-card reporting defect are recorded in Feature 12.
+
 For C6 versions with ACTIVATE, activation runs in a shutdown handler only after the
 P4's final idle gate commits to restarting. Sending ACTIVATE at transfer completion
 starts the C6 reboot timer too early and can break SDIO during the P4's announcement

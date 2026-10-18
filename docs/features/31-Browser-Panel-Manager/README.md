@@ -14,6 +14,9 @@ headless masters (BL-048). Service and browser tests pass, and authenticated enr
 partition settings pass on a display-equipped master with a physical remote keypad.
 Human comparison-screen and physical headless acceptance remain.
 
+Initial network/account setup and lost-access recovery have a separate
+[screen-free setup draft](headless-setup.md) (BL-048), awaiting owner review.
+
 ## Objective and delivered scope
 
 The panel hosts its own browser interface for household configuration, full-resolution remote

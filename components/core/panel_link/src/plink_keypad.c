@@ -3276,7 +3276,8 @@ uint32_t plink_keypad_command(plink_keypad_t *k, uint64_t now_ms, const plink_cm
 {
     if (k == NULL || cmd == NULL || !k->paired ||
         (cmd->op != PLINK_OP_COMMAND && cmd->op != PLINK_OP_AUTH &&
-         cmd->op != PLINK_OP_CHANGE_CODE)) {
+         cmd->op != PLINK_OP_CHANGE_CODE && cmd->op != PLINK_OP_GOTO &&
+         cmd->op != PLINK_OP_ACTIVITY)) {
         return 0u;
     }
     const bool panic = is_panic(cmd);

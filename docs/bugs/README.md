@@ -33,6 +33,8 @@ The panels named in the reports (board 3, `bench-panel`) are the maintainers' de
 
 ### Fixed and proven
 
+[B032 — Developer OTA cancels keypad coordination](B032-developer-ota-cancels-keypad-coordination.md): fixed and verified with coordinated signed installs on a paired master and keypad.
+
 | ID | Status | Summary |
 |---|---|---|
 | [B030](B030-ha-light-tap-sent-brightness-0.md) | **fixed (0f5223b) and proven on board 3 2026-10-06** | On Smart Home, a tap on an off Home Assistant light (or its sheet's switch) left it off with no word: the touchscreen sends `ACT_ON` with value 0, which the Home Assistant source reads as a brightness, and Home Assistant takes brightness 0 as off. -1 is "no brightness"; the simulator ignored the value. Older than that day's work. |

@@ -105,3 +105,9 @@ are what make the checks above real.
 - `panel_ota_system_idle()` waits for the alarm task: call it from the update or console task, never from a listener (`panel_ota_internal.h`).
 - Changing `partitions.csv` means a full erase of the panel: avoid it (CONTRIBUTING.md).
 - Planned (docs/features/33 step 8): the C6 part only with ESP-Hosted, the device name from the project, the partition labels from the table.
+
+Developer installs distinguish a safe coordination wait from an unsafe house. Waiting for a
+keypad download/self-test (including the planner's initial hold) keeps the staged install alive;
+arming, an alarm, a stop or cancellation still prevents the restart. The house gate is checked
+before coordination, so a hold cannot conceal a newly unsafe state. The actual gate is compiled
+against all 16 combinations by `tools/tests/test_ota_restart_gate.py`.

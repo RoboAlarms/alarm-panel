@@ -177,16 +177,17 @@
                     <hero name="hero" width="100%" height="100%" style_flex_grow="1" />
                     <box name="partition_switch" width="100%" height="content" hidden="true" />
                 </box>
-				<box name="pane" width="#pane_w" height="100%" style_layout="flex" style_flex_flow="column" style_pad_row="#space_lg">
+				<!-- Put spacing on visible banners: a flex gap also reserves room after the arming panel before hidden siblings. -->
+                <box name="pane" width="#pane_w" height="100%" style_layout="flex" style_flex_flow="column">
 					<!-- An automation arms soon, or was put off (docs/features/41 D19, D27): a short card
 					     above the arming tiles, only beside them (ui_auto_warn.c sets 0 for every other
 					     panel); the tiles keep their look and share the height left. -->
-					<arm_strip name="arm_strip">
+					<arm_strip name="arm_strip" style_margin_bottom="#space_lg">
 						<bind_flag_if_eq subject="subject_arm_strip" flag="hidden" ref_value="0" />
 					</arm_strip>
 					<!-- A keypad without system communication (BL-048, LINK-008): what to check, above
 					     the dimmed tiles, in the arming warning's card. Steady. -->
-					<box name="link_strip" width="100%" height="content" style_bg_color="#color_surface" style_bg_opa="100%" style_radius="#radius_lg" style_border_width="1" style_border_color="#color_line" style_pad_top="#space_md" style_pad_bottom="#space_md" style_pad_left="#space_lg" style_pad_right="#space_lg" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
+					<box name="link_strip" style_margin_bottom="#space_lg" width="100%" height="content" style_bg_color="#color_surface" style_bg_opa="100%" style_radius="#radius_lg" style_border_width="1" style_border_color="#color_line" style_pad_top="#space_md" style_pad_bottom="#space_md" style_pad_left="#space_lg" style_pad_right="#space_lg" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
 						<bind_flag_if_not_eq subject="subject_link_home" flag="hidden" ref_value="2" />
 						<box width="48" height="48" style_radius="#radius_full" style_bg_color="#color_amber" style_bg_opa="#opa_tint">
 							<lv_label align="center" text="&#xE1AF;" style_text_font="icons_28" style_text_color="#color_amber" />

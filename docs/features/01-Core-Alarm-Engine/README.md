@@ -548,8 +548,8 @@ v1 is complete: every requirement above has its tagged host test. What follows i
 - [ ] Common/lobby partition logic (a "common zone")
 
 ### On the keypads (M7)
-- [ ] Live acceptance of implemented cross-partition switching (KPD-006, BL-048): installer default,
-  allow/lock, idle seconds (default 30), Never and no-code view selection. Host/preview tests pass;
+- [x] Live acceptance on paired 7-inch/10-inch panels of cross-partition switching (KPD-006, BL-048): installer default,
+  allow/lock, idle seconds (default 30), Never and no-code view selection. Activity renews inactivity;
   alarm commands retain authorization. See [11](../11-Panel-Link-Master-Keypad/README.md).
 
 ### Covered elsewhere or dropped

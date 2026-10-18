@@ -460,8 +460,9 @@ static const char *restart_held(void)
 }
 
 /* The same question plus "has anyone given up on this update?" (R17). */
-static bool restart_allowed(const char **why)
+static bool restart_gate(const char **why, bool *coordinating)
 {
+    if (coordinating != NULL) *coordinating = false;
     if (s_stop) {
         *why = "Stopped"; /* never shown: the stop ends the run */
         return false;
@@ -470,12 +471,21 @@ static bool restart_allowed(const char **why)
         *why = I18N_NOOP_C("update", "Cancelled");
         return false;
     }
+    /* An unsafe house cancels a developer install even while keypads are waiting.
+     * A coordination hold alone is expected and must not discard that install. */
+    if (!panel_ota_system_idle(why)) return false;
     const char *held = restart_held();
     if (held != NULL) {
         *why = held;
+        if (coordinating != NULL) *coordinating = true;
         return false;
     }
-    return panel_ota_system_idle(why);
+    return true;
+}
+
+static bool restart_allowed(const char **why)
+{
+    return restart_gate(why, NULL);
 }
 
 /* ---- the restart itself, on the alarm task (OTA-004, R17, S07) -------------------------------- */
@@ -1838,8 +1848,9 @@ static void try_restart(void)
         return;
     }
     const char *why = "";
-    if (!restart_allowed(&why)) {
-        if (remote_install) { panel_ota_cancel(); return; }
+    bool coordinating = false;
+    if (!restart_gate(&why, &coordinating)) {
+        if (remote_install && !coordinating) { panel_ota_cancel(); return; }
         if (hold != 0u) {
             /* put off once already: 30 s after everything is quiet again (OTA-028) */
             lock();

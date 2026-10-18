@@ -11150,6 +11150,10 @@ static void walk_partition_policy(const ui_options_t *start)
     ui_app_apply_options(&opt);
     run(1500);
     expect(!lv_obj_has_flag(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), LV_OBJ_FLAG_HIDDEN), "switcher below left card");
+    lv_area_t switch_bounds, night_bounds;
+    lv_obj_get_coords(lv_obj_get_child(by_name("partition_switch"), 0), &switch_bounds);
+    lv_obj_get_coords(lv_obj_get_child(by_name("panel_arm"), 2), &night_bounds);
+    expect(switch_bounds.y2 == night_bounds.y2, "partition switcher and Night tile bottom edges align");
     shot("bl-048-partition-home");
     tap_text("Switch partition");
     shot("bl-048-partition-chooser");

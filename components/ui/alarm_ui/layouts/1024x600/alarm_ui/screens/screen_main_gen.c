@@ -315,11 +315,13 @@ lv_obj_t * screen_main_create(void)
 
         lv_obj_t * pane = alarm_ui_run_0(view_home, PANE_W, lv_pct(100));
         alarm_ui_run_1(pane, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(pane, SPACE_LG, 0);
         lv_obj_t * arm_strip = arm_strip_create(pane);
+        lv_obj_set_style_margin_bottom(arm_strip, SPACE_LG, 0);
         alarm_ui_run_43(arm_strip, &subject_arm_strip, 0, "arm_strip");
 
-        lv_obj_t * link_strip = alarm_ui_run_0(pane, lv_pct(100), LV_SIZE_CONTENT);
+        lv_obj_t * link_strip = box_create(pane);
+        lv_obj_set_style_margin_bottom(link_strip, SPACE_LG, 0);
+        alarm_ui_run_31(link_strip, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_9(link_strip, COLOR_SURFACE, 0, (255 * 100 / 100), RADIUS_LG);
         alarm_ui_run_40(link_strip, COLOR_LINE);
         alarm_ui_run_70(link_strip, SPACE_MD, SPACE_MD);

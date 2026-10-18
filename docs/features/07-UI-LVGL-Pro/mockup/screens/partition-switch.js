@@ -29,7 +29,7 @@ M.screen({id: 'bl-048-partition-away', area: 'Home', title: 'Studio: return afte
     M.panel_arm(), M.row_link({glyph: 'warehouse', title: 'Studio', detail: 'Switch partition', trail: 'chevron-right', goTo: 'bl-048-partition-chooser'}))}),
 });
 M.screen({id: 'bl-048-partition-policy', area: 'Settings', title: 'Installer: partition settings for this panel', shot: 'bl-048-partition-policy',
-  notes: 'Installer-only settings, stored separately for each panel. Default partition selects its normal view. Allow partition switching off locks it there. The Never return automatically switch sits directly below the seconds control. On disables that control; off makes it editable again, preserving its value (default 30). No separate delay screen. Never disables only the inactivity return. Firmware persistence and enforcement are implemented; live acceptance remains.',
+  notes: 'Installer-only settings, stored separately for each panel. Default partition selects its normal view. Allow partition switching off locks it there. The Never return automatically switch sits directly below the seconds control. On disables that control; off makes it editable again, preserving its value (default 30). No separate delay screen. Never disables only the inactivity return. Firmware persistence and enforcement are verified on the paired bench panels.',
   render: () => M.main({view: 'settings', content: M.settings({section: 'about', title: 'This panel', note: 'Installer · Partition settings',
     body: M.row_link({glyph: 'warehouse', title: 'Default partition', value: 'Home', trail: 'chevron-right', trail: 'chevron-right'}) +
       M.row_toggle({title: 'Allow partition switching', detail: 'Off locks this panel to its default partition', on: true}) +

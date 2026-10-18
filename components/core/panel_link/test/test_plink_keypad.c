@@ -2252,6 +2252,28 @@ static bool cmd_done(void *ctx)
     return plink_keypad_command_state(&K, *(const uint32_t *)ctx, NULL) == PLINK_CMD_DONE;
 }
 
+/* KPD-006: the real keypad must forward both no-code partition operations.
+ * Master policy/authorization is covered by test_plink_master. */
+static void test_partition_commands_forwarded(void)
+{
+    kp_online();
+    const uint8_t ops[] = {PLINK_OP_GOTO, PLINK_OP_ACTIVITY};
+    for (size_t i = 0; i < sizeof ops; i++) {
+        plink_cmd_t c = {0};
+        c.op = ops[i];
+        c.cmd.partition = 2u;
+        uint32_t req = plink_keypad_command(&K, NET.now_ms, &c);
+        TEST_ASSERT_NOT_EQUAL(0u, req);
+        TEST_ASSERT_TRUE(plink_net_run_until(&NET, 100, cmd_done, &req));
+        plink_cmd_t sent;
+        TEST_ASSERT_TRUE(plink_dec_cmd(M.cmd_pt, M.cmd_pt_len, &sent));
+        TEST_ASSERT_EQUAL_UINT8(ops[i], sent.op);
+        TEST_ASSERT_EQUAL_UINT8(2u, sent.cmd.partition);
+        TEST_ASSERT_EQUAL_STRING("", sent.cmd.code);
+        plink_keypad_command_release(&K, req);
+    }
+}
+
 /* LINK-018, LINK-002: a command goes with a request id and its codes padded; the master's answer
  * comes back; a lost copy is resent after 500 ms with the same req and runs once; a lost answer
  * is answered again from the master's cache; the codes are wiped once it is answered. */
@@ -5927,6 +5949,7 @@ int main(void)
     RUN_TEST(test_events_hole_filled);
     RUN_TEST(test_short_ring_backfilled);
     RUN_TEST(test_command_and_retries);
+    RUN_TEST(test_partition_commands_forwarded);
     RUN_TEST(test_command_gives_up_at_3s);
     RUN_TEST(test_request_ids_unique_across_restart);
     RUN_TEST(test_panic_through_outage);

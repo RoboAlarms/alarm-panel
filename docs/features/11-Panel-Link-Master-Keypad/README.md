@@ -1603,8 +1603,12 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
 
 ### Temporary partition selection implementation (KPD-006)
 The agreed target behavior (2026-10-18) is a switcher below Home's left status card when multiple
-partitions are enabled. Each panel has installer-only default-partition, switching-allowed/locked,
-and return-delay settings; the default delay is 30 seconds of inactivity. Selecting an enabled
+partitions are enabled and switching is allowed on that panel. A locked panel keeps today's
+Home layout, with no partition control, label, or lock notice below the left card.
+Each panel has installer-only default-partition, switching-allowed/locked,
+and return-delay settings; the default delay is 30 seconds of inactivity anywhere on the panel.
+Navigation, scrolling, tapping and code entry reset that timer, including on Activity and other
+pages; it is not elapsed time since the partition was selected. Selecting an enabled
 partition requires no code. This changes the displayed/command-target partition, not the normal
 authorization of arm/disarm commands or any audio preferences. The master must enforce the
 per-panel switching policy, including console requests, rather than rely on a hidden UI control.

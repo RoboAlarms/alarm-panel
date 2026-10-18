@@ -24,9 +24,8 @@ M.screen({id: 'bl-048-partition-single', area: 'Home', title: 'One partition: un
 });
 M.screen({id: 'bl-048-partition-locked', area: 'Home', title: 'Panel locked to its default partition', shot: null,
   proposal: gotoProposal,
-  notes: 'The installer has turned switching off for this panel. House is identified below the card with no chevron or tap action. All controls remain scoped to House; a different panel may allow switching.',
-  render: () => M.main({content: M.home(partitionHero, M.panel_arm(),
-    M.changed(M.row_value({title: 'Assigned partition · Locked', value: 'House'})))}),
+  notes: 'The installer has turned switching off for this panel. Home looks exactly as it does today: no switcher, partition label, or locked notice below the left card. All controls remain scoped to the assigned default partition; a different panel may allow switching.',
+  render: () => M.main({content: M.home(partitionHero, M.panel_arm())}),
 });
 M.screen({id: 'bl-048-partition-away', area: 'Home', title: 'Workshop: return after 30 seconds idle', shot: null,
   proposal: gotoProposal,

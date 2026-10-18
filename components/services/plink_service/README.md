@@ -125,14 +125,16 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
     and version.
   - On a PC: `host/link_sim` runs both sides with a stand-in for panel_ota (`link_fw.c`), and
     `tools/link_fw_sim.py` runs the scenarios.
-- **The setup** of a panel that becomes a keypad pairs while it is still a master (Option C): a
-  keypad manager of its own on the same socket; the setup's Done stores the record and the keypad
-  role and restarts. Paired, it sends nothing more until Done (the other master keeps the keypad
-  provisional, dropped after 10 minutes if the setup is abandoned), and its last step gets the
-  home partition through `link_info`, never the other master's configuration. Leaving the keypad
-  branch (`KP_PAIR_STOP`, or the setup done as the alarm panel) forgets the pairing, clears what
-  it published and ends the manager (`ksvc_setup_end`); the master's own pairing is published
-  again.
+- **The setup** pairs through a keypad manager on the same socket while the master service
+  still runs (Option C). Before LINK-053 provisioning it persists the paired record and keypad
+  role, then starts an authenticated session. Done completes setup and restarts as a keypad.
+  Before that durable transition, leaving cancels the provisional pairing. After it, Wi-Fi
+  failure or manual selection retains enrollment, and an interrupted setup resumes on reboot.
+- **Enrollment Wi-Fi** uses PLINK_CAP_WIFI and sealed WIFI_REQ/WIFI. Credentials come from
+  platform_esp under its network configuration lock, excluding pending trials; the keypad only
+  installs into an empty configuration. It retries every second for 30 seconds, cancels before
+  manual entry, wipes secrets and reports progress/online state through `ui_link_pair_t`.
+  Language, display and audio are unaffected. Radio discovery scans channels without Wi-Fi.
 
 ## Public API
 | Header | What it offers |

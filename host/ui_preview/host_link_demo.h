@@ -109,3 +109,6 @@ void host_link_demo_last_request(ui_link_req_t *out);
 /* How many keypads the alarm panel has, and one of them by number (false: none). */
 size_t host_link_demo_keypads(void);
 bool host_link_demo_keypad(uint8_t device, ui_link_keypad_t *out);
+
+/* Enrollment scenarios: requesting, joined, unavailable and radio link loss. */
+void host_link_demo_wifi_setup(uint8_t state, bool online);

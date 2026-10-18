@@ -1601,6 +1601,15 @@ typedef struct {
     uint8_t selected;
 } ui_link_info_t;
 
+/* Local enrollment progress; never includes network secrets. */
+enum {
+    UI_LINK_WIFI_IDLE = 0,
+    UI_LINK_WIFI_REQUESTING,
+    UI_LINK_WIFI_JOINING,
+    UI_LINK_WIFI_CONNECTED,
+    UI_LINK_WIFI_UNAVAILABLE,
+};
+
 /* ui_link_pair_t.state: either side's pairing (plink_pair_state_t). */
 enum {
     UI_LINK_PAIR_IDLE = 0,
@@ -1641,6 +1650,9 @@ typedef struct {
     char peer_name[48];  /* the keypad's or the alarm panel's name */
     char peer_addr[24];  /* its address on the network, e.g. "192.0.2.57" */
     uint8_t device;      /* DONE: the keypad's number */
+    /* Enrollment Wi-Fi: 0 idle/manual, 1 requesting, 2 joining, 3 connected, 4 unavailable. */
+    uint8_t wifi_setup;
+    bool online; /* authenticated, fresh master status; required for radio-only Done */
 } ui_link_pair_t;
 
 /* ui_link_keypad_t.fw_state: a keypad's part in this panel's updates (docs/features/11 "Updates
@@ -1703,6 +1715,7 @@ typedef enum {
     UI_LINK_REQ_KP_PAIR_STOP,     /* give up (the setup's Back) */
     UI_LINK_REQ_KP_DONE,          /* the pairing's Done: store the role and restart as a keypad */
     UI_LINK_REQ_PARTITION_POLICY, /* installer-only per-keypad switching policy */
+    UI_LINK_REQ_KP_WIFI, /* allow: request automatic credentials; false cancels for manual Wi-Fi */
 } ui_link_request_t;
 
 typedef struct {

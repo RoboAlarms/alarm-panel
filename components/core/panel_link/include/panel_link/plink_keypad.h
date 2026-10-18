@@ -186,6 +186,8 @@ typedef struct {
      * (a RELAY is refused BAD_ORDER, and FW_INFO says it can't). */
     size_t (*fw_write)(void *ctx, uint32_t offset, const uint8_t *data, size_t len,
                        uint32_t *busy_ms);
+    /* LINK-053: matched reply; valid only during the call, never log secrets. */
+    void (*wifi_credentials)(void *ctx, const plink_wifi_t *wifi);
 } plink_keypad_port_t;
 
 typedef struct {
@@ -390,6 +392,7 @@ typedef struct {
     uint8_t kind;
     plink_caps_t cap;
     uint16_t caps;               /* what this keypad offers (PLINK_CAPS_KNOWN at most) */
+    uint32_t wifi_req; /* outstanding enrollment request; zero rejects all replies */
     uint16_t caps_asked;         /* what its caller offered: HOME goes only with a mirror */
     char name[PLINK_NAME_MAX + 1];
     char fw[PLINK_FW_MAX + 1];
@@ -786,6 +789,11 @@ uint8_t plink_keypad_fw_trial_state(const plink_keypad_t *k, uint64_t now_ms);
 /* Forget the master (a person made it a stand-alone panel, or paired again): the record erased,
  * the session wiped. */
 bool plink_keypad_forget(plink_keypad_t *k, uint64_t now_ms);
+
+/* Request/retry only while enrolled and in an authenticated WIFI session. Stop
+ * before manual network selection so a late reply cannot overwrite it. */
+bool plink_keypad_wifi_request(plink_keypad_t *k, uint64_t now);
+void plink_keypad_wifi_cancel(plink_keypad_t *k);
 
 #ifdef __cplusplus
 }

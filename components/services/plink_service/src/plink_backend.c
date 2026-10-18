@@ -133,7 +133,7 @@ size_t plink_service_managed_keypads(void *ctx, ui_link_keypad_t *out, size_t ma
 uint8_t plink_service_manage(void *ctx, const ui_link_req_t *req)
 {
     (void)ctx;
-    if (req == NULL || req->kind < UI_LINK_REQ_PAIR_OPEN || req->kind > UI_LINK_REQ_PARTITION_POLICY) {
+    if (req == NULL || req->kind < UI_LINK_REQ_PAIR_OPEN || req->kind > UI_LINK_REQ_KP_WIFI) {
         return UI_LINK_REQ_REFUSED;
     }
     link_req_t r;

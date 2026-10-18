@@ -54,14 +54,14 @@ linkSetup({id: 'setup-role', shot: 'bl-048-setup-role', title: 'Setup: the role,
     note: 'Each home has one alarm panel. More panels can be keypads for it.', back: true, next: 'Next', body: roleBody(false)});
 
 linkSetup({id: 'setup-role-keypad', shot: 'bl-048-setup-role-keypad', title: 'Setup: the role, a keypad chosen'},
-  'With A keypad chosen the dots count a keypad\'s four steps: Role, Wi-Fi, Pair, Done. A keypad has no time zone, codes or name to set: it takes the time and its partition from the alarm panel, and codes are checked there. The role is stored when the pairing\'s Done is tapped (until then a restart comes back to this step).',
+  'With A keypad chosen the dots count a keypad\'s four steps: Role, Wi-Fi, Pair, Done. A keypad has no time zone, codes or name to set: it takes the time and its partition from the alarm panel, and codes are checked there. The role is stored after both confirmations, before Wi-Fi provisioning. Interrupted setup resumes.',
   {step: 1, steps: LINK_KEYPAD_STEPS, glyph: 'shield', title: 'How will this panel be used?',
     note: 'Each home has one alarm panel. More panels can be keypads for it.', back: true, next: 'Next', body: roleBody(true)});
 
-linkSetup({id: 'setup-keypad-wifi', shot: 'bl-048-setup-keypad-wifi', title: 'Setup: Wi-Fi on a keypad, no skipping'},
+linkSetup({id: 'setup-keypad-wifi', shot: 'bl-048-setup-keypad-wifi', title: 'Setup: Select Wi-Fi fallback on a keypad'},
   'A keypad\'s version of setup-wifi: the networks, the password on the keyboard and Other network... as today (ui_net.c), with its own side words and Next dimmed until it is connected: no Skip for now. The line on top shows until it is connected; then the connection row says so and Next lights.',
   {step: 2, steps: LINK_KEYPAD_STEPS, glyph: 'wifi', title: 'Join Wi-Fi',
-    note: 'A keypad reaches the alarm panel over Wi-Fi, so this step can\'t be skipped.', back: true, next: 'Next', nextDisabled: true,
+    note: 'Join the network the alarm panel uses.', back: true, next: 'Next', nextDisabled: true,
     body: [
       M.paragraph('Join the network the alarm panel uses.'),
       M.row_status({glyph: 'wifi-off', color: 'gray', title: 'Not connected', detail: 'Choose a network below'}),
@@ -74,18 +74,14 @@ linkSetup({id: 'setup-keypad-wifi', shot: 'bl-048-setup-keypad-wifi', title: 'Se
 
 // ---- the pairing step (keypad only) ----
 const PAIR = {step: 3, steps: LINK_KEYPAD_STEPS, glyph: 'house', title: 'Pair with the alarm panel',
-  note: 'It finds the alarm panel on your Wi-Fi. The installer allows it there.', back: true, next: 'Next', nextDisabled: true};
-const onTheAlarmPanel = () => [
-  M.section('On the alarm panel'),
-  M.row_link({glyph: 'wrench', title: 'Open Installer', detail: 'Settings > About > Installer, with the installer code', trail: ''}),
-  M.row_link({glyph: 'cpu', title: 'Keypads and devices', detail: 'In the Installer menu', trail: ''}),
-  M.row_link({glyph: 'plus', color: 'green', title: 'Add a keypad', detail: 'This keypad then finds it by itself', trail: ''}),
-].join('');
+  note: 'Find it nearby, or select Wi-Fi if it is out of range.', back: true, next: 'Next', nextDisabled: true};
+const onTheAlarmPanel = () => M.paragraph('Open Add keypad in Panel Manager or on the alarm panel.');
+const selectEnrollmentWifi = M.row_link({glyph:'wifi',title:'Select Wi-Fi',detail:'If the alarm panel is out of range',goTo:'setup-keypad-wifi'});
 const pair = (meta, notes, body, extra = {}) => linkSetup(meta, notes, {...PAIR, ...extra, body});
 
 pair({id: 'setup-pair-looking', shot: 'bl-048-setup-pair-looking', title: 'Setup, keypad: looking for the alarm panel'},
   'The step after Wi-Fi (KP_PAIR_START: a keypad starts an attempt only when a person asks, LINK-016). It keeps looking; what to do on the alarm panel stays on the page. Nothing moves: no spinner, the words change only when something is found. Next is dimmed: the step goes on by itself. Back returns to Wi-Fi and stops looking (KP_PAIR_STOP); on a panel becoming a keypad, leaving this branch (Back, the alarm panel chosen instead) also forgets a pairing that had just finished, so nothing of the other alarm panel stays.',
-  [M.row_status({glyph: 'search', color: 'blue', title: 'Looking for the alarm panel', detail: 'On your Wi-Fi'}), onTheAlarmPanel()].join(''));
+  [M.row_status({glyph: 'search', color: 'blue', title: 'Looking for the alarm panel', detail: 'Nearby or on your Wi-Fi'}), onTheAlarmPanel(), selectEnrollmentWifi].join(''));
 
 pair({id: 'setup-pair-code', shot: 'bl-048-setup-pair-code', title: 'Setup, keypad: found, compare the code'},
   'The code is the six digits the alarm panel shows (keypad-add-code), in two groups of three; the two answers have the same weight, as on the Home Assistant page. Yes sends this keypad\'s answer (KP_PAIR_CONFIRM); No ends it (nothing is stored on either side). The address is in the detail so an installer with two panels on the bench can tell them apart.',
@@ -104,41 +100,11 @@ pair({id: 'setup-pair-waiting', shot: 'bl-048-setup-pair-waiting', title: 'Setup
     M.paragraph('The installer has 2 minutes to allow it.'),
   ].join(''));
 
-linkSetup({id: 'setup-pair-done', shot: 'bl-048-setup-pair-done', title: 'Setup, keypad: paired'},
-  'The keypad branch\'s last step (4 of 4), shown by itself once both sides confirmed (LINK-016). The keypad\'s number comes from the alarm panel, the time zone too, and its home partition by the name it has there (link_info.home_name; "Partition 2" when not known). Until Done this panel sends Harbor House nothing more, so a setup left on this step for over 10 minutes is dropped there (pair again). No Back: undoing a pairing is done at the alarm panel (remove the keypad) or here by a factory reset. Done stores the role (KP_DONE), marks the setup done and the panel restarts as a keypad (kp-home-connecting).',
-  {step: 4, steps: LINK_KEYPAD_STEPS, glyph: 'party-popper', title: 'You\'re all set',
-    note: 'This panel is now a keypad. The alarm, zones and codes live on the alarm panel.', next: 'Done',
-    body: [
-      M.row_status({glyph: 'keyboard', color: 'green', title: 'Keypad 2 of Harbor House', detail: 'Shows and arms Home'}),
-      M.row_link({glyph: 'wifi', color: 'green', title: 'Wi-Fi', detail: 'Harbor House', trail: 'check', trailColor: 'green'}),
-      M.row_link({glyph: 'globe', color: 'green', title: 'Time zone', detail: 'Eastern Time, from Harbor House', trail: 'check', trailColor: 'green'}),
-    ].join('')});
-
-// ---- the ways pairing ends without a keypad: Try again (KP_PAIR_RETRY) ----
-const failed = (meta, notes, look, words, tone = 'gray') => pair(meta, notes,
-  [M.row_status(look), M.paragraph(words, tone)].join(''), {next: 'Try again', nextDisabled: false});
-failed({id: 'setup-pair-mismatch', shot: 'bl-048-setup-pair-mismatch', title: 'Setup, keypad: the codes didn\'t match'},
-  'After No on either screen (fail MISMATCH). Nothing was stored on either side. Try again starts looking again.',
-  {glyph: 'circle-x', color: 'red', title: 'Not paired: the codes didn\'t match', detail: 'Nothing was saved'},
-  'If they differ again, don\'t pair: something on your network is in between.', 'amber');
-failed({id: 'setup-pair-refused', shot: 'bl-048-setup-pair-refused', title: 'Setup, keypad: rejected at the alarm panel'},
-  'The installer tapped No, reject at the alarm panel (fail REFUSED or CANCELLED): the words say only what happened, and nothing was stored.',
-  {glyph: 'circle-x', color: 'red', title: 'Not paired: rejected at the alarm panel', detail: 'Nothing was saved'},
-  'Ask the installer to allow it there, then try again.');
-failed({id: 'setup-pair-timeout', shot: 'bl-048-setup-pair-timeout', title: 'Setup, keypad: no answer in time'},
-  'Either side waited too long: 30 s for a step, 2 minutes for the codes (fail TIMEOUT, CLOSED or INTERRUPTED, LINK-016). Words the proposal didn\'t draw, in its style: no number free at the alarm panel (FULL), two alarm panels open at once (TWO_MASTERS: the contract names one peer, so the step can\'t list both to choose from), another keypad pairing too (OVERLAP), and any other failure ("Not paired", "Open Add a keypad on the alarm panel again, then try again.").',
-  {glyph: 'clock-alert', color: 'amber', title: 'Not paired: no answer in time', detail: 'Nothing was saved'},
-  'Both screens must answer within 2 minutes. Open Add a keypad on the alarm panel again, then try again.');
-
-pair({id: 'setup-pair-not-found', shot: 'bl-048-setup-pair-not-found', title: 'Setup, keypad: nothing found yet'},
-  'After 30 s with no alarm panel found (link_pair_status left_s, looking for this long), the page swaps the instructions for what to check, once, and keeps looking (nothing blinks, no counter). Found later, it goes on to the code. The same page after 3 failed attempts (LIMIT) or when the firmware stopped looking (NOT_FOUND), then with Try again lit. Back returns to Wi-Fi, for a keypad on the wrong network.',
-  [
-    M.row_status({glyph: 'search', color: 'amber', title: 'Still looking', detail: 'No alarm panel with pairing open yet'}),
-    M.section('Check'),
-    M.row_link({glyph: 'wifi', title: 'The same Wi-Fi', detail: 'This keypad is on Harbor House: the alarm panel must be too', trail: ''}),
-    M.row_link({glyph: 'plus', title: 'Pairing open on the alarm panel', detail: 'Installer > Keypads and devices > Add a keypad, for 2 minutes', trail: ''}),
-    M.row_link({glyph: 'shield', title: 'Not a guest network', detail: 'A guest network keeps devices apart', trail: ''}),
-  ].join(''));
+linkSetup({id:'setup-pair-done',shot:'bl-048-setup-pair-done',title:'Setup: keypad paired and connected'},
+  'Enrollment is durable before provisioning. Done requires a fresh authenticated master connection.',
+  {step:4,steps:4,glyph:'house',title:'Keypad paired',note:'Your pairing is saved. Language, display and sound stay on this keypad.',
+    back:false,next:'Done',body:M.row_status({glyph:'house',color:'green',title:'Connected to the alarm panel'}) +
+      M.row_status({glyph:'wifi',color:'green',title:'Wi-Fi connected'})});
 
 // ================================ B. The alarm panel: Keypads and devices ================================
 // Installer mode, under About (BL-189), as installer-menu.

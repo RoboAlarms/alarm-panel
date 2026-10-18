@@ -7,8 +7,8 @@
  *
  * The panel link (docs/features/11, BL-048): on a first start, in a firmware with the link, the
  * role comes after Welcome - the alarm panel (the steps above) or a keypad for one, whose setup is
- * Wi-Fi (not skippable), pairing with the alarm panel (the code compared on both screens,
- * LINK-004, LINK-016) and Done, which stores the role and restarts it as a keypad. Each branch
+ * nearby discovery or Select Wi-Fi, pairing with the alarm panel (both codes compared,
+ * LINK-004, LINK-016), authenticated Wi-Fi provisioning and Done (LINK-053). Each branch
  * counts its own dots. A keypad that isn't paired comes back to the pairing step (Pair again).
  */
 #include <stdio.h>
@@ -30,12 +30,14 @@ enum {
     STEP_NAME,
     STEP_DONE,
     STEP_PAIR,
-    STEP_KP_DONE
+    STEP_KP_DONE,
+    STEP_NEAR
 };
 
 static int32_t s_step;
 static bool s_can_exit; /* the panel is already set up: every step offers "Leave setup" */
 static bool s_role;     /* a first start with the panel link: the role step after Welcome */
+static bool s_enrolled;
 static bool s_keypad;   /* the keypad's branch (chosen on the role step, or Pair again) */
 static uint8_t s_code_user;
 static alarm_config_t *s_scratch;
@@ -71,6 +73,7 @@ static void footer(const char *next, bool back)
 }
 
 static void build_step(void);
+static void pair_start(void);
 
 /* A still shade at the foot of the list while more of it runs on under the buttons; nothing moves. */
 static void shade_update(void)
@@ -178,11 +181,31 @@ static void build_role(lv_obj_t *b)
     footer(TR("Next"), true);
 }
 
+static void select_wifi(void *ctx)
+{
+    (void)ctx;
+    (void)pair_ask(UI_LINK_REQ_KP_WIFI, false);
+    if (!s_enrolled) keypad_branch_left();
+    s_step = STEP_WIFI;
+    build_step();
+}
+
+static void build_near(lv_obj_t *b)
+{
+    side(UI_ICON_HOUSE, TR("Find your alarm panel"),
+         TR("Pair nearby to get Wi-Fi settings automatically."));
+    ui_row_link(b, UI_ICON_SEARCH, ui_tone_blue(), TR("Find panel"),
+                TR("Open Add keypad in Panel Manager or on the alarm panel."), NULL, NULL, NULL, NULL);
+    ui_row_link(b, UI_ICON_WIFI, ui_tone_blue(), TR("Select Wi-Fi"),
+                TR("If the alarm panel is out of range"), NULL, UI_ICON_CHEVRON_RIGHT, select_wifi, NULL);
+    footer(TR("Find panel"), true);
+}
+
 /* A keypad reaches the alarm panel over Wi-Fi: its step can't be skipped, Next waits for it. */
 static void build_keypad_wifi(lv_obj_t *b)
 {
     side(UI_ICON_WIFI, TR("Join Wi-Fi"),
-         TR("A keypad reaches the alarm panel over Wi-Fi, so this step can't be skipped."));
+         TR("Join the network the alarm panel uses."));
     const bool connected = ui_net_connected();
     if (!connected) {
         ui_paragraph(b, TR("Join the network the alarm panel uses."), ui_tone_gray());
@@ -274,6 +297,8 @@ static uint32_t pair_sig(const ui_link_pair_t *p)
     for (const char *c = p->peer_name; *c != '\0'; c++) {
         h = (h ^ (uint8_t)*c) * 16777619u;
     }
+    h = (h ^ p->wifi_setup) * 16777619u;
+    h = (h ^ (unsigned)p->online) * 16777619u;
     return h;
 }
 
@@ -296,6 +321,9 @@ static void pair_confirm(bool allow)
     (void)pair_ask(UI_LINK_REQ_KP_PAIR_CONFIRM, allow);
     pair_read();
     if (pair_view(&s_pair.p) == PAIR_DONE) {
+        s_enrolled = true;
+        (void)pair_ask(UI_LINK_REQ_KP_WIFI, true);
+        pair_read();
         s_step = STEP_KP_DONE;
     }
     build_step();
@@ -311,20 +339,6 @@ static void pair_yes(void *ctx)
 {
     (void)ctx;
     pair_confirm(true);
-}
-
-/* What to do on the alarm panel, under the looking row. */
-static void on_the_alarm_panel(lv_obj_t *b)
-{
-    /* TR: the setup's pairing step on a keypad: the heading over what the installer does there */
-    ui_section(b, TR("On the alarm panel"));
-    ui_row_link(b, UI_ICON_WRENCH, ui_tone_blue(), TR("Open Installer"),
-                TR("Settings > About > Installer, with the installer code"), NULL, NULL, NULL,
-                NULL);
-    ui_row_link(b, UI_ICON_CPU, ui_tone_blue(), TR("Keypads and devices"),
-                TR("In the Installer menu"), NULL, NULL, NULL, NULL);
-    ui_row_link(b, UI_ICON_PLUS, ui_tone_green(), TR("Add a keypad"),
-                TR("This keypad then finds it by itself"), NULL, NULL, NULL, NULL);
 }
 
 /* "Found Harbor House", the alarm panel's address under it. */
@@ -416,7 +430,7 @@ static void pair_failed(lv_obj_t *b)
 static void build_pair(lv_obj_t *b)
 {
     side(UI_ICON_HOUSE, TR("Pair with the alarm panel"),
-         TR("It finds the alarm panel on your Wi-Fi. The installer allows it there."));
+         TR("Find it nearby, or select Wi-Fi if it is out of range."));
     footer(TR("Next"), true);
     ui_set_int(&subject_wiz_next_on, 0); /* the step goes on by itself */
     s_pair.shown = pair_sig(&s_pair.p);
@@ -428,25 +442,7 @@ static void build_pair(lv_obj_t *b)
                     TR("No alarm panel with pairing open yet"), NULL, NULL, NULL, NULL);
         /* TR: the setup's pairing step after 30 s with nothing found: the heading over what to
          * check */
-        ui_section(b, TR("Check"));
-        ui_wifi_info_t w;
-        memset(&w, 0, sizeof(w));
-        if (S.be.wifi_info != NULL) {
-            S.be.wifi_info(S.be.ctx, &w);
-        }
-        char detail[128];
-        /* TR: the setup's pairing step: what to check; {0} is the Wi-Fi network's name. At most 90
-         * bytes */
-        I18N_FORMAT(detail, sizeof(detail),
-                    TR("This keypad is on {0}: the alarm panel must be too"),
-                    w.ssid[0] != '\0' ? w.ssid : NOTR("-"));
-        ui_row_link(b, UI_ICON_WIFI, ui_tone_blue(), TR("The same Wi-Fi"), detail, NULL, NULL, NULL,
-                    NULL);
-        ui_row_link(b, UI_ICON_PLUS, ui_tone_blue(), TR("Pairing open on the alarm panel"),
-                    TR("Installer > Keypads and devices > Add a keypad, for 2 minutes"), NULL, NULL,
-                    NULL, NULL);
-        ui_row_link(b, UI_ICON_SHIELD, ui_tone_blue(), TR("Not a guest network"),
-                    TR("A guest network keeps devices apart"), NULL, NULL, NULL, NULL);
+        ui_paragraph(b, TR("Open Add keypad in Panel Manager or on the alarm panel."), ui_tone_gray());
         if (s_pair.p.state == UI_LINK_PAIR_FAILED) {
             footer(TR("Try again"), true); /* it stopped looking: a person starts it again */
         }
@@ -475,59 +471,47 @@ static void build_pair(lv_obj_t *b)
     default:
         /* TR: the setup's pairing step while it looks (nothing moves: no spinner) */
         ui_row_link(b, UI_ICON_SEARCH, ui_tone_blue(), TR("Looking for the alarm panel"),
-                    TR("On your Wi-Fi"), NULL, NULL, NULL, NULL);
-        on_the_alarm_panel(b);
+                    TR("Nearby or on your Wi-Fi"), NULL, NULL, NULL, NULL);
+        ui_paragraph(b, TR("Open Add keypad in Panel Manager or on the alarm panel."), ui_tone_gray());
         break;
     }
+    if (pair_view(&s_pair.p) == PAIR_LOOKING || pair_view(&s_pair.p) == PAIR_NOT_FOUND ||
+        pair_view(&s_pair.p) == PAIR_FAILED)
+        ui_row_link(b, UI_ICON_WIFI, ui_tone_blue(), TR("Select Wi-Fi"),
+                    TR("If the alarm panel is out of range"), NULL, UI_ICON_CHEVRON_RIGHT, select_wifi, NULL);
 }
 
 /* The keypad branch's last step: both sides checked each other before anything was stored
  * (LINK-016). Done stores the role and restarts the panel as a keypad. */
+static void retry_wifi(void *ctx)
+{
+    (void)ctx;
+    (void)pair_ask(UI_LINK_REQ_KP_WIFI, true);
+    pair_read();
+    build_step();
+}
+
 static void build_kp_done(lv_obj_t *b)
 {
-    side(UI_ICON_PARTY, TR("You're all set"),
-         TR("This panel is now a keypad. The alarm, zones and codes live on the alarm panel."));
-    const char *master = s_pair.p.peer_name[0] != '\0' ? s_pair.p.peer_name : ui_link_master_name();
-    char title[96];
-    char detail[128];
-    ui_link_keypad_title(title, sizeof(title), s_pair.p.device, master);
-    /* The home partition the alarm panel gave, by the name it has there (link_info): this
-     * panel's own configuration isn't that alarm panel's. */
-    char part[ALARM_NAME_LEN + 16];
-    uint8_t p = ui_link_paired_home(part, sizeof(part));
-    if (p < 1u || p > ALARM_MAX_PARTITIONS) {
-        p = S.opt.partition;
+    const bool connected = ui_net_connected();
+    const bool waiting = s_pair.p.wifi_setup == UI_LINK_WIFI_REQUESTING || s_pair.p.wifi_setup == UI_LINK_WIFI_JOINING;
+    side(UI_ICON_HOUSE, TR("Keypad paired"),
+         TR("Your pairing is saved. Language, display and sound stay on this keypad."));
+    ui_row_link(b, UI_ICON_HOUSE, s_pair.p.online ? ui_tone_green() : ui_tone_amber(),
+                s_pair.p.online ? TR("Connected to the alarm panel") : TR("Reconnecting to the alarm panel"),
+                NULL, NULL, NULL, NULL, NULL);
+    ui_row_link(b, UI_ICON_WIFI, connected ? ui_tone_green() : ui_tone_blue(),
+                connected ? TR("Wi-Fi connected") : waiting ? TR("Setting up Wi-Fi") : TR("Wi-Fi is not connected"),
+                waiting ? TR("Getting settings from the alarm panel and joining its network.") : NULL,
+                NULL, NULL, NULL, NULL);
+    if (!connected) {
+        ui_row_link(b, UI_ICON_WIFI, ui_tone_blue(), TR("Select Wi-Fi"), NULL, NULL,
+                    UI_ICON_CHEVRON_RIGHT, select_wifi, NULL);
+        if (!waiting) ui_row_link(b, UI_ICON_REFRESH, ui_tone_blue(), TR("Try again"),
+                                 NULL, NULL, NULL, retry_wifi, NULL);
     }
-    if (part[0] == '\0') {
-        I18N_FORMAT(part, sizeof(part), TR_C("default partition name", "Partition {0}"),
-                    (unsigned)p);
-    }
-    /* TR: the setup's last step on a keypad; {0} is the partition it shows and arms. At most 90
-     * bytes */
-    I18N_FORMAT(detail, sizeof(detail), TR("Shows and arms {0}"), part);
-    ui_row_link(b, UI_ICON_KEYBOARD, ui_tone_green(), title, detail, NULL, NULL, NULL, NULL);
-    ui_wifi_info_t w;
-    memset(&w, 0, sizeof(w));
-    if (S.be.wifi_info != NULL) {
-        S.be.wifi_info(S.be.ctx, &w);
-    }
-    lv_obj_t *row = ui_row_link(b, UI_ICON_WIFI, ui_tone_green(), TR("Wi-Fi"), w.ssid, NULL,
-                                UI_ICON_CHECK, NULL, NULL);
-    lv_obj_set_style_text_color(ui_find(row, "trail_label"), ui_tone_green(), 0);
-    char tz[64] = "UTC0";
-    if (S.be.get_timezone != NULL) {
-        S.be.get_timezone(S.be.ctx, tz, sizeof(tz));
-    }
-    const int zone = ui_tz_find(tz);
-    /* TR: the setup's last step on a keypad: its time zone {0}, taken from the alarm panel named
-     * {1}. At most 90 bytes */
-    I18N_FORMAT(detail, sizeof(detail), TR("{0}, from {1}"),
-                zone >= 0 ? TR_C("time zone", UI_TIMEZONES[zone].name) : tz, master);
-    row = ui_row_link(b, UI_ICON_GLOBE, ui_tone_green(), TR("Time zone"), detail, NULL,
-                      UI_ICON_CHECK, NULL, NULL);
-    lv_obj_set_style_text_color(ui_find(row, "trail_label"), ui_tone_green(), 0);
-    footer(TR("Done"),
-           false); /* undoing a pairing is done at the alarm panel, or by a factory reset */
+    footer(connected ? TR("Done") : TR("Continue without Wi-Fi"), false);
+    ui_set_int(&subject_wiz_next_on, s_pair.p.online && !waiting ? 1 : 0);
 }
 
 static void build_wifi(lv_obj_t *b)
@@ -747,6 +731,7 @@ static int32_t dot_of(int32_t step)
     if (s_keypad) {
         switch (step) {
         case STEP_ROLE: return 1;
+        case STEP_NEAR:
         case STEP_WIFI: return 2;
         case STEP_PAIR: return 3;
         case STEP_KP_DONE: return 4;
@@ -774,10 +759,11 @@ static void build_step(void)
     ui_set_int(&subject_wiz_step, dot_of(s_step));
     /* "Leave setup" is gone from the last step: Done ends the setup */
     ui_set_int(&subject_wiz_exit,
-               s_can_exit && s_step != STEP_DONE && s_step != STEP_KP_DONE ? 1 : 0);
+               s_can_exit && !s_enrolled && s_step != STEP_DONE && s_step != STEP_KP_DONE ? 1 : 0);
     lv_obj_t *b = body();
     switch (s_step) {
     case STEP_LANGUAGE: build_language(b); break;
+    case STEP_NEAR: build_near(b); break;
     case STEP_ROLE: build_role(b); break;
     case STEP_WIFI: s_keypad ? build_keypad_wifi(b) : build_wifi(b); break;
     case STEP_PAIR: build_pair(b); break;
@@ -811,6 +797,7 @@ void ui_wizard_init(void)
     s_can_exit = false;
     s_role = false;
     s_keypad = false;
+    s_enrolled = false;
     ui_set_int(&subject_wiz_exit, 0);
     lv_obj_add_event_cb(body(), on_body_scroll, LV_EVENT_SCROLL, NULL);
 }
@@ -829,8 +816,18 @@ void ui_wizard_start(bool can_exit)
      * Installer, the alarm panel's setup is as it was (BL-048). */
     s_role = !can_exit && ui_link_master();
     s_keypad = false;
+    s_enrolled = false;
     ui_set_int(&subject_wiz_exit, can_exit ? 1 : 0);
     s_step = ui_lang_offered() ? STEP_LANGUAGE : STEP_WELCOME;
+    if (ui_link_keypad()) {
+        s_keypad = true;
+        pair_read();
+        s_enrolled = s_pair.p.state == UI_LINK_PAIR_DONE;
+        if (s_enrolled) {
+            s_step = STEP_KP_DONE;
+            (void)pair_ask(UI_LINK_REQ_KP_WIFI, true);
+        } else s_step = STEP_NEAR;
+    }
     build_step();
     lv_screen_load(S.wizard);
 }
@@ -847,6 +844,7 @@ void ui_wizard_pair_again(void)
     s_can_exit = true; /* Leave setup goes back to Home, still a keypad */
     s_role = false;
     s_keypad = true;
+    s_enrolled = false;
     ui_set_int(&subject_wiz_exit, 1);
     s_step = STEP_PAIR;
     pair_start();
@@ -889,8 +887,9 @@ static int32_t next_step(int32_t step)
     switch (step) {
     case STEP_LANGUAGE: return STEP_WELCOME;
     case STEP_WELCOME: return s_role ? STEP_ROLE : STEP_WIFI;
-    case STEP_ROLE: return STEP_WIFI;
-    case STEP_WIFI: return s_keypad ? STEP_PAIR : STEP_TIME;
+    case STEP_ROLE: return s_keypad ? STEP_NEAR : STEP_WIFI;
+    case STEP_NEAR: return STEP_PAIR;
+    case STEP_WIFI: return s_keypad ? (s_enrolled ? STEP_KP_DONE : STEP_PAIR) : STEP_TIME;
     case STEP_TIME: return ui_clock_setup_needed() ? STEP_CLOCK : STEP_CODES;
     case STEP_CLOCK: return STEP_CODES;
     case STEP_CODES: return STEP_NAME;
@@ -905,13 +904,14 @@ static int32_t prev_step(int32_t step)
     switch (step) {
     case STEP_WELCOME: return STEP_LANGUAGE;
     case STEP_ROLE: return STEP_WELCOME;
-    case STEP_WIFI: return s_role ? STEP_ROLE : STEP_WELCOME;
+    case STEP_NEAR: return s_role ? STEP_ROLE : STEP_WELCOME;
+    case STEP_WIFI: return s_keypad ? (s_enrolled ? STEP_KP_DONE : STEP_NEAR) : (s_role ? STEP_ROLE : STEP_WELCOME);
     case STEP_TIME: return STEP_WIFI;
     case STEP_CLOCK: return STEP_TIME;
     case STEP_CODES: return ui_clock_setup_needed() ? STEP_CLOCK : STEP_TIME;
     case STEP_NAME: return STEP_CODES;
     case STEP_DONE: return STEP_NAME;
-    case STEP_PAIR: return STEP_WIFI;
+    case STEP_PAIR: return STEP_NEAR;
     default: return step; /* the keypad's Done has no Back */
     }
 }
@@ -924,7 +924,7 @@ static void go(int32_t dir)
     if (s_step == STEP_CLOCK) {
         ui_clock_fields_start();
     }
-    if (from == STEP_PAIR && s_step == STEP_WIFI) {
+    if (from == STEP_PAIR && s_step != STEP_PAIR && !s_enrolled) {
         keypad_branch_left(); /* Back stops looking, and forgets a pairing that just finished */
     }
     if (s_step == STEP_PAIR && from != STEP_PAIR) {
@@ -946,6 +946,8 @@ void ui_wizard_next(void)
         return;
     }
     if (s_step == STEP_KP_DONE) {
+        pair_read();
+        if (!s_pair.p.online) { build_step(); return; }
         finish_keypad();
         return;
     }
@@ -987,6 +989,7 @@ void ui_wizard_exit(void)
     S.wizard_paused = false;
     s_can_exit = false;
     s_keypad = false;
+    s_enrolled = false;
     s_step = STEP_WELCOME;
     ui_set_int(&subject_wiz_exit, 0);
     ui_show_main();
@@ -1002,10 +1005,30 @@ void ui_wizard_tick(void)
     } else if (s_step == STEP_WIFI) {
         ui_set_str(&subject_wiz_next, ui_net_connected() ? TR("Next") : TR("Skip for now"));
     }
+    /* A stored keypad may publish its pairing after the UI first starts. Resume
+     * setup instead of asking it to enroll a second time after a power interruption. */
+    if (s_step == STEP_NEAR && ui_link_keypad() && lv_tick_elaps(s_pair.polled) >= 1000u) {
+        pair_read();
+        if (s_pair.p.state == UI_LINK_PAIR_DONE) {
+            s_enrolled = true;
+            (void)pair_ask(UI_LINK_REQ_KP_WIFI, true);
+            pair_read();
+            s_step = STEP_KP_DONE;
+            build_step();
+        }
+    }
     /* The pairing, at most once a second (UI-020): the step changes only when what it shows does */
+    if (s_step == STEP_KP_DONE && lv_tick_elaps(s_pair.polled) >= 1000u) {
+        const uint32_t before = pair_sig(&s_pair.p);
+        pair_read();
+        if (before != pair_sig(&s_pair.p)) build_step();
+    }
     if (s_step == STEP_PAIR && lv_tick_elaps(s_pair.polled) >= 1000u) {
         pair_read();
         if (pair_view(&s_pair.p) == PAIR_DONE) {
+            s_enrolled = true;
+            (void)pair_ask(UI_LINK_REQ_KP_WIFI, true);
+            pair_read();
             s_step = STEP_KP_DONE;
             build_step();
         } else if (pair_sig(&s_pair.p) != s_pair.shown &&

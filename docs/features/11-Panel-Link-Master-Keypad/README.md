@@ -29,16 +29,34 @@ by automatic reconnection. A keypad reboot with the master's LAN blocked also co
 session and received all eight configured zones. Full firmware relay over ESP-NOW, range and
 AP channel changes still need hardware acceptance. The 7-inch display recurrence is B023.
 
-## Draft: nearby enrollment and Wi-Fi provisioning
+## Nearby enrollment and Wi-Fi provisioning (LINK-053)
 
-Owner direction: try ESP-NOW enrollment first, then transfer the master's Wi-Fi credentials
-through the authenticated encrypted link only after both code confirmations. Keep Select Wi-Fi
-available immediately for out-of-range enrollment over LAN. A failed Wi-Fi join retains enrollment;
-manual credentials are not overwritten. Language, display and audio remain keypad-local; existing
-master date/time/time-zone synchronization stays unchanged. This is a draft, not implemented.
+Approved 2026-10-18: ESP-NOW discovery first, automatic Wi-Fi setup after both comparison-code
+confirmations, and **Select Wi-Fi** available before discovery and after pairing. The same
+Panel Manager enrollment instructions serve normal and headless masters. Language, display
+and audio stay local; date, time and time zone continue to follow the master.
 
-Review the [touchscreen proposal](../07-UI-LVGL-Pro/mockup/proposals/BL-048-radio-enrollment.js)
-and [Panel Manager instructions](../31-Browser-Panel-Manager/mockup/proposals/BL-048-radio-enrollment.js).
+Implemented and host-tested; fresh-device radio provisioning still needs hardware acceptance.
+The keypad persists its pairing and role before opening its first authenticated session. Wi-Fi
+failure, manual selection and power loss after that point retain enrollment. An unfinished
+setup resumes after reboot. Done requires a fresh authenticated master connection; without
+Wi-Fi it is enabled only after the automatic attempt ends and the radio link is online.
+
+`PLINK_CAP_WIFI` (0x0008) negotiates two appended sealed messages: `WIFI_REQ` (0x3B, K->M)
+contains a nonzero request ID (u32 little endian); `WIFI` (0x3C, M->K) echoes that ID followed
+by SSID[33] and password[65], both NUL terminated. Empty SSID means unavailable. The 102-byte
+reply fits ESP-NOW's 250-byte frame. Existing type numbers and frozen v1 fixtures are unchanged.
+No credential is advertised, logged or sent before a paired authenticated session. Requests use
+the master's request-rate bucket; retries reuse the ID, replies are consumed once, and cancelling
+before manual entry rejects late replies. The service retries once per second for up to 30 seconds.
+A master without this capability falls back to manual selection. Temporary browser network
+trials cannot be shared. Stored credentials are installed only into an empty configuration under
+the same lock as manual changes; unreadable storage fails closed. Plaintext scratch buffers are wiped.
+
+PC coverage: credential codec boundaries, malformed/stale replies, open/unavailable networks,
+pre-pair refusal, negotiated capabilities, lost replies/retry, cancellation, older peers and removal;
+the real LVGL setup walk covers discovery without Wi-Fi, confirmation, transfer, loss, radio-only
+completion and manual selection after pairing. See [current enrollment screens](../07-UI-LVGL-Pro/mockup/screens/radio-enrollment.js).
 
 ## Goal
 Let another panel act as a remote keypad for a master panel, like the keypads on a classic panel's
@@ -206,7 +224,8 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-049 | Device and settings traffic shares no cache, slot, bucket, task or turn with alarm commands, and goes only in a turn with no STATUS change or RESULT due for that keypad. With 64 devices changing every 100 ms, disarm and panic answer as fast as without it (built, BL-216; the storm run on the PC; on the panels, with HOME and PREFS shared and no devices, the keypad's commands answered in 150-190 ms) | link (storm), HIL |
 | LINK-050 | A keypad with `PLINK_CAP_PREFS` reports its settings (field ids frozen in `proto_prefs.h`), its panel id, its voice state and the fields it accepts: at each session's first STATUS, after each save (at most 1 a second), and on PREFS_REQ. HEARTBEAT appends the settings CRC; the master asks again while it differs, at most every 2 s. The master keeps the report in RAM only (built, BL-216; on the panels a change's report reached the master within 1 s) | unit, link |
 | LINK-051 | PREFS_SET carries only listed fields to change. One is in flight per keypad, resent every 1 s and given up at 6 s. The answer is a PREFS with its req, the refusals per field and the values now stored. A req is applied once (the answer is kept 30 s). The keypad checks every value itself and applies it through its screen (UI-046) (built, BL-216; on the panels from the master's console: on the keypad's screen within 1 s, refused as held during an exit time) | unit, link |
-| LINK-052 | Never set over the link: codes, role, pairing, home partition, name, supervision, Wi-Fi and IP, time, language and region, updates, factory reset, the setup, the Panel Manager, developer access. PREFS_SET and PREFS_REQ come from the master only (built, BL-216) | unit (`test_plink_frame.c`) |
+| LINK-052 | Never set through PREFS_SET: codes, role, pairing, home partition, name, supervision, Wi-Fi and IP, time, language and region, updates, factory reset, the setup, the Panel Manager, developer access. PREFS_SET and PREFS_REQ come from the master only (built, BL-216) | unit (`test_plink_frame.c`) |
+| LINK-053 | Enrollment discovers nearby panels without Wi-Fi; only mutually confirmed, authenticated peers may transfer credentials. Manual Wi-Fi never gets overwritten; failure retains pairing; completion needs a live master connection. Language/audio/display remain local. | codec/link unit tests, LVGL setup walk; hardware pending |
 
 ## Frame format (v1)
 
@@ -1003,7 +1022,7 @@ Who offers each bit (built):
 | 0x0002 | `PLINK_CAP_HOME` | Built with `CONFIG_ALARM_HOME_CONTROL` and its device registry running (`plink_service_set_home`, from `panel_app`). The list is empty until Home Assistant's catalog arrives, so the keypad's rail stays hidden, as on such a master. | Built with `CONFIG_ALARM_HOME_CONTROL` and its mirror allocated in PSRAM. Never on the 4" board. |
 | 0x0004 | `PLINK_CAP_PREFS` | Every build with the UI | Every build with the UI |
 
-Next free: bit 0x0008 and type 0x3B.
+Next free: bit 0x0010 and type 0x3D (LINK-053 uses WIFI 0x0008 and 0x3B/0x3C).
 
 ### Messages
 
@@ -1669,12 +1688,9 @@ panels; a successful host preview is not hardware acceptance.
   pairing is answered (a clash ends the pairing, "Nothing was saved"). Left open: a Zigbee keypad
   given the same number within that second while the zone lock is busy at the moment of the check.
   A Zigbee-side call that claims a number under the zone lock would close it.
-- The setup's pairing on a master (Option C) sends the other master nothing after PAIR_DONE until
-  the setup's Done, so an abandoned setup leaves only a provisional keypad there, dropped after
-  10 minutes (LINK-016); a setup left on its last step for longer loses the pairing too (the
-  keypad then says it isn't paired: pair again). Its last step names the home partition from the
-  master's name (a master is named after partition 1), "Partition 2" otherwise: PAIR_DONE carrying
-  the home partition's name (an appended field, LINK-017) would name every partition.
+- The setup's keypad manager starts while the panel still runs its master service (Option C).
+  Before authenticated provisioning it persists the pairing and keypad role (LINK-053). Done
+  ends setup and restarts into the keypad service; leaving before confirmation remains cancellable.
 - For the maintainers: should panic be resent longer than 60 s; do a keypad's mains and battery
   flags become device troubles (an engine change) or stay in the keypads list. Decided 2026-10-15:
   fire and CO keep sounding on a keypad that lost the link (Roles); 5 min default supervision
@@ -1769,8 +1785,8 @@ panels; a successful host preview is not hardware acceptance.
 - [x] Live Panel Manager API enrollment/assignment on a display-equipped master and physical
   keypad: both confirmations (keypad via console), stale-code-sequence refusal, reconnect,
   cancel/expiry and policy delivery; details in feature 31's keypad-enrollment.md (BL-048).
-- [ ] Approve and implement nearby enrollment with authenticated Wi-Fi provisioning and manual
-  Select Wi-Fi fallback; keep language local (BL-048).
+- [x] Approved nearby enrollment, authenticated Wi-Fi provisioning and Select Wi-Fi fallback; language remains local (BL-048, LINK-053).
+- [ ] Hardware acceptance: fresh keypad without credentials, automatic radio provisioning, out-of-range manual enrollment, interrupted setup resume and older-master fallback (BL-048, LINK-053).
 - [ ] Human comparison-screen and physical headless enrollment/assignment acceptance (BL-048).
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over

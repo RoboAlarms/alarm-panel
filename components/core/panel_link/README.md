@@ -148,3 +148,9 @@ allows it; ACTIVITY (op 5) renews the current selection. Alarm operations still 
 authorization worker and must name the selected partition. Default idle return is 30 seconds;
 Never disables expiry. Policy changes, reconnects and reassignment clear selection. Missing
 stored/wire policy means locked. Frozen policy fixtures extend, rather than alter, v1 fixtures.
+
+LINK-053 enrollment adds negotiated WIFI (0x0008), sealed WIFI_REQ (0x3B) and WIFI (0x3C).
+The master's optional credentials port runs only after authentication and rate limiting;
+the keypad accepts one matching outstanding request, cancels before manual selection,
+and wipes decoded plaintext after its callback. Retries reuse the ID. Codec and end-to-end
+link tests cover boundaries, unavailable credentials, capability absence, loss and cancellation.

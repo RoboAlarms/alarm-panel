@@ -2083,3 +2083,27 @@ bool plink_dec_prefs_set(const uint8_t *p, size_t len, plink_prefs_set_t *m)
     }
     return dec_done(&r, m, sizeof(*m));
 }
+
+/* LINK-053: bounded secrets, never accepted without the outstanding request. */
+bool plink_enc_wifi(const plink_wifi_t *wifi, uint32_t req, uint8_t *out, size_t cap)
+{
+    if (!wifi || !out || cap < 102u || !req ||
+        !memchr(wifi->ssid, 0, 33) || !memchr(wifi->password, 0, 65)) return false;
+    memset(out, 0, 102);
+    for (unsigned i = 0; i < 4; ++i) out[i] = (uint8_t)(req >> (8u * i));
+    memcpy(out + 4, wifi->ssid, strlen(wifi->ssid));
+    if (wifi->ssid[0]) memcpy(out + 37, wifi->password, strlen(wifi->password));
+    return true;
+}
+bool plink_dec_wifi(const uint8_t *p, size_t n, uint32_t req, plink_wifi_t *out)
+{
+    if (!out) return false;
+    plink_wipe(out, sizeof *out);
+    if (!p || n < 102u || !req || !memchr(p + 4, 0, 33) || !memchr(p + 37, 0, 65)) return false;
+    uint32_t id = 0;
+    for (unsigned i = 0; i < 4; ++i) id |= (uint32_t)p[i] << (8u * i);
+    if (id != req) return false;
+    memcpy(out->ssid, p + 4, 33);
+    if (out->ssid[0]) memcpy(out->password, p + 37, 65);
+    return true;
+}

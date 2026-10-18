@@ -437,6 +437,10 @@ static uint8_t be_request(void *ctx, const ui_link_req_t *req)
             D.pair.state = UI_LINK_PAIR_WAITING;
         }
         return UI_LINK_REQ_OK;
+    case UI_LINK_REQ_KP_WIFI:
+        if (req->allow && D.pair.state != UI_LINK_PAIR_DONE) return UI_LINK_REQ_REFUSED;
+        D.pair.wifi_setup = req->allow ? 1u : 0u;
+        return UI_LINK_REQ_OK;
     case UI_LINK_REQ_KP_DONE:
         if (!D.pairing || D.pair.state != UI_LINK_PAIR_DONE) {
             return UI_LINK_REQ_REFUSED;
@@ -752,4 +756,10 @@ bool host_link_demo_keypad(uint8_t device, ui_link_keypad_t *out)
     }
     *out = *k;
     return true;
+}
+
+void host_link_demo_wifi_setup(uint8_t state, bool online)
+{
+    D.pair.wifi_setup = state;
+    D.pair.online = online;
 }

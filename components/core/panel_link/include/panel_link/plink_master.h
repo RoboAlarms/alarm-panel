@@ -206,6 +206,9 @@ typedef struct {
      * call into the master. NULL: no relay is served. */
     size_t (*fw_read)(void *ctx, const uint8_t id8[PLINK_ID8_LEN], uint32_t offset, uint8_t *out,
                       size_t len);
+    /* LINK-053: called only for a rate-limited authenticated request. No logging.
+     * Return false when sharing is unavailable; output is wiped by the caller. */
+    bool (*wifi_credentials)(void *ctx, plink_wifi_t *out);
 } plink_master_port_t;
 
 typedef struct {

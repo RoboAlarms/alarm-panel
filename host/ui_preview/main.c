@@ -10299,18 +10299,11 @@ static void walk_link_setup(const ui_options_t *start)
     expect_step(1, "BL-048: choosing a keypad moved the setup on");
     shot("bl-048-setup-role-keypad");
     tap_name("wiz_next");
-    run(2000); /* the networks nearby */
-    expect_step(2, "BL-048: a keypad's Wi-Fi isn't its second step");
-    expect(lv_subject_get_int(&subject_wiz_next_on) == 0,
-           "BL-048: a keypad's Wi-Fi step can be skipped");
-    expect(find_label(lv_screen_active(), "Skip for now") == NULL,
-           "BL-048: a keypad offers Skip for now");
-    shot("bl-048-setup-keypad-wifi");
-    tap_text("Harbor House");
-    sheet_text("correct horse");
-    tap_name("sheet_done");
-    run(3500);
-    expect(lv_subject_get_int(&subject_wiz_next_on) == 1, "BL-048: Next stays dimmed on Wi-Fi");
+    run(300);
+    expect_step(2, "LINK-053: nearby enrollment is the second step");
+    link_has("Find your alarm panel", "LINK-053: missing nearby discovery");
+    link_has("Select Wi-Fi", "LINK-053: missing manual fallback before discovery");
+    shot("bl-048-radio-start");
     tap_name("wiz_next");
     run(300);
     expect_step(3, "BL-048: the pairing isn't a keypad's third step");
@@ -10321,8 +10314,7 @@ static void walk_link_setup(const ui_options_t *start)
     shot("bl-048-setup-pair-looking");
     run(31000);
     link_has("Still looking", "BL-048: 30 s without an alarm panel doesn't say what to check");
-    link_has("This keypad is on Harbor House: the alarm panel must be too",
-             "BL-048: what to check doesn't name the keypad's Wi-Fi");
+    link_has("Select Wi-Fi", "LINK-053: missing fallback after discovery timeout");
     shot("bl-048-setup-pair-not-found");
     host_link_demo_master_found();
     run(1100);
@@ -10365,7 +10357,34 @@ static void walk_link_setup(const ui_options_t *start)
     host_link_demo_master_allows();
     run(1100);
     expect_step(4, "BL-048: a paired keypad isn't on its last step");
-    link_has("Keypad 2 of Harbor House", "BL-048: the last step doesn't say which keypad this is");
+    link_has("Keypad paired", "LINK-053: pairing must be retained during Wi-Fi setup");
+    host_link_demo_wifi_setup(1, true);
+    run(1100);
+    link_has("Setting up Wi-Fi", "LINK-053: missing automatic provisioning progress");
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 0, "LINK-053: premature completion");
+    shot("bl-048-radio-sharing");
+    host_link_demo_wifi_setup(4, false);
+    run(1100);
+    link_has("Reconnecting to the alarm panel", "LINK-053: lost link hidden");
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 0, "LINK-053: offline completion allowed");
+    shot("bl-048-radio-lost");
+    host_link_demo_wifi_setup(4, true);
+    run(1100);
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 1, "LINK-053: radio-only completion disabled");
+    shot("bl-048-radio-done-radio");
+    tap_text("Select Wi-Fi");
+    run(2000);
+    expect(link_last_kind() == UI_LINK_REQ_KP_WIFI, "LINK-053: fallback erased enrollment");
+    expect_step(2, "LINK-053: manual network selection missing");
+    shot("bl-048-setup-keypad-wifi");
+    tap_text("Harbor House");
+    sheet_text("correct horse");
+    tap_name("sheet_done");
+    run(3500);
+    tap_name("wiz_next");
+    run(1100);
+    expect_step(4, "LINK-053: manual Wi-Fi restarted pairing");
+    link_has("Wi-Fi connected", "LINK-053: Wi-Fi success not shown");
     expect(find_visible(lv_screen_active(), "wiz_back") == NULL,
            "BL-048: a paired keypad's last step has Back");
     shot("bl-048-setup-pair-done");

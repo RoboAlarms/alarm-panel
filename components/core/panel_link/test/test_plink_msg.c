@@ -4769,7 +4769,8 @@ static void test_wire_numbers_v1(void)
     }
     TEST_ASSERT_EQUAL_size_t(frozen, here);
     /* The masks built from them. */
-    TEST_ASSERT_EQUAL_HEX32(0x0007u, PLINK_CAPS_KNOWN);
+    TEST_ASSERT_EQUAL_HEX32(0x0007u, PLINK_CAPS_KNOWN & ~PLINK_CAP_WIFI);
+    TEST_ASSERT_EQUAL_HEX32(0x0008u, PLINK_CAP_WIFI);
 }
 
 /* The type of each codec row the frozen fixture names (its first word); NOT_PAIRED has no
@@ -4835,7 +4836,8 @@ static void test_wire_fixture_v1(void)
         TEST_ASSERT_EQUAL_HEX8_ARRAY(p, OUT, len);
     }
     for (unsigned t = 0; t < 256u; t++) {
-        if (!plink_type_known((uint8_t)t) || t == PLINK_T_NOT_PAIRED || t == PLINK_T_BEACON) {
+        if (!plink_type_known((uint8_t)t) || t == PLINK_T_NOT_PAIRED || t == PLINK_T_BEACON ||
+            t == PLINK_T_WIFI_REQ || t == PLINK_T_WIFI) {
             continue;
         }
         const char *name = NULL;
@@ -4853,9 +4855,38 @@ static void test_wire_fixture_v1(void)
     }
 }
 
+/* LINK-053: maximum lengths, malformed and stale replies, unavailable/open network. */
+static void test_wifi_credentials_codec(void)
+{
+    plink_wifi_t in = {0}, out;
+    uint8_t wire[103];
+    memset(in.ssid, 's', 32);
+    memset(in.password, 'p', 64);
+    TEST_ASSERT_TRUE(plink_enc_wifi(&in, 0x04030201u, wire, sizeof wire));
+    TEST_ASSERT_EQUAL_UINT8(1, wire[0]);
+    TEST_ASSERT_EQUAL_UINT8(4, wire[3]);
+    TEST_ASSERT_TRUE(plink_dec_wifi(wire, 102, 0x04030201u, &out));
+    TEST_ASSERT_EQUAL_MEMORY(&in, &out, sizeof in);
+    TEST_ASSERT_FALSE(plink_dec_wifi(wire, 101, 0x04030201u, &out));
+    TEST_ASSERT_FALSE(plink_dec_wifi(wire, 102, 12, &out));
+    TEST_ASSERT_EQUAL_STRING("", out.password);
+    wire[36] = 's';
+    TEST_ASSERT_FALSE(plink_dec_wifi(wire, 102, 0x04030201u, &out));
+    in.password[0] = 0;
+    TEST_ASSERT_TRUE(plink_enc_wifi(&in, 1, wire, sizeof wire));
+    TEST_ASSERT_TRUE(plink_dec_wifi(wire, 103, 1, &out));
+    TEST_ASSERT_EQUAL_STRING("", out.password);
+    in.ssid[0] = 0;
+    strcpy(in.password, "must-not-leak");
+    TEST_ASSERT_TRUE(plink_enc_wifi(&in, 1, wire, sizeof wire));
+    TEST_ASSERT_TRUE(plink_dec_wifi(wire, 102, 1, &out));
+    TEST_ASSERT_EQUAL_STRING("", out.password);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_wifi_credentials_codec);
     RUN_TEST(test_wire_numbers);
     RUN_TEST(test_wire_sections);
     RUN_TEST(test_wire_strings);

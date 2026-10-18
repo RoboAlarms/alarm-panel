@@ -2023,6 +2023,20 @@ static void on_sealed(plink_master_t *m, uint64_t now, const plink_addr_t *from,
     p->heard_ms = now;
     p->live_heard_ms = now;
     switch (h->type) {
+    case PLINK_T_WIFI_REQ:
+        if (n >= 4u && home_ok(m, p, PLINK_CAP_WIFI) &&
+            bucket_take(&p->requests, &p->requests_at, now, REQ_BURST, REQ_EVERY_MS)) {
+            uint32_t req = 0;
+            for (unsigned i = 0; i < 4; ++i) req |= (uint32_t)m->pt[i] << (8u * i);
+            plink_wifi_t wifi = {0};
+            if (req && m->port.wifi_credentials &&
+                !m->port.wifi_credentials(m->port.ctx, &wifi)) plink_wipe(&wifi, sizeof wifi);
+            if (plink_enc_wifi(&wifi, req, m->pt, sizeof m->pt))
+                (void)send_sealed(m, p, PLINK_T_WIFI, 102u);
+            plink_wipe(&wifi, sizeof wifi);
+            plink_wipe(m->pt, sizeof m->pt);
+        }
+        break;
     case PLINK_T_HEARTBEAT: on_heartbeat(m, p, now, n); break;
     case PLINK_T_CMD: on_cmd(m, p, now, n); break;
     case PLINK_T_CFG_REQ:

@@ -93,6 +93,8 @@ typedef enum {
     PLINK_T_PREFS = 0x38,
     PLINK_T_PREFS_REQ = 0x39,
     PLINK_T_PREFS_SET = 0x3A,
+    PLINK_T_WIFI_REQ = 0x3B,
+    PLINK_T_WIFI = 0x3C,
 } plink_type_t;
 
 /* What this firmware knows about a type: known, sealed, and which side sends it. */

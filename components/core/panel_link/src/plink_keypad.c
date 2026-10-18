@@ -2580,6 +2580,7 @@ static void dev_list_drop(plink_keypad_t *k)
 /* What a master said goes: sessions, commands, status, configuration, events, sounds, time. */
 static void forget_data(plink_keypad_t *k, uint64_t now)
 {
+    k->wifi_req = 0;
     plink_session_wipe(&k->live);
     plink_session_wipe(&k->old);
     plink_hs_k_wipe(&k->hs);
@@ -2807,6 +2808,16 @@ static void on_sealed(plink_keypad_t *k, uint64_t now, const plink_addr_t *from,
     /* LINK-037: updates never on a transport whose frames are under 250 B. */
     const bool fw = (s->caps & PLINK_CAP_FW) != 0u && frame_cap(k) >= PLINK_FRAME_ESPNOW;
     switch (h->type) {
+    case PLINK_T_WIFI:
+        if ((s->caps & PLINK_CAP_WIFI) && k->wifi_req) {
+            plink_wifi_t wifi;
+            if (plink_dec_wifi(k->pt, n, k->wifi_req, &wifi)) {
+                k->wifi_req = 0;
+                if (k->port.wifi_credentials) k->port.wifi_credentials(k->port.ctx, &wifi);
+            }
+            plink_wipe(&wifi, sizeof wifi);
+        }
+        break;
     case PLINK_T_STATUS: on_status(k, now, fs, k->pt, n); break;
     case PLINK_T_ZONES: on_zones(k, now, fs, k->pt, n); break;
     case PLINK_T_CFG_PAGE: on_cfg_page(k, now, k->pt, n); break;
@@ -3972,4 +3983,17 @@ void plink_keypad_master_version_restore(plink_keypad_t *k, const char *version,
         return;
     }
     fw_version_copy(k->upd.mver, version);
+}
+
+bool plink_keypad_wifi_request(plink_keypad_t *k, uint64_t now)
+{
+    if (!k || !k->paired || !cap_ok(k, PLINK_CAP_WIFI) || panic_waits(k)) return false;
+    if (!k->wifi_req) { k->wifi_req = ++k->next_req; if (!k->wifi_req) k->wifi_req = ++k->next_req; }
+    uint8_t req[4];
+    for (unsigned i = 0; i < 4; ++i) req[i] = (uint8_t)(k->wifi_req >> (8u * i));
+    return seal_send(k, now, PLINK_T_WIFI_REQ, req, sizeof req);
+}
+void plink_keypad_wifi_cancel(plink_keypad_t *k)
+{
+    if (k) k->wifi_req = 0;
 }

@@ -433,6 +433,12 @@ static void worker_task(void *arg)
 
 /* ---- the manager's port (the link task) ---------------------------------------------------- */
 
+static bool port_wifi_credentials(void *ctx, plink_wifi_t *wifi)
+{
+    (void)ctx;
+    return net_wifi_enrollment_read(wifi->ssid, wifi->password);
+}
+
 static bool port_send(void *ctx, const plink_addr_t *to, const uint8_t *frame, size_t len)
 {
     (void)ctx;
@@ -1058,6 +1064,7 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
     case UI_LINK_REQ_KP_PAIR_CONFIRM:
     case UI_LINK_REQ_KP_PAIR_RETRY:
     case UI_LINK_REQ_KP_PAIR_STOP:
+    case UI_LINK_REQ_KP_WIFI:
     case UI_LINK_REQ_KP_DONE:
         /* The setup making this panel a keypad (Option C): it stays the master until the pairing
          * is done, with a keypad manager of its own for the pairing on the same socket. Only a
@@ -1145,6 +1152,7 @@ esp_err_t msvc_prepare(uint64_t now)
     plink_master_port_t port = {
         .ctx = NULL,
         .send = port_send,
+        .wifi_credentials = port_wifi_credentials,
         .mtu = link_mtu,
         .store = port_store,
         .run = port_run,
@@ -1163,7 +1171,7 @@ esp_err_t msvc_prepare(uint64_t now)
     /* Each capability is offered with the code that uses it (LINK-043): HOME with a device side
      * (NULL dev_run otherwise: an action is answered UNAVAILABLE), PREFS with the UI, FW with the
      * planner's service (keypad updates go live in each session whose keypad offers it too). */
-    const uint16_t caps = (uint16_t)(hsvc_caps() | fsvc_caps());
+    const uint16_t caps = (uint16_t)(hsvc_caps() | fsvc_caps() | PLINK_CAP_WIFI);
     port.dev_run = (caps & PLINK_CAP_HOME) != 0u ? hsvc_dev_run : NULL;
     port.fw_read = (caps & PLINK_CAP_FW) != 0u ? fsvc_fw_read : NULL;
     port.ctx = s_m; /* hsvc_prefs_done reads the keypad's report back (the others need no ctx) */

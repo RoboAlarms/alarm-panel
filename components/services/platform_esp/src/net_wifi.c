@@ -1003,6 +1003,56 @@ esp_err_t net_wifi_set_credentials(const char *ssid, const char *password)
     xSemaphoreGive(s_config_lock);
     return e;
 }
+void net_wifi_retry_connection(void)
+{
+    if (!s_config_lock) return;
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    if (!s_trial_active && s_task && s_wifi_ready) xTaskNotify(s_task, NOTIFY_CONFIG, eSetBits);
+    xSemaphoreGive(s_config_lock);
+}
+
+bool net_wifi_enrollment_read(char ssid[33], char password[65])
+{
+    memset(ssid, 0, 33);
+    memset(password, 0, 65);
+    if (!s_config_lock) return false;
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    nvs_handle_t h;
+    bool ok = false;
+    if (!s_trial_active && nvs_open(NS, NVS_READONLY, &h) == ESP_OK) {
+        size_t sn = 33, pn = 65;
+        esp_err_t se = nvs_get_str(h, "ssid", ssid, &sn);
+        esp_err_t pe = nvs_get_str(h, "pass", password, &pn);
+        ok = se == ESP_OK && ssid[0] && (pe == ESP_OK || pe == ESP_ERR_NVS_NOT_FOUND);
+        nvs_close(h);
+    }
+    xSemaphoreGive(s_config_lock);
+    if (!ok) { memset(ssid, 0, 33); mbedtls_platform_zeroize(password, 65); }
+    return ok;
+}
+esp_err_t net_wifi_enrollment_install(const char *ssid, const char *password)
+{
+    if (!s_config_lock || !ssid || !ssid[0] || strlen(ssid) > 32 || !password || strlen(password) > 64)
+        return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    nvs_handle_t h;
+    esp_err_t e = s_trial_active ? ESP_ERR_INVALID_STATE : nvs_open(NS, NVS_READWRITE, &h);
+    if (e == ESP_OK) {
+        char current[33] = {0};
+        size_t len = sizeof current;
+        e = nvs_get_str(h, "ssid", current, &len);
+        if (e == ESP_ERR_NVS_NOT_FOUND || (e == ESP_OK && !current[0])) {
+            /* Password first: an interrupted save never installs a new SSID with an old password. */
+            e = nvs_set_str(h, "pass", password);
+            if (e == ESP_OK) e = nvs_set_str(h, "ssid", ssid);
+            if (e == ESP_OK) e = nvs_commit(h);
+        } else if (e == ESP_OK) e = ESP_ERR_INVALID_STATE;
+        nvs_close(h);
+    }
+    if (e == ESP_OK && s_task && s_wifi_ready) xTaskNotify(s_task, NOTIFY_CONFIG, eSetBits);
+    xSemaphoreGive(s_config_lock);
+    return e;
+}
 esp_err_t net_wifi_set_ip_config(const net_ip_config_t *in)
 {
     if (!s_config_lock)

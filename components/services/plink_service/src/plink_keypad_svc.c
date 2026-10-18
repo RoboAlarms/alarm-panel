@@ -28,12 +28,10 @@
  *     voice change, and a change from the master (PREFS_SET) checked here, handed to the screen
  *     through panel_prefs' mailbox (UI-046) and answered with the values then stored (LINK-050,
  *     LINK-051): the link task never takes board_ui_lock and never writes NVS for it.
- * A master whose setup makes it a keypad uses the same manager for that pairing only (Option C):
- * the record it makes is kept in RAM until the setup's Done stores it with the keypad role, and
- * nothing is sent to the other master after the pairing until then (no handshake: it keeps the new
- * keypad provisional, and drops it by itself after 10 minutes if the setup is abandoned, LINK-016).
- * Leaving the keypad branch without Done (KP_PAIR_STOP) forgets the pairing and ends the manager
- * (ksvc_setup_end).
+ * Setup pairs through a temporary keypad manager (Option C). LINK-053 persists the
+ * record and role before the first authenticated provisioning session; Done finishes
+ * setup and restarts as a keypad. Before persistence, leaving cancels the provisional
+ * pairing. Afterwards Wi-Fi fallback and interrupted setup retain enrollment.
  */
 #include "plink_internal.h"
 
@@ -115,6 +113,9 @@ static struct {
     uint16_t net_id;     /* its master's net */
     char master_id[PLINK_PANEL_ID_LEN + 1];
     uint8_t home;
+    bool durable; /* pairing persisted before authenticated enrollment traffic */
+    uint8_t wifi_setup;
+    uint64_t wifi_until, wifi_at;
     bool pending; /* Option C: the record the pairing made, until the setup's Done */
     plink_keypad_rec_t pending_rec;
     uint32_t static_ip; /* `plink master <ip>` (network order), 0 none */
@@ -287,10 +288,18 @@ bool ksvc_active(void)
 
 /* ---- the manager's port ---------------------------------------------------------------------- */
 
+static void port_wifi_credentials(void *ctx, const plink_wifi_t *wifi)
+{
+    (void)ctx;
+    if (K.wifi_setup != UI_LINK_WIFI_REQUESTING) return;
+    K.wifi_setup = wifi->ssid[0] &&
+        net_wifi_enrollment_install(wifi->ssid, wifi->password) == ESP_OK ? UI_LINK_WIFI_JOINING : UI_LINK_WIFI_UNAVAILABLE;
+}
+
 static bool port_send(void *ctx, const plink_addr_t *to, const uint8_t *frame, size_t len)
 {
     (void)ctx;
-    if (K.setup_only && K.pending) {
+    if (K.setup_only && K.pending && !K.durable) {
         /* Option C, paired: no handshake before the setup's Done, so the other master keeps the
          * new keypad provisional and drops it by itself if the setup is abandoned (LINK-016). */
         return false;
@@ -311,7 +320,7 @@ static void remember_master(const plink_keypad_rec_t *rec)
 static bool port_store(void *ctx, const plink_keypad_rec_t *rec)
 {
     (void)ctx;
-    if (K.setup_only) {
+    if (K.setup_only && !K.durable) {
         /* Option C: stored with the keypad role by the setup's Done (ksvc_setup_done) */
         if (rec != NULL) {
             K.pending_rec = *rec;
@@ -326,6 +335,8 @@ static bool port_store(void *ctx, const plink_keypad_rec_t *rec)
         const bool ok = link_nvs_write(LINK_KEY_KEYPAD, NULL, 0) == ESP_OK;
         if (ok) {
             remember_master(NULL);
+            K.pending = false;
+            plink_wipe(&K.pending_rec, sizeof K.pending_rec);
         }
         return ok;
     }
@@ -336,6 +347,7 @@ static bool port_store(void *ctx, const plink_keypad_rec_t *rec)
     plink_wipe(buf, sizeof buf);
     if (ok) {
         remember_master(rec);
+        if (K.setup_only) { K.pending_rec = *rec; K.pending = true; }
     } else {
         ESP_LOGE(TAG, "the master's record could not be stored");
     }
@@ -471,7 +483,7 @@ void ksvc_beacon(uint64_t now, const plink_addr_t *from, const uint8_t *frame, s
         K.pair_phase = PAIR_ASKED;
         return;
     }
-    if (!K.paired || K.setup_only || h.net_id != K.net_id)
+    if (!K.paired || (K.setup_only && !K.durable) || h.net_id != K.net_id)
         return;
     plink_keypad_info_t info;
     plink_keypad_info(K.k, now, &info);
@@ -557,7 +569,7 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
         K.radio_search_at = now + 250u;
         link_radio_tune(link_radio_channel() % 13u + 1u);
     }
-    if (link_radio_ready() && K.paired && !K.setup_only) {
+    if (link_radio_ready() && K.paired && (!K.setup_only || K.durable)) {
         if (info->status_age_s >= 11u &&
             (info->status_age_s != UINT32_MAX || info->since_s >= 11u) &&
             now >= K.radio_search_at) {
@@ -591,7 +603,7 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
     }
     switch (K.pair_phase) {
     case PAIR_LOOKING:
-        if (PAIR_BROADCAST && K.search == NULL && now - K.pair_started >= PAIR_LOOK_MS) {
+        if (PAIR_BROADCAST && link_wifi_up() && K.search == NULL && now - K.pair_started >= PAIR_LOOK_MS) {
             plink_addr_t b; /* nothing on mDNS: ask by broadcast (an open master answers) */
             link_subnet_broadcast(&b);
             if (link_radio_ready() && !link_wifi_up()) {
@@ -604,7 +616,7 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
             K.next_search_at = now + PAIR_LOOK_EVERY_MS;
             search_start(FIND_PAIRING);
         }
-        if (PAIR_BROADCAST == 0 && now - K.pair_started >= PAIR_GIVE_UP_MS) {
+        if (now - K.pair_started >= PAIR_GIVE_UP_MS) {
             pair_fail(UI_LINK_FAIL_NOT_FOUND); /* no alarm panel open for pairing answered */
         }
         return;
@@ -622,7 +634,7 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
     default: break;
     }
     /* Paired and not online: look for it (and again before the handshake's retries, E-18). */
-    if (!K.paired || K.setup_only || info->state == PLINK_LINK_ONLINE) {
+    if (!K.paired || (K.setup_only && !K.durable) || info->state == PLINK_LINK_ONLINE) {
         K.misses = 0;
         return;
     }
@@ -1615,6 +1627,14 @@ static void pair_status(uint64_t now, ui_link_pair_t *out, bool *valid)
     snprintf(out->peer_name, sizeof out->peer_name, "%s", pi.peer_name);
     link_addr_ip(&pi.peer, out->peer_addr);
     out->device = pi.device;
+    if (K.paired || K.durable) {
+        plink_keypad_info_t info;
+        plink_keypad_info(K.k, now, &info);
+        out->online = info.state == PLINK_LINK_ONLINE &&
+                      (link_wifi_up() || info.master.tp == PLINK_TP_ESPNOW);
+        out->wifi_setup = K.wifi_setup;
+        if (pi.state == PLINK_PS_IDLE) { *valid = true; out->state = UI_LINK_PAIR_DONE; }
+    }
 }
 
 /* The home partition's name for the setup's last step on a master (Option C), which pulls no
@@ -1871,11 +1891,10 @@ void ksvc_input(uint64_t now, const plink_addr_t *from, const uint8_t *frame, si
     plink_keypad_input(K.k, now, from, frame, len);
 }
 
-/* Option C once paired: the manager rests until the setup's Done (no handshake, port_send), so
- * nothing of it is due - its handshake timers would otherwise wake the link task for nothing. */
+/* No handshake until the paired record and role are durable (LINK-053). */
 static bool setup_resting(void)
 {
-    return K.setup_only && K.pending;
+    return K.setup_only && K.pending && !K.durable;
 }
 
 uint64_t ksvc_next(void)
@@ -1905,6 +1924,19 @@ void ksvc_poll(uint64_t now)
         plink_keypad_tick(K.k, now);
     }
     plink_keypad_info(K.k, now, &info);
+    if (K.wifi_setup == UI_LINK_WIFI_REQUESTING || K.wifi_setup == UI_LINK_WIFI_JOINING) {
+        if (link_wifi_up()) {
+            K.wifi_setup = UI_LINK_WIFI_CONNECTED;
+            plink_keypad_wifi_cancel(K.k);
+        } else if (now >= K.wifi_until) {
+            K.wifi_setup = UI_LINK_WIFI_UNAVAILABLE;
+            plink_keypad_wifi_cancel(K.k);
+        } else if (K.wifi_setup == UI_LINK_WIFI_REQUESTING && now >= K.wifi_at) {
+            K.wifi_at = now + 1000u;
+            (void)plink_keypad_wifi_request(K.k, now);
+        }
+    }
+    if (K.durable) follow_time(now);
     if (!K.setup_only) {
         track_command();
         track_dev_act();
@@ -1932,8 +1964,28 @@ void ksvc_poll(uint64_t now)
     }
 }
 
+static bool enrollment_keep(void)
+{
+    if (!K.setup_only || K.durable) return K.paired || K.durable;
+    if (!K.pending) return false;
+    uint8_t buf[PLINK_STORE_MAX];
+    size_t len = 0;
+    bool ok = plink_store_keypad_encode(&K.pending_rec, buf, sizeof buf, &len) &&
+              link_nvs_write(LINK_KEY_KEYPAD, buf, len) == ESP_OK;
+    plink_wipe(buf, sizeof buf);
+    if (ok) ok = link_store_role(PLINK_SERVICE_KEYPAD) == ESP_OK;
+    if (ok) {
+        K.durable = true;
+        remember_master(&K.pending_rec);
+        net_wifi_set_time_server(false);
+    }
+    return ok;
+}
+
 uint8_t ksvc_request(uint64_t now, const link_req_t *req)
 {
+    if (K.durable && req->kind != UI_LINK_REQ_KP_WIFI && req->kind != UI_LINK_REQ_KP_DONE)
+        return UI_LINK_REQ_REFUSED;
     if (K.setup_only && K.pending &&
         (req->kind == UI_LINK_REQ_KP_PAIR_START || req->kind == LINK_REQ_KP_PAIR_AT ||
          req->kind == UI_LINK_REQ_KP_PAIR_RETRY)) {
@@ -1942,6 +1994,21 @@ uint8_t ksvc_request(uint64_t now, const link_req_t *req)
         (void)plink_keypad_forget(K.k, now);
     }
     switch (req->kind) {
+    case UI_LINK_REQ_KP_WIFI: {
+        plink_keypad_wifi_cancel(K.k);
+        K.wifi_setup = UI_LINK_WIFI_IDLE;
+        if (!req->allow) break;
+        if (!enrollment_keep()) return UI_LINK_REQ_REFUSED;
+        plink_wifi_t current;
+        bool have = net_wifi_enrollment_read(current.ssid, current.password);
+        plink_wipe(&current, sizeof current);
+        K.wifi_setup = have ? (link_wifi_up() ? UI_LINK_WIFI_CONNECTED : UI_LINK_WIFI_JOINING)
+                            : UI_LINK_WIFI_REQUESTING;
+        if (have && !link_wifi_up()) net_wifi_retry_connection();
+        K.wifi_until = now + 30000u;
+        K.wifi_at = now;
+        break;
+    }
     case UI_LINK_REQ_KP_PAIR_START:
     case LINK_REQ_KP_PAIR_AT:
         pair_begin(now, req->kind == LINK_REQ_KP_PAIR_AT ? req->ip : 0u);
@@ -2059,7 +2126,7 @@ uint8_t plink_service_keypad_home(void)
 
 void ksvc_setup_end(uint64_t now)
 {
-    if (K.k == NULL || !K.setup_only) {
+    if (K.k == NULL || !K.setup_only || K.durable) {
         return;
     }
     search_stop();
@@ -2175,6 +2242,7 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     snprintf(name, sizeof name, "Keypad %s", g_link.panel_id);
     static const plink_keypad_port_t port = {.ctx = NULL,
                                              .send = port_send,
+                                             .wifi_credentials = port_wifi_credentials,
                                              .mtu = link_mtu,
                                              .store = port_store,
                                              .resolve = port_resolve,
@@ -2183,7 +2251,7 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
      * (attached below; the core offers HOME only then), its settings with a screen to apply them
      * (UI-046), updates through the link with panel_ota (BL-048). The setup's pairing on a master
      * offers nothing: that panel isn't a keypad yet. */
-    uint16_t offer = 0u;
+    uint16_t offer = PLINK_CAP_WIFI;
     if (!setup_only) {
         home_prepare();
 #if CONFIG_ALARM_FEATURE_UI

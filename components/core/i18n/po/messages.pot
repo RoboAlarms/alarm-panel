@@ -384,7 +384,6 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_settings.c
 #: components/ui/alarm_ui/src/ui_walk.c
-#: components/ui/alarm_ui/src/ui_wizard.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 msgctxt "default partition name"
 msgid "Partition {0}"
@@ -6709,6 +6708,7 @@ msgstr ""
 
 #. A button row's text (one line).
 #. First-time setup: the main button, bottom right. At most 127 bytes.
+#. A list row's title (one line; a long one ends in ...).
 #: components/services/panel_web/web/panel-pages.js
 #: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/src/ui_link.c
@@ -7087,11 +7087,8 @@ msgid "Insert a card to use it."
 msgstr ""
 
 #. the text sheet's button: asks the server before anything is kept. At most 23 bytes
-#. the setup's pairing step after 30 s with nothing found: the heading over what to check
-#. A section heading above a group of rows (one line).
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_update.c
-#: components/ui/alarm_ui/src/ui_wizard.c
 msgid "Check"
 msgstr ""
 
@@ -8413,10 +8410,8 @@ msgstr ""
 
 #. A button row's text (one line).
 #. Installer > Keypads and devices > Add a keypad, the page title. At most 47 bytes
-#. A list row's title (one line; a long one ends in ...).
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_link.c
-#: components/ui/alarm_ui/src/ui_wizard.c
 msgid "Add a keypad"
 msgstr ""
 
@@ -8461,7 +8456,7 @@ msgid "Choose Keypad in its setup."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "For Wi-Fi, join this system’s network."
+msgid "Tap Find panel. If out of range, tap Select Wi-Fi."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -17782,7 +17777,6 @@ msgstr ""
 #. A list row's title (one line; a long one ends in ...).
 #. the page title. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_wizard.c
 msgid "Keypads and devices"
 msgstr ""
 
@@ -19270,10 +19264,7 @@ msgid "Allowed here"
 msgstr ""
 
 #. Add a keypad: where the keypad that asked is (its address follows). At most 47 bytes
-#. the setup's pairing step while it looks (nothing moves: no spinner)
-#. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_link.c
-#: components/ui/alarm_ui/src/ui_wizard.c
 msgid "On your Wi-Fi"
 msgstr ""
 
@@ -22796,40 +22787,43 @@ msgstr ""
 msgid "To change this later, the panel must be reset to its factory settings."
 msgstr ""
 
+#. First-time setup: the step's title on the left. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Find your alarm panel"
+msgstr ""
+
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "A keypad reaches the alarm panel over Wi-Fi, so this step can't be skipped."
+msgid "Pair nearby to get Wi-Fi settings automatically."
 msgstr ""
 
+#. A list row's title (one line; a long one ends in ...).
+#. First-time setup: the main button, bottom right. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Find panel"
+msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#. the setup's pairing step after 30 s with nothing found: the heading over what to check
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Join the network the alarm panel uses."
-msgstr ""
-
-#. the setup's pairing step on a keypad: the heading over what the installer does there
-#. A section heading above a group of rows (one line).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "On the alarm panel"
+msgid "Open Add keypad in Panel Manager or on the alarm panel."
 msgstr ""
 
 #. A list row's title (one line; a long one ends in ...).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Open Installer"
+msgid "Select Wi-Fi"
 msgstr ""
 
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Settings > About > Installer, with the installer code"
+msgid "If the alarm panel is out of range"
 msgstr ""
 
-#. A list row's detail line, under its title (one line).
+#. First-time setup: the explanation under the step's title. At most 127 bytes.
+#. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "In the Installer menu"
-msgstr ""
-
-#. A list row's detail line, under its title (one line).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "This keypad then finds it by itself"
+msgid "Join the network the alarm panel uses."
 msgstr ""
 
 #. the setup's pairing step: an alarm panel open for pairing was found; {0} is its name. At most 60 bytes
@@ -22902,7 +22896,7 @@ msgstr ""
 
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "It finds the alarm panel on your Wi-Fi. The installer allows it there."
+msgid "Find it nearby, or select Wi-Fi if it is out of range."
 msgstr ""
 
 #. A list row's title (one line; a long one ends in ...).
@@ -22913,36 +22907,6 @@ msgstr ""
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_wizard.c
 msgid "No alarm panel with pairing open yet"
-msgstr ""
-
-#. the setup's pairing step: what to check; {0} is the Wi-Fi network's name. At most 90 bytes
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "This keypad is on {0}: the alarm panel must be too"
-msgstr ""
-
-#. A list row's title (one line; a long one ends in ...).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "The same Wi-Fi"
-msgstr ""
-
-#. A list row's title (one line; a long one ends in ...).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Pairing open on the alarm panel"
-msgstr ""
-
-#. A list row's detail line, under its title (one line).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Installer > Keypads and devices > Add a keypad, for 2 minutes"
-msgstr ""
-
-#. A list row's title (one line; a long one ends in ...).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Not a guest network"
-msgstr ""
-
-#. A list row's detail line, under its title (one line).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "A guest network keeps devices apart"
 msgstr ""
 
 #: components/ui/alarm_ui/src/ui_wizard.c
@@ -22983,24 +22947,55 @@ msgstr ""
 msgid "Looking for the alarm panel"
 msgstr ""
 
+#. the setup's pairing step while it looks (nothing moves: no spinner)
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Nearby or on your Wi-Fi"
+msgstr ""
+
 #. First-time setup: the step's title on the left. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "You're all set"
+msgid "Keypad paired"
 msgstr ""
 
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "This panel is now a keypad. The alarm, zones and codes live on the alarm panel."
+msgid "Your pairing is saved. Language, display and sound stay on this keypad."
 msgstr ""
 
-#. the setup's last step on a keypad; {0} is the partition it shows and arms. At most 90 bytes
+#. A list row's title (one line; a long one ends in ...).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Shows and arms {0}"
+msgid "Connected to the alarm panel"
 msgstr ""
 
-#. the setup's last step on a keypad: its time zone {0}, taken from the alarm panel named {1}. At most 90 bytes
+#. A list row's title (one line; a long one ends in ...).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "{0}, from {1}"
+msgid "Reconnecting to the alarm panel"
+msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Wi-Fi connected"
+msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Setting up Wi-Fi"
+msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Wi-Fi is not connected"
+msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Getting settings from the alarm panel and joining its network."
+msgstr ""
+
+#. First-time setup: the main button, bottom right. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Continue without Wi-Fi"
 msgstr ""
 
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
@@ -23072,6 +23067,11 @@ msgstr ""
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
 msgid "It shows on the screen saver and in the event log."
+msgstr ""
+
+#. First-time setup: the step's title on the left. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "You're all set"
 msgstr ""
 
 #. First-time setup: the explanation under the step's title. At most 127 bytes.

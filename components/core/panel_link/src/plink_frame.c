@@ -84,8 +84,10 @@ bool plink_type_known(uint8_t type)
     case PLINK_T_DEV_STATE_REQ:
     case PLINK_T_DEV_ACT:
     case PLINK_T_DEV_ACK:
+    case PLINK_T_WIFI_REQ:
     case PLINK_T_PREFS:
     case PLINK_T_PREFS_REQ:
+    case PLINK_T_WIFI:
     case PLINK_T_PREFS_SET: return true;
     default: return false;
     }
@@ -121,6 +123,7 @@ bool plink_type_from_master(uint8_t type)
     case PLINK_T_DEV_STATE:
     case PLINK_T_DEV_ACK:
     case PLINK_T_PREFS_REQ:
+    case PLINK_T_WIFI:
     case PLINK_T_PREFS_SET: return true;
     default: return false;
     }

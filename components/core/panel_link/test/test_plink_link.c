@@ -3860,6 +3860,77 @@ static uint16_t k_caps_of(const kp_t *k)
  * a keypad offering nothing: nothing in common. The master restarts offering PREFS too: the
  * first keypad's new session holds FW and PREFS, the other still nothing. A bit no codec here
  * knows (0x8000, 0x4000) is never offered, so never common. */
+static unsigned wifi_reads, wifi_receives;
+static bool wifi_available;
+static bool wifi_read(void *ctx, plink_wifi_t *out)
+{
+    (void)ctx;
+    ++wifi_reads;
+    if (!wifi_available) return false;
+    strcpy(out->ssid, "Harbor House");
+    strcpy(out->password, "fictional-test-password");
+    return true;
+}
+static void wifi_received(void *ctx, const plink_wifi_t *wifi)
+{
+    (void)ctx;
+    ++wifi_receives;
+    TEST_ASSERT_EQUAL_STRING(wifi_available ? "Harbor House" : "", wifi->ssid);
+    TEST_ASSERT_EQUAL_STRING(wifi_available ? "fictional-test-password" : "", wifi->password);
+}
+/* LINK-053: no credentials until pairing and a negotiated authenticated session;
+ * loss retries, duplicates once, and cancellation before manual entry rejects late replies. */
+static void test_wifi_enrollment_authenticated_requested_and_cancellable(void)
+{
+    wifi_reads = wifi_receives = 0;
+    wifi_available = true;
+    R.m_caps = PLINK_CAP_WIFI;
+    R.port.wifi_credentials = wifi_read;
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
+    remake_blob();
+    plink_master_time(&R.m, mnow(), epoch_now(), "UTC0");
+    pump(mnow());
+    kp_t *a = kp_add();
+    a->caps = PLINK_CAP_WIFI;
+    kp_boot(a);
+    a->k.port.wifi_credentials = wifi_received;
+    TEST_ASSERT_FALSE(plink_keypad_wifi_request(&a->k, know(a)));
+    TEST_ASSERT_EQUAL_UINT(0, wifi_reads);
+    pair_kp(a);
+    TEST_ASSERT_EQUAL_UINT(0, wifi_reads);
+    R.net.lose_type = PLINK_T_WIFI;
+    TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
+    run_ms(1000);
+    TEST_ASSERT_EQUAL_UINT(0, wifi_receives);
+    R.net.lose_type = 0;
+    TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
+    run_ms(1000);
+    TEST_ASSERT_EQUAL_UINT(1, wifi_receives);
+    TEST_ASSERT_EQUAL_UINT32(0, a->k.wifi_req);
+    uint8_t replay[PLINK_FRAME_MAX];
+    size_t replay_len = 0;
+    TEST_ASSERT_TRUE(plink_net_last(&R.net, R.mnode, PLINK_T_WIFI, replay, sizeof replay, &replay_len));
+    plink_keypad_input(&a->k, know(a), maddr(), replay, replay_len);
+    TEST_ASSERT_EQUAL_UINT(1, wifi_receives);
+    TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
+    plink_keypad_wifi_cancel(&a->k);
+    run_ms(1000);
+    TEST_ASSERT_EQUAL_UINT(1, wifi_receives);
+    kp_t *old = kp_new();
+    pair_kp(old);
+    TEST_ASSERT_FALSE(plink_keypad_wifi_request(&old->k, know(old)));
+    wifi_available = false;
+    TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
+    run_ms(1000);
+    TEST_ASSERT_EQUAL_UINT(2, wifi_receives);
+    R.m_caps = 0;
+    master_restart();
+    TEST_ASSERT_TRUE(run_until(15000u, c_all_synced, NULL));
+    TEST_ASSERT_FALSE(plink_keypad_wifi_request(&a->k, know(a)));
+    TEST_ASSERT_TRUE(plink_keypad_forget(&a->k, know(a)));
+    TEST_ASSERT_FALSE(plink_keypad_wifi_request(&a->k, know(a)));
+}
+
 static void test_capabilities_offered_meet_in_the_and(void)
 {
     R.m_caps = PLINK_CAP_FW | PLINK_CAP_HOME | 0x8000u;
@@ -7059,6 +7130,7 @@ int main(void)
     RUN_TEST(test_a_new_keypad_gets_the_newest_50_events);
     RUN_TEST(test_a_change_shows_on_every_keypad_within_a_second);
     RUN_TEST(test_master_restart_keypads_back_within_15_s);
+    RUN_TEST(test_wifi_enrollment_authenticated_requested_and_cancellable);
     RUN_TEST(test_capabilities_offered_meet_in_the_and);
     RUN_TEST(test_home_and_settings_end_to_end);
     RUN_TEST(test_home_list_and_states_converge_through_loss);

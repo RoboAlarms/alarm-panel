@@ -38,6 +38,7 @@
 #include "esp_timer.h"
 #include "freertos/semphr.h"
 #include "mdns.h"
+#include "net_wifi.h"
 
 static const char *const LINK_STATE[] = {"not paired", "connecting", "online",
                                          "no system communication"};
@@ -683,6 +684,35 @@ static int find_masters(void)
 
 static int cmd_plink(int argc, char **argv)
 {
+    if (argc == 2 && strcmp(argv[1], "radio") == 0) {
+        printf("ESP-NOW bridge %s, channel %u; LAN dropped %u, radio dropped %u\n",
+               link_radio_ready() ? "ready" : "unavailable", link_radio_channel(),
+               (unsigned)link_test_drops(PLINK_TP_UDP), (unsigned)link_test_drops(PLINK_TP_ESPNOW));
+        return 0;
+    }
+#if CONFIG_ALARM_BUILD_DEV
+    if (argc == 3 && strcmp(argv[1], "radio") == 0 && strcmp(argv[2], "window") == 0) {
+        net_wifi_radio_window();
+        printf("Requested a five-second Wi-Fi disconnect; saved credentials are unchanged\n");
+        return 0;
+    }
+    if (argc == 3 && strcmp(argv[1], "drop") == 0) {
+        uint8_t tp;
+        if (strcmp(argv[2], "lan") == 0)
+            tp = PLINK_TP_UDP;
+        else if (strcmp(argv[2], "radio") == 0)
+            tp = PLINK_TP_ESPNOW;
+        else if (strcmp(argv[2], "off") == 0)
+            tp = PLINK_TP_NONE;
+        else {
+            printf("plink drop lan|radio|off\n");
+            return 1;
+        }
+        link_test_drop(tp);
+        printf("Bench transport drop %s (expires in 90 seconds; not stored)\n", argv[2]);
+        return 0;
+    }
+#endif
     const bool keypad = plink_service_role() == PLINK_SERVICE_KEYPAD;
     link_req_t req;
     memset(&req, 0, sizeof req);

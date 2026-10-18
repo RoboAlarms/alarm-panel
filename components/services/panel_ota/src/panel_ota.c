@@ -523,6 +523,7 @@ static void restart_on_alarm_task(alarm_engine_t *e, alarm_ms_t now, void *ctx)
         return;
     }
     ESP_LOGW(TAG, "%s", g->said);
+    panel_ota_cp_prepare_restart();
     esp_restart();
 }
 
@@ -537,6 +538,7 @@ static void restart_via_alarm_task(const char *said, const char **why)
         if (err == ESP_ERR_INVALID_STATE) {
             if (restart_allowed(why)) {
                 ESP_LOGW(TAG, "%s", said);
+                panel_ota_cp_prepare_restart();
                 esp_restart();
             }
             return;

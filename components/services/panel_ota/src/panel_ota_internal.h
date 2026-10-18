@@ -19,10 +19,10 @@ bool panel_ota_system_idle(const char **why);
 /* Copies a fixed-size, maybe unterminated version / name field. */
 void panel_ota_version_copy(char *out, size_t cap, const char *field, size_t field_len);
 
-/* The Wi-Fi module's image is sent and activated (cp_ota.c): the run waits (stage WIFI_MODULE,
+/* The Wi-Fi module's image is verified and sent (cp_ota.c): the run waits (stage WIFI_MODULE,
  * phase WAITING) and keeps the update machinery until the update task restarts the panel, once
  * the system is idle, through the same announcement and gates as a release (OTA-004, OTA-028).
- * Update task only. */
+ * Activation waits until final shutdown. Update task only. */
 void panel_ota_cp_sent(const alarm_source_t *src, uint8_t user);
 
 void panel_ota_set_progress(panel_ota_phase_t phase, int percent, const char *error);
@@ -35,6 +35,7 @@ void panel_ota_cp_started(const char *target, const char *previous);
 void panel_ota_cp_init(void);       /* at start: looks at the "cp_fw" partition */
 void panel_ota_cp_tick(void);       /* update task, once a second: automatic update (OTA-007) */
 void panel_ota_cp_run(void);        /* update task: a requested co-processor update */
+void panel_ota_cp_prepare_restart(void); /* final idle gate: activate during shutdown */
 void panel_ota_task_notify_cp(void); /* wake the update task for panel_ota_cp_run() */
 
 /* ---- updates through the panel link (docs/features/11) ---- */

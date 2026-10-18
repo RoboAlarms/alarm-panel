@@ -123,6 +123,18 @@ void link_addr_ip(const plink_addr_t *a, char out[24]); /* "192.0.2.57", "-" for
 plink_addr_t link_addr_of(uint32_t ip_net_order);       /* UDP on port 6056 */
 bool link_subnet_broadcast(plink_addr_t *out);          /* this panel's subnet, port 6056 */
 bool link_wifi_up(void);
+esp_err_t link_radio_start(void);
+bool link_radio_ready(void);
+unsigned link_radio_channel(void);
+void link_radio_tune(unsigned channel);
+bool link_radio_send(const uint8_t *mac, const uint8_t *frame, size_t len);
+bool link_radio_receive(plink_addr_t *from, uint8_t *frame, size_t *len);
+size_t link_mtu(void *ctx, uint8_t transport);
+bool link_test_drops(uint8_t transport);
+#if CONFIG_ALARM_BUILD_DEV
+void link_test_drop(uint8_t transport);
+#endif
+void ksvc_beacon(uint64_t now, const plink_addr_t *from, const uint8_t *frame, size_t len);
 bool link_mdns_init(void); /* the shared responder, started once (false: no network yet) */
 
 /* NVS "link": read a blob (false when absent or too big), write one (NULL: erase). Only from a

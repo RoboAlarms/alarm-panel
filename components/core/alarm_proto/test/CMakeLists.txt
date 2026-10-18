@@ -12,3 +12,4 @@ alarm_add_test(fwsrv SOURCES test_fwsrv.c LIBS alarm_proto unity)
 # test_prefs: the settings fields on the panel link and in the Home Assistant link's JSON
 # (docs/features/11 LINK-050..052, docs/features/23 HAI-017).
 alarm_add_test(prefs SOURCES test_prefs.c LIBS alarm_proto unity)
+alarm_add_test(espnow_bridge SOURCES test_espnow_bridge.c LIBS alarm_proto unity STRICT)

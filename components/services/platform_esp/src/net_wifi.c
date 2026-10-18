@@ -65,6 +65,7 @@ static net_wifi_ap_t s_scan[NET_WIFI_SCAN_MAX] ALARM_SLOW_BSS; /* task-only: slo
 static size_t s_scan_count;
 static bool s_scan_done = true;
 static bool s_scanning;
+static int64_t s_radio_until_us; /* net task only */
 static net_ip_config_t s_ip; /* address settings; only the net task applies them */
 static SemaphoreHandle_t s_config_lock;
 typedef struct {
@@ -90,6 +91,13 @@ static void trial_tick(void);
 #define NOTIFY_IPCFG     0x20u
 #define NOTIFY_ADDR      0x40u
 #define NOTIFY_LATENCY   0x80u
+#define NOTIFY_RADIO     0x100u
+
+void net_wifi_radio_window(void)
+{
+    if (s_task)
+        xTaskNotify(s_task, NOTIFY_RADIO, eSetBits);
+}
 
 static void set_state(net_wifi_state_t st)
 {
@@ -585,14 +593,23 @@ static void scan_collect(void)
     ESP_LOGI(TAG, "scan found %u networks", (unsigned)count);
 }
 
+void net_wifi_coprocessor_version(const char *version)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    snprintf(s_status.coproc_fw, sizeof(s_status.coproc_fw), "%s", version);
+    xSemaphoreGive(s_lock);
+}
+
 static void read_coprocessor_version(void)
 {
 #if CONFIG_ESP_HOSTED_HOST
     esp_hosted_coprocessor_fwver_t ver = {0};
     if (esp_hosted_get_coprocessor_fwversion(&ver) == 0) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
-        snprintf(s_status.coproc_fw, sizeof(s_status.coproc_fw), "%" PRIu32 ".%" PRIu32 ".%" PRIu32,
-                 ver.major1, ver.minor1, ver.patch1);
+        if (s_status.coproc_fw[0] == '\0') {
+            snprintf(s_status.coproc_fw, sizeof(s_status.coproc_fw),
+                     "%" PRIu32 ".%" PRIu32 ".%" PRIu32, ver.major1, ver.minor1, ver.patch1);
+        }
         xSemaphoreGive(s_lock);
         ESP_LOGI(TAG, "Wi-Fi co-processor firmware %s", s_status.coproc_fw);
     } else {
@@ -603,6 +620,10 @@ static void read_coprocessor_version(void)
 
 static void connect_now(void)
 {
+    if (esp_timer_get_time() < s_radio_until_us) {
+        s_connect_failed = true;
+        return;
+    }
     if (!s_have_creds) {
         return;
     }
@@ -645,6 +666,11 @@ static void net_task(void *arg)
         uint32_t bits = 0;
         xTaskNotifyWait(0, UINT32_MAX, &bits, pdMS_TO_TICKS(1000));
         trial_tick();
+        if ((bits & NOTIFY_RADIO) && !s_scanning && !s_trial_active) {
+            s_radio_until_us = esp_timer_get_time() + 5000000;
+            (void)esp_wifi_disconnect();
+            retry_at = xTaskGetTickCount() + pdMS_TO_TICKS(5000);
+        }
         if (s_connect_failed && retry_at == 0) {
             s_connect_failed = false;
             retry_at = xTaskGetTickCount() + pdMS_TO_TICKS(s_retry_ms);

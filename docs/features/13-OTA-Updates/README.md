@@ -300,18 +300,21 @@ desktop bridge. Verified on the local P4 (2026-09-22): dark and normal upload, s
 and rollback checks.
 
 ### Co-processor (OTA-007)
-The C6 runs ESP-Hosted co-processor firmware (factory: **2.12.3**, host 3.0.7 runs it in
-compatibility mode). `cp_fw` (1.5 MB) holds a plain C6 application image
-(`network_adapter.bin`), written over USB for now:
-```
-parttool.py --port COM4 write_partition --partition-name cp_fw --input network_adapter.bin
-```
+The C6 runs ESP-Hosted co-processor firmware (factory: **2.12.3**; our signed build adds
+the ESP-NOW bridge). `cp_fw` (1.5 MB) holds the signed C6 application from `firmware/c6_cp`.
+For bench staging, resolve `cp_fw`'s offset and size from the P4's built partition table,
+verify the image fits, and write only that data partition. Modern esptool needs its
+cross-chip-header override when staging a C6 image on a P4; never use that override to
+write the C6 application into a P4 application slot. The C6's factory bootloader and
+partition table are not replaced by SDIO OTA.
 At start the panel reads its header (magic, chip id C6, app description, size with checksum,
-hash and signature block). `c6 status` shows both versions; `c6 update [force]` or the automatic
+hash and signature block). Before transfer it verifies the padded image's SHA-256 and RSA
+signature against the trusted key. `c6 status` shows both versions; `c6 update [force]` or the automatic
 path (`CONFIG_PANEL_OTA_CP_AUTO`, once per image version, NVS `ota/cp_try`) streams it with
 `esp_hosted_cp_ota_begin/write/end/activate` in 1 KB chunks, logs `coprocessor_updated`, and
 restarts the panel (ESP-Hosted resets the C6 at start). Failure: `coprocessor_failed`; the C6
-keeps its old image. The release manifest will carry the C6 image once our own C6 build exists
+  keeps its old image. Activation is deferred until final P4 shutdown so the C6 cannot reboot
+  while the P4 is still announcing the restart. Release-manifest packaging remains separate
 ([12](../12-C6-Coprocessor-Firmware/README.md), M7).
 
 ## Interfaces and data
@@ -434,7 +437,7 @@ one on a panel that protects a house.
 - [x] P4 OTA writer, release download, install when idle, probation + rollback (M6)
 - [x] Serial upload (`ota recv`, `tools/ota_serial.py`) (M6)
 - [x] C6 co-processor OTA from `cp_fw` (M6; `components/services/panel_ota/src/cp_ota.c`)
-- [ ] Run a real C6 transfer from `cp_fw` on the panel once our own C6 build exists (OTA-007,
+- [x] Signed C6 transfer from `cp_fw` and coordinated restart verified on both P4 panel sizes (OTA-007,
       CP-004) (BL-048)
 - [x] MQTT update entity, About page, event log (M6)
 - [x] Restart handshake with the alarm task, retry schedule, heartbeat self-test (review fixes,

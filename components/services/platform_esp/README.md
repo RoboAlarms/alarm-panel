@@ -13,6 +13,12 @@ other core components. It draws nothing, knows no board, and starts nothing by i
 firmware's `app_main.c` passes pins and terminals in (from `board_info()`) and decides what
 starts.
 
+`net_wifi_radio_window()` asks the network task to disconnect for five seconds so a
+lost keypad can scan ESP-NOW channels; reconnect resumes afterward and credentials
+are retained. The window is refused during network setup trials or a user scan.
+`net_wifi_coprocessor_version()` accepts the local Hosted bridge's application revision;
+the initial version query supplies the library version until that report arrives.
+
 The optional parts that used to live here are their own components since docs/features/33 step 6:
 [`rf_service`](../rf_service), [`zigbee_service`](../zigbee_service),
 [`device_service`](../device_service) and [`panel_storage`](../panel_storage).

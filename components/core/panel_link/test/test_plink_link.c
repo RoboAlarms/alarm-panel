@@ -4441,6 +4441,43 @@ static bool c_synced_at(void *ctx)
  * the status follows it there. The master's address changes: its next STATUS, authenticated,
  * moves the keypad's idea of it, before the keypad would start a handshake or show "No system
  * communication". */
+/* LINK-009: a live session survives UDP -> ESP-NOW -> UDP, including duplicate
+ * commands at the changeover; the smaller transport never receives oversized frames. */
+static void test_transport_change_keeps_session_and_commands_once(void)
+{
+    kp_t *a = kp_new();
+    pair_kp(a);
+    const uint8_t d = dev(a);
+    const uint32_t sid = a->k.live.sid;
+    const plink_addr_t udp_m = R.net.node[R.mnode].addr;
+    const plink_addr_t udp_k = R.net.node[a->node].addr;
+    const plink_addr_t radio_m = {.tp = PLINK_TP_ESPNOW, .len = 6, .a = {2, 0, 0, 0, 0, 1}};
+    const plink_addr_t radio_k = {.tp = PLINK_TP_ESPNOW, .len = 6, .a = {2, 0, 0, 0, 0, 2}};
+    R.net.dup_pm = 1000u;
+    for (unsigned pass = 0; pass < 2; ++pass) {
+        plink_net_flush(&R.net);
+        R.mtu = pass == 0 ? PLINK_FRAME_ESPNOW : PLINK_FRAME_MAX;
+        R.net.node[R.mnode].addr = pass == 0 ? radio_m : udp_m;
+        R.net.node[a->node].addr = pass == 0 ? radio_k : udp_k;
+        /* A mirrored authenticated HEARTBEAT arrives on the alternative transport.
+         * Its address is deliberately not installed directly into either manager. */
+        uint8_t heartbeat[PLINK_FRAME_MAX];
+        size_t len = 0;
+        plink_keypad_addr_changed(&a->k, know(a));
+        TEST_ASSERT_TRUE(
+            plink_net_last(&R.net, a->node, PLINK_T_HEARTBEAT, heartbeat, sizeof heartbeat, &len));
+        plink_net_inject(&R.net, a->node, maddr(), heartbeat, len);
+        at_t at = {a, maddr()};
+        TEST_ASSERT_TRUE(run_until(15000u, c_synced_at, &at));
+        TEST_ASSERT_EQUAL_UINT32(sid, a->k.live.sid);
+        const unsigned before = ran_dev(d);
+        kdo(a, PLINK_OP_COMMAND, pass == 0 ? ALARM_CMD_ARM : ALARM_CMD_DISARM, 1u,
+            pass == 0 ? ALARM_LEVEL_STAY : ALARM_LEVEL_NONE, CODE_USER, 1000u, ALARM_OK);
+        TEST_ASSERT_EQUAL_UINT(before + 1u, ran_dev(d));
+    }
+    TEST_ASSERT_EQUAL_UINT(0u, a->lost);
+}
+
 static void test_addresses_move_with_authenticated_frames(void)
 {
     kp_t *a = kp_new();
@@ -7057,6 +7094,7 @@ int main(void)
     RUN_TEST(test_eight_keypads_pull_the_configuration_through_loss);
     RUN_TEST(test_replays_after_either_side_restarts_are_refused);
     RUN_TEST(test_addresses_move_with_authenticated_frames);
+    RUN_TEST(test_transport_change_keeps_session_and_commands_once);
     RUN_TEST(test_hostile_keypad_is_rate_limited_and_the_others_go_on);
     RUN_TEST(test_a_keypad_says_what_the_master_says);
     RUN_TEST(test_a_keypad_says_nothing_old);

@@ -912,7 +912,7 @@ void msvc_poll(uint64_t now)
     ask_config(now);
     if (now >= s_net_at) {
         s_net_at = now + NET_CHECK_MS;
-        const bool up = link_wifi_up();
+        const bool up = link_wifi_up() || link_radio_ready();
         if (up != s_net_up) {
             s_net_up = up;
             plink_master_net(s_m, now, up); /* supervision pauses while it is down (LINK-007) */
@@ -1116,7 +1116,7 @@ esp_err_t msvc_prepare(uint64_t now)
     plink_master_port_t port = {
         .ctx = NULL,
         .send = port_send,
-        .mtu = NULL,
+        .mtu = link_mtu,
         .store = port_store,
         .run = port_run,
         .reachable = port_reachable,
@@ -1144,7 +1144,7 @@ esp_err_t msvc_prepare(uint64_t now)
     /* The manager starts with the network up; the service says how it is now, so supervision
      * pauses at once on a master whose Wi-Fi isn't there yet and resumes one period after it is
      * (LINK-007): later only the changes are told. */
-    s_net_up = link_wifi_up();
+    s_net_up = link_wifi_up() || link_radio_ready();
     if (!s_net_up) {
         plink_master_net(s_m, now, false);
     }

@@ -235,3 +235,32 @@ a burst from eight keypads isn't dropped.
   by the maintenance is marked first (NVS `link`/`otamaint`); after its restart the link task beats
   for the self-test while it runs (socket bound, crypto proved), until the image is confirmed or the
   link is up again, then the mark goes.
+
+## ESP-NOW alongside LAN (BL-048)
+
+`plink_radio.c` runs Hosted peer-data RPC on a separate worker, with bounded PSRAM
+queues and a 200 ms transmit-queue age limit. Its callback only validates and copies.
+A factory C6 without the bridge leaves LAN working; INIT repeats to recover after a
+radio reset. Peers are restored on demand by the C6 bridge.
+
+A live session sends small sealed frames over both paths. The original ciphertext
+and sequence number are reused, so the existing authenticated replay window accepts
+only one copy and a command runs once. Each side replies to the source of the newest
+authenticated frame. ESP-NOW uses 250-byte frames; a large LAN page is retried at the
+smaller MTU after a heartbeat moves the peer. Radio replies also probe the subnet by
+UDP, allowing LAN to return without pairing again. Plain handshake frames use only
+the selected discovery path.
+
+Master beacons advertise channel and pairing availability every 100 ms. A keypad
+without a fresh STATUS for 11 s asks its network task for a 5 s radio scan window,
+then cycles channels 1–13. Beacons are only hints; they never establish freshness or
+move a live peer. The paired key must authenticate a handshake or a sealed frame.
+Wi-Fi reconnect attempts continue after the window. Supervision remains active when
+the radio bridge works even if the access point is down.
+
+`plink radio` reports bridge readiness and channel. Development builds also accept
+`plink radio window` temporarily disconnects Wi-Fi for five seconds without changing saved
+credentials, for development-only radio fallback checks.
+`plink drop lan|radio|off`: a RAM-only, 90-second fault injection covering transmit and
+receive for that transport, to test automatic recovery without changing credentials.
+These operations do not enable either panel's speaker.

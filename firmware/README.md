@@ -9,6 +9,7 @@ belongs in a component, not here.
 | [`crowpanel_p4`](crowpanel_p4) | Elecrow CrowPanel Advanced 7" (ESP32-P4 + C6), docs/features/06 | in daily use |
 | [`crowpanel_10`](crowpanel_10) | Elecrow CrowPanel Advanced 10.1" V1.2 (the 7"'s main board), built on `crowpanel_p4` | runs on a development board; not offered by the Flasher yet |
 | [`e32r40t`](e32r40t) | LCDWiki E32R40T 4" (classic ESP32, no PSRAM), docs/features/19 | headless: builds (docs/features/33 step 10); display, touch and sound are docs/features/19 Phase 2; never flashed |
+| [`c6_cp`](c6_cp) | not a panel: the CrowPanel ESP32-C6 Wi-Fi/ESP-NOW co-processor | signed build; hardware acceptance tracked in feature 12 |
 | [`radios/h2_rcp`](radios/h2_rcp) | not a panel: the ESP32-H2 Zigbee radio in the 7"'s wireless socket, docs/features/20 | builds; its own README says how it goes on the module (over its USB-C); not yet on a module |
 
 ## A project's folder

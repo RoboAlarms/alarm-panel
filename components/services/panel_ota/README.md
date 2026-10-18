@@ -28,10 +28,18 @@ needs a person. For a language added later it also asks for the running version'
 (`GET /api/v1/languages`, `panel_ota_running_languages_ask()`). Every answer is read in
 small pieces with a 1 s timeout, so a stop ends a download within seconds, and a body slower than
 1 KB/s over a minute is given up (OTA-027); a redirect's body is never read. The co-processor image
-in `cp_fw` is streamed to the C6 over ESP-Hosted (`cp_ota.c`); the C6 keeps its old image until the
+in `cp_fw` must have an SBv2 signature. The P4 hashes the padded application and verifies it
+against its trusted key before streaming to the C6 over ESP-Hosted (`cp_ota.c`);
+the C6 keeps its old image until the
 panel restarts, and that restart waits for an idle system and goes through the same announcement
 and last gate on the alarm task as a release's (OTA-004, OTA-028), keeping the update machinery until then. Every
 step is an event in the log and on MQTT (OTA-010).
+
+For C6 versions with ACTIVATE, activation runs in a shutdown handler only after the
+P4's final idle gate commits to restarting. Sending ACTIVATE at transfer completion
+starts the C6 reboot timer too early and can break SDIO during the P4's announcement
+or a postponed restart. Recovery queries Hosted system RPC directly when Wi-Fi
+initialization fails, while retaining the normal idle/maintenance gate.
 
 Updates through the panel link (docs/features/11 "Updates through the link") are built in but run
 only when a caller asks, so a stand-alone panel and a master without keypads update as before. On a

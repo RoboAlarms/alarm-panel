@@ -85,6 +85,8 @@ typedef struct {
 esp_err_t net_wifi_start(void);
 
 void net_wifi_get_status(net_wifi_status_t *out);
+/* Version reported by the local radio bridge, not an over-the-air peer. */
+void net_wifi_coprocessor_version(const char *version);
 
 /* A feature that needs the network (MQTT, the phone notifications, the Home Assistant link)
  * turns this on; only while at least one of them needs it does a lost network become the
@@ -153,6 +155,9 @@ void net_wifi_get_ntp_server(char *out, size_t len);
  * left out. */
 esp_err_t net_wifi_scan_start(void);
 size_t net_wifi_scan_results(net_wifi_ap_t *out, size_t max, bool *done);
+/* LINK-010: briefly stop station connection attempts so the keypad can find its
+ * master's radio channel. RAM only; credentials and subsequent retries are kept. */
+void net_wifi_radio_window(void);
 
 #ifdef __cplusplus
 }

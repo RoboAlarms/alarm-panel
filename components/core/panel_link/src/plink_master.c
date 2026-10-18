@@ -1973,6 +1973,7 @@ static void on_sealed(plink_master_t *m, uint64_t now, const plink_addr_t *from,
         p->addr = *from; /* LINK-021: only an authenticated frame moves the address */
         p->have_addr = true;
         p->addr_flips++;
+        p->status_due_ms = now; /* LINK-009: confirm an authenticated transport change now */
     }
     p->heard_ms = now;
     p->live_heard_ms = now;

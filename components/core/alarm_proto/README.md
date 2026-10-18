@@ -73,3 +73,6 @@ Run all host tests with `pwsh tools/host_test.ps1` (Windows) or
 - `prefs`: the settings fields' frozen table, the TLV list (golden bytes and CRC, wrong lengths,
   unknown ids, ranges), the JSON values and parser, and random input. Tags `LINK-050`..`LINK-052`
   (docs/features/11), `HAI-017`.
+
+`espnow_bridge_proto.h` is the header-only CP-003 wire shared with the C6 radio build.
+`test_espnow_bridge.c` checks truncation, bounds, operation/version and control-message lengths.

@@ -18,9 +18,16 @@ master had no devices (Home Assistant not connected). The integration's 0.3.0 is
 are built and tried on the two panels: direct FETCH with an exact-version server request, relay,
 restart together and following the master's rollback, with both speakers muted. Left:
 the bench cases below that need a person or a network change, Smart Home and settings on the
-panels with Home Assistant connected, ESP-NOW through our C6 build, 433 MHz, keypad inputs, GOTO,
+panels with Home Assistant connected, ESP-NOW range/channel-change and firmware-relay acceptance,
+433 MHz, keypad inputs, GOTO,
 and the keypad-update Panel Manager pages ·
 **Milestone:** M7 (keypad updates M8) · **Depends on:** 01, 04, 09, 12, 15
+
+The P4/C6 ESP-NOW transport is also built and verified on hardware: authenticated commands,
+automatic failover in both directions, and operation during an actual Wi-Fi disconnect followed
+by automatic reconnection. A keypad reboot with the master's LAN blocked also completed its
+session and received all eight configured zones. Full firmware relay over ESP-NOW, range and
+AP channel changes still need hardware acceptance. The 7-inch display recurrence is B023.
 
 ## Goal
 Let another panel act as a remote keypad for a master panel, like the keypads on a classic panel's
@@ -38,8 +45,8 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 ## Decisions
 - **Thin terminals**: keypads never hold user codes or their hashes; the master validates
   everything (ADR-004).
-- **One protocol, pluggable transports** (ADR-054): LAN UDP over Wi-Fi first; ESP-NOW (through our
-  C6 build) and 433 MHz later. Frames, pairing and sessions are the same on every transport; only
+- **One protocol, pluggable transports** (ADR-054): LAN UDP over Wi-Fi and ESP-NOW through our
+  C6 build; 433 MHz later. Frames, pairing and sessions are the same on every transport; only
   the peer address and the largest frame differ.
 - **Our own encryption** on every transport (ESP-NOW's has small peer limits and none on LAN).
 - **Commit-then-reveal pairing** with a 6-digit code compared on both screens, so a device in the
@@ -56,8 +63,8 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
   reset (docs/features/00 "Devices and firmware images").
 - **In v1 a keypad works one partition**, its home partition (1..8, given by the master); "all
   partitions" and GOTO wait for KPD-006.
-- **Until ESP-NOW exists a Wi-Fi keypad works only while the router and the master have power**:
-  the installer guide says to put the router on backup power.
+- **A factory-C6 keypad needs the router and master powered**. Our C6 bridge adds direct radio
+  fallback; the installer guide still recommends backup power for the router.
 - **Keypad updates** ("Updates through the link"): decided 2026-10-16 (the owner: "Start building
   keypad updates with the four recommended choices"):
   1. A keypad takes its master's update server and signing key from its master's orders (changed
@@ -240,7 +247,7 @@ followed by fields, so later fields can be appended (LINK-017).
 | 0x11 | `WELCOME` | M->K | plain | proto u8, caps u16, n_m[16], e_m[32], mac2[16] |
 | 0x12 | `REKEY` | M->K | plain | sid u32 the master doesn't know (a hint, at most 1 a second per keypad) |
 | 0x13 | `NOT_PAIRED` | M->K | plain | (none) - a HELLO the master can't place (a hint, rate-limited) |
-| 0x18 | `BEACON` | M->all | plain | reserved for ESP-NOW: net_id, channel, name, pairing open |
+| 0x18 | `BEACON` | M->all | plain | net_id in header; payload: version 1, channel (1–13), pairing open (0/1), one byte each |
 | 0x20 | `STATUS` | M->K | sealed | system section, then partition records (below) |
 | 0x21 | `ZONES` | M->K | sealed | zones_crc u32, first u16, count u16, rec_len u8, count x zone record |
 | 0x22 | `ZONES_REQ` | K->M | sealed | first u16, count u16 |
@@ -482,7 +489,7 @@ data 0-10 s old, and a settings change reached the keypad within 1 s (2026-10-16
 | Transport | Peer address | Largest frame | Discovery | Status |
 |---|---|---|---|---|
 | UDP over Wi-Fi (LAN) | IPv4 + port | 1200 B (no IP fragments: lwIP reassembly is off) | mDNS `_roboalarms-link._udp`, port 6056, TXT `v`, `net`, `pair`, `id`; subnet broadcast to 6056 when mDNS finds nothing | built first |
-| ESP-NOW (C6 bridge on the P4) | MAC | 250 B (v1) | `BEACON` on the master's channel | later (CP-003) |
+| ESP-NOW (C6 bridge on the P4) | MAC | 250 B (v1) | `BEACON` on the master's channel | implemented; command/failover HIL passed (CP-003) |
 | 433 MHz | radio id | tens of bytes: status and commands only; never firmware (LINK-037) | - | later, an idea (needs a transmitter on both) |
 
 The core sends through a port (`plink_net_port_t`: an opaque address with its transport, the
@@ -778,12 +785,12 @@ A change of any of them sends a STATUS, as a change does (LINK-006).
 | Transport | FW_PAGE data | Relay of 3.6 MB |
 |---|---|---|
 | UDP over Wi-Fi | 1,024 B, 16 KB per request | paced by the keypad's flash: about 2 min |
-| ESP-NOW, 250 B frames (later) | 192 B | about 13 KB/s, about a fifth of the air at 1 Mbps: about 5 min |
+| ESP-NOW, 250 B frames | 192 B | design estimate about 5 min; full relay not yet measured on hardware |
 | 433 MHz | never | - |
 
-- **v1 keypads never relay over ESP-NOW.** The factory C6 (2.12.3) has no ESP-NOW, so a keypad gets
-  the firmware that brings ESP-NOW over Wi-Fi. Later keypads use these same messages with the page
-  size from the order.
+- **Factory-C6 keypads cannot relay over ESP-NOW.** They first need the signed bridge installed.
+  Bridge-equipped keypads use these same messages with the page size from the order; a complete
+  hardware relay remains an acceptance task.
 - **The ESP-NOW bridge** must send control frames before bulk ones (CP-003).
 - **No FW_* frame** goes on a transport whose largest frame is under 250 B.
 
@@ -1693,11 +1700,19 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over
   30 s saying nothing old; its internal RAM at start-up beside before (LINK-028) (BL-048)
-- [ ] ESP-NOW transport: through our C6 bridge on the P4 (docs/features/12 CP-003), native on the
-  ESP32; the channel follows the master's access point (LINK-010) (M7) (BL-048)
+- [x] ESP-NOW transport through our C6 bridge on the P4, commands verified on both panel sizes (docs/features/12 CP-003) (BL-048)
+- [ ] Native ESP32 transport and hardware acceptance of changed AP channels (LINK-010) (M7) (BL-048)
 - [x] The engine's device supervision trouble for a silent keypad (LINK-007's engine side,
   CORE-TRBL-008): `test_troubles.c` test_device_supervision, `alarm_engine_device_checkin`
-- [ ] ESP-NOW <-> LAN failover (LINK-009) (M7) (BL-048)
+- [x] ESP-NOW <-> LAN failover (LINK-009): selective transport loss switches the live path in
+  about 3.2 s in either direction with continuous ONLINE; arm/disarm commands succeed on each (BL-048).
+  P4/C6 transport and channel scan are implemented; changed AP-channel acceptance remains open.
+  `test_transport_change_keeps_session_and_commands_once` proves the core keeps its session
+  across UDP/250-byte radio address changes and suppresses duplicate commands. The service
+  mirrors small sealed frames over both transports; only authenticated frames move a peer.
+  A keypad with STATUS older than 11 s scans channels, using a 5 s disconnected Wi-Fi window.
+  Bridge callbacks and RPC run outside the link task; control queues precede bulk queues.
+  `plink drop lan|radio|off` supplies a development-only 90 s transport fault for HIL.
 - [x] Wire: types 0x2D-0x31, `PLINK_CAP_FW`, the STATUS bits UPDATING, HOLD, FIRE and CO defined,
   the codecs and Python goldens; every v1 payload and number in a frozen
   `test/plink_wire_fixture_v1.h` (LINK-032, -037, -038, -040) (BL-048, a97a745)

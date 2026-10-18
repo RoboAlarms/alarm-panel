@@ -122,6 +122,7 @@ static struct {
     mdns_search_once_t *search;
     uint8_t search_for; /* find_t */
     uint64_t next_search_at;
+    uint64_t radio_search_at, radio_window_at, radio_hello_at;
     bool resolve; /* the manager asked to look for the master again (port.resolve) */
     uint8_t misses;
     bool gave_addr;
@@ -457,6 +458,34 @@ static void pair_fail(uint8_t why)
     K.pair_fail = why;
 }
 
+void ksvc_beacon(uint64_t now, const plink_addr_t *from, const uint8_t *frame, size_t len)
+{
+    plink_hdr_t h;
+    if (!K.k || from->tp != PLINK_TP_ESPNOW || len != PLINK_HDR_LEN + 3u ||
+        !plink_hdr_read(frame, len, &h) || h.type != PLINK_T_BEACON || frame[PLINK_HDR_LEN] != 1u ||
+        frame[PLINK_HDR_LEN + 1u] < 1u || frame[PLINK_HDR_LEN + 1u] > 13u)
+        return;
+    if (K.pair_phase == PAIR_LOOKING && frame[PLINK_HDR_LEN + 2u] == 1u) {
+        search_stop();
+        plink_keypad_pair_start(K.k, now, from, false, h.net_id);
+        K.pair_phase = PAIR_ASKED;
+        return;
+    }
+    if (!K.paired || K.setup_only || h.net_id != K.net_id)
+        return;
+    plink_keypad_info_t info;
+    plink_keypad_info(K.k, now, &info);
+    if (info.status_age_s < 11u)
+        return;
+    /* A beacon is only a discovery hint. It never changes the live address or
+     * freshness; the existing session or a new authenticated handshake must prove it. */
+    give_master(now, from, false);
+    if (now >= K.radio_hello_at) {
+        K.radio_hello_at = now + 500u;
+        plink_keypad_addr_changed(K.k, now);
+    }
+}
+
 static void pair_begin(uint64_t now, uint32_t ip)
 {
     search_stop();
@@ -520,6 +549,34 @@ static void found_master(uint64_t now, const found_t *f, size_t n)
 
 static void discovery(uint64_t now, const plink_keypad_info_t *info)
 {
+    if (info->status_age_s < 11u && link_wifi_up()) {
+        link_radio_tune(0); /* recovery must also clear an unsuccessful retune */
+    }
+    if (link_radio_ready() && K.pair_phase == PAIR_LOOKING && !link_wifi_up() &&
+        now >= K.radio_search_at) {
+        K.radio_search_at = now + 250u;
+        link_radio_tune(link_radio_channel() % 13u + 1u);
+    }
+    if (link_radio_ready() && K.paired && !K.setup_only) {
+        if (info->status_age_s >= 11u &&
+            (info->status_age_s != UINT32_MAX || info->since_s >= 11u) &&
+            now >= K.radio_search_at) {
+            K.radio_search_at = now + 250u;
+            if (now >= K.radio_window_at) {
+                K.radio_window_at = now + 15000u;
+                net_wifi_radio_window();
+            }
+            link_radio_tune(link_radio_channel() % 13u + 1u);
+            if (info->state != PLINK_LINK_ONLINE && !link_wifi_up() && now >= K.radio_hello_at) {
+                const plink_addr_t b = {
+                    .tp = PLINK_TP_ESPNOW, .len = 6, .a = {255, 255, 255, 255, 255, 255}};
+                K.radio_hello_at = now + 1000u;
+                give_master(now, &b, true);
+            }
+        } else if (info->status_age_s < 11u && link_wifi_up()) {
+            link_radio_tune(0); /* the AP owns the channel while joined */
+        }
+    }
     found_t f[MDNS_RESULTS];
     bool done = false;
     const uint8_t what = K.search_for;
@@ -537,6 +594,10 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
         if (PAIR_BROADCAST && K.search == NULL && now - K.pair_started >= PAIR_LOOK_MS) {
             plink_addr_t b; /* nothing on mDNS: ask by broadcast (an open master answers) */
             link_subnet_broadcast(&b);
+            if (link_radio_ready() && !link_wifi_up()) {
+                b = (plink_addr_t){
+                    .tp = PLINK_TP_ESPNOW, .len = 6, .a = {255, 255, 255, 255, 255, 255}};
+            }
             plink_keypad_pair_start(K.k, now, &b, true, 0u);
             K.pair_phase = PAIR_ASKED;
         } else if (K.search == NULL && now >= K.next_search_at && link_wifi_up()) {
@@ -2109,7 +2170,7 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     snprintf(name, sizeof name, "Keypad %s", g_link.panel_id);
     static const plink_keypad_port_t port = {.ctx = NULL,
                                              .send = port_send,
-                                             .mtu = NULL,
+                                             .mtu = link_mtu,
                                              .store = port_store,
                                              .resolve = port_resolve,
                                              .fw_write = kfw_write}; /* the relay's writer */

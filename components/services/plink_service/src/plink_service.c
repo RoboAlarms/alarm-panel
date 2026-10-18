@@ -15,6 +15,7 @@
 #if CONFIG_ALARM_LINK
 
 #include <fcntl.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
@@ -46,6 +47,25 @@ link_t g_link = {.sock = -1};
 link_pub_t g_pub;
 
 static SemaphoreHandle_t s_pub_lock;
+
+#if CONFIG_ALARM_BUILD_DEV
+static atomic_uint s_drop_transport, s_drop_until;
+void link_test_drop(uint8_t transport)
+{
+    atomic_store(&s_drop_until, (uint32_t)link_now() + 90000u);
+    atomic_store(&s_drop_transport, transport);
+}
+#endif
+bool link_test_drops(uint8_t transport)
+{
+#if CONFIG_ALARM_BUILD_DEV
+    return atomic_load(&s_drop_transport) == transport &&
+           (int32_t)(atomic_load(&s_drop_until) - (uint32_t)link_now()) > 0;
+#else
+    (void)transport;
+    return false;
+#endif
+}
 
 /* The request hand-over (link_request): the callers queue on s_req_mutex, the link task takes the
  * request from s_req under s_req_mux and answers through s_req_done. */
@@ -162,8 +182,10 @@ bool link_subnet_broadcast(plink_addr_t *out)
     return true;
 }
 
-bool link_send(const plink_addr_t *to, const uint8_t *frame, size_t len)
+static bool udp_send(const plink_addr_t *to, const uint8_t *frame, size_t len)
 {
+    if (link_test_drops(PLINK_TP_UDP))
+        return false;
     if (g_link.sock < 0 || to == NULL || to->tp != PLINK_TP_UDP || to->len < 6u ||
         len > PLINK_FRAME_MAX) {
         return false;
@@ -175,6 +197,30 @@ bool link_send(const plink_addr_t *to, const uint8_t *frame, size_t len)
     memcpy(&sa.sin_port, to->a + 4, 2u);
     const ssize_t n = sendto(g_link.sock, frame, len, 0, (const struct sockaddr *)&sa, sizeof sa);
     return n == (ssize_t)len;
+}
+
+bool link_send(const plink_addr_t *to, const uint8_t *frame, size_t len)
+{
+    if (!to || !frame || len < PLINK_HDR_LEN || len > PLINK_FRAME_MAX)
+        return false;
+    const bool sealed = (frame[4] & PLINK_FLAG_SEALED) != 0;
+    bool sent = false;
+    if (to->tp == PLINK_TP_UDP) {
+        sent = udp_send(to, frame, len);
+        /* A second copy keeps the session alive across a one-way LAN failure. Only
+         * authenticated frames move addresses; their sequence window removes duplicates.
+         * Large LAN pages retry at the radio MTU after the next heartbeat. */
+        if (sealed)
+            sent = link_radio_send(NULL, frame, len) || sent;
+    } else if (to->tp == PLINK_TP_ESPNOW && to->len == 6u) {
+        sent = link_radio_send(to->a, frame, len);
+        if (sealed && link_wifi_up()) {
+            plink_addr_t broadcast;
+            link_subnet_broadcast(&broadcast);
+            sent = udp_send(&broadcast, frame, len) || sent;
+        }
+    }
+    return sent;
 }
 
 /* mDNS is shared (ha_link, dev_remote): initialised once by whoever comes first, the same host
@@ -410,6 +456,12 @@ static bool is_master(void)
  * only be for the setup's own pairing as a keypad (Option C); the managers check the rest. */
 static void route(uint64_t now, const plink_addr_t *from, const uint8_t *frame, size_t len)
 {
+    if (link_test_drops(from->tp))
+        return;
+    if (from->tp == PLINK_TP_ESPNOW && len >= PLINK_HDR_LEN && frame[3] == PLINK_T_BEACON) {
+        ksvc_beacon(now, from, frame, len);
+        return;
+    }
     if (!is_master()) {
         ksvc_input(now, from, frame, len);
     } else if (len > 4u && (frame[4] & PLINK_FLAG_FROM_MASTER) != 0u) {
@@ -434,6 +486,7 @@ static uint64_t next_due(void)
 static void link_task(void *arg)
 {
     (void)arg;
+    uint64_t beacon_at = 0;
     for (;;) {
         uint64_t now = link_now();
         const uint64_t next = next_due();
@@ -467,6 +520,32 @@ static void link_task(void *arg)
             }
         }
         now = link_now();
+        if (is_master() && link_radio_ready() && now >= beacon_at) {
+            beacon_at = now + 100u;
+            link_pub_lock();
+            const uint16_t net = g_pub.net_id;
+            const bool pair = g_pub.pairing_open;
+            const bool needed = pair || g_pub.keypads != 0;
+            link_pub_unlock();
+            if (needed) {
+                uint8_t frame[PLINK_HDR_LEN + 3u];
+                const plink_hdr_t h = {
+                    .type = PLINK_T_BEACON, .flags = PLINK_FLAG_FROM_MASTER, .net_id = net};
+                plink_hdr_write(&h, frame);
+                frame[PLINK_HDR_LEN] = 1;
+                frame[PLINK_HDR_LEN + 1u] = (uint8_t)link_radio_channel();
+                frame[PLINK_HDR_LEN + 2u] = pair ? 1 : 0;
+                (void)link_radio_send(NULL, frame, sizeof frame);
+            }
+        }
+        for (unsigned i = 0; i < RX_BURST; ++i) {
+            plink_addr_t from;
+            size_t len;
+            if (!link_radio_receive(&from, s_rx, &len))
+                break;
+            if (len)
+                route(link_now(), &from, s_rx, len);
+        }
         link_req_t req;
         uint32_t gen;
         if (take_request(&req, &gen)) {
@@ -572,6 +651,9 @@ esp_err_t plink_service_start(const char *model)
         return ESP_ERR_NO_MEM;
     }
     __atomic_store_n(&g_link.task, task, __ATOMIC_RELEASE);
+    const esp_err_t radio = link_radio_start();
+    if (radio != ESP_OK)
+        ESP_LOGW(TAG, "ESP-NOW bridge unavailable: %s", esp_err_to_name(radio));
     ESP_LOGI(TAG, "panel link running as %s on UDP %u (panel %s)",
              is_master() ? "the alarm panel" : "a keypad", (unsigned)PLINK_UDP_PORT,
              g_link.panel_id);

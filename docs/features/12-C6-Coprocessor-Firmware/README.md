@@ -1,9 +1,9 @@
 # 12 · ESP32-C6 co-processor firmware
 
-**Status:** In progress - the C6 as shipped (ESP-Hosted 2.12.3) has carried the panel's Wi-Fi
-since 2026-09-19, and the panel's updater for it is built (M6) but has sent no image yet. Left:
-our own C6 build with the ESP-NOW bridge, its image checked before it is sent and a failed
-transfer proved (BL-048); the link's recovery at runtime (BL-097); recovery documented with photos (BL-072) · **Milestone:**
+**Status:** Our signed C6 build and ESP-NOW bridge run on both P4 panel sizes. SDIO updates,
+full revision reporting, signature rejection before transfer, and panel-link commands over
+ESP-NOW have passed on hardware. Left: an interrupted transfer (BL-048), the link's recovery
+at runtime (BL-097), and recovery documented with photos (BL-072) · **Milestone:**
 M2 (use existing firmware), M6 (update path), M7 (ESP-NOW bridge) · **Depends on:** 06, 11, 13
 
 **Code:** `components/services/panel_ota/src/cp_ota.c` (the updater; the `c6` console command
@@ -51,7 +51,7 @@ the C6 automatically.
 | CP-001 | M2: Wi-Fi works with the C6 as shipped, or after applying Elecrow's V2.12.3 upgrade | HIL: works with the shipped 2.12.3 (joined, time synced) |
 | CP-002 | Our image `crowpanel_c6_cp` = ESP-Hosted 3.x co-processor (SDIO slave pins/width matching the V1.1 host config) + `espnow_bridge` | build + HIL |
 | CP-003 | The bridge exposes: init (channel), add/remove peer, send (dst MAC, payload <= 1470), receive (src MAC, RSSI, payload), send status; message IDs and packed structs in one shared header, versioned | host tests of the codec, HIL |
-| CP-004 | At boot the P4 reads the C6 firmware version. If it differs from the bundled image, the P4 performs co-processor OTA **only while all partitions are disarmed**, then resets the C6 | built (`components/services/panel_ota/src/cp_ota.c`, OTA-007); version read verified on HIL; transfer not run yet (no newer image) |
+| CP-004 | At boot the P4 reads the C6 firmware version. If it differs from the bundled image, the P4 performs co-processor OTA **only while all partitions are disarmed**, then resets the C6 | HIL: signed transfer and coordinated restart on both P4 panel sizes; bridge INFO reports the full revision |
 | CP-005 | A failed C6 update leaves the previous C6 firmware booting (dual OTA slots on the C6); it is logged and shown as failed on the update page, and raises the `coprocessor` trouble only if the C6 then stops answering (decided 2026-09-28: a C6 still carrying the Wi-Fi is not a trouble) | fault-injection test |
 | CP-006 | If the SDIO transport fails at runtime, the P4 resets the C6 (GPIO32), retries, and raises the `coprocessor` trouble after 3 failures | HIL |
 | CP-007 | Documented manual recovery: flash the C6 through its UART0 download pins (GPIO9 boot strap) with a USB-UART adapter | doc |
@@ -72,22 +72,27 @@ sequenceDiagram
   Host-->>App: registered callback
 ```
 
-- **Bridge messages** (`components/core/alarm_proto/espnow_bridge_proto.h`, shared by both builds;
-  not written yet, BL-048):
-  `INIT{version, channel}`, `PEER_ADD{mac, channel}`, `PEER_DEL{mac}`, `SEND{req_id, mac, len, data}`,
-  `SEND_DONE{req_id, status}`, `RECV{mac, rssi, len, data}`, `STATS{...}`. Encryption stays in
+- **Bridge messages** (`components/core/alarm_proto/include/alarm_proto/espnow_bridge_proto.h`,
+  shared by both builds): version 1, message ID `0x52414E31`, 14-byte header with explicit
+  little-endian fields. INIT, ADD, DEL, SEND, DONE, RECV and STATE carry channel, MAC,
+  request ID and status/RSSI; SEND byte 11 selects bulk (0) or control (1) priority.
+  Control and bulk have separate bounded queues on both processors. Encryption stays in
   our link layer, so no ESP-NOW LMKs are needed.
-- **Timeouts**: the host side times out a missing `SEND_DONE` after 200 ms and reports failure,
-  so a lost completion never stalls transmit (a known weakness of naive shims).
-- **Resync**: after a C6 reset the bridge re-sends `INIT` and re-adds peers from the host's table.
+  INFO reports the bounded application revision separately from Hosted's library version.
+- **Timeouts**: the C6 waits at most 200 ms for a send completion, then deinitialises ESP-NOW
+  before accepting another send. The host worker discards queued frames older than 200 ms;
+  blocking Hosted RPC never runs on the link task. The link protocol handles retries.
+- **Resync**: the host repeats INIT every second; the C6 restores peers on demand after reset.
 - **Image delivery**: the C6 image is published with each release, stored in the P4's `cp_fw`
   partition (written during the P4's own OTA or by the release package) and verified by SHA-256
   and signature before co-processor OTA ([13](../13-OTA-Updates/README.md)).
 - **As built (M6):** `cp_fw` holds a plain C6 app image (today written over USB with parttool);
   the panel parses its header for version and size, `c6 update [force]` or the automatic path
   (once per image version) streams it with `esp_hosted_cp_ota_*`, logs
-  `firmware_update/coprocessor_updated` and restarts. The signature/SHA-256 check of the C6 image
-  in the P4 is still to come with the release package (M7).
+  `firmware_update/coprocessor_updated` and restarts. The P4 verifies the padded image's SHA-256
+  and SBv2 signature against its trusted key before starting the transfer; unsigned images fail.
+  `firmware/c6_cp` builds the signed application with pinned Hosted 3.0.9, Wi-Fi and SDIO,
+  with Bluetooth disabled. Only the app is staged: the factory C6 partition table is preserved.
 
 ## First-time upgrade path (factory -> ours)
 1. M2: done. The factory firmware is already V2.12.3 and works with ESP-Hosted 3.0.7.
@@ -105,11 +110,11 @@ sequenceDiagram
 - [x] Join a Wi-Fi network on the touchscreen and confirm SNTP (2026-09-19)
 - Duplicate of docs/features/06 (Hardware acceptance: "Wi-Fi reconnects after an access point
   reboot", BL-032): was "Reconnect after an access point restart (HIL)"
-- [ ] `firmware/crowpanel_c6_cp` build (ESP-Hosted 3.x co-processor, V1.1 SDIO config) (CP-002)
+- [x] `firmware/c6_cp` build (ESP-Hosted 3.x co-processor, V1.1 SDIO config), installed on both P4 panel sizes (CP-002)
   (BL-048)
-- [ ] `espnow_bridge` component + shared protocol header + host tests (CP-003) (BL-048)
+- [x] `espnow_bridge` component + shared protocol header + host tests; commands over radio on hardware (CP-003) (BL-048)
 - [x] P4-side co-processor OTA manager (version check, disarmed-only, once per version) (M6)
-- [ ] Signature / SHA-256 check of the C6 image before sending it (M7, with the release package)
+- [x] Signature / SHA-256 check before transfer; corrupted image rejected on hardware with the old C6 still running (M7)
   (BL-048)
 - [x] CP-005 decided: a failed transfer with the old image still running is logged and shown
       as failed, not a trouble (`cp_ota.c` run_update); `coprocessor` is for a silent C6 (CP-006)

@@ -14,10 +14,12 @@ settings change from the master reaches the keypad's screen and its report withi
 during an exit time), the keypad's commands still answer in 150-190 ms, and its device data stays
 0-10 s old on the master's summaries; the device tiles were tried only on the PC, as the bench
 master had no devices (Home Assistant not connected). The integration's 0.3.0 is built in
-`RoboAlarms/ha-addon` on a local branch, not released. Left:
+`RoboAlarms/ha-addon` on a local branch, not released. Keypad updates at the master's order (M8)
+are built and tried on the two panels: direct FETCH with an exact-version server request, relay,
+restart together and following the master's rollback, with both speakers muted. Left:
 the bench cases below that need a person or a network change, Smart Home and settings on the
 panels with Home Assistant connected, ESP-NOW through our C6 build, 433 MHz, keypad inputs, GOTO,
-keypad updates at the master's order (M8, designed 2026-10-16: "Updates through the link") ·
+and the remaining keypad-update hardware checks and Panel Manager pages ·
 **Milestone:** M7 (keypad updates M8) · **Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
@@ -1722,7 +1724,8 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
 - [ ] `host/link_sim/link_peer.c`, the future peer (`-DPLINK_FUTURE_TEST=1`), `tools/link_compat.py`
   (LINK-042) (BL-048)
 - [ ] The update server takes `want` (update-server repository, BL-050): built on its local branch
-  `bl-050-want`, not merged or deployed
+  `bl-050-want`, tried in local Docker with both boards' signed development releases;
+  not merged or deployed to the public server
 - [x] On the panels (2026-10-17, muted): the 7" master and the 10.1" keypad updated together from
   0.7.0 to 0.7.1-bench.1, the keypad relayed from a bench copy while the master was armed (3.6 MB in
   about a minute), both restarted within 4 s of the disarm, the master passed its self-test with
@@ -1735,9 +1738,12 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   self-test needs) the master went back on its own self-test and the keypad, healthy on the new
   version and on trial, went back with it ("its master doesn't run ..."), Activity logging the
   keypad rolled back (BL-048)
-- [ ] On the panels, still: the keypad downloading itself (needs an update server with the
-  release); a real power cut mid-download; `display watch` and touch on the keypad while it
-  writes; the screens on the glass while updating (BL-048)
+- [x] Direct FETCH on the two panels (BL-048, firmware 41aef62): 0.7.0 to 0.7.4-dev.1, muted;
+  the keypad took its master's server and dev channel, requested `want=0.7.4-dev.1`, and
+  downloaded its own 3,739,648-byte image directly. The master waited for it, both restarted
+  about 4 s apart, both self-tests passed, and Activity recorded installing and updated.
+- [ ] On the panels, still: a real power cut mid-download; `display watch` and touch on the keypad
+  while it writes; the screens on the glass while updating (BL-048)
 - [x] Run-time caps: the offered caps an argument of `plink_master_init` and `plink_keypad_init`,
   each session keeping both offers ANDed under `PLINK_CAPS_KNOWN` (LINK-043) (BL-048,
   a97a745)

@@ -780,17 +780,17 @@ A change of any of them sends a STATUS, as a change does (LINK-006).
 - FW_ORDER is at 219 of 225 B. A later field goes in a new section, sent only where it fits.
 - A relay v2 takes new type numbers.
 
-### Per transport (estimates, not measured)
+### Per transport
 
 | Transport | FW_PAGE data | Relay of 3.6 MB |
 |---|---|---|
 | UDP over Wi-Fi | 1,024 B, 16 KB per request | paced by the keypad's flash: about 2 min |
-| ESP-NOW, 250 B frames | 192 B | design estimate about 5 min; full relay not yet measured on hardware |
+| ESP-NOW, 250 B frames | 207 B (runtime clamp) | measured 3,739,648 B in about 11 min 49 s (5.3 KB/s), 2026-10-18 |
 | 433 MHz | never | - |
 
 - **Factory-C6 keypads cannot relay over ESP-NOW.** They first need the signed bridge installed.
   Bridge-equipped keypads use these same messages with the page size from the order; a complete
-  hardware relay remains an acceptance task.
+  radio-only relay passed on the 7" master and 10.1" keypad (2026-10-18).
 - **The ESP-NOW bridge** must send control frames before bulk ones (CP-003).
 - **No FW_* frame** goes on a transport whose largest frame is under 250 B.
 
@@ -1701,6 +1701,13 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over
   30 s saying nothing old; its internal RAM at start-up beside before (LINK-028) (BL-048)
 - [x] ESP-NOW transport through our C6 bridge on the P4, commands verified on both panel sizes (docs/features/12 CP-003) (BL-048)
+- [x] Full ESP-NOW firmware relay (2026-10-18, BL-048): signed 3,739,648-byte keypad image,
+  0.7.4-dev.3 to dev.4, from the 7" master's bench copy to the 10.1" keypad. LAN packets were
+  blocked throughout reception; both C6 radios remained 3.0.10-ra3. Reception took about
+  11 min 49 s; arm/disarm commands during reception succeeded in 327/227 ms. Signature
+  verification, automatic installation and the 60 s self-test passed over the radio path.
+  Normal LAN transport was restored afterward; master disarmed, keypad ONLINE/up to date,
+  speakers off and displays enabled. Builds used 79.3% of each OTA slot. No firmware code changed.
 - [ ] Native ESP32 transport and hardware acceptance of changed AP channels (LINK-010) (M7) (BL-048)
 - [x] The engine's device supervision trouble for a silent keypad (LINK-007's engine side,
   CORE-TRBL-008): `test_troubles.c` test_device_supervision, `alarm_engine_device_checkin`

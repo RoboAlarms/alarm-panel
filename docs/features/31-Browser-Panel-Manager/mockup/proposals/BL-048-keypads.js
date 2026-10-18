@@ -1,106 +1,116 @@
-// Proposed browser management of paired link keypads; no production API changes yet.
+// Interactive proposal only: no production API or panel configuration changes.
 proposal({
-  bl: 'BL-048',
-  title: 'Keypad partition settings and updates',
-  status: 'draft',
-  decided: '',
-  role: 'installer',
-  why: ['Paired remote keypads are missing from Partitions and devices.',
-    'Set each panel’s default partition, switching permission and inactivity return independently.'],
-  look: [['partitions', 'Partitions and devices: choose a keypad'], ['keypad-partition/1', 'Switching allowed: 30 seconds idle'],
-    ['keypad-partition/never', 'Never: seconds disabled'], ['keypad-partition/2', 'Locked to its default partition'],
-    ['keypad-partition/local', 'This panel has its own settings'], ['keypad-partition/armed', 'Settings locked while armed'], ['link-keypads/empty', 'No paired keypads'],
-    ['link-keypads/armed', 'Settings locked while armed'], ['link-keypads/error', 'A keypad is not responding'], ['keypad-partition/offline', 'Offline settings are read-only'],
-    ['link-updates', 'Automatic update progress'], ['link-updates/failed', 'An update failed']].map(([route, label]) => [route, label, {parts: '2'}]),
+  bl: 'BL-048', title: 'Partitions, devices and keypad settings', status: 'draft', decided: '', role: 'installer',
+  why: ['Show configured partitions and devices, with Add and Remove instead of unused slots.',
+    'Use the same popup editor for partitions and devices, with Cancel in both.'],
+  look: [['partitions', 'Active partitions and devices'], ['keypad-partition/1', 'Keypad editor: switching allowed'],
+    ['keypad-partition/never', 'Never disables the seconds field'], ['keypad-partition/2', 'Locked keypad: return options hidden'],
+    ['keypad-partition/local', 'This panel'], ['partitions/full', 'At capacity: Add buttons disabled'],
+    ['partitions/empty', 'No paired keypads'], ['partitions/armed', 'Armed: changes disabled'],
+    ['partitions/error', 'Offline keypad'], ['link-updates', 'Automatic update progress'],
+    ['link-updates/failed', 'An update failed']].map(([route, label]) => [route, label, {parts: '2'}]),
   replaces: ['partitions', 'updates'],
-  today: {'link-keypads': 'partitions', 'link-updates': 'updates', 'keypad-partition': 'partitions'},
-  notes: ['Draft: requires owner approval before production implementation (WEB-026).',
-    'Requires authenticated link-keypad list/edit API and firmware-plan status API. Edits use the signed-in installer’s authority and require all partitions disarmed; no extra keypad code.',
-    'Assignment uses the existing home-partition operation, not the generic device table. Only enabled partitions are offered.',
-    'Updates follow the master automatically. No independent version selector or manual install button is added.',
-    'No code to switch the touchscreen view. Alarm actions retain normal authorization. Activity on any page renews the inactivity timer.',
-    'Never sits below the seconds field and disables it without losing its value. Switching off disables both return controls.',
-    'This panel and paired keypads have independent policies; no audio settings are copied.',
-    'Open Partitions and devices, then Partition settings on a keypad row in Devices. The row and its link open the same editor. The local keypad keeps In use, Name and Check-in supervision alongside its partition policy; no extra Installer navigation section.',
-    'Mock data and changes are confined to this proposal.'],
+  today: {'keypad-partition': 'partitions', 'link-updates': 'updates'},
+  notes: ['Draft: owner review required before production implementation (WEB-026).',
+    'Only configured entries appear. Add reserves a free slot only after confirmation; Remove frees it. Limits shown are four partitions and sixteen devices.',
+    'Keypad row and Edit open the same popup, including Cancel. Switching off hides both return controls while retaining their values; Never disables seconds and visibly dims that row.',
+    'Keypad supervision is automatic, so no Check-in supervision field. Expanders and receivers retain their supervision setting.',
+    'The built-in panel cannot be removed. A partition with assigned devices or zones must be cleared first; removal never silently reassigns protection.',
+    'Production must reconcile device slots and paired keypad identities and enforce capacities, dependencies and authorization in the API. Adding a remote keypad must complete pairing before activating its record.',
+    'No extra keypad code for selecting a view. Alarm authorization stays unchanged; audio remains local.',
+    'All edits and removals here change fictional mock data only. No production API changes.'],
+  css: `.keypad-return-disabled { opacity: .45; }
+    .proposal-device-actions { display: flex; flex-wrap: wrap; gap: .5rem; }`,
   apply() {
-    const rows = [
-      {id: 'local', name: 'Panel keypad', enabled: true, supervision_s: 0, home: 1, allowed: false, seconds: 30, never: false},
-      {id: '1', name: 'Hall keypad', home: 1, allowed: true, seconds: 30, never: false},
-      {id: '2', name: 'Workshop keypad', home: 2, allowed: false, seconds: 30, never: false},
+    const parts = [
+      {number: 1, name: 'Home', exit_delay_s: 60, entry_delay1_s: 30, entry_delay2_s: 45},
+      {number: 2, name: 'Garage', exit_delay_s: 60, entry_delay1_s: 30, entry_delay2_s: 45},
     ];
-    const names = {1: 'Home', 2: 'Garage'};
-    const summary = k => !k.allowed ? t('Locked to {0}', names[k.home]) :
-      k.never ? t('Default: {0} · No automatic return', names[k.home]) :
-      t('Default: {0} · Returns after {1} seconds inactive', names[k.home], k.seconds);
-    const originalPartitions = PAGES.partitions.render;
-    PAGES.partitions.render = async mode => {
-      const result = await originalPartitions();
-      const armed = mode === 'armed' || !!state?.locked;
-      const policyLink = k => `<a data-keypad-policy href="#/keypad-partition/${armed ? 'armed' : mode === 'error' && k.id === '2' ? 'offline' : k.id}">${ht('Partition settings')}</a>`;
-      const remotes = mode === 'empty' ? '' : rows.slice(1).map(k =>
-        `<li tabindex="0"><div class="main"><strong>${esc(k.name)}</strong><span>${esc(summary(k))}</span></div>` +
-        tag(mode === 'error' && k.id === '2' ? t('Not responding') : t('Online'), mode === 'error' && k.id === '2' ? 'warn' : 'good') +
-        policyLink(k) + `</li>`).join('');
-      // Keep other device editors. Each keypad row and its link open one combined editor.
-      const html = result.html.replace(/(<li data-device="1"[\s\S]*?)(<\/li>)/,
-        (_, row, end) => row + policyLink(rows[0]) + end + remotes);
-      return {...result, html, bind() {
-        result.bind?.();
-        $$('[data-keypad-policy]').forEach(a => {
-          const row = a.closest('li');
-          const open = () => { location.hash = a.getAttribute('href'); };
-          row.onclick = open;
-          row.onkeydown = event => {
-            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
+    const devices = [
+      {id: 'local', name: 'Panel keypad', kind: 'keypad', home: 1, allowed: false, seconds: 30, never: false},
+      {id: '1', name: 'Hall keypad', kind: 'keypad', home: 1, allowed: true, seconds: 30, never: false},
+      {id: '2', name: 'Workshop keypad', kind: 'keypad', home: 2, allowed: false, seconds: 30, never: false},
+    ];
+    let nextDevice = 3, full = false;
+    const partName = n => parts.find(p => p.number === Number(n))?.name || t('Unassigned');
+    const summary = d => d.kind !== 'keypad' ? t('Partition: {0}', partName(d.home)) : !d.allowed ? t('Locked to {0}', partName(d.home)) :
+      d.never ? t('Default: {0} · No automatic return', partName(d.home)) : t('Default: {0} · Returns after {1} seconds inactive', partName(d.home), d.seconds);
+    const backToList = () => go('partitions');
+    function remove(kind, item) {
+      const isPart = kind === 'partition';
+      review({title: t('Remove {0}?', item.name), intro: isPart ? t('This partition will no longer appear in the list.') : t('This device will be removed from this system.'),
+        confirm: t('Remove'), danger: true, done: t('Removed.'), after: backToList,
+        run: async () => { const list = isPart ? parts : devices; list.splice(list.indexOf(item), 1); }});
+    }
+    function editPartition(item, readOnly, isNew = false) {
+      const specs = partitionSpecs().filter(s => s.name !== 'enabled');
+      editDialog({title: isNew ? t('Add partition') : item.name, specs, values: isNew ? {} : item, initial: item, readOnly,
+        reviewOptions: {title: isNew ? t('Add partition') : t('Save partition'), done: t('Partition saved.'), after: backToList,
+          run: async patch => { Object.assign(item, patch); if (isNew) parts.push(item); }}});
+    }
+    function editDevice(item, readOnly, isNew = false) {
+      const specs = [
+        {name: 'name', label: t('Name'), type: 'text', required: true, maxLength: 24},
+        ...(isNew ? [{name: 'kind', label: t('Device type'), type: 'select', options: [['keypad', t('Keypad')], ['expander', t('Expander')], ['receiver', t('Receiver')]]}] : []),
+        {name: 'home', label: t('Default partition'), type: 'select', numeric: true, options: parts.map(p => [p.number, p.name])},
+        {name: 'allowed', label: t('Allow partition switching'), type: 'switch', help: t('Off locks this keypad to its default partition.'), showIf: v => (v.kind || item.kind) === 'keypad'},
+        {name: 'seconds', label: t('Return after inactivity'), type: 'number', min: 1, max: 3600, step: 1, unit: t('seconds'),
+          help: t('Default: 30 seconds. Using any screen restarts the inactivity timer.'), showIf: v => (v.kind || item.kind) === 'keypad' && v.allowed},
+        {name: 'never', label: t('Never return automatically'), type: 'switch', showIf: v => (v.kind || item.kind) === 'keypad' && v.allowed},
+        {name: 'supervision_s', label: t('Check-in supervision'), type: 'number', min: 0, max: 65535, step: 1, unit: t('s'), help: t('0: not supervised.'), showIf: v => (v.kind || item.kind) !== 'keypad'},
+      ];
+      editDialog({title: isNew ? t('Add device') : item.name, specs, values: isNew ? {} : item, initial: item, readOnly,
+        reviewOptions: {title: isNew ? t('Add device') : t('Save keypad settings'), done: t('Device saved.'), after: backToList,
+          run: async patch => { Object.assign(item, patch); if (isNew) devices.push(item); }},
+        bindExtra(form) {
+          const update = () => {
+            const never = form.querySelector('[name="never"]').checked;
+            const input = form.querySelector('[name="seconds"]');
+            input.disabled = readOnly || never;
+            input.closest('[data-field]').classList.toggle('keypad-return-disabled', never);
           };
-          a.onclick = event => { event.preventDefault(); event.stopPropagation(); open(); };
-        });
-      }};
+          form.addEventListener('change', update); update();
+        }});
+    }
+    PAGES.partitions.render = async mode => {
+      if (mode === 'full' && !full) {
+        full = true;
+        for (let n = 3; n <= 4; n++) if (!parts.some(p => p.number === n)) parts.push({number: n, name: t('Partition {0}', n), exit_delay_s: 60, entry_delay1_s: 30, entry_delay2_s: 45});
+        while (devices.length < 16) { const id = String(nextDevice++); devices.push({id, name: t('Expander {0}', id), kind: 'expander', home: 1, supervision_s: 300}); }
+      }
+      const readOnly = mode === 'armed' || !!state?.locked;
+      const shown = mode === 'empty' ? devices.filter(d => d.id === 'local') : devices;
+      const alarm = await loadAlarm();
+      const used = p => parts.length === 1 || devices.some(d => Number(d.home) === p.number) || alarm.zones.some(z => z.enabled && z.partition === p.number);
+      const actions = (kind, id, blocked, reason = '') => `<div class="proposal-device-actions"><button data-edit-${kind}="${esc(id)}">${ht('Edit')}</button><button class="danger" data-remove-${kind}="${esc(id)}" ${readOnly || blocked ? 'disabled' : ''} ${reason ? `title="${esc(reason)}"` : ''}>${ht('Remove')}</button></div>`;
+      return {html: pageHead(t('Partitions and devices'), t('Manage the partitions and devices configured on this system.')) +
+        (readOnly ? notice('warn', t('Disarm every partition before making changes.')) : '') +
+        `<section class="section"><div class="section-head"><div><h2>${ht('Partitions')}</h2><p>${ht('{0} of {1} configured', parts.length, 4)}</p></div><button id="add-partition" ${readOnly || parts.length >= 4 ? 'disabled' : ''}>${ht('Add partition')}</button></div><div class="card"><ul class="list clickable">` +
+        parts.map(p => `<li data-partition-edit="${p.number}" tabindex="0"><div class="main"><strong>${esc(p.name)}</strong><span>${ht('Exit {0} · entry {1} / {2}', fmtDuration(p.exit_delay_s), fmtDuration(p.entry_delay1_s), fmtDuration(p.entry_delay2_s))}</span>${used(p) ? `<span>${ht('Move assigned devices and zones before removing this partition.')}</span>` : ''}</div>${actions('partition', p.number, used(p), t('Partition still assigned or the last partition.'))}</li>`).join('') +
+        `</ul></div></section><section class="section"><div class="section-head"><div><h2>${ht('Devices')}</h2><p>${ht('{0} of {1} configured', shown.length, 16)}</p></div><button id="add-device" ${readOnly || devices.length >= 16 ? 'disabled' : ''}>${ht('Add device')}</button></div><div class="card"><ul class="list clickable">` +
+        shown.map(d => `<li data-device-edit="${esc(d.id)}" tabindex="0"><div class="main"><strong>${esc(d.name)}</strong><span>${esc(summary(d))}</span>${d.id === 'local' ? `<span>${ht('Built-in keypad')}</span>` : ''}</div>${mode === 'error' && d.id === '2' ? tag(t('Not responding'), 'warn') : ''}${actions('device', d.id, d.id === 'local', d.id === 'local' ? t('The built-in keypad cannot be removed.') : '')}</li>`).join('') +
+        `</ul></div></section>`, bind() {
+          const wire = (kind, list, edit) => {
+            $$(`[data-${kind}-edit]`).forEach(row => {
+              const id = row.getAttribute(`data-${kind}-edit`);
+              const item = list.find(x => String(kind === 'partition' ? x.number : x.id) === id);
+              const open = () => edit(item, readOnly || (mode === 'error' && item.id === '2'));
+              row.onclick = event => { if (!event.target.closest('button')) open(); };
+              row.onkeydown = event => { if (event.target === row && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); open(); }};
+              row.querySelector(`[data-edit-${kind}]`).onclick = open;
+              row.querySelector(`[data-remove-${kind}]`).onclick = () => remove(kind, item);
+            });
+          };
+          wire('partition', parts, editPartition); wire('device', devices, editDevice);
+          $('#add-partition').onclick = () => { const number = [1,2,3,4].find(n => !parts.some(p => p.number === n)); if (number) editPartition({number, name: '', exit_delay_s: 60, entry_delay1_s: 30, entry_delay2_s: 45}, false, true); };
+          $('#add-device').onclick = () => { if (devices.length < 16) editDevice({id: String(nextDevice++), name: '', kind: 'keypad', home: parts[0].number, allowed: false, seconds: 30, never: false, supervision_s: 0}, false, true); };
+        }};
     };
-    // Scenario routes are review shortcuts, never separate menu entries.
-    PAGES['link-keypads'] = {title: tx('Partitions and devices'), parent: 'partitions', nav: false,
-      access: 'installer', render: mode => PAGES.partitions.render(mode)};
-    PAGES['keypad-partition'] = {title: tx('Partition settings'), parent: 'partitions', nav: false,
-      access: 'installer', render: async arg => {
-        const armed = arg === 'armed' || !!state?.locked;
-        const offline = arg === 'offline';
-        const original = rows.find(k => k.id === (offline ? '2' : arg)) || rows[1];
-        const values = {...original, ...(arg === 'never' ? {never: true} : {})};
-        const specs = [
-          ...(original.id === 'local' ? [
-            {name: 'enabled', label: t('In use'), type: 'switch'},
-            {name: 'name', label: t('Name'), type: 'text'},
-            {name: 'supervision_s', label: t('Check-in supervision'), type: 'number', min: 0, max: 65535, step: 1, unit: t('s'), help: t('0: not supervised.')},
-          ] : []),
-          {name: 'home', label: t('Default partition'), type: 'select', numeric: true, options: Object.entries(names).map(([n, name]) => [Number(n), name])},
-          {name: 'allowed', label: t('Allow partition switching'), type: 'switch', help: t('Off locks this panel to its default partition.')},
-          {name: 'seconds', label: t('Return after inactivity'), type: 'number', min: 1, max: 3600, step: 1, unit: t('seconds'), locked: !values.allowed || values.never,
-            help: t('Default: 30 seconds. Using any screen restarts the inactivity timer.')},
-          {name: 'never', label: t('Never return automatically'), type: 'switch', locked: !values.allowed},
-        ];
-        return {html: pageHead(t('{0}: partition settings', original.name), t('These settings apply only to this panel.')) +
-          `<p><a href="#/partitions">${ht('Back to Partitions and devices')}</a></p>` +
-          (armed ? notice('warn', t('Disarm every partition before changing keypad settings.')) : '') +
-          (offline ? notice('warn', t('This keypad is not responding. Try again when it is online.')) : '') +
-          settingsCard({id: 'keypad-policy', title: t('Partition settings'), specs, values, readOnly: armed || offline}),
-          bind() {
-            const form = $('#keypad-policy');
-            bindSettingsCard('keypad-policy', specs, values, ({changes, values: patch}) =>
-              review({title: t('Save keypad partition settings'), changes, done: t('Keypad settings saved.'),
-                run: async () => { Object.assign(original, patch); }}));
-            const update = () => {
-              const allow = form.querySelector('[name="allowed"]').checked;
-              const never = form.querySelector('[name="never"]').checked;
-              for (const [name, disabled] of [['seconds', !allow || never], ['never', !allow]]) {
-                form.querySelector(`[name="${name}"]`).disabled = armed || offline || disabled;
-              }
-            };
-            form.addEventListener('change', update);
-            update();
-          },
-        };
-      }};
+    PAGES['keypad-partition'] = {title: tx('Keypad settings'), parent: 'partitions', nav: false, access: 'installer', render: async arg => {
+      const result = await PAGES.partitions.render('');
+      return {...result, bind() { result.bind(); const item = devices.find(d => d.id === arg) || devices[1];
+        editDevice(arg === 'never' ? {...item, never: true} : item, !!state?.locked); }};
+    }};
     PAGES['link-updates'] = {title: tx('Keypad updates'), icon: 'download', parent: 'updates', nav: false,
       render: async mode => ({html: pageHead(t('Keypad updates'), t('Remote keypads update automatically to the master’s version.')) +
         `<div class="card"><ul class="list"><li><div class="main"><strong>${ht('Hall keypad')}</strong><span>${ht('Up to date')}</span></div>${tag('0.7.4', 'good')}</li>` +

@@ -1751,8 +1751,9 @@ panels; a successful host preview is not hardware acceptance.
   configuration saves, reassignment and command rejection outside the newly assigned home.
 - [ ] Panel Manager keypad assignments and automatic update status: review
   [BL-048 proposal](../31-Browser-Panel-Manager/mockup/proposals/BL-048-keypads.js), then implement
-  the authenticated API and production pages (WEB-026). The draft covers each panel's default,
-  allow/lock, inactivity seconds and Never, with armed/offline read-only states. Render and browser
+  the authenticated API and production pages (WEB-026). The draft shows active partitions/devices with Add/Remove and consistent popup editors,
+  plus per-keypad default/allow/idle/Never. Return controls hide when locked; keypad supervision
+  is automatic. Armed/offline settings are read-only. Render and browser
   interaction checks pass; owner approval pending.
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over

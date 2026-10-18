@@ -7,7 +7,7 @@ M.screen({id: 'bl-048-partition-home', area: 'Home', title: 'Home: switcher belo
   proposal: gotoProposal,
   notes: 'Multiple enabled partitions and switching allowed on this panel: House appears below the left card. Tap it to choose another partition. Away, Stay and Night remain available on the right. No code is needed to change the view; alarm actions retain their normal authorization.',
   render: () => M.main({content: M.home(partitionHero, M.panel_arm(),
-    M.changed(M.row_link({glyph: 'layers', title: 'House', detail: 'Default partition · Tap to switch', trail: 'chevron-right', goTo: 'bl-048-partition-chooser'})))}),
+    M.changed(M.row_link({glyph: 'layers', title: 'House', detail: 'Switch partition', trail: 'chevron-right', goTo: 'bl-048-partition-chooser'})))}),
 });
 M.screen({id: 'bl-048-partition-chooser', area: 'Home', title: 'Choose a partition: no code prompt', shot: null,
   proposal: gotoProposal,
@@ -31,13 +31,36 @@ M.screen({id: 'bl-048-partition-away', area: 'Home', title: 'Workshop: return af
   proposal: gotoProposal,
   notes: 'The same arm/disarm controls now target Workshop with their normal code requirements. After 30 seconds without interaction this panel returns to its saved default, House. The installer can change that delay per panel. Touch activity restarts the idle timer. Switching never copies audio preferences.',
   render: () => M.main({content: M.home({...partitionHero, detail: 'Workshop', note: 'Returns to House after 30 seconds idle'},
-    M.panel_arm(), M.changed(M.row_link({glyph: 'layers', title: 'Workshop', detail: 'Temporary view · Tap to switch', trail: 'chevron-right', goTo: 'bl-048-partition-chooser'})))}),
+    M.panel_arm(), M.changed(M.row_link({glyph: 'layers', title: 'Workshop', detail: 'Switch partition', trail: 'chevron-right', goTo: 'bl-048-partition-chooser'})))}),
 });
 M.screen({id: 'bl-048-partition-policy', area: 'Settings', title: 'Installer: partition settings for this panel', shot: null,
   proposal: {...gotoProposal, replaces: null},
-  notes: 'Installer-only settings, stored separately for each panel. Default partition selects its normal view. Allow partition switching off locks it there. Return delay is editable in seconds, default 30, and applies only while switching is allowed. These are proposed controls; firmware persistence and enforcement are still pending.',
+  notes: 'Installer-only settings, stored separately for each panel. Default partition selects its normal view. Allow partition switching off locks it there. Return delay offers Never or a delay in seconds, default 30, and applies only while switching is allowed. Never disables only the inactivity return. These are proposed controls; firmware persistence and enforcement are still pending.',
   render: () => M.main({view: 'settings', content: M.settings({section: 'keypads', title: 'Hall keypad', note: 'Installer · Partition settings',
     body: M.changed(M.row_link({glyph: 'home', title: 'Default partition', detail: 'House', trail: 'chevron-right'}) +
       M.row_toggle({title: 'Allow partition switching', detail: 'Off locks this panel to its default partition', on: true}) +
-      M.row_number({title: 'Return after inactivity', detail: 'Seconds · Default 30', value: '30'}))})}),
+      M.row_link({title: 'Return after inactivity', value: '30 seconds', goTo: 'bl-048-partition-delay'}))})}),
+});
+
+M.screen({id: 'bl-048-partition-delay', area: 'Settings', title: 'Return delay: Never or seconds', shot: null,
+  proposal: {...gotoProposal, replaces: null},
+  notes: 'Open Return after inactivity from the panel policy. Choose Never to disable idle return, or adjust the seconds and save. The default remains 30 seconds. This is a static proposal: the plus/minus controls illustrate editing rather than storing changes.',
+  render: () => M.main({view: 'settings', content: M.settings({section: 'keypads', title: 'Return after inactivity', back: 'bl-048-partition-policy',
+    body: M.changed(M.row_link({title: 'Never', goTo: 'bl-048-partition-policy-never'}) +
+      M.row_number({title: 'After', detail: 'Seconds', value: '30'}) +
+      M.row_action({glyph: 'check', text: 'Save delay', goTo: 'bl-048-partition-policy'}))})}),
+});
+M.screen({id: 'bl-048-partition-policy-never', area: 'Settings', title: 'Installer: return delay set to Never', shot: null,
+  proposal: {...gotoProposal, replaces: null},
+  notes: 'Never disables inactivity-based return. The selected partition remains until the user switches it, or a restart/reconnection or installer reassignment resets the selection. This is not a permanent change to the default partition.',
+  render: () => M.main({view: 'settings', content: M.settings({section: 'keypads', title: 'Hall keypad', note: 'Installer · Partition settings',
+    body: M.changed(M.row_link({glyph: 'home', title: 'Default partition', detail: 'House'}) +
+      M.row_toggle({title: 'Allow partition switching', detail: 'Off locks this panel to its default partition', on: true}) +
+      M.row_link({title: 'Return after inactivity', value: 'Never', goTo: 'bl-048-partition-delay'}))})}),
+});
+M.screen({id: 'bl-048-partition-away-never', area: 'Home', title: 'Workshop: no inactivity return', shot: null,
+  proposal: gotoProposal,
+  notes: 'With return delay set to Never, being idle does not change the selected partition. No return countdown or promise is displayed.',
+  render: () => M.main({content: M.home({...partitionHero, detail: 'Workshop'}, M.panel_arm(),
+    M.changed(M.row_link({glyph: 'layers', title: 'Workshop', detail: 'Switch partition', goTo: 'bl-048-partition-chooser'})))}),
 });

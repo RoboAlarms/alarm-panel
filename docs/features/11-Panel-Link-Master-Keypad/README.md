@@ -1606,12 +1606,20 @@ The agreed target behavior (2026-10-18) is a switcher below Home's left status c
 partitions are enabled and switching is allowed on that panel. A locked panel keeps today's
 Home layout, with no partition control, label, or lock notice below the left card.
 Each panel has installer-only default-partition, switching-allowed/locked,
-and return-delay settings; the default delay is 30 seconds of inactivity anywhere on the panel.
+and return-delay settings: Never or a delay in seconds, default 30 seconds of inactivity anywhere
+on the panel. Never disables the inactivity return without changing the saved default partition;
+restart/reconnection and installer reassignment still reset temporary selection.
 Navigation, scrolling, tapping and code entry reset that timer, including on Activity and other
 pages; it is not elapsed time since the partition was selected. Selecting an enabled
 partition requires no code. This changes the displayed/command-target partition, not the normal
 authorization of arm/disarm commands or any audio preferences. The master must enforce the
 per-panel switching policy, including console requests, rather than rely on a hidden UI control.
+
+The switcher's subtitle is consistently **Switch partition**, naming the action rather than
+explaining a gesture or calling the view temporary (which need not time out when Never is set).
+This follows [NN/g's concise, consistent command-label guidance](https://www.nngroup.com/articles/ui-copy/)
+and [GOV.UK's advice to avoid help text explaining the interface](https://www.gov.uk/service-manual/design/designing-good-questions).
+These sources inform the wording; the exact phrase is this project's design choice.
 
 **Implementation gap:** the backend described below still requires a code and uses a fixed
 120-second command-activity timeout. It must be revised to the policy above, persisted per panel,

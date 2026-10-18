@@ -31,17 +31,38 @@
     : `<div class="v-none" style="${style}">${s.shot ? `No picture "${M.esc(s.shot)}" here: build with --shots after a PC preview run` : 'This state has no PC preview picture yet'}</div>`);
   const fixScroll = (root) => root.querySelectorAll('[data-scroll]').forEach((el) => { el.scrollTop = +el.dataset.scroll || 0; });
 
-  function list() {
+  function filtered() {
     const q = $('#v-search').value.trim().toLowerCase();
+    const area = $('#v-section').value, kind = $('#v-kind').value;
+    return all.filter((s) => (!area || s.area === area) &&
+      (!kind || (kind === 'current' ? !s.proposal : kind === 'proposals' ? !!s.proposal : s.proposal?.bl === kind)) &&
+      (!q || `${s.id} ${s.title} ${s.area} ${s.proposal?.bl || ''} ${s.proposal?.status || ''}`.toLowerCase().includes(q)));
+  }
+
+  function markCurrent() {
+    $('#v-list').querySelectorAll('.v-item').forEach((el) => {
+      const active = el.dataset.id === current;
+      el.classList.toggle('on', active);
+      if (active) el.setAttribute('aria-current', 'true');
+      else el.removeAttribute('aria-current');
+    });
+    $('#v-locate').textContent = `Viewing: ${byId.get(current)?.title || ''} · Find in list`;
+  }
+
+  function list() {
     const groups = new Map();
-    for (const s of all) {
-      if (q && !`${s.id} ${s.title} ${s.area}`.toLowerCase().includes(q)) continue;
+    const visible = filtered();
+    for (const s of visible) {
       const g = s.proposal ? `Proposals · ${s.proposal.bl || ''}` : s.area;
       if (!groups.has(g)) groups.set(g, []);
       groups.get(g).push(s);
     }
     $('#v-list').innerHTML = [...groups].map(([g, ss]) => `<div class="v-area">${M.esc(g)}</div>` +
       ss.map((s) => `<button class="v-item${s.id === current ? ' on' : ''}" data-id="${M.esc(s.id)}">${M.esc(s.title)}${statusChip(s.proposal)}</button>`).join('')).join('');
+    if (!visible.length) $('#v-list').innerHTML = '<p class="v-area">No matching screens</p>';
+    $('#v-list').scrollTop = 0;
+    $('#v-count').textContent = `${visible.length} of ${all.length}`;
+    markCurrent();
   }
 
   function fitScale(n) {
@@ -78,13 +99,13 @@
       ${s.notes ? `<dt>Notes</dt><dd>${M.esc(s.notes)}</dd>` : ''}
       ${p ? `<dt>Proposal</dt><dd>${M.esc(p.bl || '')} · ${M.esc(p.status || 'draft')}${p.replaces ? ` · replaces <code>${M.esc(p.replaces)}</code>` : ' · a new screen'}</dd>
         ${p.why ? `<dt>Why</dt><dd>${M.esc(p.why)}</dd>` : ''}${p.decided ? `<dt>Decided</dt><dd>${M.esc(p.decided)}</dd>` : ''}` : ''}</dl>`;
-    list();
+    markCurrent();
     if (location.hash.slice(1) !== `${current}${mode === 'mockup' ? '' : '/' + mode}`) history.replaceState(null, '', `#${current}${mode === 'mockup' ? '' : '/' + mode}`);
   }
 
   function gallery() {
     const k = 0.25;
-    $('#v-gallery').innerHTML = all.map((s) => `<button class="v-card" data-id="${M.esc(s.id)}">${frame(html(s), k)}
+    $('#v-gallery').innerHTML = filtered().map((s) => `<button class="v-card" data-id="${M.esc(s.id)}">${frame(html(s), k)}
       <div class="v-cap">${M.esc(s.title)} ${statusChip(s.proposal)}</div></button>`).join('');
     fixScroll($('#v-gallery'));
   }
@@ -109,7 +130,12 @@
     if (t === 'screen') show();
   }
   function open(id) { if (byId.has(id)) { current = id; tab('screen'); $('.v-main').scrollTop = 0; } }
-  function step(d) { const i = all.findIndex((s) => s.id === current); open(all[(i + d + all.length) % all.length].id); }
+  function step(d) {
+    const visible = filtered();
+    if (!visible.length) return;
+    const i = visible.findIndex((s) => s.id === current);
+    open(visible[i < 0 ? (d > 0 ? 0 : visible.length - 1) : (i + d + visible.length) % visible.length].id);
+  }
 
   document.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tab]'); if (t) return tab(t.dataset.tab);
@@ -118,12 +144,24 @@
     const g = e.target.closest('.v-stage [data-go]');
     if (g && $('#v-click').checked && byId.has(g.dataset.go)) open(g.dataset.go);
   });
-  $('#v-search').addEventListener('input', list);
+  function filterChanged() { list(); if ($('#tab-gallery').classList.contains('on')) gallery(); }
+  $('#v-search').addEventListener('input', filterChanged);
+  $('#v-section').addEventListener('change', filterChanged);
+  $('#v-kind').addEventListener('change', filterChanged);
+  $('#v-clear').addEventListener('click', () => {
+    $('#v-search').value = $('#v-section').value = $('#v-kind').value = '';
+    filterChanged();
+  });
+  $('#v-locate').addEventListener('click', () => {
+    if (!filtered().some((s) => s.id === current)) $('#v-clear').click();
+    const item = [...$('#v-list').querySelectorAll('.v-item')].find((el) => el.dataset.id === current);
+    if (item) $('#v-list').scrollTop += item.getBoundingClientRect().top - $('#v-list').getBoundingClientRect().top - 8;
+  });
   $('#v-opa').addEventListener('input', show);
   $('#v-prev').addEventListener('click', () => step(-1));
   $('#v-next').addEventListener('click', () => step(1));
   document.addEventListener('keydown', (e) => {
-    if (e.target.matches('input')) return;
+    if (e.target.matches('input, select, textarea, [contenteditable]')) return;
     if (e.key === 'ArrowRight') step(1);
     if (e.key === 'ArrowLeft') step(-1);
   });
@@ -150,6 +188,9 @@
     return;
   }
   const props = all.filter((s) => s.proposal).length;
+  for (const area of [...new Set(all.map((s) => s.area))].sort()) $('#v-section').add(new Option(area, area));
+  for (const bl of [...new Set(all.filter((s) => s.proposal?.bl).map((s) => s.proposal.bl))].sort()) $('#v-kind').add(new Option(`${bl} proposals`, bl));
   $('#v-sub').textContent = `${all.length - props} screens · ${props} proposal screens · built ${window.MOCKUP_BUILT}`;
+  list();
   fromHash();
 })();

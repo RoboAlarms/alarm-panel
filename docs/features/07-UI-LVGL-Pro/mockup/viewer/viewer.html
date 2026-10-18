@@ -25,7 +25,13 @@
 </header>
 <div class="v-body">
   <aside class="v-side">
+    <div class="v-filters">
+      <label for="v-section">Section</label><select id="v-section"><option value="">All sections</option></select>
+      <label for="v-kind">Screens</label><select id="v-kind"><option value="">All screens</option><option value="current">Current screens</option><option value="proposals">All proposals</option></select>
     <input id="v-search" type="search" placeholder="Find a screen" aria-label="Find a screen">
+      <div class="v-filter-summary"><span id="v-count" role="status"></span><button id="v-clear">Clear filters</button></div>
+      <button id="v-locate" title="Find the open screen in the list"></button>
+    </div>
     <div id="v-list"></div>
   </aside>
   <main class="v-main">

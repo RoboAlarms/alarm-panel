@@ -67,6 +67,14 @@ change, so today's mockup stays true.
 - **What the code limits** still applies: the 127-byte string subjects, labels that end in "..."
   at a width, the rail's places (four, five with Smart Home), the 1024 x 600 screen. A proposal that needs more says so.
 
+## Finding screens in the viewer
+Use **Section** to narrow the list to an area such as Home, then **Screens** to show current
+screens, all proposals, or one backlog proposal. Search narrows those results further; Gallery
+and Previous/Next use the same filters. **Clear filters** restores the full list.
+Changing the displayed screen leaves the sidebar scroll position alone. The fixed **Viewing**
+link finds the open screen in the list, clearing filters only when they hide that screen.
+For the temporary-partition proposal, choose Home and BL-048 proposals.
+
 ## Files
 | Path | What |
 |---|---|

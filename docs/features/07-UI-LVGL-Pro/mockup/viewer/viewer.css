@@ -31,8 +31,14 @@ button { font: inherit; color: inherit; }
 .v-tabs button.on, .v-seg button.on { background: var(--v-accent-soft); border-color: var(--v-accent); color: var(--v-accent); }
 .v-body { flex: 1; display: flex; min-height: 0; }
 .v-side { width: 260px; flex: none; border-right: 1px solid var(--v-line); background: var(--v-panel); display: flex; flex-direction: column; min-height: 0; }
-#v-search { margin: 12px; padding: 8px 10px; border: 1px solid var(--v-line); border-radius: 8px; background: var(--v-bg); color: var(--v-text); font: inherit; }
-#v-list { overflow-y: auto; padding: 0 8px 16px; }
+.v-filters { padding: 12px; display: grid; gap: 6px; border-bottom: 1px solid var(--v-line); }
+.v-filters label { font-size: 12px; color: var(--v-text-2); }
+#v-search, .v-filters select { width: 100%; min-width: 0; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--v-line); border-radius: 8px; background: var(--v-bg); color: var(--v-text); font: inherit; }
+#v-search { margin-top: 6px; }
+.v-filter-summary { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; color: var(--v-text-2); }
+#v-clear, #v-locate { border: 0; background: transparent; color: var(--v-accent); cursor: pointer; padding: 4px 0; text-align: left; }
+#v-locate { font-size: 12px; }
+#v-list { flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: none; padding: 0 8px 16px; }
 .v-area { margin: 12px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--v-text-2); }
 .v-item { display: flex; align-items: center; gap: 6px; width: 100%; text-align: left; border: 0; background: transparent; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
 .v-item:hover { background: var(--v-bg); }
@@ -74,6 +80,8 @@ button { font: inherit; color: inherit; }
 .v-guide pre { background: var(--v-bg); padding: 10px; border-radius: 8px; overflow-x: auto; }
 @media (max-width: 720px) {
   .v-body { flex-direction: column; }
-  .v-side { width: auto; max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--v-line); }
+  .v-side { width: auto; max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--v-line); }
+  .v-filters { grid-template-columns: auto 1fr; padding: 8px 12px; align-items: center; }
+  #v-search, .v-filter-summary, #v-locate { grid-column: 1 / -1; }
   .v-tab { padding: 12px 16px; }
 }

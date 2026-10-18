@@ -109,3 +109,6 @@ value) or a real difference worth a look in the viewer's Difference mode.
 - English only. How long words get in other languages is the PC preview's en-XA walk
   (docs/features/37).
 - The 7" layout only; the 4" (480 x 320) is on hold (docs/features/19).
+
+Preview diagnostics are collapsed by default above the screen. Expand the summary to inspect
+missing pictures or icons in a bounded, scrollable list; they do not fill the review page.

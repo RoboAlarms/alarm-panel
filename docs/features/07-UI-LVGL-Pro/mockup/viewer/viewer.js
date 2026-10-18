@@ -92,7 +92,9 @@
     $('#v-opa-wrap').hidden = mode !== 'overlay';
     const used = [...M.missing];
     $('#v-warn').hidden = !(used.length || problems.length);
-    $('#v-warn').innerHTML = [...problems.map(M.esc), used.length ? `Icons: ${used.map(M.esc).join(', ')}` : ''].filter(Boolean).join('<br>');
+    const warnings = [...problems.map(M.esc), used.length ? `Icons: ${used.map(M.esc).join(', ')}` : ''].filter(Boolean);
+    $('#v-warn-summary').textContent = `Preview diagnostics (${warnings.length})`;
+    $('#v-warn-list').innerHTML = warnings.join('<br>');
     $('#v-info').innerHTML = `<h2>${M.esc(s.title)} ${statusChip(p)}</h2>
       <dl><dt>Id</dt><dd><code>${M.esc(s.id)}</code></dd><dt>Area</dt><dd>${M.esc(s.area)}</dd>
       <dt>Preview picture</dt><dd>${s.shot ? `<code>${M.esc(SHOTS[s.shot] || s.shot)}</code>` : 'none'}</dd>

@@ -49,7 +49,10 @@
         <span class="v-grow"></span>
         <button id="v-prev" title="Previous (←)">‹</button><button id="v-next" title="Next (→)">›</button>
       </div>
-      <div id="v-warn" class="v-warn" hidden></div>
+      <details id="v-warn" class="v-warn" hidden>
+        <summary id="v-warn-summary">Preview diagnostics</summary>
+        <div id="v-warn-list"></div>
+      </details>
       <div id="v-stage" class="v-stage"></div>
       <div id="v-info" class="v-info"></div>
     </section>

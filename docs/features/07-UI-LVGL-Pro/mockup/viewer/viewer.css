@@ -54,7 +54,9 @@ button { font: inherit; color: inherit; }
 .v-seg { display: flex; gap: 4px; flex-wrap: wrap; }
 .v-grow { flex: 1; }
 .v-check, .v-opa { display: flex; align-items: center; gap: 6px; color: var(--v-text-2); }
-.v-warn { background: var(--v-warn-bg); color: var(--v-warn); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+.v-warn { border: 1px solid var(--v-line); border-radius: 8px; padding: 8px 12px; margin-bottom: 12px; }
+.v-warn summary { cursor: pointer; }
+#v-warn-list { color: var(--v-warn); background: var(--v-warn-bg); max-height: 180px; overflow: auto; margin-top: 8px; padding: 8px; overflow-wrap: anywhere; }
 .v-stage { display: flex; gap: 16px; flex-wrap: wrap; }
 .v-frame { position: relative; flex: none; }
 .v-frame > .v-cap { font-size: 12px; color: var(--v-text-2); margin-bottom: 4px; }

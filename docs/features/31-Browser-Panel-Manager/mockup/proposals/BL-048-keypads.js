@@ -29,7 +29,20 @@ proposal({
     'Pairing requires both confirmations. Naming and partition policy follow enrollment; closing that setup leaves the enrolled keypad at its default partition. Cancellation before completion saves nothing.',
     'All edits and removals here change fictional mock data only. No production API changes.'],
   css: `.keypad-return-disabled { opacity: .45; }
-    .proposal-device-actions { display: flex; flex-wrap: wrap; gap: .5rem; }`,
+    .proposal-device-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+    .enroll-choices { display: grid; gap: .75rem; max-width: 20rem; margin: .5rem auto 1rem; }
+    .enroll-choices button { width: 100%; justify-content: center; text-align: center; min-height: 3rem; }
+    .enroll-body { display: grid; gap: 1rem; }
+    .enroll-body p { margin: 0; line-height: 1.5; }
+    .enroll-steps { margin: 0; padding-left: 1.25rem; line-height: 1.6; }
+    .enroll-steps li + li { margin-top: .5rem; }
+    .enroll-code { padding: 1.25rem; text-align: center; }
+    .enroll-code strong { display: block; font-size: 2.25rem; letter-spacing: .12em; margin: .65rem 0; }
+    .enroll-demo { border-top: 1px solid var(--line); padding-top: .75rem; font-size: .85rem; }
+    .enroll-demo summary { color: var(--muted); cursor: pointer; }
+    .enroll-demo .proposal-device-actions { margin-top: .75rem; }
+    .enroll-foot { flex-wrap: wrap; gap: .5rem; }
+    .enroll-foot #enroll-cancel { margin-right: auto; }`,
   apply() {
     const parts = [
       {number: 1, name: 'Home', exit_delay_s: 60, entry_delay1_s: 30, entry_delay2_s: 45},
@@ -91,7 +104,7 @@ proposal({
     }
     function chooseDevice() {
       openDialog(`<div class="dialog-head"><h2 id="dialog-title">${ht('Add device')}</h2></div>
-        <div class="dialog-body"><p>${ht('What would you like to add?')}</p><div class="rows">
+        <div class="dialog-body"><div class="enroll-choices">
         <button id="add-keypad">${ht('Keypad')}</button><button id="add-expander">${ht('Expander')}</button><button id="add-receiver">${ht('Receiver')}</button></div></div>
         <div class="dialog-foot"><button id="enroll-cancel">${ht('Cancel')}</button></div>`);
       $('#enroll-cancel').onclick = closeDialog;
@@ -102,16 +115,16 @@ proposal({
       const blocked = !!state?.locked || devices.length >= 16;
       if (blocked) stage = 'blocked';
       const messages = {
-        start: [t('Add a keypad'), t('On the new keypad, choose Keypad during setup. If using Wi-Fi, connect it to this system’s network. Then start pairing here and on the keypad. No screen is needed on the main panel.')],
-        wait: [t('Waiting for a keypad'), t('On the new keypad, select Pair. Pairing is open for two minutes. Keep this window open.')],
-        compare: [t('Compare the codes'), t('Check that this code matches the code shown on the physical keypad you are adding.')],
-        confirm: [t('Confirm on the keypad'), t('You confirmed the code here. Now confirm the matching code on the physical keypad. It is not enrolled until both sides confirm.')],
-        done: [t('Keypad enrolled'), t('The keypad is connected. Give it a name and choose its default partition and switching settings next.')],
-        mismatch: [t('Pairing stopped'), t('The codes did not match. Nothing was saved. Check that you selected the intended keypad before trying again.')],
-        expired: [t('Pairing timed out'), t('The pairing window or confirmation time expired. Nothing was saved. Start again when you are ready at the keypad.')],
-        conflict: [t('More than one keypad is pairing'), t('Nothing was saved. Start pairing on only one keypad, then try again.')],
-        lost: [t('Connection to the panel lost'), t('Enrollment status is unknown. Reconnect and check Devices before starting again; the keypad may have finished pairing.')],
-        blocked: [t('Cannot add a keypad'), state?.locked ? t('Disarm every partition before enrolling a keypad.') : t('The device limit has been reached. Remove an unused device before adding another.')],
+        start: [t('Add a keypad'), t('Prepare the new keypad:')],
+        wait: [t('Waiting for a keypad'), t('Tap Pair on the new keypad. Keep this window open.')],
+        compare: [t('Compare the codes'), t('Does this code match your keypad?')],
+        confirm: [t('Confirm on the keypad'), t('Confirmed here. Tap Confirm on the keypad to finish.')],
+        done: [t('Keypad enrolled'), t('Choose its name and partition next.')],
+        mismatch: [t('Pairing stopped'), t('Codes did not match. Nothing was saved.')],
+        expired: [t('Pairing timed out'), t('Nothing was saved. Start again when ready.')],
+        conflict: [t('Multiple keypads found'), t('Pair one keypad at a time. Nothing was saved.')],
+        lost: [t('Connection lost'), t('The keypad may have paired. Reconnect to check before trying again.')],
+        blocked: [t('Cannot add a keypad'), state?.locked ? t('Disarm every partition before enrolling a keypad.') : t('Device limit reached. Remove a device first.')],
       };
       if (stage === 'start' || stage === 'wait') enrollment = {browser: false, keypad: false};
       if (!enrollment) enrollment = {browser: false, keypad: false};
@@ -124,16 +137,18 @@ proposal({
       const active = ['wait', 'compare', 'confirm'].includes(stage);
       const simulations = stage === 'wait' ? [['compare', t('Keypad found')], ['expired', t('Timeout')], ['conflict', t('Two keypads found')]] :
         stage === 'compare' || stage === 'confirm' ? [['keypad-confirm', t('Confirm on physical keypad')], ['expired', t('Timeout')], ['lost', t('Lose browser connection')]] : [];
-      openDialog(`<div class="dialog-head"><h2 id="dialog-title">${esc(title)}</h2></div><div class="dialog-body"><p>${esc(words)}</p>
-        ${['compare', 'confirm'].includes(stage) ? `<div class="card"><p>${ht('New keypad · 192.0.2.42')}</p><p style="font-size:2rem;letter-spacing:.15em;text-align:center"><strong>482 619</strong></p><p>${enrollment.keypad ? ht('Keypad confirmed. Waiting for your confirmation here.') : ht('Confirm on both this page and the physical keypad.')}</p></div>` : ''}
+      openDialog(`<div class="dialog-head"><h2 id="dialog-title">${esc(title)}</h2></div><div class="dialog-body enroll-body"><p>${esc(words)}</p>
+        ${stage === 'start' ? `<ol class="enroll-steps"><li>${ht('Choose Keypad in its setup.')}</li><li>${ht('For Wi-Fi, join this system’s network.')}</li></ol>` : ''}
+        ${stage === 'wait' ? `<p class="muted">${ht('Pairing window: 2 minutes')}</p>` : ''}
+        ${['compare', 'confirm'].includes(stage) ? `<div class="card enroll-code"><p class="muted">${ht('New keypad · 192.0.2.42')}</p><strong>482 619</strong>${enrollment.keypad ? `<p>${ht('Confirmed on keypad')}</p>` : ''}</div>` : ''}
         ${stage === 'done' ? `<p>${ht('Default partition: {0}', partName(enrollment.device.home))}</p>` : ''}
-        ${simulations.length ? `<details class="advanced"><summary>${ht('Mockup controls — simulate keypad events')}</summary><p>${ht('For reviewing this mockup only. These controls are not part of enrollment on a real system.')}</p><div class="proposal-device-actions">${simulations.map(([id, label]) => `<button data-enroll-sim="${id}">${esc(label)}</button>`).join('')}</div></details>` : ''}</div>
-        <div class="dialog-foot"><button id="enroll-cancel">${stage === 'done' || stage === 'blocked' ? ht('Close') : ht('Cancel')}</button>
+        ${simulations.length ? `<details class="enroll-demo"><summary>${ht('Demo controls')}</summary><p>${ht('Simulated events for this preview only.')}</p><div class="proposal-device-actions">${simulations.map(([id, label]) => `<button data-enroll-sim="${id}">${esc(label)}</button>`).join('')}</div></details>` : ''}</div>
+        <div class="dialog-foot enroll-foot"><button id="enroll-cancel">${stage === 'done' || stage === 'blocked' ? ht('Close') : ht('Cancel')}</button>
         ${stage === 'start' ? `<button class="primary" id="enroll-next">${ht('Start pairing')}</button>` : ''}
-        ${stage === 'compare' ? `<button class="danger" id="enroll-mismatch">${ht('Codes do not match')}</button><button class="primary" id="enroll-next">${ht('Codes match')}</button>` : ''}
-        ${stage === 'done' ? `<button class="primary" id="enroll-next">${ht('Configure keypad')}</button>` : ''}
+        ${stage === 'compare' ? `<button class="danger" id="enroll-mismatch">${ht('No match')}</button><button class="primary" id="enroll-next">${ht('Matches')}</button>` : ''}
+        ${stage === 'done' ? `<button class="primary" id="enroll-next">${ht('Set up keypad')}</button>` : ''}
         ${['mismatch','expired','conflict'].includes(stage) ? `<button class="primary" id="enroll-next">${ht('Try again')}</button>` : ''}
-        ${stage === 'lost' ? `<button id="enroll-next">${ht('Reconnect and check Devices')}</button>` : ''}</div>`);
+        ${stage === 'lost' ? `<button id="enroll-next">${ht('Reconnect')}</button>` : ''}</div>`);
       $('#enroll-cancel').onclick = () => { if (active) enrollment = null; closeDialog(); backToList(); };
       // Escape cancels an unfinished mock attempt just like Cancel; real expiry is panel-owned.
       $('#dialog').oncancel = () => { if (active) enrollment = null; };

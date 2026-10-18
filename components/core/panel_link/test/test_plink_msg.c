@@ -30,6 +30,7 @@
 #include "ui_backend/ui_backend.h"
 #include "unity.h"
 #include "status_goto_fixture_v1.h"
+#include "status_policy_fixture_v1.h"
 
 /* Numbers plink_msg.h copies from the components that own them (docs/features/11 "Frozen
  * values"): a DEV_ACK result 0..5 is ui_dev_result_t's, a DEV_ACT mode device_source.h's bit. */
@@ -1408,6 +1409,15 @@ static void test_status_temporary_selection_fixture(void)
     TEST_ASSERT_EQUAL_UINT8_ARRAY(STATUS_GOTO_V1, OUT, n);
     TEST_ASSERT_TRUE(plink_dec_status(G_STATUS, sizeof G_STATUS, &st));
     TEST_ASSERT_EQUAL_UINT8(0, st.selected);
+    TEST_ASSERT_FALSE(st.switch_allowed);
+    TEST_ASSERT_TRUE(plink_dec_status(STATUS_POLICY_V1, sizeof STATUS_POLICY_V1, &st));
+    TEST_ASSERT_EQUAL_UINT8(3, st.selected);
+    TEST_ASSERT_TRUE(st.switch_allowed);
+    TEST_ASSERT_TRUE(st.return_never);
+    TEST_ASSERT_EQUAL_UINT16(30, st.return_s);
+    TEST_ASSERT_TRUE(plink_enc_status(&st, 0, OUT, sizeof OUT, &n, &written));
+    TEST_ASSERT_EQUAL_UINT(sizeof STATUS_POLICY_V1, n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(STATUS_POLICY_V1, OUT, n);
 }
 
 /* LINK-017, LINK-005: ZONES, ZONES_REQ, CFG_REQ, CFG_PAGE, EV_REQ and EVENTS as in

@@ -85,3 +85,7 @@ The optional parts that used to live here are their own components since docs/fe
 `alarm_service_device_reachable_at` carries a link keypad's home partition to the alarm task.
 The engine captures the trouble scope at loss and retains it for the restore; ordinary devices
 continue using `alarm_service_device_reachable` with their enabled device-table assignment.
+
+Local partition policy is stored beside UI preferences (`part_home`, `part_switch`, `part_never`,
+`part_idle`). Defaults are partition 1, locked, auto-return and 30 seconds. These keys are not
+exposed through the display/audio preferences protocol and never copy to another panel.

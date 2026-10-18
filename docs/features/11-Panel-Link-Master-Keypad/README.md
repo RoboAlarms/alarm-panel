@@ -19,7 +19,7 @@ are built and tried on the two panels: direct FETCH with an exact-version server
 restart together and following the master's rollback, with both speakers muted. Left:
 the bench cases below that need a person or a network change, Smart Home and settings on the
 panels with Home Assistant connected, ESP-NOW range/channel-change and firmware-relay acceptance,
-433 MHz, keypad inputs, GOTO,
+433 MHz, keypad inputs,
 and the keypad-update Panel Manager pages ·
 **Milestone:** M7 (keypad updates M8) · **Depends on:** 01, 04, 09, 12, 15
 
@@ -62,7 +62,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 - **The role is chosen once** (master or keypad), stored in NVS `link`; changing it is a factory
   reset (docs/features/00 "Devices and firmware images").
 - **In v1 a keypad works one partition**, its home partition (1..8, given by the master); "all
-  partitions" and GOTO wait for KPD-006.
+  partitions" remain separate from temporary view switching.
 - **A factory-C6 keypad needs the router and master powered**. Our C6 bridge adds direct radio
   fallback; the installer guide still recommends backup power for the router.
 - **Keypad updates** ("Updates through the link"): decided 2026-10-16 (the owner: "Start building
@@ -340,13 +340,13 @@ the master refuses to pair one that can't hold its zones.
 
 **Commands.** `CMD` op 1 is an `alarm_cmd_t` (op section: type, partition, level, arm_flags, zone
 u16, panic, walk_op, walk_flags); op 2 checks a code (Settings access, `authenticate`); op 3
-changes the code's own user's code (`change_code`). Op 4 authenticates a temporary partition
-selection (KPD-006): its code must control the enabled target partition. The selection is scoped
-to this keypad's session, expires after 120 s without a successful new command, and resets on
-reconnection or home reassignment. Heartbeats and replayed cached results do not renew it; a
-late authorization from another session or before reassignment cannot reinstate it. Returning
-home explicitly uses the same authenticated op. The stored home and audio preferences do not
-change. The master runs every op as
+changes the code's own user's code (`change_code`). Op 4 selects an enabled partition
+(KPD-006), without a code, when the installer allows switching; returning home is always
+allowed. Op 5 reports interaction on the selected view. Selection belongs to this keypad's
+session and returns home after its configured inactivity delay (default 30 s), unless Never is
+set. Actual touchscreen/remote input renews it across every page; successful new commands also
+renew it. Heartbeats and replayed results do not. Reconnect, reassignment and policy changes
+clear it. The saved home and audio preferences do not change. Alarm operations run as
 `{ALARM_SRC_KEYPAD, n}` with n from the session, never from the frame, so keypad semantics (quick
 arm, auto-stay) and the per-source lockout apply (USR-005), on a worker that never holds the link
 task (LINK-027). A command outside the keypad's current selection (home when no temporary selection is active) is answered
@@ -1623,28 +1623,30 @@ This follows [NN/g's concise, consistent command-label guidance](https://www.nng
 and [GOV.UK's advice to avoid help text explaining the interface](https://www.gov.uk/service-manual/design/designing-good-questions).
 These sources inform the wording; the exact phrase is this project's design choice.
 
-**Implementation gap:** the backend described below still requires a code and uses a fixed
-120-second command-activity timeout. It must be revised to the policy above, persisted per panel,
-and renewed by actual touchscreen interaction before touchscreen or hardware acceptance. The
-revised mockup shows the requested behavior; it is not a claim that the firmware implements it.
+The touchscreen implements the approved
+[partition-switch mockup](../07-UI-LVGL-Pro/mockup/screens/partition-switch.js).
+Installer > Keypads and devices > This panel (or a paired keypad) sets the default, switching
+permission, seconds and Never toggle. Locked is the migration default. The switcher appears
+below Home's left card only with switching allowed and multiple enabled partitions. Switching
+closes any old code prompt and refreshes the current view without writing local preferences.
 
-The wire/backend and service console support `plink cmd goto <partition> <code>`; subsequent
-console commands use the selected partition. STATUS appends an optional `selected` u8 after
-`mono_ms` in the system section (0/absent means home; values beyond local capacity mean home).
-The field is omitted while at home, so the original frozen v1 fixture is unchanged. The new
-`status_goto_fixture_v1.h` freezes the extension. Receivers that predate GOTO ignore the tail;
-masters that predate it refuse the unknown op. This does not change the pairing record.
+STATUS appends optional `selected` u8 after `mono_ms` (0/absent means home), then optional policy
+flags u8 (bit 0 allow switching, bit 1 Never) and idle seconds u16 (0 means 30). The peer store
+appends those same three policy bytes after the name in each length-delimited peer record.
+Absent policy means locked, auto-return, 30 seconds. Original fixtures remain unchanged;
+`status_policy_fixture_v1.h` and `plink_store_policy_fixture_v1.h` freeze the extensions.
+Older receivers ignore the tail; older masters refuse unknown operations.
 
-Touchscreen controls and interaction-based idle renewal are pending approval of the
-[partition-switch proposal](../07-UI-LVGL-Pro/mockup/proposals/BL-048-partition-switch.js).
-Until integrated, this is a console/backend facility, not touchscreen feature acceptance.
-Announcements and Smart Home actions still use the saved home partition. Live two-partition
-acceptance remains pending installer access; host tests cover authorization, expiry, command
-isolation, retransmissions and pending authorization revoked by reassignment (BL-048).
+The bench console supports `plink policy <device> allow|lock <seconds|never>` on the master and
+`plink cmd goto <partition>` on a keypad. Alarm commands remain authorized for the selected
+partition; announcements, supervision and Smart Home retain their saved-home scope.
+Host tests cover no-code selection, lock enforcement, command isolation, interaction renewal,
+expiry, Never, replay and policy revocation. The focused `ALARM_PREVIEW_PARTITION` walk covers
+Home/chooser/Activity and installer policy. Live acceptance must use matching firmware on both
+panels; a successful host preview is not hardware acceptance.
 
 ## Open questions
-- Keypad-attached inputs (LINK-011), cross-partition GOTO (KPD-006) and partitions beyond home:
-  after the Wi-Fi keypad works.
+- Keypad-attached inputs (LINK-011): after the Wi-Fi keypad works.
 - A link keypad's supervision trouble uses its assigned home partition, supplied explicitly to
   the engine (LINK-007). Trouble, restore and remembered trouble retain the scope captured at
   loss, even if the assignment changes before recovery. A later loss uses the new home.

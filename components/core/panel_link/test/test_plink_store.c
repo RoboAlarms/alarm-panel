@@ -15,6 +15,7 @@
 #include "unity.h"
 
 #include "plink_store_fixture_v1.h"
+#include "plink_store_policy_fixture_v1.h"
 
 #define HDR 11u
 
@@ -634,9 +635,27 @@ static void test_fuzz_decoders(void)
     TEST_ASSERT_TRUE(took_k > 1000u);
 }
 
+/* KPD-006: old records stay locked; policy survives storage byte for byte. */
+static void test_policy_fixture(void)
+{
+    plink_master_rec_t m;
+    TEST_ASSERT_TRUE(plink_store_master_decode(PLINK_STORE_MASTER_V1, sizeof PLINK_STORE_MASTER_V1, &m));
+    TEST_ASSERT_FALSE(m.peer[0].switch_allowed);
+    TEST_ASSERT_TRUE(plink_store_master_decode(PLINK_STORE_POLICY_V1, sizeof PLINK_STORE_POLICY_V1, &m));
+    TEST_ASSERT_TRUE(m.peer[0].switch_allowed);
+    TEST_ASSERT_TRUE(m.peer[0].return_never);
+    TEST_ASSERT_EQUAL_UINT16(30u, m.peer[0].return_s);
+    TEST_ASSERT_FALSE(m.peer[1].switch_allowed);
+    size_t len;
+    TEST_ASSERT_TRUE(plink_store_master_encode(&m, B, sizeof B, &len));
+    TEST_ASSERT_EQUAL_size_t(sizeof PLINK_STORE_POLICY_V1, len);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(PLINK_STORE_POLICY_V1, B, len);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_policy_fixture);
     RUN_TEST(test_round_trips);
     RUN_TEST(test_damage_refused);
     RUN_TEST(test_damaged_entry_dropped);

@@ -48,6 +48,10 @@ typedef struct {
     bool voice_enabled;       /* default true; an install never changes it */
     bool voice_status;        /* arming, armed, disarmed, entry, not ready (default true) */
     bool voice_chime;         /* the zone's spoken name after the chime (default true) */
+    uint8_t partition_home; /* saved default, distinct from the current view */
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s; /* default 30, 1..3600 */
 } panel_prefs_t;
 
 void panel_prefs_defaults(panel_prefs_t *out);

@@ -2339,6 +2339,10 @@ static void system_now(const plink_keypad_t *k, uint64_t now, plink_status_t *st
     st->partitions = s->partitions;
     st->home = v->home;
     st->selected = v->selected;
+    st->switch_allowed = v->switch_allowed;
+    st->return_never = v->return_never;
+    st->return_s = v->return_s;
+
     st->sys_troubles = s->sys_troubles;
     st->sys_restored = s->sys_troubles_restored;
     st->dev_troubles = s->dev_troubles;
@@ -3155,6 +3159,9 @@ void plink_keypad_info(const plink_keypad_t *k, uint64_t now_ms, plink_keypad_in
     if (k->paired) {
         out->device = k->rec.device;
         out->home = k->rec.home;
+        out->switch_allowed = k->view.switch_allowed;
+        out->return_never = k->view.return_never;
+        out->return_s = k->view.return_s;
         out->selected = out->state == PLINK_LINK_ONLINE && k->view.selected != 0u
                             ? k->view.selected : k->rec.home;
         memcpy(out->master_name, k->rec.master_name, sizeof out->master_name);

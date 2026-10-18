@@ -56,6 +56,7 @@ static struct {
     bool dev_stopped;    /* the device data stopped, the alarm panel still answering */
     bool dev_unanswered; /* the alarm panel's answers to device actions are lost */
     int64_t dev_heard;   /* the last device data (0 none) */
+    int64_t selection_until;
     dev_ovl_t ovl[DEV_ACTS];
 } D;
 
@@ -212,6 +213,8 @@ static void setup_paired(void)
 
 void host_link_demo_advance(uint32_t ms)
 {
+    if (D.info.selected != 0u && !D.info.return_never && now_ms() >= D.selection_until)
+        D.info.selected = 0u;
     if (!D.on) {
         D.ms = 0;
         return;
@@ -353,6 +356,15 @@ static uint8_t master_request(const ui_link_req_t *req)
         snprintf(k->name, sizeof(k->name), "%s", req->name);
         k->home = req->home;
         k->supervision_s = req->supervision_s;
+        return UI_LINK_REQ_OK;
+    }
+    case UI_LINK_REQ_PARTITION_POLICY: {
+        ui_link_keypad_t *k = find(req->device);
+        if (!allowed) return UI_LINK_REQ_NOT_ALLOWED;
+        if (k == NULL) return UI_LINK_REQ_REFUSED;
+        k->switch_allowed = req->switch_allowed;
+        k->return_never = req->return_never;
+        k->return_s = req->return_s;
         return UI_LINK_REQ_OK;
     }
     case UI_LINK_REQ_KEYPAD_REMOVE: {
@@ -571,12 +583,35 @@ void host_link_demo_devices_unanswered(bool on)
     D.dev_unanswered = on;
 }
 
+static alarm_result_t partition_select(void *ctx, uint8_t partition, bool activity)
+{
+    (void)ctx;
+    if (D.info.state != UI_LINK_ONLINE || partition < 1u || partition > ALARM_MAX_PARTITIONS)
+        return ALARM_ERR_UNAVAILABLE;
+    const uint8_t selected = D.info.selected != 0u ? D.info.selected : D.info.home;
+    if ((activity && partition != selected) ||
+        (!activity && partition != D.info.home && !D.info.switch_allowed))
+        return ALARM_ERR_NOT_AUTHORIZED;
+    D.info.selected = partition == D.info.home ? 0u : partition;
+    D.selection_until = now_ms() + (D.info.return_s != 0u ? D.info.return_s : 30u) * 1000;
+    return ALARM_OK;
+}
+
+void host_link_demo_partition_policy(bool allowed, bool never, uint16_t seconds)
+{
+    D.info.switch_allowed = allowed;
+    D.info.return_never = never;
+    D.info.return_s = seconds;
+    D.info.selected = 0u;
+}
+
 void host_link_demo_backend(ui_backend_t *out)
 {
     out->link_info = be_info;
     out->link_pair_status = be_pair_status;
     out->link_keypads = be_keypads;
     out->link_request = be_request;
+    out->partition_select = partition_select;
     /* Smart Home: the alarm panel's own, through the link on a keypad (BL-216) */
     if (out->dev_list != NULL && out->dev_act != NULL && out->dev_list != kp_dev_list) {
         P.list = out->dev_list;

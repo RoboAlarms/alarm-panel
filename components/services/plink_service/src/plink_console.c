@@ -173,7 +173,7 @@ static void print_keypad_view(void)
 static int keypad_cmd(int argc, char **argv)
 {
     if (argc < 3) {
-        printf("plink cmd away|stay|night|off|chime|panic [<code>]; goto <partition> <code>\n");
+        printf("plink cmd away|stay|night|off|chime|panic [<code>]; goto <partition>\n");
         return 1;
     }
     plink_cmd_t c;
@@ -185,8 +185,8 @@ static int keypad_cmd(int argc, char **argv)
     const char *what = argv[2];
     if (strcmp(what, "goto") == 0) {
         unsigned long partition;
-        if (argc != 5 || !parse_num(argv[3], 1u, ALARM_MAX_PARTITIONS, &partition)) {
-            printf("plink cmd goto <partition> <code>\n");
+        if (argc != 4 || !parse_num(argv[3], 1u, ALARM_MAX_PARTITIONS, &partition)) {
+            printf("plink cmd goto <partition>\n");
             return 1;
         }
         c.op = PLINK_OP_GOTO;
@@ -203,11 +203,11 @@ static int keypad_cmd(int argc, char **argv)
         c.cmd.type = ALARM_CMD_PANIC;
         c.cmd.panic = ALARM_PANIC_POLICE;
     } else {
-        printf("plink cmd away|stay|night|off|chime|panic [<code>]; goto <partition> <code>\n");
+        printf("plink cmd away|stay|night|off|chime|panic [<code>]; goto <partition>\n");
         return 1;
     }
-    if (argc >= 4) {
-        snprintf(c.cmd.code, sizeof c.cmd.code, "%s", argv[c.op == PLINK_OP_GOTO ? 4 : 3]);
+    if (argc >= 4 && c.op != PLINK_OP_GOTO) {
+        snprintf(c.cmd.code, sizeof c.cmd.code, "%s", argv[3]);
     }
     plink_result_t res;
     memset(&res, 0, sizeof res);
@@ -249,7 +249,7 @@ static void print_status(void)
             plink_addr_text(&i->master, addr);
             printf("  master \"%s\" at %s: keypad %u, home partition %u\n", i->master_name, addr,
                    (unsigned)i->device, (unsigned)i->home);
-            printf("  selected partition %u (temporary selection returns home after 2 min idle)\n", (unsigned)i->selected);
+            printf("  selected partition %u (temporary selection follows installer policy)\n", (unsigned)i->selected);
         } else if (i->unpaired_why == PLINK_UNPAIRED_REMOVED) {
             printf("  removed at the alarm panel: pair again\n");
         }
@@ -802,6 +802,17 @@ static int cmd_plink(int argc, char **argv)
         }
         if (strcmp(what, "prefs") == 0 && argc >= 3 && parse_num(argv[2], 1, 8, &n)) {
             return prefs_cmd((uint8_t)n, argc, argv);
+        }
+        if (strcmp(what, "policy") == 0 && argc == 5 && parse_num(argv[2], 1, 8, &n)) {
+            if (strcmp(argv[3], "allow") != 0 && strcmp(argv[3], "lock") != 0) return 1;
+            const bool never = strcmp(argv[4], "never") == 0;
+            if (!never && !parse_num(argv[4], 1, 3600, &v)) return 1;
+            req.kind = UI_LINK_REQ_PARTITION_POLICY;
+            req.device = (uint8_t)n;
+            req.switch_allowed = strcmp(argv[3], "allow") == 0;
+            req.return_never = never;
+            req.return_s = never ? 30u : (uint16_t)v;
+            return ask(&req);
         }
         if (strcmp(what, "remove") == 0 && argc == 3 && parse_num(argv[2], 1, 8, &n)) {
             req.kind = UI_LINK_REQ_KEYPAD_REMOVE;

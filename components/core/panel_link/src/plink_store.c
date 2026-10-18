@@ -150,6 +150,10 @@ bool plink_store_master_encode(const plink_master_rec_t *rec, uint8_t *out, size
         put(&w, p->k_pair, sizeof(p->k_pair));
         put_le(&w, (uint64_t)p->paired_epoch_ms, 8u);
         put_str(&w, p->name, PLINK_NAME_MAX);
+        if (p->switch_allowed || p->return_never || p->return_s != 0u) {
+            put_u8(&w, (uint8_t)((p->switch_allowed ? 1u : 0u) | (p->return_never ? 2u : 0u)));
+            put_le(&w, p->return_s, 2u);
+        }
         if (!w.overflow) {
             out[at] = (uint8_t)(w.len - at - 1u);
         }
@@ -266,6 +270,13 @@ static bool peer_decode(const uint8_t *p, size_t len, plink_peer_rec_t *peer)
     take(&r, peer->k_pair, sizeof(peer->k_pair));
     peer->paired_epoch_ms = (int64_t)get_le(&r, 8u);
     get_str(&r, peer->name, sizeof(peer->name));
+    if (r.ok && r.len - r.pos >= 3u) {
+        const uint8_t policy = get_u8(&r);
+        peer->switch_allowed = (policy & 1u) != 0u;
+        peer->return_never = (policy & 2u) != 0u;
+        peer->return_s = (uint16_t)get_le(&r, 2u);
+        if (peer->return_s > 3600u) peer->return_s = 30u;
+    }
     return r.ok && peer->device >= PLINK_DEVICE_FIRST && peer->device <= PLINK_DEVICE_LAST;
 }
 

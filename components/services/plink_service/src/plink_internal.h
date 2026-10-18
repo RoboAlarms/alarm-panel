@@ -169,6 +169,9 @@ typedef struct {
     char name[48];
     uint32_t ip; /* network order; 0 none */
     bool bench;  /* from the service console of a development build: no installer mode needed */
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s;
 } link_req_t;
 /* Hands req to the link task and waits for its answer (a ui_link_result_t), LINK_REQ_WAIT_MS at
  * most. UI_LINK_REQ_BUSY then: withdrawn, so it never runs, unless the link task had already taken

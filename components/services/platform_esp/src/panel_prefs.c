@@ -31,6 +31,10 @@ static struct {
 
 void panel_prefs_defaults(panel_prefs_t *out)
 {
+    out->partition_home = 1;
+    out->switch_allowed = false;
+    out->return_never = false;
+    out->return_s = 30;
     out->brightness = 80;
     out->saver_brightness = 25; /* the screen saver shows a picture */
     out->saver_after_ms = 60000u;
@@ -111,6 +115,12 @@ static void load_stored(panel_prefs_t *out)
         (out->region[0] != '\0' && i18n_region(out->region) == NULL)) {
         out->region[0] = '\0';
     }
+    out->partition_home = get_u8(h, "part_home", 1, 1, ALARM_MAX_PARTITIONS);
+    out->switch_allowed = get_u8(h, "part_switch", 0, 0, 1) != 0u;
+    out->return_never = get_u8(h, "part_never", 0, 0, 1) != 0u;
+    uint16_t delay = 30u;
+    if (nvs_get_u16(h, "part_idle", &delay) == ESP_OK && delay >= 1u && delay <= 3600u)
+        out->return_s = delay;
     out->volume = get_u8(h, "volume", out->volume, 0, 100);
     /* AUD-032: a panel updated from a firmware with one volume has neither key, and keeps
      * sounding as it did - the chime and the voice start at that volume. */
@@ -237,6 +247,12 @@ static esp_err_t save_stored(const panel_prefs_t *p)
         err = nvs_set_u8(h, "voice_ch", p->voice_chime ? 1u : 0u);
     }
     if (err == ESP_OK) {
+        err = nvs_set_u8(h, "part_home", p->partition_home);
+    }
+    if (err == ESP_OK) err = nvs_set_u8(h, "part_switch", p->switch_allowed ? 1u : 0u);
+    if (err == ESP_OK) err = nvs_set_u8(h, "part_never", p->return_never ? 1u : 0u);
+    if (err == ESP_OK) err = nvs_set_u16(h, "part_idle", p->return_s);
+    if (err == ESP_OK) {
         err = nvs_commit(h);
     }
     nvs_close(h);
@@ -302,6 +318,7 @@ void panel_prefs_to_values(const panel_prefs_t *p, proto_prefs_values_t *out)
     out->voice_enabled = p->voice_enabled;
     out->voice_status = p->voice_status;
     out->voice_chime = p->voice_chime;
+
 }
 
 /* ---- a change from elsewhere (UI-046) ---------------------------------------------------------- */

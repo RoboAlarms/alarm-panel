@@ -265,9 +265,14 @@ credentials, for development-only radio fallback checks.
 receive for that transport, to test automatic recovery without changing credentials.
 These operations do not enable either panel's speaker.
 
-Development/bench partition switching: `plink cmd goto <partition> <code>` on a keypad asks
-its master to authenticate a temporary selection. Later console commands use that selection;
-`plink` shows both saved home and selected partition. After two minutes without a successful
-new command the master returns it home. Reconnect and home reassignment clear it. This is
-currently a console/backend facility; touchscreen integration awaits its UI-044 proposal.
-It does not copy audio preferences or change the saved home partition.
+Partition policy (KPD-006): Installer > Keypads and devices sets each panel's default,
+allow switching/locked, idle seconds (30 by default), and Never below the seconds selector.
+A locked panel has no Home switcher; otherwise it appears below the left card when multiple
+partitions are enabled. Choosing needs no code; alarm actions still do. Input anywhere, including
+Activity and remote typing, renews the inactivity timer. Temporary views never save preferences.
+The master enforces remote policy and persists it in each peer record; its own policy is local
+NVS. Audio preferences remain separate.
+
+Bench commands: `plink policy <device> allow|lock <seconds|never>` on the master;
+`plink cmd goto <partition>` on a keypad. `plink` shows saved home and current selection.
+Reconnection, reassignment and policy changes clear temporary selection, including with Never.

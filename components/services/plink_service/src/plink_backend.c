@@ -133,7 +133,7 @@ static size_t link_keypads(void *ctx, ui_link_keypad_t *out, size_t max)
 static uint8_t link_req(void *ctx, const ui_link_req_t *req)
 {
     (void)ctx;
-    if (req == NULL || req->kind < UI_LINK_REQ_PAIR_OPEN || req->kind > UI_LINK_REQ_KP_DONE) {
+    if (req == NULL || req->kind < UI_LINK_REQ_PAIR_OPEN || req->kind > UI_LINK_REQ_PARTITION_POLICY) {
         return UI_LINK_REQ_REFUSED;
     }
     link_req_t r;
@@ -142,6 +142,10 @@ static uint8_t link_req(void *ctx, const ui_link_req_t *req)
     r.allow = req->allow;
     r.device = req->device;
     r.home = req->home;
+    r.switch_allowed = req->switch_allowed;
+    r.return_never = req->return_never;
+    r.return_s = req->return_s;
+
     r.supervision_s = req->supervision_s;
     memcpy(r.name, req->name, sizeof r.name);
     r.name[sizeof r.name - 1u] = '\0';
@@ -179,7 +183,7 @@ static size_t kp_recent_events(void *ctx, alarm_event_t *out, size_t max)
 static uint8_t kp_home(void)
 {
     link_pub_lock();
-    const uint8_t home = g_pub.kinfo.home;
+    const uint8_t home = g_pub.kinfo.selected != 0u ? g_pub.kinfo.selected : g_pub.kinfo.home;
     link_pub_unlock();
     return home >= 1u && home <= ALARM_MAX_PARTITIONS ? home : 1u;
 }
@@ -209,6 +213,16 @@ static alarm_result_t kp_command(void *ctx, const alarm_cmd_t *cmd, alarm_cmd_re
         res->may_disarm = out.may_disarm != 0u;
     }
     return r;
+}
+
+static alarm_result_t kp_partition_select(void *ctx, uint8_t partition, bool activity)
+{
+    (void)ctx;
+    plink_cmd_t c = {0};
+    c.op = activity ? PLINK_OP_ACTIVITY : PLINK_OP_GOTO;
+    c.cmd.partition = partition;
+    plink_result_t out;
+    return ksvc_command(&c, &out);
 }
 
 static alarm_result_t kp_authenticate(void *ctx, const char *code, uint8_t *user_out)
@@ -350,6 +364,7 @@ static void keypad_backend(ui_backend_t *be)
     be->recent_events = kp_recent_events;
     be->command = kp_command;
     be->authenticate = kp_authenticate;
+    be->partition_select = kp_partition_select;
     be->change_code = kp_change_code;
     be->program_enter = kp_program_enter;
     be->program_exit = kp_program_nothing;

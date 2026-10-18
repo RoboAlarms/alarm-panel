@@ -34,6 +34,9 @@ typedef struct {
     bool updating;            /* its own update runs, or it is on its self-test: UPDATING */
     bool hold;                /* proto_fw_install_allowed() says no on its snapshot: HOLD */
     uint8_t selected; /* temporary selection, 0 means home */
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s; /* 0 = default 30 seconds */
 } plink_status_extra_t;
 
 /* A keypad's STATUS from the master's snapshot at engine time now (the clock of
@@ -68,6 +71,9 @@ typedef struct {
     alarm_ms_t walk_local[ALARM_MAX_PARTITIONS]; /* ... to this local start (0 none) */
     uint8_t flags;        /* the last status's flags as sent (PLINK_SF_*): FIRE, CO, UPDATING and
                            * HOLD are read from here (plink_view_continuous, the keypad's gate) */
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s; /* 0 = default 30 seconds */
 } plink_view_t;
 
 void plink_view_init(plink_view_t *v);

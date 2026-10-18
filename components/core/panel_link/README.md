@@ -142,3 +142,9 @@ network (arming, armed, entry, disarmed, not ready, a chime's words, a walk test
 after a keypad restart, a master restart, a cut over 30 s or one under it; a moved home; under
 loss never a kind the master didn't decide then, nor one twice. `PLINK_VOICE_SHOW=1` prints the
 loss test's utterances.
+
+KPD-006 partition views: GOTO (op 4) selects without a code when the persisted peer policy
+allows it; ACTIVITY (op 5) renews the current selection. Alarm operations still run through the
+authorization worker and must name the selected partition. Default idle return is 30 seconds;
+Never disables expiry. Policy changes, reconnects and reassignment clear selection. Missing
+stored/wire policy means locked. Frozen policy fixtures extend, rather than alter, v1 fixtures.

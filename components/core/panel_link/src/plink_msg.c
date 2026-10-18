@@ -422,8 +422,12 @@ static void w_status_system(plink_w_t *w, const plink_status_t *m)
     plink_w_u32(w, m->cfg_len);
     plink_w_u32(w, m->zones_crc);
     plink_w_u64(w, m->mono_ms);
-    if (m->selected != 0u) {
+    if (m->selected != 0u || m->switch_allowed || m->return_never || m->return_s != 0u) {
         plink_w_u8(w, m->selected);
+        if (m->switch_allowed || m->return_never || m->return_s != 0u) {
+            plink_w_u8(w, (uint8_t)((m->switch_allowed ? 1u : 0u) | (m->return_never ? 2u : 0u)));
+            plink_w_u16(w, m->return_s);
+        }
     }
     plink_w_section_end(w, at);
 }
@@ -449,6 +453,15 @@ static void r_status_system(plink_r_t *r, plink_status_t *m)
     m->zones_crc = plink_r_u32(&s);
     m->mono_ms = plink_r_u64(&s);
     m->selected = plink_r_u8(&s);
+    const uint8_t policy = plink_r_u8(&s);
+    m->switch_allowed = (policy & 1u) != 0u;
+    m->return_never = (policy & 2u) != 0u;
+    m->return_s = plink_r_u16(&s);
+    if (policy > 3u || m->return_s > 3600u) {
+        m->switch_allowed = false;
+        m->return_never = false;
+        m->return_s = 0u;
+    }
     if (m->selected > PLINK_PARTS_MAX) {
         m->selected = 0u;
     }

@@ -319,7 +319,6 @@ static void run_job(job_t *job)
         res.may_disarm = d.may_disarm ? 1u : 0u;
         break;
     }
-    case PLINK_OP_GOTO:
     case PLINK_OP_AUTH: {
         uint8_t user = 0;
         r = alarm_service_authenticate(&src, c->cmd.code, c->cmd.partition, &user);
@@ -857,6 +856,10 @@ static void publish(uint64_t now)
         k->device = p->device;
         snprintf(k->name, sizeof k->name, "%s", p->name);
         k->home = p->home;
+        k->switch_allowed = p->switch_allowed;
+        k->return_never = p->return_never;
+        k->return_s = p->return_s;
+
         k->supervision_s = p->supervision_s;
         k->connected = p->online;
         k->down = p->down;
@@ -1027,6 +1030,11 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         r = ok ? UI_LINK_REQ_OK : UI_LINK_REQ_FAILED;
         break;
     }
+    case UI_LINK_REQ_PARTITION_POLICY:
+        if (!req->bench && !installer_ok()) return UI_LINK_REQ_NOT_ALLOWED;
+        return plink_master_set_partition_policy(s_m, now, req->device, req->switch_allowed,
+                                                req->return_never, req->return_s)
+                   ? UI_LINK_REQ_OK : UI_LINK_REQ_FAILED;
     case UI_LINK_REQ_KEYPAD_REMOVE:
         if (!req->bench && !installer_ok()) {
             return UI_LINK_REQ_NOT_ALLOWED;

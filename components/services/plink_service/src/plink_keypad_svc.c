@@ -1689,6 +1689,11 @@ static void publish(uint64_t now, const plink_keypad_info_t *info)
     }
     li.device = info->device;
     li.home = info->home;
+    li.selected = info->selected;
+    li.switch_allowed = info->switch_allowed;
+    li.return_never = info->return_never;
+    li.return_s = info->return_s;
+
     li.home_gen = K.home_gen;
     li.since_epoch_ms = (info->status_age_s != UINT32_MAX && epoch != 0)
                             ? epoch - (int64_t)info->status_age_s * 1000

@@ -2034,7 +2034,7 @@ static void test_reassigned_keypad_command_scope(void)
     TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_NOT_AUTHORIZED, k_result(k, 2012u)->result);
 }
 
-/* KPD-006: GOTO authenticates the target partition, never changes the stored home,
+/* KPD-006: switching follows installer policy, never changes the stored home,
  * and expires despite heartbeats. Replayed GOTO results do not renew the lease. */
 static void test_temporary_partition_selection(void)
 {
@@ -2048,7 +2048,8 @@ static void test_temporary_partition_selection(void)
     run(100);
     TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_NOT_AUTHORIZED, k_result(k, 2200u)->result);
     TEST_ASSERT_EQUAL_UINT8(0u, k->status.selected);
-    k_cmd(k, 2201u, PLINK_OP_GOTO, ALARM_CMD_CODE_CHECK, 2u, CODE_MASTER);
+    TEST_ASSERT_TRUE(plink_master_set_partition_policy(&R.m, NOW, k->rec.device, true, false, 30u));
+    k_cmd(k, 2201u, PLINK_OP_GOTO, ALARM_CMD_CODE_CHECK, 2u, "");
     run(600);
     TEST_ASSERT_EQUAL_UINT8(ALARM_OK, k_result(k, 2201u)->result);
     TEST_ASSERT_EQUAL_UINT8(2u, k->status.selected);
@@ -2060,9 +2061,13 @@ static void test_temporary_partition_selection(void)
     k_cmd(k, 2203u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 2u, CODE_MASTER);
     run(600);
     TEST_ASSERT_EQUAL_UINT8(ALARM_OK, k_result(k, 2203u)->result);
-    run(60000);
-    k_cmd(k, 2201u, PLINK_OP_GOTO, ALARM_CMD_CODE_CHECK, 2u, CODE_MASTER);
-    run(61000);
+    run(20000);
+    k_cmd(k, 2206u, PLINK_OP_ACTIVITY, ALARM_CMD_CODE_CHECK, 2u, "");
+    run(20000);
+    TEST_ASSERT_EQUAL_UINT8(2u, k->status.selected);
+    /* Replaying activity does not keep a deserted panel on the temporary partition. */
+    k_cmd(k, 2206u, PLINK_OP_ACTIVITY, ALARM_CMD_CODE_CHECK, 2u, "");
+    run(11000);
     TEST_ASSERT_EQUAL_UINT8(0u, k->status.selected);
     k_cmd(k, 2204u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 2u, CODE_MASTER);
     run(100);
@@ -2072,26 +2077,24 @@ static void test_temporary_partition_selection(void)
     TEST_ASSERT_EQUAL_UINT8(ALARM_OK, k_result(k, 2205u)->result);
 }
 
-/* KPD-006: assignment revokes an in-flight switch; a late authorization result
- * cannot switch the reassigned keypad back to the previously requested partition. */
-static void test_goto_reassignment_revokes_pending(void)
+/* KPD-006: Never survives inactivity; a policy lock revokes it immediately. */
+static void test_goto_never_and_policy_revocation(void)
 {
     alarm_config_t cfg = R.sim.eng.cfg;
     cfg.partitions[1].enabled = true;
     TEST_ASSERT_EQUAL(ALARM_OK, alarm_engine_set_config(&R.sim.eng, &cfg, R.sim.now));
-    fk_t *k = kp_add();
-    pair(k);
-    run(200);
-    R.run_mode = RUN_LATER;
-    k_cmd(k, 2300u, PLINK_OP_GOTO, ALARM_CMD_CODE_CHECK, 1u, CODE_MASTER);
-    run(50);
-    TEST_ASSERT_EQUAL_UINT(1u, R.n_runs);
-    TEST_ASSERT_TRUE(plink_master_set_home(&R.m, NOW, k->rec.device, 2u));
-    answer(0);
-    run(300);
-    TEST_ASSERT_EQUAL_UINT8(2u, k->status.home);
+    fk_t *k = kp_add(); pair(k); run(200);
+    TEST_ASSERT_TRUE(plink_master_set_partition_policy(&R.m, NOW, k->rec.device, true, true, 30u));
+    k_cmd(k, 2300u, PLINK_OP_GOTO, ALARM_CMD_CODE_CHECK, 2u, ""); run(600);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_OK, k_result(k, 2300u)->result);
+    TEST_ASSERT_EQUAL_UINT(0u, R.n_runs); /* selecting a view never authenticates/executes an alarm action */
+    run(180000);
+    TEST_ASSERT_EQUAL_UINT8(2u, k->status.selected);
+    TEST_ASSERT_TRUE(plink_master_set_partition_policy(&R.m, NOW, k->rec.device, false, true, 30u));
+    run(600);
     TEST_ASSERT_EQUAL_UINT8(0u, k->status.selected);
-    TEST_ASSERT_EQUAL_UINT(0u, k_results(k, 2300u));
+    k_cmd(k, 2301u, PLINK_OP_GOTO, ALARM_CMD_CODE_CHECK, 2u, ""); run(600);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_NOT_AUTHORIZED, k_result(k, 2301u)->result);
 }
 
 /* LINK-018: a copy while the command runs waits for its answer; a copy after is answered from
@@ -4810,7 +4813,7 @@ int main(void)
     RUN_TEST(test_command_checks);
     RUN_TEST(test_reassigned_keypad_command_scope);
     RUN_TEST(test_temporary_partition_selection);
-    RUN_TEST(test_goto_reassignment_revokes_pending);
+    RUN_TEST(test_goto_never_and_policy_revocation);
     RUN_TEST(test_command_result_cache);
     RUN_TEST(test_one_command_at_a_time_and_the_panic_slot);
     RUN_TEST(test_command_rate_limit);

@@ -2856,6 +2856,17 @@ static void lock_down(void)
 
 /* ---- snapshot ------------------------------------------------------------------------- */
 
+void ui_partition_view(uint8_t partition)
+{
+    if (partition < 1u || partition > ALARM_MAX_PARTITIONS || partition == S.opt.partition) return;
+    ui_pad_cancel();
+    ui_sheet_close();
+    activity_forget();
+    S.opt.partition = partition; /* transient: never save it as the default */
+    ui_refresh(true);
+    if (lv_subject_get_int(&subject_view) == VIEW_ACTIVITY) activity_build(false);
+}
+
 void ui_refresh(bool force)
 {
     const uint32_t seq = S.be.snapshot_seq(S.be.ctx);
@@ -3139,6 +3150,7 @@ bool ui_app_remote_text(const char *utf8)
         return false;
     }
     lv_display_trigger_activity(S.disp);
+    ui_partition_input(NULL);
     if (ui_forms_remote_text(utf8)) {
         return true;
     }
@@ -3159,6 +3171,7 @@ bool ui_app_remote_key(ui_remote_key_t key)
         return false;
     }
     lv_display_trigger_activity(S.disp);
+    ui_partition_input(NULL);
     if (ui_forms_remote_key(key)) {
         return true;
     }
@@ -4064,6 +4077,9 @@ void ui_app_start(const ui_backend_t *backend, const ui_options_t *opt)
     lv_subject_add_observer(&subject_pad_error, dots_changed, NULL);
     for (lv_indev_t *i = lv_indev_get_next(NULL); i != NULL; i = lv_indev_get_next(i)) {
         lv_indev_add_event_cb(i, indev_pressed, LV_EVENT_PRESSED, NULL);
+        lv_indev_add_event_cb(i, ui_partition_input, LV_EVENT_PRESSED, NULL);
+        lv_indev_add_event_cb(i, ui_partition_input, LV_EVENT_PRESSING, NULL);
+        lv_indev_add_event_cb(i, ui_partition_input, LV_EVENT_RELEASED, NULL);
     }
     ui_forms_init();
     ui_settings_init();

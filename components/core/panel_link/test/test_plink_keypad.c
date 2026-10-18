@@ -424,7 +424,7 @@ static size_t fm_status_payload(uint8_t *p, size_t cap)
     alarm_engine_snapshot(&S.eng, &SNAP);
     const plink_status_extra_t x = {M.epoch_ms,          HOME,       0u,
                                     PLINK_REPORT_ONLINE, M.blob_crc, (uint32_t)M.blob_len,
-                                    CAP.zones,           M.updating, M.hold, 0u};
+                                    CAP.zones,           M.updating, M.hold, 0u, false, false, 0u};
     plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
     if (M.edit != NULL) {
         M.edit(&ST);
@@ -1653,7 +1653,7 @@ static size_t status_frame(uint32_t troubles, const plink_part_t *recs, uint8_t 
     alarm_engine_snapshot(&S.eng, &SNAP);
     const plink_status_extra_t x = {M.epoch_ms,          HOME,       0u,
                                     PLINK_REPORT_ONLINE, M.blob_crc, (uint32_t)M.blob_len,
-                                    CAP.zones,           M.updating, M.hold, 0u};
+                                    CAP.zones,           M.updating, M.hold, 0u, false, false, 0u};
     plink_status_build(&SNAP, SNAP.taken_ms, &x, &ST);
     ST.sys_troubles = troubles;
     if (FRAME_MONO != 0u) {

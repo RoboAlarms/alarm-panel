@@ -8233,7 +8233,6 @@ msgstr ""
 #. A list row's title (one line; a long one ends in ...).
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_link.c
 msgid "Home partition"
 msgstr ""
 
@@ -17596,8 +17595,11 @@ msgid "Entry and exit times, sirens, panic keys, codes"
 msgstr ""
 
 #. A section heading above a group of rows (one line).
+#. A list row's title (one line; a long one ends in ...).
+#. A Settings page's title. At most 47 bytes.
 #. About, a heading: when this panel was built and how long it has run. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
+#: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_settings.c
 msgid "This panel"
 msgstr ""
@@ -18068,9 +18070,7 @@ msgid "Hall keypad, Garage expander..."
 msgstr ""
 
 #. The sheet's note. At most 127 bytes.
-#. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_link.c
 msgid "The partition a keypad shows and arms"
 msgstr ""
 
@@ -18971,6 +18971,16 @@ msgstr ""
 msgid "Hold a button for 2 seconds to set off the alarm on {0}"
 msgstr ""
 
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Partition switching unavailable"
+msgstr ""
+
+#. The sheet's title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Choose a partition"
+msgstr ""
+
 #. a keypad on Wi-Fi that stopped answering: when it was last heard ("10:12 PM" or "Sep 19"). At most 40 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Not heard since {0}"
@@ -19006,6 +19016,11 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_wizard.c
 msgid "Add a keypad"
+msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Partition settings"
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
@@ -19197,9 +19212,45 @@ msgstr ""
 msgid "Hall keypad, Bedroom keypad..."
 msgstr ""
 
+#. The sheet's title. At most 127 bytes.
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Default partition"
+msgstr ""
+
 #. a toast once a keypad on Wi-Fi was removed; {0} is its name. At most 80 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "{0} removed"
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Allow partition switching"
+msgstr ""
+
+#. A switch row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Off locks this panel to its default partition"
+msgstr ""
+
+#. A number row's title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Return after inactivity"
+msgstr ""
+
+#. A number row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Seconds · Default 30"
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Never return automatically"
+msgstr ""
+
+#. A Settings page: the line under its title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Installer · Partition settings"
 msgstr ""
 
 #. a keypad's page once it is no longer paired (removed meanwhile)
@@ -19319,6 +19370,11 @@ msgstr ""
 #. Make it a stand-alone panel, in amber; {0} is the alarm panel's name. At most 160 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "{0} shows a trouble for this keypad until it is removed there."
+msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Switch partition"
 msgstr ""
 
 #. how strong a Wi-Fi network's signal is, after the state or the address on the same line ("Password · good signal"). At most 20 bytes

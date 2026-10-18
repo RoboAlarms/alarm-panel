@@ -1001,6 +1001,8 @@ void ui_wizard_resume(void);
  * firmware without the link), or while link_info answers false (not known yet), every call below
  * says no and nothing of the link shows. */
 void ui_link_init(void);    /* ui_app_start, before the setup: the role and its partition */
+void ui_partition_input(lv_event_t *e);
+void ui_partition_view(uint8_t partition);
 void ui_link_tick(void);    /* once a second: Home's words, the open page's live words */
 bool ui_link_master(void);  /* the alarm panel, in a firmware with the link */
 bool ui_link_keypad(void);  /* a keypad: the alarm panel's pages are left out (the role gate) */

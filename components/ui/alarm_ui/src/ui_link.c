@@ -408,27 +408,109 @@ static void subjects_follow(void)
     ui_set_int(&subject_panic_link, trying ? 1 : 0);
 }
 
-/* The alarm panel moved this keypad to another partition (LINK-007's page): the keypad's
- * options follow it, as the Panel Manager's do, range-checked. */
+/* KPD-006: only physical/remote input renews idle time, across every view. */
+static uint32_t s_partition_input_at, s_partition_sent_at, s_partition_tick_at;
+static lv_obj_t *s_partition_row;
+static uint8_t s_partition_choices[ALARM_MAX_PARTITIONS];
+static ui_choice_t s_partition_items[ALARM_MAX_PARTITIONS];
+static char s_partition_names[ALARM_MAX_PARTITIONS][ALARM_NAME_LEN + 16];
+static size_t s_partition_count;
+
+void ui_partition_input(lv_event_t *e)
+{
+    (void)e;
+    s_partition_input_at = lv_tick_get();
+}
+
+static uint8_t partition_default(void)
+{
+    const uint8_t home = ui_link_keypad() ? L.info.home : S.opt.partition_home;
+    return home >= 1u && home <= ALARM_MAX_PARTITIONS ? home : 1u;
+}
+
+static void partition_chosen(int32_t index)
+{
+    if (index < 0 || (size_t)index >= s_partition_count) return;
+    const uint8_t target = s_partition_choices[index];
+    if (ui_link_keypad()) {
+        if (L.info.state != UI_LINK_ONLINE || S.be.partition_select == NULL) return;
+        if (S.be.partition_select(S.be.ctx, target, false) != ALARM_OK) {
+            ui_toast(TR("Partition switching unavailable"));
+            return;
+        }
+        L.info.selected = target;
+    } else if (!S.opt.switch_allowed) return;
+    s_partition_input_at = lv_tick_get();
+    s_partition_sent_at = s_partition_input_at;
+    ui_partition_view(target);
+}
+
+static void partition_pick(lv_event_t *e)
+{
+    (void)e;
+    if (S.cfg == NULL || (ui_link_keypad() ? !L.info.switch_allowed || L.info.state != UI_LINK_ONLINE
+                                          : !S.opt.switch_allowed)) return;
+    s_partition_count = 0u;
+    int32_t selected = -1;
+    for (uint8_t p = 1; p <= ALARM_MAX_PARTITIONS; p++) {
+        if (!S.cfg->partitions[p - 1u].enabled) continue;
+        const size_t n = s_partition_count++;
+        partition_name(p, s_partition_names[n], sizeof s_partition_names[n]);
+        s_partition_choices[n] = p;
+        s_partition_items[n] = (ui_choice_t){UI_ICON_WAREHOUSE, ui_tone_blue(), s_partition_names[n], NULL};
+        if (p == S.opt.partition) selected = (int32_t)n;
+    }
+    ui_pick_sheet(TR("Choose a partition"), NULL, s_partition_items, s_partition_count, selected, partition_chosen);
+}
+
+static void partition_tick(void)
+{
+    /* LVGL does not forward PRESSING to indev listeners. Poll held fingers too:
+     * scrolling and a touch on a disabled/already-selected control are activity. */
+    for (lv_indev_t *i = lv_indev_get_next(NULL); i != NULL; i = lv_indev_get_next(i)) {
+        if (lv_indev_get_state(i) == LV_INDEV_STATE_PRESSED) ui_partition_input(NULL);
+    }
+    if (lv_tick_elaps(s_partition_tick_at) < 1000u) return;
+    s_partition_tick_at = lv_tick_get();
+    const bool remote = ui_link_keypad();
+    const bool allowed = remote ? L.info.switch_allowed : S.opt.switch_allowed;
+    const uint8_t home = partition_default();
+    if (remote) {
+        uint8_t selected = L.info.state == UI_LINK_ONLINE ? L.info.selected : home;
+        if (selected == 0u) selected = home;
+        ui_partition_view(selected);
+        if (selected != home && s_partition_input_at != s_partition_sent_at &&
+            S.be.partition_select != NULL && L.info.state == UI_LINK_ONLINE) {
+            if (S.be.partition_select(S.be.ctx, selected, true) == ALARM_OK)
+                s_partition_sent_at = s_partition_input_at;
+        }
+    } else {
+        const uint32_t delay = (uint32_t)(S.opt.return_s != 0u ? S.opt.return_s : 30u) * 1000u;
+        if (!allowed || (!S.opt.return_never && lv_tick_elaps(s_partition_input_at) >= delay))
+            ui_partition_view(home);
+    }
+    unsigned count = 0u;
+    if (S.cfg != NULL) for (unsigned p = 0; p < ALARM_MAX_PARTITIONS; p++)
+        if (S.cfg->partitions[p].enabled) count++;
+    lv_obj_t *host = ui_find(S.main, "partition_switch");
+    if (host == NULL) return;
+    const bool show = allowed && count > 1u && (!remote || L.info.state == UI_LINK_ONLINE);
+    if (show) lv_obj_remove_flag(host, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(host, LV_OBJ_FLAG_HIDDEN);
+    if (s_partition_row != NULL) {
+        char name[ALARM_NAME_LEN + 16];
+        ui_set_label(s_partition_row, "title_label", partition_name(S.opt.partition, name, sizeof name));
+    }
+}
+
+/* A reassignment changes the saved default but a temporary selection never writes preferences. */
 static void home_partition_follow(void)
 {
-    if (!ui_link_keypad()) {
-        L.gen_known = false;
-        return;
-    }
-    if (L.gen_known && L.info.home_gen == L.home_gen) {
-        return;
-    }
-    L.gen_known = true;
-    L.home_gen = L.info.home_gen;
-    const uint8_t home = L.info.home;
-    if (home < 1u || home > ALARM_MAX_PARTITIONS || home == S.opt.partition) {
-        return;
-    }
-    ui_options_t opt = S.opt;
-    opt.partition = home;
-    ui_app_apply_options(&opt);
-    ui_refresh(true);
+    if (!ui_link_keypad()) return;
+    S.opt.partition_home = partition_default();
+    const uint8_t selected = L.info.state == UI_LINK_ONLINE && L.info.selected != 0u
+                                 ? L.info.selected : partition_default();
+    ui_partition_view(selected);
 }
 
 /* ---- the alarm panel: Keypads and devices ---------------------------------------------------- */
@@ -554,6 +636,8 @@ void ui_link_devices_section(lv_obj_t *body, uint16_t *held)
      * panels). At most 47 bytes */
     ui_section(body, TR("Keypads"));
     ui_row_action(body, UI_ICON_PLUS, TR("Add a keypad"), ui_tone_blue(), open_add, NULL);
+    ui_row_link(body, UI_ICON_KEYBOARD, ui_tone_blue(), TR("This panel"), TR("Partition settings"),
+                NULL, UI_ICON_CHEVRON_RIGHT, open_keypad, NULL);
     for (size_t i = 0; i < s_nkps; i++) {
         keypad_row(body, &s_kps[i]);
         if (s_kps[i].device >= 1u && s_kps[i].device <= 16u) {
@@ -841,6 +925,15 @@ static void add_tick(bool can_rebuild)
 
 static const ui_link_keypad_t *find_keypad(uint8_t device)
 {
+    static ui_link_keypad_t local;
+    if (device == 0u) {
+        memset(&local, 0, sizeof local);
+        local.home = S.opt.partition_home;
+        local.switch_allowed = S.opt.switch_allowed;
+        local.return_never = S.opt.return_never;
+        local.return_s = S.opt.return_s;
+        return &local;
+    }
     read_keypads();
     for (size_t i = 0; i < s_nkps; i++) {
         if (s_kps[i].device == device) {
@@ -904,12 +997,23 @@ static uint32_t keypad_sig(const ui_link_keypad_t *k)
     uint32_t h = hash_str(hash_str(2166136261u, title), detail);
     h = hash_str(h, k->name);
     h = hash_int(h, k->home);
+    h = hash_int(h, k->switch_allowed);
+    h = hash_int(h, k->return_never);
+    h = hash_int(h, k->return_s);
     return hash_int(h, k->supervision_s);
 }
 
 /* Changes are saved as they are made: the page's line says so (saved when you go back). */
 static void keypad_set(const char *name, uint8_t home, uint16_t supervision_s)
 {
+    if (!S.program) return;
+    if (s_kp_device == 0u) {
+        S.opt.partition_home = home;
+        ui_partition_view(home);
+        ui_options_changed();
+        ui_page_rebuild();
+        return;
+    }
     ui_link_req_t req;
     memset(&req, 0, sizeof(req));
     req.kind = UI_LINK_REQ_KEYPAD_SET;
@@ -980,7 +1084,7 @@ static void pick_home(void *ctx)
         }
         n++;
     }
-    ui_pick_sheet(TR("Home partition"), TR("The partition a keypad shows and arms"), s_choices, n,
+    ui_pick_sheet(TR("Default partition"), NULL, s_choices, n,
                   selected, home_chosen);
 }
 
@@ -1056,12 +1160,74 @@ static void remove_keypad(void *ctx)
     ui_toast(text);
 }
 
+static void policy_set(bool allowed, bool never, uint16_t seconds)
+{
+    if (!S.program) return;
+    if (s_kp_device == 0u) {
+        S.opt.switch_allowed = allowed;
+        S.opt.return_never = never;
+        S.opt.return_s = seconds;
+        ui_options_changed();
+        ui_partition_view(partition_default());
+    } else {
+        ui_link_req_t req = {0};
+        req.kind = UI_LINK_REQ_PARTITION_POLICY;
+        req.device = s_kp_device;
+        req.switch_allowed = allowed;
+        req.return_never = never;
+        req.return_s = seconds;
+        const uint8_t r = S.be.link_request != NULL ? S.be.link_request(S.be.ctx, &req) : UI_LINK_REQ_REFUSED;
+        if (r != UI_LINK_REQ_OK) ui_toast(refused_words(r));
+    }
+    ui_page_rebuild();
+}
+
+static void policy_allowed(bool on, void *ctx)
+{
+    (void)ctx;
+    const ui_link_keypad_t *k = find_keypad(s_kp_device);
+    if (k != NULL) policy_set(on, k->return_never, k->return_s != 0u ? k->return_s : 30u);
+}
+static void policy_never(bool on, void *ctx)
+{
+    (void)ctx;
+    const ui_link_keypad_t *k = find_keypad(s_kp_device);
+    if (k != NULL) policy_set(k->switch_allowed, on, k->return_s != 0u ? k->return_s : 30u);
+}
+static void policy_delay(int32_t value, void *ctx)
+{
+    (void)ctx;
+    const ui_link_keypad_t *k = find_keypad(s_kp_device);
+    if (k != NULL && k->switch_allowed && !k->return_never && value >= 1 && value <= 3600)
+        policy_set(k->switch_allowed, false, (uint16_t)value);
+}
+static void policy_rows(lv_obj_t *body, const ui_link_keypad_t *k)
+{
+    char part[ALARM_NAME_LEN + 16];
+    ui_row_link(body, UI_ICON_WAREHOUSE, ui_tone_blue(), TR("Default partition"), NULL,
+                partition_name(k->home, part, sizeof part), UI_ICON_CHEVRON_RIGHT, pick_home, NULL);
+    ui_row_toggle(body, TR("Allow partition switching"), TR("Off locks this panel to its default partition"),
+                  k->switch_allowed, policy_allowed, NULL);
+    lv_obj_t *delay = ui_row_number(body, TR("Return after inactivity"), TR("Seconds · Default 30"),
+                                    k->return_s != 0u ? k->return_s : 30u, 1, 3600, 1, UNIT_SECONDS,
+                                    NULL, policy_delay, NULL);
+    if (k->return_never || !k->switch_allowed) ui_row_disable(delay);
+    lv_obj_t *never = ui_row_toggle(body, TR("Never return automatically"), NULL, k->return_never, policy_never, NULL);
+    if (!k->switch_allowed) ui_row_disable(never);
+}
+
 static void build_keypad(int32_t arg, lv_obj_t *body, char *title, size_t tlen, char *note,
                          size_t nlen)
 {
     s_kp_device = (uint8_t)arg;
     const ui_link_keypad_t *k = find_keypad(s_kp_device);
     L.page_sig = keypad_sig(k);
+    if (s_kp_device == 0u) {
+        i18n_utf8_copy(title, tlen, TR("This panel"));
+        i18n_utf8_copy(note, nlen, TR("Installer · Partition settings"));
+        if (S.program) policy_rows(body, k);
+        return;
+    }
     if (k == NULL) {
         I18N_FORMAT(title, tlen, TR_C("default keypad name", "Keypad {0}"), (unsigned)s_kp_device);
         /* TR: a keypad's page once it is no longer paired (removed meanwhile) */
@@ -1082,11 +1248,7 @@ static void build_keypad(int32_t arg, lv_obj_t *body, char *title, size_t tlen, 
     ui_section(body, TR("The keypad"));
     ui_row_link(body, UI_ICON_TAG, ui_tone_blue(), TR("Name"), NULL, k->name, UI_ICON_CHEVRON_RIGHT,
                 rename_keypad, NULL);
-    char part[ALARM_NAME_LEN + 16];
-    ui_row_link(body, UI_ICON_WAREHOUSE, ui_tone_violet(), TR("Home partition"),
-                TR("The partition a keypad shows and arms"),
-                partition_name(k->home, part, sizeof(part)), UI_ICON_CHEVRON_RIGHT, pick_home,
-                NULL);
+    policy_rows(body, k);
     char sup[32];
     supervision_words(k->supervision_s, sup, sizeof(sup));
     ui_row_link(body, UI_ICON_CLOCK_ALERT, ui_tone_blue(), TR("Supervision"),
@@ -1529,6 +1691,15 @@ void ui_link_init(void)
     memset(&A, 0, sizeof(A));
     L.polled = lv_tick_get();
     L.have = read_info(&L.info);
+    s_partition_input_at = s_partition_sent_at = lv_tick_get();
+    s_partition_tick_at = lv_tick_get() - 1000u;
+    lv_obj_t *host = ui_find(S.main, "partition_switch");
+    if (host != NULL) {
+        s_partition_row = ui_row_link(host, UI_ICON_WAREHOUSE, ui_tone_blue(), "", TR("Switch partition"),
+                                     NULL, UI_ICON_CHEVRON_RIGHT, NULL, NULL);
+        lv_obj_add_flag(s_partition_row, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(s_partition_row, partition_pick, LV_EVENT_CLICKED, NULL);
+    }
     if (ui_link_keypad()) {
         /* the platform set the partition from the link record before the UI started; a home
          * given since is taken here, range-checked */
@@ -1543,6 +1714,7 @@ void ui_link_init(void)
 
 void ui_link_tick(void)
 {
+    partition_tick();
     if (S.be.link_info == NULL || lv_tick_elaps(L.polled) < POLL_MS) {
         return;
     }

@@ -10498,19 +10498,20 @@ static void walk_link_keypad(void)
     {
         /* The alarm panel moves this keypad to another partition: its options follow it,
          * range-checked (docs/features/11 "Roles on a P4 panel", home_gen). */
-        ui_options_t o;
-        host_link_demo_home(9); /* no such partition: kept */
-        run(1100);
-        expect(!host_panel_saved_options(&o) || o.partition == 1u,
-               "BL-048: an out-of-range home partition was taken");
+        const unsigned saves = host_panel_options_saves();
+        host_link_demo_home(9); /* no such partition: use safe home */
+        run(2100);
+        lv_obj_t *label = lv_obj_find_by_name(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), "title_label");
+        expect(strcmp(lv_label_get_text(label), "Home") == 0, "invalid assignment uses home");
         host_link_demo_home(2);
-        run(1100);
-        expect(host_panel_saved_options(&o) && o.partition == 2u,
+        run(2100);
+        expect(strcmp(lv_label_get_text(label), "Partition 2") == 0,
                "BL-048: the keypad didn't follow its new home partition");
         host_link_demo_home(1);
-        run(1100);
-        expect(host_panel_saved_options(&o) && o.partition == 1u,
+        run(2100);
+        expect(strcmp(lv_label_get_text(label), "Home") == 0,
                "BL-048: the keypad didn't come back to partition 1");
+        expect(host_panel_options_saves() == saves, "assignment does not rewrite audio preferences");
     }
 #if CONFIG_ALARM_HOME_CONTROL
     walk_link_keypad_devices();
@@ -11121,6 +11122,93 @@ static void walk_keypad_updates(const ui_options_t *start)
     run(1500);
 }
 
+/* KPD-006: real touch input on every page renews the temporary view, not a timer
+ * started once at selection. Alarm authorization is covered by panel-link tests. */
+static void walk_partition_policy(const ui_options_t *start)
+{
+    host_panel_init(1789857660000LL);
+    host_link_demo_state(HOST_LINK_MASTER);
+    ui_backend_t be;
+    host_panel_backend(&be);
+    alarm_config_t *cfg = malloc(sizeof *cfg);
+    expect(cfg != NULL && be.get_config(be.ctx, cfg), "partition walk configuration");
+    cfg->partitions[1].enabled = true;
+    snprintf(cfg->partitions[1].name, ALARM_NAME_LEN, "Studio");
+    expect(be.set_config(be.ctx, cfg) == ALARM_OK, "enable Studio");
+    free(cfg);
+    ui_options_t opt = *start;
+    opt.partition = opt.partition_home = 1;
+    opt.switch_allowed = false;
+    opt.return_s = 30;
+    ui_app_apply_options(&opt);
+    run(1500);
+    wake();
+    tap_name("nav_home");
+    expect(lv_obj_has_flag(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), LV_OBJ_FLAG_HIDDEN), "locked panel hides switcher");
+    shot("bl-048-partition-locked");
+    opt.switch_allowed = true;
+    ui_app_apply_options(&opt);
+    run(1500);
+    expect(!lv_obj_has_flag(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), LV_OBJ_FLAG_HIDDEN), "switcher below left card");
+    shot("bl-048-partition-home");
+    tap_text("Switch partition");
+    shot("bl-048-partition-chooser");
+    tap_text("Studio");
+    run(1500);
+    expect(strcmp(lv_label_get_text(lv_obj_find_by_name(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), "title_label")), "Studio") == 0, "selection without a code");
+    shot("bl-048-partition-away");
+    const unsigned saves = host_panel_options_saves();
+    tap_name("nav_activity");
+    run(20000);
+    tap_name("nav_activity"); /* actual touch while looking at Activity */
+    run(20000);
+    expect(strcmp(lv_label_get_text(lv_obj_find_by_name(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), "title_label")), "Studio") == 0, "Activity input renews idle return");
+    run(11000);
+    expect(strcmp(lv_label_get_text(lv_obj_find_by_name(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), "title_label")), "Studio") != 0, "30 idle seconds returns home");
+    expect(host_panel_options_saves() == saves, "temporary selection must not write preferences");
+    tap_name("nav_home");
+    opt.return_never = true;
+    ui_app_apply_options(&opt);
+    run(1500);
+    tap_text("Switch partition");
+    tap_text("Studio");
+    run(35000);
+    expect(strcmp(lv_label_get_text(lv_obj_find_by_name(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), "title_label")), "Studio") == 0, "Never keeps the selected view");
+    tap_name("bar_settings");
+    run(300);
+    open_installer();
+    run(300);
+    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
+        tap_text("Enter the installer code");
+        type("69420k");
+        run(300);
+    }
+    tap_link("Keypads and devices");
+    tap_text("This panel");
+    run(300);
+    shot("bl-048-partition-policy-never");
+    tap_text("Never return automatically");
+    run(300);
+    ui_options_t saved;
+    expect(host_panel_saved_options(&saved) && !saved.return_never && saved.return_s == 30,
+           "Never off restores the saved 30 second delay");
+    shot("bl-048-partition-policy");
+    tap_name("nav_home");
+    host_link_demo_state(HOST_LINK_KEYPAD_ONLINE);
+    host_link_demo_partition_policy(true, false, 30);
+    run(2100);
+    tap_text("Switch partition");
+    tap_text("Studio");
+    run(20000);
+    tap_name("nav_activity");
+    run(20000);
+    ui_link_info_t info;
+    expect(be.link_info(be.ctx, &info) && info.selected == 2, "remote Activity renews selection");
+    run(12000);
+    expect(be.link_info(be.ctx, &info) && info.selected == 0, "remote idle returns home");
+    printf("Partition policy walk passed\n");
+}
+
 static void walk_panel_link(const ui_options_t *start)
 {
     walk_link_setup(start);
@@ -11213,6 +11301,10 @@ int main(int argc, char **argv)
     run(400);
 
 #if ALARM_LV_BUDGET_KB == 0
+    if (getenv("ALARM_PREVIEW_PARTITION") != NULL) {
+        walk_partition_policy(&start);
+        return 0;
+    }
     if (getenv("ALARM_PREVIEW_THEMES") != NULL) { /* only the appearances' walk, to work on it */
         walk_themes();
         return 0;

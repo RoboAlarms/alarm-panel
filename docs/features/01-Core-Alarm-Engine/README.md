@@ -548,11 +548,9 @@ v1 is complete: every requirement above has its tagged host test. What follows i
 - [ ] Common/lobby partition logic (a "common zone")
 
 ### On the keypads (M7)
-- [ ] Cross-partition GOTO on the keypads: each panel has an installer-set default partition,
-  switching allowed/locked setting, and idle return delay (default 30 seconds). Switching views
-  needs no code; alarm commands retain their authorization (KPD-006 in [04](../04-Keypad-Behavior-and-Commands/README.md)) (BL-048). The
-  engine's key parser already returns it (CORE-KEY-010), and the service console's keypad
-  follows it (`panel_console.c` `keypad_result`).
+- [ ] Live acceptance of implemented cross-partition switching (KPD-006, BL-048): installer default,
+  allow/lock, idle seconds (default 30), Never and no-code view selection. Host/preview tests pass;
+  alarm commands retain authorization. See [11](../11-Panel-Link-Master-Keypad/README.md).
 
 ### Covered elsewhere or dropped
 - Duplicate of [18](../18-Schedules-and-Auto-Arm/README.md) (`alarm_sched` with host tests;

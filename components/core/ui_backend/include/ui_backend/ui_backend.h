@@ -1464,6 +1464,10 @@ typedef struct {
     bool voice_enabled;       /* default true */
     bool voice_status;        /* arming, armed, disarmed, entry, not ready (default true) */
     bool voice_chime;         /* the zone's spoken name after the chime (default true) */
+    uint8_t partition_home; /* saved default, distinct from the current view */
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s; /* default 30, 1..3600 */
 } ui_options_t;
 
 /* A change of these preferences from elsewhere (docs/features/07 UI-046; docs/features/11
@@ -1591,6 +1595,10 @@ typedef struct {
      * the image comes from the alarm panel over the link (a relay, "Receiving from <master>"),
      * false when the keypad downloads it from the update server itself ("Downloading"). */
     bool fw_from_master;
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s;
+    uint8_t selected;
 } ui_link_info_t;
 
 /* ui_link_pair_t.state: either side's pairing (plink_pair_state_t). */
@@ -1676,6 +1684,9 @@ typedef struct {
     uint8_t fw_state;       /* UI_LINK_FW_* */
     uint8_t fw_percent;     /* DOWNLOADING and RECEIVING: 0..100 done; the screen reads it at most
                              * once a second (UI-020) */
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s;
 } ui_link_keypad_t;
 
 typedef enum {
@@ -1691,6 +1702,7 @@ typedef enum {
     UI_LINK_REQ_KP_PAIR_RETRY,    /* try again after a failure */
     UI_LINK_REQ_KP_PAIR_STOP,     /* give up (the setup's Back) */
     UI_LINK_REQ_KP_DONE,          /* the pairing's Done: store the role and restart as a keypad */
+    UI_LINK_REQ_PARTITION_POLICY, /* installer-only per-keypad switching policy */
 } ui_link_request_t;
 
 typedef struct {
@@ -1700,6 +1712,9 @@ typedef struct {
     uint8_t home;
     uint16_t supervision_s;
     char name[48];
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s;
 } ui_link_req_t;
 
 /* What link_request answers. */
@@ -2072,6 +2087,8 @@ typedef struct {
     /* A request; a ui_link_result_t. The pairing requests return at once, link_pair_status
      * follows them. */
     uint8_t (*link_request)(void *ctx, const ui_link_req_t *req);
+    /* Select a partition or report actual input; never authorizes an alarm action. */
+    alarm_result_t (*partition_select)(void *ctx, uint8_t partition, bool activity);
 } ui_backend_t;
 
 /* auto_try's "the runner didn't take it" (automation_service.h's AUTOMATION_TRY_BUSY, asserted
@@ -2086,6 +2103,10 @@ typedef struct {
 static inline void ui_options_defaults(ui_options_t *opt)
 {
     opt->partition = 1;
+    opt->partition_home = 1;
+    opt->switch_allowed = false;
+    opt->return_never = false;
+    opt->return_s = 30;
     opt->clock_mode = 0;
     opt->brightness = 80;
     opt->saver_brightness = 25; /* the screen saver shows a picture */

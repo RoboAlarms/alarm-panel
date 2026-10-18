@@ -4,8 +4,9 @@
 `keys`), the touch keypad with the panic hold and the keypad messages run on a panel and in the PC
 preview, with the lockout countdown and a test of Home's words (`ui_words_test`); the flows'
 acceptance on a panel is BL-024. Remote keypads over Wi-Fi run with the panel link
-(docs/features/11, tried on two panels 2026-10-16). Left: GOTO on a remote keypad (KPD-006,
-BL-048), a classic two-line view (BL-073).
+(docs/features/11, tried on two panels 2026-10-16). Partition switching (KPD-006, BL-048) is implemented with per-panel policy, no-code selection and
+interaction-based idle return, host/preview tested; live acceptance remains. A classic two-line
+view is BL-073.
 · **Milestone:** M1 (parser), M3 (UI), M7 (remote keypads) · **Depends on:** 01, 07, 08, 11
 
 ## Goal

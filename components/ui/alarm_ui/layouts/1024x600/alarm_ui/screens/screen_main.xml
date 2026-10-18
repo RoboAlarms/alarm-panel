@@ -173,7 +173,10 @@
 			<!-- Home: state on the left, what you can do on the right -->
 			<box name="view_home" width="100%" height="100%" style_layout="flex" style_flex_flow="row" style_pad_column="#space_xl">
 				<bind_flag_if_not_eq subject="subject_view" flag="hidden" ref_value="0" />
-				<hero name="hero" width="#pane_w" height="100%" />
+				<box name="home_partition_column" width="#pane_w" height="100%" style_layout="flex" style_flex_flow="column" style_pad_row="#space_lg">
+                    <hero name="hero" width="100%" height="100%" style_flex_grow="1" />
+                    <box name="partition_switch" width="100%" height="content" hidden="true" />
+                </box>
 				<box name="pane" width="#pane_w" height="100%" style_layout="flex" style_flex_flow="column" style_pad_row="#space_lg">
 					<!-- An automation arms soon, or was put off (docs/features/41 D19, D27): a short card
 					     above the arming tiles, only beside them (ui_auto_warn.c sets 0 for every other

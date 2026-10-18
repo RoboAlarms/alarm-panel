@@ -536,7 +536,7 @@ static bool hold_of(const alarm_snapshot_t *s)
 /* KPD-006: selection is session-only; the saved home never changes. */
 static uint8_t selected_partition(const plink_peer_t *p, uint64_t now)
 {
-    return p->selected != 0u && now < p->selected_until ? p->selected : p->rec.home;
+    return p->selected != 0u && (p->rec.return_never || now < p->selected_until) ? p->selected : p->rec.home;
 }
 
 /* What a STATUS carries besides the snapshot, for keypad p at now. */
@@ -546,6 +546,10 @@ static void status_extra(const plink_master_t *m, const plink_peer_t *p, uint64_
     memset(x, 0, sizeof *x);
     x->epoch_ms = epoch_at(m->epoch_ms, m->epoch_at_ms, now);
     x->home = p->rec.home;
+    x->switch_allowed = p->rec.switch_allowed;
+    x->return_never = p->rec.return_never;
+    x->return_s = p->rec.return_s;
+
     x->selected = selected_partition(p, now) == p->rec.home ? 0u : p->selected;
     if (m->port.lockout_left != NULL) {
         x->lockout_left_ms = m->port.lockout_left(m->port.ctx, dev_of(m, p), now);
@@ -777,7 +781,11 @@ static alarm_result_t cmd_check(const plink_master_t *m, const plink_peer_t *p, 
             !m->have_snap || !(m->snap.partitions & (1u << (c->cmd.partition - 1u)))) {
             return ALARM_ERR_BAD_ARG;
         }
-        return c->cmd.code[0] != '\0' ? ALARM_OK : ALARM_ERR_NOT_AUTHORIZED;
+        return c->cmd.partition == p->rec.home || p->rec.switch_allowed
+                   ? ALARM_OK : ALARM_ERR_NOT_AUTHORIZED;
+    }
+    if (c->op == PLINK_OP_ACTIVITY) {
+        return c->cmd.partition == selected_partition(p, now) ? ALARM_OK : ALARM_ERR_NOT_AUTHORIZED;
     }
     if (c->op != PLINK_OP_COMMAND && c->op != PLINK_OP_AUTH && c->op != PLINK_OP_CHANGE_CODE) {
         return ALARM_ERR_UNAVAILABLE;
@@ -829,7 +837,14 @@ static void cmd_run(plink_master_t *m, plink_peer_t *p, uint64_t now, size_t i,
         p->cmd_ticket = ticket;
     }
     m->in_run = true;
-    const bool ok = m->port.run(m->port.ctx, ticket, dev_of(m, p), cmd);
+    bool ok;
+    if (cmd->op == PLINK_OP_GOTO || cmd->op == PLINK_OP_ACTIVITY) {
+        const plink_result_t result = {.req = cmd->req, .result = ALARM_OK};
+        plink_master_result(m, now, ticket, &result);
+        ok = true;
+    } else {
+        ok = m->port.run(m->port.ctx, ticket, dev_of(m, p), cmd);
+    }
     m->in_run = false;
     if (!ok && e->pending && e->ticket == ticket) {
         cache_clear(p, i); /* no room now: forgotten, so the keypad's resend runs it */
@@ -915,11 +930,11 @@ void plink_master_result(plink_master_t *m, uint64_t now_ms, uint32_t ticket,
             if (res->result == ALARM_OK && e->sid == p->live.sid) {
                 if (e->op == PLINK_OP_GOTO) {
                     p->selected = e->partition == p->rec.home ? 0u : e->partition;
-                    p->selected_until = now_ms + 120000u;
+                    p->selected_until = now_ms + (uint64_t)(p->rec.return_s != 0u ? p->rec.return_s : 30u) * 1000u;
                     status_changed(p, now_ms);
-                } else if (p->selected != 0u && now_ms < p->selected_until &&
+                } else if (p->selected != 0u && (p->rec.return_never || now_ms < p->selected_until) &&
                            e->partition == p->selected) {
-                    p->selected_until = now_ms + 120000u;
+                    p->selected_until = now_ms + (uint64_t)(p->rec.return_s != 0u ? p->rec.return_s : 30u) * 1000u;
                 }
             }
             e->res = *res;
@@ -2341,7 +2356,7 @@ void plink_master_tick(plink_master_t *m, uint64_t now_ms)
             provisional_drop(m, p, now_ms);
             continue;
         }
-        if (p->selected != 0u && (now_ms >= p->selected_until ||
+        if (p->selected != 0u && ((!p->rec.return_never && now_ms >= p->selected_until) ||
             (m->have_snap && !(m->snap.partitions & (1u << (p->selected - 1u)))))) {
             p->selected = 0u;
             status_changed(p, now_ms);
@@ -2375,7 +2390,7 @@ uint64_t plink_master_next(const plink_master_t *m)
         if (!p->used) {
             continue;
         }
-        if (p->selected != 0u) {
+        if (p->selected != 0u && !p->rec.return_never) {
             t = min64(t, p->selected_until);
         }
         if (p->result_due != 0u) {
@@ -2881,6 +2896,10 @@ size_t plink_master_peers(const plink_master_t *m, uint64_t now_ms, plink_peer_i
         o->home = p->rec.home;
         o->kind = p->rec.kind;
         o->supervision_s = p->rec.supervision_s;
+        o->switch_allowed = p->rec.switch_allowed;
+        o->return_never = p->rec.return_never;
+        o->return_s = p->rec.return_s;
+
         o->provisional = is_provisional(p);
         const uint64_t per = p->rec.supervision_s != 0u
                                  ? period_ms(p)
@@ -2984,6 +3003,27 @@ bool plink_master_set_home(plink_master_t *m, uint64_t now_ms, uint8_t device, u
             cache_clear(p, i);
         }
         status_changed(p, now_ms); /* the keypad learns its new home from its STATUS */
+        status_service(m, p, now_ms);
+    }
+    return ok;
+}
+
+bool plink_master_set_partition_policy(plink_master_t *m, uint64_t now_ms, uint8_t device,
+                                       bool allowed, bool never, uint16_t seconds)
+{
+    plink_peer_t *p = m != NULL ? peer_of(m, device) : NULL;
+    if (p == NULL || seconds > 3600u) return false;
+    plink_peer_rec_t before = p->rec;
+    p->rec.switch_allowed = allowed;
+    p->rec.return_never = never;
+    p->rec.return_s = seconds;
+    const bool ok = store_change(m, p, &before);
+    plink_wipe(&before, sizeof before);
+    if (ok) {
+        p->selected = 0u;
+        p->selected_until = 0u;
+        for (size_t i = 0; i < PLINK_RESULTS_PER_KEYPAD; i++) cache_clear(p, i);
+        status_changed(p, now_ms);
         status_service(m, p, now_ms);
     }
     return ok;

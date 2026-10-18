@@ -42,6 +42,9 @@ typedef struct {
     uint8_t k_pair[PLINK_KEY_LEN];
     int64_t paired_epoch_ms; /* 0 = not known */
     char name[PLINK_NAME_MAX + 1];
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s; /* 0 = default 30 seconds */
 } plink_peer_rec_t;
 
 typedef struct {

@@ -475,6 +475,9 @@ typedef struct {
     uint32_t heard_ago_s; /* UINT32_MAX never */
     plink_addr_t addr;
     plink_heartbeat_t hb;
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s;
 } plink_peer_info_t;
 
 /* The keypads, by number: returns how many there are and fills the first max into out (out may
@@ -487,6 +490,8 @@ size_t plink_master_peers(const plink_master_t *m, uint64_t now_ms, plink_peer_i
 bool plink_master_remove(plink_master_t *m, uint64_t now_ms, uint8_t device);
 bool plink_master_rename(plink_master_t *m, uint8_t device, const char *name);
 bool plink_master_set_home(plink_master_t *m, uint64_t now_ms, uint8_t device, uint8_t home);
+bool plink_master_set_partition_policy(plink_master_t *m, uint64_t now_ms, uint8_t device,
+                                       bool allowed, bool never, uint16_t seconds);
 bool plink_master_set_supervision(plink_master_t *m, uint64_t now_ms, uint8_t device,
                                   uint16_t seconds);
 /* ---- Smart Home and settings on keypads (LINK-043..051) ---- */

@@ -530,6 +530,9 @@ typedef struct {
      * the keypad needs an update. Forgotten once another configuration installs or the master
      * names the installed one again. */
     uint32_t cfg_bad_crc;
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s; /* 0 = default 30 seconds */
 } plink_keypad_info_t;
 
 void plink_keypad_info(const plink_keypad_t *k, uint64_t now_ms, plink_keypad_info_t *out);

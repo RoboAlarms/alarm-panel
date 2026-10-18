@@ -37,6 +37,10 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stdint.h>
+void host_link_demo_partition_policy(bool allowed, bool never, uint16_t seconds);
+
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 

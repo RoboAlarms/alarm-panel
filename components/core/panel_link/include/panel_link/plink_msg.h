@@ -203,6 +203,9 @@ typedef struct {
     uint64_t mono_ms; /* the master's engine time when the frame was sealed (0: not sent) */
     uint8_t count; /* records in part[] */
     plink_part_t part[PLINK_PARTS_MAX];
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s; /* 0 = default 30 seconds */
 } plink_status_t;
 
 typedef struct {
@@ -244,7 +247,8 @@ typedef enum {
     PLINK_OP_COMMAND = 1,     /* an alarm_cmd_t */
     PLINK_OP_AUTH = 2,        /* check a code (ui_backend_t.authenticate) */
     PLINK_OP_CHANGE_CODE = 3, /* ui_backend_t.change_code: code = current, new_code */
-    PLINK_OP_GOTO = 4,        /* authenticate a temporary partition selection */
+    PLINK_OP_GOTO = 4,        /* select a view under installer policy, without a code */
+    PLINK_OP_ACTIVITY = 5, /* real interaction on the selected partition; no alarm action */
 } plink_op_t;
 
 typedef struct {

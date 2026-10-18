@@ -530,6 +530,11 @@ static void save_options(void *ctx, const ui_options_t *opt)
         .high_contrast = opt->high_contrast,
         .voice_status = opt->voice_status,
         .voice_chime = opt->voice_chime,
+        .partition_home = opt->partition_home,
+        .switch_allowed = opt->switch_allowed,
+        .return_never = opt->return_never,
+        .return_s = opt->return_s,
+
     };
 #if CONFIG_ALARM_FEATURE_VOICE
     /* D06: announcements are switched on only while the voice is ready; the screen shows the
@@ -1740,6 +1745,12 @@ void ui_port_esp_options(ui_options_t *out)
     out->voice_enabled = p.voice_enabled;
     out->voice_status = p.voice_status;
     out->voice_chime = p.voice_chime;
+    out->partition = p.partition_home;
+    out->partition_home = p.partition_home;
+    out->switch_allowed = p.switch_allowed;
+    out->return_never = p.return_never;
+    out->return_s = p.return_s;
+
     memcpy(out->lang, p.lang, sizeof(out->lang));
     memcpy(out->region, p.region, sizeof(out->region));
     out->run_setup = !panel_setup_done();

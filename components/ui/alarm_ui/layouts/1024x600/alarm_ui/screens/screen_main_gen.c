@@ -302,8 +302,16 @@ lv_obj_t * screen_main_create(void)
         lv_obj_t * view_home = alarm_ui_run_0(content, lv_pct(100), lv_pct(100));
         alarm_ui_run_1(view_home, LV_FLEX_FLOW_ROW);
         alarm_ui_run_42(view_home, SPACE_XL, &subject_view, 0);
-        lv_obj_t * hero = hero_create(view_home);
-        alarm_ui_run_31(hero, PANE_W, lv_pct(100));
+        lv_obj_t * home_partition_column = alarm_ui_run_0(view_home, PANE_W, lv_pct(100));
+        alarm_ui_run_1(home_partition_column, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_style_pad_row(home_partition_column, SPACE_LG, 0);
+        lv_obj_t * hero = hero_create(home_partition_column);
+        alarm_ui_run_31(hero, lv_pct(100), lv_pct(100));
+        lv_obj_set_style_flex_grow(hero, 1, 0);
+
+        lv_obj_t * partition_switch = alarm_ui_run_0(home_partition_column, lv_pct(100), LV_SIZE_CONTENT);
+        lv_obj_set_flag(partition_switch, LV_OBJ_FLAG_HIDDEN, true);
+        lv_obj_set_name(partition_switch, "partition_switch");
 
         lv_obj_t * pane = alarm_ui_run_0(view_home, PANE_W, lv_pct(100));
         alarm_ui_run_1(pane, LV_FLEX_FLOW_COLUMN);

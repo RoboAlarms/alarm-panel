@@ -272,10 +272,10 @@ const M = (() => {
    * detailColor: a tone for a detail that carries a problem (ui_row_set_detail's
    * tone); disabled: dimmed and not switchable (a record this software can't run).
    */
-  const row_toggle = ({glyph, color: c = 'blue', title, detail, on = false, detailColor, disabled = false}) => `<div class="row_switch${glyph ? ' with_chip' : ''}${disabled ? ' disabled' : ''}">
+  const row_toggle = ({glyph, color: c = 'blue', title, detail, on = false, detailColor, disabled = false, goTo}) => `<div class="row_switch${glyph ? ' with_chip' : ''}${disabled ? ' disabled' : ''}"${disabled ? '' : go(goTo)}>
     ${glyph ? icon_chip({glyph, size: 44, font: 20, color: c}) : ''}<div class="words">${text(title, 'label')}${detail ? text(detail, 'caption', detailColor || 'text_2') : ''}</div><div class="switch${on ? ' on' : ''}"></div></div>`;
   /** ui_row_number: minus, value, plus */
-  const row_number = ({title, detail, value}) => `<div class="row_stepper">
+  const row_number = ({title, detail, value, disabled = false}) => `<div class="row_stepper${disabled ? ' disabled' : ''}"${disabled ? ' aria-disabled="true"' : ''}>
     <div class="words">${text(title, 'label')}${detail ? text(detail, 'caption', 'text_2') : ''}</div>
     <div class="step_button">${icon('minus', 20)}</div>${text(value, 'label', null, 'value')}<div class="step_button">${icon('plus', 20)}</div></div>`;
   /** ui_row_level: a slider, value 0..100 */

@@ -35,28 +35,22 @@ M.screen({id: 'bl-048-partition-away', area: 'Home', title: 'Workshop: return af
 });
 M.screen({id: 'bl-048-partition-policy', area: 'Settings', title: 'Installer: partition settings for this panel', shot: null,
   proposal: {...gotoProposal, replaces: null},
-  notes: 'Installer-only settings, stored separately for each panel. Default partition selects its normal view. Allow partition switching off locks it there. Return delay offers Never or a delay in seconds, default 30, and applies only while switching is allowed. Never disables only the inactivity return. These are proposed controls; firmware persistence and enforcement are still pending.',
+  notes: 'Installer-only settings, stored separately for each panel. Default partition selects its normal view. Allow partition switching off locks it there. The Never return automatically switch sits directly above the seconds control. On disables that control; off makes it editable again, preserving its value (default 30). No separate delay screen. Never disables only the inactivity return. These are proposed controls; firmware persistence and enforcement are still pending.',
   render: () => M.main({view: 'settings', content: M.settings({section: 'keypads', title: 'Hall keypad', note: 'Installer · Partition settings',
     body: M.changed(M.row_link({glyph: 'home', title: 'Default partition', detail: 'House', trail: 'chevron-right'}) +
       M.row_toggle({title: 'Allow partition switching', detail: 'Off locks this panel to its default partition', on: true}) +
-      M.row_link({title: 'Return after inactivity', value: '30 seconds', goTo: 'bl-048-partition-delay'}))})}),
+      M.row_toggle({title: 'Never return automatically', on: false, goTo: 'bl-048-partition-policy-never'}) +
+      M.row_number({title: 'Return after inactivity', detail: 'Seconds · Default 30', value: '30'}))})}),
 });
 
-M.screen({id: 'bl-048-partition-delay', area: 'Settings', title: 'Return delay: Never or seconds', shot: null,
-  proposal: {...gotoProposal, replaces: null},
-  notes: 'Open Return after inactivity from the panel policy. Choose Never to disable idle return, or adjust the seconds and save. The default remains 30 seconds. This is a static proposal: the plus/minus controls illustrate editing rather than storing changes.',
-  render: () => M.main({view: 'settings', content: M.settings({section: 'keypads', title: 'Return after inactivity', back: 'bl-048-partition-policy',
-    body: M.changed(M.row_link({title: 'Never', goTo: 'bl-048-partition-policy-never'}) +
-      M.row_number({title: 'After', detail: 'Seconds', value: '30'}) +
-      M.row_action({glyph: 'check', text: 'Save delay', goTo: 'bl-048-partition-policy'}))})}),
-});
 M.screen({id: 'bl-048-partition-policy-never', area: 'Settings', title: 'Installer: return delay set to Never', shot: null,
   proposal: {...gotoProposal, replaces: null},
-  notes: 'Never disables inactivity-based return. The selected partition remains until the user switches it, or a restart/reconnection or installer reassignment resets the selection. This is not a permanent change to the default partition.',
+  notes: 'Never disables inactivity-based return and dims/disables the seconds control immediately below it. Tap the switch to see the off state in this mockup. The selected partition remains until the user switches it, or a restart/reconnection or installer reassignment resets the selection. This is not a permanent change to the default partition.',
   render: () => M.main({view: 'settings', content: M.settings({section: 'keypads', title: 'Hall keypad', note: 'Installer · Partition settings',
     body: M.changed(M.row_link({glyph: 'home', title: 'Default partition', detail: 'House'}) +
       M.row_toggle({title: 'Allow partition switching', detail: 'Off locks this panel to its default partition', on: true}) +
-      M.row_link({title: 'Return after inactivity', value: 'Never', goTo: 'bl-048-partition-delay'}))})}),
+      M.row_toggle({title: 'Never return automatically', on: true, goTo: 'bl-048-partition-policy'}) +
+      M.row_number({title: 'Return after inactivity', detail: 'Seconds · Default 30', value: '30', disabled: true}))})}),
 });
 M.screen({id: 'bl-048-partition-away-never', area: 'Home', title: 'Workshop: no inactivity return', shot: null,
   proposal: gotoProposal,

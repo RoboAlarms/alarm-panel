@@ -39,6 +39,5 @@ M.screen({id: 'bl-048-partition-policy', area: 'Settings', title: 'Installer: pa
   render: () => M.main({view: 'settings', content: M.settings({section: 'keypads', title: 'Hall keypad', note: 'Installer · Partition settings',
     body: M.changed(M.row_link({glyph: 'home', title: 'Default partition', detail: 'House', trail: 'chevron-right'}) +
       M.row_toggle({title: 'Allow partition switching', detail: 'Off locks this panel to its default partition', on: true}) +
-      M.row_number({title: 'Return after inactivity', detail: 'Seconds · Default 30', value: '30'}) +
-      M.paragraph('Switching views does not require a code. Arm and disarm keep their normal code requirements.'))})}),
+      M.row_number({title: 'Return after inactivity', detail: 'Seconds · Default 30', value: '30'}))})}),
 });

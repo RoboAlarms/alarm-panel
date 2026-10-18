@@ -36,7 +36,14 @@ confirmations, and **Select Wi-Fi** available before discovery and after pairing
 Panel Manager enrollment instructions serve normal and headless masters. Language, display
 and audio stay local; date, time and time zone continue to follow the master.
 
-Implemented and host-tested; fresh-device radio provisioning still needs hardware acceptance.
+Implemented and host-tested. On the two development panels (2026-10-18, dev.13), USB/API
+service-level tests passed enrollment with saved Wi-Fi erased, matching comparison codes and
+both confirmations, authenticated radio credential transfer and automatic Wi-Fi connection.
+Unpaired requests were refused, automatic setup preserved manually entered credentials, and
+Select Wi-Fi cancellation followed by manual LAN enrollment passed with the radio path blocked.
+The tests invoked the same service requests as setup; physical touchscreen acceptance and
+factory-first-boot/resume acceptance remain open. Both speakers stayed muted and displays lit;
+local display/audio preferences were unchanged and language settings were not modified.
 The keypad persists its pairing and role before opening its first authenticated session. Wi-Fi
 failure, manual selection and power loss after that point retain enrollment. An unfinished
 setup resumes after reboot. Done requires a fresh authenticated master connection; without
@@ -1786,7 +1793,8 @@ panels; a successful host preview is not hardware acceptance.
   keypad: both confirmations (keypad via console), stale-code-sequence refusal, reconnect,
   cancel/expiry and policy delivery; details in feature 31's keypad-enrollment.md (BL-048).
 - [x] Approved nearby enrollment, authenticated Wi-Fi provisioning and Select Wi-Fi fallback; language remains local (BL-048, LINK-053).
-- [ ] Hardware acceptance: fresh keypad without credentials, automatic radio provisioning, out-of-range manual enrollment, interrupted setup resume and older-master fallback (BL-048, LINK-053).
+- [x] Hardware service acceptance: erase keypad Wi-Fi and pairing, enroll via ESP-NOW, automatically receive credentials and join Wi-Fi; reject unpaired requests, preserve manual credentials, and enroll over manually configured LAN with radio blocked (2026-10-18, dev.13; BL-048, LINK-053).
+- [ ] Physical setup acceptance: factory-first-boot touchscreen flow, interrupted setup resume, older-master fallback and actual out-of-range manual selection (BL-048, LINK-053). Radio-unavailable service behavior is verified above.
 - [ ] Human comparison-screen and physical headless enrollment/assignment acceptance (BL-048).
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over

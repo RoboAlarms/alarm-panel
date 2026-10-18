@@ -267,6 +267,12 @@ credentials, for development-only radio fallback checks.
 receive for that transport, to test automatic recovery without changing credentials.
 These operations do not enable either panel's speaker.
 
+Development builds also provide `plink wifi` (enrollment Wi-Fi state and authenticated
+connection), `plink wifi auto` (the setup's automatic request/retry), and `plink wifi manual`
+(the Select Wi-Fi cancellation). These use the same service requests as the touchscreen;
+they neither accept nor print credentials and cannot bypass paired authentication.
+States are 0 idle/manual, 1 requesting, 2 joining, 3 connected, and 4 unavailable.
+
 Partition policy (KPD-006): Installer > Keypads and devices sets each panel's default,
 allow switching/locked, idle seconds (30 by default), and Never below the seconds selector.
 A locked panel has no Home switcher; otherwise it appears below the left card when multiple

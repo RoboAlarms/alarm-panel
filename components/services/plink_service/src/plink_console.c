@@ -700,6 +700,24 @@ static int cmd_plink(int argc, char **argv)
         return 0;
     }
 #if CONFIG_ALARM_BUILD_DEV
+    /* LINK-053: the same request as setup, available over USB without Wi-Fi.
+     * Never accepts or prints credentials; authentication remains in the link. */
+    if (argc >= 2 && strcmp(argv[1], "wifi") == 0) {
+        if (argc == 3) {
+            const bool automatic = strcmp(argv[2], "auto") == 0;
+            if (!automatic && strcmp(argv[2], "manual") != 0) return 1;
+            link_req_t request = {.kind = UI_LINK_REQ_KP_WIFI, .allow = automatic};
+            return ask(&request);
+        }
+        ui_link_pair_t pair = {0};
+        if (!plink_service_pair_status(NULL, &pair)) {
+            printf("No enrollment status\n");
+            return 0;
+        }
+        printf("Enrollment Wi-Fi %u; authenticated online %u\n",
+               (unsigned)pair.wifi_setup, (unsigned)pair.online);
+        return 0;
+    }
     if (argc == 3 && strcmp(argv[1], "radio") == 0 && strcmp(argv[2], "window") == 0) {
         net_wifi_radio_window();
         printf("Requested a five-second Wi-Fi disconnect; saved credentials are unchanged\n");

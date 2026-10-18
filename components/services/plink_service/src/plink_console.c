@@ -173,17 +173,25 @@ static void print_keypad_view(void)
 static int keypad_cmd(int argc, char **argv)
 {
     if (argc < 3) {
-        printf("plink cmd away|stay|night|off|chime|panic [<code>]\n");
+        printf("plink cmd away|stay|night|off|chime|panic [<code>]; goto <partition> <code>\n");
         return 1;
     }
     plink_cmd_t c;
     memset(&c, 0, sizeof c);
     c.op = PLINK_OP_COMMAND;
     link_pub_lock();
-    c.cmd.partition = g_pub.kinfo.home >= 1u ? g_pub.kinfo.home : 1u;
+    c.cmd.partition = g_pub.kraw.selected >= 1u ? g_pub.kraw.selected : g_pub.kraw.home;
     link_pub_unlock();
     const char *what = argv[2];
-    if (strcmp(what, "away") == 0 || strcmp(what, "stay") == 0 || strcmp(what, "night") == 0) {
+    if (strcmp(what, "goto") == 0) {
+        unsigned long partition;
+        if (argc != 5 || !parse_num(argv[3], 1u, ALARM_MAX_PARTITIONS, &partition)) {
+            printf("plink cmd goto <partition> <code>\n");
+            return 1;
+        }
+        c.op = PLINK_OP_GOTO;
+        c.cmd.partition = (uint8_t)partition;
+    } else if (strcmp(what, "away") == 0 || strcmp(what, "stay") == 0 || strcmp(what, "night") == 0) {
         c.cmd.type = ALARM_CMD_ARM;
         c.cmd.level = what[0] == 'a' ? ALARM_LEVEL_AWAY
                       : what[0] == 's' ? ALARM_LEVEL_STAY : ALARM_LEVEL_NIGHT;
@@ -195,11 +203,11 @@ static int keypad_cmd(int argc, char **argv)
         c.cmd.type = ALARM_CMD_PANIC;
         c.cmd.panic = ALARM_PANIC_POLICE;
     } else {
-        printf("plink cmd away|stay|night|off|chime|panic [<code>]\n");
+        printf("plink cmd away|stay|night|off|chime|panic [<code>]; goto <partition> <code>\n");
         return 1;
     }
     if (argc >= 4) {
-        snprintf(c.cmd.code, sizeof c.cmd.code, "%s", argv[3]);
+        snprintf(c.cmd.code, sizeof c.cmd.code, "%s", argv[c.op == PLINK_OP_GOTO ? 4 : 3]);
     }
     plink_result_t res;
     memset(&res, 0, sizeof res);
@@ -241,6 +249,7 @@ static void print_status(void)
             plink_addr_text(&i->master, addr);
             printf("  master \"%s\" at %s: keypad %u, home partition %u\n", i->master_name, addr,
                    (unsigned)i->device, (unsigned)i->home);
+            printf("  selected partition %u (temporary selection returns home after 2 min idle)\n", (unsigned)i->selected);
         } else if (i->unpaired_why == PLINK_UNPAIRED_REMOVED) {
             printf("  removed at the alarm panel: pair again\n");
         }

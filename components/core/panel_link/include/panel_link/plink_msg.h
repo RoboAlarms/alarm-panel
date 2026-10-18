@@ -189,6 +189,7 @@ typedef struct {
     int64_t epoch_ms;
     uint8_t partitions; /* enabled, bit 0 = partition 1 */
     uint8_t home;
+    uint8_t selected; /* optional system-section tail; 0 means home */
     uint32_t sys_troubles, sys_restored, dev_troubles;
     uint8_t default_codes;
     uint8_t flags; /* PLINK_SF_* */
@@ -243,6 +244,7 @@ typedef enum {
     PLINK_OP_COMMAND = 1,     /* an alarm_cmd_t */
     PLINK_OP_AUTH = 2,        /* check a code (ui_backend_t.authenticate) */
     PLINK_OP_CHANGE_CODE = 3, /* ui_backend_t.change_code: code = current, new_code */
+    PLINK_OP_GOTO = 4,        /* authenticate a temporary partition selection */
 } plink_op_t;
 
 typedef struct {

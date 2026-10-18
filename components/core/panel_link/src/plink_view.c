@@ -164,6 +164,7 @@ void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
     if (x != NULL) {
         out->epoch_ms = x->epoch_ms;
         out->home = x->home;
+        out->selected = x->selected;
         out->lockout_left_ms = x->lockout_left_ms;
         out->report = x->report;
         out->cfg_crc = x->cfg_crc;
@@ -370,6 +371,7 @@ void plink_view_apply_status(plink_view_t *v, const plink_status_t *st, uint64_t
 
     v->have_status = true;
     v->home = st->home;
+    v->selected = st->selected >= 1u && st->selected <= ALARM_MAX_PARTITIONS ? st->selected : 0u;
     v->epoch_ms = st->epoch_ms;
     v->epoch_at_ms = now_ms;
     v->report = st->report;

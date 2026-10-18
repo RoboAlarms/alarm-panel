@@ -33,6 +33,7 @@ typedef struct {
     /* Updates through the link (LINK-030), filled by the master's service: */
     bool updating;            /* its own update runs, or it is on its self-test: UPDATING */
     bool hold;                /* proto_fw_install_allowed() says no on its snapshot: HOLD */
+    uint8_t selected; /* temporary selection, 0 means home */
 } plink_status_extra_t;
 
 /* A keypad's STATUS from the master's snapshot at engine time now (the clock of
@@ -53,6 +54,7 @@ void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
 typedef struct {
     alarm_snapshot_t snap;
     bool have_status;
+    uint8_t selected; /* temporary selection, 0 means home */
     uint8_t home;
     int64_t epoch_ms;     /* the master's clock at the last status */
     uint64_t epoch_at_ms; /* local time it arrived */

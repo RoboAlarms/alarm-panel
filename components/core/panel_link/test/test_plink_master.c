@@ -297,7 +297,7 @@ static plink_result_t exec(uint8_t device, const plink_cmd_t *c)
         r.user = cr.user;
         r.not_ready_zone = cr.not_ready_zone;
         r.may_disarm = cr.may_disarm ? 1u : 0u;
-    } else if (c->op == PLINK_OP_AUTH) {
+    } else if (c->op == PLINK_OP_AUTH || c->op == PLINK_OP_GOTO) {
         uint8_t user = 0;
         r.result = (uint8_t)alarm_engine_authenticate(&R.sim.eng, &src, c->cmd.code,
                                                       c->cmd.partition, R.sim.now, &user);
@@ -2032,6 +2032,66 @@ static void test_reassigned_keypad_command_scope(void)
     run(50);
     TEST_ASSERT_EQUAL_UINT(1u, R.n_runs);
     TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_NOT_AUTHORIZED, k_result(k, 2012u)->result);
+}
+
+/* KPD-006: GOTO authenticates the target partition, never changes the stored home,
+ * and expires despite heartbeats. Replayed GOTO results do not renew the lease. */
+static void test_temporary_partition_selection(void)
+{
+    alarm_config_t cfg = R.sim.eng.cfg;
+    cfg.partitions[1].enabled = true;
+    TEST_ASSERT_EQUAL(ALARM_OK, alarm_engine_set_config(&R.sim.eng, &cfg, R.sim.now));
+    fk_t *k = kp_add();
+    pair(k);
+    run(200);
+    k_cmd(k, 2200u, PLINK_OP_GOTO, ALARM_CMD_CODE_CHECK, 2u, CODE_USER);
+    run(100);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_NOT_AUTHORIZED, k_result(k, 2200u)->result);
+    TEST_ASSERT_EQUAL_UINT8(0u, k->status.selected);
+    k_cmd(k, 2201u, PLINK_OP_GOTO, ALARM_CMD_CODE_CHECK, 2u, CODE_MASTER);
+    run(600);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_OK, k_result(k, 2201u)->result);
+    TEST_ASSERT_EQUAL_UINT8(2u, k->status.selected);
+    TEST_ASSERT_EQUAL_UINT8(1u, k->status.home);
+    TEST_ASSERT_EQUAL_UINT8(1u, R.stored.peer[0].home);
+    k_cmd(k, 2202u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, CODE_MASTER);
+    run(100);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_NOT_AUTHORIZED, k_result(k, 2202u)->result);
+    k_cmd(k, 2203u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 2u, CODE_MASTER);
+    run(600);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_OK, k_result(k, 2203u)->result);
+    run(60000);
+    k_cmd(k, 2201u, PLINK_OP_GOTO, ALARM_CMD_CODE_CHECK, 2u, CODE_MASTER);
+    run(61000);
+    TEST_ASSERT_EQUAL_UINT8(0u, k->status.selected);
+    k_cmd(k, 2204u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 2u, CODE_MASTER);
+    run(100);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_NOT_AUTHORIZED, k_result(k, 2204u)->result);
+    k_cmd(k, 2205u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, CODE_MASTER);
+    run(600);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_OK, k_result(k, 2205u)->result);
+}
+
+/* KPD-006: assignment revokes an in-flight switch; a late authorization result
+ * cannot switch the reassigned keypad back to the previously requested partition. */
+static void test_goto_reassignment_revokes_pending(void)
+{
+    alarm_config_t cfg = R.sim.eng.cfg;
+    cfg.partitions[1].enabled = true;
+    TEST_ASSERT_EQUAL(ALARM_OK, alarm_engine_set_config(&R.sim.eng, &cfg, R.sim.now));
+    fk_t *k = kp_add();
+    pair(k);
+    run(200);
+    R.run_mode = RUN_LATER;
+    k_cmd(k, 2300u, PLINK_OP_GOTO, ALARM_CMD_CODE_CHECK, 1u, CODE_MASTER);
+    run(50);
+    TEST_ASSERT_EQUAL_UINT(1u, R.n_runs);
+    TEST_ASSERT_TRUE(plink_master_set_home(&R.m, NOW, k->rec.device, 2u));
+    answer(0);
+    run(300);
+    TEST_ASSERT_EQUAL_UINT8(2u, k->status.home);
+    TEST_ASSERT_EQUAL_UINT8(0u, k->status.selected);
+    TEST_ASSERT_EQUAL_UINT(0u, k_results(k, 2300u));
 }
 
 /* LINK-018: a copy while the command runs waits for its answer; a copy after is answered from
@@ -4749,6 +4809,8 @@ int main(void)
     RUN_TEST(test_command_runs_as_the_keypad);
     RUN_TEST(test_command_checks);
     RUN_TEST(test_reassigned_keypad_command_scope);
+    RUN_TEST(test_temporary_partition_selection);
+    RUN_TEST(test_goto_reassignment_revokes_pending);
     RUN_TEST(test_command_result_cache);
     RUN_TEST(test_one_command_at_a_time_and_the_panic_slot);
     RUN_TEST(test_command_rate_limit);

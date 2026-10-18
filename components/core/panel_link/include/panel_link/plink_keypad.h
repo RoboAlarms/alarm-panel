@@ -521,6 +521,7 @@ typedef struct {
     uint32_t status_age_s;    /* UINT32_MAX none yet */
     bool maintenance;         /* LINK-025: 10 min without system communication, or not paired */
     uint8_t device;
+    uint8_t selected; /* active partition; home when no temporary selection */
     uint8_t home;
     char master_name[PLINK_NAME_MAX + 1];
     plink_addr_t master;

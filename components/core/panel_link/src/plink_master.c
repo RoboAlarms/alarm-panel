@@ -533,6 +533,12 @@ static bool hold_of(const alarm_snapshot_t *s)
     return !proto_fw_install_allowed(s, NULL);
 }
 
+/* KPD-006: selection is session-only; the saved home never changes. */
+static uint8_t selected_partition(const plink_peer_t *p, uint64_t now)
+{
+    return p->selected != 0u && now < p->selected_until ? p->selected : p->rec.home;
+}
+
 /* What a STATUS carries besides the snapshot, for keypad p at now. */
 static void status_extra(const plink_master_t *m, const plink_peer_t *p, uint64_t now,
                          plink_status_extra_t *x)
@@ -540,6 +546,7 @@ static void status_extra(const plink_master_t *m, const plink_peer_t *p, uint64_
     memset(x, 0, sizeof *x);
     x->epoch_ms = epoch_at(m->epoch_ms, m->epoch_at_ms, now);
     x->home = p->rec.home;
+    x->selected = selected_partition(p, now) == p->rec.home ? 0u : p->selected;
     if (m->port.lockout_left != NULL) {
         x->lockout_left_ms = m->port.lockout_left(m->port.ctx, dev_of(m, p), now);
     }
@@ -761,16 +768,24 @@ static void results_flush(plink_master_t *m)
 
 /* A command's checks before anything runs (LINK-017, LINK-027): an op this master doesn't
  * serve is UNAVAILABLE, and so is a command type it doesn't know - a later keypad's (LINK-039);
- * a partition other than the keypad's home NOT_AUTHORIZED. */
-static alarm_result_t cmd_check(const plink_peer_t *p, const plink_cmd_t *c)
+ * a partition outside the keypad's current selection NOT_AUTHORIZED. */
+static alarm_result_t cmd_check(const plink_master_t *m, const plink_peer_t *p, uint64_t now,
+                                 const plink_cmd_t *c)
 {
+    if (c->op == PLINK_OP_GOTO) {
+        if (c->cmd.partition < 1u || c->cmd.partition > ALARM_MAX_PARTITIONS ||
+            !m->have_snap || !(m->snap.partitions & (1u << (c->cmd.partition - 1u)))) {
+            return ALARM_ERR_BAD_ARG;
+        }
+        return c->cmd.code[0] != '\0' ? ALARM_OK : ALARM_ERR_NOT_AUTHORIZED;
+    }
     if (c->op != PLINK_OP_COMMAND && c->op != PLINK_OP_AUTH && c->op != PLINK_OP_CHANGE_CODE) {
         return ALARM_ERR_UNAVAILABLE;
     }
     if (c->op == PLINK_OP_COMMAND && (unsigned)c->cmd.type > (unsigned)ALARM_CMD_CODE_CHECK) {
         return ALARM_ERR_UNAVAILABLE;
     }
-    if (c->cmd.partition != p->rec.home) {
+    if (c->cmd.partition != selected_partition(p, now)) {
         return ALARM_ERR_NOT_AUTHORIZED;
     }
     return ALARM_OK;
@@ -799,6 +814,9 @@ static void cmd_run(plink_master_t *m, plink_peer_t *p, uint64_t now, size_t i,
     e->req = cmd->req;
     memcpy(e->digest, digest, PLINK_SHA256_LEN);
     e->pending = true;
+    e->sid = p->live.sid;
+    e->op = cmd->op;
+    e->partition = cmd->cmd.partition;
     e->ticket = ticket;
     e->last_ms = now;
     e->first_ms = now;
@@ -844,7 +862,7 @@ static void cmd_take(plink_master_t *m, plink_peer_t *p, uint64_t now, const pli
         }
         cache_clear(p, found); /* the same req with another command is a new one */
     }
-    const alarm_result_t why = cmd_check(p, cmd);
+    const alarm_result_t why = cmd_check(m, p, now, cmd);
     if (why != ALARM_OK) {
         answer_now(m, p, cmd->req, why);
         return;
@@ -893,6 +911,16 @@ void plink_master_result(plink_master_t *m, uint64_t now_ms, uint32_t ticket,
             plink_cached_t *e = &p->cache[i];
             if (!cache_used(e) || !e->pending || e->ticket != ticket) {
                 continue;
+            }
+            if (res->result == ALARM_OK && e->sid == p->live.sid) {
+                if (e->op == PLINK_OP_GOTO) {
+                    p->selected = e->partition == p->rec.home ? 0u : e->partition;
+                    p->selected_until = now_ms + 120000u;
+                    status_changed(p, now_ms);
+                } else if (p->selected != 0u && now_ms < p->selected_until &&
+                           e->partition == p->selected) {
+                    p->selected_until = now_ms + 120000u;
+                }
             }
             e->res = *res;
             e->res.req = e->req;
@@ -1814,6 +1842,8 @@ static void promote(plink_master_t *m, plink_peer_t *p, uint64_t now, const plin
     }
     plink_session_wipe(&p->live);
     p->live = p->pending;
+    p->selected = 0u;
+    p->selected_until = 0u;
     memcpy(p->live_nk, p->pending_nk, PLINK_NONCE_LEN);
     pending_drop(p);
     p->addr = *from;
@@ -2311,6 +2341,11 @@ void plink_master_tick(plink_master_t *m, uint64_t now_ms)
             provisional_drop(m, p, now_ms);
             continue;
         }
+        if (p->selected != 0u && (now_ms >= p->selected_until ||
+            (m->have_snap && !(m->snap.partitions & (1u << (p->selected - 1u)))))) {
+            p->selected = 0u;
+            status_changed(p, now_ms);
+        }
         cache_expire(p, now_ms);
         status_service(m, p, now_ms);
         if (is_live(p) && now_ms >= p->time_due_ms) {
@@ -2339,6 +2374,9 @@ uint64_t plink_master_next(const plink_master_t *m)
         }
         if (!p->used) {
             continue;
+        }
+        if (p->selected != 0u) {
+            t = min64(t, p->selected_until);
         }
         if (p->result_due != 0u) {
             t = 0u;
@@ -2941,6 +2979,10 @@ bool plink_master_set_home(plink_master_t *m, uint64_t now_ms, uint8_t device, u
     const bool ok = store_change(m, p, &before);
     plink_wipe(&before, sizeof before);
     if (ok) {
+        p->selected = 0u;
+        for (size_t i = 0; i < PLINK_RESULTS_PER_KEYPAD; i++) {
+            cache_clear(p, i);
+        }
         status_changed(p, now_ms); /* the keypad learns its new home from its STATUS */
         status_service(m, p, now_ms);
     }

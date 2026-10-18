@@ -170,7 +170,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-024 | On a working Wi-Fi network a keypad shows a change of state within 1 s, and a command's answer within 1 s (Wi-Fi power save off on a master with keypads and on keypads) | HIL |
 | LINK-025 | After 10 min without system communication a keypad opens Wi-Fi, Software update, Pair again and "Make it a stand-alone panel" without a code: a keypad holds no codes and the master supervises it, so cutting it off is no worse than unplugging it; a keypad that is not paired (removed at the master, or never paired) opens them at once - no master could check a code, and it protects nothing | unit + HIL |
 | LINK-026 | A keypad applies a status block, partition record, zone record or time only when it came in a newer frame of the session than the one it last applied for that item | unit |
-| LINK-027 | The master accepts a keypad's commands for its home partition only (NOT_AUTHORIZED otherwise), one at a time with panic in a slot of its own, at most about 2 a second (a burst of 5); requests over their limits are dropped in the link task, before anything reaches the alarm task | unit |
+| LINK-027 | The master accepts a keypad's commands for its home partition or its authenticated temporary selection only (NOT_AUTHORIZED otherwise), one at a time with panic in a slot of its own, at most about 2 a second (a burst of 5); requests over their limits are dropped in the link task, before anything reaches the alarm task | unit |
 | LINK-028 | A keypad speaks its home partition's announcements (docs/features/08 D05) from the master's pushed events, sounds and status, with its own Announcements switches and Voice volume (D06; decided 2026-10-16); nothing older than its last baseline (a reconnect, a backfill, a master restart) is ever spoken, nor an event the master made more than 5 s before its time now (by the engine time every STATUS carries, or its wall clock), nor the end of an exit time learned more than 5 s after the keypad's own countdown ended, and nothing while the link is not ONLINE; a keypad whose baseline falls in an exit time (it started, or its link came back) says that exit time's end as the master does | unit + HIL |
 | LINK-029 | A keypad whose session has `PLINK_CAP_FW` installs firmware only at its master's order, never older or equal and never past its master (decided 2026-10-17): its own ways to update are capped at the version INFO names (its Install only in LINK-025's maintenance and the needs-update state, its check sending `want` = that version; its console and every writer), an ordered run at its order's version and on trial until its master runs that version confirmed; no update check of its own, no Install, no Stop; only a cable goes past | unit, HIL |
 | LINK-030 | The master keeps every keypad with `PLINK_CAP_FW` on its version with no person's step (decided 2026-10-17): it sends FETCH{V} to every keypad behind as soon as it has its target V (its own update downloaded and checked, or the version it runs) and INSTALL{V} to every READY keypad when its own restart is allowed, restarting with them; a keypad found behind later installs when READY and its gate passes; a failed download is tried again after an hour; a keypad that went back on V waits for the master's next version; meanwhile a restarting keypad's supervision trouble isn't raised (up to 10 min) and a keypad installing alone holds the master's own restart | unit, link |
@@ -340,10 +340,16 @@ the master refuses to pair one that can't hold its zones.
 
 **Commands.** `CMD` op 1 is an `alarm_cmd_t` (op section: type, partition, level, arm_flags, zone
 u16, panic, walk_op, walk_flags); op 2 checks a code (Settings access, `authenticate`); op 3
-changes the code's own user's code (`change_code`). The master runs every op as
+changes the code's own user's code (`change_code`). Op 4 authenticates a temporary partition
+selection (KPD-006): its code must control the enabled target partition. The selection is scoped
+to this keypad's session, expires after 120 s without a successful new command, and resets on
+reconnection or home reassignment. Heartbeats and replayed cached results do not renew it; a
+late authorization from another session or before reassignment cannot reinstate it. Returning
+home explicitly uses the same authenticated op. The stored home and audio preferences do not
+change. The master runs every op as
 `{ALARM_SRC_KEYPAD, n}` with n from the session, never from the frame, so keypad semantics (quick
 arm, auto-stay) and the per-source lockout apply (USR-005), on a worker that never holds the link
-task (LINK-027). A command for a partition other than the keypad's home is answered
+task (LINK-027). A command outside the keypad's current selection (home when no temporary selection is active) is answered
 NOT_AUTHORIZED. Codes are zero-padded to the same length so the frame's size doesn't tell a code's
 length; link traffic still shows when a command is sent. Retries: every 500 ms with the same req,
 up to 3 s; panic every 1 s for 60 s (LINK-023). While the link is down or still connecting a
@@ -1594,6 +1600,21 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   8. Versions: the 0.2.0 integration with the new firmware: nothing new, nothing broken. 0.3.0
      with today's firmware: no settings entities and no timeouts.
   9. `plink_dev`'s stack high-water mark after the storm.
+
+### Temporary partition selection implementation (KPD-006)
+The wire/backend and service console support `plink cmd goto <partition> <code>`; subsequent
+console commands use the selected partition. STATUS appends an optional `selected` u8 after
+`mono_ms` in the system section (0/absent means home; values beyond local capacity mean home).
+The field is omitted while at home, so the original frozen v1 fixture is unchanged. The new
+`status_goto_fixture_v1.h` freezes the extension. Receivers that predate GOTO ignore the tail;
+masters that predate it refuse the unknown op. This does not change the pairing record.
+
+Touchscreen controls and interaction-based idle renewal are pending approval of the
+[partition-switch proposal](../07-UI-LVGL-Pro/mockup/proposals/BL-048-partition-switch.js).
+Until integrated, this is a console/backend facility, not touchscreen feature acceptance.
+Announcements and Smart Home actions still use the saved home partition. Live two-partition
+acceptance remains pending installer access; host tests cover authorization, expiry, command
+isolation, retransmissions and pending authorization revoked by reassignment (BL-048).
 
 ## Open questions
 - Keypad-attached inputs (LINK-011), cross-partition GOTO (KPD-006) and partitions beyond home:

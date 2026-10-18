@@ -319,6 +319,7 @@ static void run_job(job_t *job)
         res.may_disarm = d.may_disarm ? 1u : 0u;
         break;
     }
+    case PLINK_OP_GOTO:
     case PLINK_OP_AUTH: {
         uint8_t user = 0;
         r = alarm_service_authenticate(&src, c->cmd.code, c->cmd.partition, &user);

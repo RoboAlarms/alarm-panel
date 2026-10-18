@@ -264,3 +264,10 @@ credentials, for development-only radio fallback checks.
 `plink drop lan|radio|off`: a RAM-only, 90-second fault injection covering transmit and
 receive for that transport, to test automatic recovery without changing credentials.
 These operations do not enable either panel's speaker.
+
+Development/bench partition switching: `plink cmd goto <partition> <code>` on a keypad asks
+its master to authenticate a temporary selection. Later console commands use that selection;
+`plink` shows both saved home and selected partition. After two minutes without a successful
+new command the master returns it home. Reconnect and home reassignment clear it. This is
+currently a console/backend facility; touchscreen integration awaits its UI-044 proposal.
+It does not copy audio preferences or change the saved home partition.

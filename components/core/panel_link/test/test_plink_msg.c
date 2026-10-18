@@ -29,6 +29,7 @@
 #include "plink_wire_fixture_v1.h"
 #include "ui_backend/ui_backend.h"
 #include "unity.h"
+#include "status_goto_fixture_v1.h"
 
 /* Numbers plink_msg.h copies from the components that own them (docs/features/11 "Frozen
  * values"): a DEV_ACK result 0..5 is ui_dev_result_t's, a DEV_ACT mode device_source.h's bit. */
@@ -1391,6 +1392,22 @@ static void test_golden_status(void)
     expect_golden("STATUS", OUT, n);
     TEST_ASSERT_TRUE(plink_dec_status(G_STATUS, sizeof(G_STATUS), &st2));
     expect_status(&st, &st2);
+}
+
+/* KPD-006: the appended selection preserves home and legacy STATUS bytes. */
+static void test_status_temporary_selection_fixture(void)
+{
+    plink_status_t st;
+    TEST_ASSERT_TRUE(plink_dec_status(STATUS_GOTO_V1, sizeof STATUS_GOTO_V1, &st));
+    TEST_ASSERT_EQUAL_UINT8(1, st.home);
+    TEST_ASSERT_EQUAL_UINT8(3, st.selected);
+    size_t n = 0;
+    uint8_t written = 0;
+    TEST_ASSERT_TRUE(plink_enc_status(&st, 0, OUT, sizeof OUT, &n, &written));
+    TEST_ASSERT_EQUAL_UINT(sizeof STATUS_GOTO_V1, n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(STATUS_GOTO_V1, OUT, n);
+    TEST_ASSERT_TRUE(plink_dec_status(G_STATUS, sizeof G_STATUS, &st));
+    TEST_ASSERT_EQUAL_UINT8(0, st.selected);
 }
 
 /* LINK-017, LINK-005: ZONES, ZONES_REQ, CFG_REQ, CFG_PAGE, EV_REQ and EVENTS as in
@@ -4836,6 +4853,7 @@ int main(void)
     RUN_TEST(test_golden_pairing);
     RUN_TEST(test_golden_handshake);
     RUN_TEST(test_golden_status);
+    RUN_TEST(test_status_temporary_selection_fixture);
     RUN_TEST(test_golden_bulk);
     RUN_TEST(test_golden_commands);
     RUN_TEST(test_golden_others);

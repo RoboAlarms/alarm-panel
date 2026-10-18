@@ -212,6 +212,8 @@ typedef struct {
     uint32_t req;
     uint8_t digest[PLINK_SHA256_LEN];
     bool pending;
+    uint8_t op, partition;
+    uint32_t sid; /* authorization result belongs to this session */
     uint32_t ticket;
     plink_result_t res;
     uint64_t last_ms; /* the last copy of this req */
@@ -305,6 +307,8 @@ typedef struct {
 typedef struct {
     bool used;
     plink_peer_rec_t rec;
+    uint8_t selected;
+    uint64_t selected_until;
     plink_session_t live;
     plink_session_t pending;
     uint8_t welcome[128];

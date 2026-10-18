@@ -73,3 +73,11 @@ The component's `CMakeLists.txt` fails the build unless `CONFIG_CJSON_NESTING_LI
 ### Keypads and headless masters (BL-048)
 
 The approved [partition and enrollment flow](../../../docs/features/31-Browser-Panel-Manager/keypad-enrollment.md) uses `web_keypads.c`. The HTTPS worker owns attempts; queued maintenance work expires them even without browser polling. `plink_service` exposes its management calls without the UI feature. The browser never invents a keypad record: both pairing confirmations must complete before its setup popup. Host tests compile this production service in both UI and headless modes.
+
+`src/web_setup_flow.c` implements the portable policy for the approved
+[screen-free setup](../../../docs/features/31-Browser-Panel-Manager/headless-setup.md): exclusive
+claims, committed setup stages, bounded recovery, confirmed network trials and BOOT hold/release
+detection. `test_web_setup_flow.c` covers it with an atomic-storage fake. It is not yet wired into
+the firmware listener, NVS account transactions, setup AP or a physical GPIO. Screen-equipped
+panels cannot automatically enable its restricted listener. Ordinary Panel Manager enablement
+is unchanged. No button action grants alarm authority or erases configuration.

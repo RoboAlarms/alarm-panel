@@ -1,6 +1,7 @@
-// Draft only: no production endpoint, credential or hardware operation is invoked.
+// Approved simulation: no production endpoint, credential or hardware operation is invoked.
 proposal({
-  bl: 'BL-048', title: 'Set up a panel without a screen', status: 'draft', decided: '',
+  bl: 'BL-048', title: 'Set up a panel without a screen', status: 'approved',
+  decided: '2026-10-18: Approved setup and BOOT recovery. Panels with screens keep Panel Manager off until explicitly enabled.',
   role: 'installer',
   why: ['A new headless panel cannot use the touchscreen to join Wi-Fi or create its first browser login.',
     'A local setup flow creates separate household and installer access. Recovery keeps the existing system.'],
@@ -18,7 +19,7 @@ proposal({
   ],
   replaces: [], today: Object.fromEntries(['start','unlock','accounts','network','check','failed','ready','recovery','password','locked'].map(x => ['headless-'+x, 'network'])),
   notes: [
-    'Draft for normal and headless panels. All actions here are simulations; do not enter real passwords.',
+    'Approved shared setup design. Automatic setup access is headless-only; panels with screens keep Panel Manager off until enabled. All actions here are simulations; do not enter real passwords.',
     'Setup Wi-Fi, unique label secrets, a verifiable device identity and a protected local recovery control are proposed hardware/provisioning requirements, not existing controls on the bench panels.',
     'An unclaimed panel exposes only setup. The preview hides normal navigation during setup. A production setup session has no alarm authority.',
     'Browser and future app share panel-owned setup/recovery state. No mobile app or cloud account is required.',

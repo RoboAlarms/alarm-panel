@@ -39,6 +39,10 @@ alarm_add_test(web_rules
                LIBS web_cjson event_log alarm_core unity INCLUDES ${CMAKE_CURRENT_LIST_DIR}/../src STRICT)
 
 # The real keypad HTTP service compiled with and without a local display.
+alarm_add_test(web_setup_flow
+    SOURCES test_web_setup_flow.c ${CMAKE_CURRENT_LIST_DIR}/../src/web_setup_flow.c
+    LIBS unity INCLUDES ${CMAKE_CURRENT_LIST_DIR}/../src STRICT)
+
 set(keypad_fakes ${CMAKE_CURRENT_BINARY_DIR}/keypad_fakes)
 foreach(header alarm_mem.h alarm_service.h panel_prefs.h esp_timer.h sdkconfig.h plink_service.h nvs.h)
     file(WRITE ${keypad_fakes}/${header} "/* declared by test_web_keypads.c */\n")

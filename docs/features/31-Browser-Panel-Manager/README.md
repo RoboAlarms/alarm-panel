@@ -15,7 +15,9 @@ partition settings pass on a display-equipped master with a physical remote keyp
 Human comparison-screen and physical headless acceptance remain.
 
 Initial network/account setup and lost-access recovery have a separate
-[screen-free setup draft](headless-setup.md) (BL-048), awaiting owner review.
+[approved screen-free setup design](headless-setup.md) (BL-048). The policy controller and BOOT
+gesture are host-tested; provisioning, the setup AP and firmware integration remain. Automatic
+setup access is headless-only; panels with screens keep Panel Manager off until enabled.
 
 ## Objective and delivered scope
 

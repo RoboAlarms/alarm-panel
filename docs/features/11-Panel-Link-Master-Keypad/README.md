@@ -1754,7 +1754,9 @@ panels; a successful host preview is not hardware acceptance.
   the authenticated API and production pages (WEB-026). The draft shows active partitions/devices with Add/Remove and consistent popup editors,
   plus per-keypad default/allow/idle/Never. Return controls hide when locked; keypad supervision
   is automatic. Armed/offline settings are read-only. Render and browser
-  interaction checks pass; owner approval pending.
+  interaction checks pass; owner approval pending. The [headless enrollment design](../31-Browser-Panel-Manager/mockup/proposals/keypad-enrollment.md)
+  moves master-side pairing to the installer browser, with shared service requirements for the future
+  mobile app; physical-keypad confirmation remains required.
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over
   30 s saying nothing old; its internal RAM at start-up beside before (LINK-028) (BL-048)

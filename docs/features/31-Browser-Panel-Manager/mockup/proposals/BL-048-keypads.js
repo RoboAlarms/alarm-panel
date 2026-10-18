@@ -13,7 +13,7 @@ proposal({
   today: {'keypad-partition': 'partitions', 'link-updates': 'updates'},
   notes: ['Draft: owner review required before production implementation (WEB-026).',
     'Only configured entries appear. Add reserves a free slot only after confirmation; Remove frees it. Limits shown are four partitions and sixteen devices.',
-    'Keypad row and Edit open the same popup, including Cancel. Switching off hides both return controls while retaining their values; Never disables seconds and visibly dims that row.',
+    'Remove appears only in existing-entry edit popups beside Cancel and Review, never on list rows or Add popups. Keypad row and Edit open the same popup, including Cancel. Switching off hides both return controls while retaining their values; Never disables seconds and visibly dims that row.',
     'Keypad supervision is automatic, so no Check-in supervision field. Expanders and receivers retain their supervision setting.',
     'The built-in panel cannot be removed. A partition with assigned devices or zones must be cleared first; removal never silently reassigns protection.',
     'Production must reconcile device slots and paired keypad identities and enforce capacities, dependencies and authorization in the API. Adding a remote keypad must complete pairing before activating its record.',
@@ -36,15 +36,20 @@ proposal({
     const summary = d => d.kind !== 'keypad' ? t('Partition: {0}', partName(d.home)) : !d.allowed ? t('Locked to {0}', partName(d.home)) :
       d.never ? t('Default: {0} · No automatic return', partName(d.home)) : t('Default: {0} · Returns after {1} seconds inactive', partName(d.home), d.seconds);
     const backToList = () => go('partitions');
+    const removeButton = disabled => `<button type="button" class="danger" id="remove-entry" style="margin-right:auto" ${disabled ? 'disabled' : ''}>${ht('Remove')}</button>`;
     function remove(kind, item) {
       const isPart = kind === 'partition';
       review({title: t('Remove {0}?', item.name), intro: isPart ? t('This partition will no longer appear in the list.') : t('This device will be removed from this system.'),
         confirm: t('Remove'), danger: true, done: t('Removed.'), after: backToList,
-        run: async () => { const list = isPart ? parts : devices; list.splice(list.indexOf(item), 1); }});
+        run: async () => { const list = isPart ? parts : devices; const index = list.findIndex(x => isPart ? x.number === item.number : x.id === item.id); if (index >= 0) list.splice(index, 1); }});
     }
-    function editPartition(item, readOnly, isNew = false) {
+    async function editPartition(item, readOnly, isNew = false) {
+      const alarm = await loadAlarm();
+      const assigned = devices.some(d => Number(d.home) === item.number) || alarm.zones.some(z => z.enabled && z.partition === item.number);
+      const reason = !isNew && (parts.length === 1 ? t('The last partition cannot be removed.') : assigned ? t('Move assigned devices and zones before removing this partition.') : '');
       const specs = partitionSpecs().filter(s => s.name !== 'enabled');
-      editDialog({title: isNew ? t('Add partition') : item.name, specs, values: isNew ? {} : item, initial: item, readOnly,
+      editDialog({title: isNew ? t('Add partition') : item.name, intro: reason, extraButtons: isNew ? '' : removeButton(readOnly || !!reason),
+        bindExtra(form) { const button = form.querySelector('#remove-entry'); if (button) button.onclick = () => remove('partition', item); }, specs, values: isNew ? {} : item, initial: item, readOnly,
         reviewOptions: {title: isNew ? t('Add partition') : t('Save partition'), done: t('Partition saved.'), after: backToList,
           run: async patch => { Object.assign(item, patch); if (isNew) parts.push(item); }}});
     }
@@ -59,10 +64,12 @@ proposal({
         {name: 'never', label: t('Never return automatically'), type: 'switch', showIf: v => (v.kind || item.kind) === 'keypad' && v.allowed},
         {name: 'supervision_s', label: t('Check-in supervision'), type: 'number', min: 0, max: 65535, step: 1, unit: t('s'), help: t('0: not supervised.'), showIf: v => (v.kind || item.kind) !== 'keypad'},
       ];
-      editDialog({title: isNew ? t('Add device') : item.name, specs, values: isNew ? {} : item, initial: item, readOnly,
+      editDialog({title: isNew ? t('Add device') : item.name, intro: item.id === 'local' ? t('The built-in keypad cannot be removed.') : '',
+        extraButtons: isNew ? '' : removeButton(readOnly || item.id === 'local'), specs, values: isNew ? {} : item, initial: item, readOnly,
         reviewOptions: {title: isNew ? t('Add device') : t('Save keypad settings'), done: t('Device saved.'), after: backToList,
           run: async patch => { Object.assign(item, patch); if (isNew) devices.push(item); }},
         bindExtra(form) {
+          const button = form.querySelector('#remove-entry'); if (button) button.onclick = () => remove('device', item);
           const update = () => {
             const never = form.querySelector('[name="never"]').checked;
             const input = form.querySelector('[name="seconds"]');
@@ -80,15 +87,13 @@ proposal({
       }
       const readOnly = mode === 'armed' || !!state?.locked;
       const shown = mode === 'empty' ? devices.filter(d => d.id === 'local') : devices;
-      const alarm = await loadAlarm();
-      const used = p => parts.length === 1 || devices.some(d => Number(d.home) === p.number) || alarm.zones.some(z => z.enabled && z.partition === p.number);
-      const actions = (kind, id, blocked, reason = '') => `<div class="proposal-device-actions"><button data-edit-${kind}="${esc(id)}">${ht('Edit')}</button><button class="danger" data-remove-${kind}="${esc(id)}" ${readOnly || blocked ? 'disabled' : ''} ${reason ? `title="${esc(reason)}"` : ''}>${ht('Remove')}</button></div>`;
+      const actions = (kind, id) => `<button data-edit-${kind}="${esc(id)}">${ht('Edit')}</button>`;
       return {html: pageHead(t('Partitions and devices'), t('Manage the partitions and devices configured on this system.')) +
         (readOnly ? notice('warn', t('Disarm every partition before making changes.')) : '') +
         `<section class="section"><div class="section-head"><div><h2>${ht('Partitions')}</h2><p>${ht('{0} of {1} configured', parts.length, 4)}</p></div><button id="add-partition" ${readOnly || parts.length >= 4 ? 'disabled' : ''}>${ht('Add partition')}</button></div><div class="card"><ul class="list clickable">` +
-        parts.map(p => `<li data-partition-edit="${p.number}" tabindex="0"><div class="main"><strong>${esc(p.name)}</strong><span>${ht('Exit {0} · entry {1} / {2}', fmtDuration(p.exit_delay_s), fmtDuration(p.entry_delay1_s), fmtDuration(p.entry_delay2_s))}</span>${used(p) ? `<span>${ht('Move assigned devices and zones before removing this partition.')}</span>` : ''}</div>${actions('partition', p.number, used(p), t('Partition still assigned or the last partition.'))}</li>`).join('') +
+        parts.map(p => `<li data-partition-edit="${p.number}" tabindex="0"><div class="main"><strong>${esc(p.name)}</strong><span>${ht('Exit {0} · entry {1} / {2}', fmtDuration(p.exit_delay_s), fmtDuration(p.entry_delay1_s), fmtDuration(p.entry_delay2_s))}</span></div>${actions('partition', p.number)}</li>`).join('') +
         `</ul></div></section><section class="section"><div class="section-head"><div><h2>${ht('Devices')}</h2><p>${ht('{0} of {1} configured', shown.length, 16)}</p></div><button id="add-device" ${readOnly || devices.length >= 16 ? 'disabled' : ''}>${ht('Add device')}</button></div><div class="card"><ul class="list clickable">` +
-        shown.map(d => `<li data-device-edit="${esc(d.id)}" tabindex="0"><div class="main"><strong>${esc(d.name)}</strong><span>${esc(summary(d))}</span>${d.id === 'local' ? `<span>${ht('Built-in keypad')}</span>` : ''}</div>${mode === 'error' && d.id === '2' ? tag(t('Not responding'), 'warn') : ''}${actions('device', d.id, d.id === 'local', d.id === 'local' ? t('The built-in keypad cannot be removed.') : '')}</li>`).join('') +
+        shown.map(d => `<li data-device-edit="${esc(d.id)}" tabindex="0"><div class="main"><strong>${esc(d.name)}</strong><span>${esc(summary(d))}</span>${d.id === 'local' ? `<span>${ht('Built-in keypad')}</span>` : ''}</div>${mode === 'error' && d.id === '2' ? tag(t('Not responding'), 'warn') : ''}${actions('device', d.id)}</li>`).join('') +
         `</ul></div></section>`, bind() {
           const wire = (kind, list, edit) => {
             $$(`[data-${kind}-edit]`).forEach(row => {
@@ -98,7 +103,6 @@ proposal({
               row.onclick = event => { if (!event.target.closest('button')) open(); };
               row.onkeydown = event => { if (event.target === row && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); open(); }};
               row.querySelector(`[data-edit-${kind}]`).onclick = open;
-              row.querySelector(`[data-remove-${kind}]`).onclick = () => remove(kind, item);
             });
           };
           wire('partition', parts, editPartition); wire('device', devices, editDevice);

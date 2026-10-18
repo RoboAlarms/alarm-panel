@@ -74,3 +74,15 @@ is separate from those device slots.
 
 Validation: the production service has normal/headless host tests; browser flow tests use a
 mock physical peer. Initial headless provisioning and recovery remain outside this change.
+
+Live acceptance on a display-equipped master and remote keypad verifies the authenticated API:
+removal, matching peer codes, stale-sequence refusal, browser confirmation insufficient on its
+own, keypad-side confirmation, reconnect after completion, and late cancel retaining success.
+Keypad-side confirmation was driven through the physical keypad's development console; this
+does not replace a person checking the comparison screens. Idempotent start, cancellation and
+server-owned expiry with the browser disconnected also pass. Partition assignment, switching,
+30-second idle return and Never were exercised on the physical keypad. Audio stays local.
+
+The live save/readback check found that partition policy requests returned before publishing
+their new state. They now use the same publish-before-reply path as other keypad changes, so
+immediately reopening the settings does not show the preceding policy.

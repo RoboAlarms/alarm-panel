@@ -10,7 +10,9 @@ and passkeys (BL-064), helper accounts (BL-076). · **Milestone:** M18 · **Depe
 09, 13, 14, 15, 21, 30
 
 The approved [keypad management and enrollment flow](keypad-enrollment.md) supports normal and
-headless masters (BL-048). Its service and browser tests pass; live enrollment acceptance remains.
+headless masters (BL-048). Service and browser tests pass, and authenticated enrollment and
+partition settings pass on a display-equipped master with a physical remote keypad.
+Human comparison-screen and physical headless acceptance remain.
 
 ## Objective and delivered scope
 

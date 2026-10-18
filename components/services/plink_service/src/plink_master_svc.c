@@ -1043,9 +1043,10 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
     }
     case UI_LINK_REQ_PARTITION_POLICY:
         if (!req->bench && !installer_ok()) return UI_LINK_REQ_NOT_ALLOWED;
-        return plink_master_set_partition_policy(s_m, now, req->device, req->switch_allowed,
+        r = plink_master_set_partition_policy(s_m, now, req->device, req->switch_allowed,
                                                 req->return_never, req->return_s)
                    ? UI_LINK_REQ_OK : UI_LINK_REQ_FAILED;
+        break; /* Publish the saved policy before acknowledging the browser's request. */
     case UI_LINK_REQ_KEYPAD_REMOVE:
         if (!req->bench && !installer_ok()) {
             return UI_LINK_REQ_NOT_ALLOWED;

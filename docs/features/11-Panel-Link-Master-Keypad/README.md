@@ -1755,8 +1755,10 @@ panels; a successful host preview is not hardware acceptance.
   supervision. The [shared enrollment service](../31-Browser-Panel-Manager/keypad-enrollment.md)
   supports normal/headless masters; the physical keypad still confirms its code. Normal/headless
   service tests, browser tests and both P4 builds pass. Physical enrollment acceptance remains below.
-- [ ] Live Panel Manager enrollment/assignment acceptance on normal and headless hardware;
-  verify two-sided comparison, reconnect/cancel/expiry and policy delivery (BL-048).
+- [x] Live Panel Manager API enrollment/assignment on a display-equipped master and physical
+  keypad: both confirmations (keypad via console), stale-code-sequence refusal, reconnect,
+  cancel/expiry and policy delivery; details in feature 31's keypad-enrollment.md (BL-048).
+- [ ] Human comparison-screen and physical headless enrollment/assignment acceptance (BL-048).
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over
   30 s saying nothing old; its internal RAM at start-up beside before (LINK-028) (BL-048)

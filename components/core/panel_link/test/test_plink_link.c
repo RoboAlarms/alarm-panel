@@ -3931,6 +3931,80 @@ static void test_wifi_enrollment_authenticated_requested_and_cancellable(void)
     TEST_ASSERT_FALSE(plink_keypad_wifi_request(&a->k, know(a)));
 }
 
+/* LINK-053: a reboot loses an outstanding request, not enrollment. A reply from
+ * the previous session cannot provision the restarted keypad; a new request can. */
+static void test_wifi_enrollment_restart_rejects_old_reply(void)
+{
+    wifi_reads = wifi_receives = 0;
+    wifi_available = true;
+    R.m_caps = PLINK_CAP_WIFI;
+    R.port.wifi_credentials = wifi_read;
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
+    remake_blob();
+    plink_master_time(&R.m, mnow(), epoch_now(), "UTC0");
+    pump(mnow());
+    kp_t *a = kp_add();
+    a->caps = PLINK_CAP_WIFI;
+    kp_boot(a);
+    a->k.port.wifi_credentials = wifi_received;
+    pair_kp(a);
+    R.net.lose_type = PLINK_T_WIFI;
+    TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
+    run_ms(1000);
+    uint8_t stale[PLINK_FRAME_MAX];
+    size_t len = 0;
+    TEST_ASSERT_TRUE(plink_net_last(&R.net, R.mnode, PLINK_T_WIFI, stale, sizeof stale, &len));
+    TEST_ASSERT_EQUAL_UINT(0, wifi_receives);
+    const uint8_t device = dev(a);
+    kp_boot(a);
+    a->k.port.wifi_credentials = wifi_received;
+    R.net.lose_type = 0;
+    TEST_ASSERT_TRUE(run_until(15000u, c_all_synced, NULL));
+    TEST_ASSERT_EQUAL_UINT(device, dev(a));
+    TEST_ASSERT_EQUAL_UINT32(0, a->k.wifi_req);
+    plink_keypad_input(&a->k, know(a), maddr(), stale, len);
+    TEST_ASSERT_EQUAL_UINT(0, wifi_receives);
+    TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
+    run_ms(1000);
+    TEST_ASSERT_EQUAL_UINT(1, wifi_receives);
+}
+
+/* LINK-053, LINK-017: an older master remains usable without credential support,
+ * including after either peer restarts. An upgrade enables setup without pairing again. */
+static void test_wifi_enrollment_older_master_restarts_and_upgrade(void)
+{
+    wifi_reads = wifi_receives = 0;
+    wifi_available = true;
+    R.m_caps = 0;
+    R.port.wifi_credentials = wifi_read;
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
+    remake_blob();
+    plink_master_time(&R.m, mnow(), epoch_now(), "UTC0");
+    pump(mnow());
+    kp_t *a = kp_add();
+    a->caps = PLINK_CAP_WIFI;
+    kp_boot(a);
+    pair_kp(a);
+    const uint8_t device = dev(a);
+    for (unsigned i = 0; i < 2; ++i) {
+        if (i == 0) kp_boot(a);
+        else master_restart();
+        a->k.port.wifi_credentials = wifi_received;
+        TEST_ASSERT_TRUE(run_until(15000u, c_all_synced, NULL));
+        TEST_ASSERT_FALSE(plink_keypad_wifi_request(&a->k, know(a)));
+        run_ms(1000);
+        TEST_ASSERT_EQUAL_UINT(0, wifi_reads);
+        TEST_ASSERT_EQUAL_UINT(device, dev(a));
+    }
+    R.m_caps = PLINK_CAP_WIFI;
+    master_restart();
+    TEST_ASSERT_TRUE(run_until(15000u, c_all_synced, NULL));
+    TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
+    run_ms(1000);
+    TEST_ASSERT_EQUAL_UINT(1, wifi_receives);
+    TEST_ASSERT_EQUAL_UINT(device, dev(a));
+}
+
 static void test_capabilities_offered_meet_in_the_and(void)
 {
     R.m_caps = PLINK_CAP_FW | PLINK_CAP_HOME | 0x8000u;
@@ -7131,6 +7205,8 @@ int main(void)
     RUN_TEST(test_a_change_shows_on_every_keypad_within_a_second);
     RUN_TEST(test_master_restart_keypads_back_within_15_s);
     RUN_TEST(test_wifi_enrollment_authenticated_requested_and_cancellable);
+    RUN_TEST(test_wifi_enrollment_restart_rejects_old_reply);
+    RUN_TEST(test_wifi_enrollment_older_master_restarts_and_upgrade);
     RUN_TEST(test_capabilities_offered_meet_in_the_and);
     RUN_TEST(test_home_and_settings_end_to_end);
     RUN_TEST(test_home_list_and_states_converge_through_loss);

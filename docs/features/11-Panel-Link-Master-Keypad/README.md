@@ -65,6 +65,18 @@ pre-pair refusal, negotiated capabilities, lost replies/retry, cancellation, old
 the real LVGL setup walk covers discovery without Wi-Fi, confirmation, transfer, loss, radio-only
 completion and manual selection after pairing. See [current enrollment screens](../07-UI-LVGL-Pro/mockup/screens/radio-enrollment.js).
 
+Recovery coverage: the dev.13 bench keypad retained enrollment through an orderly restart
+while its credential request was blocked, then accepted a resumed setup request without
+pairing again. A second restart after credential storage automatically rejoined Wi-Fi and
+the authenticated session. A 30-second provisioning timeout retained enrollment; restoring
+radio connectivity and retrying succeeded. USB invoked the setup service request after the
+first restart; this does not establish physical first-boot or abrupt-power-cut acceptance.
+Protocol regressions reject a pre-restart credential reply, recover with a fresh request, and
+retain pairing with a master lacking `PLINK_CAP_WIFI` across either peer's restart and a later
+master upgrade. Older-master coverage is simulated, not an installed firmware downgrade.
+The real LVGL walkthrough also checks delayed publication of stored enrollment at startup,
+automatic resumption, offline completion disabled, and manual fallback without pairing again.
+
 ## Goal
 Let another panel act as a remote keypad for a master panel, like the keypads on a classic panel's
 wired keypad bus: it shows what the master says and sends what a person keys. It must be secure
@@ -1794,7 +1806,8 @@ panels; a successful host preview is not hardware acceptance.
   cancel/expiry and policy delivery; details in feature 31's keypad-enrollment.md (BL-048).
 - [x] Approved nearby enrollment, authenticated Wi-Fi provisioning and Select Wi-Fi fallback; language remains local (BL-048, LINK-053).
 - [x] Hardware service acceptance: erase keypad Wi-Fi and pairing, enroll via ESP-NOW, automatically receive credentials and join Wi-Fi; reject unpaired requests, preserve manual credentials, and enroll over manually configured LAN with radio blocked (2026-10-18, dev.13; BL-048, LINK-053).
-- [ ] Physical setup acceptance: factory-first-boot touchscreen flow, interrupted setup resume, older-master fallback and actual out-of-range manual selection (BL-048, LINK-053). Radio-unavailable service behavior is verified above.
+- [x] Recovery service tests: restart before/after credential storage, timeout then retry on restored radio; portable regressions for stale replies and older-master restart/upgrade without re-enrollment (BL-048, LINK-053).
+- [ ] Physical setup acceptance: factory-first-boot touchscreen flow, abrupt-power-cut setup resume, older firmware on the master and actual out-of-range manual selection (BL-048, LINK-053). Orderly restart and radio-unavailable service behavior are verified above.
 - [ ] Human comparison-screen and physical headless enrollment/assignment acceptance (BL-048).
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over

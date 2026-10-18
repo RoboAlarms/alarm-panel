@@ -10398,6 +10398,40 @@ static void walk_link_setup(const ui_options_t *start)
     expect(link_tile_dimmed(),
            "BL-048: the arming tiles open while the keypad connects (LINK-008)");
     shot("bl-048-kp-home-connecting");
+
+    /* LINK-053: stored pairing may publish after the first UI frame on reboot.
+     * Resume directly into Wi-Fi setup, then offer manual selection for an older
+     * master/unavailable credentials without throwing away the stored pairing. */
+    host_panel_forget_wifi();
+    host_link_demo_resume_pairing(false);
+    run(1100);
+    ui_app_first_setup();
+    run(300);
+    link_has("Find your alarm panel", "LINK-053: missing pending-publication state");
+    host_link_demo_resume_pairing(true);
+    run(2200);
+    expect_step(4, "LINK-053: persisted pairing did not resume after publication");
+    expect(link_last_kind() == UI_LINK_REQ_KP_WIFI, "LINK-053: resume did not request Wi-Fi");
+    link_has("Keypad paired", "LINK-053: resume lost enrollment");
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 0, "LINK-053: resume allowed offline Done");
+    shot("bl-048-radio-resume");
+    host_link_demo_wifi_setup(4, true);
+    run(1100);
+    link_has("Select Wi-Fi", "LINK-053: older-master fallback missing");
+    tap_text("Select Wi-Fi");
+    run(2200); /* wait for the simulated network scan */
+    expect_step(2, "LINK-053: resumed manual selection missing");
+    expect(link_last_kind() == UI_LINK_REQ_KP_WIFI, "LINK-053: fallback changed pairing");
+    tap_text("Harbor House");
+    sheet_text("correct horse");
+    tap_name("sheet_done");
+    run(3500);
+    tap_name("wiz_next");
+    run(1100);
+    expect_step(4, "LINK-053: resume manual Wi-Fi re-enrolled");
+    link_has("Wi-Fi connected", "LINK-053: resume did not complete Wi-Fi");
+    tap_name("wiz_next");
+    run(300);
 }
 
 #if CONFIG_ALARM_HOME_CONTROL

@@ -112,3 +112,5 @@ bool host_link_demo_keypad(uint8_t device, ui_link_keypad_t *out);
 
 /* Enrollment scenarios: requesting, joined, unavailable and radio link loss. */
 void host_link_demo_wifi_setup(uint8_t state, bool online);
+/* Stored enrollment appearing after the UI starts, as after interrupted setup. */
+void host_link_demo_resume_pairing(bool published);

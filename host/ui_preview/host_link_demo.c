@@ -763,3 +763,13 @@ void host_link_demo_wifi_setup(uint8_t state, bool online)
     D.pair.wifi_setup = state;
     D.pair.online = online;
 }
+
+void host_link_demo_resume_pairing(bool published)
+{
+    keypad_info(UI_LINK_CONNECTING);
+    D.pairing = published;
+    D.pair.state = UI_LINK_PAIR_DONE;
+    D.pair.device = 2;
+    D.pair.wifi_setup = 0;
+    D.pair.online = false;
+}

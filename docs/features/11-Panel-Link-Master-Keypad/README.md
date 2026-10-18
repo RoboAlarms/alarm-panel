@@ -19,7 +19,7 @@ are built and tried on the two panels: direct FETCH with an exact-version server
 restart together and following the master's rollback, with both speakers muted. Left:
 the bench cases below that need a person or a network change, Smart Home and settings on the
 panels with Home Assistant connected, ESP-NOW through our C6 build, 433 MHz, keypad inputs, GOTO,
-and the remaining keypad-update hardware checks and Panel Manager pages ·
+and the keypad-update Panel Manager pages ·
 **Milestone:** M7 (keypad updates M8) · **Depends on:** 01, 04, 09, 12, 15
 
 ## Goal
@@ -1742,8 +1742,11 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   the keypad took its master's server and dev channel, requested `want=0.7.4-dev.1`, and
   downloaded its own 3,739,648-byte image directly. The master waited for it, both restarted
   about 4 s apart, both self-tests passed, and Activity recorded installing and updated.
-- [ ] On the panels, still: a real power cut mid-download; `display watch` and touch on the keypad
-  while it writes; the screens on the glass while updating (BL-048)
+- [x] Keypad-only USB power cut at 30% of FETCH: booted 0.7.4-dev.1, automatically fetched again,
+  then both panels confirmed 0.7.4-dev.2 after disarming; both speakers stayed off (BL-048, a9716ef).
+- [x] Touch/navigation and visible download progress remained responsive and steady to the owner;
+  `display watch 20` during writes recorded 55-58 frames/s, zero late frames and touch errors,
+  a maximum refresh of 851.4 ms and touch-poll gap of 1023.6 ms (BL-048, a9716ef).
 - [x] Run-time caps: the offered caps an argument of `plink_master_init` and `plink_keypad_init`,
   each session keeping both offers ANDed under `PLINK_CAPS_KNOWN` (LINK-043) (BL-048,
   a97a745)

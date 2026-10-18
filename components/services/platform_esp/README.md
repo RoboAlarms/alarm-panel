@@ -81,3 +81,7 @@ The optional parts that used to live here are their own components since docs/fe
 - Nothing is ever erased or rewritten to recover from a failure that was not diagnosed (`alarm_store.h`); losing an event-log record is a defect (LOG-010).
 - `zone_service`'s binding blob and `zsrc_*` numbers are stored in NVS: never renumber (CONTRIBUTING.md, `zone_hub` rules).
 - It names no board: pins and terminals come from the app (`board_info()`), docs/features/33.
+
+`alarm_service_device_reachable_at` carries a link keypad's home partition to the alarm task.
+The engine captures the trouble scope at loss and retains it for the restore; ordinary devices
+continue using `alarm_service_device_reachable` with their enabled device-table assignment.

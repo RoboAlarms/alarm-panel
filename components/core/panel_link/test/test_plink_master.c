@@ -2009,6 +2009,31 @@ static void test_command_checks(void)
     EXPECT_STATE(&R.sim, 1, ALARM_STATE_DISARMED);
 }
 
+/* LINK-002, LINK-027: reassignment changes the authenticated command scope immediately,
+ * persists the home, and does not grant access to the keypad's previous partition. */
+static void test_reassigned_keypad_command_scope(void)
+{
+    fk_t *k = kp_add();
+    pair(k);
+    TEST_ASSERT_TRUE(plink_master_set_home(&R.m, NOW, k->rec.device, 2u));
+    run(200);
+    TEST_ASSERT_EQUAL_UINT8(2u, k->status.home);
+    TEST_ASSERT_EQUAL_UINT8(2u, R.stored.peer[0].home);
+    k_cmd(k, 2010u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 1u, CODE_USER);
+    run(50);
+    TEST_ASSERT_EQUAL_UINT(0u, R.n_runs);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_NOT_AUTHORIZED, k_result(k, 2010u)->result);
+    k_cmd(k, 2011u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 2u, CODE_USER);
+    run(50);
+    TEST_ASSERT_EQUAL_UINT(1u, R.n_runs);
+    TEST_ASSERT_TRUE(plink_master_set_home(&R.m, NOW, k->rec.device, 1u));
+    run(200);
+    k_cmd(k, 2012u, PLINK_OP_COMMAND, ALARM_CMD_DISARM, 2u, CODE_USER);
+    run(50);
+    TEST_ASSERT_EQUAL_UINT(1u, R.n_runs);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_NOT_AUTHORIZED, k_result(k, 2012u)->result);
+}
+
 /* LINK-018: a copy while the command runs waits for its answer; a copy after is answered from
  * the cache, for 90 s after the last copy; then the same req runs as a new command; the same req
  * with another command is a new one. Nothing runs twice. */
@@ -4723,6 +4748,7 @@ int main(void)
     RUN_TEST(test_sounds_by_home_partition);
     RUN_TEST(test_command_runs_as_the_keypad);
     RUN_TEST(test_command_checks);
+    RUN_TEST(test_reassigned_keypad_command_scope);
     RUN_TEST(test_command_result_cache);
     RUN_TEST(test_one_command_at_a_time_and_the_panic_slot);
     RUN_TEST(test_command_rate_limit);

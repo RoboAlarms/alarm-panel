@@ -400,7 +400,7 @@ void alarm_engine_device_checkin(alarm_engine_t *e, uint8_t device, alarm_ms_t n
     if ((e->dev_trouble & bit) != 0u) {
         e->dev_trouble &= ~bit;
         e->dev_trouble_mem |= bit;
-        eng_emit(e, ALARM_EV_TROUBLE_RESTORE, e->cfg.devices[d].partition, device, 0u, NULL,
+        eng_emit(e, ALARM_EV_TROUBLE_RESTORE, e->dev_trouble_partition[d], device, 0u, NULL,
                  ALARM_TRBL_DEVICE_SUPERVISION, ALARM_TRBL_FAMILY_DEVICE, ALARM_EVF_SYSTEM,
                  REPORT_NOW);
         e->sys_dirty = true;
@@ -414,33 +414,43 @@ void alarm_engine_device_checkin(alarm_engine_t *e, uint8_t device, alarm_ms_t n
 void alarm_engine_device_reachable(alarm_engine_t *e, uint8_t device, bool reachable,
                                    alarm_ms_t now)
 {
-    if (e == NULL || device < 1u || device > ALARM_MAX_DEVICES || !eng_enter(e, now)) {
+    if (e == NULL || device < 1u || device > ALARM_MAX_DEVICES) {
+        return;
+    }
+    const alarm_device_config_t *dc = &e->cfg.devices[device - 1u];
+    alarm_engine_device_reachable_at(e, device, dc->enabled ? dc->partition : 0u, reachable, now);
+}
+
+void alarm_engine_device_reachable_at(alarm_engine_t *e, uint8_t device, uint8_t partition,
+                                      bool reachable, alarm_ms_t now)
+{
+    if (e == NULL || device < 1u || device > ALARM_MAX_DEVICES ||
+        partition > ALARM_MAX_PARTITIONS || !eng_enter(e, now)) {
         return;
     }
     const unsigned d = device - 1u;
     const uint32_t bit = 1u << d;
-    const alarm_device_config_t *dc = &e->cfg.devices[d];
     if (reachable) {
         e->devices[d].checkin = e->now;
         if ((e->dev_trouble & bit) != 0u) {
             e->dev_trouble &= ~bit;
             e->dev_trouble_mem |= bit;
-            eng_emit(e, ALARM_EV_TROUBLE_RESTORE, dc->partition, device, 0u, NULL,
+            eng_emit(e, ALARM_EV_TROUBLE_RESTORE, e->dev_trouble_partition[d], device, 0u, NULL,
                      ALARM_TRBL_DEVICE_SUPERVISION, ALARM_TRBL_FAMILY_DEVICE, ALARM_EVF_SYSTEM,
                      REPORT_NOW);
             e->sys_dirty = true;
         }
     } else if ((e->dev_trouble & bit) == 0u) {
+        e->dev_trouble_partition[d] = partition;
         e->dev_trouble |= bit;
         e->dev_trouble_mem &= ~bit;
         for (uint8_t p = 1u; p <= ALARM_MAX_PARTITIONS; p++) {
-            if (dc->partition == 0u || dc->partition == p) {
+            if (partition == 0u || partition == p) {
                 eng_part(e, p)->trouble_unack = true;
             }
         }
-        eng_emit(e, ALARM_EV_TROUBLE, dc->partition, device, 0u, NULL,
-                 ALARM_TRBL_DEVICE_SUPERVISION, ALARM_TRBL_FAMILY_DEVICE, ALARM_EVF_SYSTEM,
-                 REPORT_NOW);
+        eng_emit(e, ALARM_EV_TROUBLE, partition, device, 0u, NULL, ALARM_TRBL_DEVICE_SUPERVISION,
+                 ALARM_TRBL_FAMILY_DEVICE, ALARM_EVF_SYSTEM, REPORT_NOW);
         e->sys_dirty = true;
     }
     eng_leave(e);
@@ -677,7 +687,7 @@ void alarm_engine_partition_status(const alarm_engine_t *e, uint8_t p,
     out->troubles = (uint16_t)(out->troubles + popcount32(e->sys_trouble | e->sys_trouble_mem));
     for (unsigned d = 0; d < ALARM_MAX_DEVICES; d++) {
         const uint32_t bit = 1u << d;
-        const uint8_t dp = e->cfg.devices[d].partition;
+        const uint8_t dp = e->dev_trouble_partition[d];
         if (((e->dev_trouble | e->dev_trouble_mem) & bit) != 0u && (dp == 0u || dp == p)) {
             out->troubles++;
         }

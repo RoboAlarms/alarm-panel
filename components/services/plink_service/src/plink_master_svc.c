@@ -147,6 +147,7 @@ static alarm_config_t *s_cfg;         /* the engine's configuration, PSRAM, the 
 static alarm_config_t *s_cfg_scratch; /* plink_cfg_for_keypads' scratch, PSRAM, the worker's */
 static uint8_t *s_blob[2];            /* the keypads' copies, PSRAM */
 static atomic_uint s_reach_dirty;     /* supervision edges to tell the engine (bit d-1) */
+static atomic_uchar s_reach_home[PLINK_KEYPADS_MAX];
 static atomic_uint s_reach_state;     /* ... and what to tell it (1 reachable) */
 static atomic_uint s_enabled_devices; /* the engine's enabled device-table entries (bit d-1) */
 
@@ -401,7 +402,8 @@ static void flush_edges(void)
     const uint32_t state = atomic_load(&s_reach_state);
     for (uint8_t d = 1; d <= PLINK_KEYPADS_MAX; d++) {
         if ((dirty & (1u << (d - 1u))) != 0u) {
-            alarm_service_device_reachable(d, (state & (1u << (d - 1u))) != 0u);
+            alarm_service_device_reachable_at(d, atomic_load(&s_reach_home[d - 1u]),
+                                              (state & (1u << (d - 1u))) != 0u);
         }
     }
 }
@@ -519,6 +521,12 @@ static void port_reachable(void *ctx, uint8_t device, bool reachable)
     (void)ctx;
     if (device < PLINK_DEVICE_FIRST || device > PLINK_DEVICE_LAST) {
         return;
+    }
+    for (size_t i = 0; i < PLINK_KEYPADS_MAX; i++) {
+        if (s_m->peer[i].used && s_m->peer[i].rec.device == device) {
+            atomic_store(&s_reach_home[device - 1u], s_m->peer[i].rec.home);
+            break;
+        }
     }
     const uint32_t bit = 1u << (device - 1u);
     if (reachable) {

@@ -76,6 +76,7 @@ typedef struct {
         struct {
             uint8_t device;
             bool reachable;
+            uint8_t partition; /* UINT8_MAX: use the configured device scope */
         } reach;
         struct {
             alarm_storage_owner_t owner;
@@ -97,7 +98,8 @@ static uint32_t hash_faults(void *ctx)
 
 /* The engine, its snapshot and the event ring live in PSRAM: only tasks touch them (the alarm
  * task, and the others under s_lock), never an ISR or the flash-writing code that runs with the
- * cache off. Internal RAM is the reserve the crypto and the network drivers draw on (docs/bugs/B001). */
+ * cache off. Internal RAM is the reserve the crypto and the network drivers draw on
+ * (docs/bugs/B001). */
 static alarm_engine_t s_eng ALARM_SLOW_BSS;
 static QueueHandle_t s_queue;
 static TaskHandle_t s_task;
@@ -559,7 +561,12 @@ static void handle(const msg_t *m)
         m->call.fn(&s_eng, now, m->call.ctx);
         break;
     case MSG_REACHABLE:
-        alarm_engine_device_reachable(&s_eng, m->reach.device, m->reach.reachable, now);
+        if (m->reach.partition == UINT8_MAX) {
+            alarm_engine_device_reachable(&s_eng, m->reach.device, m->reach.reachable, now);
+        } else {
+            alarm_engine_device_reachable_at(&s_eng, m->reach.device, m->reach.partition,
+                                             m->reach.reachable, now);
+        }
         break;
     case MSG_STORAGE:
         alarm_engine_storage_trouble(&s_eng, m->storage.owner, m->storage.active, now);
@@ -819,8 +826,14 @@ void alarm_service_device_checkin(uint8_t device)
 
 void alarm_service_device_reachable(uint8_t device, bool reachable)
 {
-    /* an edge, like a trouble: waits for room rather than being dropped (CORE-TRBL-008) */
-    const msg_t m = {.kind = MSG_REACHABLE, .reach = {.device = device, .reachable = reachable}};
+    alarm_service_device_reachable_at(device, UINT8_MAX, reachable);
+}
+
+void alarm_service_device_reachable_at(uint8_t device, uint8_t partition, bool reachable)
+{
+    /* An edge must not be dropped (CORE-TRBL-008). */
+    const msg_t m = {.kind = MSG_REACHABLE,
+                     .reach = {.device = device, .reachable = reachable, .partition = partition}};
     post(&m);
 }
 

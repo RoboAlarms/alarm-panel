@@ -299,7 +299,7 @@ A faulted motion sensor makes the panel "not ready" for Away but still allows St
 | CORE-TRBL-005 | Tamper while armed = alarm | `test_tamper_armed_is_alarm` |
 | CORE-TRBL-006 | Low battery doesn't block arming | `test_low_battery_does_not_block` |
 | CORE-TRBL-007 | Zone supervision (missed check-in = CHECK) | `test_zone_supervision` |
-| CORE-TRBL-008 | Device (keypad) supervision | `test_device_supervision` |
+| CORE-TRBL-008 | Device (keypad) supervision; external keypads supply their home partition, and restore retains the loss scope | `test_device_supervision`, `test_keypad_supervision_home_partition`, `test_disabled_device_scope_is_not_reused` |
 | CORE-TRBL-009 | Trouble by day / alarm by night | `test_day_night_zone` |
 | CORE-TRBL-010 | Monitor zones report only | `test_monitor_zone` |
 | CORE-TRBL-011 | Exit beeps outrank trouble beeps | `test_trouble_beeps_below_exit` |

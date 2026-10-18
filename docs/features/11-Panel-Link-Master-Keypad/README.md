@@ -1598,14 +1598,11 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
 ## Open questions
 - Keypad-attached inputs (LINK-011), cross-partition GOTO (KPD-006) and partitions beyond home:
   after the Wi-Fi keypad works.
-- A link keypad's supervision trouble takes its partition from the engine's device-table entry with
-  the keypad's number (`alarm_engine_device_reachable`), enabled or not: all partitions while that
-  entry was never given one, but an entry once used for partition 2 and switched off puts a
-  partition-1 keypad's trouble, its restore, its report and `trouble_unack` on partition 2. Known
-  limitation, as for Z-Wave's keypads: a core call taking the partition (the keypad's home), or the
-  engine using all partitions for an entry that isn't enabled, would fix both. The trouble names
-  the keypad by number only ("Keypad 3 not responding"); a name lookup shared with Zigbee and
-  Z-Wave would fix it.
+- A link keypad's supervision trouble uses its assigned home partition, supplied explicitly to
+  the engine (LINK-007). Trouble, restore and remembered trouble retain the scope captured at
+  loss, even if the assignment changes before recovery. A later loss uses the new home.
+  Legacy external devices with a disabled device-table slot ignore that slot's stale partition.
+  Trouble names still identify the keypad by number; a shared name lookup remains open.
 - LINK-001's number shared with Zigbee: the link chooses from Zigbee's numbers as its worker read
   them (at most a second old: the zone lock is never taken on the link task, LINK-027), reserves
   the chosen one with Zigbee at once and reads Zigbee's numbers again without waiting before the
@@ -1697,6 +1694,15 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   start and end (its trips, and a chime, on zones without approved words silent on both), a keypad
   restart in an exit time (Armed at its end once a baseline there joins the arming) (LINK-028)
   (BL-048, 5720f24, 674a736, 660b91c)
+- [x] Muted bench checks: keypad voice/status/chime switches and Voice volume 0 applied and
+  restored; 43 s without STATUS reached No system communication and automatically recovered.
+  Speakers remained off, displays enabled. This verifies settings/transport, not audible output.
+- [x] Multi-partition supervision: a missing link keypad reports against its assigned home;
+  restore retains the loss's partition. Host regressions cover a stale disabled device slot,
+  configuration saves, reassignment and command rejection outside the newly assigned home.
+- [ ] Panel Manager keypad assignments and automatic update status: review
+  [BL-048 proposal](../31-Browser-Panel-Manager/mockup/proposals/BL-048-keypads.js), then implement
+  the authenticated API and production pages (WEB-026). Render tests pass; visual review pending.
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over
   30 s saying nothing old; its internal RAM at start-up beside before (LINK-028) (BL-048)

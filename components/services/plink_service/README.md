@@ -13,7 +13,7 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   STATUS, so a keypad's voice has a batch's tone before its STATUS); a worker task runs the keypads' commands,
   code checks and code changes on the alarm task as `{ALARM_SRC_KEYPAD, n}`, reads each keypad's
   lockout after its command, rebuilds the keypads' copy of the configuration (no code material,
-  LINK-019) and tells the engine about silent keypads (`alarm_service_device_reachable`, LINK-007;
+  LINK-019) and tells the engine about silent keypads (`alarm_service_device_reachable_at`, with the keypad's home partition, LINK-007;
   no check-ins: they would only repeat the edges, once per heartbeat, and the engine call can wait
   for the alarm task, which the link task never does).
   The link is announced by mDNS `_roboalarms-link._udp` only while a keypad is paired or pairing is

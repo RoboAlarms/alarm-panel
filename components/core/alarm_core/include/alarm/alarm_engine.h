@@ -191,12 +191,13 @@ typedef struct {
     uint32_t sys_trouble_mem;     /* restored, awaiting code+OFF */
     uint32_t dev_trouble;         /* devices missing (bit = device - 1) */
     uint32_t dev_trouble_mem;
-    uint32_t storage_owners;      /* owners holding ALARM_TRBL_STORAGE (bit = alarm_storage_owner_t);
-                                     runtime only, never persisted */
-    uint8_t default_codes;        /* ALARM_DEFAULT_CODE_* still in use */
-    bool program;                 /* installer mode */
-    bool arm_hold;                /* the platform holds arming (alarm_engine_hold_arming) */
-    uint8_t program_user;         /* installer who entered it, 0 = power-up recovery */
+    uint8_t dev_trouble_partition[ALARM_MAX_DEVICES]; /* scope captured when trouble starts */
+    uint32_t storage_owners; /* owners holding ALARM_TRBL_STORAGE (bit = alarm_storage_owner_t);
+                                runtime only, never persisted */
+    uint8_t default_codes;   /* ALARM_DEFAULT_CODE_* still in use */
+    bool program;            /* installer mode */
+    bool arm_hold;           /* the platform holds arming (alarm_engine_hold_arming) */
+    uint8_t program_user;    /* installer who entered it, 0 = power-up recovery */
     alarm_source_t program_src;
     alarm_ms_t program_until;     /* installer mode idle timeout */
     alarm_ms_t recovery_until;    /* end of the power-up recovery window, 0 = closed */
@@ -274,6 +275,10 @@ void alarm_engine_device_checkin(alarm_engine_t *e, uint8_t device, alarm_ms_t n
  * device's supervision_s. Idempotent: only a change emits. */
 void alarm_engine_device_reachable(alarm_engine_t *e, uint8_t device, bool reachable,
                                    alarm_ms_t now);
+/* LINK-007: external keypads supply their assigned home partition (0 means all).
+ * A restore retains the scope of the original trouble, even after reassignment. */
+void alarm_engine_device_reachable_at(alarm_engine_t *e, uint8_t device, uint8_t partition,
+                                      bool reachable, alarm_ms_t now);
 
 /* ALARM_CMD_WALK_TEST (docs/features/40 WALK-001/002/025): walk_op START and EXTEND, and a
  * TOGGLE that starts, need the installer, the system master or a partition master; a TOGGLE that

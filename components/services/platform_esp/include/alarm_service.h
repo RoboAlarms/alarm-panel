@@ -92,6 +92,7 @@ void alarm_service_device_checkin(uint8_t device);
 /* CORE-TRBL-008, ZW-038: a device the platform can't reach (false) or hears again (true):
  * alarm_engine_device_reachable on the alarm task. */
 void alarm_service_device_reachable(uint8_t device, bool reachable);
+void alarm_service_device_reachable_at(uint8_t device, uint8_t partition, bool reachable);
 
 /* ---- synchronous calls (block until the alarm task has run them) -------------- */
 esp_err_t alarm_service_call(alarm_service_fn fn, void *ctx);

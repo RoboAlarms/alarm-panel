@@ -406,6 +406,53 @@ static void test_device_unreachable_with_supervision(void)
     TEST_ASSERT_EQUAL_UINT32(0, alarm_engine_device_troubles(&S.eng));
 }
 
+/* CORE-TRBL-008, LINK-007: a link keypad's home wins over a stale device-table
+ * assignment. Restore and remembered trouble retain the original scope. */
+static void test_keypad_supervision_home_partition(void)
+{
+    alarm_config_t cfg;
+    sim_config_basic(&cfg);
+    cfg.partitions[1].enabled = true;
+    cfg.devices[0].enabled = false;
+    cfg.devices[0].partition = 1;
+    sim_start(&S, &cfg, NULL);
+    alarm_engine_device_reachable_at(&S.eng, 1, 2, false, S.now);
+    TEST_ASSERT_EQUAL_UINT16(0, sim_status(&S, 1).troubles);
+    TEST_ASSERT_EQUAL_UINT16(1, sim_status(&S, 2).troubles);
+    TEST_ASSERT_FALSE(sim_status(&S, 1).trouble_unack);
+    TEST_ASSERT_TRUE(sim_status(&S, 2).trouble_unack);
+    TEST_ASSERT_EQUAL_UINT8(2, sim_last_event(&S, ALARM_EV_TROUBLE)->partition);
+    alarm_engine_device_reachable_at(&S.eng, 1, 2, false, S.now);
+    EXPECT_EVENTS(&S, ALARM_EV_TROUBLE, 1);
+    TEST_ASSERT_EQUAL(ALARM_OK, alarm_engine_set_config(&S.eng, &cfg, S.now));
+    TEST_ASSERT_EQUAL_UINT16(1, sim_status(&S, 2).troubles);
+    /* Reassignment must not put the restore on a different partition. */
+    alarm_engine_device_reachable_at(&S.eng, 1, 1, true, S.now);
+    TEST_ASSERT_EQUAL_UINT8(2, sim_last_event(&S, ALARM_EV_TROUBLE_RESTORE)->partition);
+    TEST_ASSERT_EQUAL_UINT16(0, sim_status(&S, 1).troubles);
+    TEST_ASSERT_EQUAL_UINT16(1, sim_status(&S, 2).troubles);
+    alarm_engine_device_reachable_at(&S.eng, 1, 1, false, S.now);
+    TEST_ASSERT_EQUAL_UINT8(1, sim_last_event(&S, ALARM_EV_TROUBLE)->partition);
+    TEST_ASSERT_EQUAL_UINT16(1, sim_status(&S, 1).troubles);
+    TEST_ASSERT_EQUAL_UINT16(0, sim_status(&S, 2).troubles);
+    alarm_engine_device_reachable_at(&S.eng, 1, ALARM_MAX_PARTITIONS + 1u, true, S.now);
+    TEST_ASSERT_EQUAL_UINT32(1, alarm_engine_device_troubles(&S.eng));
+}
+
+/* CORE-TRBL-008: an unused legacy slot must not scope a radio keypad to an old partition. */
+static void test_disabled_device_scope_is_not_reused(void)
+{
+    alarm_config_t cfg;
+    sim_config_basic(&cfg);
+    cfg.partitions[1].enabled = true;
+    cfg.devices[0].partition = 2;
+    sim_start(&S, &cfg, NULL);
+    alarm_engine_device_reachable(&S.eng, 1, false, S.now);
+    TEST_ASSERT_EQUAL_UINT8(0, sim_last_event(&S, ALARM_EV_TROUBLE)->partition);
+    TEST_ASSERT_EQUAL_UINT16(1, sim_status(&S, 1).troubles);
+    TEST_ASSERT_EQUAL_UINT16(1, sim_status(&S, 2).troubles);
+}
+
 /* CORE-TRBL-009: trouble by day / alarm by night (type 05). */
 static void test_day_night_zone(void)
 {
@@ -470,6 +517,8 @@ int main(void)
     RUN_TEST(test_low_battery_does_not_block);
     RUN_TEST(test_zone_supervision);
     RUN_TEST(test_device_supervision);
+    RUN_TEST(test_keypad_supervision_home_partition);
+    RUN_TEST(test_disabled_device_scope_is_not_reused);
     RUN_TEST(test_device_unreachable_without_supervision);
     RUN_TEST(test_device_unreachable_with_supervision);
     RUN_TEST(test_device_unreachable_survives_config_save);

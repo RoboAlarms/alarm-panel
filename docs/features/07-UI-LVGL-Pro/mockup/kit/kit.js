@@ -417,7 +417,7 @@ const M = (() => {
       <div class="content">${content}</div>${over}${t ? toast(t) : ''}</div>`;
   }
   /** Home: the state card beside the arming tiles, a pad or an action tile. */
-  const home = (heroProps, pane) => `<div class="view" style="gap:var(--space_xl)">${hero(heroProps)}<div class="pane">${pane}</div></div>`;
+  const home = (heroProps, pane, belowHero = '') => `<div class="view" style="gap:var(--space_xl)">${belowHero ? `<div class="home_partition">${hero(heroProps)}${belowHero}</div>` : hero(heroProps)}<div class="pane">${pane}</div></div>`;
   /** big_value: one value to read out or compare, large (a pairing code) */
   const big_value = ({label, value, note}) => `<div class="big_value">${label ? text(label, 'body', 'text_2') : ''}
     ${text(value, 'headline')}${note ? text(note, 'caption', 'text_2') : ''}</div>`;

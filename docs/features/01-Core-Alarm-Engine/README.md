@@ -548,8 +548,9 @@ v1 is complete: every requirement above has its tagged host test. What follows i
 - [ ] Common/lobby partition logic (a "common zone")
 
 ### On the keypads (M7)
-- [ ] Cross-partition GOTO on the keypads: each keypad has a home partition and returns to it
-  after 2 minutes idle (KPD-006 in [04](../04-Keypad-Behavior-and-Commands/README.md)) (BL-048). The
+- [ ] Cross-partition GOTO on the keypads: each panel has an installer-set default partition,
+  switching allowed/locked setting, and idle return delay (default 30 seconds). Switching views
+  needs no code; alarm commands retain their authorization (KPD-006 in [04](../04-Keypad-Behavior-and-Commands/README.md)) (BL-048). The
   engine's key parser already returns it (CORE-KEY-010), and the service console's keypad
   follows it (`panel_console.c` `keypad_result`).
 

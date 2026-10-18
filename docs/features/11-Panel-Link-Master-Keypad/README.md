@@ -1602,6 +1602,18 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   9. `plink_dev`'s stack high-water mark after the storm.
 
 ### Temporary partition selection implementation (KPD-006)
+The agreed target behavior (2026-10-18) is a switcher below Home's left status card when multiple
+partitions are enabled. Each panel has installer-only default-partition, switching-allowed/locked,
+and return-delay settings; the default delay is 30 seconds of inactivity. Selecting an enabled
+partition requires no code. This changes the displayed/command-target partition, not the normal
+authorization of arm/disarm commands or any audio preferences. The master must enforce the
+per-panel switching policy, including console requests, rather than rely on a hidden UI control.
+
+**Implementation gap:** the backend described below still requires a code and uses a fixed
+120-second command-activity timeout. It must be revised to the policy above, persisted per panel,
+and renewed by actual touchscreen interaction before touchscreen or hardware acceptance. The
+revised mockup shows the requested behavior; it is not a claim that the firmware implements it.
+
 The wire/backend and service console support `plink cmd goto <partition> <code>`; subsequent
 console commands use the selected partition. STATUS appends an optional `selected` u8 after
 `mono_ms` in the system section (0/absent means home; values beyond local capacity mean home).

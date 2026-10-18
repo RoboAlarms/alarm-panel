@@ -1,46 +1,45 @@
-// KPD-006: temporary partition switching; saved home and audio preferences do not change.
+// KPD-006: per-panel installer policy; selecting a view does not authorize alarm actions.
 const gotoProposal = {bl: 'BL-048', status: 'draft', replaces: 'home-ready',
-  why: 'Control another enabled partition with an authorized code, then return home after two minutes idle.'};
-M.screen({id: 'bl-048-partition-home', area: 'Home', title: 'Home: partition row and arm buttons', shot: null,
+  why: 'Show the partition selector under the left status card; installer controls switching and return delay.',
+  decided: '2026-10-18: owner requested no code to switch views, per-panel switching lock, and installer-set return delay defaulting to 30 seconds. Revised layout awaits review.'};
+const partitionHero = {tone: 'green', glyph: 'shield-check', headline: 'Disarmed', detail: 'Ready to arm', note: 'All zones closed'};
+M.screen({id: 'bl-048-partition-home', area: 'Home', title: 'Home: switcher below the status card', shot: null,
   proposal: gotoProposal,
-  notes: 'This is the normal Home screen when multiple partitions are enabled. Tap House above the arm buttons to open the chooser; it never opens automatically. With one enabled partition, Home stays unchanged. No saved audio settings change.',
-  render: () => M.main({content: M.home(
-    {tone: 'green', glyph: 'shield-check', headline: 'Disarmed', detail: 'Ready to arm', note: 'All zones closed'},
-    M.panel_arm(M.changed(M.row_link({glyph: 'layers', title: 'House', detail: 'Home partition', trail: 'chevron-right', goTo: 'bl-048-partition-chooser'}))))}),
+  notes: 'Multiple enabled partitions and switching allowed on this panel: House appears below the left card. Tap it to choose another partition. Away, Stay and Night remain available on the right. No code is needed to change the view; alarm actions retain their normal authorization.',
+  render: () => M.main({content: M.home(partitionHero, M.panel_arm(),
+    M.changed(M.row_link({glyph: 'layers', title: 'House', detail: 'Default partition · Tap to switch', trail: 'chevron-right', goTo: 'bl-048-partition-chooser'})))}),
 });
-M.screen({id: 'bl-048-partition-chooser', area: 'Home', title: 'Choose a partition', shot: null,
+M.screen({id: 'bl-048-partition-chooser', area: 'Home', title: 'Choose a partition: no code prompt', shot: null,
   proposal: gotoProposal,
-  notes: 'Opened only by tapping the partition row on Home. Choose Workshop to request access with a code. House returns to the current Home screen. Disabled partitions are omitted.',
+  notes: 'Opened only by tapping the switcher. Tap Workshop to view it immediately, without a code prompt. House returns to the original view. Only enabled partitions appear; selecting an armed partition does not disarm it.',
   render: () => M.main({content: M.home(
-    {tone: 'blue', glyph: 'layers', headline: 'Choose a partition', detail: 'Currently House', note: 'Your code must allow access'},
-    M.changed(M.row_link({glyph: 'home', title: 'House', detail: 'Home partition · Current', trail: 'chevron-right', goTo: 'bl-048-partition-home'}) +
-      M.row_link({glyph: 'layers', title: 'Workshop', detail: 'Enter code to switch', trail: 'chevron-right', goTo: 'bl-048-partition-code'})))}),
+    {tone: 'blue', glyph: 'layers', headline: 'Choose a partition', detail: 'Currently House', note: 'Choose which partition to view'},
+    M.changed(M.row_link({glyph: 'home', title: 'House', detail: 'Default partition · Current', trail: 'chevron-right', goTo: 'bl-048-partition-home'}) +
+      M.row_link({glyph: 'layers', title: 'Workshop', detail: 'View this partition', trail: 'chevron-right', goTo: 'bl-048-partition-away'})))}),
 });
 M.screen({id: 'bl-048-partition-single', area: 'Home', title: 'One partition: unchanged Home', shot: null,
   proposal: gotoProposal,
-  notes: 'With only one enabled partition there is no partition row or chooser. The existing Home screen stays unchanged.',
-  render: () => M.main({content: M.home(
-    {tone: 'green', glyph: 'shield-check', headline: 'Disarmed', detail: 'Ready to arm', note: 'All zones closed'},
-    M.panel_arm())}),
+  notes: 'With only one enabled partition there is no switcher. The existing Home screen stays unchanged.',
+  render: () => M.main({content: M.home(partitionHero, M.panel_arm())}),
 });
-M.screen({id: 'bl-048-partition-code', area: 'Home', title: 'Authorize the selected partition', shot: null,
-  proposal: {...gotoProposal, replaces: 'pad-arm-away'},
-  notes: 'Only enabled partitions appear in the chooser. This is the code prompt after choosing Workshop; authorization is checked by the master.',
-  render: () => M.main({content: M.home(
-    {tone: 'green', glyph: 'shield-check', headline: 'Disarmed', detail: 'House', note: 'Home partition'},
-    M.changed(M.code_pad({title: 'Switch to Workshop', tone: 'blue', glyph: 'layers', digits: 3})))}),
-});
-M.screen({id: 'bl-048-partition-away', area: 'Home', title: 'Temporarily controlling Workshop', shot: null,
+M.screen({id: 'bl-048-partition-locked', area: 'Home', title: 'Panel locked to its default partition', shot: null,
   proposal: gotoProposal,
-  notes: 'The existing arm/disarm controls act on Workshop. Return home is explicit; two minutes without interaction also returns home. Restart/reconnect and reassignment clear the selection.',
-  render: () => M.main({content: M.home(
-    {tone: 'green', glyph: 'shield-check', headline: 'Disarmed', detail: 'Workshop', note: 'Returns to House after 2 minutes idle'},
-    M.panel_arm(M.changed(M.row_link({glyph: 'home', title: 'Return to House', detail: 'Home partition', trail: 'chevron-right', goTo: 'bl-048-partition-home'}))))}),
+  notes: 'The installer has turned switching off for this panel. House is identified below the card with no chevron or tap action. All controls remain scoped to House; a different panel may allow switching.',
+  render: () => M.main({content: M.home(partitionHero, M.panel_arm(),
+    M.changed(M.row_value({title: 'Assigned partition · Locked', value: 'House'})))}),
 });
-M.screen({id: 'bl-048-partition-denied', area: 'Home', title: 'Partition access refused', shot: null,
+M.screen({id: 'bl-048-partition-away', area: 'Home', title: 'Workshop: return after 30 seconds idle', shot: null,
   proposal: gotoProposal,
-  notes: 'A refused code leaves the current partition unchanged. Normal source lockout applies. A lost link refuses switching and retains the existing No system communication screen.',
-  render: () => M.main({content: M.home(
-    {tone: 'green', glyph: 'shield-check', headline: 'Disarmed', detail: 'House', note: 'Home partition'},
-    M.panel_arm(M.changed(M.paragraph('This code cannot control Workshop.'))))}),
+  notes: 'The same arm/disarm controls now target Workshop with their normal code requirements. After 30 seconds without interaction this panel returns to its saved default, House. The installer can change that delay per panel. Touch activity restarts the idle timer. Switching never copies audio preferences.',
+  render: () => M.main({content: M.home({...partitionHero, detail: 'Workshop', note: 'Returns to House after 30 seconds idle'},
+    M.panel_arm(), M.changed(M.row_link({glyph: 'layers', title: 'Workshop', detail: 'Temporary view · Tap to switch', trail: 'chevron-right', goTo: 'bl-048-partition-chooser'})))}),
+});
+M.screen({id: 'bl-048-partition-policy', area: 'Settings', title: 'Installer: partition settings for this panel', shot: null,
+  proposal: {...gotoProposal, replaces: null},
+  notes: 'Installer-only settings, stored separately for each panel. Default partition selects its normal view. Allow partition switching off locks it there. Return delay is editable in seconds, default 30, and applies only while switching is allowed. These are proposed controls; firmware persistence and enforcement are still pending.',
+  render: () => M.main({view: 'settings', content: M.settings({section: 'keypads', title: 'Hall keypad', note: 'Installer · Partition settings',
+    body: M.changed(M.row_link({glyph: 'home', title: 'Default partition', detail: 'House', trail: 'chevron-right'}) +
+      M.row_toggle({title: 'Allow partition switching', detail: 'Off locks this panel to its default partition', on: true}) +
+      M.row_number({title: 'Return after inactivity', detail: 'Seconds · Default 30', value: '30'}) +
+      M.paragraph('Switching views does not require a code. Arm and disarm keep their normal code requirements.'))})}),
 });

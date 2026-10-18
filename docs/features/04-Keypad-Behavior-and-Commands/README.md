@@ -64,7 +64,7 @@ key is the submit.
 | KPD-003 | Panic buttons need a 2 s hold with visual progress; a silent panic or a refused command confirms with a toast, an audible panic needs none because the screen becomes the alarm (as built) | UI preview |
 | KPD-004 | Keypads show the classic message set (below) for every status | UI preview, ui_words_test |
 | KPD-005 | Keypads play the partition's continuous pattern and one-shot sounds ([08](../08-Audio-and-Annunciation/README.md)) | M3 |
-| KPD-006 | A keypad belongs to a home partition; GOTO switches temporarily and returns after 2 min idle | M7 |
+| KPD-006 | Each panel has an installer-set default partition, permission to switch or remain locked there, and an installer-set idle return delay (default 30 s). Selecting another enabled partition needs no code; alarm actions keep their normal authorization | M7 |
 | KPD-007 | A remote keypad that loses the master shows "No system communication" after 30 s and disables arming controls; panic still attempts to send | M7 |
 | KPD-008 | The keypad shows a lockout countdown when its source is locked out | `test_users.c`, UI preview |
 

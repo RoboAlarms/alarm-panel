@@ -176,6 +176,9 @@
 .disk > * { position: relative; }
 .disk .count { color: var(--color_text); }
 .hero .detail, .hero .note { width: 100%; }
+.home_partition { width: var(--pane_w); height: 100%; flex: none; display: flex; flex-direction: column; gap: var(--space_lg); }
+.home_partition > .hero { flex: 1 1 0; min-height: 0; height: auto; }
+.home_partition > :last-child { flex: none; }
 
 .pane { width: var(--pane_w); height: 100%; flex: none; position: relative; }
 .panel_arm { height: 100%; display: flex; flex-direction: column; gap: var(--space_lg); }

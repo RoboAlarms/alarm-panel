@@ -21,11 +21,11 @@ proposal({
     'No code to switch the touchscreen view. Alarm actions retain normal authorization. Activity on any page renews the inactivity timer.',
     'Never sits below the seconds field and disables it without losing its value. Switching off disables both return controls.',
     'This panel and paired keypads have independent policies; no audio settings are copied.',
-    'Open Partitions and devices, then Partition settings on a keypad row in Devices. Existing device editing stays available; no extra Installer navigation section.',
+    'Open Partitions and devices, then Partition settings on a keypad row in Devices. The row and its link open the same editor. The local keypad keeps In use, Name and Check-in supervision alongside its partition policy; no extra Installer navigation section.',
     'Mock data and changes are confined to this proposal.'],
   apply() {
     const rows = [
-      {id: 'local', name: 'Panel keypad (this panel)', home: 1, allowed: false, seconds: 30, never: false},
+      {id: 'local', name: 'Panel keypad', enabled: true, supervision_s: 0, home: 1, allowed: false, seconds: 30, never: false},
       {id: '1', name: 'Hall keypad', home: 1, allowed: true, seconds: 30, never: false},
       {id: '2', name: 'Workshop keypad', home: 2, allowed: false, seconds: 30, never: false},
     ];
@@ -39,16 +39,23 @@ proposal({
       const armed = mode === 'armed' || !!state?.locked;
       const policyLink = k => `<a data-keypad-policy href="#/keypad-partition/${armed ? 'armed' : mode === 'error' && k.id === '2' ? 'offline' : k.id}">${ht('Partition settings')}</a>`;
       const remotes = mode === 'empty' ? '' : rows.slice(1).map(k =>
-        `<li><div class="main"><strong>${esc(k.name)}</strong><span>${esc(summary(k))}</span></div>` +
+        `<li tabindex="0"><div class="main"><strong>${esc(k.name)}</strong><span>${esc(summary(k))}</span></div>` +
         tag(mode === 'error' && k.id === '2' ? t('Not responding') : t('Online'), mode === 'error' && k.id === '2' ? 'warn' : 'good') +
         policyLink(k) + `</li>`).join('');
-      // Keep the existing device editor and other devices. Add the local policy action
-      // to its existing row, then paired keypad rows in that same Devices list.
+      // Keep other device editors. Each keypad row and its link open one combined editor.
       const html = result.html.replace(/(<li data-device="1"[\s\S]*?)(<\/li>)/,
         (_, row, end) => row + policyLink(rows[0]) + end + remotes);
       return {...result, html, bind() {
         result.bind?.();
-        $$('[data-keypad-policy]').forEach(a => a.onclick = event => event.stopPropagation());
+        $$('[data-keypad-policy]').forEach(a => {
+          const row = a.closest('li');
+          const open = () => { location.hash = a.getAttribute('href'); };
+          row.onclick = open;
+          row.onkeydown = event => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); open(); }
+          };
+          a.onclick = event => { event.preventDefault(); event.stopPropagation(); open(); };
+        });
       }};
     };
     // Scenario routes are review shortcuts, never separate menu entries.
@@ -61,6 +68,11 @@ proposal({
         const original = rows.find(k => k.id === (offline ? '2' : arg)) || rows[1];
         const values = {...original, ...(arg === 'never' ? {never: true} : {})};
         const specs = [
+          ...(original.id === 'local' ? [
+            {name: 'enabled', label: t('In use'), type: 'switch'},
+            {name: 'name', label: t('Name'), type: 'text'},
+            {name: 'supervision_s', label: t('Check-in supervision'), type: 'number', min: 0, max: 65535, step: 1, unit: t('s'), help: t('0: not supervised.')},
+          ] : []),
           {name: 'home', label: t('Default partition'), type: 'select', numeric: true, options: Object.entries(names).map(([n, name]) => [Number(n), name])},
           {name: 'allowed', label: t('Allow partition switching'), type: 'switch', help: t('Off locks this panel to its default partition.')},
           {name: 'seconds', label: t('Return after inactivity'), type: 'number', min: 1, max: 3600, step: 1, unit: t('seconds'), locked: !values.allowed || values.never,

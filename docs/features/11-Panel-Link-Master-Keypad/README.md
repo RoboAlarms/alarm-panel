@@ -1609,7 +1609,7 @@ Each panel has installer-only default-partition, switching-allowed/locked,
 and return-delay settings: Never or a delay in seconds, default 30 seconds of inactivity anywhere
 on the panel. Never disables the inactivity return without changing the saved default partition;
 restart/reconnection and installer reassignment still reset temporary selection. A Never switch
-sits directly above the seconds control on the same policy screen. On disables the seconds
+sits directly below the seconds control on the same policy screen. On disables the seconds
 control; off re-enables it with its previous value. There is no separate delay-selection screen.
 Navigation, scrolling, tapping and code entry reset that timer, including on Activity and other
 pages; it is not elapsed time since the partition was selected. Selecting an enabled

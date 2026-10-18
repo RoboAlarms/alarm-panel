@@ -1,7 +1,7 @@
-idf_component_register(SRCS "src/panel_web.c" "src/web_config.c" "src/web_extra.c" "src/web_login.c" "src/web_screen.c" "src/web_zwave.c" "src/web_zigbee.c" "src/web_automations.c" "src/web_voice.c" "src/web_json_merge.c" "src/web_rules.c"
+idf_component_register(SRCS "src/panel_web.c" "src/web_keypads.c" "src/web_config.c" "src/web_extra.c" "src/web_login.c" "src/web_screen.c" "src/web_zwave.c" "src/web_zigbee.c" "src/web_automations.c" "src/web_voice.c" "src/web_json_merge.c" "src/web_rules.c"
     INCLUDE_DIRS "include" PRIV_INCLUDE_DIRS "src"
     REQUIRES ui_backend dev_remote
-    PRIV_REQUIRES alarm_mem backup_service lang_packs panel_voice voice_pack ui_port_esp platform_esp panel_ota panel_storage alarm_core net_mqtt net_notify notify zwave_service zigbee_service automation_service device_service i18n espressif__cjson esp_https_server esp_http_server http_redirect
+    PRIV_REQUIRES plink_service alarm_mem backup_service lang_packs panel_voice voice_pack ui_port_esp platform_esp panel_ota panel_storage alarm_core net_mqtt net_notify notify zwave_service zigbee_service automation_service device_service i18n espressif__cjson esp_https_server esp_http_server http_redirect
         esp_timer esp_hw_support app_update mbedtls nvs_flash console)
 # The browser interface, in web/ (web/README.md); the mock-*.cjs files there are PC only and
 # are not embedded. Each file goes in gzipped (a quarter of the flash, and a quarter of the

@@ -548,10 +548,11 @@ static void link_task(void *arg)
         }
         link_req_t req;
         uint32_t gen;
-        if (take_request(&req, &gen)) {
-            const uint8_t r = is_master() ? msvc_request(now, &req) : ksvc_request(now, &req);
+        const bool requested = take_request(&req, &gen);
+        uint8_t result = UI_LINK_REQ_REFUSED;
+        if (requested) {
+            result = is_master() ? msvc_request(now, &req) : ksvc_request(now, &req);
             plink_wipe(&req, sizeof req);
-            answer_request(gen, r);
         }
         if (is_master()) {
             msvc_poll(link_now());
@@ -559,6 +560,9 @@ static void link_task(void *arg)
         if (ksvc_active()) {
             ksvc_poll(link_now());
         }
+        /* Publish the result before waking a caller that immediately reads it (Panel Manager
+         * start/reconnect/cancel). Otherwise it could consume the preceding attempt's DONE. */
+        if (requested) answer_request(gen, result);
         /* The turn's frames are done: the cached AES key goes, so a session wiped in it (a
          * removal, a BYE, a forget, the setup's pairing ended) leaves no key behind (LINK-014). */
         plink_psa_forget();

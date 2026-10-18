@@ -37,3 +37,15 @@ alarm_add_test(web_login
 alarm_add_test(web_rules
                SOURCES test_web_rules.c ${CMAKE_CURRENT_LIST_DIR}/../src/web_rules.c
                LIBS web_cjson event_log alarm_core unity INCLUDES ${CMAKE_CURRENT_LIST_DIR}/../src STRICT)
+
+# The real keypad HTTP service compiled with and without a local display.
+set(keypad_fakes ${CMAKE_CURRENT_BINARY_DIR}/keypad_fakes)
+foreach(header alarm_mem.h alarm_service.h panel_prefs.h esp_timer.h sdkconfig.h plink_service.h nvs.h)
+    file(WRITE ${keypad_fakes}/${header} "/* declared by test_web_keypads.c */\n")
+endforeach()
+foreach(mode normal headless)
+    alarm_add_test(web_keypads_${mode} SOURCES test_web_keypads.c LIBS ui_backend alarm_core web_cjson unity
+        INCLUDES ${keypad_fakes} ${CMAKE_CURRENT_LIST_DIR}/../src STRICT)
+endforeach()
+target_compile_definitions(test_web_keypads_normal PRIVATE CONFIG_ALARM_FEATURE_UI=1)
+target_compile_definitions(test_web_keypads_headless PRIVATE CONFIG_ALARM_FEATURE_UI=0)

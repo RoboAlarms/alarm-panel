@@ -200,6 +200,8 @@ alarm_result_t alarm_service_user_delete_as(const alarm_source_t *src, uint8_t a
 alarm_result_t alarm_service_program_enter(const alarm_source_t *src, const char *code,
                                            uint8_t *user_out);
 void alarm_service_program_exit(const alarm_source_t *src);
+/* End only this source's installer session; a timed-out browser must not end a local one. */
+void alarm_service_program_exit_owned(const alarm_source_t *src);
 void alarm_service_program_keepalive(void);
 alarm_result_t alarm_service_program_set_code(const alarm_source_t *src, uint8_t user_no,
                                               const char *new_code);

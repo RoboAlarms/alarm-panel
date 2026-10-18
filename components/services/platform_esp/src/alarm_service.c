@@ -1299,6 +1299,19 @@ void alarm_service_program_exit(const alarm_source_t *src)
     alarm_service_call(do_program_exit, &c);
 }
 
+static void do_program_exit_owned(alarm_engine_t *e, alarm_ms_t now, void *ctx)
+{
+    const alarm_source_t *src = ((program_ctx_t *)ctx)->src;
+    if (src && e->program && e->program_src.kind == src->kind && e->program_src.id == src->id)
+        alarm_engine_program_exit(e, src, now);
+}
+
+void alarm_service_program_exit_owned(const alarm_source_t *src)
+{
+    program_ctx_t c = {.src = src};
+    alarm_service_call(do_program_exit_owned, &c);
+}
+
 static void do_program_keepalive(alarm_engine_t *e, alarm_ms_t now, void *ctx)
 {
     (void)ctx;

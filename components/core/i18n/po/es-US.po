@@ -1196,6 +1196,229 @@ msgctxt "Zigbee device name"
 msgid "A device"
 msgstr "Un dispositivo"
 
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The update server has nothing for it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The update server holds it back for now"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It needs another version first"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The update server has no release of this version for it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The update server doesn't offer this version"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The download broke off"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The download was too slow"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It got the wrong size"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It arrived damaged"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "No data for a minute"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It waited too long"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Not enough memory"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It couldn't store it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Its signing key isn't trusted"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It isn't for this keypad's chip"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It isn't from a project it accepts"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It isn't newer than the version it runs"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The signature check failed"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It's too big for this keypad"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It can't take this kind of update"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It doesn't know this order"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "3 tries failed, next try tomorrow"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It refused the order"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It got another version"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The system is busy"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It waits until everything is quiet"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "A panic is being sent from it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Its fire or CO alarm still sounds"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Its link is down"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Another update runs on it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, the line under "Keypad {0} update failed". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Stopped at the keypad"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It can't reach the update server"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The update server won't offer it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The transfer failed"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The keypad refused it"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It waits"
+msgstr ""
+
+#. Activity: why a keypad's update ended with nothing installed, by kind, for a reason this panel has no words of its own for. At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgctxt "keypad update"
+msgid "Stopped"
+msgstr ""
+
+#. Activity: a keypad restarts with the update its master sent it; {0} is the keypad's number. At most 63 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Keypad {0} installing an update"
+msgstr ""
+
+#. The line under "Keypad {0} installing an update". At most 95 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It restarts with the new version"
+msgstr ""
+
+#. Activity: a keypad's new version passed its self-test; {0} is the keypad's number. At most 63 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Keypad {0} updated"
+msgstr ""
+
+#: components/core/notify/src/notify_words.c
+# review: draft
+#, fuzzy
+msgid "The new version passed its self-test"
+msgstr "La versión nueva pasó su autoprueba"
+
+#. Activity: a keypad's new version failed and it went back to the one it ran; {0} is the keypad's number. At most 63 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Keypad {0} update rolled back"
+msgstr ""
+
+#: components/core/notify/src/notify_words.c
+# review: draft
+#, fuzzy
+msgid "The new version failed; the previous one runs"
+msgstr "La versión nueva falló; funciona la anterior"
+
+#. Activity: a keypad's update ended with nothing installed; the line under it says why. {0} is the keypad's number. At most 63 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "Keypad {0} update failed"
+msgstr ""
+
 #. Who did it, in the line under an event title: one of the panel's automations (rules the installer set up), not a person. At most 48 bytes.
 #: components/core/notify/src/notify_words.c
 #: components/ui/alarm_ui/src/ui_app.c
@@ -2074,18 +2297,6 @@ msgstr ""
 #, fuzzy
 msgid "The panel restarts with the new version"
 msgstr "El panel se reinicia con la versión nueva"
-
-#: components/core/notify/src/notify_words.c
-# review: draft
-#, fuzzy
-msgid "The new version passed its self-test"
-msgstr "La versión nueva pasó su autoprueba"
-
-#: components/core/notify/src/notify_words.c
-# review: draft
-#, fuzzy
-msgid "The new version failed; the previous one runs"
-msgstr "La versión nueva falló; funciona la anterior"
 
 #: components/core/notify/src/notify_words.c
 # review: draft
@@ -3386,7 +3597,37 @@ msgstr "La lista de versiones está dañada"
 
 #: components/services/panel_ota/src/panel_ota.c
 msgctxt "update"
+msgid "The update server has no firmware for this panel"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
+msgid "The update server offers nothing newer"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
 msgid "The new update server could not be saved"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
+msgid "Waiting for the alarm panel"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
+msgid "No data for a minute"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
+msgid "It waited too long"
+msgstr ""
+
+#: components/services/panel_ota/src/panel_ota.c
+msgctxt "update"
+msgid "The transfer failed"
 msgstr ""
 
 #: components/services/panel_storage/src/panel_storage.c
@@ -3790,11 +4031,13 @@ msgstr "Este navegador no puede decodificar H.264 en esta página"
 msgid "{0} pictures/second"
 msgstr "{0} imágenes/segundo"
 
+#. the alarm panel's Software update, a keypad's status line: it runs this panel's version. At most 95 bytes
 #. Software update status when the newest version is installed. At most 63 bytes
 #. Settings > About, Software update's value when nothing is waiting. At most 23 bytes
 #. A list row's value, at its right end (keep it short).
 #: components/services/panel_web/web/panel-keypad.js
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_update.c
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
@@ -8695,6 +8938,7 @@ msgstr "Disponibles para descargar"
 msgid "Language file"
 msgstr "Archivo de idioma"
 
+#. the question before installing an update on an alarm panel with keypads, which update with it (the sheet's note). At most 190 bytes
 #. the question before installing an update (the sheet's note). At most 190 bytes
 #. A confirmation sheet. At most 127 bytes.
 #: components/services/panel_web/web/panel-pages.js
@@ -10938,7 +11182,6 @@ msgstr "Para puertas de entrada/salida 2."
 #. A list row's title (one line; a long one ends in ...).
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_link.c
 # review: draft
 #, fuzzy
 msgid "Home partition"
@@ -10957,49 +11200,38 @@ msgid "0: not supervised."
 msgstr "0: sin supervisión."
 
 #: components/services/panel_web/web/panel-pages.js
-# review: draft
-#, fuzzy
-msgid "Partitions and devices"
-msgstr "Particiones y dispositivos"
+msgid "Locked to {0}"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Default: {0} · No automatic return"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Default: {0} · Returns after {1} seconds inactive"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Panel keypad"
+msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "Areas that arm separately, their entry and exit times, and supervised keypads and expanders."
-msgstr "Áreas que se arman por separado, sus tiempos de entrada y salida, y los teclados y expansores supervisados."
-
-#. Installer > Partitions, a row's line: exit time {0}, entry times {1} and {2}. At most 30 bytes
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_installer.c
-# review: draft
-#, fuzzy
-msgid "Exit {0} · entry {1} / {2}"
-msgstr "Salida {0} · entrada {1} / {2}"
+msgid "Removed."
+msgstr "Eliminado."
 
 #: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_installer.c
-# review: draft
-#, fuzzy
-msgid "Not in use"
-msgstr "Sin usar"
+msgid "The last partition cannot be removed."
+msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-# review: draft
-#, fuzzy
-msgid "Devices"
-msgstr "Dispositivos"
+msgid "Move assigned devices and zones before removing this partition."
+msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-# review: draft
-#, fuzzy
-msgid "Keypads, expanders and receivers the panel supervises."
-msgstr "Teclados, expansores y receptores que el panel supervisa."
-
-#: components/services/panel_web/web/panel-pages.js
-# review: draft
-#, fuzzy
-msgid "Checked every {0}"
-msgstr "Revisado cada {0}"
+msgid "Add partition"
+msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -11014,6 +11246,10 @@ msgid "Partition saved."
 msgstr "Partición guardada."
 
 #: components/services/panel_web/web/panel-pages.js
+msgid "Add device"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
 msgid "Save device"
@@ -11024,6 +11260,205 @@ msgstr "Guardar el dispositivo"
 #, fuzzy
 msgid "Device saved."
 msgstr "Dispositivo guardado."
+
+#. The sheet's title. At most 127 bytes.
+#. A list row's title (one line; a long one ends in ...).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Default partition"
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Allow partition switching"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Off locks this keypad to its default partition."
+msgstr ""
+
+#. A number row's title (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Return after inactivity"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "seconds"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Default: 30 seconds. Using any screen restarts the inactivity timer."
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Never return automatically"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "The built-in keypad cannot be removed."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Save keypad settings"
+msgstr ""
+
+#. A section heading above a group of rows (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgid "Keypad"
+msgstr "Teclado"
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Expander"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Receiver"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+# review: draft
+#, fuzzy
+msgid "Partitions and devices"
+msgstr "Particiones y dispositivos"
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Areas that arm separately and the devices assigned to them."
+msgstr ""
+
+#. Installer > Partitions, a row's line: exit time {0}, entry times {1} and {2}. At most 30 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_installer.c
+# review: draft
+#, fuzzy
+msgid "Exit {0} · entry {1} / {2}"
+msgstr "Salida {0} · entrada {1} / {2}"
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Edit"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+# review: draft
+#, fuzzy
+msgid "Devices"
+msgstr "Dispositivos"
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Not responding"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "No devices added."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "View keypad enrollment"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Keypad enrolled"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Pairing ended"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Confirm on the keypad"
+msgstr ""
+
+#. Add a keypad, the line under the title while pairing opens. At most 63 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Waiting for a keypad"
+msgstr ""
+
+#. A button row's text (one line).
+#. Installer > Keypads and devices > Add a keypad, the page title. At most 47 bytes
+#. A list row's title (one line; a long one ends in ...).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Add a keypad"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Choose its name and partition next."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "The codes did not match. Start pairing again."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "More than one keypad tried to pair. Try one at a time."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Pairing ended or expired. Check the device list before trying again."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Does this code match your keypad?"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Confirmed here. Tap Confirm on the keypad to finish."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Tap Pair on the new keypad. Keep this window open."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Pairing window: 2 minutes"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Prepare the new keypad:"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Choose Keypad in its setup."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "For Wi-Fi, join this system’s network."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
+# review: draft
+#, fuzzy
+msgid "Close"
+msgstr "Cerrar"
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "No match"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Matches"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Set up keypad"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Pairing status is unknown. Check the device list before starting again."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Connection lost. Pairing status is unknown; reconnecting…"
+msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -12494,6 +12929,36 @@ msgid "The panel isn’t answering. It may be restarting to install the update."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
+msgid "Waiting for status"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Receiving from this panel"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line: it has the update and restarts together with this panel. At most 95 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Ready · restarts with this panel"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line when it missed this panel's version: nobody has to do anything. At most 95 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Not updated yet · tries again by itself"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line when it runs a newer version than this panel (it is left alone). At most 95 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Newer than this panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Keypad updates"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
 msgid "Channel"
@@ -13007,14 +13472,6 @@ msgstr "Corea"
 #, fuzzy
 msgid "Device"
 msgstr "Dispositivo"
-
-#. A section heading above a group of rows (one line).
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_zwave.c
-# review: draft
-#, fuzzy
-msgid "Keypad"
-msgstr "Teclado"
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -17912,13 +18369,6 @@ msgid "Unlock"
 msgstr "Abrir con llave"
 
 #: components/services/panel_web/web/panel-pages.js
-#: components/services/panel_web/web/panel.js
-# review: draft
-#, fuzzy
-msgid "Close"
-msgstr "Cerrar"
-
-#: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
 msgid "Run"
@@ -20087,6 +20537,18 @@ msgstr "La actualización no se confirmó a tiempo. Recargue para ver qué firmw
 #, fuzzy
 msgid "You are signed out."
 msgstr "Cerró sesión."
+
+#. Software update: why this panel's restart into its update waits - one of its keypads runs its own new version's self-test, or installs. At most 39 bytes.
+#: components/services/plink_service/src/plink_fwm_svc.c
+msgctxt "update"
+msgid "A keypad is checking its update"
+msgstr ""
+
+#. Software update: why this panel's restart into its update waits - its keypads are still downloading the same update, so they can restart together. At most 39 bytes.
+#: components/services/plink_service/src/plink_fwm_svc.c
+msgctxt "update"
+msgid "Its keypads are getting the update"
+msgstr ""
 
 #: components/services/plink_service/src/plink_keypad_svc.c
 msgctxt "update"
@@ -23818,8 +24280,11 @@ msgid "Entry and exit times, sirens, panic keys, codes"
 msgstr "Tiempos de entrada y salida, sirenas, teclas de pánico, códigos"
 
 #. A section heading above a group of rows (one line).
+#. A list row's title (one line; a long one ends in ...).
+#. A Settings page's title. At most 47 bytes.
 #. About, a heading: when this panel was built and how long it has run. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
+#: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_settings.c
 # review: draft
 #, fuzzy
@@ -24399,6 +24864,12 @@ msgstr "Áreas que se arman y desarman por separado · se guarda al volver"
 msgid "this keypad"
 msgstr "este teclado"
 
+#: components/ui/alarm_ui/src/ui_installer.c
+# review: draft
+#, fuzzy
+msgid "Not in use"
+msgstr "Sin usar"
+
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
@@ -24478,9 +24949,7 @@ msgid "Hall keypad, Garage expander..."
 msgstr "Teclado del pasillo, Expansor de la cochera..."
 
 #. The sheet's note. At most 127 bytes.
-#. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_link.c
 # review: draft
 #, fuzzy
 msgid "The partition a keypad shows and arms"
@@ -25687,6 +26156,16 @@ msgstr ""
 msgid "Hold a button for 2 seconds to set off the alarm on {0}"
 msgstr ""
 
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Partition switching unavailable"
+msgstr ""
+
+#. The sheet's title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Choose a partition"
+msgstr ""
+
 #. a keypad on Wi-Fi that stopped answering: when it was last heard ("10:12 PM" or "Sep 19"). At most 40 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Not heard since {0}"
@@ -25698,6 +26177,12 @@ msgctxt "keypad state"
 msgid "Connected"
 msgstr ""
 
+#. a keypad on Wi-Fi restarting with a software update this panel sent it; the value of its row instead of "Not responding" (keep it short)
+#: components/ui/alarm_ui/src/ui_link.c
+msgctxt "keypad state"
+msgid "Updating"
+msgstr ""
+
 #. a keypad on Wi-Fi that stopped answering (a trouble); the value of its row (keep it short)
 #: components/ui/alarm_ui/src/ui_link.c
 msgctxt "keypad state"
@@ -25705,16 +26190,14 @@ msgid "Not responding"
 msgstr ""
 
 #. Installer > Keypads and devices, the heading over the keypads on Wi-Fi (other RoboAlarms panels). At most 47 bytes
+#. the alarm panel's Software update, the heading over its keypads. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Keypads"
 msgstr ""
 
-#. A button row's text (one line).
-#. Installer > Keypads and devices > Add a keypad, the page title. At most 47 bytes
-#. A list row's title (one line; a long one ends in ...).
+#. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_link.c
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Add a keypad"
+msgid "Partition settings"
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
@@ -25739,11 +26222,6 @@ msgid_plural "Waiting for a keypad · {0} s left"
 msgstr[0] ""
 msgstr[1] ""
 msgstr[2] ""
-
-#. Add a keypad, the line under the title while pairing opens. At most 63 bytes
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Waiting for a keypad"
-msgstr ""
 
 #. a toast once a keypad was added; {0} is its number. At most 60 bytes
 #: components/ui/alarm_ui/src/ui_link.c
@@ -25896,6 +26374,11 @@ msgstr ""
 msgid "Leaving this page closes pairing."
 msgstr ""
 
+#. a keypad's page while it restarts with a software update this panel sent it, the line under "Updating". At most 95 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Restarting with the new version"
+msgstr ""
+
 #. The sheet's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Keypad name"
@@ -25909,6 +26392,21 @@ msgstr ""
 #. a toast once a keypad on Wi-Fi was removed; {0} is its name. At most 80 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "{0} removed"
+msgstr ""
+
+#. A switch row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Off locks this panel to its default partition"
+msgstr ""
+
+#. A number row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Seconds · Default 30"
+msgstr ""
+
+#. A Settings page: the line under its title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Installer · Partition settings"
 msgstr ""
 
 #. a keypad's page once it is no longer paired (removed meanwhile)
@@ -25964,6 +26462,48 @@ msgstr ""
 msgid "A factory reset: erases the pairing and every setting"
 msgstr ""
 
+#. the alarm panel's Software update, a keypad's line under its name: its number {0} and the version {1} it runs ("Keypad 2 · version 0.6.1"). At most 63 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Keypad {0} · version {1}"
+msgstr ""
+
+#. a percent done ("45 %"); {0} is the number
+#. a light's level in the list of levels; {0} is 25, 50 or 75. At most 15 bytes
+#. a dimmer's level on a device's page, a row's value; {0} is 1 to 99. At most 15 bytes
+#. a row's value on a device's page: its battery's charge; {0} is 0 to 100. At most 15 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+#: components/ui/alarm_ui/src/ui_update.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgctxt "percent"
+msgid "{0} %"
+msgstr "{0} %"
+
+#. a keypad's status line in Software update while it downloads the update itself; {0} is the percent done ("45 %"). At most 80 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+#: components/ui/alarm_ui/src/ui_update.c
+# review: draft
+#, fuzzy
+msgid "Downloading · {0}"
+msgstr "Descargando · {0}"
+
+#. the alarm panel's Software update, a keypad's status line while this panel sends it the update; {0} is the percent done ("30 %"). At most 80 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Receiving from this panel · {0}"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line while it restarts with the update. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgctxt "keypad update"
+msgid "Restarting"
+msgstr ""
+
+#. the alarm panel's Software update, under the Keypads heading. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Keypads update with this panel. They restart together once everything is disarmed."
+msgstr ""
+
 #. Make it a stand-alone panel, the line under the title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "A factory reset"
@@ -25977,6 +26517,11 @@ msgstr ""
 #. Make it a stand-alone panel, in amber; {0} is the alarm panel's name. At most 160 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "{0} shows a trouble for this keypad until it is removed there."
+msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Switch partition"
 msgstr ""
 
 #. how strong a Wi-Fi network's signal is, after the state or the address on the same line ("Password · good signal"). At most 20 bytes
@@ -26467,7 +27012,9 @@ msgid "Set"
 msgstr "Ajustar"
 
 #. a keypad's Time and language, under the date and time: it comes from the alarm panel named {0}. At most 80 bytes
+#. About on a keypad, the line under Software update: its updates come from its alarm panel, {0} its name (up to 47 bytes). At most 48 bytes
 #: components/ui/alarm_ui/src/ui_net.c
+#: components/ui/alarm_ui/src/ui_update.c
 msgid "From {0}"
 msgstr ""
 
@@ -29191,16 +29738,10 @@ msgstr ""
 msgid "Wi-Fi module update ready · installs once disarmed"
 msgstr ""
 
-#. a light's level in the list of levels; {0} is 25, 50 or 75. At most 15 bytes
-#. a dimmer's level on a device's page, a row's value; {0} is 1 to 99. At most 15 bytes
-#. a row's value on a device's page: its battery's charge; {0} is 0 to 100. At most 15 bytes
+#. the status bar on a keypad from the moment it gets an update from its alarm panel until it restarts with it; {0} is the alarm panel's name (up to 47 bytes). At most 48 bytes
 #: components/ui/alarm_ui/src/ui_update.c
-#: components/ui/alarm_ui/src/ui_zwave.c
-# review: draft
-#, fuzzy
-msgctxt "percent"
-msgid "{0} %"
-msgstr "{0} %"
+msgid "Updating · restarts with {0}"
+msgstr ""
 
 #. Software update, the line under the download before the first bytes (the panel asks the server first). At most 63 bytes
 #: components/ui/alarm_ui/src/ui_update.c
@@ -29412,12 +29953,37 @@ msgstr "Comprobado {0}"
 msgid "Rolled back"
 msgstr ""
 
+#. Software update on a keypad while it gets the update its alarm panel sent for; {0} is the version. At most 50 bytes
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "Updating to version {0}"
+msgstr ""
+
+#. Software update on a keypad, the line under the run while its alarm panel sends the update; {0} is the alarm panel's name (up to 47 bytes), {1} the percent done ("30 %"). At most 56 bytes
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "Receiving from {0} · {1}"
+msgstr ""
+
+#. Software update on a keypad, the line under the run once it has the update; {0} is the alarm panel's name (up to 47 bytes). At most 64 bytes
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "Ready · restarts with {0} once everything is disarmed"
+msgstr ""
+
+#. Software update on a keypad: its updates come from its alarm panel, {0} its name (up to 47 bytes). At most 48 bytes
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "Updates come from {0}"
+msgstr ""
+
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_update.c
 # review: draft
 #, fuzzy
 msgid "An update is already running"
 msgstr "Ya hay una actualización en curso"
+
+#. the question before installing an update on an alarm panel with keypads, which update with it (the sheet's note). At most 190 bytes
+#: components/ui/alarm_ui/src/ui_update.c
+msgid "The panel downloads it now and keeps protecting meanwhile; you can stop the update until it restarts. It restarts once everything is disarmed, then its keypads update with it."
+msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_update.c
@@ -29453,6 +30019,13 @@ msgstr ""
 msgid "About a minute; the self-test starts at once"
 msgstr ""
 
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_update.c
+# review: draft
+#, fuzzy
+msgid "The panel restarts once everything is disarmed. It takes about a minute."
+msgstr "El panel se reinicia cuando todo esté desarmado. Tarda cerca de un minuto."
+
 #. Software update, under Stop while the download is checked. At most 111 bytes
 #: components/ui/alarm_ui/src/ui_update.c
 msgid "The alarm keeps working while it checks. You can stop the update until the panel restarts."
@@ -29472,13 +30045,6 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_update.c
 msgid "The alarm keeps working while it sends the update to the module."
 msgstr ""
-
-#. An explanation under a group of rows (wraps over several lines).
-#: components/ui/alarm_ui/src/ui_update.c
-# review: draft
-#, fuzzy
-msgid "The panel restarts once everything is disarmed. It takes about a minute."
-msgstr "El panel se reinicia cuando todo esté desarmado. Tarda cerca de un minuto."
 
 #. Software update, the row that looks for a new version. At most 47 bytes
 #. Software update, Check again's line while it looks. At most 47 bytes
@@ -37724,12 +38290,6 @@ msgstr "Salir"
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-#~ msgid "Removed."
-#~ msgstr "Eliminado."
-
-#: components/services/panel_web/web/panel-pages.js
-# review: draft
-#, fuzzy
 #~ msgid "The two codes are not the same."
 #~ msgstr "Los dos códigos no coinciden."
 
@@ -38727,13 +39287,6 @@ msgstr "Salir"
 #~ msgid "The update is on its way."
 #~ msgstr "La actualización va en camino."
 
-#. the update's progress in Software update; {0} is the percent done. At most 50 bytes
-#: components/ui/alarm_ui/src/ui_update.c
-# review: draft
-#, fuzzy
-#~ msgid "Downloading · {0}"
-#~ msgstr "Descargando · {0}"
-
 #. the line under the download status. At most 111 bytes
 #: components/ui/alarm_ui/src/ui_update.c
 # review: draft
@@ -38802,3 +39355,21 @@ msgstr "Salir"
 #: components/ui/alarm_ui/src/ui_settings.c
 #~ msgid "{0}, version {1}"
 #~ msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+# review: draft
+#, fuzzy
+#~ msgid "Areas that arm separately, their entry and exit times, and supervised keypads and expanders."
+#~ msgstr "Áreas que se arman por separado, sus tiempos de entrada y salida, y los teclados y expansores supervisados."
+
+#: components/services/panel_web/web/panel-pages.js
+# review: draft
+#, fuzzy
+#~ msgid "Keypads, expanders and receivers the panel supervises."
+#~ msgstr "Teclados, expansores y receptores que el panel supervisa."
+
+#: components/services/panel_web/web/panel-pages.js
+# review: draft
+#, fuzzy
+#~ msgid "Checked every {0}"
+#~ msgstr "Revisado cada {0}"

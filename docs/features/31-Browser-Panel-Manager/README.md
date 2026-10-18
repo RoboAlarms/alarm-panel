@@ -9,6 +9,9 @@ page, People and codes, Troubles and sign-in without codes on a panel (BL-138), 
 and passkeys (BL-064), helper accounts (BL-076). · **Milestone:** M18 · **Depends on:** 03, 07,
 09, 13, 14, 15, 21, 30
 
+The approved [keypad management and enrollment flow](keypad-enrollment.md) supports normal and
+headless masters (BL-048). Its service and browser tests pass; live enrollment acceptance remains.
+
 ## Objective and delivered scope
 
 The panel hosts its own browser interface for household configuration, full-resolution remote

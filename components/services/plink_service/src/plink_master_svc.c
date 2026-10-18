@@ -976,6 +976,7 @@ uint32_t msvc_stack_free(void)
 /* The UI's and the console's requests (the link task). */
 uint8_t msvc_request(uint64_t now, const link_req_t *req)
 {
+    take_engine_news(now); /* includes installer entry made just before a browser request */
     uint8_t r = UI_LINK_REQ_OK;
     switch (req->kind) {
     case UI_LINK_REQ_PAIR_OPEN:
@@ -1008,12 +1009,22 @@ uint8_t msvc_request(uint64_t now, const link_req_t *req)
         if (!s_pair_forced && !req->bench && !installer_ok()) {
             return UI_LINK_REQ_NOT_ALLOWED;
         }
+        if (req->pair_code[0]) {
+            plink_pair_info_t pi;
+            plink_master_pair_info(s_m, now, &pi);
+            if ((pi.state != PLINK_PS_COMPARE && pi.state != PLINK_PS_WAITING) ||
+                pi.attempts != req->pair_attempts || strcmp(pi.code, req->pair_code)) return UI_LINK_REQ_REFUSED;
+        }
         plink_master_pair_decide(s_m, now, req->allow);
         break;
-    case UI_LINK_REQ_PAIR_STOP:
-        plink_master_pair_cancel(s_m, now); /* stopping is always allowed */
+    case UI_LINK_REQ_PAIR_STOP: {
+        plink_pair_info_t pi;
+        plink_master_pair_info(s_m, now, &pi);
+        /* A late cancel must not wipe the success a reconnect needs to discover. */
+        if (pi.state != PLINK_PS_DONE) plink_master_pair_cancel(s_m, now);
         s_pair_forced = false;
         break;
+    }
     case UI_LINK_REQ_KEYPAD_SET: {
         if (!req->bench && !installer_ok()) {
             return UI_LINK_REQ_NOT_ALLOWED;

@@ -1,6 +1,6 @@
-# Headless keypad enrollment — proposal
+# Keypad enrollment in Panel Manager
 
-Status: draft for review with BL-048-keypads.js; not a production API or implemented feature.
+Status: owner approved 2026-10-18; implemented for normal and headless masters. Physical headless hardware acceptance is still pending.
 
 The owner requires a main panel without a screen to be fully operable through Panel Manager,
 with a future mobile app able to use the same controls. Keypad enrollment must therefore not
@@ -48,5 +48,29 @@ Keypad supervision is automatic and is not exposed as a user-editable timer. No 
 are copied during enrollment or assignment.
 
 Initial headless provisioning/account setup, recovery without connectivity, and the rest of
-mobile administration need their own designs; this proposal covers enrollment on an accessible,
+mobile administration need their own designs; this design covers enrollment on an accessible,
 configured main panel. It does not claim those other workflows are implemented.
+
+## Implemented API
+
+`GET /api/v1/keypads` returns the enrolled keypads and (only on a display-equipped panel)
+`local` policy. Installer access is required. It also returns the current installer's last
+`enrollment` and whether a pairing window is busy.
+
+`POST /api/v1/keypads` requires an installer password session, a recent password and a disarmed
+system. `op: start` uses a client-generated random 32-hex `attempt` id so a lost response can be
+retried. `confirm` carries that id, the displayed `code` and `sequence`, and boolean `allow`; `cancel` carries
+the id. The service binds these to the initiating installer, rechecks the comparison on the
+link task, retains the result for reconnects, and closes after two minutes even without a browser.
+A restart clears the transient attempt; reconcile against the persistent device list.
+
+`save` carries `device` (0 is the built-in keypad), `home`, `allowed`, `never`, `seconds` (1–3600),
+and `name`. The built-in keypad label is an appended `ui/keypad_name` preference; existing
+display and sound preference writers leave it alone. `remove` revokes the remote pairing. Neither operation changes
+audio preferences. Expander/receiver entries use the existing revision-checked alarm device
+configuration; those labels do not introduce new stored device kinds. Actual limits are four
+partitions, sixteen shared device slots and eight link-capable keypad slots. The built-in keypad
+is separate from those device slots.
+
+Validation: the production service has normal/headless host tests; browser flow tests use a
+mock physical peer. Initial headless provisioning and recovery remain outside this change.

@@ -1715,6 +1715,9 @@ typedef struct {
     bool switch_allowed;
     bool return_never;
     uint16_t return_s;
+    /* Optional browser confirmation binding. Rechecked by the link task, not a cached UI. */
+    char pair_code[8];
+    uint8_t pair_attempts;
 } ui_link_req_t;
 
 /* What link_request answers. */

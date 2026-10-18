@@ -25,9 +25,7 @@
 #include "alarm_service.h"
 #include "esp_err.h"
 #include "sdkconfig.h"
-#if CONFIG_ALARM_FEATURE_UI
 #include "ui_backend/ui_backend.h"
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -257,13 +255,16 @@ void plink_service_voice_resync(void);
  * config_seq), for the voice's zone words. Any task; false before the first one. */
 bool plink_service_keypad_config(alarm_config_t *out, uint32_t *config_seq);
 
-#if CONFIG_ALARM_FEATURE_UI
+/* Service calls also available on a headless master. Mutations retain the link task's
+ * installer/disarmed gate; a browser enters installer mode as its authenticated user. */
+bool plink_service_pair_status(void *ctx, ui_link_pair_t *out);
+size_t plink_service_managed_keypads(void *ctx, ui_link_keypad_t *out, size_t max);
+uint8_t plink_service_manage(void *ctx, const ui_link_req_t *req);
 /* The UI backend's link entries (link_info, link_pair_status, link_keypads, link_request) for the
  * role; on a keypad also the entries the link serves (status, configuration, events, commands,
  * codes) and the master-only ones turned off (NULL, or ALARM_ERR_UNAVAILABLE where the UI calls
  * without looking). After ui_port_esp_backend(), before the UI starts. */
 void plink_service_extend_backend(ui_backend_t *be);
-#endif
 
 /* The `plink` console command (the service console only; ESP_OK without it). */
 esp_err_t plink_service_console_register(void);

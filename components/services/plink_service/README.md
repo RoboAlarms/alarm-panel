@@ -276,3 +276,5 @@ NVS. Audio preferences remain separate.
 Bench commands: `plink policy <device> allow|lock <seconds|never>` on the master;
 `plink cmd goto <partition>` on a keypad. `plink` shows saved home and current selection.
 Reconnection, reassignment and policy changes clear temporary selection, including with Never.
+
+Panel Manager also uses the published pairing/keypad copies and management queue on headless masters. These calls retain installer-mode and disarmed checks. Browser confirmations carry the displayed code for a second check on the link task, avoiding a stale published snapshot authorizing a replacement comparison.

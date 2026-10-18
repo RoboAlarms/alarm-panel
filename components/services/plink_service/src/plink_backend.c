@@ -19,7 +19,7 @@
  */
 #include "plink_internal.h"
 
-#if CONFIG_ALARM_LINK && CONFIG_ALARM_FEATURE_UI
+#if CONFIG_ALARM_LINK
 
 #include <stdio.h>
 #include <string.h>
@@ -68,7 +68,7 @@ static bool link_info(void *ctx, ui_link_info_t *out)
     return known;
 }
 
-static bool link_pair_status(void *ctx, ui_link_pair_t *out)
+bool plink_service_pair_status(void *ctx, ui_link_pair_t *out)
 {
     (void)ctx;
     link_pub_lock();
@@ -94,7 +94,7 @@ static uint8_t fw_state_of(uint8_t row)
     }
 }
 
-static size_t link_keypads(void *ctx, ui_link_keypad_t *out, size_t max)
+size_t plink_service_managed_keypads(void *ctx, ui_link_keypad_t *out, size_t max)
 {
     (void)ctx;
     if (plink_service_role() != PLINK_SERVICE_MASTER) {
@@ -130,7 +130,7 @@ static size_t link_keypads(void *ctx, ui_link_keypad_t *out, size_t max)
     return n;
 }
 
-static uint8_t link_req(void *ctx, const ui_link_req_t *req)
+uint8_t plink_service_manage(void *ctx, const ui_link_req_t *req)
 {
     (void)ctx;
     if (req == NULL || req->kind < UI_LINK_REQ_PAIR_OPEN || req->kind > UI_LINK_REQ_PARTITION_POLICY) {
@@ -145,6 +145,9 @@ static uint8_t link_req(void *ctx, const ui_link_req_t *req)
     r.switch_allowed = req->switch_allowed;
     r.return_never = req->return_never;
     r.return_s = req->return_s;
+    memcpy(r.pair_code, req->pair_code, sizeof r.pair_code);
+    r.pair_code[sizeof r.pair_code - 1u] = '\0';
+    r.pair_attempts = req->pair_attempts;
 
     r.supervision_s = req->supervision_s;
     memcpy(r.name, req->name, sizeof r.name);
@@ -470,9 +473,9 @@ void plink_service_extend_backend(ui_backend_t *be)
         keypad_backend(be);
     }
     be->link_info = link_info;
-    be->link_pair_status = link_pair_status;
-    be->link_keypads = link_keypads;
-    be->link_request = link_req;
+    be->link_pair_status = plink_service_pair_status;
+    be->link_keypads = plink_service_managed_keypads;
+    be->link_request = plink_service_manage;
 }
 
-#endif /* CONFIG_ALARM_LINK && CONFIG_ALARM_FEATURE_UI */
+#endif /* CONFIG_ALARM_LINK */

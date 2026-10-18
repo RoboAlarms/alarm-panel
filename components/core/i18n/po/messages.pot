@@ -8245,34 +8245,35 @@ msgid "0: not supervised."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Partitions and devices"
+msgid "Locked to {0}"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Areas that arm separately, their entry and exit times, and supervised keypads and expanders."
-msgstr ""
-
-#. Installer > Partitions, a row's line: exit time {0}, entry times {1} and {2}. At most 30 bytes
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_installer.c
-msgid "Exit {0} · entry {1} / {2}"
+msgid "Default: {0} · No automatic return"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_installer.c
-msgid "Not in use"
+msgid "Default: {0} · Returns after {1} seconds inactive"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Devices"
+msgid "Panel keypad"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Keypads, expanders and receivers the panel supervises."
+msgid "Removed."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Checked every {0}"
+msgid "The last partition cannot be removed."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Move assigned devices and zones before removing this partition."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Add partition"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -8284,11 +8285,208 @@ msgid "Partition saved."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
+msgid "Add device"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
 msgid "Save device"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 msgid "Device saved."
+msgstr ""
+
+#. The sheet's title. At most 127 bytes.
+#. A list row's title (one line; a long one ends in ...).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Default partition"
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Allow partition switching"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Off locks this keypad to its default partition."
+msgstr ""
+
+#. A number row's title (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Return after inactivity"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "seconds"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Default: 30 seconds. Using any screen restarts the inactivity timer."
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Never return automatically"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "The built-in keypad cannot be removed."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Save keypad settings"
+msgstr ""
+
+#. A section heading above a group of rows (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Keypad"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Expander"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Receiver"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Partitions and devices"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Areas that arm separately and the devices assigned to them."
+msgstr ""
+
+#. Installer > Partitions, a row's line: exit time {0}, entry times {1} and {2}. At most 30 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Exit {0} · entry {1} / {2}"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Edit"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Devices"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Waiting for status"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Not responding"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "No devices added."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "View keypad enrollment"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Keypad enrolled"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Pairing ended"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Confirm on the keypad"
+msgstr ""
+
+#. Add a keypad, the line under the title while pairing opens. At most 63 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Waiting for a keypad"
+msgstr ""
+
+#. A button row's text (one line).
+#. Installer > Keypads and devices > Add a keypad, the page title. At most 47 bytes
+#. A list row's title (one line; a long one ends in ...).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Add a keypad"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Choose its name and partition next."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "The codes did not match. Start pairing again."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "More than one keypad tried to pair. Try one at a time."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Pairing ended or expired. Check the device list before trying again."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Does this code match your keypad?"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Confirmed here. Tap Confirm on the keypad to finish."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Tap Pair on the new keypad. Keep this window open."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Pairing window: 2 minutes"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Prepare the new keypad:"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Choose Keypad in its setup."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "For Wi-Fi, join this system’s network."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
+msgid "Close"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "No match"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Matches"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Set up keypad"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Pairing status is unknown. Check the device list before starting again."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Connection lost. Pairing status is unknown; reconnecting…"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9431,6 +9629,32 @@ msgid "The panel isn’t answering. It may be restarting to install the update."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
+msgid "Receiving from this panel"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line: it has the update and restarts together with this panel. At most 95 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Ready · restarts with this panel"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line when it missed this panel's version: nobody has to do anything. At most 95 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Not updated yet · tries again by itself"
+msgstr ""
+
+#. the alarm panel's Software update, a keypad's status line when it runs a newer version than this panel (it is left alone). At most 95 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Newer than this panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Keypad updates"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
 msgid "Channel"
 msgstr ""
 
@@ -9841,12 +10065,6 @@ msgstr ""
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_installer.c
 msgid "Device"
-msgstr ""
-
-#. A section heading above a group of rows (one line).
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Keypad"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -13314,11 +13532,6 @@ msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 msgid "Unlock"
-msgstr ""
-
-#: components/services/panel_web/web/panel-pages.js
-#: components/services/panel_web/web/panel.js
-msgid "Close"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -18013,6 +18226,10 @@ msgstr ""
 msgid "this keypad"
 msgstr ""
 
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Not in use"
+msgstr ""
+
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_installer.c
 msgid "This keypad shows and arms its own partition. Zones and users belong to partitions on their own pages."
@@ -19010,14 +19227,6 @@ msgstr ""
 msgid "Keypads"
 msgstr ""
 
-#. A button row's text (one line).
-#. Installer > Keypads and devices > Add a keypad, the page title. At most 47 bytes
-#. A list row's title (one line; a long one ends in ...).
-#: components/ui/alarm_ui/src/ui_link.c
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Add a keypad"
-msgstr ""
-
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Partition settings"
@@ -19044,11 +19253,6 @@ msgid "Waiting for a keypad · {0} s left"
 msgid_plural "Waiting for a keypad · {0} s left"
 msgstr[0] ""
 msgstr[1] ""
-
-#. Add a keypad, the line under the title while pairing opens. At most 63 bytes
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Waiting for a keypad"
-msgstr ""
 
 #. a toast once a keypad was added; {0} is its number. At most 60 bytes
 #: components/ui/alarm_ui/src/ui_link.c
@@ -19212,20 +19416,9 @@ msgstr ""
 msgid "Hall keypad, Bedroom keypad..."
 msgstr ""
 
-#. The sheet's title. At most 127 bytes.
-#. A list row's title (one line; a long one ends in ...).
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Default partition"
-msgstr ""
-
 #. a toast once a keypad on Wi-Fi was removed; {0} is its name. At most 80 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "{0} removed"
-msgstr ""
-
-#. A switch row's title (one line).
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Allow partition switching"
 msgstr ""
 
 #. A switch row's detail line, under its title (one line).
@@ -19233,19 +19426,9 @@ msgstr ""
 msgid "Off locks this panel to its default partition"
 msgstr ""
 
-#. A number row's title (one line).
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Return after inactivity"
-msgstr ""
-
 #. A number row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Seconds · Default 30"
-msgstr ""
-
-#. A switch row's title (one line).
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Never return automatically"
 msgstr ""
 
 #. A Settings page: the line under its title. At most 127 bytes.
@@ -19331,25 +19514,10 @@ msgstr ""
 msgid "Receiving from this panel · {0}"
 msgstr ""
 
-#. the alarm panel's Software update, a keypad's status line: it has the update and restarts together with this panel. At most 95 bytes
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Ready · restarts with this panel"
-msgstr ""
-
 #. the alarm panel's Software update, a keypad's status line while it restarts with the update. At most 95 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgctxt "keypad update"
 msgid "Restarting"
-msgstr ""
-
-#. the alarm panel's Software update, a keypad's status line when it missed this panel's version: nobody has to do anything. At most 95 bytes
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Not updated yet · tries again by itself"
-msgstr ""
-
-#. the alarm panel's Software update, a keypad's status line when it runs a newer version than this panel (it is left alone). At most 95 bytes
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Newer than this panel"
 msgstr ""
 
 #. the alarm panel's Software update, under the Keypads heading. At most 127 bytes

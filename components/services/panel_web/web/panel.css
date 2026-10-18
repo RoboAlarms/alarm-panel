@@ -919,3 +919,16 @@ button.choice.fill small { color: inherit; opacity: 0.85; }
   .zb-chan .tags { grid-column: 2; justify-content: flex-start; }
   .zb-table th.zb-wide, .zb-table td.zb-wide { display: none; }
 }
+
+/* Keypad enrollment and partition policy (BL-048). */
+.keypad-return-disabled { opacity: .45; }
+.enroll-choices { display:grid; gap:.75rem; max-width:20rem; margin:.5rem auto 1rem; }
+.enroll-choices button { width:100%; justify-content:center; text-align:center; min-height:3rem; }
+.enroll-body { display:grid; gap:1rem; }
+.enroll-body p { margin:0; line-height:1.5; }
+.enroll-steps { margin:0; padding-left:1.25rem; line-height:1.6; }
+.enroll-steps li + li { margin-top:.5rem; }
+.enroll-code { padding:1.25rem; text-align:center; }
+.enroll-code strong { display:block; font-size:2.25rem; letter-spacing:.12em; margin:.65rem 0; }
+.enroll-foot { flex-wrap:wrap; gap:.5rem; }
+.enroll-foot #enroll-cancel { margin-right:auto; }

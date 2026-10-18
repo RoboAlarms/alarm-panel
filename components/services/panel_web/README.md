@@ -69,3 +69,7 @@ The component's `CMakeLists.txt` fails the build unless `CONFIG_CJSON_NESTING_LI
 - Try a page change against `components/services/panel_web/web/mock-panel.cjs` before a panel (CONTRIBUTING.md).
 - Planned (docs/features/33 step 5): `panel_web` stops requiring the UI once `ui_backend` is a core component and the ESP port moves to `services/ui_port_esp`.
 - Planned (docs/features/33 step 6): the firmware requires optional components only when their feature is on.
+
+### Keypads and headless masters (BL-048)
+
+The approved [partition and enrollment flow](../../../docs/features/31-Browser-Panel-Manager/keypad-enrollment.md) uses `web_keypads.c`. The HTTPS worker owns attempts; queued maintenance work expires them even without browser polling. `plink_service` exposes its management calls without the UI feature. The browser never invents a keypad record: both pairing confirmations must complete before its setup popup. Host tests compile this production service in both UI and headless modes.

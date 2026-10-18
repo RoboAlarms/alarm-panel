@@ -172,6 +172,8 @@ typedef struct {
     bool switch_allowed;
     bool return_never;
     uint16_t return_s;
+    char pair_code[8];
+    uint8_t pair_attempts;
 } link_req_t;
 /* Hands req to the link task and waits for its answer (a ui_link_result_t), LINK_REQ_WAIT_MS at
  * most. UI_LINK_REQ_BUSY then: withdrawn, so it never runs, unless the link task had already taken

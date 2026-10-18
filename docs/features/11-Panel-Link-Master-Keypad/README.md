@@ -147,7 +147,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-001 | One master, up to 8 panel-link keypads on device numbers 1-8, shared with the Zigbee keypads: a new keypad takes the lowest number no Zigbee keypad, no link keypad and no enabled entry of the installer's device table holds, chosen under the Zigbee zone lock (docs/features/20 alarm-devices.md §4); numbers 9-16 are the Z-Wave keypads' (docs/features/36 ZW-031) | unit |
 | LINK-002 | Keypads render the master's status and send commands; they never validate codes | review + unit |
 | LINK-003 | Every data frame is authenticated and encrypted (AES-128-CCM, 8-byte tag) under per-session, per-direction keys; sequence numbers start at 1 and a 64-frame sliding window, updated only after the tag verifies, rejects replayed frames; frames of another session, net or direction are refused | host crypto tests |
-| LINK-004 | Pairing needs the installer at the master (installer mode), uses commit-then-reveal, and both screens show the same 6-digit code with the other side's name and address, confirmed on both (defeats a device in the middle) | unit + HIL |
+| LINK-004 | Pairing needs the installer at the master (touchscreen installer mode or an authenticated Panel Manager installer session, including a headless master), uses commit-then-reveal, and both sides show the same 6-digit code and peer identity, confirmed on both (defeats a device in the middle; [browser enrollment](../31-Browser-Panel-Manager/keypad-enrollment.md), owner approved 2026-10-18) | unit + HIL |
 | LINK-005 | ESP-NOW control frames fit in 250 bytes; a UDP datagram is at most 1200 bytes; bulk data (configuration, events, zones) is paged to the transport's largest frame | unit |
 | LINK-006 | The master sends status on change (repeated at +250 ms and +1 s, at most one per 100 ms per keypad) and at least every 10 s; keypads send heartbeats every 10 s (±1 s jitter) | unit + HIL |
 | LINK-007 | The master raises a device supervision trouble (`alarm_service_device_reachable(n, false)`) for a keypad not heard for its supervision time (5 min by default, per keypad: 1 min, 5 min, 15 min or not supervised; decided 2026-10-15), or one that reports no fresh status for that long; it clears it when both directions are fresh again and before a removed keypad's number is freed; supervision pauses while the master's own Wi-Fi is down (the network trouble covers it) and resumes one period after it is back | unit + HIL |
@@ -1749,14 +1749,14 @@ panels; a successful host preview is not hardware acceptance.
 - [x] Multi-partition supervision: a missing link keypad reports against its assigned home;
   restore retains the loss's partition. Host regressions cover a stale disabled device slot,
   configuration saves, reassignment and command rejection outside the newly assigned home.
-- [ ] Panel Manager keypad assignments and automatic update status: review
-  [BL-048 proposal](../31-Browser-Panel-Manager/mockup/proposals/BL-048-keypads.js), then implement
-  the authenticated API and production pages (WEB-026). The draft shows active partitions/devices with Add/Remove and consistent popup editors,
-  plus per-keypad default/allow/idle/Never. Return controls hide when locked; keypad supervision
-  is automatic. Armed/offline settings are read-only. Render and browser
-  interaction checks pass; owner approval pending. The [headless enrollment design](../31-Browser-Panel-Manager/mockup/proposals/keypad-enrollment.md)
-  moves master-side pairing to the installer browser, with shared service requirements for the future
-  mobile app; physical-keypad confirmation remains required.
+- [x] Panel Manager keypad assignments, enrollment and automatic update status (owner approved
+  2026-10-18): production popup editors, configured lists with capacity-limited Add and popup-only
+  Remove, default/allow/idle/Never policy, hidden return controls when locked, automatic keypad
+  supervision. The [shared enrollment service](../31-Browser-Panel-Manager/keypad-enrollment.md)
+  supports normal/headless masters; the physical keypad still confirms its code. Normal/headless
+  service tests, browser tests and both P4 builds pass. Physical enrollment acceptance remains below.
+- [ ] Live Panel Manager enrollment/assignment acceptance on normal and headless hardware;
+  verify two-sided comparison, reconnect/cancel/expiry and policy delivery (BL-048).
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over
   30 s saying nothing old; its internal RAM at start-up beside before (LINK-028) (BL-048)

@@ -29,6 +29,17 @@ by automatic reconnection. A keypad reboot with the master's LAN blocked also co
 session and received all eight configured zones. Full firmware relay over ESP-NOW, range and
 AP channel changes still need hardware acceptance. The 7-inch display recurrence is B023.
 
+## Draft: nearby enrollment and Wi-Fi provisioning
+
+Owner direction: try ESP-NOW enrollment first, then transfer the master's Wi-Fi credentials
+through the authenticated encrypted link only after both code confirmations. Keep Select Wi-Fi
+available immediately for out-of-range enrollment over LAN. A failed Wi-Fi join retains enrollment;
+manual credentials are not overwritten. Language, display and audio remain keypad-local; existing
+master date/time/time-zone synchronization stays unchanged. This is a draft, not implemented.
+
+Review the [touchscreen proposal](../07-UI-LVGL-Pro/mockup/proposals/BL-048-radio-enrollment.js)
+and [Panel Manager instructions](../31-Browser-Panel-Manager/mockup/proposals/BL-048-radio-enrollment.js).
+
 ## Goal
 Let another panel act as a remote keypad for a master panel, like the keypads on a classic panel's
 wired keypad bus: it shows what the master says and sends what a person keys. It must be secure
@@ -1758,6 +1769,8 @@ panels; a successful host preview is not hardware acceptance.
 - [x] Live Panel Manager API enrollment/assignment on a display-equipped master and physical
   keypad: both confirmations (keypad via console), stale-code-sequence refusal, reconnect,
   cancel/expiry and policy delivery; details in feature 31's keypad-enrollment.md (BL-048).
+- [ ] Approve and implement nearby enrollment with authenticated Wi-Fi provisioning and manual
+  Select Wi-Fi fallback; keep language local (BL-048).
 - [ ] Human comparison-screen and physical headless enrollment/assignment acceptance (BL-048).
 - [ ] On the panels, what needs a person at the keypad or a network change: its Announcements,
   Status messages and Zone chime off and Voice volume 0 while the master speaks; a link cut over

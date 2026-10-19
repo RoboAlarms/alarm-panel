@@ -1911,6 +1911,36 @@ static bool setup_resting(void)
     return K.setup_only && K.pending && !K.durable;
 }
 
+/* The owner's rule for the setup: nobody steps in. A keypad whose setup isn't finished and whose
+ * pairing ends - removed at its alarm panel (a BYE erases the record), the record erased, or told
+ * "not paired" for 5 min - is unpaired here too: its finished pairing and Wi-Fi step go, and on
+ * a master's setup (Option C) the stored keypad role with them, so the setup is back near the
+ * alarm panel and its pairing can run again by itself (BL-048, LINK-053). A keypad set up
+ * already keeps its keys and shows the hint. */
+static void enrollment_lost(uint64_t now, const plink_keypad_info_t *info)
+{
+    if (K.setup_only ? !K.durable : (!info->not_paired_hint || panel_setup_done())) {
+        return;
+    }
+    if (K.paired && info->not_paired_hint) {
+        (void)plink_keypad_forget(K.k, now); /* the record erased (port_store with NULL) */
+    }
+    if (K.paired) {
+        return; /* still paired, or the record couldn't be erased: tried again next turn */
+    }
+    ESP_LOGW(TAG, "the pairing ended during the setup: pairing again");
+    plink_keypad_pair_cancel(K.k, now); /* the finished pairing's DONE goes too */
+    plink_keypad_wifi_cancel(K.k);
+    K.wifi_setup = UI_LINK_WIFI_IDLE;
+    if (K.setup_only) {
+        K.durable = false;
+        if (link_store_role(PLINK_SERVICE_MASTER) != ESP_OK) {
+            ESP_LOGE(TAG, "the keypad role couldn't be taken back");
+        }
+        net_wifi_set_time_server(true);
+    }
+}
+
 uint64_t ksvc_next(void)
 {
     /* resting, the link task's own 50 ms turn is enough for its publishing */
@@ -1938,6 +1968,7 @@ void ksvc_poll(uint64_t now)
         plink_keypad_tick(K.k, now);
     }
     plink_keypad_info(K.k, now, &info);
+    enrollment_lost(now, &info);
     if (K.wifi_setup == UI_LINK_WIFI_REQUESTING || K.wifi_setup == UI_LINK_WIFI_JOINING) {
         if (link_wifi_up()) {
             K.wifi_setup = UI_LINK_WIFI_CONNECTED;

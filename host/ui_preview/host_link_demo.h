@@ -114,3 +114,5 @@ bool host_link_demo_keypad(uint8_t device, ui_link_keypad_t *out);
 void host_link_demo_wifi_setup(uint8_t state, bool online);
 /* Stored enrollment appearing after the UI starts, as after interrupted setup. */
 void host_link_demo_resume_pairing(bool published);
+/* The pairing ended (removed at the alarm panel, its record erased) before the setup's Done. */
+void host_link_demo_unpaired(void);

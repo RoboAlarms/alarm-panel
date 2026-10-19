@@ -10415,6 +10415,14 @@ static void walk_link_setup(const ui_options_t *start)
     link_has("Keypad paired", "LINK-053: resume lost enrollment");
     expect(lv_subject_get_int(&subject_wiz_next_on) == 0, "LINK-053: resume allowed offline Done");
     shot("bl-048-radio-resume");
+    /* BL-048: removed at the alarm panel (or its record erased) before Done - the setup goes
+     * back near the alarm panel by itself, and a new pairing goes on to its last step again */
+    host_link_demo_unpaired();
+    run(1100);
+    link_has("Find your alarm panel", "BL-048: a removed keypad's setup stays on its last step");
+    host_link_demo_resume_pairing(true);
+    run(2200);
+    expect_step(4, "BL-048: pairing again didn't reach the last step");
     host_link_demo_wifi_setup(4, true);
     run(1100);
     link_has("Select Wi-Fi", "LINK-053: older-master fallback missing");

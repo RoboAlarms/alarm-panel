@@ -1021,7 +1021,15 @@ void ui_wizard_tick(void)
     if (s_step == STEP_KP_DONE && lv_tick_elaps(s_pair.polled) >= 1000u) {
         const uint32_t before = pair_sig(&s_pair.p);
         pair_read();
-        if (before != pair_sig(&s_pair.p)) build_step();
+        if (s_pair.p.state != UI_LINK_PAIR_DONE) {
+            /* Removed at the alarm panel or its pairing erased before Done: back near the alarm
+             * panel to pair again, with nobody stepping in (BL-048) */
+            s_enrolled = false;
+            s_step = STEP_NEAR;
+            build_step();
+        } else if (before != pair_sig(&s_pair.p)) {
+            build_step();
+        }
     }
     if (s_step == STEP_PAIR && lv_tick_elaps(s_pair.polled) >= 1000u) {
         pair_read();

@@ -764,6 +764,12 @@ void host_link_demo_wifi_setup(uint8_t state, bool online)
     D.pair.online = online;
 }
 
+void host_link_demo_unpaired(void)
+{
+    D.pairing = false;
+    memset(&D.pair, 0, sizeof D.pair);
+}
+
 void host_link_demo_resume_pairing(bool published)
 {
     keypad_info(UI_LINK_CONNECTING);

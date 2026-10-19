@@ -47,6 +47,7 @@ as CONTRIBUTING.md "Rules for the UI". Display safety (nothing flashes) is in th
   at run time), `ui_wizard.c` (the setup; with the panel link its role and a keypad's pairing steps),
   `ui_link.c` (the panel link, docs/features/11: Installer > Keypads and devices' keypads on Wi-Fi, a
   keypad's Home, Emergency words, About and stand-alone page; nothing without `ui_backend_t.link_*`),
+  `ui_calls.c` (the calls that wait for another panel: a keypad's master, LINK-054),
   `ui_tz.c`, `ui_text.c`, `ui_status.c` (the status screen a board shows
   when the full UI doesn't fit in its RAM); shared state in `ui_internal.h`. User-facing
   strings live in these modules, **except the event sentences** ("Burglary alarm" / "Front Door",

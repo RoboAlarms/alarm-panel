@@ -17,6 +17,7 @@ and simulator. The contract is `components/core/ui_backend`; its ESP-IDF impleme
 | Module (`src/`) | What |
 |---|---|
 | `ui_app.c` | Start-up, the tick, snapshots, Home, the code pad, the lists, emergency buttons, the screen saver |
+| `ui_calls.c` | The calls that wait for another panel's answer (a keypad's commands, code checks, code change, device actions, partition switches): queued and run on the backend's task where it has `run_later`, the taps held meanwhile while the screen draws on (docs/features/11 LINK-054) |
 | `ui_forms.c` | Settings rows, sheets (text entry with the on-screen keyboard, choices, confirmation) |
 | `ui_settings.c` | Settings sections and who may open them, the page stack, display and sound (and a change of them from elsewhere: `prefs_remote_tick`, docs/features/07 UI-046 - in use, held, the voice's readiness, what the screen shows - the look, the screen-off and saver delays, the clock's format - at most once per 2 s), users, About |
 | `ui_installer.c` | Installer mode: options, zones, system name, installer and master codes, setup, factory reset |

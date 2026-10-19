@@ -455,6 +455,8 @@ void ui_pad_ask_new(pad_host_t host, const char *glyph, const char *title, ui_co
 void ui_pad_ask_note(const char *note);
 void ui_pad_error(const char *text);
 void ui_pad_cancel(void);
+/* The pad open asks for a code on behalf of fn (a continuation checks it is still there). */
+bool ui_pad_asks(ui_code_fn fn);
 /* Someone is in the middle of something at the panel: a code half typed, a sheet, Settings, the
  * setup, a panic button held. The screen saver waits for them, and so does a walk test started
  * elsewhere (WALK-023). */
@@ -466,6 +468,39 @@ void ui_app_walk_show(void);
 void ui_app_wake(void);
 /* The status bar's left side again (a banner came or went). */
 void ui_bar_banner_update(void);
+
+/* ---- ui_calls.c: the calls that wait for another panel's answer (LINK-054) ------------------
+ * A command, a code check, a code change, a device action or a partition switch, run on the
+ * backend's task where it has run_later (a keypad: its master answers), else here at once. The
+ * continuation runs on this task with what was asked and the answer; true: queued (false: four
+ * already wait, nothing runs). Taps wait while a person's call does; the screen draws on. */
+typedef struct {
+    /* what was asked */
+    alarm_cmd_t cmd;                        /* command */
+    char code[ALARM_CODE_MAX_LEN + 1];      /* code check, current code, a device's code */
+    char new_code[ALARM_CODE_MAX_LEN + 1];  /* code change */
+    uint8_t partition;                      /* partition switch */
+    bool activity;                          /* ...only the input's report (no one waits) */
+    char ref[DEV_REF_LEN];                  /* device action */
+    uint8_t action;
+    int32_t value;
+    uintptr_t tag; /* the caller's own */
+    /* the answer */
+    alarm_result_t r;       /* also a device action's code result */
+    alarm_cmd_result_t res; /* command */
+    uint8_t user;           /* code check, code change */
+    ui_dev_result_t dev;    /* device action */
+} ui_call_t;
+typedef void (*ui_call_done_fn)(const ui_call_t *c);
+bool ui_call_command(const alarm_cmd_t *cmd, ui_call_done_fn done, uintptr_t tag);
+bool ui_call_authenticate(const char *code, ui_call_done_fn done, uintptr_t tag);
+bool ui_call_change_code(const char *current, const char *new_code, ui_call_done_fn done,
+                         uintptr_t tag);
+bool ui_call_partition(uint8_t partition, bool activity, ui_call_done_fn done, uintptr_t tag);
+bool ui_call_dev_act(const char *ref, uint8_t action, int32_t value, const char *code,
+                     ui_call_done_fn done, uintptr_t tag);
+bool ui_call_waiting(void); /* a person's call waits for its answer */
+void ui_call_reset(void);   /* ui_app_start */
 
 /* ---- ui_forms.c ---------------------------------------------------------------------------- */
 typedef void (*ui_text_fn)(const char *text);

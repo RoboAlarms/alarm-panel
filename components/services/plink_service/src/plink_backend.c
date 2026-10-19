@@ -1,9 +1,12 @@
 /*
  * plink_backend.c - the touch UI's side of the panel link (ui_backend.h "The panel link"): the four
  * link entries for either role and, on a keypad, the entries the link serves instead of the engine
- * (docs/features/11 "Roles on a P4 panel"). Every entry runs on the LVGL task and reads what the
- * link task published (link_pub_lock) or hands it a request; none waits longer than the link's
- * own answer (2 s for a request, 3 s for a command). The keypad-update fields (docs/features/11
+ * (docs/features/11 "Roles on a P4 panel"). Every entry reads what the link task published
+ * (link_pub_lock) or hands it a request; none waits longer than the link's own answer (2 s for a
+ * request, 3 s for a command). On a keypad the screen never waits for its master (LINK-054): it
+ * hands its commands, code checks, code changes, device actions and partition switches to
+ * run_later, which runs them on plink_call, a task of their own, one at a time; the rest run on
+ * the LVGL task and answer from the copies at once. The keypad-update fields (docs/features/11
  * "Updates through the link", What people see) come from plink_service_fw and
  * plink_service_fw_keypad: copies under the same lock, taken one after the other, never nested.
  *
@@ -23,6 +26,11 @@
 
 #include <stdio.h>
 #include <string.h>
+
+#include "esp_log.h"
+#include "freertos/queue.h"
+
+static const char *const TAG = "plink_ui";
 
 /* ---- the four link entries ------------------------------------------------------------------- */
 
@@ -300,6 +308,57 @@ static ui_dev_result_t kp_dev_act(void *ctx, const char *ref, uint8_t action, in
 }
 #endif
 
+/* ---- a keypad: the screen's calls to its master, off the LVGL task (LINK-054) ---------------- */
+
+#define CALL_STACK    4096u /* internal RAM: a call's work never writes flash, but stays safe */
+#define CALL_PRIORITY 4u
+#define CALL_DEPTH    4u    /* the UI hands over one at a time */
+
+typedef struct {
+    void (*work)(void *arg);
+    void *arg;
+} call_t;
+
+static QueueHandle_t s_call_q;
+
+static void call_task(void *p)
+{
+    (void)p;
+    for (;;) {
+        call_t c;
+        if (xQueueReceive(s_call_q, &c, portMAX_DELAY) == pdTRUE && c.work != NULL) {
+            c.work(c.arg); /* kp_command and the rest: their waits are the link's, never LVGL */
+        }
+    }
+}
+
+static bool kp_run_later(void *ctx, void (*work)(void *arg), void *arg)
+{
+    (void)ctx;
+    const call_t c = {.work = work, .arg = arg};
+    return s_call_q != NULL && xQueueSend(s_call_q, &c, 0) == pdTRUE;
+}
+
+/* Once; without it the screen runs its calls itself, as before. */
+static void call_start(void)
+{
+    if (s_call_q != NULL) {
+        return;
+    }
+    QueueHandle_t q = xQueueCreate(CALL_DEPTH, sizeof(call_t));
+    if (q == NULL) {
+        ESP_LOGE(TAG, "no memory for the screen's calls: they wait on the screen");
+        return;
+    }
+    s_call_q = q;
+    if (xTaskCreatePinnedToCore(call_task, "plink_call", CALL_STACK, NULL, CALL_PRIORITY, NULL,
+                                tskNO_AFFINITY) != pdPASS) {
+        s_call_q = NULL;
+        vQueueDelete(q);
+        ESP_LOGE(TAG, "no memory for the screen's calls: they wait on the screen");
+    }
+}
+
 /* ---- a keypad: what only the master does (until the role gate hides it) ---------------------- */
 
 static alarm_result_t kp_program_enter(void *ctx, const char *code, uint8_t *user_out)
@@ -463,6 +522,8 @@ static void keypad_backend(ui_backend_t *be)
     be->storage_sd = NULL;
     be->storage_flash = NULL;
     be->storage_action = NULL;
+    call_start();
+    be->run_later = s_call_q != NULL ? kp_run_later : NULL;
 }
 
 /* A master keeps every entry of its own; during its setup's pairing as a keypad (Option C) the

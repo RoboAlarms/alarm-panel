@@ -47,7 +47,9 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   don't say so on a subnet other than a /24), and pairs by that broadcast when mDNS finds no master
   open for pairing within 10 s (`PAIR_BROADCAST`; the first master's answer is taken), keeps the
   copies the touch UI reads, sends its commands (answered within 3 s, refused at once while the
-  link is down, panic excepted), plays the master's sounds, follows its clock and time zone (no
+  link is down, panic excepted; the screen hands them, its code checks, device actions and
+  partition switches to `plink_call`, a task of their own, through `ui_backend_t.run_later`, so it
+  never waits for its master: LINK-054), plays the master's sounds, follows its clock and time zone (no
   time server of its own while paired), answers the update gate, and tells the Emergency words the
   master's reporting (the backend's `mqtt_status` only, so the Integrations pages stay hidden).
   A fire or CO tone kept through a lost link stops on OFF keyed here that the master didn't run

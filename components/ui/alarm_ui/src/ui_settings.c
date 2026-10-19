@@ -340,27 +340,37 @@ static const char *access_hint(ui_access_t access)
     }
 }
 
-static bool unlock_with(const char *code)
+static bool unlock_with(const char *code);
+
+static void unlock_checked(const ui_call_t *c)
 {
-    uint8_t user = 0;
-    const alarm_result_t r = S.be.authenticate != NULL
-                                 ? S.be.authenticate(S.be.ctx, code, &user)
-                                 : ALARM_ERR_DISABLED;
-    if (r != ALARM_OK) {
-        ui_beep(UI_BEEP_ERROR);
-        ui_pad_error(r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again") : ui_result_text(r));
-        return false;
+    if (!ui_pad_asks(unlock_with)) {
+        return; /* the pad closed while the code was checked */
     }
-    if (!user_allowed(s_ask_access, user)) {
+    if (c->r != ALARM_OK) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_pad_error(c->r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again")
+                                                    : ui_result_text(c->r));
+        return;
+    }
+    if (!user_allowed(s_ask_access, c->user)) {
         ui_beep(UI_BEEP_ERROR);
         ui_pad_error(TR("This code can't open this section"));
-        return false;
+        return;
     }
-    S.auth_user = user;
-    snprintf(S.auth_code, sizeof(S.auth_code), "%s", code);
+    S.auth_user = c->user;
+    snprintf(S.auth_code, sizeof(S.auth_code), "%s", c->code);
     ui_pad_cancel();
     build_page();
-    return true;
+}
+
+/* The pad stays open; the answer opens the section (unlock_checked). */
+static bool unlock_with(const char *code)
+{
+    if (!ui_call_authenticate(code, unlock_checked, 0u)) {
+        ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+    return false;
 }
 
 /* The section's icon, as on its line in the Settings list (screen_main.xml), and a colour: the

@@ -158,6 +158,15 @@ alarm_host_voice_pack(auto_smoke)
 enable_testing()
 add_test(NAME auto_smoke COMMAND auto_smoke)
 add_test(NAME prefs_smoke COMMAND prefs_smoke)
+# The screen's calls that wait for another panel (LINK-054): the real touch UI with a run_later that
+# holds each call until the test answers it, as a keypad's master does over the link (calls_smoke.c).
+add_executable(calls_smoke calls_smoke.c host_panel.c ${ZB_HOST})
+target_link_libraries(calls_smoke PRIVATE alarm_ui alarm_proto automation zigbee_zones_fake)
+target_include_directories(calls_smoke PRIVATE ${ALARM_COMPONENTS_DIR}/ui/alarm_ui/src)
+target_compile_definitions(calls_smoke PRIVATE ${screen})
+target_compile_options(calls_smoke PRIVATE -Wall -Wextra -Werror)
+alarm_host_voice_pack(calls_smoke)
+add_test(NAME calls_smoke COMMAND calls_smoke)
 
 # The voice backend (docs/features/08 voice-first-build.md, BL-202 U13a): the five voice hooks
 # over the packed en-US voice and the host engine (voice_smoke.c). Windowless; skipped (77)

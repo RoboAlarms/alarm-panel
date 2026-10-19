@@ -428,21 +428,44 @@ static uint8_t partition_default(void)
     return home >= 1u && home <= ALARM_MAX_PARTITIONS ? home : 1u;
 }
 
+static void partition_shown(uint8_t target)
+{
+    s_partition_input_at = lv_tick_get();
+    s_partition_sent_at = s_partition_input_at;
+    ui_partition_view(target);
+}
+
+static void partition_selected(const ui_call_t *c)
+{
+    if (c->r != ALARM_OK || !ui_link_keypad()) {
+        ui_toast(TR("Partition switching unavailable"));
+        return;
+    }
+    L.info.selected = c->partition;
+    partition_shown(c->partition);
+}
+
 static void partition_chosen(int32_t index)
 {
     if (index < 0 || (size_t)index >= s_partition_count) return;
     const uint8_t target = s_partition_choices[index];
     if (ui_link_keypad()) {
         if (L.info.state != UI_LINK_ONLINE || S.be.partition_select == NULL) return;
-        if (S.be.partition_select(S.be.ctx, target, false) != ALARM_OK) {
+        if (!ui_call_partition(target, false, partition_selected, 0u)) {
             ui_toast(TR("Partition switching unavailable"));
-            return;
         }
-        L.info.selected = target;
+        return; /* the master's answer shows it (partition_selected) */
     } else if (!S.opt.switch_allowed) return;
-    s_partition_input_at = lv_tick_get();
-    s_partition_sent_at = s_partition_input_at;
-    ui_partition_view(target);
+    partition_shown(target);
+}
+
+/* The input's report: sent once answered; until then the next tick doesn't send another. */
+static bool s_activity_out;
+
+static void activity_reported(const ui_call_t *c)
+{
+    s_activity_out = false;
+    if (c->r == ALARM_OK) s_partition_sent_at = (uint32_t)c->tag;
 }
 
 static void partition_pick(lv_event_t *e)
@@ -480,9 +503,10 @@ static void partition_tick(void)
         if (selected == 0u) selected = home;
         ui_partition_view(selected);
         if (selected != home && s_partition_input_at != s_partition_sent_at &&
-            S.be.partition_select != NULL && L.info.state == UI_LINK_ONLINE) {
-            if (S.be.partition_select(S.be.ctx, selected, true) == ALARM_OK)
-                s_partition_sent_at = s_partition_input_at;
+            S.be.partition_select != NULL && L.info.state == UI_LINK_ONLINE && !s_activity_out) {
+            s_activity_out = true;
+            if (!ui_call_partition(selected, true, activity_reported, (uintptr_t)s_partition_input_at))
+                s_activity_out = false;
         }
     } else {
         const uint32_t delay = (uint32_t)(S.opt.return_s != 0u ? S.opt.return_s : 30u) * 1000u;
@@ -1528,26 +1552,38 @@ void ui_link_update_keypads_stop(void)
     memset(&U, 0, sizeof(U));
 }
 
-static bool standalone_code(const char *code)
+static bool standalone_code(const char *code);
+
+static void standalone_checked(const ui_call_t *c)
 {
-    uint8_t user = 0;
-    const alarm_result_t r =
-        S.be.authenticate != NULL ? S.be.authenticate(S.be.ctx, code, &user) : ALARM_ERR_DISABLED;
-    if (r != ALARM_OK) {
+    if (!ui_pad_asks(standalone_code)) {
+        return; /* the pad closed while the code was checked */
+    }
+    const uint8_t user = c->user;
+    if (c->r != ALARM_OK) {
         ui_beep(UI_BEEP_ERROR);
-        ui_pad_error(r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again") : ui_result_text(r));
-        return false;
+        ui_pad_error(c->r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again")
+                                                    : ui_result_text(c->r));
+        return;
     }
     if (user < 1u || user > ALARM_MAX_USERS ||
         S.cfg->users[user - 1u].authority != ALARM_AUTH_INSTALLER) {
         ui_beep(UI_BEEP_ERROR);
         ui_pad_error(TR("That isn't the installer code"));
-        return false;
+        return;
     }
     L.standalone_ok = true;
     ui_pad_cancel();
     ui_page_rebuild();
-    return true;
+}
+
+/* The pad stays open; the answer opens the page (standalone_checked). */
+static bool standalone_code(const char *code)
+{
+    if (!ui_call_authenticate(code, standalone_checked, 0u)) {
+        ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+    return false;
 }
 
 static void standalone_ask(void *ctx)

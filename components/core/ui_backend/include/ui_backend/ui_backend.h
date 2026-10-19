@@ -1743,7 +1743,8 @@ typedef enum {
     UI_LINK_REQ_REFUSED,     /* not in this role, or a bad argument */
 } ui_link_result_t;
 
-/* What the UI needs from the platform. Commands block until the engine has answered.
+/* What the UI needs from the platform. Commands block until the engine has answered (with
+ * run_later, the UI calls them off its own task: LINK-054).
  * The M4 entries (settings, installer mode, users, event log, network) are optional: a NULL
  * entry hides what depends on it. */
 typedef struct {
@@ -2105,6 +2106,14 @@ typedef struct {
     uint8_t (*link_request)(void *ctx, const ui_link_req_t *req);
     /* Select a partition or report actual input; never authorizes an alarm action. */
     alarm_result_t (*partition_select)(void *ctx, uint8_t partition, bool activity);
+
+    /* Optional (LINK-054): runs work(arg) once on a task of the backend's and returns at once;
+     * false: not now (the UI runs it itself). The UI hands over its calls to command,
+     * authenticate, change_code, dev_act and partition_select, one at a time, when they may wait
+     * for another panel (a keypad's master answers them); work calls only those entries and
+     * nothing of LVGL. NULL: every call runs on the UI's task, as an engine on this panel answers
+     * at once. */
+    bool (*run_later)(void *ctx, void (*work)(void *arg), void *arg);
 } ui_backend_t;
 
 /* auto_try's "the runner didn't take it" (automation_service.h's AUTOMATION_TRY_BUSY, asserted

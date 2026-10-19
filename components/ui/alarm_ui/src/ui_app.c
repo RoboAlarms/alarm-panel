@@ -1131,7 +1131,12 @@ bool ui_app_busy(void)
 {
     return (S.pad != PAD_NONE && !(pad_resident() && S.digits[0] == '\0')) || S.panic_holding ||
            lv_subject_get_int(&subject_view) == VIEW_SETTINGS || (S.wizard_on && !S.wizard_paused) ||
-           lv_subject_get_int(&subject_sheet) != SHEET_NONE;
+           lv_subject_get_int(&subject_sheet) != SHEET_NONE || ui_call_waiting();
+}
+
+bool ui_pad_asks(ui_code_fn fn)
+{
+    return S.pad == PAD_ASK && S.pad_fn == fn;
 }
 
 void ui_app_wake(void)
@@ -1342,6 +1347,52 @@ static void pad_submit_ask(size_t len)
     }
 }
 
+/* The pad a call's answer is for: the same one still open (LINK-054: the screen went on while
+ * the call waited, and a timeout or an alarm may have closed it). */
+static uintptr_t pad_tag(void)
+{
+    return (uintptr_t)S.pad | ((uintptr_t)S.pad_host << 8);
+}
+
+static bool pad_still(const ui_call_t *c)
+{
+    return c->tag == pad_tag() && S.pad != PAD_NONE;
+}
+
+static void code_changed(const ui_call_t *c)
+{
+    if (!pad_still(c)) {
+        ui_refresh(true);
+        return;
+    }
+    if (c->r == ALARM_OK) {
+        char name[ALARM_NAME_LEN + 8];
+        char text[96];
+        /* TR: a toast after a code was changed; {0} is the user's name */
+        I18N_FORMAT(text, sizeof(text), TR("Code changed for {0}"),
+                    ui_user_name(S.cfg, c->user, name, sizeof(name)));
+        pad_close();
+        ui_toast(text);
+        ui_refresh(true);
+    } else {
+        S.pad = (c->r == ALARM_ERR_INVALID_CODE || c->r == ALARM_ERR_LOCKED_OUT) ? PAD_CODE_CURRENT
+                                                                                  : PAD_CODE_NEW;
+        pad_clear_digits();
+        pad_texts();
+        ui_pad_error(c->r == ALARM_ERR_INVALID_CODE ? TR("Your current code is wrong")
+                                                    : ui_result_text(c->r));
+    }
+}
+
+static void pad_answered(const ui_call_t *c)
+{
+    if (!pad_still(c)) {
+        ui_refresh(true);
+        return;
+    }
+    pad_result(c->r, &c->res);
+}
+
 static void pad_submit(void)
 {
     const size_t len = strlen(S.digits);
@@ -1403,24 +1454,9 @@ static void pad_submit(void)
             ui_pad_error(TR("Those didn't match. Try again"));
             return;
         }
-        uint8_t user = 0;
-        const alarm_result_t r = S.be.change_code(S.be.ctx, S.code_current, S.code_new, &user);
-        if (r == ALARM_OK) {
-            char name[ALARM_NAME_LEN + 8];
-            char text[96];
-            /* TR: a toast after a code was changed; {0} is the user's name */
-            I18N_FORMAT(text, sizeof(text), TR("Code changed for {0}"),
-                        ui_user_name(S.cfg, user, name, sizeof(name)));
-            pad_close();
-            ui_toast(text);
-            ui_refresh(true);
-        } else {
-            S.pad = (r == ALARM_ERR_INVALID_CODE || r == ALARM_ERR_LOCKED_OUT) ? PAD_CODE_CURRENT
-                                                                                : PAD_CODE_NEW;
+        if (!ui_call_change_code(S.code_current, S.code_new, code_changed, pad_tag())) {
             pad_clear_digits();
-            pad_texts();
-            ui_pad_error(r == ALARM_ERR_INVALID_CODE ? TR("Your current code is wrong")
-                                                     : ui_result_text(r));
+            ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
         }
         return;
     }
@@ -1457,11 +1493,11 @@ static void pad_submit(void)
         break;
     default: return;
     }
-    alarm_cmd_result_t res;
-    memset(&res, 0, sizeof(res));
-    const alarm_result_t r = S.be.command(S.be.ctx, &cmd, &res);
+    const bool queued = ui_call_command(&cmd, pad_answered, pad_tag());
     memset(cmd.code, 0, sizeof(cmd.code));
-    pad_result(r, &res);
+    if (!queued) {
+        pad_result(ALARM_ERR_UNAVAILABLE, NULL);
+    }
 }
 
 static void pad_key(const char *key)
@@ -2280,29 +2316,40 @@ static void activity_clear_loss_click(lv_event_t *e)
     activity_build(true); /* the screen shows the outcome: the warning goes, no toast */
 }
 
-static bool private_unlock(const char *code)
+static bool private_unlock(const char *code);
+
+static void private_checked(const ui_call_t *c)
 {
-    uint8_t user = 0;
-    const alarm_result_t r = S.be.authenticate != NULL
-                                 ? S.be.authenticate(S.be.ctx, code, &user)
-                                 : ALARM_ERR_DISABLED;
-    if (r != ALARM_OK) { /* counted towards the keypad lockout as any wrong code is */
-        ui_beep(UI_BEEP_ERROR);
-        ui_pad_error(r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again") : ui_result_text(r));
-        return false;
+    if (!ui_pad_asks(private_unlock)) {
+        return; /* the pad closed while the code was checked */
     }
-    if (!private_authority(user)) {
+    if (c->r != ALARM_OK) { /* counted towards the keypad lockout as any wrong code is */
+        ui_beep(UI_BEEP_ERROR);
+        ui_pad_error(c->r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again")
+                                                    : ui_result_text(c->r));
+        return;
+    }
+    if (!private_authority(c->user)) {
         ui_beep(UI_BEEP_ERROR);
         ui_pad_error(TR("This code can't show private events"));
-        return false;
+        return;
     }
     if (S.locked) {
-        return true; /* armed while the code was typed: the pad closes, nothing opens */
+        ui_pad_cancel(); /* armed while the code was typed: the pad closes, nothing opens */
+        return;
     }
-    s_priv_user = user;
+    s_priv_user = c->user;
     ui_pad_cancel();
     activity_build(true);
-    return true;
+}
+
+/* The pad stays open; the answer closes it (private_checked). */
+static bool private_unlock(const char *code)
+{
+    if (!ui_call_authenticate(code, private_checked, 0u)) {
+        ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+    return false;
 }
 
 static void activity_private_click(lv_event_t *e)
@@ -3270,6 +3317,8 @@ static void on_panic(lv_event_t *e)
     }
 }
 
+static void panic_answered(const ui_call_t *c);
+
 static void panic_tick(void)
 {
     if (!S.panic_holding || S.panic_sent) {
@@ -3282,16 +3331,21 @@ static void panic_tick(void)
     if (held < PANIC_HOLD_MS) {
         return;
     }
-    S.panic_sent = true;
     alarm_cmd_t cmd;
     memset(&cmd, 0, sizeof(cmd));
     cmd.type = ALARM_CMD_PANIC;
     cmd.partition = S.opt.partition;
     cmd.panic = S.panic;
-    const alarm_result_t r = S.be.command(S.be.ctx, &cmd, NULL);
+    /* never dropped: with every slot taken, the next tick sends it */
+    S.panic_sent = ui_call_command(&cmd, panic_answered, 0u);
+}
+
+static void panic_answered(const ui_call_t *c)
+{
+    const alarm_result_t r = c->r;
     if (r != ALARM_OK) {
         ui_toast(ui_result_text(r));
-    } else if (S.panic == ALARM_PANIC_SILENT) {
+    } else if (c->cmd.panic == ALARM_PANIC_SILENT) {
         /* The one panic the screen deliberately doesn't show. It says the alarm is on here -
          * never that it was delivered, and never that help is coming - and stays short enough
          * to be unremarkable to anyone else in the room (UI-029). */
@@ -3318,21 +3372,26 @@ static void on_zone_bypass(lv_event_t *e)
 
 /* Chime with no code (CORE-CHIME-005, the installer's choice): one touch. Nothing opens; the
  * rail's bell changes under the finger and that is enough. */
-static void chime_toggle_now(void)
+static void chime_answered(const ui_call_t *c)
 {
-    alarm_cmd_t cmd;
-    alarm_cmd_result_t res;
-    memset(&cmd, 0, sizeof(cmd));
-    memset(&res, 0, sizeof(res));
-    cmd.partition = S.opt.partition;
-    cmd.type = ALARM_CMD_CHIME;
-    const alarm_result_t r = S.be.command(S.be.ctx, &cmd, &res);
-    if (r != ALARM_OK) {
+    if (c->r != ALARM_OK) {
         ui_beep(UI_BEEP_ERROR);
-        ui_toast(ui_result_text(r));
+        ui_toast(ui_result_text(c->r));
         return;
     }
     ui_refresh(true);
+}
+
+static void chime_toggle_now(void)
+{
+    alarm_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.partition = S.opt.partition;
+    cmd.type = ALARM_CMD_CHIME;
+    if (!ui_call_command(&cmd, chime_answered, 0u)) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_toast(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
 }
 
 /* The one way chime is switched: the rail's Chime and the row in Settings both come here.
@@ -3353,16 +3412,25 @@ void ui_chime_toggle(void)
     }
 }
 
+static void silence_answered(const ui_call_t *c);
+
 static void on_silence(void)
 {
     /* A keypad keeping a fire or CO tone through a lost link: the command can't reach the alarm
      * panel, and the link stops the tone here all the same (decided 2026-10-15). */
-    const bool here = ui_link_local_alarm();
     alarm_cmd_t cmd;
     memset(&cmd, 0, sizeof(cmd));
     cmd.type = ALARM_CMD_SILENCE;
     cmd.partition = S.opt.partition;
-    const alarm_result_t r = S.be.command(S.be.ctx, &cmd, NULL);
+    if (!ui_call_command(&cmd, silence_answered, ui_link_local_alarm() ? 1u : 0u)) {
+        ui_toast(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+}
+
+static void silence_answered(const ui_call_t *c)
+{
+    const bool here = c->tag != 0u;
+    const alarm_result_t r = c->r;
     if (here) {
         /* TR: a toast after Silence on a keypad without system communication: its own alarm
          * sound stops; the alarm panel goes on as it was */
@@ -3998,6 +4066,7 @@ void ui_app_start(const ui_backend_t *backend, const ui_options_t *opt)
 {
     memset(&S, 0, sizeof(S));
     S.be = *backend;
+    ui_call_reset();
     S.local_minute = -1;
     S.light_sent = -1;
     S.light_preview = -1;

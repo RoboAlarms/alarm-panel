@@ -248,6 +248,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-051 | PREFS_SET carries only listed fields to change. One is in flight per keypad, resent every 1 s and given up at 6 s. The answer is a PREFS with its req, the refusals per field and the values now stored. A req is applied once (the answer is kept 30 s). The keypad checks every value itself and applies it through its screen (UI-046) (built, BL-216; on the panels from the master's console: on the keypad's screen within 1 s, refused as held during an exit time) | unit, link |
 | LINK-052 | Never set through PREFS_SET: codes, role, pairing, home partition, name, supervision, Wi-Fi and IP, time, language and region, updates, factory reset, the setup, the Panel Manager, developer access. PREFS_SET and PREFS_REQ come from the master only (built, BL-216) | unit (`test_plink_frame.c`) |
 | LINK-053 | Enrollment discovers nearby panels without Wi-Fi; only mutually confirmed, authenticated peers may transfer credentials, and only within 10 minutes of that keypad's pairing. Manual Wi-Fi never gets overwritten; failure retains pairing; completion needs a live master connection. Language/audio/display remain local. | codec/link unit tests, LVGL setup walk; hardware service acceptance passed (2026-10-18, dev.13); physical setup acceptance open |
+| LINK-054 | A keypad's screen never waits for its master: its commands, code checks, code change, device actions and partition switches run on a task of their own (`plink_call`, through `ui_backend_t.run_later`), one at a time, a person's before the partition's activity, at most four waiting; the screen draws on meanwhile, a transparent layer takes the taps while a person's call waits (nothing on the screen changes), and the answer is handled on the screen's task, against the pad that is still open. The alarm panel's own screen, without `run_later`, runs them at once as before. The link task itself never waits (select at most 50 ms, hand-overs that never block). | PC (`calls_smoke`) |
 
 ## Frame format (v1)
 
@@ -1459,8 +1460,9 @@ Estimates, not measured:
 Sizes are exact from the field widths. Latencies other than those measured on the panels, ESP-NOW
 air time and the PSRAM figures are estimates. A keypad unlock's code check holds the alarm task
 for about 150 ms, as any keypad code does: a disarm at that moment waits for it, within
-LINK-024's 1 s. During packet loss a keypad's screen waits up to 1 s on a tap (3 s with a code);
-commands already wait up to 3 s (`CMD_WAIT_MS`, `plink_keypad_svc.c`). This design and "Updates
+LINK-024's 1 s. During packet loss a keypad's tap is answered within 1 s (3 s with a code) and a
+command within 3 s (`CMD_WAIT_MS`, `plink_keypad_svc.c`); the screen goes on drawing meanwhile
+(LINK-054). This design and "Updates
 through the link" freeze together: `OWN_PAYLOAD_MAX` (225) and the v1 fixture serve both, and
 freeze at the first release. Home Assistant's changes to how a screen looks are rate-limited on
 the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGENTS.md).

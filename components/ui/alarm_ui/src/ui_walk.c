@@ -386,8 +386,10 @@ static void pick_part(void *ctx)
 
 /* ---- the commands ------------------------------------------------------------------------- */
 
-/* code "": an End the engine takes as the system's (WALK-025); anything else asks for one. */
-static alarm_result_t walk_command(uint8_t p, alarm_walk_op_t op, uint8_t flags, const char *code)
+/* code "": an End the engine takes as the system's (WALK-025); anything else asks for one. The
+ * answer goes to done (LINK-054); false: not sent (done gets nothing). */
+static bool walk_command(uint8_t p, alarm_walk_op_t op, uint8_t flags, const char *code,
+                         ui_call_done_fn done)
 {
     alarm_cmd_t cmd;
     memset(&cmd, 0, sizeof(cmd));
@@ -396,11 +398,9 @@ static alarm_result_t walk_command(uint8_t p, alarm_walk_op_t op, uint8_t flags,
     cmd.walk_op = (uint8_t)op;
     cmd.walk_flags = flags;
     snprintf(cmd.code, sizeof(cmd.code), "%s", code);
-    alarm_cmd_result_t res;
-    memset(&res, 0, sizeof(res));
-    const alarm_result_t r = S.be.command(S.be.ctx, &cmd, &res);
+    const bool queued = ui_call_command(&cmd, done, 0u);
     memset(cmd.code, 0, sizeof(cmd.code));
-    return r;
+    return queued;
 }
 
 /* Why the panel said no (WALK-001, WALK-002), in words that say what to do. */
@@ -434,12 +434,23 @@ static const char *refusal(alarm_result_t r, alarm_walk_op_t op)
     return TR("Silence the alarm first");
 }
 
+static void started(const ui_call_t *c);
+
 static void on_start(void *ctx)
 {
     (void)ctx;
     s_own_start = true; /* the snapshot that shows it is this screen's start, not a notice */
-    const alarm_result_t r = walk_command(s_part, ALARM_WALK_START,
-                                          s_life24 ? ALARM_WALK_F_LIFE24 : 0u, S.auth_code);
+    if (!walk_command(s_part, ALARM_WALK_START, s_life24 ? ALARM_WALK_F_LIFE24 : 0u, S.auth_code,
+                      started)) {
+        s_own_start = false;
+        ui_beep(UI_BEEP_ERROR);
+        ui_toast(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+}
+
+static void started(const ui_call_t *c)
+{
+    const alarm_result_t r = c->r;
     if (r != ALARM_OK) {
         s_own_start = false;
         ui_beep(UI_BEEP_ERROR);
@@ -469,19 +480,42 @@ static void on_start(void *ctx)
 
 /* Extend on the page opened without a code: the code comes with it (WALK-001), as on Home's pad,
  * and is used for this one command. */
-static bool extend_with(const char *code)
+static bool extend_with(const char *code);
+
+static void extended_with(const ui_call_t *c)
 {
-    const alarm_result_t r = walk_command(s_part, ALARM_WALK_EXTEND, 0u, code);
-    if (r != ALARM_OK) {
+    if (!ui_pad_asks(extend_with)) {
+        ui_refresh(true);
+        return; /* the pad closed meanwhile */
+    }
+    if (c->r != ALARM_OK) {
         ui_beep(UI_BEEP_ERROR);
-        ui_pad_error(r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again")
-                                                 : refusal(r, ALARM_WALK_EXTEND));
-        return false;
+        ui_pad_error(c->r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again")
+                                                    : refusal(c->r, ALARM_WALK_EXTEND));
+        return;
     }
     ui_pad_cancel();
     ui_refresh(true);
     ui_page_rebuild();
-    return true;
+}
+
+/* The pad stays open; the answer closes it (extended_with). */
+static bool extend_with(const char *code)
+{
+    if (!walk_command(s_part, ALARM_WALK_EXTEND, 0u, code, extended_with)) {
+        ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+    return false;
+}
+
+static void extended(const ui_call_t *c)
+{
+    if (c->r != ALARM_OK) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_toast(refusal(c->r, ALARM_WALK_EXTEND));
+    }
+    ui_refresh(true);
+    ui_page_rebuild();
 }
 
 static void on_extend(void *ctx)
@@ -494,13 +528,22 @@ static void on_extend(void *ctx)
                    TR("Enter a master or installer code"), ui_tone_blue(), extend_with);
         return;
     }
-    const alarm_result_t r = walk_command(s_part, ALARM_WALK_EXTEND, 0u, S.auth_code);
-    if (r != ALARM_OK) {
+    if (!walk_command(s_part, ALARM_WALK_EXTEND, 0u, S.auth_code, extended)) {
         ui_beep(UI_BEEP_ERROR);
-        ui_toast(refusal(r, ALARM_WALK_EXTEND));
+        ui_toast(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+}
+
+static void ended(const ui_call_t *c)
+{
+    if (c->r != ALARM_OK) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_toast(refusal(c->r, ALARM_WALK_END));
     }
     ui_refresh(true);
-    ui_page_rebuild();
+    if (page_open()) {
+        ui_page_rebuild();
+    }
 }
 
 static void end_confirmed(void)
@@ -508,14 +551,9 @@ static void end_confirmed(void)
     /* Never a toggle (WALK-002). With the page's code the log names who ended it; without one,
      * the panel ends it (WALK-025). */
     const char *code = s_end_coded && ui_settings_allowed(ACCESS_SHARED) ? S.auth_code : "";
-    const alarm_result_t r = walk_command(s_end_part, ALARM_WALK_END, 0u, code);
-    if (r != ALARM_OK) {
+    if (!walk_command(s_end_part, ALARM_WALK_END, 0u, code, ended)) {
         ui_beep(UI_BEEP_ERROR);
-        ui_toast(refusal(r, ALARM_WALK_END));
-    }
-    ui_refresh(true);
-    if (page_open()) {
-        ui_page_rebuild();
+        ui_toast(ui_result_text(ALARM_ERR_UNAVAILABLE));
     }
 }
 

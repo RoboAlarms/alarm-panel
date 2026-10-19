@@ -15374,6 +15374,11 @@ msgstr[1] ""
 msgid "Those didn't match. Try again"
 msgstr ""
 
+#. The code pad's hint line. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_app.c
+msgid "Your current code is wrong"
+msgstr ""
+
 #. the code pad's error when OK is pressed with nothing typed. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_app.c
 msgid "Enter your code first"
@@ -15385,11 +15390,6 @@ msgid "Codes have at least {0} digit"
 msgid_plural "Codes have at least {0} digits"
 msgstr[0] ""
 msgstr[1] ""
-
-#. The code pad's hint line. At most 127 bytes.
-#: components/ui/alarm_ui/src/ui_app.c
-msgid "Your current code is wrong"
-msgstr ""
 
 #. Home, facts at the foot of the state card, " · " between them; "Chime on" says chime is switched on
 #. Text from the layout XML, no context.

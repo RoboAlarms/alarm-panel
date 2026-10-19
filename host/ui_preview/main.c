@@ -13819,6 +13819,9 @@ int main(int argc, char **argv)
     walk_voice(&start);    /* BL-202, appended too */
     walk_without_letters(&start); /* BL-124, appended: the shots before keep their numbers */
     walk_panel_link(&start);      /* BL-048, appended too */
+    /* KPD-006 (BL-048), appended too: its pictures are partition-switch.js's, so
+     * ui_mockup.py check finds them in the walk's own shots */
+    walk_partition_policy(&start);
 #endif
 
 #if ALARM_LV_BUDGET_KB > 0

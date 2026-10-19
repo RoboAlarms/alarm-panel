@@ -1,6 +1,6 @@
 # host - the panel on a PC
 
-Three PC builds of the same code the firmware runs, so behaviour is proven and seen before a
+Four PC builds of the same code the firmware runs, so behaviour is proven and seen before a
 panel is flashed (docs/features/21, docs/features/33 principle 7). All of them build the portable
 components the same way, through `cmake/alarm_host.cmake`.
 
@@ -9,6 +9,7 @@ components the same way, through `cmake/alarm_host.cmake`.
 | `CMakeLists.txt` | every portable component and every component's host tests (Unity), run with CTest | `pwsh tools/host_test.ps1` | `cmake -S host -B build/host -G Ninja && cmake --build build/host && ctest --test-dir build/host --output-on-failure` |
 | `ui_preview/` | the real engine, event log and UI rendered headless; a scripted walk through every screen, saved as PNGs to `build/ui_preview/shots`, failing when a check reports the wrong thing | `pwsh tools/ui_preview.ps1` | `cmake -S host/ui_preview -B build/ui_preview -G Ninja && cmake --build build/ui_preview && ./build/ui_preview/ui_preview build/ui_preview/shots` |
 | `ui_sim/` | the interactive simulator: the panel's screen in a window, buttons for the states worth trying, the sounder through the PC's speakers | `pwsh tools/ui_sim.ps1` | not yet (LVGL's Windows backend) |
+| `link_sim/` | the panel link on a PC (docs/features/11 LINK-013): `link_sim master` (the real engine, a small house's devices and the master's side of the link) or `link_sim keypad` (the keypad's side, the status it rebuilds, the master's devices it mirrors and its own Screen and sound settings) over UDP with a console, pairing with each other and with panels on the LAN; `link_smoke`, both in one process over 127.0.0.1 on a virtual clock, runs in CTest with the host tests | `pwsh tools/link_sim.ps1 master`, `pwsh tools/link_sim.ps1 keypad --master 127.0.0.1` | `cmake -S host/link_sim -B build/link_sim -G Ninja && cmake --build build/link_sim && ./build/link_sim/link_sim master --state build/link_sim/master.plink` (and `keypad --master 127.0.0.1 --state build/link_sim/keypad.plink` in a second terminal) |
 
 ## Where things are
 - **Tests live with their components**: `components/<tier>/<name>/test/`. This folder only
@@ -17,6 +18,31 @@ components the same way, through `cmake/alarm_host.cmake`.
 - `ui_preview/host_panel.c` is the simulated world (a panel backend with zones, network,
   storage...) that both the preview and the simulator drive; `ui_preview/main.c` is the
   scripted walk; `ui_sim/sim_main.c` the simulator's buttons.
+- `link_sim/`: `link_node.c` wires the portable link managers (`components/core/panel_link`) as a
+  panel does - the master to the real engine, the keypad to the status it rebuilds - with no
+  socket; `link_udp.c` is the only file with the OS's network headers (Winsock or POSIX),
+  `link_os_crypto.c` the crypto port (zwave_host's PC AES and X25519, the OS's random numbers),
+  `link_sim.c` the console and `link_smoke.c` the CI test. Smart Home and settings on keypads
+  (BL-216): the virtual master's devices are home_control's real registry over a fake Home
+  Assistant source (`devices`, `device REF online|offline`; `house off` disconnects it, so the
+  keypads get the empty list a panel serves until Home Assistant's catalog comes, and `house on`
+  connects it again), each keypad action judged as the
+  panel's `device_service_person_act` judges it, and `prefs N set KEY VALUE` changes a keypad's
+  Screen and sound settings as Home Assistant would; the virtual keypad mirrors the devices
+  (`devices`, `act REF ACTION [VALUE] [CODE]`) and keeps its own settings (`prefs`, `prefs set`).
+  `link_smoke` checks one device action and one settings change end to end. Updates through the
+  link (BL-048; `link_fw.c`, a stand-in for panel_ota on both sides: fake images of about 1 MB
+  with their SHA-256, a fake update server, a restart that takes a node off for 3 s and starts it
+  again on the new version on its self-test): the master's `fw install V` downloads its update and
+  its keypads follow it - fetching it from their own server (`fw server on|off|refuse` on the
+  keypad) or taking the master's relay - and restart with it once everything is disarmed; `fw`
+  shows the rows, `fw update N` asks a keypad again, `fw bad` fails the next self-test (the master
+  goes back, and the keypad on trial with it). `python tools/link_fw_sim.py` runs four scenarios
+  on two processes and prints the rows over time. No mDNS on the PC: a keypad is given
+  `--master`, or asks by broadcast to 255.255.255.255:6056 - for pairing, the first master to
+  answer is paired with (the pairing starts again addressed to it; a second master that answers
+  stops it), and a paired keypad says HELLO there and follows the master's authenticated
+  answer. A tool built on the seeded test port (`link_smoke`) talks only to 127.0.0.0/8.
 - LVGL comes from the firmware's managed copy or a clone of the pinned tag
   (`cmake/alarm_lvgl.cmake`); the UI library from `cmake/alarm_ui.cmake`, which reads the
   same source list as the firmware (`components/ui/alarm_ui/sources.cmake`).

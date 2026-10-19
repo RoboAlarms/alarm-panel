@@ -161,7 +161,7 @@ Deliberate choices:
 | `log/*` | boot counter and the lost-record counters (`lost`, `lostrep`) of the event log ([05](../05-Event-Log/README.md) LOG-010) | every start; when a record could not be kept |
 | `mqtt/*` | broker, account, TLS and its certificate authority, discovery, commands, topic prefix ([10](../10-MQTT-and-Home-Assistant/README.md)) | Settings > Integrations > MQTT, the Panel Manager |
 | `halink`, `notify`, `ntfy`, `pushover`, `weblogin`, `panelweb`, `devrem`, `devota`, `ota`, `nettrial`, `clock`, `rf`, `zwave`, `zbpanel`, `automations` (and `touch` on the 4") | each service's own settings and state, described in its feature document (09, 13, 19, 20, 23, 25-28, 30, 31, 35, 36, 41) | their own pages |
-| `link/*` | a later milestone (the panel link, [11](../11-Panel-Link-Master-Keypad/README.md)) | |
+| `link/*` | the panel link ([11](../11-Panel-Link-Master-Keypad/README.md)): the role, the master's keypads or the keypad's master with their pairing keys | never in a backup (LINK-022) |
 
 Both `alarm/*` keys are written by the alarm task right after the engine call that changed
 them, and the revision the engine reached is tracked apart from the revision NVS holds

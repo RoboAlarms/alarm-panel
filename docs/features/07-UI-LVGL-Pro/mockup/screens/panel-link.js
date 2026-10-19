@@ -1,0 +1,569 @@
+// The panel link (docs/features/11, BL-048; ui_link.c, ui_wizard.c): a panel is the alarm panel itself
+// (the "master", every panel before BL-048) or a keypad for an alarm panel elsewhere in the house, over
+// Wi-Fi. Built from the approved proposal BL-048-panel-link.js (2026-10-15) with its decisions: "Stop"
+// ends the add flow, the section is "Keypads", a keypad that answers is "Connected", a new keypad is
+// "Keypad N" until renamed, removing is a hold with no dialog, supervision is 1 min, 5 min (the default),
+// 15 min or Not supervised, a keypad shows the factory-code reminder pointing to the alarm panel, and a
+// removed keypad has no Panic. Four places:
+//   A. the setup on a panel's first start: the role after Welcome and, for a keypad, Wi-Fi it can't skip
+//      and the pairing step (docs/features/09 NET-001);
+//   B. the alarm panel, installer mode, Keypads and devices: the keypads on Wi-Fi, adding one (the code
+//      compared on both screens, LINK-004, LINK-016), a keypad's page and removing it (LINK-014);
+//   C. a panel in the keypad role: Home while it connects, without the alarm panel ("No system
+//      communication", LINK-008) and not paired, Emergency, Smart Home (the alarm panel's devices,
+//      BL-216), the Settings it keeps, About and how it becomes a stand-alone panel again (a factory
+//      reset, LINK-020, LINK-025);
+//   D. keypad updates (from the approved proposal P2, 2026-10-17): the alarm panel's Software update
+//      with its keypads, and a keypad's own pages while it follows its alarm panel's updates.
+// Nothing blinks; every countdown and live word changes at most once a second (UI-020, UI-023). The
+// screens never name how the link works. A firmware without the link (NULL link entries) shows none of
+// this. The preview draws them over a demo link backend (host/ui_preview/host_link_demo.c), Harbor House
+// at 192.0.2.42; fictional data throughout.
+
+// ================================ A. The setup on a panel's first start ================================
+// Dots: the alarm panel's setup counts Role, Wi-Fi, Time zone, Codes, Name and Done (6); a keypad's
+// Role, Wi-Fi, Pair and Done (4). Language and Welcome come before the dots, as today.
+const LINK_MASTER_STEPS = 6;
+const LINK_KEYPAD_STEPS = 4;
+const linkSetup = (meta, notes, props) => M.screen({...meta, area: 'Setup', notes,
+  render: () => M.wizard(props)});
+
+linkSetup({id: 'setup-welcome-first', shot: 'bl-048-setup-welcome', title: 'Setup: Welcome on a panel\'s first start, the role first'},
+  'On a panel\'s first start in a firmware with the panel link (ui_options_t.run_setup; ui_app_first_setup in the preview): the role\'s row on top, the rest as setup-welcome. The list scrolls a little (the shade at its foot). Run again from Installer the role isn\'t asked (it is chosen once: changing it is a factory reset), so Welcome lists five rows and the dots stay five. No Leave setup on a first start.',
+  {step: 0, steps: LINK_MASTER_STEPS, glyph: 'sparkles', title: 'Welcome',
+    note: 'Let\'s get your alarm panel ready. It takes about two minutes, and you can change everything later in Settings.', next: 'Start',
+    body: [
+      M.row_link({glyph: 'shield', color: 'violet', title: 'Choose its role', detail: 'The alarm panel, or a keypad for one', trail: ''}),
+      M.row_link({glyph: 'wifi', title: 'Join Wi-Fi', detail: 'For the clock and updates', trail: ''}),
+      M.row_link({glyph: 'globe', title: 'Choose your time zone', detail: 'So the event log shows your local time', trail: ''}),
+      M.row_link({glyph: 'key', color: 'amber', title: 'Change the factory codes', detail: 'Your own installer and master codes', trail: ''}),
+      M.row_link({glyph: 'tag', color: 'violet', title: 'Name your system', detail: 'How it shows up on the screen', trail: ''}),
+      M.row_link({glyph: 'party-popper', color: 'green', title: 'Look it over', detail: 'A last look at what you chose', trail: ''}),
+    ].join('')});
+
+const roleBody = (keypad) => [
+  M.row_link({glyph: 'shield-check', color: 'green', title: 'The alarm panel', detail: 'Sensors and the alarm live here',
+    trail: keypad ? '' : 'check', trailColor: 'blue', goTo: 'setup-role'}),
+  M.row_link({glyph: 'keyboard', color: 'blue', title: 'A keypad', detail: 'For an alarm panel elsewhere in the house',
+    trail: keypad ? 'check' : '', trailColor: 'blue', goTo: 'setup-role-keypad'}),
+  M.paragraph('To change this later, the panel must be reset to its factory settings.'),
+].join('');
+linkSetup({id: 'setup-role', shot: 'bl-048-setup-role', title: 'Setup: the role, the alarm panel chosen'},
+  'After Welcome, only on a panel\'s first start (or after a factory reset) in a firmware with the link and only while it is the alarm panel (link_info). The alarm panel is chosen to start with: Next goes on to Wi-Fi as today and the dots count its six steps. A tap on a row chooses it; the dots change at once to the branch\'s count (not animated).',
+  {step: 1, steps: LINK_MASTER_STEPS, glyph: 'shield', title: 'How will this panel be used?',
+    note: 'Each home has one alarm panel. More panels can be keypads for it.', back: true, next: 'Next', body: roleBody(false)});
+
+linkSetup({id: 'setup-role-keypad', shot: 'bl-048-setup-role-keypad', title: 'Setup: the role, a keypad chosen'},
+  'With A keypad chosen the dots count a keypad\'s four steps: Role, Wi-Fi, Pair, Done. A keypad has no time zone, codes or name to set: it takes the time and its partition from the alarm panel, and codes are checked there. The role is stored after both confirmations, before Wi-Fi provisioning. Interrupted setup resumes.',
+  {step: 1, steps: LINK_KEYPAD_STEPS, glyph: 'shield', title: 'How will this panel be used?',
+    note: 'Each home has one alarm panel. More panels can be keypads for it.', back: true, next: 'Next', body: roleBody(true)});
+
+linkSetup({id: 'setup-keypad-wifi', shot: 'bl-048-setup-keypad-wifi', title: 'Setup: Select Wi-Fi fallback on a keypad'},
+  'A keypad\'s version of setup-wifi: the networks, the password on the keyboard and Other network... as today (ui_net.c), with its own side words and Next dimmed until it is connected: no Skip for now. The line on top shows until it is connected; then the connection row says so and Next lights.',
+  {step: 2, steps: LINK_KEYPAD_STEPS, glyph: 'wifi', title: 'Join Wi-Fi',
+    note: 'Join the network the alarm panel uses.', back: true, next: 'Next', nextDisabled: true,
+    body: [
+      M.paragraph('Join the network the alarm panel uses.'),
+      M.row_status({glyph: 'wifi-off', color: 'gray', title: 'Not connected', detail: 'Choose a network below'}),
+      M.section('Networks nearby'),
+      M.row_link({glyph: 'wifi', title: 'Harbor House', detail: 'Password · strong signal', trail: 'lock'}),
+      M.row_link({glyph: 'wifi-high', title: 'Harbor House 5G', detail: 'Password · good signal', trail: 'lock'}),
+      M.row_link({glyph: 'wifi-high', title: 'Maple Street', detail: 'Password · good signal', trail: 'lock'}),
+      M.row_link({glyph: 'wifi-low', title: 'DIRECT-42 Printer', detail: 'Password · fair signal', trail: 'lock'}),
+    ].join('')});
+
+// ---- the pairing step (keypad only) ----
+const PAIR = {step: 3, steps: LINK_KEYPAD_STEPS, glyph: 'house', title: 'Pair with the alarm panel',
+  note: 'Find it nearby, or select Wi-Fi if it is out of range.', back: true, next: 'Next', nextDisabled: true};
+const onTheAlarmPanel = () => M.paragraph('Open Add keypad in Panel Manager or on the alarm panel.');
+const selectEnrollmentWifi = M.row_link({glyph:'wifi',title:'Select Wi-Fi',detail:'If the alarm panel is out of range',goTo:'setup-keypad-wifi'});
+const pair = (meta, notes, body, extra = {}) => linkSetup(meta, notes, {...PAIR, ...extra, body});
+
+pair({id: 'setup-pair-looking', shot: 'bl-048-setup-pair-looking', title: 'Setup, keypad: looking for the alarm panel'},
+  'The step after Wi-Fi (KP_PAIR_START: a keypad starts an attempt only when a person asks, LINK-016). It keeps looking; what to do on the alarm panel stays on the page. Nothing moves: no spinner, the words change only when something is found. Next is dimmed: the step goes on by itself. Back returns to Wi-Fi and stops looking (KP_PAIR_STOP); on a panel becoming a keypad, leaving this branch (Back, the alarm panel chosen instead) also forgets a pairing that had just finished, so nothing of the other alarm panel stays.',
+  [M.row_status({glyph: 'search', color: 'blue', title: 'Looking for the alarm panel', detail: 'Nearby or on your Wi-Fi'}), onTheAlarmPanel(), selectEnrollmentWifi].join(''));
+
+pair({id: 'setup-pair-code', shot: 'bl-048-setup-pair-code', title: 'Setup, keypad: found, compare the code'},
+  'The code is the six digits the alarm panel shows (keypad-add-code), in two groups of three; the two answers have the same weight, as on the Home Assistant page. Yes sends this keypad\'s answer (KP_PAIR_CONFIRM); No ends it (nothing is stored on either side). The address is in the detail so an installer with two panels on the bench can tell them apart.',
+  [
+    M.row_status({glyph: 'house', color: 'green', title: 'Found Harbor House', detail: 'The alarm panel · 192.0.2.42'}),
+    M.big_value({label: 'Does the alarm panel show this code?', value: '588 460'}),
+    M.action_pair({glyph: 'circle-x', text: 'No, cancel', color: 'red', goTo: 'setup-pair-mismatch'}, {glyph: 'circle-check', text: 'Yes, pair', color: 'green', goTo: 'setup-pair-waiting'}),
+    M.paragraph('If the codes differ, something on your network is in between: tap No.', 'amber'),
+  ].join(''));
+
+pair({id: 'setup-pair-waiting', shot: 'bl-048-setup-pair-waiting', title: 'Setup, keypad: waiting for the installer to allow it'},
+  'After Yes here, until the installer allows it at the alarm panel. If the installer allowed first, this screen is skipped. The code stays on show so the installer can still compare it. Back cancels the pairing.',
+  [
+    M.row_status({glyph: 'circle-check', color: 'green', title: 'The codes match', detail: 'Now allow it on the alarm panel'}),
+    M.big_value({label: 'The code on both screens', value: '588 460'}),
+    M.paragraph('The installer has 2 minutes to allow it.'),
+  ].join(''));
+
+linkSetup({id:'setup-pair-done',shot:'bl-048-setup-pair-done',title:'Setup: keypad paired and connected'},
+  'Enrollment is durable before provisioning. Done requires a fresh authenticated master connection.',
+  {step:4,steps:4,glyph:'house',title:'Keypad paired',note:'Your pairing is saved. Language, display and sound stay on this keypad.',
+    back:false,next:'Done',body:M.row_status({glyph:'house',color:'green',title:'Connected to the alarm panel'}) +
+      M.row_status({glyph:'wifi',color:'green',title:'Wi-Fi connected'})});
+
+// ================================ B. The alarm panel: Keypads and devices ================================
+// Installer mode, under About (BL-189), as installer-menu.
+const LINK_INST_SECTIONS = M.settings_sections({drop: ['installer']}).filter((s) => !s.divider);
+const linkInst = (meta, notes, page, extra = {}) => M.screen({...meta, area: 'Installer', notes,
+  render: () => M.main({view: 'settings', tone: 'blue', rail: {tone: 'blue'},
+    bar: {banner: 'installer', time: '10:58'},
+    content: M.settings({section: 'about', sections: LINK_INST_SECTIONS, ...page}), toast: extra.toast})});
+
+const DEVICES_PAGE = {title: 'Keypads and devices', note: 'A supervised device that stops answering shows a trouble', back: 'installer-menu'};
+// The installer's own table, as before, without the numbers a keypad on Wi-Fi holds.
+const tableRows = (skip = []) => Array.from({length: 16}, (_, i) => i + 1).filter((d) => !skip.includes(d))
+  .map((d) => M.row_link({glyph: 'cpu', color: 'gray', title: `Device ${d}`, detail: 'Not in use', goTo: d === 1 ? 'installer-device' : ''})).join('');
+const ADD_ROW = M.row_action({glyph: 'plus', text: 'Add a keypad', color: 'blue', goTo: 'keypad-add-open'});
+const HALL = M.row_link({glyph: 'keyboard', color: 'green', title: 'Hall keypad', detail: 'Keypad 2 · Home', value: 'Connected', goTo: 'keypad-page'});
+const BEDROOM = M.row_link_alert({glyph: 'keyboard', color: 'amber', title: 'Bedroom keypad', detail: 'Keypad 3 · Home', sub: 'Not heard since 10:25 PM',
+  value: 'Not responding', valueColor: 'amber', goTo: 'keypad-page-silent'});
+
+linkInst({id: 'installer-devices', shot: 'bl-048-devices-empty', title: 'Installer: Keypads and devices, no keypad on Wi-Fi yet'},
+  'In a firmware with the panel link, on the alarm panel: the Keypads section on top, then the installer\'s own table of the 16 device numbers under a heading of its own (a row each: the name, or "Device 4", and its partition when in use, else "Not in use"). Add a keypad is there in installer mode with every partition disarmed. The installer menu\'s row counts both. Without the link the page is the table alone, as before.',
+  {...DEVICES_PAGE, body: [
+    M.section('Keypads'), ADD_ROW,
+    M.paragraph('Another RoboAlarms panel on this Wi-Fi can be a keypad for this one.'),
+    M.section('Supervised devices'),
+    tableRows(),
+  ].join('')});
+
+linkInst({id: 'installer-devices-keypads', shot: 'bl-048-devices', title: 'Installer: Keypads and devices, two keypads on Wi-Fi'},
+  'A row per keypad (link_keypads): its name (a new one is "Keypad 2" until renamed, then the number moves to the line under it), its home partition, and Connected, Connecting (just added) or Not responding (amber when its supervision trouble is raised, with since when: LINK-007, CORE-TRBL-008). The words follow it at most once a second; the page is built again only when they change. Numbers 2 and 3 are left out of the table below: a keypad on Wi-Fi holds them (numbers 1-8 are shared with Zigbee keypads and this table, LINK-001).',
+  {...DEVICES_PAGE, body: [
+    M.section('Keypads'), ADD_ROW, HALL, BEDROOM, M.section('Supervised devices'),
+    tableRows([2, 3]),
+  ].join('')});
+
+// ---- adding a keypad ----
+const ADD = {title: 'Add a keypad', back: 'installer-devices'};
+linkInst({id: 'keypad-add-open', shot: 'bl-048-add-open', title: 'Installer: Add a keypad, pairing open'},
+  'Opening the page opens pairing for 2 minutes (PAIR_OPEN); leaving it, or Stop, closes it (PAIR_STOP), as Zigbee\'s Add a device. The time left in the line under the title changes once a second, nothing else moves. A refusal says why on the page: "Not started: only in installer mode, with everything disarmed." (NOT_ALLOWED) or "Not started: that can\'t be done now." (BUSY, FAILED), with Try again.',
+  {...ADD, note: 'Waiting for a keypad · 1 min 48 s left', body: [
+    M.section('On the new keypad'),
+    M.row_link({glyph: 'wifi', title: 'Join the same Wi-Fi', detail: 'Harbor House, as this panel', trail: ''}),
+    M.row_link({glyph: 'keyboard', title: 'Choose A keypad', detail: 'Its setup asks how it will be used', trail: ''}),
+    M.row_link({glyph: 'circle-check', title: 'Compare the codes', detail: 'This page shows the code when it asks', trail: ''}),
+    M.row_action({glyph: 'x', text: 'Stop', color: 'gray', goTo: 'installer-devices'}),
+    M.paragraph('Leaving this page closes pairing.'),
+  ].join('')});
+
+linkInst({id: 'keypad-add-nothing', shot: 'bl-048-add-nothing', title: 'Installer: Add a keypad, nothing asked'},
+  'The 2 minutes ran out with no keypad (fail TIMEOUT, no attempt). Try again opens pairing again. After a keypad asked and pairing still ended, the row says "No keypad was added" with "Closed after 3 tries" (LIMIT, LINK-016), "The 2 minutes ran out" or "Nothing was saved".',
+  {...ADD, note: 'Pairing closed', body: [
+    M.row_status({glyph: 'circle-dot', color: 'gray', title: 'No keypad asked to pair', detail: 'The 2 minutes ran out'}),
+    M.paragraph('Check that the new keypad is on the same Wi-Fi and on its pairing step, then try again.'),
+    M.row_action({glyph: 'refresh-cw', text: 'Try again', color: 'blue', goTo: 'keypad-add-open'}),
+  ].join('')});
+
+linkInst({id: 'keypad-add-code', shot: 'bl-048-add-code', title: 'Installer: Add a keypad, compare the code'},
+  'The Home Assistant pairing\'s pattern (ha-pairing-code): the six digits big, the two answers side by side, red on the left (PAIR_DECIDE). One keypad at a time. Reject ends it on both screens.',
+  {...ADD, note: 'A keypad asked to pair', body: [
+    M.row_status({glyph: 'keyboard', color: 'blue', title: 'A new keypad', detail: 'On your Wi-Fi · 192.0.2.57'}),
+    M.big_value({label: 'Does the keypad show this code?', value: '588 460'}),
+    M.action_pair({glyph: 'circle-x', text: 'No, reject', color: 'red', goTo: 'keypad-add-nothing'}, {glyph: 'circle-check', text: 'Yes, allow', color: 'green', goTo: 'keypad-add-allowed'}),
+    M.paragraph('If the codes differ, something on your network is in between: reject it.', 'amber'),
+  ].join('')});
+
+linkInst({id: 'keypad-add-allowed', shot: 'bl-048-add-allowed', title: 'Installer: allowed, waiting for the keypad'},
+  'After Yes, allow here while the keypad hasn\'t answered yet; if it answered first, this is skipped and the keypad is added at once. Nothing is stored until both have answered. Stop ends it on both screens.',
+  {...ADD, note: 'Allowed here · waiting for the keypad', body: [
+    M.row_status({glyph: 'circle-check', color: 'green', title: 'Allowed here', detail: 'Now tap Yes, pair on the keypad'}),
+    M.big_value({label: 'The code on both screens', value: '588 460'}),
+    M.row_action({glyph: 'x', text: 'Stop', color: 'gray', goTo: 'installer-devices'}),
+  ].join('')});
+
+linkInst({id: 'keypad-add-done', shot: 'bl-048-add-done', title: 'Installer: a keypad added'},
+  'Both answered: the keypad takes the lowest number free (1 is the table\'s here), its home partition is this panel\'s first, and it is supervised once heard (5 min). Back on the list with a toast saying the number; its row says Connected within a second or two. Its page renames it.',
+  {...DEVICES_PAGE, body: [
+    M.section('Keypads'), ADD_ROW,
+    M.row_link({glyph: 'keyboard', color: 'green', title: 'Keypad 2', detail: 'Home', value: 'Connected', goTo: 'keypad-page'}),
+    M.section('Supervised devices'),
+    tableRows([2]),
+  ].join('')}, {toast: 'Added as Keypad 2'});
+
+linkInst({id: 'keypad-add-full', shot: 'bl-048-add-full', title: 'Installer: Add a keypad, all 8 numbers taken'},
+  'Opening Add a keypad with no number free (PAIR_OPEN answers FULL): pairing doesn\'t open. Z-Wave keypads (numbers 9 to 16) don\'t count. The words follow Z-Wave\'s "storage is full" page (zwave-add-full).',
+  {...ADD, note: '', body: [
+    M.paragraph('Not started: keypad numbers 1 to 8 are all in use.', 'amber'),
+    M.paragraph('Keypads on Wi-Fi share them with Zigbee keypads and the supervised devices. Remove one you no longer use first.'),
+    M.row_action({glyph: 'refresh-cw', text: 'Try again', color: 'blue'}),
+  ].join('')});
+
+// ---- a keypad's page ----
+const keypadBody = (name, status, held = 0) => [
+  status,
+  M.section('The keypad'),
+  M.row_link({glyph: 'tag', title: 'Name', value: name}),
+  M.row_link({glyph: 'warehouse', color: 'violet', title: 'Home partition', detail: 'The partition a keypad shows and arms', value: 'Home'}),
+  M.row_link({glyph: 'clock-alert', title: 'Supervision', detail: 'Silent this long: a trouble', value: '5 min'}),
+  M.section(''),
+  M.row_hold({text: 'Remove this keypad', held}),
+  M.paragraph('It stops working at once. To use it again, pair it again.'),
+].join('');
+linkInst({id: 'keypad-page', shot: 'bl-048-keypad-page', title: 'Installer: a keypad\'s page'},
+  'The device page (installer-device) for a keypad on Wi-Fi: no In use switch (removing it is the hold at the foot), the state on top, then Name (the keyboard: "Keypad name", "Hall keypad, Bedroom keypad..."), Home partition (the partitions in use) and Supervision (1 min, 5 min, 15 min, Not supervised; a value set another way stays offered). Each change is sent as it is made (KEYPAD_SET); a refusal is a toast. Its state\'s words follow it at most once a second.',
+  {title: 'Hall keypad', note: 'Keypad 2 · saved when you go back', back: 'installer-devices-keypads',
+    body: keypadBody('Hall keypad', M.row_status({glyph: 'keyboard', color: 'green', title: 'Connected', detail: 'Version 0.6.0 · 192.0.2.57'}))});
+
+linkInst({id: 'keypad-page-silent', shot: 'bl-048-keypad-page-silent', title: 'Installer: a keypad not responding, being removed'},
+  'Amber while it is silent past its supervision time. Remove this keypad is held for 2 seconds (here half way; the page scrolled to it): the hold is the confirmation, so no dialog follows (KEYPAD_REMOVE). It is cut off at once, told if it answers (it then shows kp-removed), and the list says "Bedroom keypad removed".',
+  {title: 'Bedroom keypad', note: 'Keypad 3 · saved when you go back', back: 'installer-devices-keypads',
+    body: keypadBody('Bedroom keypad', M.row_status({glyph: 'keyboard', color: 'amber', title: 'Not responding', detail: 'Not heard since 10:25 PM'}), 0.55)});
+
+// ================================ C. A panel in the keypad role ================================
+// A keypad runs no alarm of its own (LINK-020): its Settings keep what is this screen's own, and Home
+// shows what the alarm panel says, or that it can't. Its rail shows Smart Home under the alarm panel's
+// rule - a listed device that isn't from Z-Wave - once the alarm panel's list is in: not while it
+// connects after a start (the list is RAM only), nor once it is not paired (BL-216, from the approved
+// proposal BL-216-keypad-smart-home.js, 2026-10-16: "Approve P1, recommendations OK"). Its rail's places
+// open its own screens here.
+const CODES_KP = 'Factory codes · Change them on the alarm panel';
+const kp = (meta, notes, main) => M.screen({...meta, area: 'Keypad', notes,
+  render: () => {
+    const m = main();
+    return M.main({...m, rail: {devices: true, ...(m.rail || {})}, bar: {time: '10:42', ...(m.bar || {})}})
+      .replace('data-go="devices"', 'data-go="kp-devices"').replace('data-go="home-ready"', 'data-go="kp-home-ready"');
+  }});
+const ONLINE_BAR = {banner: 'codes', bannerText: CODES_KP};
+const READY = {tone: 'green', glyph: 'shield-check', headline: 'Disarmed', detail: 'Ready to arm', note: 'All zones closed'};
+
+kp({id: 'kp-home-ready', shot: 'bl-048-kp-home-ready', title: 'Keypad: Home, connected'},
+  'The same Home as the alarm panel\'s (home-ready): the state, the words and the arming tiles come from Harbor House within a second (LINK-024), and a code typed here is checked there. While the alarm panel\'s factory codes are in use, the reminder points to the alarm panel, where codes change (not a button here; decided 2026-10-15). The rail has Smart Home between Zones and Activity, as on the alarm panel: five places with Panic, the rail\'s limit (BL-216). It shows under the master\'s rule, at least one listed device that isn\'t from Z-Wave, here from Harbor House\'s list (LINK-044); after a keypad restart it shows once the list is in. A keypad whose alarm panel has no Smart Home, an older one, or a keypad built without home control keeps the rail without it. Every other keypad screen (Zones, Activity, Settings) has the same rail.',
+  () => ({bar: ONLINE_BAR, content: M.home(READY, M.panel_arm())}));
+
+kp({id: 'kp-home-connecting', shot: 'bl-048-kp-home-connecting', title: 'Keypad: Home while it connects'},
+  'From start-up (or the setup\'s Done) until the first word from Harbor House. The words don\'t change while it waits and nothing moves. The tiles are dimmed and don\'t open the pad; Chime is dimmed (it is the alarm panel\'s). Panic in the rail works: held, it is sent as soon as Harbor House answers, for up to a minute (LINK-023). No factory-code reminder: nothing stale is shown as current. No Smart Home in the rail yet: it shows once Harbor House\'s device list is in (BL-216).',
+  () => ({tone: 'blue', bar: {banner: null, chimeOff: true}, rail: {devices: false}, content: M.home({tone: 'blue', glyph: 'wifi', headline: 'Connecting', detail: 'To Harbor House', note: 'Arming waits until it answers'},
+    M.panel_arm('', {disabled: true}))}));
+
+kp({id: 'kp-home-lost', shot: 'bl-048-kp-home-lost', title: 'Keypad: Home with no system communication'},
+  'After 30 s without a word from Harbor House (LINK-008). Steady: gray ring and words (the state is unknown, not armed or disarmed), when it last answered on a line of its own (a line broken inside "10:36" read badly), the fix above the dimmed tiles. Its sounds stop (no old entry or alarm tone; fire and CO keep sounding, the firmware\'s). Panic in the rail still sends (next screen). The Zones view shows every zone as Unknown, with no Bypass; Chime is dimmed. When Harbor House answers again, Home shows its state at once.',
+  () => ({tone: 'gray', bar: {banner: null, chimeOff: true}, content: M.home({tone: 'gray', glyph: 'unlink', headline: 'No system communication',
+    detail: 'Harbor House hasn\'t answered\nSince 10:36 PM', note: 'State unknown · Arming is off'},
+  M.panel_arm(M.arm_strip({glyph: 'wifi-off', tone: 'amber', title: 'Check the alarm panel', detail: 'Is it on, and on the same Wi-Fi?'}), {disabled: true}))}));
+
+kp({id: 'kp-home-lost-silence', shot: 'bl-048-kp-home-lost-silence', title: 'Keypad: no system communication, its fire alarm still sounding'},
+  'A fire or CO alarm was sounding when Harbor House stopped answering: the keypad keeps that sound (decided 2026-10-15: until OFF is pressed on the keypad or the link returns), and in the dimmed tiles\' place offers Silence (link_info.local_alarm), under Check the alarm panel. The state card stays the steady "No system communication" (the state is unknown): no alarm look, nothing blinks. Silence stops the sound on this keypad only, with the toast "Silenced on this keypad" (the command can\'t reach Harbor House; a Disarm or Silence keyed while the link was still up but not answered counts too); the dimmed tiles come back. Built from the decision without a proposal of its own (BL-048 review).',
+  () => ({tone: 'gray', bar: {banner: null, chimeOff: true}, content: M.home({tone: 'gray', glyph: 'unlink', headline: 'No system communication',
+    detail: 'Harbor House hasn\'t answered\nSince 10:36 PM', note: 'State unknown · Arming is off'},
+  `<div class="pane_stack">${M.arm_strip({glyph: 'wifi-off', tone: 'amber', title: 'Check the alarm panel', detail: 'Is it on, and on the same Wi-Fi?'})}${M.action_tile({glyph: 'bell-ring', title: 'Silence', subtitle: 'Stops the alarm sound on this keypad', color: 'red'})}</div>`)}));
+
+kp({id: 'kp-home-update', shot: 'bl-048-kp-home-update', title: 'Keypad: Home when it needs an update'},
+  'Harbor House answers, but its settings are newer than this keypad\'s software reads (link_info.needs_update), so the keypad never gets to show the state: it stays Connecting (or No system communication after a loss), and the foot of the state card says where to update it, steady. Software update then opens without a code (no code can be checked at Harbor House meanwhile), and Settings opens even if the last status said armed; the update installs only when Harbor House\'s partitions allow it, as on a connected keypad. Built without a proposal of its own (BL-048 review).',
+  () => ({tone: 'blue', bar: {banner: null, chimeOff: true}, rail: {devices: false}, content: M.home({tone: 'blue', glyph: 'wifi', headline: 'Connecting', detail: 'To Harbor House', note: 'Update this keypad: Settings > About'},
+    M.panel_arm('', {disabled: true}))}));
+
+kp({id: 'kp-emergency-lost', shot: 'bl-048-kp-emergency-lost', title: 'Keypad: Emergency with no system communication'},
+  'The Emergency view (panic); its words name the alarm panel, and while there is no system communication (or still connecting with a panic waiting) the small print says the keypad keeps trying (LINK-023: kept for 60 s, run once). When Harbor House takes it, the small print goes back to its usual words and the alarm shows on Home.',
+  () => ({view: 'panic', tone: 'gray', bar: {banner: null, chimeOff: true}, content: `<div class="view col center" style="gap:var(--space_xxl)">
+    <div class="col center" style="gap:4px">${M.text('Emergency', 'headline')}
+      ${M.text('Hold a button for 2 seconds to set off the alarm on Harbor House', 'body', 'text_2')}
+      ${M.text('No system communication · This keypad keeps trying for 1 minute', 'caption', 'amber')}</div>
+    <div class="row" style="gap:56px">${M.panic_button({glyph: 'siren', text: 'Police', color: 'red'})}
+      ${M.panic_button({glyph: 'flame', text: 'Fire', color: 'orange'})}${M.panic_button({glyph: 'heart-pulse', text: 'Medical', color: 'rose'})}</div></div>`}));
+
+kp({id: 'kp-removed', shot: 'bl-048-kp-removed', title: 'Keypad: removed at the alarm panel'},
+  'Shown when Harbor House says it removed this keypad (link_info: NOT_PAIRED, removed). It stays a keypad: Pair again opens the setup\'s pairing step (setup-pair-looking), with Leave setup back to here. To use it as an alarm panel of its own: About > Make it a stand-alone panel. No Panic in the rail: there is nothing to send it to (decided 2026-10-15). Never paired (no removal): "It isn\'t paired with an alarm panel". No Smart Home: the alarm panel\'s devices went with the pairing (BL-216).',
+  () => ({tone: 'gray', bar: {banner: null, chimeOff: true}, rail: {panic: false, devices: false}, content: M.home({tone: 'gray', glyph: 'unlink', headline: 'Not paired', detail: 'Harbor House removed this keypad', note: 'Arming is off'},
+    M.action_tile({glyph: 'house', title: 'Pair again', subtitle: 'With Harbor House or another alarm panel', color: 'blue', goTo: 'setup-pair-looking'}))}));
+
+// ---- Smart Home on a keypad (BL-216) ----
+// The alarm panel's page, unchanged: the same tiles, sheets, code pad, words, pending and failed
+// states, note and Arrange, from Harbor House's devices over the link (LINK-044..049; docs/features/11
+// "Smart Home and Home Assistant on keypads"). Built from the approved proposal BL-216-keypad-smart-home.js
+// (2026-10-16), with the design's decisions as recommended: a keypad's codes unlock or open for its home
+// partition, as for its arming (1); each panel keeps its own Arrange (2); device control while armed Away
+// is the same on both screens (3); the scope is the Smart Home view only (11). This file has its own
+// scope: the page and its devices are copied from views.js (devicesView, DEVICE_FAVORITES, resting,
+// withState), so the tiles are the alarm panel's own.
+const DEVICE_AREAS = ['Favorites', 'Living room', 'Kitchen', 'Outside'];
+const DEVICE_PORCH = {glyph: 'lightbulb', tone: 'blue', name: 'Porch Light', state: 'On · 80%', wide: true, control: M.device_level({value: 80})};
+const DEVICE_FAVORITES = [
+  DEVICE_PORCH,
+  {glyph: 'lock', tone: 'green', name: 'Front Door', state: 'Locked'},
+  {glyph: 'lock-open', tone: 'amber', name: 'Back Door', state: 'Unlocked'},
+  {glyph: 'warehouse', tone: 'green', name: 'Garage Door', state: 'Closed'},
+  {glyph: 'thermometer', tone: 'orange', name: 'Hallway', state: 'Heating · 71° now', wide: true, control: M.device_stepper({label: 'Heat to', value: '72°'})},
+  {glyph: 'sparkles', tone: 'violet', name: 'Good Night', state: 'Ran at 8:30 PM', more: false},
+  {glyph: 'lightbulb', tone: 'blue', name: 'Living Room Lamp', state: 'On · 40%', wide: true, control: M.device_level({value: 40})},
+  {glyph: 'lightbulb', name: 'Kitchen Lights', state: 'Off'},
+];
+const devicesView = ({note, area = 0, tiles}) => `<div class="view column">
+  <div class="row" style="gap:var(--space_md)">${M.view_header({title: 'Smart Home', note})}${M.segments(DEVICE_AREAS, area)}
+    <div class="round_button" data-go="devices-arrange">${M.icon('pencil', 20)}</div></div>
+  <div class="device_grid scroll grow">${tiles.map(M.device_tile).join('')}</div></div>`;
+const withState = (tiles, name, o) => tiles.map((t) => (t.name === name ? {...t, ...o} : t));
+const resting = (html, c) => html.replace(`class="${c}"`, `class="${c} disabled"`);
+const FAVORITES_NOTE = 'Back Door unlocked · 2 lights on';
+
+kp({id: 'kp-devices', shot: 'bl-216-kp-devices', title: 'Keypad: Smart Home, the alarm panel\'s devices'},
+  'The alarm panel\'s Smart Home page (devices), unchanged: Favorites, the areas, the tiles, the note and the sheets, with Harbor House\'s devices and states. A change shows within 1 s of Harbor House\'s own screen on a working Wi-Fi (LINK-045). Each tap goes to Harbor House, which judges it with the same function its own screen uses (LINK-048); one without a code holds the screen at most 1 s, then shows as under way until the answer. The pencil arranges this keypad\'s page only (decision 2). Settings > Integrations and Automations stay on the alarm panel.',
+  () => ({view: 'devices', bar: ONLINE_BAR, content: devicesView({note: FAVORITES_NOTE, tiles: DEVICE_FAVORITES})}));
+
+kp({id: 'kp-device-unlock', shot: 'bl-216-kp-device-unlock', title: 'Keypad: Smart Home, unlocking asks for a code'},
+  'The alarm panel\'s pad (device-unlock): "Unlock Front Door". The keypad knows an unlock needs a code, so the pad opens at once, without asking Harbor House first; Harbor House checks the code as this keypad\'s and judges the unlock again (LINK-047, LINK-048). Only a code valid for this keypad\'s home partition works (decision 1). Arm-only and guest codes are refused. A wrong code shows its reason on the pad, as on the alarm panel, and counts toward this keypad\'s own lockout (5 wrong codes), never the alarm panel\'s. The pad waits at most 3 s for the answer. Locking and closing never ask.',
+  () => ({view: 'devices', bar: ONLINE_BAR, content: devicesView({note: FAVORITES_NOTE, tiles: DEVICE_FAVORITES}),
+    over: M.modal_pad({title: 'Unlock Front Door', tone: 'amber', glyph: 'lock-open'})}));
+
+// Every tile offline: the alarm panel's look when Home Assistant drops (ui_devices.c tile_words, note).
+const LOST = 'Offline since 10:36 PM';
+const FAVORITES_LOST = [
+  {glyph: 'lightbulb', name: 'Porch Light', state: LOST, wide: true, offline: true,
+    control: resting(M.device_level({value: 80, tone: 'gray'}), 'device_level')},
+  {glyph: 'lock', name: 'Front Door', state: LOST, offline: true},
+  {glyph: 'lock-open', name: 'Back Door', state: LOST, offline: true},
+  {glyph: 'warehouse', name: 'Garage Door', state: LOST, offline: true},
+  {glyph: 'thermometer', name: 'Hallway', state: LOST, wide: true, offline: true,
+    control: resting(M.device_stepper({label: 'Heat to', value: '72°'}), 'device_stepper')},
+  {glyph: 'sparkles', name: 'Good Night', state: LOST, more: false, offline: true},
+  {glyph: 'lightbulb', name: 'Living Room Lamp', state: LOST, wide: true, offline: true,
+    control: resting(M.device_level({value: 40, tone: 'gray'}), 'device_level')},
+  {glyph: 'lightbulb', name: 'Kitchen Lights', state: LOST, offline: true},
+];
+
+kp({id: 'kp-devices-lost', shot: 'bl-216-kp-devices-lost', title: 'Keypad: Smart Home while Harbor House can\'t be reached'},
+  'The link is down, or no device data came for 30 s (LINK-046): every tile reads "Offline since" the time of the last device data, here when Harbor House last answered (kp-home-lost), and the note "Your devices can\'t be reached right now". This is the alarm panel\'s own look when Home Assistant drops (HCTL-006, BL-181): names and times readable, chips grey at 70 %, controls resting at 40 % in grey, no arrows. A tap sends nothing. A device Harbor House already said is offline keeps its own time. The frame is the keypad\'s while it has no system communication (kp-home-lost): grey logo, no factory-code reminder, Chime dimmed. Where only the device data stops and Harbor House still answers, the tiles and the note are the same and the frame stays the connected one. When device data comes again, each tile shows its state in one step. When only Harbor House\'s Home Assistant link drops, both screens show offline since the drop. The note is one line, whole: it takes its room from the area tabs (on the panel about 112 px of their 560), which then scroll with Favorites in view, as the other long notes do (UI-020); the mockup draws the tabs whole.',
+  () => ({view: 'devices', tone: 'gray', bar: {banner: null, chimeOff: true, time: '10:42'},
+    content: devicesView({note: 'Your devices can\'t be reached right now', tiles: FAVORITES_LOST})}));
+
+kp({id: 'kp-devices-unconfirmed', shot: 'bl-216-kp-devices-unconfirmed', title: 'Keypad: Smart Home, an unlock not confirmed'},
+  'After the code, Harbor House\'s answer didn\'t come: the keypad resent the request every 500 ms for 3 s, then gave up (LINK-047). The pad waited those 3 s and closed. Now Front Door\'s tile says "Not confirmed" in amber and the note "Couldn\'t confirm Front Door unlocked" (the catalog\'s "Couldn\'t confirm {0} unlocked", devices-failed-note). An action without a code (a light) holds the screen at most 1 s, then shows as under way until the answer or the give-up ("Turning on…" with its chip dimmed, the alarm panel\'s words). Back Door was locked meanwhile, so the outcome is the note\'s first fact; "2 lights on" doesn\'t fit beside it and gives way whole, as on the alarm panel. On the panel the note is one line (about 340 px of 344); the mockup\'s tabs are wider, so it wraps here, as today\'s long notes do. Harbor House runs a request at most once, so a copy that arrives late never unlocks twice. A tap tries again, with the code pad. The next state from Harbor House replaces the words.',
+  () => ({view: 'devices', bar: ONLINE_BAR, content: devicesView({note: 'Couldn\'t confirm Front Door unlocked',
+    tiles: withState(withState(DEVICE_FAVORITES, 'Front Door', {state: 'Not confirmed', stateTone: 'amber'}),
+      'Back Door', {glyph: 'lock', tone: 'green', state: 'Locked'})})}));
+
+// ---- Settings on a keypad ----
+// Kept: Screen and sound, Wi-Fi and network, Time and language, About (Software update is About's).
+// Left out (the role gate): Users, Integrations, Automations, Walk test, and Installer under About.
+const KP_SECTIONS = M.settings_sections({drop: ['users', 'integrations', 'automations', 'walk', 'installer']}).filter((s) => !s.divider);
+const kpSet = (meta, notes, page) => kp(meta, notes,
+  () => ({view: 'settings', bar: ONLINE_BAR, content: M.settings({sections: KP_SECTIONS, ...page})}));
+
+// The keypad's voice (docs/features/11 LINK-028). Decided 2026-10-16, the owner: "The slave panel is
+// not doing the announcements like the main panel does. It should have its own audio settings for
+// that as well to turn it on or off and control the volume like the master panel." So a keypad shows
+// the alarm panel's Voice volume and Announcements as they are (no new words), its own settings
+// (stored on the keypad, on as shipped like the alarm panel's, D06), and speaks its home partition's
+// announcements from what Harbor House sends. The zones' spoken names stay Harbor House's: its
+// installer approves them, so a keypad has no Spoken name row (and no Installer). Each screen file
+// has its own scope: the Announcements rows are copied from settings.js (annBody).
+const KP_ANN = ({on = true, voice = 'ready', refused = ''} = {}) => {
+  const ready = voice === 'ready';
+  return [
+    M.row_toggle({glyph: 'megaphone', title: 'Announcements', detail: ready ? 'The panel says what is happening, in words' : voice === 'none' ? 'Needs a voice pack' : 'Needs working voice', on}),
+    refused ? M.paragraph(refused, 'amber') : '',
+    M.row_toggle({title: 'Status messages', detail: 'Says arming, armed, disarmed, entry and not ready messages.', on: true, disabled: !on}),
+    M.row_toggle({title: 'Zone chime', detail: 'Says the zone’s spoken name after the chime.', on: true, disabled: !on}),
+    voice === 'unavailable' ? M.paragraph('Voice is unavailable.', 'amber') : '',
+    M.row_action({glyph: 'volume-2', text: 'Preview', color: 'blue', disabled: !ready}),
+    M.paragraph('Uses the Voice volume in Screen and sound. Alarms, fire and CO always sound at full volume.'),
+  ].join('');
+};
+
+kpSet({id: 'kp-settings', shot: 'bl-048-kp-settings', title: 'Keypad: Settings, Screen and sound'},
+  'A keypad\'s settings-display: the alarm panel\'s rows, its Voice volume and Announcements included (decided 2026-10-16, LINK-028): the chime and beeps play what Harbor House says, and the keypad says its home partition\'s announcements with its own voice, each at this keypad\'s volumes and with its own switches. Announcements says On as shipped (D06). Like today, Screen and sound needs no code. After 10 minutes without system communication (LINK-025), Wi-Fi and Software update open without a code, and Settings opens even if the last status said armed or in alarm (it closes once Harbor House answers armed).',
+  {section: 'display', title: 'Screen and sound', note: '', body: [
+    M.section('Sound'),
+    M.row_level({glyph: 'bell', title: 'Chime volume', value: 70}),
+    M.row_level({glyph: 'megaphone', title: 'Voice volume', value: 70}),
+    M.row_level({glyph: 'volume-2', title: 'Beeps volume', value: 70}),
+    M.paragraph('Alarms, fire and CO always sound at full volume.'),
+    M.row_toggle({title: 'Key clicks', detail: 'A short click for every touch', on: true}),
+    M.row_link({glyph: 'megaphone', title: 'Announcements', value: 'On', goTo: 'kp-announcements'}),
+    M.section('Screen'),
+    M.row_link({glyph: 'sun-moon', title: 'Appearance', value: 'Dark'}),
+    M.row_toggle({glyph: 'contrast', title: 'High contrast', detail: 'Stronger colors, every button outlined'}),
+  ].join('')});
+
+kpSet({id: 'kp-announcements', shot: 'bl-048-kp-announcements', title: 'Keypad: Screen and sound > Announcements'},
+  'The alarm panel\'s Announcements page (settings-announcements-on), on the keypad and for the keypad (decided 2026-10-16, LINK-028): its own switches, saved on the keypad. It says Harbor House\'s arming, armed, disarmed, entry and not ready for its home partition, the chime\'s and the walk test\'s spoken names Harbor House\'s installer approved (only when its voice pack is the one they were approved with; otherwise the tone alone), and the walk test whenever its voice is ready, Announcements off too (WALK-016). Never anything from before the keypad connected, nor while there is no system communication. Preview plays a sample name with the keypad\'s own voice. Back returns to Screen and sound.',
+  {section: 'display', title: 'Announcements', note: 'Screen and sound', back: 'kp-settings', body: KP_ANN()});
+
+kpSet({id: 'kp-announcements-no-pack', shot: null, title: 'Keypad: Announcements without a voice pack'},
+  'No voice pack in the keypad\'s own store (it has no Panel Manager or developer link to install one; BL-205 brings voices with updates): turning Announcements on is refused with the alarm panel\'s line, as there (settings-announcements-refused), and Preview is dimmed. Its tones are unchanged.',
+  {section: 'display', title: 'Announcements', note: 'Screen and sound', back: 'kp-settings',
+    body: KP_ANN({on: false, voice: 'none', refused: 'Announcements cannot be turned on because the voice pack is not installed.'})});
+
+kpSet({id: 'kp-time', shot: 'bl-048-kp-time', title: 'Keypad: Settings, Time and language'},
+  'A keypad\'s settings-time, opened with a master code (checked by Harbor House). The clock and the time zone come from Harbor House, so they are read-only here and say so; no Time server. The 12/24-hour clock, the language and the region are this keypad\'s. Without a code: the clock rows, Clock and "Enter a master or installer code", with the line "A master or installer code changes the language".',
+  {section: 'time', title: 'Time and language', body: [
+    M.row_link({glyph: 'calendar-clock', color: 'green', title: 'Saturday, September 19 · 10:42 PM', detail: 'From Harbor House', trail: ''}),
+    M.row_link({glyph: 'globe', title: 'Time zone', detail: 'Set on Harbor House', value: 'Eastern Time', trail: ''}),
+    M.row_link({glyph: 'clock', title: 'Clock', detail: '2:30 PM or 14:30', value: '12-hour'}),
+    M.section('Language'),
+    M.row_link({glyph: 'languages', title: 'Language', value: 'English'}),
+    M.row_link({glyph: 'map-pin', title: 'Region', detail: 'How dates and numbers are written', value: 'United States'}),
+  ].join('')});
+
+// ---- About on a keypad ----
+kpSet({id: 'kp-about', shot: 'bl-048-kp-about', title: 'Keypad: About'},
+  'A keypad\'s settings-about. Under the panel\'s own row, what it is a keypad of: Connected, Connecting, or "No system communication" (amber), at most once a second. Then the details as today, with an "Alarm panel" section (Name, Address, Keypad number; the address from link_info.master_addr) instead of Set up (zones, users and the event log are Harbor House\'s). Software update works as on any panel while its alarm panel doesn\'t send it its updates (one that does: kp-about-updates).',
+  {section: 'about', title: 'About this panel', body: [
+    M.row_status({glyph: 'shield-check', color: 'green', title: 'RoboAlarms Panel', detail: 'Version 0.6.0 · Panel ID b7c8d9e0f1a2'}),
+    M.row_status({glyph: 'keyboard', color: 'green', title: 'Keypad 2 of Harbor House', detail: 'Connected · shows and arms Home'}),
+    M.row_link({glyph: 'refresh-cw', title: 'Software update', value: 'Up to date'}),
+    M.row_link({glyph: 'hard-drive', color: 'violet', title: 'SD card', detail: '44.7 GB free of 59.6 GB', value: 'Ready'}),
+    M.section('This panel'),
+    M.row_value({title: 'Built', value: 'Sep 19, 2026'}),
+    M.row_value({title: 'Running for', value: '3 days'}),
+  ].join('')});
+
+kpSet({id: 'kp-about-end', shot: 'bl-048-kp-about-end', title: 'Keypad: About, scrolled to the end'},
+  'A keypad\'s settings-about-end: the Alarm panel section above Hardware; where an alarm panel has Installer, a keypad has the way back to a panel of its own, apart under a gap. It opens the next page.',
+  {section: 'about', title: 'About this panel', body: [
+    M.row_value({title: 'Keypad number', value: '2'}),
+    M.section('Hardware'),
+    M.row_value({title: 'Processor', value: 'ESP32-P4 v1.0 (v1.x image)'}),
+    M.row_value({title: 'Wi-Fi module', value: 'ESP32-C6 2.12.3'}),
+    M.row_value({title: 'ESP-IDF', value: 'v6.1'}),
+    M.row_value({title: 'Free memory', value: '214 KB internal · 29.1 MB PSRAM'}),
+    M.row_value({title: 'Firmware space', value: '2.3 MB of 4.5 MB used'}),
+    M.section(''),
+    M.row_link({glyph: 'rotate-ccw', color: 'red', title: 'Make it a stand-alone panel', detail: 'A factory reset: erases the pairing and every setting', goTo: 'kp-standalone'}),
+  ].join('')});
+
+kpSet({id: 'kp-standalone', shot: 'bl-048-kp-standalone', title: 'Keypad: make it a stand-alone panel (factory reset, held)'},
+  'A keypad\'s factory-reset page, held half way after the installer code (checked by Harbor House through authenticate; any other code: "That isn\'t the installer code"). Before the code the hold is "Enter the installer code"; after 10 minutes with no system communication (link_info.maintenance, LINK-025) it opens without one, so a keypad whose alarm panel is gone isn\'t stuck. It erases everything and restarts in the setup, where the role is asked again. No event-log switch: a keypad has none.',
+  {section: 'about', title: 'Make it a stand-alone panel', note: 'A factory reset', back: 'kp-about-end', body: [
+    M.paragraph('Erases the pairing with Harbor House, Wi-Fi and every setting, then restarts with the setup.'),
+    M.paragraph('Harbor House shows a trouble for this keypad until it is removed there.', 'amber'),
+    M.row_hold({text: 'Hold to erase everything', held: 0.53}),
+  ].join('')});
+
+
+// ================================ D. Keypad updates ================================
+// Built from the approved proposal BL-048-keypad-updates.js (P2, redrawn simple; 2026-10-17: "Approve,
+// recommendations OK"; docs/features/11 "Updates through the link", What people see). Keypads follow
+// their alarm panel: it tells each keypad which version to have; each gets it (downloads it, or
+// receives it from the alarm panel) while it keeps protecting, armed or not, and they restart together
+// once everything is disarmed. A keypad that misses an update tries again by itself. Nobody acts on any
+// of it: nothing here can be tapped and no screen asks anyone to do anything. The alarm panel keeps its
+// own Stop the update, which ends its keypads' download too (Q1); a keypad's banner names its alarm
+// panel, cut with "..." where a long name doesn't fit, its page saying it whole (Q3). Words, steady
+// tones and today's stepped bar; a percent changes at most once a second (UI-020, UI-023). What the
+// screens read: each keypad's ui_link_keypad_t.fw_state, fw_percent and fw (the alarm panel), and
+// ui_link_info_t.fw_follows and fw_from_master (a keypad); the preview draws them over the demo link
+// (host_link_demo_keypad_fw, host_link_demo_fw_follows).
+
+// ---- the alarm panel ----
+// Software update as today (updates-run.js), the Settings list as BL-189 has it.
+const fwMaster = ({id, shot, title, notes, body, bar, tags = {}, over}) => M.screen({
+  id, area: 'Settings', title, shot, notes,
+  render: () => M.main({view: 'settings', rail: {}, bar, over,
+    content: M.settings({section: 'about', sections: LINK_INST_SECTIONS, title: 'Software update', back: 'settings-about', tags, body: body.join('')})}),
+});
+
+// One keypad's row: its name; its number and version; one status line in its tone. Not tappable.
+const fwKpRow = (name, n, version, state, tone) => M.row_link_alert({glyph: 'keyboard', color: tone, title: name,
+  detail: `Keypad ${n} · version ${version}`, sub: state, subColor: tone === 'gray' ? 'text_2' : tone, trail: ''});
+// The Keypads section (ui_link_update_keypads): its heading, one line, a row per keypad; no buttons.
+const fwKeypads = (...rows) => [M.section('Keypads'),
+  M.paragraph('Keypads update with this panel. They restart together once everything is disarmed.'), ...rows].join('');
+const FW_UP_TO_DATE = (name, n, v) => fwKpRow(name, n, v, 'Up to date', 'green');
+
+// Today's steps (updates-run.js), the first running.
+const FW_STEPS = [M.section('Steps'), ...[
+  ['Download', '2.7 MB'],
+  ['Check the download', 'Its signature and checksum'],
+  ['Wait until everything is disarmed', 'Right away when it already is'],
+  ['Restart with the new version', 'About a minute; the self-test starts at once'],
+  ['Self-test', 'Usually a minute, at most three · restarts with 0.6.1 if it fails'],
+].map(([title, detail], i) => M.row_link({glyph: i === 0 ? 'circle-dot' : 'circle', color: i === 0 ? 'blue' : 'gray', title, detail, trail: ''}))].join('');
+
+fwMaster({id: 'settings-update-keypads', shot: 'bl-048-fw-master-keypads', title: 'Software update downloading, its keypads with it',
+  notes: 'On an alarm panel with keypads (link_keypads), the Keypads section under the run row; today\'s Stop, its paragraph and the steps follow below it, apart under a gap. A row per keypad: its name, "Keypad 2 · version 0.6.1" (the version it runs) and one status line in its tone, from ui_link_keypad_t.fw_state: "Downloading · 45 %" and "Receiving from this panel · 30 %" (fw_percent), "Ready · restarts with this panel", "Restarting" (blue), "Up to date" (green), "Not updated yet · tries again by itself", "Newer than this panel" (gray); none while not known. Read once a second and changed in place, so a percent changes at most once a second. Armed, downloading goes on and the rows say the same. Without keypads the page is today\'s (settings-update-downloading).',
+  bar: {banner: {glyph: 'download', tone: 'blue', text: 'Downloading an update'}, time: '6:52', ampm: 'AM'},
+  tags: {about: {text: 'Updating', tone: 'blue'}},
+  body: [
+    M.row_status({glyph: 'download', color: 'blue', title: 'Downloading version 0.6.2', detail: '1.1 of 2.7 MB · 42 %', level: 42}),
+    fwKeypads(
+      fwKpRow('Hall keypad', 2, '0.6.1', 'Downloading · 45 %', 'blue'),
+      fwKpRow('Bedroom keypad', 3, '0.6.1', 'Receiving from this panel · 30 %', 'blue'),
+      fwKpRow('Kitchen', 4, '0.6.1', 'Ready · restarts with this panel', 'blue')),
+    M.section(''),
+    M.row_action({glyph: 'circle-x', text: 'Stop the update', color: 'red', goTo: 'settings-update-stop-question'}),
+    M.paragraph('The alarm keeps working while it downloads. You can stop the update until the panel restarts.'),
+    FW_STEPS,
+  ]});
+
+fwMaster({id: 'settings-update-keypads-done', shot: 'bl-048-fw-master-keypads-done', title: 'Software update after the update: one keypad not yet',
+  notes: 'One gray line for every keypad that missed the version, whatever the reason: "Not updated yet · tries again by itself". It does: a failed download after an hour and at this panel\'s next version; one that went back, at the next version. The reason is in Activity and the console only. No amber, no trouble, no banner. Check again stands apart under a gap.',
+  bar: {banner: null, time: '7:31', ampm: 'AM'},
+  body: [
+    M.row_status({glyph: 'circle-check', color: 'green', title: 'Updated to version 0.6.2', detail: '7:14 AM · it passed its self-test'}),
+    fwKeypads(
+      FW_UP_TO_DATE('Hall keypad', 2, '0.6.2'),
+      FW_UP_TO_DATE('Bedroom keypad', 3, '0.6.2'),
+      fwKpRow('Kitchen', 4, '0.6.1', 'Not updated yet · tries again by itself', 'gray')),
+    M.section(''),
+    M.row_link({glyph: 'refresh-cw', title: 'Check again', detail: 'Checked 7:17 AM', trail: ''}),
+  ]});
+
+fwMaster({id: 'settings-update-install-question-keypads', shot: 'bl-048-fw-master-install-question', title: 'Install: the question on an alarm panel with keypads',
+  notes: 'Today\'s question (settings-update-install-question) with a note of its own on an alarm panel with keypads: they update with it. Behind it, the page with its Keypads section under Install, all up to date on 0.6.1.',
+  bar: {banner: null, time: '6:50', ampm: 'AM'},
+  tags: {about: {text: 'Update', tone: 'violet'}},
+  body: [
+    M.row_link({glyph: 'sparkles', color: 'violet', title: 'Version 0.6.2 is ready to install', detail: 'You have 0.6.1 · the alarm keeps working while it downloads', trail: ''}),
+    M.row_action({glyph: 'download', text: 'Install version 0.6.2', color: 'blue'}),
+    M.paragraph('The panel restarts once everything is disarmed. It takes about a minute.'),
+    fwKeypads(FW_UP_TO_DATE('Hall keypad', 2, '0.6.1'), FW_UP_TO_DATE('Bedroom keypad', 3, '0.6.1'), FW_UP_TO_DATE('Kitchen', 4, '0.6.1')),
+  ],
+  over: M.confirm_dialog({title: 'Install version 0.6.2?', tone: 'primary', ok: 'Install',
+    note: 'The panel downloads it now and keeps protecting meanwhile; you can stop the update until it restarts. It restarts once everything is disarmed, then its keypads update with it.'})});
+
+linkInst({id: 'installer-devices-keypad-updating', shot: 'bl-048-fw-installer-keypads', title: 'Installer: Keypads and devices, a keypad restarting for its update'},
+  'While a keypad restarts with the update (fw_state RESTARTING, up to 10 minutes, its trouble held meanwhile), its row says "Updating" (blue) instead of "Not responding", and so does its page. After 10 minutes without it, today\'s row and trouble (installer-devices-keypads).',
+  {...DEVICES_PAGE, body: [
+    M.section('Keypads'), ADD_ROW, HALL,
+    M.row_link_alert({glyph: 'keyboard', color: 'blue', title: 'Bedroom keypad', detail: 'Keypad 3 · Home', value: 'Updating', valueColor: 'blue', goTo: 'keypad-page'}),
+    M.section('Supervised devices'),
+    tableRows([2, 3]),
+  ].join('')});
+
+M.screen({id: 'activity-keypad-updates', area: 'Views', title: 'Activity on the alarm panel: keypad updates', shot: 'bl-048-fw-master-activity',
+  notes: 'Another morning than settings-update-keypads-done: the keypads restarted with this panel at 7:12; Kitchen, off then, caught up later and its download broke off. The keypad by its number, as "Keypad 3 not responding" (notify_words.c, ALARM_FW_KEYPAD_*). A failed update says why on its line; nothing to do: it tries again by itself. "Keypad 3 installing an update" is logged at the restart too (not drawn). The System filter.',
+  render: () => M.main({view: 'activity', rail: {}, bar: {banner: null, time: '7:31', ampm: 'AM'}, content: `<div class="view column">
+    ${M.view_header({title: 'Activity', note: 'Everything the panel did, newest first'})}
+    <div class="row" style="flex:none">${M.segments(['All', 'Alarms', 'Troubles', 'Arming', 'Bypass', 'System'], 5)}</div>
+    <div class="list scroll">${[
+      M.event_row({glyph: 'refresh-cw', title: 'Keypad 4 update failed', detail: 'The download broke off', time: '7:25 AM', tone: 'amber'}),
+      M.event_row({glyph: 'refresh-cw', title: 'Keypad 2 update rolled back', detail: 'The new version failed; the previous one runs', time: '7:14 AM', tone: 'amber'}),
+      M.event_row({glyph: 'refresh-cw', title: 'Keypad 3 updated', detail: 'The new version passed its self-test', time: '7:14 AM', tone: 'blue'}),
+      M.event_row({glyph: 'refresh-cw', title: 'Firmware updated', detail: 'The new version passed its self-test', time: '7:14 AM', tone: 'blue'}),
+      M.event_row({glyph: 'refresh-cw', title: 'Installing an update', detail: 'The panel restarts with the new version', time: '7:12 AM', tone: 'blue'}),
+    ].join('')}</div></div>`}),
+});
+
+// ---- a keypad (Hall keypad) that follows Harbor House's updates ----
+const FW_KP_BANNER = {glyph: 'download', tone: 'blue', text: 'Updating · restarts with Harbor House', goTo: 'kp-update'};
+
+kp({id: 'kp-about-updates', shot: 'bl-048-fw-kp-about', title: 'Keypad: About, its updates from Harbor House'},
+  'kp-about on a keypad whose alarm panel sends it its updates (link_info.fw_follows): the Software update row says "From Harbor House" on its line (a long name wraps there). While an update runs the row\'s value says "Updating" (blue), as on any panel. In LINK-025\'s maintenance, or when it needs an update to read its alarm panel\'s settings, its own Software update returns (kp-about).',
+  () => ({view: 'settings', bar: {banner: null, time: '6:52', ampm: 'AM'},
+    content: M.settings({sections: KP_SECTIONS, section: 'about', title: 'About this panel', body: [
+      M.row_status({glyph: 'shield-check', color: 'green', title: 'RoboAlarms Panel', detail: 'Version 0.6.1 · Panel ID b7c8d9e0f1a2'}),
+      M.row_status({glyph: 'keyboard', color: 'green', title: 'Keypad 2 of Harbor House', detail: 'Connected · shows and arms Home'}),
+      M.row_link({glyph: 'refresh-cw', title: 'Software update', detail: 'From Harbor House', goTo: 'kp-update'}),
+      M.row_link({glyph: 'hard-drive', color: 'violet', title: 'SD card', detail: '44.7 GB free of 59.6 GB', value: 'Ready'}),
+      M.section('This panel'),
+      M.row_value({title: 'Built', value: 'Sep 19, 2026'}),
+      M.row_value({title: 'Running for', value: '3 days'}),
+    ].join('')})}));
+
+kp({id: 'kp-update', shot: 'bl-048-fw-kp-update', title: 'Keypad: Software update, updating with Harbor House'},
+  'A keypad runs its alarm panel\'s version, by itself: the page says where updates come from and how far one is. No Install, no Check again, no Stop, no steps. With no update running, the first row alone. While one runs, today\'s run row with its stepped bar and one line: "Downloading · 45 %" (or "Receiving from Harbor House · 30 %", link_info.fw_from_master), "Checking the download", then "Ready · restarts with Harbor House once everything is disarmed"; the restart and the self-test say what they say on any panel. The percent at most once a second.',
+  () => ({view: 'settings', bar: {banner: FW_KP_BANNER, time: '6:52', ampm: 'AM'},
+    content: M.settings({sections: KP_SECTIONS, section: 'about', title: 'Software update', back: 'kp-about-updates', tags: {about: {text: 'Updating', tone: 'blue'}}, body: [
+      M.row_status({glyph: 'house', color: 'blue', title: 'Updates come from Harbor House', detail: 'Version 0.6.1'}),
+      M.row_status({glyph: 'download', color: 'blue', title: 'Updating to version 0.6.2', detail: 'Downloading · 45 %', level: 45}),
+    ].join('')})}));
+
+kp({id: 'kp-home-updating', shot: 'bl-048-fw-kp-home', title: 'Keypad: Home, the update banner'},
+  'Today\'s steady blue update banner, on a keypad that follows its alarm panel: "Updating · restarts with Harbor House", from the first byte to the restart, armed or not; the same words throughout. It gives way to an alarm as today. A tap opens Software update (with the code). Nothing covers Home, the pad or Panic.',
+  () => ({bar: {banner: FW_KP_BANNER, time: '6:52', ampm: 'AM'}, content: M.home(READY, M.panel_arm())}));

@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "alarm_proto/proto_fw.h"
 #include "alarm_service.h"
 #include "esp_err.h"
 
@@ -106,6 +107,10 @@ typedef struct {
     char release_url[192]; /* "" = none */
     bool in_progress;
     int percent;           /* 0..100 while an image is written, -1 = none */
+    /* A master's link keypads (docs/features/11 "What people see"): "keypads" in the state,
+     * left out while there are none. */
+    proto_fw_keypad_t keypads[PROTO_FW_KEYPADS_MAX];
+    size_t keypad_count;
 } net_mqtt_fw_t;
 
 typedef struct {

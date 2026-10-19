@@ -32,7 +32,7 @@ lv_obj_t * device_tile_create(lv_obj_t * parent, const char * glyph, const char 
         lv_style_set_height(&style_device_tile, DEVICE_CELL_H);
         alarm_ui_run_6(&style_device_tile, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_device_tile, RADIUS_LG);
-        alarm_ui_run_50(&style_device_tile, SPACE_LG, SPACE_LG, SPACE_MD, SPACE_MD);
+        alarm_ui_run_53(&style_device_tile, SPACE_LG, SPACE_LG, SPACE_MD, SPACE_MD);
         lv_style_set_flex_main_place(&style_device_tile, LV_FLEX_ALIGN_SPACE_BETWEEN);
         lv_style_set_bg_color(&style_device_tile_pressed, COLOR_RAISED);
 
@@ -48,7 +48,7 @@ lv_obj_t * device_tile_create(lv_obj_t * parent, const char * glyph, const char 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_20(parent);
-        alarm_ui_run_15(box_0, &style_device_tile, 0, &style_device_tile_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(box_0, &style_device_tile, 0, &style_device_tile_pressed, LV_STATE_PRESSED);
         lv_obj_t * top = alarm_ui_run_0(box_0, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_1(top, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(top);
@@ -75,10 +75,10 @@ lv_obj_t * device_tile_create(lv_obj_t * parent, const char * glyph, const char 
         lv_label_set_text(detail_label, detail);
         lv_obj_set_style_text_font(detail_label, font_caption, 0);
         lv_obj_set_style_text_line_space(detail_label, 0, 0);
-        alarm_ui_run_45(detail_label, "detail_label");
+        alarm_ui_run_47(detail_label, "detail_label");
 
         lv_obj_t * more = alarm_ui_run_0(box_0, 64, 72);
-        alarm_ui_run_51(more, LV_ALIGN_TOP_RIGHT, 16, -12);
+        alarm_ui_run_56(more, LV_ALIGN_TOP_RIGHT, 16, -12);
         lv_obj_set_flag(more, LV_OBJ_FLAG_FLOATING, true);
         lv_obj_set_flag(more, LV_OBJ_FLAG_CLICKABLE, true);
         lv_obj_set_name(more, "more");

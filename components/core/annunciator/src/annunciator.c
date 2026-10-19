@@ -114,6 +114,7 @@ void ann_state_from_snapshot(const alarm_snapshot_t *s, uint8_t keypad_partition
     out->state = (uint8_t)ps->state;
     out->level = (uint8_t)ps->level;
     out->arm_flags = ps->arm_flags;
+    out->quick_exit = ps->quick_exit;
     out->walk_test = ps->walk_test;
     out->walk_tested = ps->walk_tested;
     out->walk_total = ps->walk_total;
@@ -446,6 +447,13 @@ static void decide(ann_t *a, const ann_state_t *prev, uint64_t now)
                 armed_words(a, st->level, st->arm_flags, &b->ack, now);
             }
         }
+    } else if (a->join_exit && prev->state == ALARM_STATE_DISARMED &&
+               st->state == ALARM_STATE_EXIT_DELAY) {
+        /* a link keypad: an arming whose event came too late to say - it joins, as a baseline
+         * in the exit time does (ann_join_exit) */
+        a->cycle = true;
+        a->cycle_silent = (st->arm_flags & ALARM_ARM_SILENT_EXIT) != 0u;
+        a->cycle_armed_said = false;
     } else if (prev->state == ALARM_STATE_EXIT_DELAY && st->state == ALARM_STATE_ARMED &&
                a->cycle && !a->cycle_armed_said) {
         /* Exit time ended: the actual mode (auto-stay's Home too). An entry delay that ends is
@@ -532,6 +540,17 @@ void ann_rebaseline(ann_t *a)
     a->have_baseline = false;
     a->cycle = false;
     memset(&a->batch, 0, sizeof(a->batch));
+}
+
+void ann_set_keypad(ann_t *a, uint8_t keypad_partition)
+{
+    a->keypad = keypad_partition;
+    ann_rebaseline(a); /* the old partition's state and cycle mean nothing for the new one */
+}
+
+void ann_join_exit(ann_t *a, bool on)
+{
+    a->join_exit = on;
 }
 
 void ann_set_prefs(ann_t *a, const ann_prefs_t *prefs, uint64_t now_ms)
@@ -644,10 +663,13 @@ void ann_output(ann_t *a, alarm_output_t output, uint8_t partition, alarm_patter
 void ann_commit(ann_t *a, const ann_state_t *st, uint64_t now_ms)
 {
     if (!a->have_baseline) {
-        /* The silent baseline: whatever the state is, it isn't news. */
+        /* The silent baseline: whatever the state is, it isn't news (a link keypad joins an exit
+         * time's cycle, ann_join_exit). */
         a->st = *st;
         a->have_baseline = true;
-        a->cycle = false;
+        a->cycle = a->join_exit && st->state == ALARM_STATE_EXIT_DELAY && !st->quick_exit;
+        a->cycle_silent = a->cycle && (st->arm_flags & ALARM_ARM_SILENT_EXIT) != 0u;
+        a->cycle_armed_said = false;
         memset(&a->batch, 0, sizeof(a->batch));
         return;
     }

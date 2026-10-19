@@ -1,6 +1,8 @@
 /* The Smart Home screen's model (docs/features/24, BL-045): the layout blob - a stored format, read
- * by later firmware - and the defaults when nothing is stored (HCTL-003, HCTL-008), and the source's
- * state words. Portable: nothing but the contract and Unity. */
+ * by later firmware - and the defaults when nothing is stored (HCTL-003, HCTL-008), the source's
+ * state words, and the one conversion of a device into what both screens show, held to the
+ * master's own from before BL-216 (docs/features/11). Portable: nothing but the contract, the
+ * registry's types and Unity. */
 #include "ui_backend/ui_dev_model.h"
 #include "ui_dev_layout_fixture_v1.h"
 #include "unity.h"
@@ -559,6 +561,293 @@ static void test_kind_wide_fan_without_speeds(void)
     TEST_ASSERT_TRUE(ui_devl_wide(&s_l, &devs[1]));
 }
 
+/* ---- one converter for both screens (docs/features/11, BL-216) ---------------------------------- */
+
+/* ui_port_esp.c's dev_list before BL-216 moved it into ui_dev_model.h, kept verbatim as the
+ * reference the master's screen is held to: one registry row as the screen showed it. */
+static void legacy_from_hc(ui_dev_t *u, const hc_device_t *d)
+{
+    memset(u, 0, sizeof(*u));
+    u->kind = d->info.kind;
+    u->source = d->info.source;
+    u->state = ui_dev_state_parse(d->info.kind, d->info.state);
+    u->status = !d->info.online ? UI_DEV_OFFLINE
+                : d->pending != 0u ? UI_DEV_PENDING
+                : d->failed        ? UI_DEV_FAILED
+                                   : UI_DEV_IDLE;
+    u->action = u->status == UI_DEV_PENDING || u->status == UI_DEV_FAILED
+                    ? d->action
+                    : (uint8_t)ACT_NONE;
+    u->unsure = u->status == UI_DEV_FAILED && hc_outcome_unknown(d) ? 1u : 0u;
+    ui_dev_values_fill(u, &d->info.values);
+    snprintf(u->ref, sizeof(u->ref), "%s", d->info.ref);
+    snprintf(u->name, sizeof(u->name), "%s", d->info.name);
+    snprintf(u->area, sizeof(u->area), "%s", d->info.area);
+}
+
+/* ui_port_esp.c's dev_act before BL-216: a thermostat's mode key as the word the source got. */
+static const char *legacy_mode_word(int32_t value)
+{
+    return value == UI_DEV_ST_OFF    ? "off"
+           : value == UI_DEV_ST_HEAT ? "heat"
+           : value == UI_DEV_ST_COOL ? "cool"
+           : value == UI_DEV_ST_AUTO ? "auto"
+                                     : NULL;
+}
+
+/* The fixture: a row of every kind as its sources report it - Home Assistant's and the panel's own
+ * Z-Wave outputs, each state word the screen reads and some it doesn't, values known and not, a
+ * level past 100, a thermostat doing something this firmware has no word for, a kind from a newer
+ * source - each tried below in every status. */
+typedef struct {
+    uint8_t kind;
+    uint8_t source;
+    const char *ref;
+    const char *name;
+    const char *area;
+    const char *state;
+    dev_values_t v; /* flags, level, modes, hvac_action, setpoint, temp, since, caps */
+} dev_row_fixture_t;
+
+static const dev_row_fixture_t ROWS[] = {
+    {DEV_LIGHT, DSRC_HA, "light.porch", "Porch light", "Porch", "on",
+     {DEV_VAL_LEVEL | DEV_VAL_LEVEL_SET, 80, 0, 0, 0, 0, 0, DEV_CAP_KNOWN | DEV_CAP_DIM}},
+    {DEV_LIGHT, DSRC_HA, "light.hall", "Hall", "", "off", {DEV_VAL_LEVEL_SET, 0, 0, 0, 0, 0, 0, 0}},
+    {DEV_LIGHT, DSRC_ZWAVE, "zw_1_7_0_1", "Dimmer", "Den", "on",
+     {DEV_VAL_LEVEL, 200, 0, 0, 0, 0, 0, 0}},
+    {DEV_SWITCH, DSRC_HA, "switch.kettle", "Kettle", "Kitchen", "off", {0, 0, 0, 0, 0, 0, 0, 0}},
+    {DEV_SWITCH, DSRC_ZWAVE, "zw_1_5_0_1", "Plug", "Den", "on", {0, 0, 0, 0, 0, 0, 0, 0}},
+    {DEV_LOCK, DSRC_HA, "lock.front", "Front door", "Hall", "locked", {0, 0, 0, 0, 0, 0, 0, 0}},
+    {DEV_LOCK, DSRC_HA, "lock.back", "Back door", "Kitchen", "jammed", {0, 0, 0, 0, 0, 0, 0, 0}},
+    {DEV_LOCK, DSRC_HA, "lock.shed", "Shed", "Garden", "opening", {0, 0, 0, 0, 0, 0, 0, 0}},
+    {DEV_CLIMATE, DSRC_HA, "climate.hall", "Thermostat", "Hall", "heat_cool",
+     {DEV_VAL_SETPOINT | DEV_VAL_TEMP, 0, DEV_MODE_OFF | DEV_MODE_HEAT | DEV_MODE_HEAT_COOL,
+      DEV_HVAC_HEATING, 2150, -1980, 0, 0}},
+    {DEV_CLIMATE, DSRC_HA, "climate.den", "Den", "Den", "dry",
+     {DEV_VAL_TEMP, 0, DEV_MODE_AUTO | DEV_MODE_COOL, 200, 0, 7150, 0, 0}},
+    {DEV_COVER, DSRC_HA, "cover.garage", "Garage door", "Garage", "closing",
+     {DEV_VAL_LEVEL | DEV_VAL_LEVEL_SET, 40, 0, DEV_HVAC_COOLING, 0, 0, 0,
+      DEV_CAP_KNOWN | DEV_CAP_POSITION}},
+    {DEV_COVER, DSRC_HA, "cover.blinds", "Blinds", "Living room", "open", {0, 0, 0, 0, 0, 0, 0, 0}},
+    {DEV_COVER, DSRC_ZWAVE, "zw_1_9_0_1", "Garage", "Garage", "closed",
+     {0, 0, 0, 0, 0, 0, 0, DEV_CAP_KNOWN | DEV_CAP_STOP}},
+    {DEV_FAN, DSRC_HA, "fan.ceiling", "Ceiling fan", "Bedroom", "on",
+     {0, 0, 0, 0, 0, 0, 0, DEV_CAP_KNOWN}},
+    {DEV_FAN, DSRC_HA, "fan.attic", "Attic fan", "Attic", "off",
+     {DEV_VAL_LEVEL | DEV_VAL_LEVEL_SET, 66, 0, 0, 0, 0, 0, DEV_CAP_KNOWN | DEV_CAP_SPEED}},
+    {DEV_VALVE, DSRC_HA, "valve.main", "Water", "", "open", {0, 0, 0, 0, 0, 0, 0, 0}},
+    {DEV_SCENE, DSRC_HA, "scene.movie", "Movie night", "Living room", "2026-10-01T23:05:00",
+     {0, 0, 0, 0, 0, 0, 1791320712u, 0}},
+    {DEV_SCRIPT, DSRC_HA, "script.goodnight", "Goodnight", "", "off",
+     {0, 0, 0, 0, 0, 0, 4294967295u, 0}},
+    {DEV_LIGHT, DSRC_HA, "light.garden", "Garden", "Garden", "unavailable",
+     {0, 0, 0, 0, 0, 0, 1791320000u, 0}},
+    {DEV_NONE, DSRC_NONE, "sensor.x", "Nothing", "", "", {0, 0, 0, 0, 0, 0, 0, 0}},
+    {42u, DSRC_ZIGBEE, "zb/42", "From a newer source", "Hall", "on",
+     {0xFFu, 255u, 0xFFu, 255u, INT32_MIN, INT32_MAX, 1u, 0xFFu}},
+};
+
+static hc_device_t s_row;
+
+/* The registry row: every byte the row doesn't name is garbage, as in a copy of a reused slot, so a
+ * conversion that read past a string's end or copied padding would show. */
+static void row_from(hc_device_t *d, const dev_row_fixture_t *f, bool online, uint32_t pending,
+                     bool failed, bool unsure, uint8_t action)
+{
+    memset(d, 0xA5, sizeof(*d));
+    d->info.kind = f->kind;
+    d->info.source = f->source;
+    snprintf(d->info.ref, sizeof(d->info.ref), "%s", f->ref);
+    snprintf(d->info.name, sizeof(d->info.name), "%s", f->name);
+    snprintf(d->info.area, sizeof(d->info.area), "%s", f->area);
+    snprintf(d->info.state, sizeof(d->info.state), "%s", f->state);
+    d->info.online = online;
+    d->info.values = f->v;
+    d->pending = pending;
+    d->failed = failed;
+    d->unsure = unsure;
+    d->action = action;
+}
+
+/* What the master's screen shows of a row: the legacy conversion and the moved one. */
+static void both_from(const hc_device_t *d, ui_dev_t *want, ui_dev_t *got)
+{
+    memset(want, 0x11, sizeof(*want));
+    memset(got, 0x22, sizeof(*got));
+    legacy_from_hc(want, d);
+    const ui_dev_parts_t p = ui_dev_parts_hc(d);
+    ui_dev_from_parts(got, &p);
+}
+
+/* HCTL-006, HCTL-012, HCTL-013 (docs/features/11, BL-216): ui_dev_from_parts on the registry's row
+ * gives the master's screen byte for byte what ui_port_esp's own conversion gave it - every kind,
+ * online and offline, idle, pending, failed, unsure or not, every action - padding included. */
+static void test_from_parts_is_todays_conversion(void)
+{
+    static const uint8_t ACTIONS[] = {ACT_NONE, ACT_ON, ACT_UNLOCK, ACT_SET_MODE, ACT_RUN, 200u};
+    static const uint32_t PENDING[] = {0u, 7u};
+    ui_dev_t want;
+    ui_dev_t got;
+    unsigned tried = 0;
+    unsigned seen[4] = {0};
+    for (size_t r = 0; r < sizeof(ROWS) / sizeof(ROWS[0]); r++) {
+        for (unsigned bits = 0; bits < 8u; bits++) {
+            for (size_t p = 0; p < sizeof(PENDING) / sizeof(PENDING[0]); p++) {
+                for (size_t a = 0; a < sizeof(ACTIONS) / sizeof(ACTIONS[0]); a++) {
+                    row_from(&s_row, &ROWS[r], (bits & 1u) != 0u, PENDING[p], (bits & 2u) != 0u,
+                             (bits & 4u) != 0u, ACTIONS[a]);
+                    both_from(&s_row, &want, &got);
+                    char msg[160];
+                    snprintf(msg, sizeof(msg), "%s online %u pending %u failed %u unsure %u action %u",
+                             ROWS[r].ref, bits & 1u, (unsigned)PENDING[p], (bits >> 1) & 1u,
+                             (bits >> 2) & 1u, (unsigned)ACTIONS[a]);
+                    TEST_ASSERT_EQUAL_MEMORY_MESSAGE(&want, &got, sizeof(want), msg);
+                    seen[got.status & 3u]++;
+                    tried++;
+                }
+            }
+        }
+    }
+    TEST_ASSERT_EQUAL_UINT(sizeof(ROWS) / sizeof(ROWS[0]) * 8u * 2u * 6u, tried);
+    for (size_t s = 0; s < 4u; s++) {
+        TEST_ASSERT_TRUE(seen[s] > 0u); /* idle, pending, failed and offline all came up */
+    }
+
+    /* the longest strings the registry holds arrive whole */
+    row_from(&s_row, &ROWS[0], true, 0u, false, false, ACT_NONE);
+    memset(s_row.info.ref, 'r', sizeof(s_row.info.ref) - 1u);
+    s_row.info.ref[sizeof(s_row.info.ref) - 1u] = '\0';
+    memset(s_row.info.name, 'n', sizeof(s_row.info.name) - 1u);
+    s_row.info.name[sizeof(s_row.info.name) - 1u] = '\0';
+    memset(s_row.info.area, 'a', sizeof(s_row.info.area) - 1u);
+    s_row.info.area[sizeof(s_row.info.area) - 1u] = '\0';
+    memset(s_row.info.state, 'o', sizeof(s_row.info.state) - 1u);
+    s_row.info.state[sizeof(s_row.info.state) - 1u] = '\0';
+    both_from(&s_row, &want, &got);
+    TEST_ASSERT_EQUAL_MEMORY(&want, &got, sizeof(want));
+    TEST_ASSERT_EQUAL_size_t(DEV_REF_LEN - 1u, strlen(got.ref));
+    TEST_ASSERT_EQUAL_size_t(DEV_NAME_LEN - 1u, strlen(got.name));
+    TEST_ASSERT_EQUAL_size_t(DEV_AREA_LEN - 1u, strlen(got.area));
+}
+
+/* HCTL-006, HCTL-012 (BL-171): what the converter says, in words - the first status that applies,
+ * the action only while pending or failed, "couldn't confirm" only for a failure by origin. */
+static void test_from_parts_status(void)
+{
+    ui_dev_t u;
+    const dev_row_fixture_t *lock = &ROWS[5];
+    TEST_ASSERT_EQUAL_STRING("lock.front", lock->ref);
+
+    row_from(&s_row, lock, true, 0u, false, false, ACT_UNLOCK);
+    ui_dev_parts_t p = ui_dev_parts_hc(&s_row);
+    ui_dev_from_parts(&u, &p);
+    TEST_ASSERT_EQUAL_UINT8(UI_DEV_IDLE, u.status);
+    TEST_ASSERT_EQUAL_UINT8(ACT_NONE, u.action);
+    TEST_ASSERT_EQUAL_UINT8(UI_DEV_ST_LOCKED, u.state);
+    TEST_ASSERT_EQUAL_STRING("Front door", u.name);
+    TEST_ASSERT_EQUAL_STRING("Hall", u.area);
+
+    row_from(&s_row, lock, true, 9u, true, true, ACT_UNLOCK); /* pending wins over failed */
+    p = ui_dev_parts_hc(&s_row);
+    ui_dev_from_parts(&u, &p);
+    TEST_ASSERT_EQUAL_UINT8(UI_DEV_PENDING, u.status);
+    TEST_ASSERT_EQUAL_UINT8(ACT_UNLOCK, u.action);
+    TEST_ASSERT_EQUAL_UINT8(0u, u.unsure);
+
+    row_from(&s_row, lock, true, 0u, true, true, ACT_UNLOCK);
+    p = ui_dev_parts_hc(&s_row);
+    ui_dev_from_parts(&u, &p);
+    TEST_ASSERT_EQUAL_UINT8(UI_DEV_FAILED, u.status);
+    TEST_ASSERT_EQUAL_UINT8(ACT_UNLOCK, u.action);
+    TEST_ASSERT_EQUAL_UINT8(1u, u.unsure); /* "Couldn't confirm" */
+
+    row_from(&s_row, lock, true, 0u, true, false, ACT_UNLOCK);
+    p = ui_dev_parts_hc(&s_row);
+    ui_dev_from_parts(&u, &p);
+    TEST_ASSERT_EQUAL_UINT8(0u, u.unsure); /* "Didn't unlock" */
+
+    row_from(&s_row, lock, false, 9u, true, true, ACT_UNLOCK); /* offline wins over all */
+    p = ui_dev_parts_hc(&s_row);
+    ui_dev_from_parts(&u, &p);
+    TEST_ASSERT_EQUAL_UINT8(UI_DEV_OFFLINE, u.status);
+    TEST_ASSERT_EQUAL_UINT8(ACT_NONE, u.action);
+    TEST_ASSERT_EQUAL_UINT8(0u, u.unsure);
+}
+
+/* HCTL-013, LINK-044 (docs/features/11, BL-216): a link keypad has no registry row, only the parts
+ * the link carries - the same parts give the same tile as the master's row; NULL strings read as
+ * "" and no values as nothing known. */
+static void test_from_parts_without_a_row(void)
+{
+    ui_dev_t from_row;
+    ui_dev_t from_link;
+    const dev_row_fixture_t *f = &ROWS[8]; /* the thermostat */
+    row_from(&s_row, f, true, 0u, true, true, ACT_SET_MODE);
+    ui_dev_parts_t p = ui_dev_parts_hc(&s_row);
+    ui_dev_from_parts(&from_row, &p);
+
+    ui_dev_parts_t k;
+    memset(&k, 0, sizeof(k));
+    k.kind = f->kind;
+    k.source = f->source;
+    k.online = true;
+    k.failed = true;
+    k.unsure = true;
+    k.action = ACT_SET_MODE;
+    k.ref = f->ref;
+    k.name = f->name;
+    k.area = f->area;
+    k.state = f->state;
+    k.values = &f->v;
+    memset(&from_link, 0x5A, sizeof(from_link));
+    ui_dev_from_parts(&from_link, &k);
+    TEST_ASSERT_EQUAL_MEMORY(&from_row, &from_link, sizeof(from_row));
+    TEST_ASSERT_EQUAL_UINT8(UI_DEV_ST_AUTO, from_link.state);
+    TEST_ASSERT_EQUAL_INT32(2150, from_link.setpoint);
+
+    memset(&k, 0, sizeof(k));
+    k.kind = DEV_LIGHT;
+    k.online = true;
+    memset(&from_link, 0x5A, sizeof(from_link));
+    ui_dev_from_parts(&from_link, &k);
+    TEST_ASSERT_EQUAL_STRING("", from_link.ref);
+    TEST_ASSERT_EQUAL_STRING("", from_link.name);
+    TEST_ASSERT_EQUAL_STRING("", from_link.area);
+    TEST_ASSERT_EQUAL_UINT8(UI_DEV_ST_UNKNOWN, from_link.state);
+    TEST_ASSERT_EQUAL_UINT8(UI_DEV_IDLE, from_link.status);
+    TEST_ASSERT_EQUAL_INT8(-1, from_link.level);
+    TEST_ASSERT_EQUAL_INT32(UI_DEV_TEMP_UNKNOWN, from_link.setpoint);
+    TEST_ASSERT_TRUE(from_link.since_ms == 0);
+}
+
+/* HCTL-004, LINK-048 (docs/features/11, BL-216): a mode key goes to the judge as one DEV_MODE_* bit,
+ * and the judge's word for it is the word the screen sent before - for every value, so a value
+ * without a key is still refused. */
+static void test_mode_bit_is_todays_word(void)
+{
+    static const int32_t ODD[] = {INT32_MIN, -256, -1, 256 + UI_DEV_ST_OFF, 256 + UI_DEV_ST_AUTO,
+                                  INT32_MAX};
+    for (int32_t v = -2; v <= 40; v++) {
+        const char *want = legacy_mode_word(v);
+        const char *got = hc_mode_word(ui_dev_mode_bit(v));
+        if (want == NULL) {
+            TEST_ASSERT_NULL(got);
+            TEST_ASSERT_EQUAL_UINT8(0u, ui_dev_mode_bit(v));
+        } else {
+            TEST_ASSERT_NOT_NULL(got);
+            TEST_ASSERT_EQUAL_STRING(want, got);
+        }
+    }
+    for (size_t i = 0; i < sizeof(ODD) / sizeof(ODD[0]); i++) {
+        TEST_ASSERT_NULL(legacy_mode_word(ODD[i]));
+        TEST_ASSERT_EQUAL_UINT8(0u, ui_dev_mode_bit(ODD[i]));
+    }
+    TEST_ASSERT_EQUAL_UINT8(DEV_MODE_OFF, ui_dev_mode_bit(UI_DEV_ST_OFF));
+    TEST_ASSERT_EQUAL_UINT8(DEV_MODE_HEAT, ui_dev_mode_bit(UI_DEV_ST_HEAT));
+    TEST_ASSERT_EQUAL_UINT8(DEV_MODE_COOL, ui_dev_mode_bit(UI_DEV_ST_COOL));
+    TEST_ASSERT_EQUAL_UINT8(DEV_MODE_AUTO, ui_dev_mode_bit(UI_DEV_ST_AUTO));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -575,5 +864,9 @@ int main(void)
     RUN_TEST(test_values_fill_caps);
     RUN_TEST(test_values_fill_hvac_action);
     RUN_TEST(test_kind_wide_fan_without_speeds);
+    RUN_TEST(test_from_parts_is_todays_conversion);
+    RUN_TEST(test_from_parts_status);
+    RUN_TEST(test_from_parts_without_a_row);
+    RUN_TEST(test_mode_bit_is_todays_word);
     return UNITY_END();
 }

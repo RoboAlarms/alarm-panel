@@ -24,7 +24,7 @@ lv_obj_t * pick_sheet_create(lv_obj_t * parent)
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_0(parent, lv_pct(100), lv_pct(100));
-        alarm_ui_run_32(box_0);
+        alarm_ui_run_32(box_0, &style_backdrop);
         lv_obj_t * pick_card = alarm_ui_run_0(box_0, 600, LV_SIZE_CONTENT);
         lv_obj_set_style_max_height(pick_card, PICK_MAX_H, 0);
         alarm_ui_run_34(pick_card);
@@ -42,16 +42,16 @@ lv_obj_t * pick_sheet_create(lv_obj_t * parent)
         alarm_ui_run_29(lv_label_1, COLOR_TEXT_2, &subject_sheet_note);
 
         lv_obj_t * pick_close = alarm_ui_run_0(box_1, 44, 44);
-        alarm_ui_run_56(pick_close, LV_OBJ_FLAG_CLICKABLE, true, 10);
-        alarm_ui_run_22(pick_close, RADIUS_FULL, COLOR_RAISED, (255 * 100 / 100));
-        alarm_ui_run_9(pick_close, ui_on_sheet_cancel, "pick_close");
+        alarm_ui_run_60(pick_close, LV_OBJ_FLAG_CLICKABLE, true, 10);
+        alarm_ui_run_21(pick_close, RADIUS_FULL, COLOR_RAISED, (255 * 100 / 100));
+        alarm_ui_run_10(pick_close, ui_on_sheet_cancel, "pick_close");
         lv_obj_t * lv_label_2 = alarm_ui_run_11(pick_close, "\xEE\x86\xB2");
         alarm_ui_run_4(lv_label_2, icons_20, COLOR_TEXT_2);
 
         lv_obj_t * pick_list = alarm_ui_run_0(pick_card, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_13(pick_list);
         alarm_ui_run_1(pick_list, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_48(pick_list, SPACE_SM, "pick_list");
+        alarm_ui_run_49(pick_list, SPACE_SM, "pick_list");
 
         the_root = box_0;
     }

@@ -64,7 +64,7 @@ about({id: 'installer-menu', shot: 'installer_menu', title: 'Installer mode: the
     M.section('Sensors and devices'),
     M.row_link({glyph: 'door-closed', color: 'green', title: 'Zones', detail: 'Sensors, types, names', value: '8 in use', goTo: 'installer-zones'}),
     M.row_link({glyph: 'warehouse', color: 'violet', title: 'Partitions', detail: 'Areas that arm separately', value: '1 in use'}),
-    M.row_link({glyph: 'cpu', title: 'Keypads and devices', detail: 'Supervised keypads and expanders', value: 'None'}),
+    M.row_link({glyph: 'cpu', title: 'Keypads and devices', detail: 'Supervised keypads and expanders', value: 'None', goTo: 'installer-devices'}),
     M.section('How the alarm works'),
     M.row_link({glyph: 'sliders-horizontal', title: 'Delays and arming', detail: 'Entry and exit times, sirens, panic keys, codes', goTo: 'installer-options'}),
     M.section('This panel'),
@@ -81,4 +81,16 @@ about({id: 'installer-menu', shot: 'installer_menu', title: 'Installer mode: the
     M.row_link({glyph: 'sparkles', color: 'rose', title: 'Run the setup again', detail: 'Wi-Fi, time zone, codes and name, step by step', goTo: 'setup-welcome'}),
     M.row_link({glyph: 'rotate-ccw', color: 'red', title: 'Factory reset', detail: 'Erase everything', goTo: 'factory-reset'}),
     M.row_action({glyph: 'log-out', text: 'Leave installer mode', color: 'blue'}),
+  ].join('')}});
+
+// Installer > Keypads and devices (ui_installer.c build_devices, build_device): the engine's table of
+// supervised devices, every one of its 16 numbers a row, is drawn with the panel link's keypads on top
+// (panel-link.js installer-devices); a device's page here.
+about({id: 'installer-device', shot: null, title: 'Installer: one supervised device', installer: true,
+  notes: 'Device 1 just switched on. Off, the page has the switch alone. Name opens the keyboard ("Hall keypad, Garage expander..."); Home partition a pick sheet (All partitions, then each partition in use; "The partition a keypad shows and arms"); Supervision a pick sheet (Not supervised, 1, 4 or 12 hours; "Silent this long: a trouble"). Saved when the page is left.',
+  body: {title: 'Device 1', note: 'Device 1 · saved when you go back', back: 'installer-devices', body: [
+    M.row_toggle({title: 'In use', detail: 'Supervised: the panel expects it to answer', on: true}),
+    M.row_link({glyph: 'tag', title: 'Name'}),
+    M.row_link({glyph: 'warehouse', color: 'violet', title: 'Home partition', value: 'All partitions'}),
+    M.row_link({glyph: 'clock-alert', title: 'Supervision', detail: 'Silent this long: a trouble', value: 'Not supervised'}),
   ].join('')}});

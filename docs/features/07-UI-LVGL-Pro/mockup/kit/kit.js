@@ -55,16 +55,17 @@ const M = (() => {
   /**
    * The navigation rail: places only (BL-131). view: home|zones|devices|activity|panic; tone colours
    * the logo. Smart Home (BL-045, HCTL-003) shows only while there is a device to control
-   * (devices: false hides it); its name is on two lines and its button a line taller (.two).
+   * (devices: false hides it); its name is on two lines and its button a line taller (.two). panic:
+   * false (BL-048) leaves Panic out, as a keypad the alarm panel removed shows it.
    */
-  function rail({view = 'home', tone = 'green', zones = 0, devices = true} = {}) {
+  function rail({view = 'home', tone = 'green', zones = 0, devices = true, panic = true} = {}) {
     const counts = {zones};
     return `<div class="rail">
       <div class="rail_logo" style="color:${color(tone)}"><i></i></div>
       ${NAV.filter((n) => devices || n.key !== 'devices').map((n) => `<div class="nav_item${n.text.includes('\n') ? ' two' : ''}${view === n.key ? ' active' : ''}"${go(n.go)}>
         ${icon(n.glyph, 28)}${raw(n.text.split('\n').map(esc).join('<br>'), 'caption')}${badge(counts[n.key])}</div>`).join('')}
       <div class="rail_fill"></div>
-      <div class="nav_item panic${view === 'panic' ? ' active' : ''}"${go('panic')}>${icon('siren', 28)}${text('Panic', 'caption')}</div>
+      ${panic ? `<div class="nav_item panic${view === 'panic' ? ' active' : ''}"${go('panic')}>${icon('siren', 28)}${text('Panic', 'caption')}</div>` : ''}
     </div>`;
   }
 
@@ -81,9 +82,10 @@ const M = (() => {
    * The status bar. banner: null (the date) | 'codes' | 'installer' | 'walk' | 'remote' | 'arm', or
    * {glyph, tone, text, goTo}; bannerText replaces a named banner's words. battery: null (none shown),
    * 'none' (the red struck-out battery: no battery fitted), or {glyph, text, level: ''|'warn'|'critical'}.
+   * chimeOff (BL-048): Chime dimmed alone, as a keypad without the alarm panel shows it (Settings stays).
    */
   function bar({banner = 'codes', bannerText, date = 'Saturday, September 19', time = '10:41', ampm = 'PM',
-    wifi = 'wifi', wifiOk = true, battery = 'none', troubles = 0, chime = false, settings = false, locked = false, view} = {}) {
+    wifi = 'wifi', wifiOk = true, battery = 'none', troubles = 0, chime = false, settings = false, locked = false, chimeOff = false, view} = {}) {
     let left = text(date, 'label', 'text_2');
     if (banner) {
       const b = typeof banner === 'string' ? BANNERS[banner] : banner;
@@ -103,7 +105,7 @@ const M = (() => {
       <span class="${wifiOk ? 't2' : 'warn'}">${icon(wifi, 20)}</span>
       ${bat}
       <div class="bar_clock">${text(time, 'title')}${ampm ? text(ampm, 'caption', 'text_2', 'ampm') : ''}</div>
-      <div class="bar_round${chime ? ' on' : ''}${locked ? ' disabled' : ''}"${go(locked ? '' : 'chime-pad')}>${icon(chime ? 'bell' : 'bell-off', 20)}</div>
+      <div class="bar_round${chime ? ' on' : ''}${locked || chimeOff ? ' disabled' : ''}"${go(locked || chimeOff ? '' : 'chime-pad')}>${icon(chime ? 'bell' : 'bell-off', 20)}</div>
       <div class="bar_settings${settings ? ' active' : ''}${locked ? ' disabled' : ''}"${go(locked ? '' : 'settings-display')}>${icon('settings', 20)}</div>
     </div>`;
   }
@@ -117,28 +119,30 @@ const M = (() => {
       ${fill > 0 ? `<circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${color(tone)}" stroke-width="${width}"
         stroke-linecap="round" stroke-dasharray="${len} ${c}" transform="rotate(-90 ${size / 2} ${size / 2})"/>` : ''}</svg>`;
   }
-  /** The state card: ring, icon or seconds left, headline, detail, note. */
+  /** The state card: ring, icon or seconds left, headline, detail (a "\n" starts a line of its own), note. */
   function hero({tone = 'green', glyph = 'shield-check', countdown = 0, fill = 1, headline, detail, note, alarm = false}) {
     return `<div class="hero${alarm ? ' alarm' : ''}">
       <div class="ring_box">${ring(236, 12, tone, fill)}
         <div class="disk" style="color:${color(tone)}">${countdown ? text(countdown, 'digits', null, 'count') : icon(glyph, 96)}</div></div>
       ${text(headline, 'headline')}
-      ${text(detail, 'body', 'text_2', 'detail')}
+      ${String(detail).includes('\n') ? `<span class="font_body detail" style="color:${color('text_2')}">${String(detail).split('\n').map(esc).join('<br>')}</span>`
+        : text(detail, 'body', 'text_2', 'detail')}
       ${note ? text(note, 'caption', 'text_3', 'note dots') : ''}
     </div>`;
   }
-  const arm_tile = ({glyph, title, subtitle, color: c, goTo}) => `<div class="arm_tile"${go(goTo)}>
+  /** disabled (BL-048 proposal): dimmed and not tappable (LV_STATE_DISABLED), as a keypad shows them without the alarm panel. */
+  const arm_tile = ({glyph, title, subtitle, color: c, goTo, disabled = false}) => `<div class="arm_tile${disabled ? ' disabled' : ''}"${disabled ? '' : go(goTo)}>
     ${icon_chip({glyph, size: 76, font: 40, color: c})}
     <div class="words">${text(title, 'title')}${text(subtitle, 'body', 'text_2')}</div>${icon('chevron-right', 28, 'text_3')}</div>`;
   /**
    * The three arming tiles of Home (panel_arm). above (D19): something drawn over
    * the tiles in the same pane (the arming warning's strip); the tiles share what height is left and
-   * are otherwise exactly as they are.
+   * are otherwise exactly as they are. disabled (BL-048 proposal): the three tiles dimmed, not what is above them.
    */
-  const panel_arm = (above) => (above ? `<div class="pane_stack">${above}` : '') + `<div class="panel_arm">
-    ${arm_tile({glyph: 'log-out', title: 'Away', subtitle: 'Everyone is leaving', color: 'rose', goTo: 'pad-arm-away'})}
-    ${arm_tile({glyph: 'house', title: 'Stay', subtitle: 'Someone is home', color: 'blue', goTo: 'pad-arm-away'})}
-    ${arm_tile({glyph: 'moon', title: 'Night', subtitle: 'Going to bed', color: 'violet', goTo: 'pad-arm-away'})}</div>` + (above ? '</div>' : '');
+  const panel_arm = (above, {disabled = false} = {}) => (above ? `<div class="pane_stack">${above}` : '') + `<div class="panel_arm">
+    ${arm_tile({glyph: 'log-out', title: 'Away', subtitle: 'Everyone is leaving', color: 'rose', goTo: 'pad-arm-away', disabled})}
+    ${arm_tile({glyph: 'house', title: 'Stay', subtitle: 'Someone is home', color: 'blue', goTo: 'pad-arm-away', disabled})}
+    ${arm_tile({glyph: 'moon', title: 'Night', subtitle: 'Going to bed', color: 'violet', goTo: 'pad-arm-away', disabled})}</div>` + (above ? '</div>' : '');
   /**
    * arm_levels (components/forms/arm_levels): Away, Stay and Night as one 64 px row of three keys, each with the
    * arming tile's glyph; the chosen one tinted in its level's tone. active: 0..2
@@ -268,10 +272,10 @@ const M = (() => {
    * detailColor: a tone for a detail that carries a problem (ui_row_set_detail's
    * tone); disabled: dimmed and not switchable (a record this software can't run).
    */
-  const row_toggle = ({glyph, color: c = 'blue', title, detail, on = false, detailColor, disabled = false}) => `<div class="row_switch${glyph ? ' with_chip' : ''}${disabled ? ' disabled' : ''}">
+  const row_toggle = ({glyph, color: c = 'blue', title, detail, on = false, detailColor, disabled = false, goTo}) => `<div class="row_switch${glyph ? ' with_chip' : ''}${disabled ? ' disabled' : ''}"${disabled ? '' : go(goTo)}>
     ${glyph ? icon_chip({glyph, size: 44, font: 20, color: c}) : ''}<div class="words">${text(title, 'label')}${detail ? text(detail, 'caption', detailColor || 'text_2') : ''}</div><div class="switch${on ? ' on' : ''}"></div></div>`;
   /** ui_row_number: minus, value, plus */
-  const row_number = ({title, detail, value}) => `<div class="row_stepper">
+  const row_number = ({title, detail, value, disabled = false}) => `<div class="row_stepper${disabled ? ' disabled' : ''}"${disabled ? ' aria-disabled="true"' : ''}>
     <div class="words">${text(title, 'label')}${detail ? text(detail, 'caption', 'text_2') : ''}</div>
     <div class="step_button">${icon('minus', 20)}</div>${text(value, 'label', null, 'value')}<div class="step_button">${icon('plus', 20)}</div></div>`;
   /** ui_row_level: a slider, value 0..100 */
@@ -413,7 +417,7 @@ const M = (() => {
       <div class="content">${content}</div>${over}${t ? toast(t) : ''}</div>`;
   }
   /** Home: the state card beside the arming tiles, a pad or an action tile. */
-  const home = (heroProps, pane) => `<div class="view" style="gap:var(--space_xl)">${hero(heroProps)}<div class="pane">${pane}</div></div>`;
+  const home = (heroProps, pane, belowHero = '') => `<div class="view" style="gap:var(--space_xl)">${belowHero ? `<div class="home_partition">${hero(heroProps)}${belowHero}</div>` : hero(heroProps)}<div class="pane">${pane}</div></div>`;
   /** big_value: one value to read out or compare, large (a pairing code) */
   const big_value = ({label, value, note}) => `<div class="big_value">${label ? text(label, 'body', 'text_2') : ''}
     ${text(value, 'headline')}${note ? text(note, 'caption', 'text_2') : ''}</div>`;
@@ -479,14 +483,19 @@ const M = (() => {
     <div class="saver_state"><div class="saver_disk" style="color:${color(tone)}">${icon(glyph, 40)}</div>
       <div class="col" style="gap:2px;max-width:400px">${text(headline, 'headline', tone)}${text(detail, 'label')}<span class="font_body soft">${esc(note)}</span>
         ${trouble ? `<div class="row warn" style="gap:var(--space_sm);margin-top:var(--space_sm)">${icon('triangle-alert', 20)}${text(trouble, 'label')}</div>` : ''}</div></div></div>`;
-  /** The first-boot setup (screen_wizard.xml). step 0..5; body: rows; pad: a code_pad in its place. */
-  function wizard({step = 0, glyph = 'sparkles', title, note, body = '', pad, next = 'Start', back = false, exit = false, toast: t, leaveSide = false}) {
+  /**
+   * The first-boot setup (screen_wizard.xml). step 0..steps; body: rows; pad: a code_pad in its place.
+   * steps (BL-048 proposal): how many progress dots, 5 today; a branch of the setup (the alarm panel's,
+   * a keypad's) has its own count. nextDisabled (BL-048 proposal): Next dimmed until the step is done.
+   */
+  function wizard({step = 0, steps = 5, glyph = 'sparkles', title, note, body = '', pad, next = 'Start', nextDisabled = false,
+    back = false, exit = false, toast: t, leaveSide = false}) {
     // leaveSide (mockup-next): "Leave setup" is a quiet link under the step's words, away from Back and Next.
     const footer = pad ? '' : `<div class="wiz_footer">${exit && !leaveSide ? button('Leave setup', '', 'log-out') : ''}${back ? button('Back', '', 'chevron-left') : ''}
-      <div class="grow"></div>${button(next, 'primary', null, 'chevron-right')}</div>`;
+      <div class="grow"></div>${button(next, nextDisabled ? 'primary disabled' : 'primary', null, 'chevron-right')}</div>`;
     const leave = exit && leaveSide ? `<div class="grow"></div><div class="row wiz_leave">${icon('log-out', 20)}${text('Leave setup', 'label')}</div>` : '';
     return `<div class="screen">
-      <div class="wiz_side"><div class="wiz_steps">${[1, 2, 3, 4, 5].map((i) => `<i class="${step >= i ? 'on' : ''}"></i>`).join('')}</div>
+      <div class="wiz_side"><div class="wiz_steps">${Array.from({length: steps}, (_, k) => k + 1).map((i) => `<i class="${step >= i ? 'on' : ''}"></i>`).join('')}</div>
         ${icon_chip({glyph, size: 168, font: 96, color: 'blue'}).replace('class="icon_chip"', 'class="icon_chip wiz_disk"')}
         ${text(title, 'headline', null, '')}${text(note, 'body', 'text_2')}${leave}</div>
       <div class="wiz_main">${pad ? `<div class="col grow" style="align-items:center">${pad}</div>` : `<div class="page_body scroll">${body}</div>`}${footer}</div>

@@ -3,8 +3,11 @@
  * the FIPS vectors, hex, framing, the pairing code (golden vectors shared verbatim with the
  * aioroboalarms Python client's tests) and the message writers and parser.
  * Requirements: HAI-002 (framing bounds), HAI-003 (pairing code), HAI-009 (entities as zones:
- * watch, catalog, state), HAI-013 (api version) (docs/features/23, protocol.md)
+ * watch, catalog, state), HAI-013 (api version), HAI-016..019 (panel settings and keypads:
+ * settings, keypads, settings_set, settings_result and the set queue) (docs/features/23,
+ * protocol.md)
  */
+#include <stdio.h>
 #include <string.h>
 
 #include "alarm_proto/proto_link.h"
@@ -978,6 +981,631 @@ static void test_parse_zwave_set(void)
     }
 }
 
+/* ---- panel settings and keypads (HAI-016..019, protocol.md "Panel settings and keypads") ---------
+ * The golden strings below are the ones the integration's tests read (docs/features/23: the
+ * aioroboalarms side of BL-216): change one, change both. */
+
+static pj_writer_t BW; /* over BIG: the keypads list doesn't fit BUF */
+
+static const char *big_done(void)
+{
+    TEST_ASSERT_TRUE_MESSAGE(pj_finish(&BW) > 0u, "document overflowed or isn't closed");
+    return BIG;
+}
+
+/* panel_prefs_defaults() as fields (as test_prefs.c's). */
+static proto_prefs_values_t prefs_defaults(void)
+{
+    proto_prefs_values_t v;
+    memset(&v, 0, sizeof v);
+    v.have = PROTO_PREFS_KNOWN;
+    v.brightness = 80u;
+    v.saver_brightness = 25u;
+    v.saver_after_ms = 60000u;
+    v.off_after_ms = 0u;
+    v.night_on = false;
+    v.night_start = 22u * 60u;
+    v.night_end = 7u * 60u;
+    v.night_brightness = 20u;
+    v.night_off_after_ms = 60000u;
+    v.clock_mode = 0u;
+    v.appearance = 0u;
+    v.high_contrast = false;
+    v.volume = 70u;
+    v.chime_volume = 70u;
+    v.voice_volume = 70u;
+    v.key_click = true;
+    v.voice_enabled = true;
+    v.voice_status = true;
+    v.voice_chime = true;
+    return v;
+}
+
+#define DEFAULTS_JSON                                                                              \
+    "{\"brightness\":80,\"saver_level\":25,\"saver_after\":60,\"off_after\":0,\"night\":false,"    \
+    "\"night_start\":1320,\"night_end\":420,\"night_level\":20,\"night_off\":60,\"clock\":0,"      \
+    "\"appearance\":0,\"contrast\":false,\"beeps\":70,\"chime_vol\":70,\"voice_vol\":70,"          \
+    "\"key_click\":true,\"voice\":true,\"voice_stat\":true,\"voice_chime\":true}"
+#define ALL_KEYS_JSON                                                                              \
+    "[\"brightness\",\"saver_level\",\"saver_after\",\"off_after\",\"night\",\"night_start\","     \
+    "\"night_end\",\"night_level\",\"night_off\",\"clock\",\"appearance\",\"contrast\",\"beeps\"," \
+    "\"chime_vol\",\"voice_vol\",\"key_click\",\"voice\",\"voice_stat\",\"voice_chime\"]"
+
+/* HAI-016, HAI-017: the master's own settings, whole: every value, the keys it takes, its voice. */
+static void test_settings_golden(void)
+{
+    pj_init(&BW, BIG, sizeof BIG);
+    const proto_prefs_values_t v = prefs_defaults();
+    proto_link_settings(&BW, &v, PROTO_PREFS_KNOWN, PROTO_LINK_VOICE_READY);
+    TEST_ASSERT_EQUAL_STRING("{\"t\":\"settings\",\"values\":" DEFAULTS_JSON
+                             ",\"can\":" ALL_KEYS_JSON ",\"voice\":\"ready\"}",
+                             big_done());
+    TEST_ASSERT_TRUE(strlen(BIG) < PROTO_PAYLOAD_MAX); /* the link task's ordinary buffer */
+
+    /* the voice's three words, and null for one not known (0 or a later number) */
+    proto_prefs_values_t one;
+    memset(&one, 0, sizeof one);
+    TEST_ASSERT_EQUAL_INT(PROTO_PREFS_WHY_NONE, proto_prefs_put(&one, PROTO_PREFS_F_BRIGHTNESS, 40u));
+    static const struct {
+        uint8_t voice;
+        const char *json;
+    } V[] = {
+        {PROTO_LINK_VOICE_LOADING, "\"loading\""},
+        {PROTO_LINK_VOICE_NONE, "\"none\""},
+        {PROTO_LINK_VOICE_UNKNOWN, "null"},
+        {4u, "null"},
+    };
+    for (size_t i = 0; i < sizeof V / sizeof V[0]; i++) {
+        char want[128];
+        snprintf(want, sizeof want,
+                 "{\"t\":\"settings\",\"values\":{\"brightness\":40},\"can\":[\"brightness\","
+                 "\"beeps\"],\"voice\":%s}",
+                 V[i].json);
+        pj_init(&W, BUF, sizeof BUF);
+        /* an unknown bit in can names nothing */
+        proto_link_settings(&W, &one, PROTO_PREFS_BIT(1u) | PROTO_PREFS_BIT(13u) | 0x80000000u,
+                            V[i].voice);
+        TEST_ASSERT_EQUAL_STRING(want, done());
+    }
+}
+
+static proto_link_keypad_t KP[PROTO_LINK_KEYPADS_MAX];
+
+static void keypad(proto_link_keypad_t *k, uint8_t device, const char *id, const char *name)
+{
+    memset(k, 0, sizeof *k);
+    k->device = device;
+    snprintf(k->id, sizeof k->id, "%s", id);
+    snprintf(k->name, sizeof k->name, "%s", name);
+}
+
+/* HAI-016, HAI-018: the whole list; a keypad that reported and one that hasn't (null id, firmware,
+ * signal, settings and voice; no keys), and the empty list of a master without keypads. */
+static void test_keypads_golden(void)
+{
+    keypad(&KP[0], 1u, "c0ffee", "Hall");
+    KP[0].home = 1u;
+    KP[0].online = true;
+    snprintf(KP[0].fw, sizeof KP[0].fw, "0.9.0");
+    KP[0].rssi = -61;
+    KP[0].reported = true;
+    KP[0].settings = prefs_defaults();
+    KP[0].settings.brightness = 60u;
+    KP[0].settings.appearance = 1u;
+    KP[0].can = PROTO_PREFS_KNOWN;
+    KP[0].voice = PROTO_LINK_VOICE_NONE;
+    keypad(&KP[1], 3u, "", "Bedroom");
+    KP[1].home = 2u;
+    KP[1].rssi = 0;                    /* not known */
+    KP[1].settings = prefs_defaults(); /* not reported: never shown */
+    KP[1].can = PROTO_PREFS_KNOWN;
+    KP[1].voice = PROTO_LINK_VOICE_READY;
+    pj_init(&BW, BIG, sizeof BIG);
+    proto_link_keypads(&BW, KP, 2u);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"t\":\"keypads\",\"keypads\":[{\"device\":1,\"id\":\"c0ffee\",\"name\":\"Hall\",\"home\":1,"
+        "\"online\":true,\"fw\":\"0.9.0\",\"rssi\":-61,\"settings\":{\"brightness\":60,"
+        "\"saver_level\":25,\"saver_after\":60,\"off_after\":0,\"night\":false,"
+        "\"night_start\":1320,\"night_end\":420,\"night_level\":20,\"night_off\":60,\"clock\":0,"
+        "\"appearance\":1,\"contrast\":false,\"beeps\":70,\"chime_vol\":70,\"voice_vol\":70,"
+        "\"key_click\":true,\"voice\":true,\"voice_stat\":true,\"voice_chime\":true},"
+        "\"can\":" ALL_KEYS_JSON ",\"voice\":\"none\"},{\"device\":3,\"id\":null,"
+        "\"name\":\"Bedroom\",\"home\":2,\"online\":false,\"fw\":null,\"rssi\":null,"
+        "\"settings\":null,\"can\":[],\"voice\":null}]}",
+        big_done());
+
+    pj_init(&W, BUF, sizeof BUF);
+    proto_link_keypads(&W, NULL, 0u);
+    TEST_ASSERT_EQUAL_STRING("{\"t\":\"keypads\",\"keypads\":[]}", done());
+    pj_init(&W, BUF, sizeof BUF);
+    proto_link_keypads(&W, KP, 0u);
+    TEST_ASSERT_EQUAL_STRING("{\"t\":\"keypads\",\"keypads\":[]}", done());
+}
+
+/* HAI-018: eight keypads at their longest (every field, the longest values and words, a name and
+ * a firmware of quotes and backslashes the writer escapes) fit PROTO_LINK_KEYPADS_JSON_MAX. */
+static void test_keypads_fit(void)
+{
+    for (uint8_t i = 0; i < PROTO_LINK_KEYPADS_MAX; i++) {
+        proto_link_keypad_t *k = &KP[i];
+        memset(k, 0, sizeof *k);
+        k->device = (uint8_t)(i + 1u);
+        snprintf(k->id, sizeof k->id, "abcde%u", (unsigned)i);
+        memset(k->name, '"', sizeof k->name - 1u);
+        memset(k->fw, '\\', sizeof k->fw - 1u);
+        k->home = 8u;
+        k->rssi = -128;
+        k->reported = true;
+        k->can = PROTO_PREFS_KNOWN;
+        k->voice = PROTO_LINK_VOICE_LOADING;
+        proto_prefs_values_t *v = &k->settings;
+        v->have = PROTO_PREFS_KNOWN;
+        v->brightness = 100u;
+        v->saver_brightness = 50u;
+        v->saver_after_ms = 86400000u;
+        v->off_after_ms = 86400000u;
+        v->night_off_after_ms = 86400000u;
+        v->night_start = 1439u;
+        v->night_end = 1439u;
+        v->night_brightness = 100u;
+        v->volume = 100u;
+        v->chime_volume = 100u;
+        v->voice_volume = 100u;
+        v->clock_mode = 2u;
+        v->appearance = 2u;
+    }
+    pj_writer_t w;
+    pj_init(&w, BIG, PROTO_LINK_KEYPADS_JSON_MAX);
+    proto_link_keypads(&w, KP, PROTO_LINK_KEYPADS_MAX);
+    const size_t len = pj_finish(&w);
+    TEST_ASSERT_TRUE_MESSAGE(len > 0u, "8 keypads overflow PROTO_LINK_KEYPADS_JSON_MAX");
+    TEST_ASSERT_TRUE(valid_json(BIG));
+}
+
+/* HAI-018 (docs/features/11 "Settings over the link"): only a well-formed id is published; a twin
+ * of a lower device number's, or the master's own, is null, and so never a target. */
+static void test_keypads_tidy(void)
+{
+    keypad(&KP[0], 5u, "c0ffee", "A");
+    keypad(&KP[1], 2u, "c0ffee", "B"); /* the lower number keeps it */
+    keypad(&KP[2], 7u, "c0ffee", "C");
+    keypad(&KP[3], 1u, "C0FFEE", "D");   /* uppercase: not one the link keeps */
+    keypad(&KP[4], 3u, "a1b2c3", "E");   /* the master's own */
+    keypad(&KP[5], 4u, "beef", "F");     /* too short */
+    keypad(&KP[6], 6u, "", "G");         /* none yet: not counted */
+    keypad(&KP[7], 8u, "0badf00d", "H"); /* too long */
+    TEST_ASSERT_EQUAL_size_t(6u, proto_link_keypads_tidy(KP, 8u, "a1b2c3"));
+    TEST_ASSERT_EQUAL_STRING("", KP[0].id);
+    TEST_ASSERT_EQUAL_STRING("c0ffee", KP[1].id);
+    TEST_ASSERT_EQUAL_STRING("", KP[2].id);
+    TEST_ASSERT_EQUAL_STRING("", KP[3].id);
+    TEST_ASSERT_EQUAL_STRING("", KP[4].id);
+    TEST_ASSERT_EQUAL_STRING("", KP[5].id);
+    TEST_ASSERT_EQUAL_STRING("", KP[6].id);
+    TEST_ASSERT_EQUAL_STRING("", KP[7].id);
+
+    /* unique, well-formed ids stay; the master's own may be NULL */
+    keypad(&KP[0], 1u, "0a1b2c", "A");
+    keypad(&KP[1], 2u, "3d4e5f", "B");
+    TEST_ASSERT_EQUAL_size_t(0u, proto_link_keypads_tidy(KP, 2u, NULL));
+    TEST_ASSERT_EQUAL_STRING("0a1b2c", KP[0].id);
+    TEST_ASSERT_EQUAL_STRING("3d4e5f", KP[1].id);
+    TEST_ASSERT_EQUAL_size_t(0u, proto_link_keypads_tidy(NULL, 0u, NULL));
+}
+
+static bool parse_set(const char *json, proto_link_settings_set_t *out)
+{
+    return proto_link_parse_settings_set(json, strlen(json), out);
+}
+
+/* HAI-017: a settings_set is recognised, read in any member order, its values taken against every
+ * known key; unknown members ride along; an overlong target matches no panel. */
+static void test_parse_settings_set(void)
+{
+    static const char OK[] = "{\"t\":\"settings_set\",\"id\":\"3f9a1c2e\",\"later\":{\"x\":[1]},"
+                             "\"values\":{\"brightness\":40,\"saver_after\":600,\"night\":true,"
+                             "\"beeps\":101,\"glow\":3},\"target\":\"a1b2c3\"}";
+    proto_link_in_t in;
+    TEST_ASSERT_TRUE(proto_link_parse(OK, strlen(OK), &in));
+    TEST_ASSERT_EQUAL_INT(PROTO_LINK_IN_SETTINGS_SET, in.type);
+    proto_link_settings_set_t s;
+    TEST_ASSERT_TRUE(parse_set(OK, &s));
+    TEST_ASSERT_FALSE(s.bad);
+    TEST_ASSERT_EQUAL_STRING("3f9a1c2e", s.id);
+    TEST_ASSERT_EQUAL_STRING("a1b2c3", s.target);
+    TEST_ASSERT_EQUAL_HEX32(PROTO_PREFS_BIT(1u) | PROTO_PREFS_BIT(3u) | PROTO_PREFS_BIT(5u),
+                            s.p.values.have);
+    TEST_ASSERT_EQUAL_UINT8(40u, s.p.values.brightness);
+    TEST_ASSERT_EQUAL_UINT32(600000u, s.p.values.saver_after_ms);
+    TEST_ASSERT_TRUE(s.p.values.night_on);
+    TEST_ASSERT_EQUAL_HEX32(PROTO_PREFS_BIT(13u), s.p.refused); /* beeps 101: that key alone */
+    TEST_ASSERT_EQUAL_UINT8(PROTO_PREFS_WHY_RANGE, s.p.why[12]);
+    TEST_ASSERT_EQUAL_UINT8(1u, s.p.unknown_n);
+    TEST_ASSERT_EQUAL_STRING("glow", s.p.unknown[0]);
+
+    /* the longest id echoed (11 bytes); a target longer than any panel id is "", found nowhere */
+    TEST_ASSERT_TRUE(parse_set("{\"id\":\"0123456789a\",\"target\":\"0123456789abcdef0\","
+                               "\"values\":{}}",
+                               &s));
+    TEST_ASSERT_FALSE(s.bad);
+    TEST_ASSERT_EQUAL_STRING("0123456789a", s.id);
+    TEST_ASSERT_EQUAL_STRING("", s.target);
+    TEST_ASSERT_EQUAL_HEX32(0u, s.p.values.have);
+
+    /* not a message (the connection closes, as for any message missing a required key) */
+    static const char *const NOT[] = {
+        "{\"t\":\"settings_set\",\"target\":\"a1b2c3\",\"values\":{}}",
+        "{\"t\":\"settings_set\",\"id\":\"\",\"target\":\"a1b2c3\",\"values\":{}}",
+        "{\"t\":\"settings_set\",\"id\":\"0123456789ab\",\"target\":\"a1b2c3\",\"values\":{}}",
+        "{\"t\":\"settings_set\",\"id\":7,\"target\":\"a1b2c3\",\"values\":{}}",
+        "{\"t\":\"settings_set\",\"id\":\"1\",\"values\":{}}",
+        "{\"t\":\"settings_set\",\"id\":\"1\",\"target\":null,\"values\":{}}",
+        "{\"t\":\"settings_set\",\"id\":\"1\",\"target\":7,\"values\":{}}",
+        "{\"t\":\"settings_set\",\"id\":\"1\",\"target\":\"a1b2c3\",\"values\":{\"beeps\":1}",
+        "{\"t\":\"settings_set\",\"id\":\"1\",\"target\":\"a1b2c3\",\"values\":{\"beeps\":1}} x",
+        "{\"t\":\"settings_set\",\"id\":\"1\",\"target\":\"a1b2c3\",\"values\":{\"beeps\":}}",
+        "[\"settings_set\"]",
+        "",
+    };
+    for (size_t i = 0; i < sizeof NOT / sizeof NOT[0]; i++) {
+        TEST_ASSERT_FALSE_MESSAGE(parse_set(NOT[i], &s), NOT[i]);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("", s.id, NOT[i]);
+    }
+
+    /* HAI-017: the whole request is "bad", nothing of it taken; its id and target still read */
+    static const char *const BAD[] = {
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\"}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\",\"values\":[1,{\"a\":2}]}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\",\"values\":\"beeps\"}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\",\"values\":null}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\",\"values\":{\"night\":1}}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\",\"values\":{\"beeps\":1.5}}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\",\"values\":{\"beeps\":null}}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\",\"values\":{\"beeps\":\"5\"}}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\","
+        "\"values\":{\"beeps\":99999999999999999999}}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\","
+        "\"values\":{\"beeps\":1,\"beeps\":2}}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\",\"values\":{\"\":1}}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\","
+        "\"values\":{\"a_key_too_long\":1}}",
+        "{\"t\":\"settings_set\",\"id\":\"9\",\"target\":\"a1b2c3\",\"values\":{\"beeps\":1},"
+        "\"values\":{\"beeps\":2}}",
+        "{\"t\":\"settings_set\",\"values\":{\"beeps\":1,\"night\":\"on\"},\"id\":\"9\","
+        "\"target\":\"a1b2c3\"}",
+    };
+    for (size_t i = 0; i < sizeof BAD / sizeof BAD[0]; i++) {
+        TEST_ASSERT_TRUE_MESSAGE(parse_set(BAD[i], &s), BAD[i]);
+        TEST_ASSERT_TRUE_MESSAGE(s.bad, BAD[i]);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("9", s.id, BAD[i]);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("a1b2c3", s.target, BAD[i]);
+        TEST_ASSERT_EQUAL_HEX32_MESSAGE(0u, s.p.values.have, BAD[i]);
+        TEST_ASSERT_EQUAL_HEX32_MESSAGE(0u, s.p.refused, BAD[i]);
+        TEST_ASSERT_EQUAL_UINT8_MESSAGE(0u, s.p.unknown_n, BAD[i]);
+    }
+}
+
+/* HAI-017: the target takes only its own keys; a key it doesn't take is refused not_allowed,
+ * whatever its value (out of range too), and never sent. */
+static void test_settings_set_accept(void)
+{
+    proto_link_settings_set_t s;
+    TEST_ASSERT_TRUE(parse_set("{\"id\":\"1\",\"target\":\"c0ffee\",\"values\":{\"brightness\":40,"
+                               "\"beeps\":101,\"voice\":true,\"night_end\":0}}",
+                               &s));
+    const proto_prefs_mask_t can =
+        PROTO_PREFS_KNOWN & ~(PROTO_PREFS_BIT(1u) | PROTO_PREFS_BIT(13u));
+    proto_link_settings_set_accept(&s, can);
+    TEST_ASSERT_EQUAL_HEX32(PROTO_PREFS_BIT(7u) | PROTO_PREFS_BIT(17u), s.p.values.have);
+    TEST_ASSERT_TRUE(s.p.values.voice_enabled);
+    TEST_ASSERT_EQUAL_UINT16(0u, s.p.values.night_end);
+    TEST_ASSERT_EQUAL_UINT8(0u, s.p.values.brightness); /* dropped, not just unflagged */
+    TEST_ASSERT_EQUAL_HEX32(PROTO_PREFS_BIT(1u) | PROTO_PREFS_BIT(13u), s.p.refused);
+    TEST_ASSERT_EQUAL_UINT8(PROTO_PREFS_WHY_NOT_ALLOWED, s.p.why[0]);
+    TEST_ASSERT_EQUAL_UINT8(PROTO_PREFS_WHY_NOT_ALLOWED, s.p.why[12]);
+
+    /* a target that takes everything changes nothing; one that takes nothing refuses it all */
+    TEST_ASSERT_TRUE(parse_set("{\"id\":\"1\",\"target\":\"c0ffee\",\"values\":{\"clock\":2}}", &s));
+    proto_link_settings_set_accept(&s, PROTO_PREFS_KNOWN);
+    TEST_ASSERT_EQUAL_HEX32(PROTO_PREFS_BIT(10u), s.p.values.have);
+    TEST_ASSERT_EQUAL_UINT8(2u, s.p.values.clock_mode);
+    proto_link_settings_set_accept(&s, 0u);
+    TEST_ASSERT_EQUAL_HEX32(0u, s.p.values.have);
+    TEST_ASSERT_EQUAL_UINT8(PROTO_PREFS_WHY_NOT_ALLOWED, s.p.why[9]);
+}
+
+/* HAI-017, HAI-019: settings_result - ok only when nothing is refused; the request's refusals,
+ * the target's for the keys it was sent, and the unknown keys; a whole-request error names none. */
+static void test_settings_result_golden(void)
+{
+    proto_link_settings_set_t s;
+    /* protocol.md's example */
+    TEST_ASSERT_TRUE(parse_set("{\"t\":\"settings_set\",\"id\":\"3f9a1c2e\",\"target\":\"a1b2c3\","
+                               "\"values\":{\"brightness\":40}}",
+                               &s));
+    uint8_t why[PROTO_PREFS_F_LAST] = {0};
+    why[0] = PROTO_PREFS_WHY_IN_USE;
+    proto_link_settings_result(&W, &s, "", why);
+    TEST_ASSERT_EQUAL_STRING("{\"t\":\"settings_result\",\"id\":\"3f9a1c2e\",\"ok\":false,"
+                             "\"error\":\"\",\"refused\":{\"brightness\":\"in_use\"}}",
+                             done());
+    pj_init(&W, BUF, sizeof BUF);
+    memset(why, 0, sizeof why);
+    proto_link_settings_result(&W, &s, NULL, why);
+    TEST_ASSERT_EQUAL_STRING("{\"t\":\"settings_result\",\"id\":\"3f9a1c2e\",\"ok\":true,"
+                             "\"error\":\"\",\"refused\":{}}",
+                             done());
+    /* the six whole-request errors: nothing is named */
+    static const char *const ERR[] = {
+        PROTO_LINK_SET_E_NOT_FOUND, PROTO_LINK_SET_E_OFFLINE, PROTO_LINK_SET_E_UNSUPPORTED,
+        PROTO_LINK_SET_E_BUSY,      PROTO_LINK_SET_E_TIMEOUT, PROTO_LINK_SET_E_BAD,
+    };
+    static const char *const WORD[] = {"not_found", "offline", "unsupported",
+                                       "busy",      "timeout", "bad"};
+    why[0] = PROTO_PREFS_WHY_HELD;
+    for (size_t i = 0; i < sizeof ERR / sizeof ERR[0]; i++) {
+        char want[160];
+        snprintf(want, sizeof want,
+                 "{\"t\":\"settings_result\",\"id\":\"3f9a1c2e\",\"ok\":false,\"error\":\"%s\","
+                 "\"refused\":{}}",
+                 WORD[i]);
+        pj_init(&W, BUF, sizeof BUF);
+        proto_link_settings_result(&W, &s, ERR[i], why);
+        TEST_ASSERT_EQUAL_STRING(want, done());
+    }
+
+    /* everything at once, in id order, then the unknown keys as they came */
+    TEST_ASSERT_TRUE(parse_set("{\"id\":\"7b\",\"target\":\"c0ffee\",\"values\":{\"zz_top\":1,"
+                               "\"beeps\":101,\"voice\":true,\"glow\":3,\"night\":true,"
+                               "\"appearance\":2,\"contrast\":true,\"clock\":1}}",
+                               &s));
+    proto_link_settings_set_accept(&s, PROTO_PREFS_KNOWN & ~PROTO_PREFS_BIT(11u));
+    memset(why, 0, sizeof why);
+    why[16] = PROTO_PREFS_WHY_VOICE_NOT_READY; /* voice */
+    why[11] = PROTO_PREFS_WHY_BAD;             /* contrast: no word of its own */
+    why[9] = 9u;                               /* clock: a number from a newer keypad */
+    why[0] = PROTO_PREFS_WHY_BUSY;             /* brightness: not sent, so not named */
+    why[12] = PROTO_PREFS_WHY_HELD;            /* beeps: its own refusal comes first */
+    pj_init(&W, BUF, sizeof BUF);
+    proto_link_settings_result(&W, &s, "", why);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"t\":\"settings_result\",\"id\":\"7b\",\"ok\":false,\"error\":\"\",\"refused\":"
+        "{\"clock\":\"not_allowed\",\"appearance\":\"not_allowed\",\"contrast\":\"not_allowed\","
+        "\"beeps\":\"out_of_range\",\"voice\":\"voice_not_ready\",\"zz_top\":\"not_allowed\","
+        "\"glow\":\"not_allowed\"}}",
+        done());
+
+    /* the target's other words: held, busy */
+    TEST_ASSERT_TRUE(parse_set("{\"id\":\"8c\",\"target\":\"c0ffee\",\"values\":{\"night\":true,"
+                               "\"key_click\":false}}",
+                               &s));
+    memset(why, 0, sizeof why);
+    why[4] = PROTO_PREFS_WHY_HELD;
+    why[15] = PROTO_PREFS_WHY_BUSY;
+    pj_init(&W, BUF, sizeof BUF);
+    proto_link_settings_result(&W, &s, "", why);
+    TEST_ASSERT_EQUAL_STRING("{\"t\":\"settings_result\",\"id\":\"8c\",\"ok\":false,\"error\":\"\","
+                             "\"refused\":{\"night\":\"held\",\"key_click\":\"busy\"}}",
+                             done());
+
+    /* an unknown key alone is a refusal; more than the parser names still make ok false */
+    TEST_ASSERT_TRUE(parse_set("{\"id\":\"9d\",\"target\":\"c0ffee\",\"values\":{\"k1\":1,\"k2\":1,"
+                               "\"k3\":1,\"k4\":1,\"k5\":1,\"k6\":1,\"k7\":1,\"k8\":1,\"k9\":1}}",
+                               &s));
+    TEST_ASSERT_EQUAL_UINT8(9u, s.p.unknown_n);
+    pj_init(&W, BUF, sizeof BUF);
+    proto_link_settings_result(&W, &s, "", NULL);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"t\":\"settings_result\",\"id\":\"9d\",\"ok\":false,\"error\":\"\",\"refused\":"
+        "{\"k1\":\"not_allowed\",\"k2\":\"not_allowed\",\"k3\":\"not_allowed\","
+        "\"k4\":\"not_allowed\",\"k5\":\"not_allowed\",\"k6\":\"not_allowed\","
+        "\"k7\":\"not_allowed\",\"k8\":\"not_allowed\"}}",
+        done());
+}
+
+/* The longest answer (every key refused with the longest word, 8 unknown keys of 11 bytes that
+ * need escapes) fits the link task's ordinary buffer. */
+static void test_settings_result_fits(void)
+{
+    proto_link_settings_set_t s;
+    memset(&s, 0, sizeof s);
+    memset(s.id, 'f', sizeof s.id - 1u);
+    s.p.refused = PROTO_PREFS_KNOWN;
+    memset(s.p.why, (int)PROTO_PREFS_WHY_VOICE_NOT_READY, sizeof s.p.why);
+    s.p.unknown_n = 255u;
+    for (unsigned u = 0; u < PROTO_PREFS_UNKNOWN_MAX; u++) {
+        memset(s.p.unknown[u], '"', PROTO_PREFS_KEY_MAX);
+        s.p.unknown[u][0] = (char)('a' + u);
+    }
+    pj_init(&BW, BIG, PROTO_PAYLOAD_MAX);
+    proto_link_settings_result(&BW, &s, "", NULL);
+    TEST_ASSERT_TRUE(valid_json(big_done()));
+}
+
+/* ---- settings_set's queue (HAI-019) ------------------------------------------------------- */
+
+static proto_link_setq_t Q;
+static proto_link_settings_set_t REQ;
+
+_Static_assert(PROTO_LINK_SET_ANSWER_MS + 500u <= 7000u,
+               "protocol.md: answered within 7 s, with the link task's 500 ms pass");
+_Static_assert(PROTO_LINK_SET_ANSWER_MS > 6000u, "after a keypad's own 6 s give-up (LINK-051)");
+
+static proto_link_set_slot_t *add(uint64_t now, uint8_t target)
+{
+    snprintf(REQ.id, sizeof REQ.id, "r%u", (unsigned)target);
+    return proto_link_setq_add(&Q, now, target, &REQ);
+}
+
+/* At most one a second per target after a burst of 3, one in flight per target, targets apart. */
+static void test_setq_turns(void)
+{
+    proto_link_setq_init(&Q);
+    memset(&REQ, 0, sizeof REQ);
+    proto_link_set_slot_t *a[5];
+    for (size_t i = 0; i < 5u; i++) {
+        a[i] = add(1000u, 0u);
+        TEST_ASSERT_NOT_NULL(a[i]);
+        TEST_ASSERT_EQUAL_UINT8(PROTO_LINK_SET_QUEUED, a[i]->state);
+        TEST_ASSERT_EQUAL_STRING("r0", a[i]->req.id);
+    }
+    /* the burst, one in flight at a time, oldest first */
+    for (size_t i = 0; i < 3u; i++) {
+        proto_link_set_slot_t *s = proto_link_setq_next(&Q, 1000u);
+        TEST_ASSERT_EQUAL_PTR(a[i], s);
+        TEST_ASSERT_EQUAL_UINT8(PROTO_LINK_SET_FLIGHT, s->state);
+        TEST_ASSERT_EQUAL_UINT64(1000u, s->sent_ms);
+        TEST_ASSERT_NULL(proto_link_setq_next(&Q, 1000u)); /* its target has one in flight */
+        const uint32_t ticket = s->ticket;
+        TEST_ASSERT_EQUAL_PTR(s, proto_link_setq_find(&Q, ticket));
+        proto_link_setq_free(&Q, s);
+        TEST_ASSERT_EQUAL_UINT8(PROTO_LINK_SET_FREE, s->state);
+        TEST_ASSERT_NULL(proto_link_setq_find(&Q, ticket)); /* answered: a copy comes late */
+    }
+    /* then one a second */
+    TEST_ASSERT_NULL(proto_link_setq_next(&Q, 1999u));
+    /* ... while another target has its own turns and its own one in flight */
+    proto_link_set_slot_t *b = add(1500u, 8u);
+    TEST_ASSERT_EQUAL_PTR(b, proto_link_setq_next(&Q, 1500u));
+    TEST_ASSERT_EQUAL_PTR(a[3], proto_link_setq_next(&Q, 2000u));
+    proto_link_setq_free(&Q, a[3]);
+    TEST_ASSERT_NULL(proto_link_setq_next(&Q, 2999u));
+    TEST_ASSERT_EQUAL_PTR(a[4], proto_link_setq_next(&Q, 3000u));
+    proto_link_setq_free(&Q, a[4]);
+    proto_link_setq_free(&Q, b);
+    /* a quiet target earns its burst back: 3 at once again */
+    for (size_t i = 0; i < 4u; i++) {
+        a[i] = add(7000u, 0u);
+    }
+    for (size_t i = 0; i < 3u; i++) {
+        proto_link_set_slot_t *s = proto_link_setq_next(&Q, 7000u);
+        TEST_ASSERT_EQUAL_PTR(a[i], s);
+        proto_link_setq_free(&Q, s);
+    }
+    TEST_ASSERT_NULL(proto_link_setq_next(&Q, 7000u));
+    TEST_ASSERT_EQUAL_PTR(a[3], proto_link_setq_next(&Q, 8000u));
+
+    /* out of range: no target 9; no request */
+    TEST_ASSERT_NULL(add(8000u, (uint8_t)PROTO_LINK_SET_TARGETS));
+    TEST_ASSERT_NULL(proto_link_setq_add(&Q, 8000u, 1u, NULL));
+}
+
+/* A queue of 8 over all targets; in arrival order per target, whatever the slot. */
+static void test_setq_queue(void)
+{
+    proto_link_setq_init(&Q);
+    memset(&REQ, 0, sizeof REQ);
+    proto_link_set_slot_t *s[PROTO_LINK_SET_QUEUE];
+    for (size_t i = 0; i < PROTO_LINK_SET_QUEUE; i++) {
+        s[i] = add(100u, (uint8_t)(i % 2u));
+        TEST_ASSERT_NOT_NULL(s[i]);
+    }
+    TEST_ASSERT_NULL(add(100u, 5u)); /* full: busy at once */
+    proto_link_setq_free(&Q, s[2]);  /* a freed slot is used again, by the newest */
+    proto_link_set_slot_t *late = add(100u, 0u);
+    TEST_ASSERT_EQUAL_PTR(s[2], late);
+    /* each target's burst of 3, oldest first across both */
+    const proto_link_set_slot_t *want[] = {s[0], s[1], s[3], s[4], s[5], s[6]};
+    for (size_t i = 0; i < sizeof want / sizeof want[0]; i++) {
+        proto_link_set_slot_t *n = proto_link_setq_next(&Q, 100u);
+        TEST_ASSERT_EQUAL_PTR(want[i], n);
+        proto_link_setq_free(&Q, n);
+    }
+    TEST_ASSERT_NULL(proto_link_setq_next(&Q, 100u)); /* both used their burst */
+    proto_link_set_slot_t *n = proto_link_setq_next(&Q, 1100u);
+    TEST_ASSERT_EQUAL_PTR(s[7], n); /* target 1's 4th came before target 0's late one */
+    proto_link_setq_free(&Q, n);
+    TEST_ASSERT_EQUAL_PTR(late, proto_link_setq_next(&Q, 1100u));
+}
+
+/* Every request answered within 7 s: one never sent is busy, one sent and unanswered timeout,
+ * oldest first; a reconnect drops the requests and keeps the turns and the tickets. */
+static void test_setq_deadlines(void)
+{
+    proto_link_setq_init(&Q);
+    memset(&REQ, 0, sizeof REQ);
+    proto_link_set_slot_t *s[PROTO_LINK_SET_QUEUE];
+    for (size_t i = 0; i < PROTO_LINK_SET_QUEUE; i++) {
+        s[i] = add(1000u + i, 3u);
+    }
+    proto_link_set_slot_t *f = proto_link_setq_next(&Q, 1000u);
+    TEST_ASSERT_EQUAL_PTR(s[0], f); /* in flight, and it never answers */
+    TEST_ASSERT_NULL(proto_link_setq_expired(&Q, 1000u + PROTO_LINK_SET_ANSWER_MS - 1u));
+    const uint64_t at = 1000u + PROTO_LINK_SET_ANSWER_MS + 10u;
+    for (size_t i = 0; i < PROTO_LINK_SET_QUEUE; i++) {
+        proto_link_set_slot_t *e = proto_link_setq_expired(&Q, at);
+        TEST_ASSERT_EQUAL_PTR(s[i], e);
+        TEST_ASSERT_EQUAL_UINT8(i == 0u ? PROTO_LINK_SET_FLIGHT : PROTO_LINK_SET_QUEUED, e->state);
+        proto_link_setq_free(&Q, e);
+    }
+    TEST_ASSERT_NULL(proto_link_setq_expired(&Q, at));
+
+    /* eight to one target in one instant, each answered 100 ms after it goes: all within 7 s */
+    proto_link_setq_init(&Q);
+    for (size_t i = 0; i < PROTO_LINK_SET_QUEUE; i++) {
+        s[i] = add(1000u, 0u);
+    }
+    size_t answered = 0;
+    uint64_t last = 0;
+    for (uint64_t now = 1000u; now <= 9000u; now += 50u) {
+        for (size_t i = 0; i < PROTO_LINK_SET_QUEUE; i++) {
+            if (Q.slot[i].state == PROTO_LINK_SET_FLIGHT && now >= Q.slot[i].sent_ms + 100u) {
+                proto_link_setq_free(&Q, &Q.slot[i]);
+                answered++;
+                last = now;
+            }
+        }
+        TEST_ASSERT_NULL(proto_link_setq_expired(&Q, now));
+        (void)proto_link_setq_next(&Q, now);
+    }
+    TEST_ASSERT_EQUAL_size_t(PROTO_LINK_SET_QUEUE, answered);
+    TEST_ASSERT_EQUAL_UINT64(6100u, last); /* 3 at once, then one a second */
+
+    /* a new connection: nothing left to answer, no new burst, no ticket used again */
+    proto_link_set_slot_t *g = NULL;
+    for (size_t i = 0; i < 3u; i++) {
+        add(20000u, 0u);
+        g = proto_link_setq_next(&Q, 20000u);
+        TEST_ASSERT_NOT_NULL(g);
+        if (i < 2u) {
+            proto_link_setq_free(&Q, g);
+        }
+    }
+    const uint32_t gt = g->ticket; /* the third, still in flight */
+    TEST_ASSERT_NOT_NULL(add(20000u, 0u));
+    proto_link_setq_clear(&Q);
+    TEST_ASSERT_NULL(proto_link_setq_find(&Q, gt)); /* its late answer matches nothing */
+    TEST_ASSERT_NULL(proto_link_setq_expired(&Q, 99999u));
+    TEST_ASSERT_NULL(proto_link_setq_next(&Q, 99999u));
+    g = add(20000u, 0u);
+    TEST_ASSERT_TRUE(g->ticket > gt + 1u);
+    TEST_ASSERT_NULL(proto_link_setq_next(&Q, 20000u)); /* the burst isn't back */
+    TEST_ASSERT_EQUAL_PTR(g, proto_link_setq_next(&Q, 21000u));
+}
+
+/* Tickets are never 0, across their wrap too, and keep the order there; find takes only one in
+ * flight. */
+static void test_setq_tickets(void)
+{
+    proto_link_setq_init(&Q);
+    memset(&REQ, 0, sizeof REQ);
+    Q.next_ticket = 0xFFFFFFFFu;
+    proto_link_set_slot_t *a = add(0u, 2u);
+    proto_link_set_slot_t *b = add(0u, 2u);
+    TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFFu, a->ticket);
+    TEST_ASSERT_EQUAL_HEX32(1u, b->ticket);
+    TEST_ASSERT_NULL(proto_link_setq_find(&Q, a->ticket)); /* queued: no answer is due */
+    TEST_ASSERT_NULL(proto_link_setq_find(&Q, 0u));
+    TEST_ASSERT_EQUAL_PTR(a, proto_link_setq_next(&Q, 0u));
+    TEST_ASSERT_EQUAL_PTR(a, proto_link_setq_find(&Q, 0xFFFFFFFFu));
+    proto_link_setq_free(&Q, a);
+    TEST_ASSERT_EQUAL_PTR(b, proto_link_setq_next(&Q, 0u));
+    TEST_ASSERT_EQUAL_PTR(b, proto_link_setq_find(&Q, 1u));
+    /* a queue never initialised still gives no 0 */
+    memset(&Q, 0, sizeof Q);
+    TEST_ASSERT_EQUAL_HEX32(1u, add(0u, 0u)->ticket);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -1009,5 +1637,17 @@ int main(void)
     RUN_TEST(test_parse_shapes);
     RUN_TEST(test_zwave_devices_golden);
     RUN_TEST(test_parse_zwave_set);
+    RUN_TEST(test_settings_golden);
+    RUN_TEST(test_keypads_golden);
+    RUN_TEST(test_keypads_fit);
+    RUN_TEST(test_keypads_tidy);
+    RUN_TEST(test_parse_settings_set);
+    RUN_TEST(test_settings_set_accept);
+    RUN_TEST(test_settings_result_golden);
+    RUN_TEST(test_settings_result_fits);
+    RUN_TEST(test_setq_turns);
+    RUN_TEST(test_setq_queue);
+    RUN_TEST(test_setq_deadlines);
+    RUN_TEST(test_setq_tickets);
     return UNITY_END();
 }

@@ -2,6 +2,6 @@
 # with store-and-forward from the event log, commands and Home Assistant discovery.
 idf_component_register(SRCS "src/net_mqtt.c"
                        INCLUDE_DIRS "include"
-                       REQUIRES platform_esp
-                       PRIV_REQUIRES alarm_mem alarm_proto console i18n esp_app_format esp_timer esp-tls mbedtls
+                       REQUIRES alarm_proto platform_esp
+                       PRIV_REQUIRES alarm_mem console i18n esp_app_format esp_timer esp-tls mbedtls
                                      mqtt nvs_flash)

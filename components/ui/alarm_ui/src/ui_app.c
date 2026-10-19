@@ -634,9 +634,10 @@ static void light_apply(void)
     if (!S.lit) {
         return;
     }
-    /* A walk test is lit as an alarm is: at the day brightness, night hours or not (WALK-022). */
+    /* A walk test is lit as an alarm is: at the day brightness, night hours or not (WALK-022);
+     * so is a keypad keeping a fire or CO tone through a lost link (its Silence must be seen). */
     int pct = ui_light_percent(&S.opt, (ui_light_stage_t)S.light, S.night,
-                               alarm_mode(S.mode) || ui_walk_running());
+                               alarm_mode(S.mode) || ui_walk_running() || ui_link_local_alarm());
     if (S.light_preview >= 0) {
         if (!S.saver_on && lv_tick_elaps(S.light_preview_at) < LIGHT_PREVIEW_MS) {
             pct = S.light_preview;
@@ -687,7 +688,6 @@ static void saver_enter(ui_light_stage_t stage)
  * applied only when the result changes: Automatic switches once at each end of the night hours,
  * in one step (UI-020). Called when the options change and when the clock's minute does. */
 static int s_theme_wanted = -1; /* the last result, -1 before the first */
-static bool language_held(void);
 
 /* by_clock: the night hours began or ended, or the time was lost. That change waits while an
  * alarm sounds or entry or exit time runs, like a language change: the screen doesn't change
@@ -705,7 +705,7 @@ static void theme_follow_as(bool by_clock)
     if ((int)want == s_theme_wanted) {
         return;
     }
-    if (by_clock && S.main != NULL && language_held()) {
+    if (by_clock && S.main != NULL && ui_app_held()) {
         return; /* tried again at the next minute */
     }
     s_theme_wanted = (int)want;
@@ -741,7 +741,11 @@ void ui_options_changed(void)
 void ui_app_apply_options(const ui_options_t *opt)
 {
     const bool new_language = strncmp(S.opt.lang, opt->lang, sizeof(S.opt.lang)) != 0;
+    const uint8_t partition = S.opt.partition;
     S.opt = *opt;
+    if (S.opt.partition < 1u || S.opt.partition > ALARM_MAX_PARTITIONS) {
+        S.opt.partition = partition; /* range-checked: the one in use stays */
+    }
     S.opt.lang[sizeof(S.opt.lang) - 1u] = '\0';
     S.opt.region[sizeof(S.opt.region) - 1u] = '\0';
     ui_options_changed();
@@ -779,6 +783,23 @@ static void update_panel(void)
     const char *title = TR("Disarm");
     /* TR: Home, the line under the title of the card on the right. At most 127 bytes */
     const char *note = TR("Enter your code to disarm");
+    char link_title[48];
+    char link_note[128];
+    if (ui_link_silence_words(link_title, sizeof(link_title), link_note, sizeof(link_note))) {
+        /* a keypad keeping a fire or CO tone through a lost link: the way to stop it here
+         * (decided 2026-10-15, "until OFF is pressed on the keypad"); steady, like the rest */
+        ui_set_str(&subject_disarm_title, link_title);
+        ui_set_str(&subject_disarm_note, link_note);
+        ui_set_int(&subject_panel, PANEL_SILENCE);
+        return;
+    }
+    if (ui_link_unpaired(link_title, sizeof(link_title), link_note, sizeof(link_note))) {
+        /* a keypad the alarm panel removed: the way back (BL-048, LINK-014) */
+        ui_set_str(&subject_disarm_title, link_title);
+        ui_set_str(&subject_disarm_note, link_note);
+        ui_set_int(&subject_panel, PANEL_LINK);
+        return;
+    }
     if (S.pad != PAD_NONE && S.pad_host == HOST_HOME) {
         panel = PANEL_PAD;
     } else {
@@ -1110,7 +1131,18 @@ bool ui_app_busy(void)
 {
     return (S.pad != PAD_NONE && !(pad_resident() && S.digits[0] == '\0')) || S.panic_holding ||
            lv_subject_get_int(&subject_view) == VIEW_SETTINGS || (S.wizard_on && !S.wizard_paused) ||
-           lv_subject_get_int(&subject_sheet) != SHEET_NONE;
+           lv_subject_get_int(&subject_sheet) != SHEET_NONE || ui_call_waiting();
+}
+
+bool ui_pad_asks(ui_code_fn fn)
+{
+    return S.pad == PAD_ASK && S.pad_fn == fn;
+}
+
+void ui_app_wake(void)
+{
+    saver_exit();
+    lv_display_trigger_activity(S.disp);
 }
 
 void ui_app_walk_show(void)
@@ -1315,6 +1347,52 @@ static void pad_submit_ask(size_t len)
     }
 }
 
+/* The pad a call's answer is for: the same one still open (LINK-054: the screen went on while
+ * the call waited, and a timeout or an alarm may have closed it). */
+static uintptr_t pad_tag(void)
+{
+    return (uintptr_t)S.pad | ((uintptr_t)S.pad_host << 8);
+}
+
+static bool pad_still(const ui_call_t *c)
+{
+    return c->tag == pad_tag() && S.pad != PAD_NONE;
+}
+
+static void code_changed(const ui_call_t *c)
+{
+    if (!pad_still(c)) {
+        ui_refresh(true);
+        return;
+    }
+    if (c->r == ALARM_OK) {
+        char name[ALARM_NAME_LEN + 8];
+        char text[96];
+        /* TR: a toast after a code was changed; {0} is the user's name */
+        I18N_FORMAT(text, sizeof(text), TR("Code changed for {0}"),
+                    ui_user_name(S.cfg, c->user, name, sizeof(name)));
+        pad_close();
+        ui_toast(text);
+        ui_refresh(true);
+    } else {
+        S.pad = (c->r == ALARM_ERR_INVALID_CODE || c->r == ALARM_ERR_LOCKED_OUT) ? PAD_CODE_CURRENT
+                                                                                  : PAD_CODE_NEW;
+        pad_clear_digits();
+        pad_texts();
+        ui_pad_error(c->r == ALARM_ERR_INVALID_CODE ? TR("Your current code is wrong")
+                                                    : ui_result_text(c->r));
+    }
+}
+
+static void pad_answered(const ui_call_t *c)
+{
+    if (!pad_still(c)) {
+        ui_refresh(true);
+        return;
+    }
+    pad_result(c->r, &c->res);
+}
+
 static void pad_submit(void)
 {
     const size_t len = strlen(S.digits);
@@ -1376,24 +1454,9 @@ static void pad_submit(void)
             ui_pad_error(TR("Those didn't match. Try again"));
             return;
         }
-        uint8_t user = 0;
-        const alarm_result_t r = S.be.change_code(S.be.ctx, S.code_current, S.code_new, &user);
-        if (r == ALARM_OK) {
-            char name[ALARM_NAME_LEN + 8];
-            char text[96];
-            /* TR: a toast after a code was changed; {0} is the user's name */
-            I18N_FORMAT(text, sizeof(text), TR("Code changed for {0}"),
-                        ui_user_name(S.cfg, user, name, sizeof(name)));
-            pad_close();
-            ui_toast(text);
-            ui_refresh(true);
-        } else {
-            S.pad = (r == ALARM_ERR_INVALID_CODE || r == ALARM_ERR_LOCKED_OUT) ? PAD_CODE_CURRENT
-                                                                                : PAD_CODE_NEW;
+        if (!ui_call_change_code(S.code_current, S.code_new, code_changed, pad_tag())) {
             pad_clear_digits();
-            pad_texts();
-            ui_pad_error(r == ALARM_ERR_INVALID_CODE ? TR("Your current code is wrong")
-                                                     : ui_result_text(r));
+            ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
         }
         return;
     }
@@ -1430,11 +1493,11 @@ static void pad_submit(void)
         break;
     default: return;
     }
-    alarm_cmd_result_t res;
-    memset(&res, 0, sizeof(res));
-    const alarm_result_t r = S.be.command(S.be.ctx, &cmd, &res);
+    const bool queued = ui_call_command(&cmd, pad_answered, pad_tag());
     memset(cmd.code, 0, sizeof(cmd.code));
-    pad_result(r, &res);
+    if (!queued) {
+        pad_result(ALARM_ERR_UNAVAILABLE, NULL);
+    }
 }
 
 static void pad_key(const char *key)
@@ -1573,8 +1636,36 @@ static void mode_entered(ui_mode_t m, ui_mode_t prev, bool first)
     }
 }
 
+/* A keypad that can't show the alarm panel's state - connecting, no system communication, not
+ * paired (BL-048, LINK-008): its own words on the state card, steady, and nothing of the last state
+ * it had, which may be stale: no alarm look, no pad to disarm with, the tiles dimmed (the XML,
+ * subject_link_home). The real state comes back with the link (apply_mode's mode_entered). */
+static void apply_link_home(const ui_link_home_t *lh)
+{
+    /* calm: the screen saver may come, as on a quiet Home - unless a fire or CO tone is kept
+     * here (ui_link_local_alarm: lit and awake as an alarm, ui_app_wake when it starts) */
+    S.mode = MODE_READY;
+    S.mode_valid = true;
+    if (S.pad != PAD_NONE && S.pad_host == HOST_HOME) {
+        pad_close();
+    }
+    hero_tone(lh->tone, false);
+    ui_set_str(&subject_hero_icon, lh->glyph);
+    ui_set_str(&subject_headline, lh->headline);
+    ui_set_str(&subject_detail, lh->detail);
+    ui_set_str(&subject_hero_note, lh->note);
+    ui_set_int(&subject_alarm_active, 0);
+    set_pulse(false);
+    update_panel();
+}
+
 static void apply_mode(void)
 {
+    ui_link_home_t lh;
+    if (ui_link_home_words(&lh)) {
+        apply_link_home(&lh);
+        return;
+    }
     const alarm_partition_status_t *ps = part();
     const ui_mode_t prev = S.mode;
     const ui_mode_t m = compute_mode(ps);
@@ -1850,7 +1941,7 @@ static void update_countdown(void)
 {
     const alarm_partition_status_t *ps = part();
     const bool delay = ps->state == ALARM_STATE_EXIT_DELAY || ps->state == ALARM_STATE_ENTRY_DELAY;
-    if (!S.have_snap || !delay) {
+    if (!S.have_snap || !delay || ui_link_holds_home()) {
         S.count_total_ms = 0;
         ui_set_int(&subject_countdown, 0);
         ui_set_int(&subject_countdown_pct, 1000);
@@ -2058,6 +2149,18 @@ static void zones_empty_set(bool want, int32_t filter)
     }
 }
 
+/* A zone card's words; on a keypad without the alarm panel every zone is Unknown, never the
+ * last state it had as if it were now (BL-048, LINK-008). */
+static void zone_line(uint16_t z, const alarm_zone_status_t *zs, ui_line_t *l)
+{
+    ui_zone_state(S.cfg, z, zs, l);
+    if (ui_link_holds_home()) {
+        l->tone = ui_tone_gray();
+        /* TR: a zone card on a keypad that has lost the alarm panel: its state isn't known */
+        i18n_utf8_copy(l->detail, sizeof(l->detail), TR_C("zone state", "Unknown"));
+    }
+}
+
 static void zones_update(void)
 {
     const bool disarmed = part()->state == ALARM_STATE_DISARMED;
@@ -2070,12 +2173,13 @@ static void zones_update(void)
         lv_obj_t *card = S.zone_cards[i];
         const alarm_zone_status_t *zs = &S.snap.zone[z - 1u];
         ui_line_t l;
-        ui_zone_state(S.cfg, z, zs, &l);
+        zone_line(z, zs, &l);
         ui_chip_tone(ui_find(card, "chip"), l.glyph, l.tone);
         ui_set_label(card, "title_label", l.title);
         ui_set_label(card, "detail_label", l.detail);
         lv_obj_t *bypass = ui_find(card, "bypass");
-        const bool can_bypass = disarmed && alarm_zone_bypassable(&S.cfg->zones[z - 1u]);
+        const bool can_bypass =
+            disarmed && alarm_zone_bypassable(&S.cfg->zones[z - 1u]) && !ui_link_holds_home();
         lv_obj_set_flag(bypass, LV_OBJ_FLAG_HIDDEN, !can_bypass);
         /* TR: the button on a zone card in the Zones list */
         ui_set_label(bypass, "bypass_label", (zs->flags & ALARM_ZS_BYPASSED)
@@ -2123,7 +2227,7 @@ static void zones_build(void)
             continue;
         }
         ui_line_t l;
-        ui_zone_state(S.cfg, z, &S.snap.zone[z - 1u], &l);
+        zone_line(z, &S.snap.zone[z - 1u], &l);
         lv_obj_t *card = zone_card_create(S.zone_list, l.glyph, l.title, l.detail);
         lv_obj_set_user_data(card, (void *)(uintptr_t)z);
         S.zone_cards[S.zone_cards_n] = card;
@@ -2212,29 +2316,40 @@ static void activity_clear_loss_click(lv_event_t *e)
     activity_build(true); /* the screen shows the outcome: the warning goes, no toast */
 }
 
-static bool private_unlock(const char *code)
+static bool private_unlock(const char *code);
+
+static void private_checked(const ui_call_t *c)
 {
-    uint8_t user = 0;
-    const alarm_result_t r = S.be.authenticate != NULL
-                                 ? S.be.authenticate(S.be.ctx, code, &user)
-                                 : ALARM_ERR_DISABLED;
-    if (r != ALARM_OK) { /* counted towards the keypad lockout as any wrong code is */
-        ui_beep(UI_BEEP_ERROR);
-        ui_pad_error(r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again") : ui_result_text(r));
-        return false;
+    if (!ui_pad_asks(private_unlock)) {
+        return; /* the pad closed while the code was checked */
     }
-    if (!private_authority(user)) {
+    if (c->r != ALARM_OK) { /* counted towards the keypad lockout as any wrong code is */
+        ui_beep(UI_BEEP_ERROR);
+        ui_pad_error(c->r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again")
+                                                    : ui_result_text(c->r));
+        return;
+    }
+    if (!private_authority(c->user)) {
         ui_beep(UI_BEEP_ERROR);
         ui_pad_error(TR("This code can't show private events"));
-        return false;
+        return;
     }
     if (S.locked) {
-        return true; /* armed while the code was typed: the pad closes, nothing opens */
+        ui_pad_cancel(); /* armed while the code was typed: the pad closes, nothing opens */
+        return;
     }
-    s_priv_user = user;
+    s_priv_user = c->user;
     ui_pad_cancel();
     activity_build(true);
-    return true;
+}
+
+/* The pad stays open; the answer closes it (private_checked). */
+static bool private_unlock(const char *code)
+{
+    if (!ui_call_authenticate(code, private_checked, 0u)) {
+        ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+    return false;
 }
 
 static void activity_private_click(lv_event_t *e)
@@ -2758,6 +2873,11 @@ static bool compute_locked(void)
     return alarm_snapshot_locked(&S.snap);
 }
 
+/* Locked, but Settings opens all the same: a keypad that can't show the alarm panel's state, whose
+ * last status said armed or in alarm, with a page it needs without a code (LINK-025's maintenance,
+ * an update it needs). The rest of the lock stands; Settings closes once this ends while locked. */
+static bool s_lock_waived;
+
 /* A locked control says why: one whole sentence for "armed" and one for "in alarm". */
 static void locked_toast(const char *when_disarmed, const char *when_silenced)
 {
@@ -2782,6 +2902,17 @@ static void lock_down(void)
 }
 
 /* ---- snapshot ------------------------------------------------------------------------- */
+
+void ui_partition_view(uint8_t partition)
+{
+    if (partition < 1u || partition > ALARM_MAX_PARTITIONS || partition == S.opt.partition) return;
+    ui_pad_cancel();
+    ui_sheet_close();
+    activity_forget();
+    S.opt.partition = partition; /* transient: never save it as the default */
+    ui_refresh(true);
+    if (lv_subject_get_int(&subject_view) == VIEW_ACTIVITY) activity_build(false);
+}
 
 void ui_refresh(bool force)
 {
@@ -2817,16 +2948,19 @@ void ui_refresh(bool force)
     ui_set_str(&subject_chime_icon, ps->chime ? UI_ICON_BELL : UI_ICON_BELL_OFF);
     ui_set_int(&subject_default_codes, S.snap.default_codes);
     const bool locked = compute_locked();
-    ui_set_int(&subject_locked, locked ? 1 : 0);
+    const bool waived = locked && ui_link_settings_waived();
+    ui_set_int(&subject_locked, locked ? 1 : 0); /* chime, Acknowledge: still locked */
+    ui_set_int(&subject_settings_locked, locked && !waived ? 1 : 0); /* the gear as it works */
     bar_banner(locked);
     if (!S.snap.program && S.program) {
         S.program = false; /* timed out or left elsewhere */
         ui_settings_refresh();
     }
     apply_mode();
-    if (locked && !S.locked) {
+    if (locked && (!S.locked || (s_lock_waived && !waived))) {
         lock_down();
     }
+    s_lock_waived = waived;
     if (locked != S.locked) {
         S.events_shown_seq = UINT32_MAX; /* Activity's private row dims or wakes (UI-022) */
     }
@@ -2849,13 +2983,15 @@ static void bar_banner(bool locked)
     const bool quiet = !alarm_mode(compute_mode(part())); /* an alarm has the screen */
     const bool arming = ui_auto_warn_banner() && quiet;
     const uint8_t update = quiet ? ui_update_banner() : 0u; /* BL-188: 1 blue, 2 amber */
-    ui_set_int(&subject_bar_banner, S.remote.active                            ? 3
-                                    : S.snap.program                            ? 2
-                                    : walk                                      ? 4
-                                    : arming                                    ? 5
-                                    : update != 0u                              ? (int32_t)(5u + update)
-                                    : (S.snap.default_codes != 0u && !locked) ? 1
-                                                                               : 0);
+    ui_set_int(&subject_bar_banner,
+               S.remote.active  ? 3
+               : S.snap.program ? 2
+               : walk           ? 4
+               : arming         ? 5
+               : update != 0u   ? (int32_t)(5u + update)
+               : (S.snap.default_codes != 0u && !locked && !ui_link_holds_home())
+                   ? (ui_link_keypad() ? 8 : 1) /* a keypad's: BL-048 */
+                   : 0);
 }
 
 void ui_bar_banner_update(void)
@@ -3061,6 +3197,7 @@ bool ui_app_remote_text(const char *utf8)
         return false;
     }
     lv_display_trigger_activity(S.disp);
+    ui_partition_input(NULL);
     if (ui_forms_remote_text(utf8)) {
         return true;
     }
@@ -3081,6 +3218,7 @@ bool ui_app_remote_key(ui_remote_key_t key)
         return false;
     }
     lv_display_trigger_activity(S.disp);
+    ui_partition_input(NULL);
     if (ui_forms_remote_key(key)) {
         return true;
     }
@@ -3179,6 +3317,8 @@ static void on_panic(lv_event_t *e)
     }
 }
 
+static void panic_answered(const ui_call_t *c);
+
 static void panic_tick(void)
 {
     if (!S.panic_holding || S.panic_sent) {
@@ -3191,16 +3331,21 @@ static void panic_tick(void)
     if (held < PANIC_HOLD_MS) {
         return;
     }
-    S.panic_sent = true;
     alarm_cmd_t cmd;
     memset(&cmd, 0, sizeof(cmd));
     cmd.type = ALARM_CMD_PANIC;
     cmd.partition = S.opt.partition;
     cmd.panic = S.panic;
-    const alarm_result_t r = S.be.command(S.be.ctx, &cmd, NULL);
+    /* never dropped: with every slot taken, the next tick sends it */
+    S.panic_sent = ui_call_command(&cmd, panic_answered, 0u);
+}
+
+static void panic_answered(const ui_call_t *c)
+{
+    const alarm_result_t r = c->r;
     if (r != ALARM_OK) {
         ui_toast(ui_result_text(r));
-    } else if (S.panic == ALARM_PANIC_SILENT) {
+    } else if (c->cmd.panic == ALARM_PANIC_SILENT) {
         /* The one panic the screen deliberately doesn't show. It says the alarm is on here -
          * never that it was delivered, and never that help is coming - and stays short enough
          * to be unremarkable to anyone else in the room (UI-029). */
@@ -3227,28 +3372,36 @@ static void on_zone_bypass(lv_event_t *e)
 
 /* Chime with no code (CORE-CHIME-005, the installer's choice): one touch. Nothing opens; the
  * rail's bell changes under the finger and that is enough. */
-static void chime_toggle_now(void)
+static void chime_answered(const ui_call_t *c)
 {
-    alarm_cmd_t cmd;
-    alarm_cmd_result_t res;
-    memset(&cmd, 0, sizeof(cmd));
-    memset(&res, 0, sizeof(res));
-    cmd.partition = S.opt.partition;
-    cmd.type = ALARM_CMD_CHIME;
-    const alarm_result_t r = S.be.command(S.be.ctx, &cmd, &res);
-    if (r != ALARM_OK) {
+    if (c->r != ALARM_OK) {
         ui_beep(UI_BEEP_ERROR);
-        ui_toast(ui_result_text(r));
+        ui_toast(ui_result_text(c->r));
         return;
     }
     ui_refresh(true);
+}
+
+static void chime_toggle_now(void)
+{
+    alarm_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.partition = S.opt.partition;
+    cmd.type = ALARM_CMD_CHIME;
+    if (!ui_call_command(&cmd, chime_answered, 0u)) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_toast(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
 }
 
 /* The one way chime is switched: the rail's Chime and the row in Settings both come here.
  * It never leaves the view you are on (UI-025) and waits while armed (UI-022). */
 void ui_chime_toggle(void)
 {
-    if (S.locked) {
+    if (ui_link_holds_home()) {
+        /* TR: a toast when the dimmed chime is tapped on a keypad without the alarm panel */
+        ui_toast(TR("Chime can be changed once the alarm panel answers"));
+    } else if (S.locked) {
         /* TR: a toast when chime is tapped while armed, or while the alarm sounds */
         locked_toast(TR("Chime can be changed once the system is disarmed"),
                      TR("Chime can be changed once the alarm is silenced"));
@@ -3259,15 +3412,34 @@ void ui_chime_toggle(void)
     }
 }
 
+static void silence_answered(const ui_call_t *c);
+
 static void on_silence(void)
 {
+    /* A keypad keeping a fire or CO tone through a lost link: the command can't reach the alarm
+     * panel, and the link stops the tone here all the same (decided 2026-10-15). */
     alarm_cmd_t cmd;
     memset(&cmd, 0, sizeof(cmd));
     cmd.type = ALARM_CMD_SILENCE;
     cmd.partition = S.opt.partition;
-    const alarm_result_t r = S.be.command(S.be.ctx, &cmd, NULL);
-    /* TR: a toast after Silence during a fire, CO or medical alarm */
-    ui_toast(r == ALARM_OK ? TR("Siren silenced. Enter your code to reset") : ui_result_text(r));
+    if (!ui_call_command(&cmd, silence_answered, ui_link_local_alarm() ? 1u : 0u)) {
+        ui_toast(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+}
+
+static void silence_answered(const ui_call_t *c)
+{
+    const bool here = c->tag != 0u;
+    const alarm_result_t r = c->r;
+    if (here) {
+        /* TR: a toast after Silence on a keypad without system communication: its own alarm
+         * sound stops; the alarm panel goes on as it was */
+        ui_toast(TR("Silenced on this keypad"));
+    } else {
+        /* TR: a toast after Silence during a fire, CO or medical alarm */
+        ui_toast(r == ALARM_OK ? TR("Siren silenced. Enter your code to reset")
+                               : ui_result_text(r));
+    }
     ui_refresh(true);
 }
 
@@ -3297,6 +3469,8 @@ static void on_walk_card(const char *ud)
         ui_settings_section(NOTR("about"));
     } else if (ud != NULL && strcmp(ud, "banner") == 0) {
         ui_walk_banner_pressed(); /* the status bar's walk test banner (WALK-023, WALK-010) */
+    } else if (ud != NULL && strcmp(ud, "pair") == 0) {
+        ui_link_pair_again(); /* a keypad that isn't paired: Home's Pair again (BL-048) */
     } else if (ud != NULL && strcmp(ud, "extend") == 0) {
         pad_open(PAD_EXTEND_WALK_TEST);
     } else {
@@ -3309,6 +3483,9 @@ static void on_action(alarm_ui_action_t action, lv_event_t *e)
     const char *ud = (const char *)lv_event_get_user_data(e);
     switch (action) {
     case ALARM_UI_ACT_ARM:
+        if (ui_link_holds_home()) {
+            break; /* dimmed and deaf: a keypad without the alarm panel arms nothing (LINK-008) */
+        }
         S.pad_level = (ud != NULL && strcmp(ud, "stay") == 0)    ? ALARM_LEVEL_STAY
                       : (ud != NULL && strcmp(ud, "night") == 0) ? ALARM_LEVEL_NIGHT
                                                                  : ALARM_LEVEL_AWAY;
@@ -3346,7 +3523,7 @@ static void on_action(alarm_ui_action_t action, lv_event_t *e)
         }
         break;
     case ALARM_UI_ACT_SETTINGS:
-        if (S.locked) {
+        if (S.locked && !ui_link_settings_waived()) {
             /* TR: a toast when Settings is tapped while armed, or while the alarm sounds */
             locked_toast(TR("Settings open once the system is disarmed"),
                          TR("Settings open once the alarm is silenced"));
@@ -3537,8 +3714,9 @@ static void relabel(lv_obj_t *o, const i18n_catalog_t *from, const i18n_catalog_
 }
 
 /* An alarm, an entry time or an exit time keeps its words: nobody reading the screen then should
- * see it change language under them. */
-static bool language_held(void)
+ * see it change language under them (and the rest of how it looks: the theme by the clock, a
+ * setting from elsewhere, UI-046). */
+bool ui_app_held(void)
 {
     return S.mode_valid && (alarm_mode(S.mode) || S.mode == MODE_ENTRY || S.mode == MODE_EXIT);
 }
@@ -3669,7 +3847,7 @@ void ui_language_apply(void)
         S.lang_pending = false;
         return;
     }
-    if (language_held()) {
+    if (ui_app_held()) {
         S.lang_pending = true;
         return;
     }
@@ -3764,7 +3942,7 @@ static void tick(lv_timer_t *t)
         light_apply();
     }
     ui_refresh(false);
-    if (S.lang_pending && !language_held()) {
+    if (S.lang_pending && !ui_app_held()) {
         ui_language_apply(); /* the alarm or the delay that held it ended */
     }
     update_countdown();
@@ -3820,6 +3998,7 @@ static void tick(lv_timer_t *t)
     ui_auto_warn_tick();
 #endif
     ui_wizard_tick();
+    ui_link_tick(); /* the panel link (BL-048): once a second */
 
     const uint32_t idle = lv_display_get_inactive_time(S.disp);
     const int32_t view = lv_subject_get_int(&subject_view);
@@ -3829,7 +4008,8 @@ static void tick(lv_timer_t *t)
                        S.mode == MODE_PROGRAM) &&
                       !ui_app_busy() && /* the same test a walk test started elsewhere waits on */
                       !S.remote.active && /* someone at the panel sees a remote session */
-                      !ui_walk_running(); /* awake for the whole test, any partition (WALK-022) */
+                      !ui_walk_running() && /* awake for the whole test, any partition (WALK-022) */
+                      !ui_link_local_alarm(); /* a keypad's kept fire or CO tone: as an alarm */
     /* Dimmed, then dark (UI-009, UI-043): only while nothing else needs the screen. Night hours
      * that begin or end, or new times, move it on from where it is; only a touch or the panel
      * itself (a change of state, an alarm) wakes it. */
@@ -3877,10 +4057,16 @@ void ui_app_run_setup(void)
     ui_wizard_start(true); /* already set up: the setup can be left again */
 }
 
+void ui_app_first_setup(void)
+{
+    ui_wizard_start(false); /* as a first start: no Leave setup, the role first (BL-048) */
+}
+
 void ui_app_start(const ui_backend_t *backend, const ui_options_t *opt)
 {
     memset(&S, 0, sizeof(S));
     S.be = *backend;
+    ui_call_reset();
     S.local_minute = -1;
     S.light_sent = -1;
     S.light_preview = -1;
@@ -3960,6 +4146,9 @@ void ui_app_start(const ui_backend_t *backend, const ui_options_t *opt)
     lv_subject_add_observer(&subject_pad_error, dots_changed, NULL);
     for (lv_indev_t *i = lv_indev_get_next(NULL); i != NULL; i = lv_indev_get_next(i)) {
         lv_indev_add_event_cb(i, indev_pressed, LV_EVENT_PRESSED, NULL);
+        lv_indev_add_event_cb(i, ui_partition_input, LV_EVENT_PRESSED, NULL);
+        lv_indev_add_event_cb(i, ui_partition_input, LV_EVENT_PRESSING, NULL);
+        lv_indev_add_event_cb(i, ui_partition_input, LV_EVENT_RELEASED, NULL);
     }
     ui_forms_init();
     ui_settings_init();
@@ -3972,6 +4161,7 @@ void ui_app_start(const ui_backend_t *backend, const ui_options_t *opt)
     ui_auto_warn_init();
 #endif
 
+    ui_link_init(); /* the role and its partition, before Home and the setup (BL-048) */
     lv_screen_load(S.main);
     ui_refresh(true);
     update_clock(true);

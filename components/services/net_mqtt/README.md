@@ -15,10 +15,10 @@ delivered, and it tells `net_wifi` that the network is needed while MQTT is on.
 ## Public API
 | Header | What it offers |
 |---|---|
-| `include/net_mqtt.h` | `net_mqtt_listener()` (register before `alarm_service_start()`), `net_mqtt_start()`, settings get/set (the password is never returned), `net_mqtt_get_status()`, `net_mqtt_set_ca()`, `net_mqtt_suppress_discovery()`, the Home Assistant update entity (`net_mqtt_set_firmware()`, `net_mqtt_firmware_changed()`), the Zigbee network (`net_mqtt_set_zigbee()`: `~/zigbee/state` when it changes, at most once a second, its discovery sensor, the battery and signal of Zigbee-fed zones; docs/features/20 devices.md §15), `net_mqtt_console_register()` |
+| `include/net_mqtt.h` | `net_mqtt_listener()` (register before `alarm_service_start()`), `net_mqtt_start()`, settings get/set (the password is never returned), `net_mqtt_get_status()`, `net_mqtt_set_ca()`, `net_mqtt_suppress_discovery()`, the Home Assistant update entity (`net_mqtt_set_firmware()`, `net_mqtt_firmware_changed()`; a master's link keypads ride in its state as `keypads`, docs/features/11), the Zigbee network (`net_mqtt_set_zigbee()`: `~/zigbee/state` when it changes, at most once a second, its discovery sensor, the battery and signal of Zigbee-fed zones; docs/features/20 devices.md §15), `net_mqtt_console_register()` |
 
 ## Depends on
-- Project components: `platform_esp` (`alarm_service` for snapshots, reports and commands; `panel_log` for replay and the lost-report handler; `net_wifi` for the network requirement), `alarm_proto` (topics, payloads, discovery, the strict JSON reader, `proto_report` store-and-forward), `alarm_mem` (slow memory for the big buffers), `alarm_core` types through `platform_esp`.
+- Project components: `platform_esp` (`alarm_service` for snapshots, reports and commands; `panel_log` for replay and the lost-report handler; `net_wifi` for the network requirement), `alarm_proto` (topics, payloads, discovery, the strict JSON reader, `proto_report` store-and-forward; public, for `net_mqtt_fw_t`'s keypads), `alarm_mem` (slow memory for the big buffers), `alarm_core` types through `platform_esp`.
 - ESP-IDF: `console`, `esp_app_format`, `esp_timer`, `esp-tls`, `mbedtls`, `nvs_flash`; `espressif/mqtt` `^1.1.0` from the component registry (`idf_component.yml`; ESP-IDF 6 no longer ships esp-mqtt).
 
 ## Options

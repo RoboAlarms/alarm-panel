@@ -23,6 +23,10 @@ void alarm_engine_snapshot(const alarm_engine_t *e, alarm_snapshot_t *out)
     }
     out->sys_troubles = alarm_engine_system_troubles(e, &out->sys_troubles_restored);
     out->dev_troubles = alarm_engine_device_troubles(e);
+    for (unsigned d = 0; d < ALARM_MAX_DEVICES; d++) {
+        out->dev_partition[d] =
+            (out->dev_troubles & (1u << d)) != 0u ? e->dev_trouble_partition[d] : 0u;
+    }
     out->default_codes = alarm_engine_default_codes(e);
     out->program = alarm_engine_program_active(e);
     const alarm_ms_t left = alarm_engine_recovery_left(e);
@@ -97,8 +101,8 @@ static void trouble_put(trouble_walk_t *w, uint8_t family, uint8_t kind, uint16_
     w->n++;
 }
 
-static void troubles_walk(const alarm_snapshot_t *s, const alarm_config_t *cfg,
-                          uint8_t partitions, trouble_walk_t *w)
+static void troubles_walk(const alarm_snapshot_t *s, const alarm_config_t *cfg, uint8_t partitions,
+                          trouble_walk_t *w)
 {
     for (int pass = 0; pass < 2; pass++) {
         const bool restored = pass == 1;
@@ -112,7 +116,11 @@ static void troubles_walk(const alarm_snapshot_t *s, const alarm_config_t *cfg,
         }
         if (!restored) {
             for (unsigned d = 0; d < 32u; d++) {
-                if ((s->dev_troubles & (1u << d)) != 0u) {
+                /* a keypad's trouble belongs to its home partition, as the engine counts it */
+                const uint8_t dp = d < ALARM_MAX_DEVICES ? s->dev_partition[d] : 0u;
+                if ((s->dev_troubles & (1u << d)) != 0u &&
+                    (dp == 0u || dp > ALARM_MAX_PARTITIONS ||
+                     (partitions & (1u << (dp - 1u))) != 0u)) {
                     trouble_put(w, ALARM_TRBL_FAMILY_DEVICE, ALARM_TRBL_DEVICE_SUPERVISION,
                                 (uint16_t)(d + 1u), false);
                 }

@@ -44,6 +44,8 @@ typedef struct {
     bool walk_test;
     bool triggered;                /* audible/visible alarm active or occurred this armed period */
     bool exit_error;               /* current entry time follows an exit error */
+    bool quick_exit;               /* the exit time running restarted an armed partition's (quick
+                                    * exit, a momentary-exit zone): no arming of its own */
     bool trouble_unack;            /* trouble beeps pending acknowledgement */
     alarm_sound_t sounder;         /* continuous keypad pattern */
     alarm_pattern_t bell;          /* current bell pattern */
@@ -112,6 +114,7 @@ typedef struct {
     bool exit_fast_done;        /* status updated for the last 10 s of exit time */
     uint8_t exit_restarts;
     uint8_t exit_door;          /* 0 = untouched, 1 = open, 2 = opened and closed */
+    bool quick_exit;            /* this exit time restarted an armed partition's, not an arming */
     bool entry_exit_error;
     uint16_t entry_zone;
     uint8_t followers[ALARM_ZONE_BITMAP_BYTES]; /* zones that faulted during entry time */
@@ -188,12 +191,13 @@ typedef struct {
     uint32_t sys_trouble_mem;     /* restored, awaiting code+OFF */
     uint32_t dev_trouble;         /* devices missing (bit = device - 1) */
     uint32_t dev_trouble_mem;
-    uint32_t storage_owners;      /* owners holding ALARM_TRBL_STORAGE (bit = alarm_storage_owner_t);
-                                     runtime only, never persisted */
-    uint8_t default_codes;        /* ALARM_DEFAULT_CODE_* still in use */
-    bool program;                 /* installer mode */
-    bool arm_hold;                /* the platform holds arming (alarm_engine_hold_arming) */
-    uint8_t program_user;         /* installer who entered it, 0 = power-up recovery */
+    uint8_t dev_trouble_partition[ALARM_MAX_DEVICES]; /* scope captured when trouble starts */
+    uint32_t storage_owners; /* owners holding ALARM_TRBL_STORAGE (bit = alarm_storage_owner_t);
+                                runtime only, never persisted */
+    uint8_t default_codes;   /* ALARM_DEFAULT_CODE_* still in use */
+    bool program;            /* installer mode */
+    bool arm_hold;           /* the platform holds arming (alarm_engine_hold_arming) */
+    uint8_t program_user;    /* installer who entered it, 0 = power-up recovery */
     alarm_source_t program_src;
     alarm_ms_t program_until;     /* installer mode idle timeout */
     alarm_ms_t recovery_until;    /* end of the power-up recovery window, 0 = closed */
@@ -271,6 +275,10 @@ void alarm_engine_device_checkin(alarm_engine_t *e, uint8_t device, alarm_ms_t n
  * device's supervision_s. Idempotent: only a change emits. */
 void alarm_engine_device_reachable(alarm_engine_t *e, uint8_t device, bool reachable,
                                    alarm_ms_t now);
+/* LINK-007: external keypads supply their assigned home partition (0 means all).
+ * A restore retains the scope of the original trouble, even after reassignment. */
+void alarm_engine_device_reachable_at(alarm_engine_t *e, uint8_t device, uint8_t partition,
+                                      bool reachable, alarm_ms_t now);
 
 /* ALARM_CMD_WALK_TEST (docs/features/40 WALK-001/002/025): walk_op START and EXTEND, and a
  * TOGGLE that starts, need the installer, the system master or a partition master; a TOGGLE that
@@ -416,7 +424,8 @@ alarm_ms_t alarm_engine_recovery_left(const alarm_engine_t *e);
 
 /* Events the platform records through the engine so they are numbered, logged and reported
  * like engine events. Allowed: ALARM_EV_FACTORY_RESET (arg bit 0: event log erased too),
- * ALARM_EV_FIRMWARE_UPDATE (arg: alarm_fw_stage_t), ALARM_EV_BACKUP_MADE and
+ * ALARM_EV_FIRMWARE_UPDATE (arg: alarm_fw_stage_t; a keypad's stage only from src
+ * {ALARM_SRC_KEYPAD, its device number 1..ALARM_MAX_DEVICES}), ALARM_EV_BACKUP_MADE and
  * ALARM_EV_BACKUP_RESTORED and ALARM_EV_CLOCK_SET (arg 0; user = who set the clock). */
 alarm_result_t alarm_engine_platform_event(alarm_engine_t *e, alarm_event_type_t type,
                                            uint8_t arg, const alarm_source_t *src, uint8_t user,
@@ -431,7 +440,8 @@ alarm_result_t alarm_engine_platform_event(alarm_engine_t *e, alarm_event_type_t
  * 0), _JOIN_REFUSED (zone 0, arg 0, arg2 alarm_zb_refused_t), _CHANNEL (zone 0, arg 0, arg2 the
  * channel), _NETWORK_RESET (all 0) and _RADIO_RESTARTED (zone 0, arg 0, arg2 alarm_zb_restart_t);
  * and ALARM_EV_AUTOMATION_FAILED (docs/features/41 AUT-009: zone the triggering zone or 0, arg an
- * alarm_auto_fail_t, arg2 below ALARM_AUTO_ACT_LIMIT, src {ALARM_SRC_AUTOMATION, uid}).
+ * alarm_auto_fail_t, arg2 below ALARM_AUTO_ACT_LIMIT, src {ALARM_SRC_AUTOMATION, uid}); and
+ * ALARM_EV_FIRMWARE_UPDATE's ALARM_FW_KEYPAD_FAILED (zone 0, arg2 the link's why, not 0).
  * The two above go through here with zone 0 and arg2 0. */
 alarm_result_t alarm_engine_platform_event_ex(alarm_engine_t *e, alarm_event_type_t type,
                                               uint16_t zone, uint8_t arg, uint8_t arg2,

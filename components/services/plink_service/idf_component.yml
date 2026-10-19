@@ -1,0 +1,6 @@
+version: "0.1.0"
+description: "The panel link of the alarm panel: master and keypad panels over Wi-Fi"
+dependencies:
+  idf:
+    version: ">=6.1"
+  espressif/mdns: "^1.8.0"

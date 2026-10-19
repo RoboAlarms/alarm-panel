@@ -1,9 +1,20 @@
 # B023 · Pieces of earlier screens flicker behind the current one (display safety)
 
-**Status (2026-10-04): fixed in code for what firmware can reach, and tried on board 3. The panel
-is now reset, lit and put to sleep in the order its datasheet gives. A self-check on board 3 found
-the frame buffer right every time. Whether the glass is clean still needs a person's eyes (Left,
-1).** Backlog: BL-160. A power cut stays out of firmware's reach.
+**Status: reopened by hardware observation.** On the 7-inch panel, the screensaver's clock and
+parts of its background remain visible with flicker after repeated USB-flash/restart cycles,
+then clear after a few minutes. The 10.1-inch panel has not shown the same symptom in this test;
+its longer screensaver delay makes that an incomplete comparison. The existing buffer clearing,
+hardware reset and orderly software-shutdown fixes are still present. Earlier diagnostics found
+correct frame-buffer contents, but this recurrence needs a fresh diagnostic capture; normal
+frame timing alone does not establish that the glass is clean. Backlog: BL-160.
+
+The follow-up diagnostic build was visually clean after a USB flash and after an orderly
+console restart, including a screensaver wake. The new capture found no differing pixels,
+unpainted areas or late frames; the orderly restart logged the sleep handler before reset.
+The shared display source is identical to the original repository's implementation of
+`f313f1e`; no missing 10-inch-only fix was found. This does not close the recurrence:
+diagnostic rendering adds work and changes timing, and the normal build still needs the
+same visual comparison. No new display-driver fix is claimed.
 
 ## Symptom
 

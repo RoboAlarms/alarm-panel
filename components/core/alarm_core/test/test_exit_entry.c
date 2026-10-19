@@ -340,6 +340,37 @@ static void test_quick_exit_in_stay(void)
     EXPECT_EVENTS(&S, ALARM_EV_ALARM, 0);
 }
 
+/* LINK-028: the snapshot tells a quick exit's time (from the armed state) from an arming's,
+ * whose own re-entry restart stays the arming's; arming again clears it. */
+static void test_quick_exit_is_flagged(void)
+{
+    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, CODE_USER, ALARM_LEVEL_AWAY, 0));
+    TEST_ASSERT_FALSE(sim_status(&S, 1).quick_exit);
+    sim_advance(&S, SEC(5));
+    sim_fault(&S, Z_FRONT);
+    sim_advance(&S, SEC(3));
+    sim_restore(&S, Z_FRONT);
+    sim_advance(&S, SEC(12));
+    sim_fault(&S, Z_FRONT); /* came back in: the arming's exit time restarts */
+    EXPECT_EVENTS(&S, ALARM_EV_EXIT_RESTART, 1);
+    TEST_ASSERT_FALSE(sim_status(&S, 1).quick_exit);
+    sim_restore(&S, Z_FRONT);
+    EXPECT_RESULT(ALARM_OK, sim_disarm(&S, 1, CODE_USER));
+
+    sim_arm_stay_settled(&S, CODE_USER);
+    TEST_ASSERT_FALSE(sim_status(&S, 1).quick_exit);
+    EXPECT_RESULT(ALARM_OK, sim_simple(&S, ALARM_CMD_EXIT_RESTART, 1, ""));
+    EXPECT_STATE(&S, 1, ALARM_STATE_EXIT_DELAY);
+    TEST_ASSERT_TRUE(sim_status(&S, 1).quick_exit);
+    sim_advance(&S, SEC(61));
+    EXPECT_STATE(&S, 1, ALARM_STATE_ARMED);
+    TEST_ASSERT_FALSE(sim_status(&S, 1).quick_exit); /* only while its exit time runs */
+    EXPECT_RESULT(ALARM_OK, sim_disarm(&S, 1, CODE_USER));
+    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, CODE_USER, ALARM_LEVEL_AWAY, 0));
+    EXPECT_STATE(&S, 1, ALARM_STATE_EXIT_DELAY);
+    TEST_ASSERT_FALSE(sim_status(&S, 1).quick_exit);
+}
+
 /* CORE-EXIT-011 */
 static void test_quick_exit_not_in_away(void)
 {
@@ -443,6 +474,7 @@ int main(void)
     RUN_TEST(test_silent_exit_is_away_only);
     RUN_TEST(test_perimeter_during_exit_delay_is_instant);
     RUN_TEST(test_quick_exit_in_stay);
+    RUN_TEST(test_quick_exit_is_flagged);
     RUN_TEST(test_quick_exit_not_in_away);
     RUN_TEST(test_quick_exit_option);
     RUN_TEST(test_momentary_exit_zone);

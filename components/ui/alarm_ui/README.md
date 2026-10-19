@@ -1,7 +1,7 @@
 # alarm_ui
 
 **Tier:** ui (portable LVGL logic) · **Features:** [07 UI with LVGL Pro](../../../docs/features/07-UI-LVGL-Pro/README.md), [14 Configuration and installer programming](../../../docs/features/14-Configuration-and-Installer-Programming/README.md#who-can-change-what) (who can change what) ·
-**Tests:** the PC builds compile the same logic against the real engine: `pwsh tools/ui_preview.ps1` ([host/ui_preview](../../../host/ui_preview)) renders every screen to `build/ui_preview/shots` and fails when the scripted walk gets stuck or a check reports the wrong thing (it carries `UI-NNN` checks and runs in CI); `ui_words_test` (same folder) reads Home's headline, detail and note and checks `ui_text.c`'s tones, glyphs and zone card (`KPD-004`); `pwsh tools/ui_sim.ps1` ([host/ui_sim](../../../host/ui_sim)) is the interactive simulator. CI also runs `lvpro_gen.py --check`, `embed_image.py --check` and `embed_logo.py --check`. On a panel: the `display` / `display watch <s>` console commands and `tools/panelctl.py screen`.
+**Tests:** the PC builds compile the same logic against the real engine: `pwsh tools/ui_preview.ps1` ([host/ui_preview](../../../host/ui_preview)) renders every screen to `build/ui_preview/shots` and fails when the scripted walk gets stuck or a check reports the wrong thing (it carries `UI-NNN` checks and runs in CI); `ui_words_test` (same folder) reads Home's headline, detail and note and checks `ui_text.c`'s tones, glyphs and zone card (`KPD-004`); `prefs_smoke` (same folder) hands the running UI changes of its settings from elsewhere (`UI-046`); `pwsh tools/ui_sim.ps1` ([host/ui_sim](../../../host/ui_sim)) is the interactive simulator. CI also runs `lvpro_gen.py --check`, `embed_image.py --check` and `embed_logo.py --check`. On a panel: the `display` / `display watch <s>` console commands and `tools/panelctl.py screen`.
 
 The panel's touch UI: Home, the code pad, the zone, activity and trouble lists, the emergency
 buttons, the screen saver, Settings, installer mode and the first-boot setup. The logic in
@@ -17,8 +17,9 @@ and simulator. The contract is `components/core/ui_backend`; its ESP-IDF impleme
 | Module (`src/`) | What |
 |---|---|
 | `ui_app.c` | Start-up, the tick, snapshots, Home, the code pad, the lists, emergency buttons, the screen saver |
+| `ui_calls.c` | The calls that wait for another panel's answer (a keypad's commands, code checks, code change, device actions, partition switches): queued and run on the backend's task where it has `run_later`, the taps held meanwhile while the screen draws on (docs/features/11 LINK-054) |
 | `ui_forms.c` | Settings rows, sheets (text entry with the on-screen keyboard, choices, confirmation) |
-| `ui_settings.c` | Settings sections and who may open them, the page stack, display and sound, users, About |
+| `ui_settings.c` | Settings sections and who may open them, the page stack, display and sound (and a change of them from elsewhere: `prefs_remote_tick`, docs/features/07 UI-046 - in use, held, the voice's readiness, what the screen shows - the look, the screen-off and saver delays, the clock's format - at most once per 2 s), users, About |
 | `ui_installer.c` | Installer mode: options, zones, system name, installer and master codes, setup, factory reset |
 | `ui_sources.c` | Where a zone's sensor is: source picker, live terminal / learn list, source rows |
 | `ui_net.c` | Wi-Fi, address settings and the connection check, date and time; the setup's network steps |
@@ -26,7 +27,8 @@ and simulator. The contract is `components/core/ui_backend`; its ESP-IDF impleme
 | `ui_update.c` / `ui_storage.c` | About > Software update; About > SD card |
 | `ui_zwave.c` | Installer > Z-Wave (docs/features/36 screens.md): the installer menu's row and the Z-Wave page - the radio, the devices, the network's settings; a page table the add, device, remove, region and radio pages slot into (Z7b). Only with `ALARM_UI_WITH_ZWAVE` |
 | `ui_walk.c` | The walk test (docs/features/40): Settings > Walk test (start it, follow it, its list of zones, the summary after it), Home's card while one runs (who started it when that was elsewhere, the end warning), the status bar's walk test banner, the installer menu's Walk test |
-| `ui_wizard.c`, `ui_tz.c` | First-boot setup; the time zone table |
+| `ui_wizard.c`, `ui_tz.c` | First-boot setup (with the panel link: the role, and a keypad's Wi-Fi and pairing steps); the time zone table |
+| `ui_link.c` | The panel link (docs/features/11, BL-048): Installer > Keypads and devices' keypads on Wi-Fi (adding one with the code compared on both screens, a keypad's page, removing it), and a panel in the keypad role: Home while it connects, without the alarm panel or not paired, Emergency's words, About's rows, Make it a stand-alone panel, the home partition. Read through `ui_backend_t.link_*`; nothing shows without them |
 | `ui_saver.c` | The screen saver picture, decoded once with LVGL's TJPGD |
 | `ui_status.c` (`include/ui_status.h`) | The status screen a board shows when the full UI doesn't fit in its RAM: state, troubles, clock, a ring under the finger; operates nothing |
 | `ui_text.c` / `ui_text.h` | Icons and tones, the zone card, the words only this screen uses; wraps `notify`'s sentences |

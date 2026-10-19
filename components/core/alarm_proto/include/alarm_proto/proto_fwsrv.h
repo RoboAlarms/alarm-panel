@@ -61,18 +61,33 @@ typedef struct {
     size_t peripheral_count;
     const char *const *languages;   /* BCP 47 locales it wants packs for */
     size_t language_count;
+    /* A keypad's check only: the version of the one release its master ordered, the version the
+     * master runs (docs/features/11 LINK-029, LINK-031; the server's FWS-028). NULL or "" leaves
+     * it out, and the check is as it always was. */
+    const char *want;
 } proto_fwsrv_facts_t;
 
-/* The request body of POST /api/v1/check, as one JSON object. */
+/* The request body of POST /api/v1/check, as one JSON object. "want" comes last, and only when
+ * facts->want is set: never "" (the server takes text that is no version as bad input, FWS-028). */
 void proto_fwsrv_check_request(pj_writer_t *w, const proto_fwsrv_facts_t *facts);
 
+/* Appended only, never renumbered. */
 typedef enum {
     PROTO_FWSRV_UP_TO_DATE = 0,
     PROTO_FWSRV_UPDATE,          /* "update": true */
     PROTO_FWSRV_UNKNOWN_DEVICE,  /* its catalogue doesn't have this board, chip or build */
     PROTO_FWSRV_STEPPING_STONE,  /* newer releases exist, none it may install yet */
     PROTO_FWSRV_HELD_BACK,       /* newer releases exist, their hardware rules leave it out */
-    PROTO_FWSRV_OTHER,           /* a reason this panel doesn't know: treated as up to date */
+    PROTO_FWSRV_OTHER,           /* a reason this panel doesn't know, on a check without want:
+                                    treated as up to date */
+    /* On a check with want only (FWS-028); without want these words read as OTHER, as before. */
+    PROTO_FWSRV_UNKNOWN_VERSION, /* 6, "unknown_version": the server has no release of that version
+                                    for this panel's chip revision and project (or want names no
+                                    release): refuses nothing */
+    PROTO_FWSRV_NOT_OFFERED,     /* 7, "not_offered": that release is withdrawn, or on a channel
+                                    this panel's channel doesn't see: a refusal */
+    PROTO_FWSRV_REFUSED,         /* 8: a reason this panel doesn't know, on a check with want: a
+                                    refusal ("a reason added later refuses", FWS-028) */
 } proto_fwsrv_reason_t;
 
 typedef struct {
@@ -95,6 +110,48 @@ typedef struct {
  * valid "version" is malformed too. */
 alarm_result_t proto_fwsrv_check_answer(const char *json, size_t len, const char *base_url,
                                         proto_fwsrv_answer_t *out);
+
+/* The answer to a check that carried want (facts->want; NULL or "": none, and this is
+ * proto_fwsrv_check_answer byte for byte). With want, "unknown_version" and "not_offered" are
+ * read, and a reason this panel doesn't know (or one too long to be one it knows) is
+ * PROTO_FWSRV_REFUSED, never up to date. A missing or null reason stays UP_TO_DATE. An offer is
+ * read whatever its version: proto_fwsrv_check_why says whether it is the one named. */
+alarm_result_t proto_fwsrv_check_answer_want(const char *json, size_t len, const char *base_url,
+                                             const char *want, proto_fwsrv_answer_t *out);
+
+/* A check's outcome in the panel link's why numbers (docs/features/11 "Updates through the link",
+ * the why table: FW_STATE's why, its probe section's why). The same numbers as panel_link's
+ * PLINK_FW_WHY_* (plink_msg.h), on the wire and never renumbered; 0 and 1-19 only, the classes a
+ * check can end in. A reader takes a value it doesn't know by its decade: one in 10-19 blocks. */
+typedef enum {
+    PROTO_FWSRV_WHY_OK = 0,               /* the server offers exactly want */
+    /* 1-9: the server wasn't reached (the device's HTTPS layer sets 1-4) */
+    PROTO_FWSRV_WHY_NO_NETWORK = 1,
+    PROTO_FWSRV_WHY_NO_LOOKUP = 2,
+    PROTO_FWSRV_WHY_NO_CONNECT = 3,
+    PROTO_FWSRV_WHY_SERVER_ERROR = 4,
+    PROTO_FWSRV_WHY_NOT_A_SERVER = 5,     /* an answer that isn't a check answer */
+    /* 10-19: the server's answer */
+    PROTO_FWSRV_WHY_UNKNOWN_DEVICE = 10,  /* refuses */
+    PROTO_FWSRV_WHY_HELD_BACK = 11,       /* refuses */
+    PROTO_FWSRV_WHY_STEPPING_STONE = 12,  /* refuses */
+    PROTO_FWSRV_WHY_OTHER_VERSION = 13,   /* offers a version that isn't want (a server that
+                                             ignores want offers its newest) */
+    PROTO_FWSRV_WHY_UP_TO_DATE = 14,      /* nothing newer than the version it runs */
+    PROTO_FWSRV_WHY_UNKNOWN_VERSION = 15, /* no release of want for this panel: refuses nothing */
+    PROTO_FWSRV_WHY_NOT_OFFERED = 16,     /* refuses */
+    PROTO_FWSRV_WHY_REFUSED = 17,         /* a reason this panel doesn't know, on a check with
+                                             want: refuses */
+} proto_fwsrv_why_t;
+
+/* The why of a check that carried want (LINK-031: FETCH on OK, the relay on 13, 14 and 15,
+ * blocked on 10-12 and 16-19). parsed: what proto_fwsrv_check_answer_want returned for a, with
+ * the same want; anything but ALARM_OK, or a NULL a, is NOT_A_SERVER. An offer is OK only when
+ * its version is want exactly, byte for byte ("0.9.0+local" is not "0.9.0"), else OTHER_VERSION.
+ * A reason this panel doesn't know is REFUSED with want, even read without it. NULL or "" want
+ * (no check with want): every offer is OTHER_VERSION and an unknown reason UP_TO_DATE. */
+proto_fwsrv_why_t proto_fwsrv_check_why(alarm_result_t parsed, const proto_fwsrv_answer_t *a,
+                                        const char *want);
 
 /* The language packs in a check answer or in a GET /api/v1/languages answer:
  * the same rules as proto_fw_manifest_languages. SIZE_MAX: not an answer of either kind. */

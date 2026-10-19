@@ -7,12 +7,14 @@
  * components/core/event_log ring on a RAM flash; Wi-Fi, time zone and preferences are simulated.
  */
 #include "host_panel.h"
+#include "host_link_demo.h"
 #include "host_zigbee_demo.h"
 #include "host_zigbee_real.h"
 #include "i18n/i18n.h"
 #include "notify/notify_auto.h"
 #include "ui_backend/ui_check_words.h"
 #include "ui_backend/ui_dev_model.h"
+#include "ui_backend/ui_prefs.h"
 #include "ui_backend/ui_voice.h"
 #include "annunciator/annunciator.h"
 #include "sounder/sounder_mix.h"
@@ -2552,19 +2554,29 @@ static bool zb_demo_allowed(void)
     return alarm_engine_program_active(&H.eng) && all_disarmed();
 }
 
+/* The panel link's demo backend (host_link_demo.h): the pretend panel's clock. */
+static int64_t link_demo_epoch(void)
+{
+    return H.epoch_at_start == 0 ? 0 : H.epoch_at_start + (int64_t)H.now;
+}
+
 static void storage_reset(void);
 static void ha_link_up(bool up);
 static bool host_panel_ha_paired_and_on(void);
 static void zb_demo_hooks(void);
 
+static void prefs_remote_reset(void);
+
 void host_panel_init(int64_t epoch_ms_at_start)
 {
     memset(&H, 0, sizeof(H));
+    prefs_remote_reset(); /* no change from elsewhere waiting */
     storage_reset();
     devices_reset(epoch_ms_at_start);
     H.epoch_at_start = epoch_ms_at_start;
     vx_init();
     host_zigbee_demo_init(zb_demo_allowed); /* Installer > Zigbee (BL-144), interim */
+    host_link_demo_init(zb_demo_allowed, link_demo_epoch); /* the panel link (BL-048), off */
     zb_demo_hooks();
     H.now = 5000;
     H.config_seq = 1;
@@ -2858,6 +2870,7 @@ static void mqtt_step(void)
 void host_panel_advance(alarm_ms_t ms)
 {
     host_zigbee_demo_advance((uint32_t)ms);
+    host_link_demo_advance((uint32_t)ms);
     const alarm_ms_t end = H.now + ms;
     while (H.now < end) { /* the hub's deadlines (wired polling, grace times) in order */
         uint64_t next = zone_hub_next_deadline(&H.hub, H.now);
@@ -3306,6 +3319,7 @@ static bool be_clock_set(void *ctx, int64_t epoch_ms, uint8_t user, char *why, s
  * outlives host_panel_init(), as the panel's store outlives the engine restarting. */
 static ui_options_t s_saved_options;
 static bool s_options_saved;
+static unsigned s_options_saves;
 static void VP_set_options(const ui_options_t *opt); /* the voice's, below */
 
 static void be_save_options(void *ctx, const ui_options_t *opt)
@@ -3313,6 +3327,7 @@ static void be_save_options(void *ctx, const ui_options_t *opt)
     (void)ctx;
     s_saved_options = *opt;
     s_options_saved = true;
+    s_options_saves++;
     VP_set_options(opt);
 }
 
@@ -3322,6 +3337,88 @@ bool host_panel_saved_options(ui_options_t *out)
         *out = s_saved_options;
     }
     return s_options_saved;
+}
+
+unsigned host_panel_options_saves(void)
+{
+    return s_options_saves;
+}
+
+/* A change of the settings from elsewhere (docs/features/07 UI-046): the panel's mailbox
+ * (platform_esp's panel_prefs_remote_*) on one thread and the simulated clock - the same
+ * bookkeeping (ui_prefs.h's box), the same conversion to the screen's patch (ui_port_esp's
+ * prefs_remote_take), the same BUSY for a patch not taken within 3 s. Emptied by
+ * host_panel_init(). */
+static struct {
+    ui_prefs_box_t box;
+    proto_prefs_values_t patch;
+    host_panel_prefs_done_fn done;
+    void *ctx;
+} s_prefs_remote;
+
+uint32_t host_panel_prefs_submit(const proto_prefs_values_t *patch, host_panel_prefs_done_fn done,
+                                 void *ctx)
+{
+    if (patch == NULL || done == NULL) {
+        return 0u;
+    }
+    const uint32_t ticket = ui_prefs_box_submit(&s_prefs_remote.box, (uint32_t)H.now);
+    if (ticket != 0u) {
+        s_prefs_remote.patch = *patch;
+        s_prefs_remote.done = done;
+        s_prefs_remote.ctx = ctx;
+    }
+    return ticket;
+}
+
+bool host_panel_prefs_cancel(uint32_t ticket)
+{
+    return ui_prefs_box_cancel(&s_prefs_remote.box, ticket);
+}
+
+static bool be_prefs_remote_take(void *ctx, ui_prefs_patch_t *out, uint32_t *ticket)
+{
+    (void)ctx;
+    uint32_t t = 0u;
+    const ui_prefs_take_t r = ui_prefs_box_take(&s_prefs_remote.box, (uint32_t)H.now, &t);
+    if (r == UI_PREFS_TAKE_EXPIRED) {
+        uint8_t why[PROTO_PREFS_F_LAST];
+        memset(why, 0, sizeof(why));
+        for (unsigned id = 1u; id <= PROTO_PREFS_F_LAST; id++) {
+            if ((s_prefs_remote.patch.have & PROTO_PREFS_BIT(id)) != 0u) {
+                why[id - 1u] = (uint8_t)PROTO_PREFS_WHY_BUSY;
+            }
+        }
+        s_prefs_remote.done(s_prefs_remote.ctx, t, why);
+        return false;
+    }
+    if (r != UI_PREFS_TAKE_OK) {
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    for (unsigned id = 1u; id <= UI_PREFS_F_LAST; id++) {
+        uint32_t x = 0u;
+        if (proto_prefs_get(&s_prefs_remote.patch, id, &x)) {
+            (void)ui_prefs_put(out, id, x);
+        }
+    }
+    *ticket = t;
+    return true;
+}
+
+static void be_prefs_remote_done(void *ctx, uint32_t ticket, const uint8_t why[UI_PREFS_F_LAST])
+{
+    (void)ctx;
+    if (ui_prefs_box_done(&s_prefs_remote.box, ticket)) {
+        s_prefs_remote.done(s_prefs_remote.ctx, ticket, why);
+    }
+}
+
+static void prefs_remote_reset(void)
+{
+    const uint32_t last = s_prefs_remote.box.last; /* tickets go on counting */
+    memset(&s_prefs_remote, 0, sizeof(s_prefs_remote));
+    s_prefs_remote.box.last = last;
 }
 
 /* The backlight the UI asked for (UI-009, UI-043): the panel's PWM here is just a number, which
@@ -4254,6 +4351,16 @@ void host_panel_log_loss(uint32_t records, uint32_t reports)
 {
     s_log_lost = records;
     s_log_lost_reports = reports;
+}
+
+void host_panel_fw_event(uint8_t stage, uint8_t keypad, uint8_t why)
+{
+    const alarm_source_t src = keypad != 0u
+                                   ? (alarm_source_t){.kind = ALARM_SRC_KEYPAD, .id = keypad}
+                                   : (alarm_source_t){.kind = ALARM_SRC_SYSTEM, .id = 0};
+    (void)alarm_engine_platform_event_ex(&H.eng, ALARM_EV_FIRMWARE_UPDATE, 0, stage, why, &src, 0,
+                                         H.now);
+    H.dirty = true;
 }
 
 static void be_log_loss(void *ctx, uint32_t *records, uint32_t *reports)
@@ -6146,6 +6253,28 @@ void host_panel_devices_range_thermostat(bool on)
     t->modes = UI_DEV_MODE_OFF | UI_DEV_MODE_HEAT | UI_DEV_MODE_COOL | UI_DEV_MODE_AUTO;
 }
 
+void host_panel_devices_unreachable(bool on, int64_t since_ms)
+{
+    static ui_dev_t was[DEV_WORLD_MAX];
+    static size_t was_n;
+    static bool saved;
+    if (on && !saved) {
+        memcpy(was, s_dev.dev, sizeof(was));
+        was_n = s_dev.n;
+        saved = true;
+        for (size_t i = 0; i < s_dev.n; i++) {
+            s_dev.dev[i].status = UI_DEV_OFFLINE;
+            s_dev.dev[i].action = ACT_NONE;
+            s_dev.dev[i].unsure = 0u;
+            s_dev.dev[i].since_ms = since_ms;
+        }
+    } else if (!on && saved) {
+        memcpy(s_dev.dev, was, sizeof(was));
+        s_dev.n = was_n;
+        saved = false;
+    }
+}
+
 /* Takes a device out of the world by its ref, if it is there. */
 static void dev_remove(const char *ref)
 {
@@ -7603,6 +7732,8 @@ void host_panel_backend(ui_backend_t *out)
     out->clock_info = be_clock_info;
     out->clock_set = be_clock_set;
     out->save_options = be_save_options;
+    out->prefs_remote_take = be_prefs_remote_take; /* as ui_port_esp_backend, in both roles */
+    out->prefs_remote_done = be_prefs_remote_done;
     out->backlight = be_backlight;
     /* The rest follows the board's options (host_features.h), as the firmware's backend
      * does: remote access and browser sign-in come with the Panel Manager
@@ -7684,6 +7815,9 @@ void host_panel_backend(ui_backend_t *out)
     if (CONFIG_ALARM_FEATURE_VOICE) {
         voice_load(); /* its log line once, at start */
     }
+    /* link_*: the panel link's demo model (BL-048), off (answering as a firmware that hasn't said)
+     * until the walk turns it on */
+    host_link_demo_backend(out);
     /* zb_*: the real Zigbee or the demo model, as host_panel_zigbee_use_real() chose */
     host_zigbee_demo_backend(&s_zb_demo_be);
     host_zigbee_real_backend(&s_zb_real_be);

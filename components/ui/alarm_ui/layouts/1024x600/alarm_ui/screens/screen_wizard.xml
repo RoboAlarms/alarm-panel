@@ -1,5 +1,6 @@
 <screen permanent="true">
-	<!-- First-boot setup: welcome, Wi-Fi, time zone, factory codes, system name, done. The
+	<!-- First-boot setup: welcome, (the role,) Wi-Fi, time zone, factory codes, system name, done;
+	     a keypad's: welcome, the role, Wi-Fi, pairing, done (BL-048). The
 	     left side says where you are and why; the right side holds the step (lists filled from
 	     C, or the code pad) and the buttons. 1024 x 600. -->
 	<view extends="lv_obj" scrollable="false">
@@ -27,10 +28,18 @@
 					<style name="style_step_on" selector="checked" />
 					<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="4" />
 				</box>
+				<!-- a keypad's setup counts 4 steps, an alarm panel's 5, or 6 with the role (BL-048) -->
 				<box>
 					<style name="style_step" />
 					<style name="style_step_on" selector="checked" />
 					<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="5" />
+					<bind_flag_if_lt subject="subject_wiz_steps" flag="hidden" ref_value="5" />
+				</box>
+				<box>
+					<style name="style_step" />
+					<style name="style_step_on" selector="checked" />
+					<bind_state_if_ge subject="subject_wiz_step" state="checked" ref_value="6" />
+					<bind_flag_if_lt subject="subject_wiz_steps" flag="hidden" ref_value="6" />
 				</box>
 			</box>
 			<box name="wiz_disk" width="168" height="168" style_margin_top="#space_xxl" style_radius="#radius_full" style_bg_color="#color_blue" style_bg_opa="#opa_tint">

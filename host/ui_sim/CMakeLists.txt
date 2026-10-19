@@ -69,7 +69,7 @@ target_link_libraries(shot_png PUBLIC lvgl)
 # Zigbee: the panel's real zbz_panel over the fake radio and its virtual devices
 # (host_zigbee_real.c, BL-143 ZB-M6) by default; the demo model with the environment variable
 # ALARM_SIM_ZIGBEE_DEMO=1 (sim_main.c).
-set(ZB_HOST ${PREVIEW}/host_zigbee_demo.c ${PREVIEW}/host_zigbee_real.c)
+set(ZB_HOST ${PREVIEW}/host_zigbee_demo.c ${PREVIEW}/host_zigbee_real.c ${PREVIEW}/host_link_demo.c)
 add_executable(ui_sim sim_main.c sim_audio.c ${PREVIEW}/host_panel.c ${ZB_HOST})
 target_include_directories(ui_sim PRIVATE ${CMAKE_CURRENT_LIST_DIR} ${PREVIEW})
 target_link_libraries(ui_sim PRIVATE alarm_ui alarm_proto automation sounder shot_png winmm zigbee_zones_fake)

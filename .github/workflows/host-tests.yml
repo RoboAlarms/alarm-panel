@@ -112,6 +112,8 @@ jobs:
         run: ./build/ui_preview/ui_words_test
       - name: The simulator runs the automations, Harbor House's seeded (docs/features/41)
         run: ./build/ui_preview/auto_smoke
+      - name: A setting changed from elsewhere goes through the screen (UI-046)
+        run: ./build/ui_preview/prefs_smoke
       # Z-Wave (docs/features/36) is an option of the P4 build (the manifest leaves it out by
       # default), so the walk above has no Z-Wave pages; this builds them with Linux GCC and walks
       # them against the simulated radio.

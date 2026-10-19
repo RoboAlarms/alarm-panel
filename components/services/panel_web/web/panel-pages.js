@@ -2826,40 +2826,132 @@ const deviceSpecs = () => [
   {name: 'supervision_s', label: t('Check-in supervision'), type: 'number', unit: t('s'), help: t('0: not supervised.')},
 ];
 async function partitionsPage() {
-  const alarm = await loadAlarm();
-  const devices = alarm.devices;
-  const editable = isInstaller() && !state.program;
+  const [alarm, links] = await Promise.all([loadAlarm(), api('keypads')]);
+  const parts = alarm.partitions.filter(p => p.enabled), paired = links.keypads;
+  const devices = alarm.devices.filter(d => d.enabled && !paired.some(k => k.number === d.number));
+  const editable = isInstaller() && !state.program && !state.locked && !links.busy;
+  const partName = n => parts.find(p => p.number === n)?.name || t('All partitions');
+  const removeButton = disabled => `<button type="button" class="danger" id="remove-entry" style="margin-right:auto"${disabled ? ' disabled' : ''}>${ht('Remove')}</button>`;
+  const back = () => go('partitions');
+  const summary = k => !k.allowed ? t('Locked to {0}', partName(k.home)) : k.never ? t('Default: {0} · No automatic return', partName(k.home)) : t('Default: {0} · Returns after {1} seconds inactive', partName(k.home), k.seconds);
+  const local = links.local ? {...links.local, number: 0, name: links.local.name || t('Panel keypad'), online: true} : null;
+  const keypads = [...(local ? [local] : []), ...paired];
+  const freeDevice = alarm.devices.find(d => !d.enabled && !paired.some(k => k.number === d.number));
+  const freePart = alarm.partitions.find(p => !p.enabled);
+  function remove(title, run, password = false) {
+    review({title: t('Remove {0}?', title), confirm: t('Remove'), danger: true, password, done: t('Removed.'), run, after: back});
+  }
+  function partition(p, isNew = false) {
+    const assigned = keypads.some(k => k.home === p.number) || devices.some(d => d.partition === p.number) || alarm.zones.some(z => z.type && z.partition === p.number);
+    const reason = !isNew && (parts.length === 1 ? t('The last partition cannot be removed.') : assigned ? t('Move assigned devices and zones before removing this partition.') : '');
+    editDialog({title: isNew ? t('Add partition') : p.name, intro: reason,
+      specs: withSchema(partitionSpecs().filter(s => s.name !== 'enabled'), alarm.schema.partitions, false),
+      values: isNew ? {} : p, initial: p, readOnly: !editable, extraButtons: isNew ? '' : removeButton(!editable || !!reason),
+      bindExtra(form) { const b = form.querySelector('#remove-entry'); if (b) b.onclick = () => remove(p.name, () => applyAlarm({partitions: [{number: p.number, enabled: false}]})); },
+      reviewOptions: {title: t('Save partition'), confirm: t('Apply'), done: t('Partition saved.'), after: back,
+        run: values => applyAlarm({partitions: [{...p, ...values, enabled: true}]})}});
+  }
+  function device(d, isNew = false) {
+    const specs = withSchema(deviceSpecs().filter(s => s.name !== 'enabled').map(s => s.name === 'partition' ? {...s, options: partitionChoices(alarm, true)} : s), alarm.schema.devices, false);
+    editDialog({title: isNew ? t('Add device') : d.name, specs, values: isNew ? {} : d, initial: d, readOnly: !editable,
+      extraButtons: isNew ? '' : removeButton(!editable),
+      bindExtra(form) { const b = form.querySelector('#remove-entry'); if (b) b.onclick = () => remove(d.name, () => applyAlarm({devices: [{number: d.number, enabled: false}]})); },
+      reviewOptions: {title: t('Save device'), confirm: t('Apply'), done: t('Device saved.'), after: back,
+        run: values => applyAlarm({devices: [{...d, ...values, enabled: true}]})}});
+  }
+  function keypad(k) {
+    const canEdit = editable && (k.online || k.waiting);
+    const specs = [
+      {name: 'name', label: t('Name'), type: 'text', required: true, maxLength: 47},
+      {name: 'home', label: t('Default partition'), type: 'select', numeric: true, options: partitionChoices(alarm)},
+      {name: 'allowed', label: t('Allow partition switching'), type: 'switch', help: t('Off locks this keypad to its default partition.')},
+      {name: 'seconds', label: t('Return after inactivity'), type: 'number', min: 1, max: 3600, step: 1, unit: t('seconds'),
+        help: t('Default: 30 seconds. Using any screen restarts the inactivity timer.'), showIf: v => v.allowed},
+      {name: 'never', label: t('Never return automatically'), type: 'switch', showIf: v => v.allowed},
+    ];
+    editDialog({title: k.name, intro: !k.number ? t('The built-in keypad cannot be removed.') : '', specs, values: k, readOnly: !canEdit,
+      extraButtons: removeButton(!canEdit || !k.number),
+      bindExtra(form) {
+        form.querySelector('#remove-entry').onclick = () => remove(k.name, me_password => api('keypads', {op: 'remove', device: k.number, me_password}), true);
+        const update = () => { const input = form.querySelector('[name="seconds"]'), never = form.querySelector('[name="never"]').checked;
+          input.disabled = !canEdit || never; input.closest('[data-field]').classList.toggle('keypad-return-disabled', never); };
+        form.addEventListener('change', update); update();
+      },
+      reviewOptions: {title: t('Save keypad settings'), password: true, done: t('Device saved.'), after: back,
+        run: (values, me_password) => api('keypads', {op: 'save', ...k, ...values, device: k.number, me_password})}});
+  }
+  function addDevice() {
+    openDialog(`<div class="dialog-head"><h2 id="dialog-title">${ht('Add device')}</h2></div><div class="dialog-body"><div class="enroll-choices">
+      <button id="add-keypad"${!links.available || paired.length >= links.capacity || !alarm.devices.some(d => d.number <= links.capacity && !d.enabled && !paired.some(k => k.number === d.number)) ? ' disabled' : ''}>${ht('Keypad')}</button>
+      <button id="add-expander">${ht('Expander')}</button><button id="add-receiver">${ht('Receiver')}</button></div></div>
+      <div class="dialog-foot"><button id="dialog-cancel">${ht('Cancel')}</button></div>`);
+    $('#dialog-cancel').onclick = closeDialog;
+    $('#add-keypad').onclick = () => keypadEnrollment();
+    $('#add-expander').onclick = () => device({...freeDevice, name: t('Expander'), partition: parts[0].number}, true);
+    $('#add-receiver').onclick = () => device({...freeDevice, name: t('Receiver'), partition: parts[0].number}, true);
+  }
   return {
-    html: pageHead(t('Partitions and devices'), t('Areas that arm separately, their entry and exit times, and supervised keypads and expanders.')) +
-      installerNotice() +
-      `<section class="section"><div class="section-head"><h2>${ht('Partitions')}</h2></div><div class="card"><ul class="list clickable">
-      ${alarm.partitions.map(p => `<li data-partition="${p.number}" tabindex="0"><div class="main"><strong>${esc(p.name || tc('default partition name', 'Partition {0}', p.number))}</strong>
-        <span>${p.enabled ? ht('Exit {0} · entry {1} / {2}', fmtDuration(p.exit_delay_s), fmtDuration(p.entry_delay1_s), fmtDuration(p.entry_delay2_s)) : ht('Not in use')}</span></div>
-        ${p.enabled ? tag(t('In use'), 'good') : tag(t('Off'))}</li>`).join('')}</ul></div></section>
-      <section class="section"><div class="section-head"><div><h2>${ht('Devices')}</h2><p>${ht('Keypads, expanders and receivers the panel supervises.')}</p></div></div>
-      <div class="card"><ul class="list clickable">${devices.map(d => `<li data-device="${d.number}" tabindex="0"><div class="main">
-        <strong>${esc(d.name || t('Device {0}', d.number))}</strong><span>${d.enabled ? (d.supervision_s ? ht('Checked every {0}', fmtDuration(d.supervision_s)) : ht('Not supervised')) : ht('Not in use')}</span></div>
-        ${d.enabled ? tag(t('In use'), 'good') : ''}</li>`).join('')}</ul></div></section>`,
+    html: pageHead(t('Partitions and devices'), t('Areas that arm separately and the devices assigned to them.')) + installerNotice() +
+      `<section class="section"><div class="section-head"><h2>${ht('Partitions')}</h2><button id="add-partition"${!editable || !freePart ? ' disabled' : ''}>${ht('Add partition')}</button></div>
+      <div class="card"><ul class="list clickable">${parts.map(p => `<li data-partition="${p.number}" tabindex="0"><div class="main"><strong>${esc(p.name)}</strong><span>${ht('Exit {0} · entry {1} / {2}', fmtDuration(p.exit_delay_s), fmtDuration(p.entry_delay1_s), fmtDuration(p.entry_delay2_s))}</span></div><button>${ht('Edit')}</button></li>`).join('')}</ul></div></section>
+      <section class="section"><div class="section-head"><h2>${ht('Devices')}</h2><button id="add-device"${!editable || !freeDevice ? ' disabled' : ''}>${ht('Add device')}</button></div>
+      <div class="card"><ul class="list clickable">${keypads.map(k => `<li data-keypad="${k.number}" tabindex="0"><div class="main"><strong>${esc(k.name)}</strong><span>${esc(summary(k))}</span></div>${k.number ? tag(k.online ? t('Online') : k.waiting ? t('Waiting for status') : t('Not responding'), k.online ? 'good' : 'warn') : ''}<button>${ht('Edit')}</button></li>`).join('')}
+      ${devices.map(d => `<li data-device="${d.number}" tabindex="0"><div class="main"><strong>${esc(d.name || t('Device {0}', d.number))}</strong><span>${esc(partName(d.partition))}</span></div><button>${ht('Edit')}</button></li>`).join('')}
+      ${!keypads.length && !devices.length ? `<li class="empty">${ht('No devices added.')}</li>` : ''}</ul></div></section>` +
+      (links.enrollment && links.enrollment.state > 0 ? `<button id="resume-pairing">${ht('View keypad enrollment')}</button>` : ''),
     bind() {
-      const wire = (selector, open) => $$(selector).forEach(li => {
-        li.onclick = open.bind(null, li);
-        li.onkeydown = e => { if (e.key === 'Enter') open(li); };
-      });
-      wire('[data-partition]', li => {
-        const number = Number(li.dataset.partition), p = alarm.partitions[number - 1];
-        editDialog({title: p.name || tc('default partition name', 'Partition {0}', number), specs: withSchema(partitionSpecs(), alarm.schema.partitions), values: p,
-          readOnly: !editable, reviewOptions: {title: t('Save partition'), confirm: t('Apply'), done: t('Partition saved.'),
-            run: values => applyAlarm({partitions: [{number, ...values}]})}});
-      });
-      wire('[data-device]', li => {
-        const number = Number(li.dataset.device), d = devices[number - 1];
-        const specs = withSchema(deviceSpecs().map(s => s.name === 'partition' ? {...s, options: partitionChoices(alarm, true)} : s), alarm.schema.devices);
-        editDialog({title: d.name || t('Device {0}', number), specs, values: d, readOnly: !editable,
-          reviewOptions: {title: t('Save device'), confirm: t('Apply'), done: t('Device saved.'),
-            run: values => applyAlarm({devices: [{number, ...values}]})}});
-      });
+      const wire = (kind, fn) => $$(`[data-${kind}]`).forEach(li => { li.onclick = () => fn(Number(li.dataset[kind])); li.onkeydown = e => { if (e.key === 'Enter') fn(Number(li.dataset[kind])); }; });
+      wire('partition', n => partition(parts.find(p => p.number === n)));
+      wire('device', n => device(devices.find(d => d.number === n)));
+      wire('keypad', n => keypad(keypads.find(k => k.number === n)));
+      $('#add-partition').onclick = () => partition({...freePart, name: tc('default partition name', 'Partition {0}', freePart.number)}, true);
+      $('#add-device').onclick = addDevice;
+      if ($('#resume-pairing')) $('#resume-pairing').onclick = () => keypadEnrollment(links.enrollment);
     },
   };
+}
+
+// Server owns the enrollment. Polling reads facts; it never manufactures keypad events.
+function keypadEnrollment(resume = null) {
+  let enrollment = resume, stopped = false, timer = null;
+  const id = resume?.attempt || Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
+  const dialog = $('#dialog');
+  function cleanup() { stopped = true; clearTimeout(timer); dialog.removeEventListener('close', cleanup); }
+  dialog.addEventListener('close', cleanup);
+  async function send(body) {
+    try { await api('keypads', {attempt: id, me_password: dialogPassword()?.value || '', ...body}); await poll(); }
+    catch (error) { if (!stopped) { $('#dialog-error').textContent = error.message; if (!askPasswordAgain(error)) timer = setTimeout(poll, 1500); } }
+  }
+  function draw() {
+    const s = enrollment?.state || 0, done = s === 5, failed = s === 6;
+    const title = done ? t('Keypad enrolled') : failed ? t('Pairing ended') : s === 3 ? t('Compare the codes') : s === 4 ? t('Confirm on the keypad') : s ? t('Waiting for a keypad') : t('Add a keypad');
+    const body = done ? `<p>${ht('Choose its name and partition next.')}</p>` : failed ? `<p>${enrollment.fail === 3 ? ht('The codes did not match. Start pairing again.') : enrollment.fail === 7 ? ht('More than one keypad tried to pair. Try one at a time.') : ht('Pairing ended or expired. Check the device list before trying again.')}</p>` : s === 3 || s === 4 ?
+      `<p>${s === 3 ? ht('Does this code match your keypad?') : ht('Confirmed here. Tap Confirm on the keypad to finish.')}</p><div class="enroll-code">${esc(enrollment.peer)}<strong>${esc(enrollment.code)}</strong></div>` : s ?
+      `<p>${ht('Tap Pair on the new keypad. Keep this window open.')}</p><p class="muted">${ht('Pairing window: 2 minutes')}</p>` :
+      `<p>${ht('Prepare the new keypad:')}</p><ol class="enroll-steps"><li>${ht('Choose Keypad in its setup.')}</li><li>${ht('Tap Find panel. If out of range, tap Select Wi-Fi.')}</li></ol>`;
+    openDialog(`<div class="dialog-head"><h2 id="dialog-title">${esc(title)}</h2></div><div class="dialog-body enroll-body">${body}${!s && passwordDue() ? passwordField() : ''}</div>
+      <p class="dialog-error" id="dialog-error" role="alert"></p><div class="dialog-foot enroll-foot"><button id="enroll-cancel">${done || failed ? ht('Close') : ht('Cancel')}</button>
+      ${!s ? `<button class="primary" id="enroll-start">${ht('Start pairing')}</button>` : s === 3 ? `<button id="enroll-no">${ht('No match')}</button><button class="primary" id="enroll-yes">${ht('Matches')}</button>` : done ? `<button class="primary" id="enroll-setup">${ht('Set up keypad')}</button>` : ''}</div>`);
+    $('#enroll-cancel').onclick = async () => { if (s && !done && !failed) { try { await api('keypads', {op: 'cancel', attempt: id, me_password: dialogPassword()?.value || ''}); } catch (e) { if (!askPasswordAgain(e)) $('#dialog-error').textContent = e.message; return; } } cleanup(); closeDialog(); go('partitions'); };
+    if (!s) $('#enroll-start').onclick = async () => { const me_password = dialogPassword()?.value || ''; await send({op: 'start', me_password}); if (enrollment && me_password) passwordConfirmed(); };
+    if (s === 3) { $('#enroll-no').onclick = () => send({op: 'confirm', allow: false, code: enrollment.code, sequence: enrollment.sequence}); $('#enroll-yes').onclick = () => send({op: 'confirm', allow: true, code: enrollment.code, sequence: enrollment.sequence}); }
+    if (done) $('#enroll-setup').onclick = async () => { const number = enrollment.device; cleanup(); closeDialog(); await refreshStatus(); await show(); $(`[data-keypad="${number}"]`)?.click(); };
+  }
+  async function poll() {
+    if (stopped || !dialog.open) return;
+    try {
+      const data = await api('keypads');
+      if (data.enrollment?.attempt !== id) throw new Error(t('Pairing status is unknown. Check the device list before starting again.'));
+      const next = data.enrollment;
+      const changed = !enrollment || ['state', 'fail', 'code', 'peer', 'sequence'].some(k => next[k] !== enrollment[k]);
+      enrollment = next;
+      if (changed) draw();
+      else $('#dialog-error').textContent = '';
+      if (next.state < 5) timer = setTimeout(poll, 1000);
+    } catch { if (!stopped) { $('#dialog-error').textContent = t('Connection lost. Pairing status is unknown; reconnecting…'); timer = setTimeout(poll, 2000); } }
+  }
+  draw();
+  if (resume) timer = setTimeout(poll, 1000);
 }
 
 const optionGroups = () => {
@@ -3321,8 +3413,14 @@ function updStopDialog(d, after) {
   };
 }
 
+function keypadUpdates(rows) {
+  if (!rows.length) return '';
+  const words = [t('Waiting for status'), t('Up to date'), t('Downloading'), t('Receiving from this panel'), t('Ready · restarts with this panel'), t('Restarting'), t('Not updated yet · tries again by itself'), t('Newer than this panel')];
+  return `<section class="section"><div class="section-head"><h2>${ht('Keypad updates')}</h2></div><div class="card"><ul class="list">${rows.map(k => `<li><div class="main"><strong>${esc(k.name)}</strong><span>${esc(k.firmware || t('Waiting for status'))}</span></div><span>${esc(words[k.update_state] || words[0])}${[2, 3].includes(k.update_state) ? ' · ' + esc(k.update_percent) + ' %' : ''}</span></li>`).join('')}</ul></div></section>`;
+}
 async function updatesPage() {
   const first = await api('updates');
+  const keypadRows = isInstaller() ? (await api('keypads')).keypads : [];
   // Back from a restart this page lost the panel in: did the version it was installing come up?
   const saved = restartSaved();
   const interrupted = saved?.version && !updRunning(first) && !first.last && first.running !== saved.version ? saved.version : '';
@@ -3337,7 +3435,7 @@ async function updatesPage() {
   return {
     html: pageHead(t('Software updates'), t('Every update is signed. The panel checks the signature and installs only while disarmed; if the new version fails its self-test it goes back by itself.')) +
       (d.withdrawn ? notice('warn', t('Version {0} was withdrawn', d.running), d.available ? t('Its publisher took it back. Install version {0} when you can.', d.latest) : t('Its publisher took it back.')) : '') +
-      updCard(d) + `<p class="upd-hidden" role="status" id="upd-said"></p>
+      `<div id="keypad-updates">${keypadUpdates(keypadRows)}</div>` + updCard(d) + `<p class="upd-hidden" role="status" id="upd-said"></p>
       ${s ? `<section class="section"><div class="card"><div class="card-head"><div><h2>${ht('Where updates come from')}</h2>
           <p>${ht('Every update must be signed with this key or with the key of the version it runs. The panel refuses anything else, wherever it comes from.')}</p></div>
           ${tag(s.official ? t('RoboAlarms') : t('Not the RoboAlarms server'), s.official ? 'good' : 'warn')}</div>
@@ -3409,6 +3507,7 @@ async function updatesPage() {
           lost = '';
           if (updRunning(d) !== wasRunning || (was.running !== d.running)) return show();
           redraw();
+          if (installer) { const html = keypadUpdates((await api('keypads')).keypads); const box = $('#keypad-updates'); if (box && box.innerHTML !== html) box.innerHTML = html; }
         } catch (error) {
           if (error.status || !updRunning(d) || lost) return; // a 401 was said by api(), with the note when this page lost the panel
           if (!misses++) { firstMiss = Date.now(); return; }

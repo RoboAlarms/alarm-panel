@@ -16,10 +16,13 @@ without making DIY development painful. Be honest about the limits of hobby hard
 |---|---|---|
 | Intruder at a keypad | Guess a code, silence the alarm | Lockout per keypad, entry time, disarm needs a code, duress code, tamper, UI never reveals silent alarms |
 | Intruder who breaks or unplugs a keypad | Stop the alarm | Keypads are terminals: the master keeps running; keypad supervision trouble; master placed out of reach |
-| Intruder who cuts power / Wi-Fi | Blind the system | Battery; ESP-NOW doesn't need the router; `network`/`comm_fail` troubles; local siren still works |
+| Intruder who cuts power / Wi-Fi | Blind the system | Battery; ESP-NOW doesn't need the router (until it exists, a Wi-Fi keypad needs the router: put it on backup power, docs/features/11); `network`/`comm_fail` troubles; local siren still works |
+| Intruder with a keypad in hand for a while | Read the link's keys, act as that keypad | The pairing key is in plain NVS (SEC-009): remove the keypad at the master and pair it again; a keypad holds no codes, and the master checks every code and locks the source out (docs/features/11 "Security notes"). Once BL-216 is built (designed 2026-10-16), the keys also reach that keypad's Smart Home: what Home Assistant's options allow, an unlock or an opening only with a valid code for its home partition (lockout after 5; the owner's decision 1, decided 2026-10-16), and a forged settings report that changes only what the master and Home Assistant show about that keypad (docs/features/11 LINK-047, LINK-048) |
+| Someone who controls the paired Home Assistant | Change how a panel looks or sounds (designed 2026-10-16; built, BL-216) | No code: anyone at a panel may change these settings, on every panel, the master and each keypad. Only Screen and sound settings, never codes, role, pairing, Wi-Fi, time or updates (docs/features/11 LINK-052). The panel checks every value, refuses while a person has Screen and sound open, holds changes during an alarm, entry time or exit time, and changes how the screen looks at most once per 2 s (docs/features/07 UI-046). Beeps can go to 0, which silences entry beeps, never alarms. The master's own settings, changes while armed and Beeps at 0 are the owner's decisions 7, 4 and 6 (docs/features/11 Decisions), decided as written here on 2026-10-16 |
 | Attacker on the home LAN | Sniff codes, spoof commands, fake status | MQTT over TLS with CA pinning + auth; link frames encrypted and replay-protected; commands need user codes; lockout for remote sources |
 | RF attacker | Jam or replay keypad/sensor traffic | AEAD with sequence numbers; supervision (missing check-ins -> CHECK); jam detection on the sensor radio (M10) |
 | Malicious firmware | Backdoor | Signed OTA; pinned dependencies; reproducible CI builds; optional Secure Boot v2 |
+| A faulty or compromised master | Push a wrong, older or unsigned image to its keypads, or keep them busy | A keypad checks every image itself: the header before any flash write, then length, SHA-256, its own signing keys and the version named; nothing forced or older; no trust change without a person at the keypad; at most 3 failed runs a day (docs/features/11 LINK-033, LINK-035, LINK-036) |
 | Thief with the panel | Read codes, Wi-Fi password, keys | Codes hashed; flash + NVS encryption in production builds |
 | Curious household member | Read the event log / duress events | Silent events visible to master/installer only |
 
@@ -103,13 +106,22 @@ or token lets them read and send the panel's alerts; a Pushover token spends the
 allowance. None of them disarms the panel - codes are hashed with a salt, and remote arming is a
 separate installer option.
 
+The panel link (docs/features/11) keeps its pairing keys in NVS `link`, in plain text too: on the
+master one per keypad, on a keypad its master's. They never go into a backup (LINK-022), a
+factory reset erases them, and a session's keys live only in RAM. With a keypad's pairing key
+someone can act as that keypad - send commands with codes, which the master checks - and read
+what it shows; recorded traffic stays secret (each session's keys come from a fresh X25519).
+
 ## Tasks
 - Duplicate of docs/features/03 (Tasks: "PBKDF2 `hash_code` port using the PSA API"):
   `components/services/platform_esp/src/code_hash.c` code_hash_pbkdf2, with its known-answer
   self-test in code_hash_init. There is no host test: the host builds use
   stand-in hashes.
-- [ ] The rest of the PSA-based crypto helpers, with host tests: AEAD (AES-128-CCM), HKDF and
-  ECDH for the panel link (SEC-004), ECDSA verify (M7), and a host (unit) test of the PBKDF2
+- [x] The panel link's crypto (SEC-004): AES-128-CCM, HMAC/HKDF-SHA256 and X25519 on a port of
+  three PSA primitives, host-tested against the RFCs and checked at every start
+  (`panel_link` `plink_crypto`, `plink_service` `plink_psa.c`) (BL-048, e59c7f6)
+- [ ] The rest of the PSA-based crypto helpers, with host tests: ECDSA verify (M7), and a host
+  (unit) test of the PBKDF2
   code hash (SEC-002) unless the maintainers accept the start-up known-answer test instead
   (docs/features/03 USR-003 says "platform") (BL-049)
 - [x] Signed OTA in the default build (M6)

@@ -64,7 +64,7 @@ Base: `alarmpanel/<panel_id>`
 | `…/cmd` | in | - | 1 | command JSON |
 | `…/cmd/result` | out | no | 1 | result JSON |
 | `…/heartbeat` | out | no | 0 | `{"uptime_s":…,"fw":"0.5.0","ip":"…","rssi":-58,"free_heap_kb":…,"boot":…,"unsent":0}` |
-| `…/firmware` | out | yes | 1 | firmware state for the HA `update` entity (M6): `{"installed_version":"0.6.0","latest_version":"0.6.1","title":"RoboAlarms Panel firmware","release_url":"…","in_progress":false,"update_percentage":null}`; `release_url` only when the panel knows one (Home Assistant drops the whole payload over a null, B019) |
+| `…/firmware` | out | yes | 1 | firmware state for the HA `update` entity (M6): `{"installed_version":"0.6.0","latest_version":"0.6.1","title":"RoboAlarms Panel firmware","release_url":"…","in_progress":false,"update_percentage":null}`; `release_url` only when the panel knows one (Home Assistant drops the whole payload over a null, B019); a master with link keypads adds `keypads`: `[{"device":2,"version":"0.6.1","state":"up_to_date"}]` (`version` null when not known; `state` one of `up_to_date`, `downloading`, `receiving`, `ready`, `restarting`, `not_updated`, `newer`, `none`; docs/features/11 "What people see") |
 | `…/firmware/set` | in | - | 1 | `install`: download the newest release and restart into it once the system is idle (only with commands on) |
 | `…/zigbee/state` | out | yes | 1 | the Zigbee network (MQTT-021): `{"radio":"working","channel":15,"devices":5,"not_heard":0,"jammed":false}` |
 

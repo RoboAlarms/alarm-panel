@@ -33,7 +33,8 @@
 				</lv_label>
 			</box>
 		</box>
-		<lv_label name="hero_headline" bind_text="subject_headline" style_text_font="font_headline" />
+		<!-- wraps: a keypad's "No system communication" takes two lines (BL-048) -->
+		<lv_label name="hero_headline" width="100%" long_mode="wrap" bind_text="subject_headline" style_text_align="center" style_text_font="font_headline" />
 		<lv_label name="hero_detail" width="100%" long_mode="wrap" bind_text="subject_detail" style_text_align="center" style_text_color="#color_text_2" />
 		<lv_label name="hero_note" width="100%" long_mode="dots" bind_text="subject_hero_note" style_text_align="center" style_text_font="font_caption" style_text_color="#color_text_3" />
 	</view>

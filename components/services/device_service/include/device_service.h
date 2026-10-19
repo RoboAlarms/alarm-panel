@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "alarm/alarm_types.h" /* alarm_source_t, alarm_result_t: device_service_person_act */
 #include "esp_err.h"
 #include "home_control/device_source.h" /* dev_values_t: ha_link feeds them in every build */
 #if CONFIG_ALARM_HOME_CONTROL
@@ -26,6 +27,50 @@ extern "C" {
 /* Builds the registry. Everything below reports "not available" until this has succeeded, and
  * a failure leaves nothing allocated, so it can simply be called again. */
 esp_err_t device_service_start(void);
+
+/* A change counter (docs/features/11 "Device state", BL-216): it moves whenever the registry may
+ * show something new - a source reported a change, an action ended (its answer, "timeout",
+ * "offline"), an action was sent (the row shows it pending), or a send its source refused at once
+ * cleared the failure the row showed (home_control's port.changed) - so a reader that copies the
+ * list when it moves (the panel link's device builds) misses nothing it would have to poll for.
+ * Only equality means anything; it wraps. Lock-free: safe from any task, before the start too. 0
+ * without home control. */
+uint32_t device_service_seq(void);
+
+/* What became of an action a person asked for (device_service_person_act). The same numbers as
+ * the touchscreen's ui_dev_result_t and the panel link's DEV_ACK result (asserted where both are
+ * known): append only. */
+typedef enum {
+    DS_PERSON_OK = 0,        /* sent: the device's row follows it */
+    DS_PERSON_NEED_CODE,     /* the action needs a user code (HCTL-005) and none came */
+    DS_PERSON_CODE_REFUSED,  /* the code wasn't accepted: *why says why (lockout included) */
+    DS_PERSON_BUSY,          /* an action is already under way on it */
+    DS_PERSON_UNREACHABLE,   /* its source is offline */
+    DS_PERSON_REFUSED,       /* no such device, one this screen can't act on, or the action
+                              * doesn't fit it */
+} ds_person_t;
+
+/* One judge for both screens (docs/features/11 "Device actions", LINK-048; HCTL-005): an action a
+ * person asked for at a keypad - the panel's own screen ({ALARM_SRC_KEYPAD, ALARM_KEYPAD_LOCAL},
+ * partition 0: a code of any partition) or a link keypad ({ALARM_SRC_KEYPAD, n}, its home
+ * partition). In order:
+ *   - REFUSED for an unknown ref, a Z-Wave row (Smart Home doesn't show them yet, BL-169) or an
+ *     action that doesn't fit the device's live kind (hc_action_valid);
+ *   - where hc_needs_code says so (unlock, an opening), NEED_CODE without a code; with one, the
+ *     engine checks it for src and partition like any keypad code (a wrong one counts toward
+ *     src's lockout); an arm-only or a guest code is refused as ALARM_ERR_NOT_AUTHORIZED, a
+ *     duress code acts as asked without the silent report (decided in BL-045): CODE_REFUSED with
+ *     *why;
+ *   - ACT_SET_MODE takes one DEV_MODE_* bit in mode_bit (hc_mode_word): any other is REFUSED;
+ *     other actions ignore it;
+ *   - device_service_act: OK, BUSY, UNREACHABLE (offline), REFUSED (anything else).
+ * value is device_service_act's, passed on unchanged. code NULL or "" for none; *why (may be NULL)
+ * is ALARM_OK except with CODE_REFUSED. Blocks while the alarm task checks a code: never call it
+ * on the alarm task or holding the device lock. Who did it isn't logged yet (HCTL-007). Without
+ * home control: REFUSED. */
+ds_person_t device_service_person_act(const alarm_source_t *src, uint8_t partition,
+                                      const char *ref, uint8_t action, int32_t value,
+                                      uint8_t mode_bit, const char *code, alarm_result_t *why);
 
 /* Expires a device command whose reply never came (HCTL-012). Call it about once a second with
  * the monotonic clock (alarm_service_now()); safe before device_service_start(). */

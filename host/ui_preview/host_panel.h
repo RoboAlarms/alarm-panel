@@ -6,6 +6,7 @@
 #pragma once
 
 #include "alarm/alarm_engine.h"
+#include "alarm_proto/proto_prefs.h"
 #include "host_features.h"
 #include "alarm/alarm_snapshot.h"
 #include "ui_app.h"
@@ -42,6 +43,21 @@ int host_panel_backlight(void);
 /* The keypad's preferences as the touch UI last saved them (backend.save_options): false before
  * it saved any. The preview's stand-in for the panel's NVS "ui" store (BL-132). */
 bool host_panel_saved_options(ui_options_t *out);
+/* How many times the touch UI saved them since the program started. */
+unsigned host_panel_options_saves(void);
+
+/* A change of the Screen and sound settings from elsewhere (docs/features/07 UI-046): Home
+ * Assistant or the master's link, as the panel's panel_prefs_remote_submit / _cancel hand it to
+ * the screen (the same mailbox, ui_prefs.h, on the simulated clock). patch->have names the fields.
+ * Returns the ticket, 0 while another is under way (BUSY). done runs inside lv_timer_handler (the
+ * screen's task) at most once per ticket: why[id - 1] a PROTO_PREFS_WHY_*, 0 = applied; a patch
+ * not taken within 3 s is answered BUSY when the screen next looks. cancel: true when withdrawn
+ * before the screen took it (no done will come). */
+typedef void (*host_panel_prefs_done_fn)(void *ctx, uint32_t ticket,
+                                         const uint8_t why[PROTO_PREFS_F_LAST]);
+uint32_t host_panel_prefs_submit(const proto_prefs_values_t *patch, host_panel_prefs_done_fn done,
+                                 void *ctx);
+bool host_panel_prefs_cancel(uint32_t ticket);
 
 /* Forget the saved network (the setup starts from scratch). */
 void host_panel_forget_wifi(void);
@@ -69,6 +85,10 @@ void host_panel_net_clear_faults(void);
 void host_panel_log_loss(uint32_t records, uint32_t reports);
 /* The simulated firmware update state (Settings > About). */
 void host_panel_fw_preset(const ui_fw_status_t *st);
+/* An update's stage logged now (ALARM_EV_FIRMWARE_UPDATE, alarm_fw_stage_t), as the firmware logs
+ * it: the panel's own (keypad 0), or a keypad's through the panel link (keypad 1..8, its stages
+ * ALARM_FW_KEYPAD_*; why: ALARM_FW_KEYPAD_FAILED's reason, the link's why table). */
+void host_panel_fw_event(uint8_t stage, uint8_t keypad, uint8_t why);
 /* BL-186: the update server in use (a fictional one: example.net), and whether RoboAlarms' key is
  * trusted. A check of example.net answers OK with an untrusted key "Example Builds" after a moment,
  * example.org NOT_A_SERVER, example.com NO_FIRMWARE, anything else UNREACHABLE. */
@@ -338,6 +358,10 @@ void host_panel_device_pending(const char *ref, uint8_t action);
 /* The device's source can't reach it (HCTL-006): offline since since_ms, its state and values kept
  * as last reported; host_panel_device_settle brings it back (BL-181). */
 void host_panel_device_offline(const char *ref, int64_t since_ms);
+/* No device can be reached (HCTL-006, LINK-046: Home Assistant's link dropped; on a link keypad,
+ * its alarm panel's device data stopped): on, every device offline since since_ms; off, each back
+ * as it was (BL-216). */
+void host_panel_devices_unreachable(bool on, int64_t since_ms);
 /* How many actions the screen has asked of any device so far (ui_backend_t dev_act), refused ones
  * included: a check that a tap sent nothing (BL-181). */
 unsigned host_panel_device_acts(void);

@@ -8,6 +8,9 @@
 // Thread rules: any task may call these. None blocks on the alarm task's engine (state comes from
 // snapshot copies). panel_voice_install() writes flash: call it from a task whose stack is in
 // internal RAM (AGENTS.md "Rules for the firmware"), or it hands the flash work to one.
+//
+// On a panel in the link's keypad role there is no engine: a source (panel_voice_set_source)
+// answers for it, and the link task hands the master's facts on (docs/features/11 LINK-028).
 #ifndef PANEL_VOICE_H
 #define PANEL_VOICE_H
 
@@ -15,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "alarm/alarm_config.h"
 #include "alarm/alarm_snapshot.h"
 #include "alarm/alarm_types.h"
 #include "esp_err.h"
@@ -48,11 +52,33 @@ typedef struct {
     bool enabled;
     uint8_t volume;
     uint16_t word_gap_ms;
+    uint8_t partition; // the partition it speaks for (D05; a link keypad's home)
 } panel_voice_status_t;
 
-// Start after the sounder and the alarm service run (panel_app): it takes the silent baseline on
-// the alarm task (alarm_service_call). Loads "primary" into PSRAM on
-// a worker: the call returns at once. Never fails the boot: a bad pack leaves tones as they are.
+// ---- where the facts come from --------------------------------------------------------------
+// An alarm panel's voice hears its own engine (the default: no source). A panel in the link's
+// keypad role has none: its link task feeds the facts it hears from the master
+// (panel_voice_engine_baseline/_pause and the calls below, docs/features/11 LINK-028), and this
+// source answers what the voice asks of an engine otherwise. Every entry is required; ctx is passed
+// back. Any task may call them; none may wait on the voice.
+typedef struct {
+    // A silent baseline is wanted (start-up, a lost fact): ask the producer for
+    // panel_voice_engine_baseline() soon. false: ask again next round.
+    bool (*baseline)(void *ctx);
+    // The configuration the zones' spoken words are read from, and its generation (the
+    // config_seq the producer's snapshots carry). false: none yet.
+    bool (*config)(void *ctx, alarm_config_t *out, uint32_t *config_seq);
+    // Whether a pack install must wait (D12: armed, an alarm, a walk test, installer mode).
+    bool (*install_locked)(void *ctx);
+    void *ctx;
+} panel_voice_source_t;
+// Before panel_voice_start(); the source is kept (a static). NULL: the alarm panel's engine.
+void panel_voice_set_source(const panel_voice_source_t *src);
+
+// Start after the sounder runs, and on an alarm panel after the alarm service (panel_app): with no
+// source it takes the silent baseline on the alarm task (alarm_service_call); with one it asks the
+// source for it. Loads "primary" into PSRAM on a worker: the call returns at once. Never fails the
+// boot: a bad pack leaves tones as they are.
 esp_err_t panel_voice_start(void);
 
 void panel_voice_status(panel_voice_status_t *out);
@@ -66,7 +92,7 @@ bool panel_voice_ready(void);
 // after panel_prefs_load() and whenever one changes (Settings, the Panel Manager, the volume
 // slider). A change that forbids speech cancels it at once (AUD-015).
 typedef struct {
-    bool enabled; // voice_enabled: automatic announcements (default off)
+    bool enabled; // voice_enabled: automatic announcements (default on, D06)
     bool status;  // voice_status
     bool chime;   // voice_chime
     uint8_t volume; // the Voice volume 0..100 (AUD-032); 0 = no speech at all
@@ -77,18 +103,26 @@ void panel_voice_set_volume(uint8_t volume);
 // Power saving (on battery): no automatic speech, no Preview, as for the keypad tones.
 void panel_voice_set_power_saving(bool saving);
 
-// ---- the engine's facts (panel_app's sounder listener, on the alarm task) -----------------
-// alarm_service.c's listeners are full: panel_app's sounder listener hands these on. Each only
-// copies the fact (the snapshot as the policy's state, with the configuration's exit_sounds as
-// the engine has it now) into a preallocated queue with a zero-tick send: no lock, no
-// allocation, no logging, no engine call. The worker applies them in order. They copy nothing
-// until panel_voice_start has queued a silent baseline on the alarm task; a full queue makes the
-// voice silent until the next snapshot, a new baseline. sound: the ticket sounder_play_tracked()
-// returned for the tone, 0 when it wasn't played or admitted.
+// ---- the engine's facts (one producer task) -------------------------------------------------
+// On an alarm panel the producer is the alarm task (alarm_service.c's listeners are full:
+// panel_app's sounder listener hands these on); on a link keypad, the link task (plink_service).
+// Each only copies the fact (the snapshot as the policy's state, with the configuration's
+// exit_sounds as the snapshot has it) into a preallocated queue with a zero-tick send: no lock,
+// no allocation, no logging, no engine call. The worker applies them in order. They copy nothing
+// until a silent baseline was queued (panel_voice_start on the alarm task, or
+// panel_voice_engine_baseline); a full queue makes the voice silent until the next snapshot, a
+// new baseline. sound: the ticket sounder_play_tracked() returned for the tone, 0 when it wasn't
+// played or admitted.
 void panel_voice_engine_event(const alarm_event_t *ev);
 void panel_voice_engine_sound(uint8_t partition, alarm_sound_t sound, uint16_t zone, uint32_t ticket);
 void panel_voice_engine_output(alarm_output_t output, uint8_t partition, alarm_pattern_t pattern);
 void panel_voice_engine_snapshot(const alarm_snapshot_t *snap);
+// A source's producer (a link keypad's link task): speech stops and this state, of this partition
+// (the keypad's home: D05's partition from now on), is the silent baseline; the facts after it
+// are collected.
+void panel_voice_engine_baseline(uint8_t partition, const alarm_snapshot_t *snap);
+// ... and nothing is collected until the next baseline; speech stops (the link is not ONLINE).
+void panel_voice_engine_pause(void);
 
 // ---- the words, for the editor (D03, D09) ------------------------------------------------
 // A lease on the active pack: valid until released, even if a new pack is installed meanwhile

@@ -49,6 +49,15 @@ typedef void (*alarm_service_fn)(alarm_engine_t *e, alarm_ms_t now, void *ctx);
 /* Register before alarm_service_start() to also see the start-up event. */
 esp_err_t alarm_service_add_listener(const alarm_listener_t *listener);
 
+/* A panel in the keypad role runs no engine (docs/features/11 "Roles on a P4 panel"): call this
+ * first, before anything can post, instead of alarm_service_start(). From then on every input
+ * (zone events, troubles, check-ins) is dropped without waiting, every synchronous call answers
+ * at once - ESP_ERR_INVALID_STATE, or ALARM_ERR_UNAVAILABLE for those returning an
+ * alarm_result_t - alarm_service_start() is refused, alarm_service_get_snapshot() zero-fills and
+ * alarm_service_recent_events() returns 0. Never undone until the restart. */
+void alarm_service_set_dormant(void);
+bool alarm_service_dormant(void);
+
 /* Event numbers continue after this one (the newest in the flash event log), even when the
  * stored runtime state is older or gone. Call before alarm_service_start(). */
 void alarm_service_set_min_event_seq(uint32_t seq);
@@ -83,6 +92,7 @@ void alarm_service_device_checkin(uint8_t device);
 /* CORE-TRBL-008, ZW-038: a device the platform can't reach (false) or hears again (true):
  * alarm_engine_device_reachable on the alarm task. */
 void alarm_service_device_reachable(uint8_t device, bool reachable);
+void alarm_service_device_reachable_at(uint8_t device, uint8_t partition, bool reachable);
 
 /* ---- synchronous calls (block until the alarm task has run them) -------------- */
 esp_err_t alarm_service_call(alarm_service_fn fn, void *ctx);
@@ -190,6 +200,8 @@ alarm_result_t alarm_service_user_delete_as(const alarm_source_t *src, uint8_t a
 alarm_result_t alarm_service_program_enter(const alarm_source_t *src, const char *code,
                                            uint8_t *user_out);
 void alarm_service_program_exit(const alarm_source_t *src);
+/* End only this source's installer session; a timed-out browser must not end a local one. */
+void alarm_service_program_exit_owned(const alarm_source_t *src);
 void alarm_service_program_keepalive(void);
 alarm_result_t alarm_service_program_set_code(const alarm_source_t *src, uint8_t user_no,
                                               const char *new_code);
@@ -236,7 +248,10 @@ esp_err_t alarm_service_factory_reset(const alarm_source_t *src, uint8_t user, b
 esp_err_t alarm_service_backup_event(bool restoring, const alarm_source_t *src, uint8_t user);
 
 /* Records a firmware update step (ALARM_EV_FIRMWARE_UPDATE, logged and reported like any
- * event). src NULL = the system. */
+ * event). src NULL = the system. A keypad's stage (ALARM_FW_KEYPAD_*) takes src {ALARM_SRC_KEYPAD,
+ * its device number}; ALARM_FW_KEYPAD_FAILED carries its why in arg2, so it goes through
+ * alarm_service_platform_event (zone 0, arg the stage, arg2 the why). ESP_ERR_INVALID_ARG for a
+ * stage with the wrong fields. */
 esp_err_t alarm_service_firmware_event(alarm_fw_stage_t stage, const alarm_source_t *src,
                                        uint8_t user);
 

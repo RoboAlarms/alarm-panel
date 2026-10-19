@@ -22,6 +22,7 @@ compiled here.
 | `ALARM_DEV_REMOTE` | y with PSRAM | `dev_remote` |
 | `ALARM_FEATURE_STORAGE` | y | `panel_storage`: the microSD card and Settings > About > Storage |
 | `ALARM_FEATURE_PHOTO_SAVER` | y with PSRAM | the screen saver's JPEG picture |
+| `ALARM_LINK` | y with PSRAM | `panel_link`, `plink_service`: keypad panels for a master over Wi-Fi, and the keypad role (docs/features/11) |
 | `ALARM_FEATURE_AUTOMATIONS` | y with PSRAM (needs `ALARM_HOME_CONTROL`) | `automation`, `automation_service`: the built-in automations (docs/features/41) |
 
 Other options live with the component that uses them and follow the same rules: the 433 MHz

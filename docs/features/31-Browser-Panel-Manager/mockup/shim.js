@@ -20,6 +20,7 @@
   else if (role !== 'signedout') env.MOCK_AUTOLOGIN = role;
   const scenario = query.get('scenario');
   if (scenario && scenario !== 'ready') env.MOCK_SCENARIO = scenario;
+  if (query.get('headless') === '1') env.MOCK_HEADLESS = '1';
   if (query.get('parts') === '2') env.MOCK_PARTITIONS = '2';
   if (query.get('zwave') === '0' || query.get('zwave') === 'jammed') env.MOCK_ZWAVE = query.get('zwave');
   if (query.get('clock') && query.get('clock') !== 'none') env.MOCK_CLOCK = query.get('clock');

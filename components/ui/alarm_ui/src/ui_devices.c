@@ -654,19 +654,60 @@ static void refusal(ui_dev_result_t r)
     }
 }
 
+static bool code_entered(const char *code);
+
+static void code_sent(const ui_call_t *c)
+{
+    if (!ui_pad_asks(code_entered)) {
+        D.polled = lv_tick_get() - POLL_VIEW_MS; /* the pad closed meanwhile: the tile says */
+        return;
+    }
+    if (c->dev == UI_DEV_CODE_REFUSED) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_pad_error(ui_result_text(c->r));
+        return;
+    }
+    ui_pad_cancel();
+    refusal(c->dev); /* the code was good, the change wasn't sent: say so */
+    D.polled = lv_tick_get() - POLL_VIEW_MS; /* the tile says what happened, now */
+}
+
+/* The pad stays open; the answer closes it (code_sent). */
 static bool code_entered(const char *code)
 {
-    alarm_result_t why = ALARM_OK;
-    const ui_dev_result_t r =
-        S.be.dev_act(S.be.ctx, D.ask_ref, D.ask_action, D.ask_value, code, &why);
-    if (r == UI_DEV_CODE_REFUSED) {
-        ui_beep(UI_BEEP_ERROR);
-        ui_pad_error(ui_result_text(why));
-        return false;
+    if (!ui_call_dev_act(D.ask_ref, D.ask_action, D.ask_value, code, code_sent, 0u)) {
+        ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
     }
-    refusal(r); /* the code was good, the change wasn't sent: say so */
-    D.polled = lv_tick_get() - POLL_VIEW_MS; /* the tile says what happened, now */
-    return true;
+    return false;
+}
+
+/* The answer to an action sent without a code: one that needs a code asks for it now. The tile
+ * list may have changed meanwhile (LINK-054), so it is found again by its ref. */
+static void sent(const ui_call_t *c)
+{
+    if (c->dev == UI_DEV_NEED_CODE) {
+        const ui_dev_t *d = find(c->ref);
+        if (d == NULL) {
+            return; /* it went from the list meanwhile */
+        }
+        snprintf(D.ask_ref, sizeof(D.ask_ref), "%s", d->ref);
+        D.ask_action = c->action;
+        D.ask_value = c->value;
+        char title[64];
+        if (c->action == ACT_UNLOCK) {
+            /* TR: the code pad's title before an unlock; {0} is the lock's name */
+            I18N_FORMAT(title, sizeof(title), TR("Unlock {0}"), d->name);
+        } else {
+            /* TR: the code pad's title before opening a garage door, a cover or a valve */
+            I18N_FORMAT(title, sizeof(title), TR("Open {0}"), d->name);
+        }
+        ui_pad_ask(HOST_MODAL, c->action == ACT_UNLOCK ? G_LOCK_OPEN : glyph(d), title, NULL,
+                   ui_tone_amber(), code_entered);
+        return;
+    }
+    refusal(c->dev);
+    poll();
+    show();
 }
 
 /* Sends an action; one that needs a code asks for it first (HCTL-005). */
@@ -675,27 +716,9 @@ static void send(const ui_dev_t *d, uint8_t action, int32_t value)
     if (S.be.dev_act == NULL || action == ACT_NONE) {
         return;
     }
-    alarm_result_t why = ALARM_OK;
-    const ui_dev_result_t r = S.be.dev_act(S.be.ctx, d->ref, action, value, NULL, &why);
-    if (r == UI_DEV_NEED_CODE) {
-        snprintf(D.ask_ref, sizeof(D.ask_ref), "%s", d->ref);
-        D.ask_action = action;
-        D.ask_value = value;
-        char title[64];
-        if (action == ACT_UNLOCK) {
-            /* TR: the code pad's title before an unlock; {0} is the lock's name */
-            I18N_FORMAT(title, sizeof(title), TR("Unlock {0}"), d->name);
-        } else {
-            /* TR: the code pad's title before opening a garage door, a cover or a valve */
-            I18N_FORMAT(title, sizeof(title), TR("Open {0}"), d->name);
-        }
-        ui_pad_ask(HOST_MODAL, action == ACT_UNLOCK ? G_LOCK_OPEN : glyph(d), title, NULL,
-                   ui_tone_amber(), code_entered);
-        return;
+    if (!ui_call_dev_act(d->ref, action, value, NULL, sent, 0u)) {
+        refusal(UI_DEV_BUSY);
     }
-    refusal(r);
-    poll();
-    show();
 }
 
 static const tile_t *tile_of(lv_event_t *e)
@@ -2366,6 +2389,7 @@ static void note(void)
     if (D.npage > 0u && offline == D.npage) {
         /* TR: Smart Home's note when no device on the page can be reached (the link is down) */
         i18n_utf8_copy(text, sizeof(text), TR("Your devices can't be reached right now"));
+        fits = note_fits(text); /* no name to shorten: whole, its room from the tabs (BL-216) */
     } else if (nf == 0u) {
         /* TR: Smart Home's note when nothing needs attention and no light is on */
         i18n_utf8_copy(text, sizeof(text), TR("Nothing needs you"));
@@ -2483,6 +2507,8 @@ static void poll(void)
         }
     }
     D.n = kept;
+    /* HCTL-003: Smart Home on the rail while a device is listed - a link keypad's are its alarm
+     * panel's, through the link (BL-216, proposal P1 approved 2026-10-16) */
     ui_set_int(&subject_devices_avail, D.n > 0u ? 1 : 0);
     if (D.n == 0u && on_view()) {
         ui_set_int(&subject_view, VIEW_HOME); /* the last device went away */

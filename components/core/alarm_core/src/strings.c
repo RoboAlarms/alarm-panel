@@ -288,6 +288,10 @@ const char *alarm_fw_stage_name(alarm_fw_stage_t stage)
         [ALARM_FW_STOPPED] = "stopped",
         [ALARM_FW_ROLLING_BACK] = "rolling_back",
         [ALARM_FW_RESTART_PUT_OFF] = "restart_put_off",
+        [ALARM_FW_KEYPAD_INSTALLING] = "keypad_installing",
+        [ALARM_FW_KEYPAD_UPDATED] = "keypad_updated",
+        [ALARM_FW_KEYPAD_ROLLED_BACK] = "keypad_rolled_back",
+        [ALARM_FW_KEYPAD_FAILED] = "keypad_failed",
     };
     return pick(t, COUNT_OF(t), (unsigned)stage);
 }

@@ -787,6 +787,7 @@ test('words: every page is worded from the catalog', async () => {
   const served = [];
   for (const e of (await vm.runInContext("api('history')", context)).events) served.push(e.title, e.body);
   for (const z of (await vm.runInContext("api('alarm')", context)).zones) served.push(z.name);
+  for (const k of (await vm.runInContext("api('keypads')", context)).keypads) served.push(k.name, k.firmware);
   // A Zigbee device's model and how to wake it are the model table's (devices.md §9), not the page's words.
   for (const d of (await vm.runInContext("api('zigbee')", context)).devices || []) {
     context.__zb = d.id;
@@ -4505,6 +4506,19 @@ test('Software updates: updated, rolled back and failed come from `last` (OTA-02
   });
 });
 
+test('Software updates: failed C6 installs show Update failed with the radio reason (CP-005)', async () => {
+  await updContext('installer', {}, async u => {
+    for (const reason of ['The Wi-Fi module update failed', 'The Wi-Fi module image failed verification']) {
+      await u.set({reset: true, set: {last: {result: 'failed', version: '3.0.10-ra4',
+        from: '3.0.10-ra3', reason, at: Math.floor(Date.now() / 1000)}}, update: OFFERED});
+      const card = words(await u.card());
+      assert.ok(card.includes('Update failed') && card.includes(reason + '. Nothing was changed.'));
+      assert.ok(!card.includes('Couldn’t check for updates') && !card.includes('Updated to version'));
+      assert.equal((await u.get()).failed, 'install');
+    }
+  });
+});
+
 test('Software updates: the server and the channel are held while an update runs (OTA-026, OTA-028)', async () => {
   await updContext('installer', {}, async u => {
     await u.set({reset: true, set: {stage: 'downloading', percent: 42}, update: OFFERED});
@@ -4765,5 +4779,44 @@ test('AUD-032: a firmware without a voice has no Voice volume', async () => {
     assert.match(page, /name="chime_volume"/);
     assert.doesNotMatch(page, /name="voice_volume"/);
     assert.ok(!(await a.get('config/display')).fields.some(f => f.name === 'voice_volume'));
+  });
+});
+
+
+for (const headless of [false, true]) test(`BL-048: configured lists and enrollment work on ${headless ? 'headless' : 'normal'} panels`, async () => {
+  await withPage('installer', {MOCK_PARTITIONS: '2', ...(headless ? {MOCK_HEADLESS: '1'} : {})}, async (context, html, a) => {
+    await vm.runInContext('refreshStatus()', context);
+    const before = await html('partitions');
+    assert.equal(before.includes('Panel keypad'), !headless);
+    assert.ok(before.includes('Add partition') && before.includes('Add device'));
+    assert.ok(!before.includes('Not in use') && !before.includes('remove-entry'));
+    const attempt = '0123456789abcdef0123456789abcdef';
+    await a.post('mock/confirmation', {recent: true});
+    assert.equal((await a.post('keypads', {op: 'start', attempt})).status, 200);
+    assert.equal((await a.post('keypads', {op: 'start', attempt})).status, 200);
+    await a.post('mock/keypad-event', {event: 'compare'});
+    const pairing = (await a.get('keypads')).enrollment;
+    assert.equal((await a.post('keypads', {op: 'confirm', attempt, code: '000000', sequence: pairing.sequence, allow: true})).status, 409);
+    // Physical confirmation first must not create a record before the browser confirms.
+    await a.post('mock/keypad-event', {event: 'confirmed'});
+    assert.equal((await a.get('keypads')).keypads.length, 1);
+    assert.equal((await a.post('keypads', {op: 'confirm', attempt, code: pairing.code, sequence: pairing.sequence, allow: true})).status, 200);
+    const completed = await a.get('keypads');
+    assert.equal(completed.enrollment.state, 5); assert.equal(completed.keypads.length, 2);
+    assert.equal(completed.keypads[1].allowed, false); assert.equal(completed.keypads[1].seconds, 30);
+    assert.equal((await a.post('keypads', {op: 'remove', device: 0})).status, 409);
+    assert.equal((await a.post('keypads', {op: 'save', device: 2, home: 2, name: 'Workshop', allowed: true, never: true, seconds: 45})).status, 200);
+    assert.ok((await html('partitions')).includes('Default: Garage · No automatic return'));
+    assert.equal((await a.post('keypads', {op: 'remove', device: 2})).status, 200);
+    assert.equal((await a.get('keypads')).keypads.length, 1);
+  });
+});
+test('BL-048: keypad management is installer-only and locked while armed', async () => {
+  for (const role of ['master', 'partition', 'standard']) {
+    assert.equal((await fetch(servers[role].base + '/api/v1/keypads')).status, 403);
+    assert.equal((await api(servers[role].base).post('keypads', {op: 'start', attempt: '0123456789abcdef0123456789abcdef'})).status, 403);
+  }
+  await withMock('installer', {MOCK_LOCKED: '1'}, async a => {
+    assert.equal((await a.post('keypads', {op: 'start', attempt: '0123456789abcdef0123456789abcdef'})).status, 409);
   });
 });

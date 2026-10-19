@@ -1,7 +1,9 @@
 /*
  * ui_dev_model.h - the Smart Home screen's model (docs/features/24, BL-045): its layout - which
  * devices are on Favorites, the order of the tiles and each tile's size - kept as one panel setting,
- * the same for everyone (HCTL-003, HCTL-008), and a source's state words read into ui_dev_state_t.
+ * the same for everyone (HCTL-003, HCTL-008), a source's state words read into ui_dev_state_t, and
+ * the one conversion of a device's parts into the ui_dev_t both screens show - the master's from
+ * its registry, a link keypad's from the panel link (docs/features/11, BL-216).
  * Header only and portable: the touch UI (ui_devices.c) and the ESP port use it, the host tests
  * prove it.
  *
@@ -29,6 +31,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "home_control/home_control.h"
 #include "ui_backend/ui_backend.h"
 
 #ifdef __cplusplus
@@ -475,6 +478,104 @@ static inline void ui_dev_values_fill(ui_dev_t *u, const dev_values_t *v)
     u->hvac_action = u->kind == DEV_CLIMATE && v->hvac_action < DEV_HVAC_COUNT
                          ? v->hvac_action
                          : (uint8_t)DEV_HVAC_UNKNOWN;
+}
+
+/* ---- one converter for both screens (docs/features/11 "Smart Home and Home Assistant on keypads",
+ * BL-216): a device's parts, wherever they come from - the registry's row on the master
+ * (ui_dev_parts_hc), the panel link's catalog and device records on a keypad - become the one
+ * ui_dev_t the screen reads. ---- */
+
+/* One device's parts. The strings and values are read during ui_dev_from_parts only; NULL reads
+ * as "" (values: nothing known). */
+typedef struct {
+    uint8_t kind;   /* dev_kind_t */
+    uint8_t source; /* dsrc_kind_t */
+    bool online;    /* false: offline, readable, its controls rest (HCTL-006) */
+    bool pending;   /* an action is under way */
+    bool failed;    /* the last action failed */
+    bool unsure;    /* hc_outcome_unknown: whether the failed action happened isn't known */
+    uint8_t action; /* dev_action_t under way, or the last one when it failed */
+    const char *ref;
+    const char *name;
+    const char *area;  /* "" none */
+    const char *state; /* the source's words ("on", "locked", "heat_cool") */
+    const dev_values_t *values;
+} ui_dev_parts_t;
+
+/* src into dst (cap bytes, cap > 0) cut to fit and NUL-terminated, as snprintf("%s") writes it. */
+static inline void ui_dev_copy_text(char *dst, size_t cap, const char *src)
+{
+    size_t n = 0;
+    if (src != NULL) {
+        while (n + 1u < cap && src[n] != '\0') {
+            dst[n] = src[n];
+            n++;
+        }
+    }
+    dst[n] = '\0';
+}
+
+/* The device as the screen shows it. Its status is the first that applies: OFFLINE, PENDING,
+ * FAILED, IDLE (HCTL-006); `action` only while pending or failed - the action whoever started it,
+ * this screen, another keypad, the console, an automation - so a tile says "Didn't unlock", not
+ * "Didn't respond"; `unsure` only when failed (HCTL-012: "couldn't confirm", BL-171); the values
+ * through ui_dev_values_fill (kind first: the fill reads it). Every byte of *u is written, padding
+ * included (zeroed). */
+static inline void ui_dev_from_parts(ui_dev_t *u, const ui_dev_parts_t *p)
+{
+    dev_values_t none;
+    memset(&none, 0, sizeof(none));
+    memset(u, 0, sizeof(*u));
+    u->kind = p->kind;
+    u->source = p->source;
+    u->state = ui_dev_state_parse(p->kind, p->state);
+    u->status = (uint8_t)(!p->online   ? UI_DEV_OFFLINE
+                          : p->pending ? UI_DEV_PENDING
+                          : p->failed  ? UI_DEV_FAILED
+                                       : UI_DEV_IDLE);
+    u->action = u->status == UI_DEV_PENDING || u->status == UI_DEV_FAILED ? p->action
+                                                                           : (uint8_t)ACT_NONE;
+    u->unsure = (uint8_t)(u->status == UI_DEV_FAILED && p->unsure ? 1u : 0u);
+    ui_dev_values_fill(u, p->values != NULL ? p->values : &none);
+    ui_dev_copy_text(u->ref, sizeof(u->ref), p->ref);
+    ui_dev_copy_text(u->name, sizeof(u->name), p->name);
+    ui_dev_copy_text(u->area, sizeof(u->area), p->area);
+}
+
+/* The master's parts: one row of home_control's registry (device_service_list's copy). The
+ * strings and values point into *d. */
+static inline ui_dev_parts_t ui_dev_parts_hc(const hc_device_t *d)
+{
+    ui_dev_parts_t p;
+    memset(&p, 0, sizeof(p));
+    p.kind = d->info.kind;
+    p.source = d->info.source;
+    p.online = d->info.online;
+    p.pending = d->pending != 0u;
+    p.failed = d->failed;
+    p.unsure = hc_outcome_unknown(d);
+    p.action = d->action;
+    p.ref = d->info.ref;
+    p.name = d->info.name;
+    p.area = d->info.area;
+    p.state = d->info.state;
+    p.values = &d->info.values;
+    return p;
+}
+
+/* A thermostat's mode key as the screen sends it - dev_act's ACT_SET_MODE value, a ui_dev_state_t
+ * (UI_DEV_ST_OFF, _HEAT, _COOL, _AUTO) - as the DEV_MODE_* bit the judge takes
+ * (device_service_person_act, a link keypad's DEV_ACT); 0 for any other value, which the judge
+ * refuses. */
+static inline uint8_t ui_dev_mode_bit(int32_t value)
+{
+    switch (value) {
+    case UI_DEV_ST_OFF: return (uint8_t)DEV_MODE_OFF;
+    case UI_DEV_ST_HEAT: return (uint8_t)DEV_MODE_HEAT;
+    case UI_DEV_ST_COOL: return (uint8_t)DEV_MODE_COOL;
+    case UI_DEV_ST_AUTO: return (uint8_t)DEV_MODE_AUTO;
+    default: return 0u;
+    }
 }
 
 #ifdef __cplusplus

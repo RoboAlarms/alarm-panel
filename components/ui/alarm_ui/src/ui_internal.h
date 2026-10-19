@@ -15,7 +15,9 @@
  *   ui_walk.c       the walk test: Settings > Walk test, its list, Home's card while one runs
  *   ui_automations.c, ui_auto_edit.c  Settings > Automations: the list, a page, the editors
  *                   (ALARM_UI_AUTOMATIONS; ui_automations.h)
- *   ui_wizard.c     first-boot setup
+ *   ui_wizard.c     first-boot setup (and a keypad's role and pairing steps, BL-048)
+ *   ui_link.c       the panel link (docs/features/11, BL-048): Installer > Keypads and devices'
+ *                   keypads on Wi-Fi, a keypad's Home, About and stand-alone page
  * Everything runs on the LVGL thread.
  */
 #pragma once
@@ -108,7 +110,15 @@ void *ui_slow_alloc(size_t size);
 #define UI_FLAG_SCROLL_SURFACE LV_OBJ_FLAG_USER_1
 
 enum { VIEW_HOME = 0, VIEW_ZONES, VIEW_ACTIVITY, VIEW_TROUBLES, VIEW_PANIC, VIEW_SETTINGS, VIEW_DEVICES };
-enum { PANEL_ARM = 0, PANEL_DISARM, PANEL_PAD, PANEL_MEMORY, PANEL_WALK };
+enum {
+    PANEL_ARM = 0,
+    PANEL_DISARM,
+    PANEL_PAD,
+    PANEL_MEMORY,
+    PANEL_WALK,
+    PANEL_LINK,   /* a keypad that isn't paired: Pair again (BL-048) */
+    PANEL_SILENCE /* a keypad keeping a fire or CO tone through a lost link: Silence */
+};
 /* Settings sections (subject_settings_section): the numbers are the XML's ref_value, not the order
  * of the left column. */
 enum {
@@ -247,6 +257,10 @@ typedef enum {
     PAGE_FW_SERVER,       /* Installer > Updates > Update server (BL-186; ui_update.c) */
     PAGE_FW_WARNING,      /* ... the warning before a server whose key the panel does not trust */
     PAGE_ANNOUNCEMENTS,   /* Screen and sound > Announcements (BL-202, D06; ui_voice.c's words) */
+    /* The panel link (docs/features/11, BL-048; ui_link.c) */
+    PAGE_LINK_ADD,        /* Installer > Keypads and devices > Add a keypad */
+    PAGE_LINK_KEYPAD,     /* a keypad on Wi-Fi, arg = its number (1..8) */
+    PAGE_LINK_STANDALONE, /* a keypad's About > Make it a stand-alone panel (a factory reset) */
 } page_id_t;
 
 typedef struct {
@@ -374,6 +388,9 @@ void ui_theme_watch_saver(void); /* ui_app_start, once the screen saver is made 
 
 /* ---- ui_app.c ------------------------------------------------------------------------------ */
 void ui_app_theme_changed(void);
+/* An alarm, entry time or exit time is on the screen: its words and its look wait (a language
+ * change, the theme by the clock, a setting from elsewhere: I18N-014, UI-046). */
+bool ui_app_held(void);
 void ui_refresh(bool force);
 void ui_toast(const char *text);
 void ui_beep(ui_beep_t b);
@@ -438,14 +455,52 @@ void ui_pad_ask_new(pad_host_t host, const char *glyph, const char *title, ui_co
 void ui_pad_ask_note(const char *note);
 void ui_pad_error(const char *text);
 void ui_pad_cancel(void);
+/* The pad open asks for a code on behalf of fn (a continuation checks it is still there). */
+bool ui_pad_asks(ui_code_fn fn);
 /* Someone is in the middle of something at the panel: a code half typed, a sheet, Settings, the
  * setup, a panic button held. The screen saver waits for them, and so does a walk test started
  * elsewhere (WALK-023). */
 bool ui_app_busy(void);
 /* Wake the screen and show Home, where a walk test's card is (WALK-023). */
 void ui_app_walk_show(void);
+/* Wake the screen from its saver, the idle time counted again from now: as an alarm does
+ * (ui_link.c, when a keypad starts keeping a fire or CO tone through a lost link). */
+void ui_app_wake(void);
 /* The status bar's left side again (a banner came or went). */
 void ui_bar_banner_update(void);
+
+/* ---- ui_calls.c: the calls that wait for another panel's answer (LINK-054) ------------------
+ * A command, a code check, a code change, a device action or a partition switch, run on the
+ * backend's task where it has run_later (a keypad: its master answers), else here at once. The
+ * continuation runs on this task with what was asked and the answer; true: queued (false: four
+ * already wait, nothing runs). Taps wait while a person's call does; the screen draws on. */
+typedef struct {
+    /* what was asked */
+    alarm_cmd_t cmd;                        /* command */
+    char code[ALARM_CODE_MAX_LEN + 1];      /* code check, current code, a device's code */
+    char new_code[ALARM_CODE_MAX_LEN + 1];  /* code change */
+    uint8_t partition;                      /* partition switch */
+    bool activity;                          /* ...only the input's report (no one waits) */
+    char ref[DEV_REF_LEN];                  /* device action */
+    uint8_t action;
+    int32_t value;
+    uintptr_t tag; /* the caller's own */
+    /* the answer */
+    alarm_result_t r;       /* also a device action's code result */
+    alarm_cmd_result_t res; /* command */
+    uint8_t user;           /* code check, code change */
+    ui_dev_result_t dev;    /* device action */
+} ui_call_t;
+typedef void (*ui_call_done_fn)(const ui_call_t *c);
+bool ui_call_command(const alarm_cmd_t *cmd, ui_call_done_fn done, uintptr_t tag);
+bool ui_call_authenticate(const char *code, ui_call_done_fn done, uintptr_t tag);
+bool ui_call_change_code(const char *current, const char *new_code, ui_call_done_fn done,
+                         uintptr_t tag);
+bool ui_call_partition(uint8_t partition, bool activity, ui_call_done_fn done, uintptr_t tag);
+bool ui_call_dev_act(const char *ref, uint8_t action, int32_t value, const char *code,
+                     ui_call_done_fn done, uintptr_t tag);
+bool ui_call_waiting(void); /* a person's call waits for its answer */
+void ui_call_reset(void);   /* ui_app_start */
 
 /* ---- ui_forms.c ---------------------------------------------------------------------------- */
 typedef void (*ui_text_fn)(const char *text);
@@ -623,6 +678,8 @@ void ui_settings_init(void);
 void ui_settings_open(void);                 /* the gear */
 void ui_settings_section(const char *which); /* a section in the left column */
 void ui_settings_leave(void);                /* Settings closes: forget codes, leave installer */
+/* Every tick: the delayed save, the open page's live parts, and a setting changed from elsewhere
+ * (UI-046: ui_backend_t.prefs_remote_take, judged and applied through the screen's own copy). */
 void ui_settings_tick(void);
 void ui_settings_refresh(void);              /* after a new snapshot */
 void ui_page_open(page_id_t id, int32_t arg);
@@ -650,9 +707,13 @@ void ui_settings_remember(uint8_t user, const char *code);
 void ui_settings_unlock_row(lv_obj_t *body, ui_access_t access, const char *title);
 
 /* ---- ui_voice.c (docs/features/08 voice-first-build.md D03, D06, D09; UI-045) --------------- */
-/* The build has a voice: every voice function of the backend, and voice_info not UI_VOICE_OFF.
- * Without one there is no Spoken name row and no Announcements page. */
+/* The build has a voice: the backend's voice_info, the pack's lease and Preview, and voice_info
+ * not UI_VOICE_OFF - on an alarm panel and on a link keypad (LINK-028). Without one there is no
+ * Voice volume, no Announcements page and no Spoken name row. */
 bool ui_voice_present(void);
+/* ... and this panel approves zones' words: voice_seen and voice_apply_approve too, and not a link
+ * keypad (its alarm panel's installer approves them). Without it, no Spoken name row or editor. */
+bool ui_voice_editor_present(void);
 void ui_voice_info(ui_voice_info_t *out); /* zeros (UI_VOICE_OFF) without a backend */
 /* The voice's language in the interface's language ("English (United States)"); locale "" is the
  * one this build's words are for. Translated: pass it on, never wrap it in TR() again. */
@@ -957,13 +1018,88 @@ void ui_update_banner_tick(void);
 
 /* ---- ui_wizard.c --------------------------------------------------------------------------- */
 void ui_wizard_init(void);
-void ui_wizard_start(bool can_exit); /* can_exit: the panel is already set up, offer "Leave setup" */
+/* can_exit: the panel is already set up, offer "Leave setup"; without it (a first start) a firmware
+ * with the panel link asks for the role after Welcome (BL-048). */
+void ui_wizard_start(bool can_exit);
+/* A keypad that isn't paired: the setup's pairing step, again (Home's Pair again, BL-048). */
+void ui_wizard_pair_again(void);
 void ui_wizard_next(void);
 void ui_wizard_back(void);
 void ui_wizard_exit(void);   /* "Leave setup": back to Home, nothing else changed */
 void ui_wizard_tick(void);
 void ui_wizard_pause(void);  /* an alarm needs the main screen */
 void ui_wizard_resume(void);
+
+/* ---- ui_link.c (the panel link, docs/features/11, BL-048) ---------------------------------------
+ * A panel is the alarm panel itself (the master) or a keypad for one elsewhere in the house. The
+ * link is read through ui_backend_t.link_*, at most once a second (UI-027); with NULL entries (a
+ * firmware without the link), or while link_info answers false (not known yet), every call below
+ * says no and nothing of the link shows. */
+void ui_link_init(void);    /* ui_app_start, before the setup: the role and its partition */
+void ui_partition_input(lv_event_t *e);
+void ui_partition_view(uint8_t partition);
+void ui_link_tick(void);    /* once a second: Home's words, the open page's live words */
+bool ui_link_master(void);  /* the alarm panel, in a firmware with the link */
+bool ui_link_keypad(void);  /* a keypad: the alarm panel's pages are left out (the role gate) */
+/* LINK-025: 10 minutes without system communication; Wi-Fi, Software update and "Make it a
+ * stand-alone panel" open without a code. */
+bool ui_link_maintenance(void);
+/* A keypad that can't show the alarm panel's state (connecting, lost, not paired): arming waits. */
+bool ui_link_holds_home(void);
+/* Software update opens without a code: LINK-025's maintenance, or a keypad that can't read its
+ * alarm panel's configuration (it needs this update) and so can't check a code there. */
+bool ui_link_update_open(void);
+/* Settings opens although the last status said armed or in alarm: a keypad that can't show the
+ * alarm panel's state and has a page it needs without a code (LINK-025, an update it needs). */
+bool ui_link_settings_waived(void);
+/* A keypad keeping a fire or CO tone through a lost link (decided 2026-10-15): Home's right side
+ * is Silence (panel 6), which stops the tone here (ALARM_CMD_SILENCE through command()). */
+bool ui_link_local_alarm(void);
+/* The setup's last step on a panel becoming a keypad: its home partition at the alarm panel and
+ * that partition's name ("" not known), read now. */
+uint8_t ui_link_paired_home(char *name, size_t len);
+const char *ui_link_master_name(void); /* the alarm panel's name: a value, never translated */
+/* "Keypad 2 of Harbor House" (About, the setup's last step). */
+void ui_link_keypad_title(char *out, size_t len, uint8_t device, const char *master);
+/* Home's state card on a keypad that doesn't show the alarm panel's state (connecting, no system
+ * communication, not paired, LINK-008): true with the words; Home shows no state of its own. */
+typedef struct {
+    const char *glyph;
+    lv_color_t tone;
+    char headline[48];
+    char detail[128];
+    char note[128];
+} ui_link_home_t;
+bool ui_link_home_words(ui_link_home_t *out);
+/* Home's right side on a keypad that isn't paired: Pair again, with its words (panel 5). */
+bool ui_link_unpaired(char *title, size_t tlen, char *note, size_t nlen);
+/* ... and on a keypad keeping a fire or CO tone through a lost link: Silence (panel 6). */
+bool ui_link_silence_words(char *title, size_t tlen, char *note, size_t nlen);
+void ui_link_pair_again(void);
+/* The alarm panel's keypads on Wi-Fi: how many (the installer menu counts them), and Keypads and
+ * devices' section on top of the table; *held gets the numbers they hold (bit n - 1), which the
+ * table leaves out (LINK-001). */
+uint8_t ui_link_keypad_count(void);
+void ui_link_devices_section(lv_obj_t *body, uint16_t *held);
+bool ui_link_build(page_id_t id, int32_t arg, lv_obj_t *body, char *title, size_t tlen, char *note,
+                   size_t nlen);
+void ui_link_stop(void); /* a page is being dropped: leaving Add a keypad closes pairing */
+/* About on a keypad: its row under the panel's, the alarm panel's rows instead of Set up, and the
+ * way back to a panel of its own instead of Installer. */
+void ui_link_about_row(lv_obj_t *body);
+void ui_link_about_details(lv_obj_t *body);
+void ui_link_about_end(lv_obj_t *body);
+/* Keypad updates (docs/features/11 "Updates through the link", proposal P2). On a keypad whose
+ * alarm panel sends it its updates (outside LINK-025's maintenance and an update it needs, where
+ * its own Install stays): the alarm panel's name, else NULL. */
+const char *ui_link_fw_master(void);
+bool ui_link_fw_from_master(void); /* ... and its download comes from the alarm panel (a relay) */
+/* The alarm panel's Software update: its Keypads section (a heading, one line, a row per keypad;
+ * nothing to tap). False, and nothing drawn, without keypads. The tick follows their status lines
+ * once a second, in place; true when the page must be built again (a keypad came or went). */
+bool ui_link_update_keypads(lv_obj_t *body);
+bool ui_link_update_keypads_tick(void);
+void ui_link_update_keypads_stop(void);
 
 /* ---- ui_tz.c ------------------------------------------------------------------------------- */
 typedef struct {

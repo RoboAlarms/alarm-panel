@@ -1,7 +1,8 @@
 /*
  * ui_settings.c - the Settings view: the sections in the left column, who may open them
  * (docs/features/14, "Who can change what"), a stack of pages on the right, and the pages that
- * don't need installer mode: display and sound (anyone), users (a master code) and about. The
+ * don't need installer mode: display and sound (anyone; a change of them from elsewhere comes
+ * through here too, UI-046), users (a master code) and about. The
  * event log is Activity's (ui_app.c, BL-131 finding 7). Wi-Fi and date and time live in ui_net.c,
  * integrations in ui_integrations.c, installer pages in ui_installer.c.
  *
@@ -12,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "ui_backend/ui_prefs.h"
 #include "ui_internal.h"
 
 #define SAVE_AFTER_MS 1500u
@@ -129,16 +131,53 @@ void ui_settings_init(void)
     S.depth = 0;
 }
 
+/* The role gate (BL-048): a keypad holds no users, integrations, automations or walk test - they
+ * are the alarm panel's - so its Settings list leaves them out (Installer, About's row, too). */
+static bool section_gated(int32_t section)
+{
+    return ui_link_keypad() && (section == SECTION_USERS || section == SECTION_INTEGRATIONS ||
+                                section == SECTION_WALK || section == SECTION_AUTOMATIONS ||
+                                section == SECTION_INSTALLER);
+}
+
+static void role_gate(void)
+{
+    static const struct {
+        const char *name;
+        int32_t section;
+    } lines[] = {
+        {NOTR("set_users"), SECTION_USERS},
+        {NOTR("set_integrations"), SECTION_INTEGRATIONS},
+        {NOTR("set_walk"), SECTION_WALK},
+    };
+    for (size_t i = 0; i < sizeof(lines) / sizeof(lines[0]); i++) {
+        lv_obj_t *line = ui_find(S.main, lines[i].name);
+        bool hide = section_gated(lines[i].section);
+#if !ALARM_UI_INTEGRATIONS && !ALARM_UI_NOTIFY
+        /* Nothing to integrate with in this firmware: no Integrations section (docs/features/33).
+         */
+        hide = hide || lines[i].section == SECTION_INTEGRATIONS;
+#endif
+        if (line != NULL) {
+            lv_obj_set_flag(line, LV_OBJ_FLAG_HIDDEN, hide);
+        }
+    }
+}
+
 void ui_settings_open(void)
 {
     ui_update_tag(); /* the list is right from the start */
 #if ALARM_UI_AUTOMATIONS
     /* The Automations line, once the backend has them (docs/features/41); with Event log gone
-     * to Activity there is room for it (BL-131 finding 7). */
-    ui_set_int(&subject_automations_avail, ui_automations_available() ? 1 : 0);
+     * to Activity there is room for it (BL-131 finding 7). Not on a keypad (BL-048). */
+    ui_set_int(&subject_automations_avail, ui_automations_available() && !ui_link_keypad() ? 1 : 0);
 #endif
+    role_gate();
     ui_set_int(&subject_view, VIEW_SETTINGS);
-    const int32_t section = lv_subject_get_int(&subject_settings_section);
+    int32_t section = lv_subject_get_int(&subject_settings_section);
+    if (section_gated(section)) {
+        section = SECTION_DISPLAY;
+    }
     if (S.program) { /* About, then the Installer menu on top of it */
         select_section(SECTION_ABOUT);
         ui_page_open(PAGE_INSTALLER, 0);
@@ -170,6 +209,9 @@ void ui_settings_section(const char *which)
             section = names[i].section;
         }
     }
+    if (section_gated(section)) {
+        section = section == SECTION_INSTALLER ? SECTION_ABOUT : SECTION_DISPLAY; /* a keypad's */
+    }
     if (section == SECTION_INSTALLER) { /* the Installer page is About's (BL-189) */
         select_section(SECTION_ABOUT);
         ui_page_open(PAGE_INSTALLER, 0);
@@ -195,6 +237,7 @@ void ui_settings_leave(void)
 }
 
 static void announcements_tick(void);
+static void prefs_remote_tick(void);
 
 void ui_settings_tick(void)
 {
@@ -204,6 +247,7 @@ void ui_settings_tick(void)
     if (s_opts_dirty && lv_tick_elaps(s_opts_changed) >= SAVE_AFTER_MS) {
         save_options_now();
     }
+    prefs_remote_tick();
     if (S.program && S.be.program_keepalive != NULL &&
         lv_display_get_inactive_time(S.disp) < 5000u && lv_tick_elaps(S.keepalive_at) >= 30000u) {
         S.keepalive_at = lv_tick_get();
@@ -296,27 +340,37 @@ static const char *access_hint(ui_access_t access)
     }
 }
 
-static bool unlock_with(const char *code)
+static bool unlock_with(const char *code);
+
+static void unlock_checked(const ui_call_t *c)
 {
-    uint8_t user = 0;
-    const alarm_result_t r = S.be.authenticate != NULL
-                                 ? S.be.authenticate(S.be.ctx, code, &user)
-                                 : ALARM_ERR_DISABLED;
-    if (r != ALARM_OK) {
-        ui_beep(UI_BEEP_ERROR);
-        ui_pad_error(r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again") : ui_result_text(r));
-        return false;
+    if (!ui_pad_asks(unlock_with)) {
+        return; /* the pad closed while the code was checked */
     }
-    if (!user_allowed(s_ask_access, user)) {
+    if (c->r != ALARM_OK) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_pad_error(c->r == ALARM_ERR_INVALID_CODE ? TR("Wrong code, try again")
+                                                    : ui_result_text(c->r));
+        return;
+    }
+    if (!user_allowed(s_ask_access, c->user)) {
         ui_beep(UI_BEEP_ERROR);
         ui_pad_error(TR("This code can't open this section"));
-        return false;
+        return;
     }
-    S.auth_user = user;
-    snprintf(S.auth_code, sizeof(S.auth_code), "%s", code);
+    S.auth_user = c->user;
+    snprintf(S.auth_code, sizeof(S.auth_code), "%s", c->code);
     ui_pad_cancel();
     build_page();
-    return true;
+}
+
+/* The pad stays open; the answer opens the section (unlock_checked). */
+static bool unlock_with(const char *code)
+{
+    if (!ui_call_authenticate(code, unlock_checked, 0u)) {
+        ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+    return false;
 }
 
 /* The section's icon, as on its line in the Settings list (screen_main.xml), and a colour: the
@@ -667,7 +721,8 @@ static void open_announcements(void *ctx)
     ui_page_open(PAGE_ANNOUNCEMENTS, 0);
 }
 
-/* The main switch: off as shipped, on only by a person and only while the voice is ready; a
+/* The main switch: on as shipped (D06), on again only by a person and only while the voice is
+ * ready (on a link keypad too: its own voice, LINK-028); a
  * refusal says why in a line (no toast). The page is built again: the three kinds below follow it. */
 static void on_voice_toggle(bool on, void *ctx)
 {
@@ -950,6 +1005,111 @@ static void build_night(lv_obj_t *body, char *title, size_t tlen, char *note, si
     ui_paragraph(body, TR("A touch, a change of state or an alarm wakes the screen. An alarm shows at "
                           "the normal brightness, at night too."),
                  ui_tone_gray());
+}
+
+/* ---- a change from elsewhere (docs/features/07 UI-046; docs/features/11 "Applying a change from
+ * elsewhere") -------------------------------------------------------------------------------------
+ * Home Assistant (through the master) or the master's console changes this panel's Screen and
+ * sound settings, field by field. The patch comes through the backend's mailbox and goes through
+ * the screen's own copy (S.opt) and its normal save (ui_app_apply_options), on this task: what the
+ * screen shows and what is stored never part, and the voice follows as after a change made here.
+ * It is refused whole while a person is changing these settings here (the setup, a page that shows
+ * them, a change not saved yet: in use) and while an alarm, entry time or exit time is on the
+ * screen (held). What the screen shows changes from elsewhere at most once per UI_PREFS_LOOK_MS -
+ * the look, and the screen-off and saver delays and the clock's format, whose change shows at once
+ * too (UI_PREFS_SHOWN: a new delay takes a screen nobody touches from the saver to dark and back):
+ * a patch that would change one sooner waits, whole, and is judged again then, so no flood of
+ * changes can make the screen or its backlight flicker (WCAG 2.3.1). Nothing on the screen says it
+ * happened: no word, no toast (the owner's decision 10, BL-216). */
+static struct {
+    bool held;         /* a patch taken, waiting for the 2 s */
+    uint32_t ticket;   /* its ticket, answered with prefs_remote_done */
+    ui_prefs_patch_t patch;
+    bool shown_recent; /* shown_at is less than UI_PREFS_LOOK_MS ago */
+    uint32_t shown_at; /* when a change from elsewhere last changed what the screen shows */
+} s_remote;
+
+/* A page that shows these settings is open: Screen and sound and its pages, and Time and language,
+ * whose Clock row is a settings field too. What it shows is never changed under a finger. */
+static bool prefs_pages_open(void)
+{
+    if (lv_subject_get_int(&subject_view) != VIEW_SETTINGS) {
+        return false;
+    }
+    for (uint8_t i = 0; i < S.depth; i++) {
+        switch (S.pages[i].id) {
+        case PAGE_DISPLAY:
+        case PAGE_SAVER:
+        case PAGE_NIGHT:
+        case PAGE_ANNOUNCEMENTS:
+        case PAGE_TIME: return true;
+        default: break;
+        }
+    }
+    return false;
+}
+
+/* Judges a patch and applies what it may: true when it is answered (why filled in), false while it
+ * waits for the 2 s (judged again then, from the start). */
+static bool prefs_remote_apply(const ui_prefs_patch_t *p, uint8_t why[UI_PREFS_F_LAST])
+{
+    memset(why, 0, UI_PREFS_F_LAST);
+    if (S.wizard_on || prefs_pages_open() || s_opts_dirty) {
+        ui_prefs_refuse_all(p, (uint8_t)UI_PREFS_WHY_IN_USE, why);
+        return true;
+    }
+    if (ui_app_held()) {
+        ui_prefs_refuse_all(p, (uint8_t)UI_PREFS_WHY_HELD, why);
+        return true;
+    }
+    ui_prefs_patch_t take = *p;
+    /* Announcements go on only while the voice is ready, as from this screen (D06); off, or on
+     * while already on, always. */
+    const uint32_t voice = UI_PREFS_BIT(UI_PREFS_F_VOICE_ENABLED);
+    if ((take.have & voice) != 0u && take.value[UI_PREFS_F_VOICE_ENABLED - 1u] == 1u &&
+        !S.opt.voice_enabled) {
+        ui_voice_info_t info;
+        ui_voice_info(&info);
+        if (info.state != UI_VOICE_READY) {
+            why[UI_PREFS_F_VOICE_ENABLED - 1u] = (uint8_t)UI_PREFS_WHY_VOICE_NOT_READY;
+            take.have &= ~voice;
+        }
+    }
+    ui_options_t opt = S.opt; /* the partition, the language and the region stay as they are */
+    const uint32_t changed = ui_prefs_merge(&opt, &take, why);
+    if ((changed & UI_PREFS_SHOWN) != 0u && s_remote.shown_recent) {
+        return false;
+    }
+    if (changed != 0u) {
+        if ((changed & UI_PREFS_SHOWN) != 0u) {
+            s_remote.shown_recent = true;
+            s_remote.shown_at = lv_tick_get();
+        }
+        ui_app_apply_options(&opt); /* shown and saved as a change made here is */
+    }
+    return true;
+}
+
+static void prefs_remote_tick(void)
+{
+    if (S.be.prefs_remote_take == NULL || S.be.prefs_remote_done == NULL) {
+        return;
+    }
+    if (s_remote.shown_recent && lv_tick_elaps(s_remote.shown_at) >= UI_PREFS_LOOK_MS) {
+        s_remote.shown_recent = false;
+    }
+    if (!s_remote.held) {
+        if (!S.be.prefs_remote_take(S.be.ctx, &s_remote.patch, &s_remote.ticket)) {
+            return;
+        }
+    } else if (s_remote.shown_recent) {
+        return; /* what the screen shows changed from elsewhere less than 2 s ago */
+    }
+    uint8_t why[UI_PREFS_F_LAST];
+    s_remote.held = !prefs_remote_apply(&s_remote.patch, why);
+    if (!s_remote.held) {
+        S.be.prefs_remote_done(S.be.ctx, s_remote.ticket, why);
+    }
 }
 
 /* ---- users --------------------------------------------------------------------------------- */
@@ -1508,8 +1668,32 @@ static void running_for(char *out, size_t len, uint32_t up)
     I18N_FORMAT(out, len, TR_C("running for", "{0} {1}"), big, small);
 }
 
+/* About's Set up section: zones, users and events in use. */
+static void about_setup(lv_obj_t *body, char *buf, size_t blen, uint32_t log_count)
+{
+    unsigned zones = 0;
+    unsigned users = 0;
+    for (unsigned z = 0; z < ALARM_MAX_ZONES; z++) {
+        zones += S.cfg->zones[z].type != ALARM_ZT_NOT_USED;
+    }
+    for (unsigned u = 0; u < ALARM_MAX_USERS; u++) {
+        users += S.cfg->users[u].authority != ALARM_AUTH_NONE;
+    }
+    /* TR: About, a heading: what is set up (zones, users, events). At most 47 bytes */
+    ui_section(body, TR("Set up"));
+    /* TR: About, zones in use {0} of the most the panel has {1}. At most 31 bytes */
+    I18N_FORMAT(buf, blen, TR("{0} of {1}"), zones, (unsigned)ALARM_MAX_ZONES);
+    ui_row_value(body, TR("Zones"), buf);
+    I18N_FORMAT(buf, blen, TR("{0} of {1}"), users, (unsigned)ALARM_MAX_USERS);
+    ui_row_value(body, TR("Users"), buf);
+    /* TR: About, how many events the log holds. At most 31 bytes */
+    I18N_FORMAT(buf, blen, TRN("{0} event", "{0} events", log_count), (unsigned)log_count);
+    ui_row_value(body, TR("Event log"), buf);
+}
+
 /* What System details showed, now on About itself after SD card (BL-189): This panel, Network,
- * Set up, Hardware. The panel's ID and version are in About's top row. */
+ * Set up (a keypad: its alarm panel, BL-048), Hardware. The panel's ID and version are in About's
+ * top row. */
 static void about_details(lv_obj_t *body)
 {
     ui_about_t a;
@@ -1561,24 +1745,12 @@ static void about_details(lv_obj_t *body)
     ui_row_value(body, TR("IP address"), w.state == UI_NET_CONNECTED && w.ip[0] ? w.ip : "-");
     ui_row_value(body, TR("MAC address"), w.mac[0] ? w.mac : "-");
 
-    unsigned zones = 0;
-    unsigned users = 0;
-    for (unsigned z = 0; z < ALARM_MAX_ZONES; z++) {
-        zones += S.cfg->zones[z].type != ALARM_ZT_NOT_USED;
+    if (ui_link_keypad()) {
+        /* a keypad's zones, users and event log are the alarm panel's (BL-048) */
+        ui_link_about_details(body);
+    } else {
+        about_setup(body, buf, sizeof(buf), (uint32_t)a.log_count);
     }
-    for (unsigned u = 0; u < ALARM_MAX_USERS; u++) {
-        users += S.cfg->users[u].authority != ALARM_AUTH_NONE;
-    }
-    /* TR: About, a heading: what is set up (zones, users, events). At most 47 bytes */
-    ui_section(body, TR("Set up"));
-    /* TR: About, zones in use {0} of the most the panel has {1}. At most 31 bytes */
-    I18N_FORMAT(buf, sizeof(buf), TR("{0} of {1}"), zones, (unsigned)ALARM_MAX_ZONES);
-    ui_row_value(body, TR("Zones"), buf);
-    I18N_FORMAT(buf, sizeof(buf), TR("{0} of {1}"), users, (unsigned)ALARM_MAX_USERS);
-    ui_row_value(body, TR("Users"), buf);
-    /* TR: About, how many events the log holds. At most 31 bytes */
-    I18N_FORMAT(buf, sizeof(buf), TRN("{0} event", "{0} events", a.log_count), (unsigned)a.log_count);
-    ui_row_value(body, TR("Event log"), buf);
 
     ui_section(body, TR("Hardware"));
     ui_row_value(body, TR("Processor"), a.chip[0] ? a.chip : "-");
@@ -1636,14 +1808,20 @@ static void build_about(lv_obj_t *body, char *title, size_t tlen, char *note, si
     }
     ui_row_link(body, UI_ICON_SHIELD_CHECK, ui_tone_green(), TR("RoboAlarms Panel"), detail, NULL, NULL,
                 NULL, NULL);
+    ui_link_about_row(body); /* a keypad: what it is a keypad of (BL-048) */
     ui_update_about_row(body, about_open, (void *)(intptr_t)PAGE_SOFTWARE);
     ui_storage_about_row(body, about_open, (void *)(intptr_t)PAGE_SD_CARD);
     about_details(body);
-    ui_section(body, ""); /* a gap before the Installer row */
-    /* TR: Settings > About, the Installer row's line. At most 111 bytes */
-    ui_row_link(body, UI_ICON_WRENCH, ui_tone_blue(), TR("Installer"),
-                TR("Changes how the alarm works · needs the installer code"), NULL,
-                UI_ICON_CHEVRON_RIGHT, about_open, (void *)(intptr_t)PAGE_INSTALLER);
+    if (ui_link_keypad()) {
+        /* Installer is the alarm panel's; a keypad has the way back to a panel of its own */
+        ui_link_about_end(body);
+    } else {
+        ui_section(body, ""); /* a gap before the Installer row */
+        /* TR: Settings > About, the Installer row's line. At most 111 bytes */
+        ui_row_link(body, UI_ICON_WRENCH, ui_tone_blue(), TR("Installer"),
+                    TR("Changes how the alarm works · needs the installer code"), NULL,
+                    UI_ICON_CHEVRON_RIGHT, about_open, (void *)(intptr_t)PAGE_INSTALLER);
+    }
     ui_paragraph(body, TR("Made with LVGL (MIT), the Inter typeface (SIL Open Font License 1.1), "
                           "Lucide icons (ISC) and parts of Z-Wave JS (MIT)."),
                  ui_tone_gray());
@@ -1679,7 +1857,9 @@ static void build_page(void)
     case PAGE_SOFTWARE:
         /* TR: About > Software update, the title. At most 47 bytes */
         i18n_utf8_copy(title, sizeof(title), TR("Software update"));
-        if (!ui_settings_allowed(ACCESS_SYSTEM)) {
+        /* a keypad in LINK-025's maintenance, or one that needs this update to read its alarm
+         * panel's settings (it can't check a code there), opens it without a code */
+        if (!ui_settings_allowed(ACCESS_SYSTEM) && !ui_link_update_open()) {
             /* TR: a locked page: the line under the title. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SYSTEM, TR("Software update"),
                                TR("The system master or installer code updates the software"),
@@ -1699,7 +1879,8 @@ static void build_page(void)
     case PAGE_WIFI:
         /* TR: Settings, the page title. At most 47 bytes */
         i18n_utf8_copy(title, sizeof(title), TR("Wi-Fi and network"));
-        if (!ui_settings_allowed(ACCESS_SHARED)) {
+        /* a keypad without the alarm panel for 10 minutes opens it without a code (LINK-025) */
+        if (!ui_settings_allowed(ACCESS_SHARED) && !ui_link_maintenance()) {
             /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SHARED, TR("Wi-Fi and network"),
                                TR("A master or installer code changes the network"), note,
@@ -1713,7 +1894,7 @@ static void build_page(void)
     case PAGE_NETWORK:
         /* TR: Settings > Wi-Fi > Network, the page title. At most 47 bytes */
         i18n_utf8_copy(title, sizeof(title), TR("Network"));
-        if (!ui_settings_allowed(ACCESS_SHARED)) {
+        if (!ui_settings_allowed(ACCESS_SHARED) && !ui_link_maintenance()) {
             /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SHARED, TR("Network"),
                                TR("A master or installer code changes the network"), note,
@@ -1779,6 +1960,9 @@ static void build_page(void)
         ui_zwave_build(pg->id, pg->arg, body, title, sizeof(title), note, sizeof(note));
         break;
 #endif
+    case PAGE_LINK_STANDALONE: /* a keypad's (BL-048): no installer mode on a keypad */
+        ui_link_build(pg->id, pg->arg, body, title, sizeof(title), note, sizeof(note));
+        break;
 #if ALARM_UI_AUTOMATIONS
     case PAGE_AUTOMATIONS:
     case PAGE_AUTOMATION:

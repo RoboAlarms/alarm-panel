@@ -299,7 +299,7 @@ A faulted motion sensor makes the panel "not ready" for Away but still allows St
 | CORE-TRBL-005 | Tamper while armed = alarm | `test_tamper_armed_is_alarm` |
 | CORE-TRBL-006 | Low battery doesn't block arming | `test_low_battery_does_not_block` |
 | CORE-TRBL-007 | Zone supervision (missed check-in = CHECK) | `test_zone_supervision` |
-| CORE-TRBL-008 | Device (keypad) supervision | `test_device_supervision` |
+| CORE-TRBL-008 | Device (keypad) supervision; external keypads supply their home partition, and restore retains the loss scope | `test_device_supervision`, `test_keypad_supervision_home_partition`, `test_disabled_device_scope_is_not_reused` |
 | CORE-TRBL-009 | Trouble by day / alarm by night | `test_day_night_zone` |
 | CORE-TRBL-010 | Monitor zones report only | `test_monitor_zone` |
 | CORE-TRBL-011 | Exit beeps outrank trouble beeps | `test_trouble_beeps_below_exit` |
@@ -330,6 +330,7 @@ A faulted motion sensor makes the panel "not ready" for Away but still allows St
 | CORE-CFG-019 | `alarm_config_check()` answers with a code (`alarm_config_problem_t`, never renumbered) and the partition, zone, user or device it concerns, so a screen can say it in its language (docs/features/37); `alarm_config_validate()`'s English reason is the same check, unchanged | `test_config.c: test_check_codes` |
 | CORE-CFG-020 | A zone's spoken name is stored as eight little-endian token IDs (field 0x0B, a nonzero prefix then zeros) and survives older blobs, restarts and a missing voice pack as a draft ([08 voice-first-build.md](../08-Audio-and-Annunciation/voice-first-build.md)) | `test_config.c: test_zone_words_shape`; `test_codec.c: test_voice_fixture` (`codec_fixture_v6.h`: exact bytes, little-endian IDs, an older reader sees v5), `test_voice_fields_rejected`, `test_worst_case_fits`; v1-v5 decode with no spoken names |
 | CORE-CFG-021 | Non-reusing voice revisions (system field 0x1E, zone fields 0x0C-0x0E) keep an approval from outliving a rename, a partition move, a source change or a zone's removal and reuse | `test_config.c: test_voice_reconcile_rules` (no write grants, replaces or replays approval, recipe A->B->A included), `test_voice_approve_and_exhaustion`, `test_set_config_reconciles_voice` (`alarm_engine_set_config` runs `alarm_config_voice_reconcile` on every write; `alarm_engine_voice_approve`/`_withdraw` refuse a stale generation, binding or words), `test_voice_invalidate_zones_keeps_concurrent_edit` (a sensor change's invalidation on the running configuration keeps another writer's edit), `test_voice_restore`; `test_backup.c: test_restore_config_never_brings_approval_back` (older and interrupted restores); `test_zone_hub.c: test_same_sensors` (which bind is a new sensor); `test_voice_epoch.c` (a second same-zone rebind during an invalidation stays owed, a stale epoch never clears, settling until the binding is stored); `zone_service.c` `change()` and `alarm_service_voice_invalidate` (the ordering; firmware build only) |
+| CORE-CFG-022 | `alarm_config_decode_lenient()` reads a configuration another panel made (a newer master's copy on an older keypad, [11](../11-Panel-Link-Master-Keypad/README.md) LINK-019): no validation, values it doesn't know kept as they came, an entry beyond this build's capacities skipped with its fields; a damaged, truncated or incompatible blob, an index of 0 or a value too wide for its field is still refused | `test_codec.c: test_lenient_decode` |
 | CORE-CFG-018 | `alarm_zone_config_resets_state()` names exactly the zones whose troubles a configuration change makes the engine forget (new, removed, retyped or moved; not renamed), so the zone hub can tell it again ([22](../22-Zone-Sources/README.md)); a retyped zone keeps its sensor's open/closed state, a removed or new zone starts closed | `test_config.c: test_resets_state_rule` |
 
 ### Installer mode and platform events
@@ -343,7 +344,7 @@ A faulted motion sensor makes the panel "not ready" for Away but still allows St
 | CORE-PROG-006 | The recovery window closes, can be switched off (`power_up_program`), needs every partition disarmed, and closes when the option is turned off | `test_recovery_window_limits` |
 | CORE-PROG-007 | In installer mode, from the same source, `alarm_engine_program_set_code` sets the installer and master codes only (code policy, uniqueness) | `test_program_set_code_rules` |
 | CORE-PROG-008 | Platform events (`factory_reset`) are numbered, logged and reported like engine events; other types are refused | `test_platform_event` |
-| CORE-PROG-009 | `firmware_update` platform events (installing, updated, rolled back, co-processor updated or failed; docs/features/13) are logged and reported the same way; unknown stages are refused | `test_platform_event` |
+| CORE-PROG-009 | `firmware_update` platform events are logged and reported the same way: the panel's own stages 0-8 (installing, updated, rolled back, co-processor updated or failed, server changed, stopped, rolling back, restart put off; docs/features/13) with arg2 0, and a keypad's stages 9-13 on its master (docs/features/11) only from source {keypad, 1..`ALARM_MAX_DEVICES`}, with arg2 0 except on `keypad_failed`, where it is the why (never 0); a zone, unknown stages and other fields are refused | `test_platform_event`, `test_firmware_update_keypad_stages` |
 | CORE-PROG-010 | `alarm_engine_platform_event_ex` adds a zone and a second argument to a platform event: the Z-Wave network's events (device added, added insecure, removed, left, network reset, radio restarted; docs/features/36 network.md §15) are numbered, logged and reported the same way, each type accepting only its own fields | `test_program.c: test_zwave_platform_events` |
 | CORE-PROG-011 | `alarm_engine_program_enter_as()` opens installer mode for a user the platform has already identified (a Panel Manager sign-in), without a code: the slot must hold the installer, read again now (anyone else, user 0 or an empty slot is `not_authorized`); every partition idle and one source at a time as CORE-PROG-001/002 (not while someone is in installer mode at the panel), never the power-up recovery path, logged and reported as `program_enter` by that user and source; nothing counts toward a lockout. The Panel Manager applies programming, sets the installer and master codes and starts a factory reset this way | `test_program.c: test_program_enter_as_installer`, `test_program_enter_as_refusals`, `test_program_enter_as_conditions` |
 | CORE-PROG-012 | `automation_failed` (docs/features/41 AUT-009) is a platform event, numbered, logged and reported now: partition 0, the triggering zone or 0 (at most `ALARM_MAX_ZONES`), arg the reason (`alarm_auto_fail_t`, 1..7), arg2 the action (`ALARM_AUTO_ACT_*`: Lock or Close with a device's reason, 0 for arming with `no_warning` only), src {automation, uid}; a reason of 0 or past the last, any other action or pair, or a zone out of range is refused and records nothing | `test_program.c: test_automation_failed_event` |
@@ -388,7 +389,7 @@ Outputs (`on_output`): `BELL` per partition (`steady` / `temporal3` / `temporal4
 | `user_updated` | Name, authority or partitions changed; the code stays | yes | - |
 | `program_enter` / `program_exit` | Installer mode (arg 1: power-up recovery / idle timeout) | yes | 627/628 program mode |
 | `factory_reset` | Recorded by the platform just before erasing (arg bit 0: event log too) | yes | - |
-| `firmware_update` | Recorded by the platform (arg `alarm_fw_stage_t`: `installing`, `updated`, `rolled_back`, `coprocessor_updated`, `coprocessor_failed`; JSON key `stage`), [13](../13-OTA-Updates/README.md) | yes | - |
+| `firmware_update` | Recorded by the platform (arg `alarm_fw_stage_t`: `installing` 0, `updated`, `rolled_back`, `coprocessor_updated`, `coprocessor_failed`, `server_changed`, `stopped`, `rolling_back`, `restart_put_off` 8; a keypad's, on its master from {keypad, n}: `keypad_installing` 9, `keypad_updated` 10, `keypad_rolled_back` 11, `keypad_failed` 12 (arg2 its why), 13 reserved; JSON key `stage`, and for `keypad_failed` `why` and its name `reason`), [13](../13-OTA-Updates/README.md), [11](../11-Panel-Link-Master-Keypad/README.md) | yes | - |
 | `zwave_device_added` / `zwave_device_added_insecure` | A Z-Wave device joined, encrypted or not (arg2: how, [36](../36-Z-Wave-Sensors-ZAC93/README.md)) | yes | - |
 | `zwave_device_removed` | The installer removed a Z-Wave device (arg2: why) | yes | - |
 | `zwave_device_left` | A Z-Wave device left the network by itself (arg2: why) | yes | - |
@@ -547,10 +548,9 @@ v1 is complete: every requirement above has its tagged host test. What follows i
 - [ ] Common/lobby partition logic (a "common zone")
 
 ### On the keypads (M7)
-- [ ] Cross-partition GOTO on the keypads: each keypad has a home partition and returns to it
-  after 2 minutes idle (KPD-006 in [04](../04-Keypad-Behavior-and-Commands/README.md)) (BL-048). The
-  engine's key parser already returns it (CORE-KEY-010), and the service console's keypad
-  follows it (`panel_console.c` `keypad_result`).
+- [x] Live acceptance on paired 7-inch/10-inch panels of cross-partition switching (KPD-006, BL-048): installer default,
+  allow/lock, idle seconds (default 30), Never and no-code view selection. Activity renews inactivity;
+  alarm commands retain authorization. See [11](../11-Panel-Link-Master-Keypad/README.md).
 
 ### Covered elsewhere or dropped
 - Duplicate of [18](../18-Schedules-and-Auto-Arm/README.md) (`alarm_sched` with host tests;

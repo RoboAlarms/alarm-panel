@@ -41,6 +41,7 @@
 #include "web_config.h"
 #include "web_extra.h"
 #include "web_login.h"
+#include "web_keypads.h"
 #include "web_mem.h"
 #include "web_rules.h"
 #include "web_screen.h"
@@ -2216,6 +2217,8 @@ static esp_err_t get(httpd_req_t *r)
         cJSON_AddNumberToObject(o, "window_s", h.window_s);
         return json(r, o);
     }
+    if (!strcmp(path, "keypads"))
+        return json(r, web_keypads_get(s->user));
     if (!strcmp(path, "updates")) /* ACC_SYSTEM (get_access): OTA-022 */
         return updates_get(r, authority);
     if (!strcmp(path, "walk-test")) /* ACC_SHARED (get_access): docs/features/40 */
@@ -2540,6 +2543,16 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
                    ? okay(r)
                    : error(r, "409 Conflict", "Could not persist remote access");
     }
+    if (!strcmp(path, "keypads")) {
+        if (s->grant) return error(r, "403 Forbidden", "password_sign_in_required");
+        esp_err_t refused = ESP_OK;
+        if (!recent_password(r, s, str(o, "me_password"), &refused)) return refused;
+        const char *why_keypad = web_keypads_post(s->user, o);
+        if (!why_keypad && !strcmp(str(o, "op"), "save") &&
+            cJSON_GetNumberValue(cJSON_GetObjectItemCaseSensitive(o, "device")) == 0 && A.preferences_changed)
+            A.preferences_changed();
+        return why_keypad ? error(r, "409 Conflict", why_keypad) : okay(r);
+    }
     if (!strcmp(path, "alarm")) {
         /* Programming as the signed-in installer, without a code (CORE-PROG-011): the engine
          * enters installer mode as this user, read again on the alarm task. */
@@ -2568,6 +2581,10 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
             mbedtls_platform_zeroize(cfg, sizeof(*cfg)); /* it holds the code hashes */
             free(cfg);
             return error(r, "400 Bad Request", why[0] ? why : "Invalid configuration");
+        }
+        if (!web_keypads_config_valid(cJSON_GetObjectItemCaseSensitive(o, "changes"), cfg)) {
+            mbedtls_platform_zeroize(cfg, sizeof(*cfg)); free(cfg);
+            return error(r, "409 Conflict", "Move assigned keypads first; edit paired keypads in their popup");
         }
         const alarm_result_t e = alarm_service_program_apply_as(&SOURCE, s->user, revision, cfg);
         mbedtls_platform_zeroize(cfg, sizeof(*cfg));
@@ -3374,6 +3391,10 @@ static void maintenance(void *arg)
          * (web_login_retry() itself waits its own 5 s between flash tries; code review S01). */
         if (server && web_login_owed() && ++owed_ticks % 5 == 0)
             (void)httpd_queue_work(server, login_retry_work, NULL);
+        if (server)
+            (void)httpd_queue_work(server, web_keypads_tick, NULL);
+        else
+            web_keypads_tick(NULL); /* server stopped: no HTTP worker races this expiry */
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }

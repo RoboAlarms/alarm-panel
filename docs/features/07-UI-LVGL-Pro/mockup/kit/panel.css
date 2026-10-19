@@ -176,6 +176,9 @@
 .disk > * { position: relative; }
 .disk .count { color: var(--color_text); }
 .hero .detail, .hero .note { width: 100%; }
+.home_partition { width: var(--pane_w); height: 100%; flex: none; display: flex; flex-direction: column; gap: var(--space_lg); }
+.home_partition > .hero { flex: 1 1 0; min-height: 0; height: auto; }
+.home_partition > :last-child { flex: none; }
 
 .pane { width: var(--pane_w); height: 100%; flex: none; position: relative; }
 .panel_arm { height: 100%; display: flex; flex-direction: column; gap: var(--space_lg); }
@@ -425,6 +428,8 @@
 /* Proposal marks: a dashed outline an agent puts around what a proposal changes (M.changed). */
 .changed { outline: 2px dashed var(--color_violet); outline-offset: 3px; }
 .pane > .changed, .settings_page > .changed { height: 100%; }
+/* Several rows marked at once keep the page's gap between them */
+.page_body > .changed { display: flex; flex-direction: column; gap: var(--space_sm); }
 
 /* big_value, action_pair */
 .big_value { background: var(--color_surface); border-radius: var(--radius_md); padding: var(--space_lg); display: flex; flex-direction: column; align-items: center; gap: var(--space_xs); }
@@ -470,6 +475,8 @@
 /* arm_strip (components/home/arm_strip, D19): above the arming tiles, which keep their look and share the height left */
 .pane_stack { height: 100%; display: flex; flex-direction: column; gap: var(--space_lg); }
 .pane_stack > .panel_arm { flex: 1 1 0; min-height: 0; height: auto; }
+/* BL-048: a keypad's Silence (panel_silence, flex_grow) under Check the alarm panel */
+.pane_stack > .action_tile { flex: 1 1 0; min-height: 0; height: auto; }
 .arm_strip { flex: none; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; text-align: left;
   background: var(--color_surface); border: 1px solid var(--color_line);
   padding: var(--space_md) var(--space_lg); gap: var(--space_md); border-radius: var(--radius_lg); }

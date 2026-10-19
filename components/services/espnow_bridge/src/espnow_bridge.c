@@ -22,21 +22,28 @@ static QueueHandle_t commands, bulk, received, completed;
 static bool ready;
 static const uint8_t broadcast[6] = {255, 255, 255, 255, 255, 255};
 
+/* The callbacks' packets are static, not on their callers' small stacks: rx runs only on the
+ * Wi-Fi task and request only on Hosted's receive task (each one context, never re-entered),
+ * and xQueueSend copies the packet before the next call. */
+static packet_t rx_packet, request_packet;
+
 static void rx(const esp_now_recv_info_t *info, const uint8_t *data, int len)
 {
     if (!info || !data || len <= 0 || len > ENB_DATA_MAX)
         return;
-    packet_t p = {.n = ENB_HEADER + (size_t)len};
-    p.p[0] = ENB_VERSION;
-    p.p[1] = ENB_RECV;
-    memcpy(p.p + 4, info->src_addr, 6);
+    packet_t *const p = &rx_packet;
+    memset(p->p, 0, ENB_HEADER);
+    p->n = ENB_HEADER + (size_t)len;
+    p->p[0] = ENB_VERSION;
+    p->p[1] = ENB_RECV;
+    memcpy(p->p + 4, info->src_addr, 6);
     if (info->rx_ctrl) {
-        p.p[10] = info->rx_ctrl->channel;
-        p.p[11] = (uint8_t)info->rx_ctrl->rssi;
+        p->p[10] = info->rx_ctrl->channel;
+        p->p[11] = (uint8_t)info->rx_ctrl->rssi;
     }
-    enb_put16(p.p + 12, (uint16_t)len);
-    memcpy(p.p + ENB_HEADER, data, (size_t)len);
-    (void)xQueueSend(received, &p, 0);
+    enb_put16(p->p + 12, (uint16_t)len);
+    memcpy(p->p + ENB_HEADER, data, (size_t)len);
+    (void)xQueueSend(received, p, 0);
 }
 
 static void sent(const wifi_tx_info_t *info, esp_now_send_status_t status)
@@ -51,10 +58,10 @@ static void request(uint32_t id, const uint8_t *data, size_t n, void *ctx)
     (void)ctx;
     if (!enb_valid(data, n) || data[1] > ENB_SEND)
         return;
-    packet_t p = {.n = n};
-    memcpy(p.p, data, n);
+    request_packet.n = n;
+    memcpy(request_packet.p, data, n);
     QueueHandle_t q = data[1] == ENB_SEND && data[11] == 0 ? bulk : commands;
-    (void)xQueueSend(q, &p, 0); /* the link protocol retries a full queue */
+    (void)xQueueSend(q, &request_packet, 0); /* the link protocol retries a full queue */
 }
 
 static esp_err_t peer(const uint8_t *mac)

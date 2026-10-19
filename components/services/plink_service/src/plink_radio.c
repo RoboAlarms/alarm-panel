@@ -25,6 +25,10 @@ static atomic_uint state_at;
 static uint16_t sequence;
 static const uint8_t bcast[6] = {255, 255, 255, 255, 255, 255};
 
+/* Not on the ESP-Hosted receive task's stack: incoming() runs only there (one context, never
+ * re-entered), and xQueueSend copies it before the next call. */
+static radio_packet_t rx_packet;
+
 static void incoming(uint32_t id, const uint8_t *p, size_t n, void *ctx)
 {
     (void)id;
@@ -40,9 +44,10 @@ static void incoming(uint32_t id, const uint8_t *p, size_t n, void *ctx)
         atomic_store(&radio_channel, p[10]);
         atomic_store(&state_at, (uint32_t)link_now());
     } else if (p[1] == ENB_RECV) {
-        radio_packet_t packet = {.at = link_now(), .len = n};
-        memcpy(packet.bytes, p, n);
-        (void)xQueueSend(rx, &packet, 0);
+        rx_packet.at = link_now();
+        rx_packet.len = n;
+        memcpy(rx_packet.bytes, p, n);
+        (void)xQueueSend(rx, &rx_packet, 0);
     }
 }
 

@@ -3862,6 +3862,7 @@ static uint16_t k_caps_of(const kp_t *k)
  * knows (0x8000, 0x4000) is never offered, so never common. */
 static unsigned wifi_reads, wifi_receives;
 static bool wifi_available;
+static bool wifi_expect_empty; /* the master answers outside the enrollment window */
 static bool wifi_read(void *ctx, plink_wifi_t *out)
 {
     (void)ctx;
@@ -3875,8 +3876,9 @@ static void wifi_received(void *ctx, const plink_wifi_t *wifi)
 {
     (void)ctx;
     ++wifi_receives;
-    TEST_ASSERT_EQUAL_STRING(wifi_available ? "Harbor House" : "", wifi->ssid);
-    TEST_ASSERT_EQUAL_STRING(wifi_available ? "fictional-test-password" : "", wifi->password);
+    const bool full = wifi_available && !wifi_expect_empty;
+    TEST_ASSERT_EQUAL_STRING(full ? "Harbor House" : "", wifi->ssid);
+    TEST_ASSERT_EQUAL_STRING(full ? "fictional-test-password" : "", wifi->password);
 }
 /* LINK-053: no credentials until pairing and a negotiated authenticated session;
  * loss retries, duplicates once, and cancellation before manual entry rejects late replies. */
@@ -3884,6 +3886,7 @@ static void test_wifi_enrollment_authenticated_requested_and_cancellable(void)
 {
     wifi_reads = wifi_receives = 0;
     wifi_available = true;
+    wifi_expect_empty = false;
     R.m_caps = PLINK_CAP_WIFI;
     R.port.wifi_credentials = wifi_read;
     plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
@@ -3937,6 +3940,7 @@ static void test_wifi_enrollment_restart_rejects_old_reply(void)
 {
     wifi_reads = wifi_receives = 0;
     wifi_available = true;
+    wifi_expect_empty = false;
     R.m_caps = PLINK_CAP_WIFI;
     R.port.wifi_credentials = wifi_read;
     plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
@@ -3970,11 +3974,13 @@ static void test_wifi_enrollment_restart_rejects_old_reply(void)
 }
 
 /* LINK-053, LINK-017: an older master remains usable without credential support,
- * including after either peer restarts. An upgrade enables setup without pairing again. */
+ * including after either peer restarts. An upgrade answers a keypad paired before it, but with
+ * no network: the home Wi-Fi goes only within 10 minutes of an enrollment the master saw. */
 static void test_wifi_enrollment_older_master_restarts_and_upgrade(void)
 {
     wifi_reads = wifi_receives = 0;
     wifi_available = true;
+    wifi_expect_empty = false;
     R.m_caps = 0;
     R.port.wifi_credentials = wifi_read;
     plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
@@ -3999,10 +4005,50 @@ static void test_wifi_enrollment_older_master_restarts_and_upgrade(void)
     R.m_caps = PLINK_CAP_WIFI;
     master_restart();
     TEST_ASSERT_TRUE(run_until(15000u, c_all_synced, NULL));
+    wifi_expect_empty = true;
     TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
     run_ms(1000);
     TEST_ASSERT_EQUAL_UINT(1, wifi_receives);
+    TEST_ASSERT_EQUAL_UINT(0, wifi_reads);
     TEST_ASSERT_EQUAL_UINT(device, dev(a));
+}
+
+/* LINK-053: the home Wi-Fi goes to a keypad only within 10 minutes of its PAIR_DONE. Later
+ * (or to a keypad paired before the master last started) the answer is an empty network,
+ * and the stored credentials aren't even read. */
+static void test_wifi_enrollment_only_within_ten_minutes_of_pairing(void)
+{
+    wifi_reads = wifi_receives = 0;
+    wifi_available = true;
+    wifi_expect_empty = false;
+    R.m_caps = PLINK_CAP_WIFI;
+    R.port.wifi_credentials = wifi_read;
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
+    remake_blob();
+    plink_master_time(&R.m, mnow(), epoch_now(), "UTC0");
+    pump(mnow());
+    kp_t *a = kp_add();
+    a->caps = PLINK_CAP_WIFI;
+    kp_boot(a);
+    a->k.port.wifi_credentials = wifi_received;
+    pair_kp(a);
+    TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
+    run_ms(1000);
+    TEST_ASSERT_EQUAL_UINT(1, wifi_receives);
+    TEST_ASSERT_EQUAL_UINT(1, wifi_reads);
+    run_ms(PLINK_WIFI_SHARE_MS);
+    wifi_expect_empty = true;
+    TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
+    run_ms(1000);
+    TEST_ASSERT_EQUAL_UINT(2, wifi_receives);
+    TEST_ASSERT_EQUAL_UINT(1, wifi_reads);
+    /* A master restart forgets the window too (RAM only). */
+    master_restart();
+    TEST_ASSERT_TRUE(run_until(15000u, c_all_synced, NULL));
+    TEST_ASSERT_TRUE(plink_keypad_wifi_request(&a->k, know(a)));
+    run_ms(1000);
+    TEST_ASSERT_EQUAL_UINT(3, wifi_receives);
+    TEST_ASSERT_EQUAL_UINT(1, wifi_reads);
 }
 
 static void test_capabilities_offered_meet_in_the_and(void)
@@ -7207,6 +7253,7 @@ int main(void)
     RUN_TEST(test_wifi_enrollment_authenticated_requested_and_cancellable);
     RUN_TEST(test_wifi_enrollment_restart_rejects_old_reply);
     RUN_TEST(test_wifi_enrollment_older_master_restarts_and_upgrade);
+    RUN_TEST(test_wifi_enrollment_only_within_ten_minutes_of_pairing);
     RUN_TEST(test_capabilities_offered_meet_in_the_and);
     RUN_TEST(test_home_and_settings_end_to_end);
     RUN_TEST(test_home_list_and_states_converge_through_loss);

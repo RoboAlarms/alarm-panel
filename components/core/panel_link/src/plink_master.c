@@ -2029,7 +2029,10 @@ static void on_sealed(plink_master_t *m, uint64_t now, const plink_addr_t *from,
             uint32_t req = 0;
             for (unsigned i = 0; i < 4; ++i) req |= (uint32_t)m->pt[i] << (8u * i);
             plink_wifi_t wifi = {0};
-            if (req && m->port.wifi_credentials &&
+            /* Only to a keypad enrolled in the last 10 minutes; any other gets an empty
+             * answer, so a paired keypad can't fetch the home network's password later. */
+            const bool share = now < p->wifi_until_ms;
+            if (req && share && m->port.wifi_credentials &&
                 !m->port.wifi_credentials(m->port.ctx, &wifi)) plink_wipe(&wifi, sizeof wifi);
             if (plink_enc_wifi(&wifi, req, m->pt, sizeof m->pt))
                 (void)send_sealed(m, p, PLINK_T_WIFI, 102u);
@@ -2168,6 +2171,7 @@ static void pair_take(plink_master_t *m, uint64_t now)
     }
     plink_pm_stored(&m->pair, now, true, PLINK_FAIL_NONE, d, home, &m->pout);
     send_pout(m);
+    p->wifi_until_ms = now + PLINK_WIFI_SHARE_MS; /* LINK-053: its enrollment's window */
     note(m, PLINK_NOTE_PAIRED, d);
     held_changed(m);
 }

@@ -53,7 +53,10 @@ Wi-Fi it is enabled only after the automatic attempt ends and the radio link is 
 contains a nonzero request ID (u32 little endian); `WIFI` (0x3C, M->K) echoes that ID followed
 by SSID[33] and password[65], both NUL terminated. Empty SSID means unavailable. The 102-byte
 reply fits ESP-NOW's 250-byte frame. Existing type numbers and frozen v1 fixtures are unchanged.
-No credential is advertised, logged or sent before a paired authenticated session. Requests use
+No credential is advertised, logged or sent before a paired authenticated session, and the
+master shares the home network only within 10 minutes of that keypad's PAIR_DONE
+(`PLINK_WIFI_SHARE_MS`, kept in RAM: a master restart ends it); any later request, or one from a
+keypad paired before the master started, gets an empty SSID. Requests use
 the master's request-rate bucket; retries reuse the ID, replies are consumed once, and cancelling
 before manual entry rejects late replies. The service retries once per second for up to 30 seconds.
 A master without this capability falls back to manual selection. Temporary browser network
@@ -244,7 +247,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-050 | A keypad with `PLINK_CAP_PREFS` reports its settings (field ids frozen in `proto_prefs.h`), its panel id, its voice state and the fields it accepts: at each session's first STATUS, after each save (at most 1 a second), and on PREFS_REQ. HEARTBEAT appends the settings CRC; the master asks again while it differs, at most every 2 s. The master keeps the report in RAM only (built, BL-216; on the panels a change's report reached the master within 1 s) | unit, link |
 | LINK-051 | PREFS_SET carries only listed fields to change. One is in flight per keypad, resent every 1 s and given up at 6 s. The answer is a PREFS with its req, the refusals per field and the values now stored. A req is applied once (the answer is kept 30 s). The keypad checks every value itself and applies it through its screen (UI-046) (built, BL-216; on the panels from the master's console: on the keypad's screen within 1 s, refused as held during an exit time) | unit, link |
 | LINK-052 | Never set through PREFS_SET: codes, role, pairing, home partition, name, supervision, Wi-Fi and IP, time, language and region, updates, factory reset, the setup, the Panel Manager, developer access. PREFS_SET and PREFS_REQ come from the master only (built, BL-216) | unit (`test_plink_frame.c`) |
-| LINK-053 | Enrollment discovers nearby panels without Wi-Fi; only mutually confirmed, authenticated peers may transfer credentials. Manual Wi-Fi never gets overwritten; failure retains pairing; completion needs a live master connection. Language/audio/display remain local. | codec/link unit tests, LVGL setup walk; hardware pending |
+| LINK-053 | Enrollment discovers nearby panels without Wi-Fi; only mutually confirmed, authenticated peers may transfer credentials, and only within 10 minutes of that keypad's pairing. Manual Wi-Fi never gets overwritten; failure retains pairing; completion needs a live master connection. Language/audio/display remain local. | codec/link unit tests, LVGL setup walk; hardware pending |
 
 ## Frame format (v1)
 

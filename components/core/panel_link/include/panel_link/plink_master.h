@@ -92,6 +92,7 @@ extern "C" {
 #define PLINK_RESULT_KEEP_MS     90000u /* LINK-018 */
 #define PLINK_RESULTS_PER_KEYPAD 8u     /* answers kept per keypad (bitmasks below: at most 8) */
 #define PLINK_PROVISIONAL_MS     600000u
+#define PLINK_WIFI_SHARE_MS      600000u /* LINK-053: home Wi-Fi only this long after PAIR_DONE */
 #define PLINK_HELLO_SEEN         4u     /* n_k remembered per keypad */
 #define PLINK_X25519_PER_S       4u     /* handshakes answered per second, all keypads */
 #define PLINK_TIME_EVERY_MS      600000u
@@ -206,8 +207,9 @@ typedef struct {
      * call into the master. NULL: no relay is served. */
     size_t (*fw_read)(void *ctx, const uint8_t id8[PLINK_ID8_LEN], uint32_t offset, uint8_t *out,
                       size_t len);
-    /* LINK-053: called only for a rate-limited authenticated request. No logging.
-     * Return false when sharing is unavailable; output is wiped by the caller. */
+    /* LINK-053: called only for a rate-limited authenticated request from a keypad paired in
+     * the last PLINK_WIFI_SHARE_MS (this run of the master; others get an empty answer). No
+     * logging. Return false when sharing is unavailable; output is wiped by the caller. */
     bool (*wifi_credentials)(void *ctx, plink_wifi_t *out);
 } plink_master_port_t;
 
@@ -360,6 +362,7 @@ typedef struct {
     uint8_t hs_tokens;
     plink_home_peer_t home;     /* Smart Home and settings */
     plink_fw_peer_t fw;         /* updates through the link */
+    uint64_t wifi_until_ms;     /* RAM only: home Wi-Fi shared before then (0 never, LINK-053) */
 } plink_peer_t;
 
 typedef struct {

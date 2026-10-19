@@ -122,8 +122,9 @@ void net_wifi_set_time_server(bool on);
 /* Saves credentials and (re)connects. Empty ssid forgets the network. */
 esp_err_t net_wifi_set_credentials(const char *ssid, const char *password);
 
-/* Enrollment only: snapshot stored credentials, or install only if still empty.
- * Serialized with manual changes/trials. Caller wipes output and never logs it. */
+/* Enrollment only (LINK-053): snapshot stored credentials - the panel link's master calls it
+ * only for a keypad within 10 minutes of its pairing (PLINK_WIFI_SHARE_MS) - or install only if
+ * still empty. Serialized with manual changes/trials. Caller wipes output and never logs it. */
 bool net_wifi_enrollment_read(char ssid[33], char password[65]);
 esp_err_t net_wifi_enrollment_install(const char *ssid, const char *password);
 void net_wifi_retry_connection(void); /* retries current settings; never overwrites a manual change */

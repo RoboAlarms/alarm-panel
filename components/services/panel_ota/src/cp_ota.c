@@ -215,9 +215,8 @@ static void run_update(void)
 #endif
 #if CONFIG_ESP_HOSTED_HOST && CONFIG_ESP_HOSTED_HOST_FEAT_OTA_READY
     if (!verify_image(s_part, &s_img)) {
-        panel_ota_set_progress(PANEL_OTA_FAILED, -1, "The Wi-Fi module image failed verification");
         alarm_service_firmware_event(ALARM_FW_CP_FAILED, &s_src, s_user);
-        panel_ota_release();
+        panel_ota_cp_failed("The Wi-Fi module image failed verification", &s_src, s_user);
         return;
     }
     char running[24] = "";
@@ -267,8 +266,7 @@ static void run_update(void)
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "co-processor update failed: %s", esp_err_to_name(err));
         alarm_service_firmware_event(ALARM_FW_CP_FAILED, &s_src, s_user);
-        panel_ota_set_progress(PANEL_OTA_FAILED, -1, "The Wi-Fi module update failed");
-        panel_ota_release();
+        panel_ota_cp_failed("The Wi-Fi module update failed", &s_src, s_user);
         return;
     }
     /* The C6 keeps its old image until the panel restarts: that waits for an idle system
@@ -276,8 +274,7 @@ static void run_update(void)
     ESP_LOGW(TAG, "co-processor image sent: the panel restarts once everything is quiet");
     panel_ota_cp_sent(&s_src, s_user);
 #else
-    panel_ota_set_progress(PANEL_OTA_FAILED, -1, "This panel has no updatable Wi-Fi module");
-    panel_ota_release();
+    panel_ota_cp_failed("This panel has no updatable Wi-Fi module", &s_src, s_user);
 #endif
 }
 

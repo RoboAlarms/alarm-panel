@@ -30,6 +30,9 @@ void panel_ota_set_cp_image(const char *version);
 /* A co-processor update was claimed: its run (stage WIFI_MODULE, OTA-026) lasts until
  * panel_ota_release() or the restart. */
 void panel_ota_cp_started(const char *target, const char *previous);
+/* Finish a failed radio install atomically: last-result, classification and
+ * ownership release. Keeps the ordinary failed-install lifetime (OTA-029). */
+void panel_ota_cp_failed(const char *why, const alarm_source_t *src, uint8_t user);
 
 /* ---- co-processor (cp_ota.c) ---- */
 void panel_ota_cp_init(void);       /* at start: looks at the "cp_fw" partition */

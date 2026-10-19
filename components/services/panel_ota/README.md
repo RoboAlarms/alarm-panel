@@ -40,7 +40,11 @@ It verifies the signed image normally, stops after half the bytes are acknowledg
 END/ACTIVATE. The one-shot injection is consumed before verification and never persisted.
 The normal `c6 update` path never injects a fault. Release builds omit the test command and
 implementation. After recording the failure, restart normally to verify the old radio boots.
-Hardware results and the remaining failure-card reporting defect are recorded in Feature 12.
+Hardware results and acceptance remaining for the corrected failure card are recorded in Feature 12.
+Radio failure reporting is completed atomically by `panel_ota_cp_failed()`: it records a failed
+install with C6 versions and requester, ends the run and releases update ownership. The portable
+production result builder is covered by `test/test_cp_ota_result.c`; Panel Manager's page tests
+verify its existing "Update failed" card displays the verification/transfer reason.
 
 For C6 versions with ACTIVATE, activation runs in a shutdown handler only after the
 P4's final idle gate commits to restarting. Sending ACTIVATE at transfer completion

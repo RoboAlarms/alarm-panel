@@ -3,7 +3,8 @@
 **Status:** Our signed C6 build and ESP-NOW bridge run on both P4 panel sizes. SDIO updates,
 full revision reporting, signature rejection before transfer, and panel-link commands over
 ESP-NOW have passed on hardware. An interrupted SDIO transfer also preserves the working radio
-across restart. Left: interrupted-update reporting in Panel Manager (BL-048), the link's recovery
+across restart. Failed radio installs now populate the correct Panel Manager result; host and
+browser regressions pass. Left: hardware acceptance of the reporting fix (BL-048), the link's recovery
 at runtime (BL-097), and recovery documented with photos (BL-072) · **Milestone:**
 M2 (use existing firmware), M6 (update path), M7 (ESP-NOW bridge) · **Depends on:** 06, 11, 13
 
@@ -114,10 +115,12 @@ the same working `3.0.10-ra3` radio returned, Wi-Fi rejoined and the physical ke
 Both panel applications completed their coordinated `dev.14` update. No C6 bootloader,
 partition table, signing key or eFuse was changed.
 
-Reporting defect found: the Panel Manager API returns phase 5 and the correct Wi-Fi-module
-failure reason, but classifies it as `failed: check`, so the page says "Couldn't check for
-updates". The last-result record still describes the prior successful P4 install. The failure
-event remains in history after reboot, but the immediate failure card clears at restart.
+Failed transfers and image verification failures now end as failed installs, replacing the
+previous successful P4 result with the C6 target, previous radio version, failure reason and
+requester. Panel Manager uses its existing "Update failed" card. The result and ownership
+release happen under one service lock. Production result-builder and browser regression tests
+cover the correction; the new firmware has not yet been tried on hardware. Like other failed
+installs, the immediate result is in RAM; the failure event remains in history after reboot.
 
 The development-only `c6 test-interrupt` command requests one signed transfer, stops it halfway
 and consumes the injection before starting. It refuses an initially non-idle system and keeps
@@ -149,8 +152,9 @@ speaker/display preferences to run this test.
       as failed, not a trouble (`cp_ota.c` run_update); `coprocessor` is for a silent C6 (CP-006)
 - [x] CP-005 hardware: half-transfer interruption, failure event, continued radio service and old
   C6 firmware booting after orderly restart; see acceptance above (BL-048).
-- [ ] Correct CP-005 Panel Manager failure classification and last-result reporting: currently
-  presented as a failed update check rather than a failed radio install (BL-048).
+- [x] Correct CP-005 Panel Manager failure classification and last-result reporting; production
+  result-builder and browser regression tests pass (BL-048).
+- [ ] Verify the corrected CP-005 failure card and last-result on hardware (BL-048).
 - [ ] CP-006: when the SDIO link fails after start-up, reset the C6 (GPIO32), retry, and raise
   the `coprocessor` trouble after 3 failures. Today only the start-up retries every 30 s
   (`net_wifi.c` net_task) (BL-097)

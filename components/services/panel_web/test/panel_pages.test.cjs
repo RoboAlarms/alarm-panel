@@ -4506,6 +4506,19 @@ test('Software updates: updated, rolled back and failed come from `last` (OTA-02
   });
 });
 
+test('Software updates: failed C6 installs show Update failed with the radio reason (CP-005)', async () => {
+  await updContext('installer', {}, async u => {
+    for (const reason of ['The Wi-Fi module update failed', 'The Wi-Fi module image failed verification']) {
+      await u.set({reset: true, set: {last: {result: 'failed', version: '3.0.10-ra4',
+        from: '3.0.10-ra3', reason, at: Math.floor(Date.now() / 1000)}}, update: OFFERED});
+      const card = words(await u.card());
+      assert.ok(card.includes('Update failed') && card.includes(reason + '. Nothing was changed.'));
+      assert.ok(!card.includes('Couldn’t check for updates') && !card.includes('Updated to version'));
+      assert.equal((await u.get()).failed, 'install');
+    }
+  });
+});
+
 test('Software updates: the server and the channel are held while an update runs (OTA-026, OTA-028)', async () => {
   await updContext('installer', {}, async u => {
     await u.set({reset: true, set: {stage: 'downloading', percent: 42}, update: OFFERED});

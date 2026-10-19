@@ -54,6 +54,7 @@
 #include "alarm_proto/ota_retry.h"
 #include "panel_log.h"
 #include "panel_ota_internal.h"
+#include "cp_ota_result.h"
 #include "alarm_proto/ota_profile.h"
 #include "psa/crypto.h"
 #include "sdkconfig.h"
@@ -4828,6 +4829,16 @@ void panel_ota_cp_started(const char *target, const char *previous)
 {
     lock();
     run_begin_locked(PANEL_OTA_KIND_WIFI_MODULE, PANEL_OTA_STAGE_WIFI_MODULE, target, previous);
+    changed_locked();
+    unlock();
+}
+
+void panel_ota_cp_failed(const char *why, const alarm_source_t *src, uint8_t user)
+{
+    lock();
+    cp_ota_failure_result(&s_st, why, src, user, now_unix());
+    run_end_locked();
+    s_busy = false;
     changed_locked();
     unlock();
 }

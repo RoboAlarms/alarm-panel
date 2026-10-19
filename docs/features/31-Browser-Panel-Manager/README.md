@@ -9,14 +9,15 @@ page, People and codes, Troubles and sign-in without codes on a panel (BL-138), 
 and passkeys (BL-064), helper accounts (BL-076). · **Milestone:** M18 · **Depends on:** 03, 07,
 09, 13, 14, 15, 21, 30
 
-The approved [keypad management and enrollment flow](keypad-enrollment.md) supports normal and
+The [keypad management and enrollment flow](keypad-enrollment.md), approved 2026-10-18 by the
+owner, supports normal and
 headless masters (BL-048). Service and browser tests pass, and authenticated enrollment and
 partition settings pass on a display-equipped master with a physical remote keypad.
 Human comparison-screen and physical headless acceptance remain.
 
 Initial network/account setup and lost-access recovery have a separate
-[approved screen-free setup design](headless-setup.md) (BL-048). The policy controller and BOOT
-gesture are host-tested; provisioning, the setup AP and firmware integration remain. Automatic
+[screen-free setup design](headless-setup.md), approved 2026-10-18 by the owner (BL-048). The
+policy controller and BOOT gesture are a host-only draft, host-tested and in no firmware; provisioning, the setup AP and firmware integration remain. Automatic
 setup access is headless-only; panels with screens keep Panel Manager off until enabled.
 
 ## Objective and delivered scope

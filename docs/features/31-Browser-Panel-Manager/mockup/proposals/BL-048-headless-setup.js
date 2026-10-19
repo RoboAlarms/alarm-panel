@@ -1,7 +1,7 @@
 // Approved simulation: no production endpoint, credential or hardware operation is invoked.
 proposal({
   bl: 'BL-048', title: 'Set up a panel without a screen', status: 'approved',
-  decided: '2026-10-18: Approved setup and BOOT recovery. Panels with screens keep Panel Manager off until explicitly enabled.',
+  decided: '2026-10-18: approved by the owner - setup and BOOT recovery. Panels with screens keep Panel Manager off until explicitly enabled.',
   role: 'installer',
   why: ['A new headless panel cannot use the touchscreen to join Wi-Fi or create its first browser login.',
     'A local setup flow creates separate household and installer access. Recovery keeps the existing system.'],
@@ -19,7 +19,7 @@ proposal({
   ],
   replaces: [], today: Object.fromEntries(['start','unlock','accounts','network','check','failed','ready','recovery','password','locked'].map(x => ['headless-'+x, 'network'])),
   notes: [
-    'Approved shared setup design. Automatic setup access is headless-only; panels with screens keep Panel Manager off until enabled. All actions here are simulations; do not enter real passwords.',
+    'Shared setup design, approved 2026-10-18 by the owner; its code is a host-only draft (web_setup_flow.c, host tests only). Automatic setup access is headless-only; panels with screens keep Panel Manager off until enabled. All actions here are simulations; do not enter real passwords.',
     'Setup Wi-Fi, unique label secrets, a verifiable device identity and a protected local recovery control are proposed hardware/provisioning requirements, not existing controls on the bench panels.',
     'An unclaimed panel exposes only setup. The preview hides normal navigation during setup. A production setup session has no alarm authority.',
     'Browser and future app share panel-owned setup/recovery state. No mobile app or cloud account is required.',
@@ -85,7 +85,7 @@ function hsPage(id) {
     fields='<p>Opening recovery does not disarm the system or turn off its alarms.</p>';
     buttons=hsButton('Back','recovery');
   }
-  return {html:`<div class="hs"><p class="hs-progress">Draft · simulated setup</p><section class="card">${step?`<p class="hs-progress">${step}</p>`:''}<h1>${title}</h1><p>${text}</p><form id="hs-form">${fields}<p id="hs-error" role="alert"></p><div class="hs-actions">${buttons}</div></form></section></div>`,bind() {
+  return {html:`<div class="hs"><p class="hs-progress">Approved · simulated setup</p><section class="card">${step?`<p class="hs-progress">${step}</p>`:''}<h1>${title}</h1><p>${text}</p><form id="hs-form">${fields}<p id="hs-error" role="alert"></p><div class="hs-actions">${buttons}</div></form></section></div>`,bind() {
     document.querySelectorAll('[data-hs]').forEach(b => b.onclick=()=>{
       const dest=b.dataset.hs;
       const needs={unlock:'accounts',accounts:'network',network:'check',failed:'check',recovery:'network',password:'recovery'}[id]===dest;

@@ -1,3 +1,6 @@
+/* Screen-free setup and recovery policy (BL-048, docs/features/31 headless-setup.md; design
+ * approved 2026-10-18 by the owner). A host-only draft: compiled only into the host tests
+ * (test_web_setup_flow.c), not into any firmware, until its adapter is built. */
 #include "web_setup_flow.h"
 #include <stddef.h>
 #include <string.h>

@@ -1,4 +1,4 @@
-// BL-048 / LINK-053. Approved 2026-10-18: implement automatic Wi-Fi and Select Wi-Fi fallback.
+// BL-048 / LINK-053. Approved 2026-10-18 by the owner: automatic Wi-Fi and Select Wi-Fi fallback.
 // Current firmware screens, verified against the real LVGL enrollment walk.
 (() => {
   const row = (title, detail, glyph = 'house', color = 'blue') => M.row_status({title, detail, glyph, color});

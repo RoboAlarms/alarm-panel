@@ -1,8 +1,9 @@
 # Screen-free setup and recovery
 
-Status: approved; implementation in progress (BL-048). The portable setup/recovery controller
-and BOOT gesture have host tests. The setup AP, provisioning, durable account adapter and HTTP
-integration are not implemented yet. This does not change the already implemented keypad
+Status: design approved 2026-10-18 by the owner (BL-048). The code is a host-only draft: the
+portable setup/recovery controller and BOOT gesture (`web_setup_flow.c`) are compiled only into
+the host tests, never into a firmware. The setup AP, provisioning, durable account adapter and
+HTTP integration are not implemented yet. This does not change the already implemented keypad
 enrollment flow. [Approved proposal](mockup/proposals/BL-048-headless-setup.js).
 
 ## Approved flow
@@ -80,7 +81,8 @@ These remain prerequisites, not working controls on the existing development pan
 
 ## Controller integration contract
 
-`web_setup_flow.c` is a portable policy controller, not a running setup service. Its host tests
+`web_setup_flow.c` is a portable policy controller and a host-only draft (built only by
+`components/services/panel_web/test`), not a running setup service. Its host tests
 exercise competing claims, expiry, failed commits, resumption from committed state, physical
 input, armed refusal and the screen-panel listener restriction. Storage callbacks in those tests
 are fakes; they do not demonstrate power-fail-safe NVS writes or working network provisioning.

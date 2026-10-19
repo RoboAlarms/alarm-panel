@@ -1,6 +1,6 @@
 # Keypad enrollment in Panel Manager
 
-Status: owner approved 2026-10-18; implemented for normal and headless masters. Physical headless hardware acceptance is still pending.
+Status: approved 2026-10-18 by the owner; implemented for normal and headless masters. Physical headless hardware acceptance is still pending.
 
 The owner requires a main panel without a screen to be fully operable through Panel Manager,
 with a future mobile app able to use the same controls. Keypad enrollment must therefore not

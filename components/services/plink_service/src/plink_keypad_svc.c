@@ -72,6 +72,10 @@ static const char *TAG = "plink";
  * pairing takes the first PAIR_COMMIT's (unicast) address as its master's (LINK-021). */
 #define PAIR_BROADCAST     1
 #define PAIR_GIVE_UP_MS    30000u /* no alarm panel answered: UI_LINK_FAIL_NOT_FOUND (E-18) */
+/* LINK-010: radio windows while the master is unheard and this keypad's Wi-Fi is down - the
+ * first after 15 s, each gap doubling to 5 min, from 15 s again once the master is heard. */
+#define RADIO_WINDOW_FIRST_MS 15000u
+#define RADIO_WINDOW_MAX_MS   300000u
 #define CLOCK_CHECK_MS     10000u
 #define CLOCK_STEP_MS      2000
 #define PUBLISH_MS         500u
@@ -124,6 +128,7 @@ static struct {
     uint8_t search_for; /* find_t */
     uint64_t next_search_at;
     uint64_t radio_search_at, radio_window_at, radio_hello_at;
+    uint32_t radio_window_gap; /* the last gap between radio windows (0: none since heard) */
     bool resolve; /* the manager asked to look for the master again (port.resolve) */
     uint8_t misses;
     bool gave_addr;
@@ -554,8 +559,9 @@ static void found_master(uint64_t now, const found_t *f, size_t n)
     }
     if (++K.misses >= 2u) {
         plink_addr_t b; /* mDNS blocked or lost: the subnet broadcast (LINK-021) */
-        link_subnet_broadcast(&b);
-        give_master(now, &b, true);
+        if (link_subnet_broadcast(&b)) {
+            give_master(now, &b, true);
+        }
     }
 }
 
@@ -563,6 +569,10 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
 {
     if (info->status_age_s < 11u && link_wifi_up()) {
         link_radio_tune(0); /* recovery must also clear an unsuccessful retune */
+    }
+    if (info->status_age_s < 11u) {
+        K.radio_window_gap = 0u; /* heard: the next search's windows start over */
+        K.radio_window_at = 0u;
     }
     if (link_radio_ready() && K.pair_phase == PAIR_LOOKING && !link_wifi_up() &&
         now >= K.radio_search_at) {
@@ -574,8 +584,13 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
             (info->status_age_s != UINT32_MAX || info->since_s >= 11u) &&
             now >= K.radio_search_at) {
             K.radio_search_at = now + 250u;
-            if (now >= K.radio_window_at) {
-                K.radio_window_at = now + 15000u;
+            /* A window drops a joined station for 5 s: only while this keypad's Wi-Fi is down
+             * (the master is then found over the LAN), backing off 15 s doubling to 5 min. */
+            if (now >= K.radio_window_at && !link_wifi_up()) {
+                const uint32_t gap = K.radio_window_gap == 0u ? RADIO_WINDOW_FIRST_MS
+                                                              : K.radio_window_gap * 2u;
+                K.radio_window_gap = gap < RADIO_WINDOW_MAX_MS ? gap : RADIO_WINDOW_MAX_MS;
+                K.radio_window_at = now + K.radio_window_gap;
                 net_wifi_radio_window();
             }
             link_radio_tune(link_radio_channel() % 13u + 1u);
@@ -604,14 +619,13 @@ static void discovery(uint64_t now, const plink_keypad_info_t *info)
     switch (K.pair_phase) {
     case PAIR_LOOKING:
         if (PAIR_BROADCAST && link_wifi_up() && K.search == NULL && now - K.pair_started >= PAIR_LOOK_MS) {
-            plink_addr_t b; /* nothing on mDNS: ask by broadcast (an open master answers) */
-            link_subnet_broadcast(&b);
-            if (link_radio_ready() && !link_wifi_up()) {
-                b = (plink_addr_t){
-                    .tp = PLINK_TP_ESPNOW, .len = 6, .a = {255, 255, 255, 255, 255, 255}};
+            /* Nothing on mDNS: ask by broadcast (an open master answers). Over the radio an
+             * open master's BEACON starts the pairing instead (ksvc_beacon). */
+            plink_addr_t b;
+            if (link_subnet_broadcast(&b)) {
+                plink_keypad_pair_start(K.k, now, &b, true, 0u);
+                K.pair_phase = PAIR_ASKED;
             }
-            plink_keypad_pair_start(K.k, now, &b, true, 0u);
-            K.pair_phase = PAIR_ASKED;
         } else if (K.search == NULL && now >= K.next_search_at && link_wifi_up()) {
             K.next_search_at = now + PAIR_LOOK_EVERY_MS;
             search_start(FIND_PAIRING);

@@ -163,6 +163,10 @@ void link_addr_ip(const plink_addr_t *a, char out[24])
     }
 }
 
+/* The master's radio BEACON (LINK-010): a discovery hint, never authenticated. */
+#define BEACON_PAIRING_MS 100u
+#define BEACON_EVERY_MS   1000u
+
 bool link_wifi_up(void)
 {
     net_wifi_status_t st;
@@ -216,8 +220,9 @@ bool link_send(const plink_addr_t *to, const uint8_t *frame, size_t len)
         sent = link_radio_send(to->a, frame, len);
         if (sealed && link_wifi_up()) {
             plink_addr_t broadcast;
-            link_subnet_broadcast(&broadcast);
-            sent = udp_send(&broadcast, frame, len) || sent;
+            if (link_subnet_broadcast(&broadcast)) {
+                sent = udp_send(&broadcast, frame, len) || sent;
+            }
         }
     }
     return sent;
@@ -521,12 +526,13 @@ static void link_task(void *arg)
         }
         now = link_now();
         if (is_master() && link_radio_ready() && now >= beacon_at) {
-            beacon_at = now + 100u;
             link_pub_lock();
             const uint16_t net = g_pub.net_id;
             const bool pair = g_pub.pairing_open;
             const bool needed = pair || g_pub.keypads != 0;
             link_pub_unlock();
+            /* Every 100 ms only while pairing is open; once a second for paired keypads. */
+            beacon_at = now + (pair ? BEACON_PAIRING_MS : BEACON_EVERY_MS);
             if (needed) {
                 uint8_t frame[PLINK_HDR_LEN + 3u];
                 const plink_hdr_t h = {

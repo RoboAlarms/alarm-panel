@@ -204,7 +204,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-007 | The master raises a device supervision trouble (`alarm_service_device_reachable(n, false)`) for a keypad not heard for its supervision time (5 min by default, per keypad: 1 min, 5 min, 15 min or not supervised; decided 2026-10-15), or one that reports no fresh status for that long; it clears it when both directions are fresh again and before a removed keypad's number is freed; supervision pauses while the master's own Wi-Fi is down (the network trouble covers it) and resumes one period after it is back | unit + HIL |
 | LINK-008 | A keypad shows "No system communication" after 30 s without an authenticated status and refuses arming; it never shows stale status as current; from start-up until the first status and configuration are in it shows a steady "Connecting" state | unit + HIL |
 | LINK-009 | Automatic failover ESP-NOW <-> LAN within 15 s; duplicates suppressed by sequence number | HIL (ESP-NOW) |
-| LINK-010 | The master's ESP-NOW channel follows its Wi-Fi AP; beacons carry the channel; keypads rescan channels 1-13 when lost | HIL (ESP-NOW) |
+| LINK-010 | The master's ESP-NOW channel follows its Wi-Fi AP; beacons carry the channel; keypads rescan channels 1-13 when lost, pausing their own Wi-Fi's connection attempts for a radio window only while that Wi-Fi is down (15 s, doubling to 5 min, from 15 s again once the master is heard) | HIL (ESP-NOW) |
 | LINK-011 | Keypad-attached inputs are reported as zone events (zone expander role) | M7 |
 | LINK-012 | Keypad updates at the master's order: a keypad that reaches the update server fetches its own image, otherwise the master relays it over the link (LINK-029..037; [13](../13-OTA-Updates/README.md)) | unit + link + HIL |
 | LINK-013 | A PC "virtual keypad" and "virtual master" (host build, UDP, the OS's random numbers) interoperate with each other in CI and with panels | CI + manual |
@@ -299,7 +299,7 @@ followed by fields, so later fields can be appended (LINK-017).
 | 0x11 | `WELCOME` | M->K | plain | proto u8, caps u16, n_m[16], e_m[32], mac2[16] |
 | 0x12 | `REKEY` | M->K | plain | sid u32 the master doesn't know (a hint, at most 1 a second per keypad) |
 | 0x13 | `NOT_PAIRED` | M->K | plain | (none) - a HELLO the master can't place (a hint, rate-limited) |
-| 0x18 | `BEACON` | M->all | plain | net_id in header; payload: version 1, channel (1–13), pairing open (0/1), one byte each |
+| 0x18 | `BEACON` | M->all | plain | net_id in header; payload: version 1, channel (1–13), pairing open (0/1), one byte each; every 100 ms while pairing is open, otherwise once a second while a keypad is paired |
 | 0x20 | `STATUS` | M->K | sealed | system section, then partition records (below) |
 | 0x21 | `ZONES` | M->K | sealed | zones_crc u32, first u16, count u16, rec_len u8, count x zone record |
 | 0x22 | `ZONES_REQ` | K->M | sealed | first u16, count u16 |

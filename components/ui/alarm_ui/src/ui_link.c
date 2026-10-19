@@ -524,6 +524,9 @@ static void partition_tick(void)
     if (s_partition_row != NULL) {
         char name[ALARM_NAME_LEN + 16];
         ui_set_label(s_partition_row, "title_label", partition_name(S.opt.partition, name, sizeof name));
+        /* a row's detail isn't relabelled with the language (pages rebuild theirs); this row is
+         * Home's, so it follows here, unchanged words left alone */
+        ui_set_label(s_partition_row, "detail_label", TR("Switch partition"));
     }
 }
 

@@ -19192,6 +19192,11 @@ msgstr ""
 msgid "Choose a partition"
 msgstr ""
 
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Switch partition"
+msgstr ""
+
 #. a keypad on Wi-Fi that stopped answering: when it was last heard ("10:12 PM" or "Sep 19"). At most 40 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Not heard since {0}"
@@ -19529,11 +19534,6 @@ msgstr ""
 #. Make it a stand-alone panel, in amber; {0} is the alarm panel's name. At most 160 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "{0} shows a trouble for this keypad until it is removed there."
-msgstr ""
-
-#. A list row's detail line, under its title (one line).
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Switch partition"
 msgstr ""
 
 #. how strong a Wi-Fi network's signal is, after the state or the address on the same line ("Password · good signal"). At most 20 bytes

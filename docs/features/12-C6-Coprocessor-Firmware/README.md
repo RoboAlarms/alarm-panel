@@ -3,8 +3,8 @@
 **Status:** Our signed C6 build and ESP-NOW bridge run on both P4 panel sizes. SDIO updates,
 full revision reporting, signature rejection before transfer, and panel-link commands over
 ESP-NOW have passed on hardware. An interrupted SDIO transfer also preserves the working radio
-across restart. Failed radio installs now populate the correct Panel Manager result; host and
-browser regressions pass. Left: hardware acceptance of the reporting fix (BL-048), the link's recovery
+across restart. Failed radio installs populate the correct Panel Manager result; host/browser
+regressions and both-panel hardware acceptance pass. Left: the link's recovery
 at runtime (BL-097), and recovery documented with photos (BL-072) · **Milestone:**
 M2 (use existing firmware), M6 (update path), M7 (ESP-NOW bridge) · **Depends on:** 06, 11, 13
 
@@ -103,7 +103,7 @@ sequenceDiagram
 
 ## Interrupted-transfer acceptance (CP-005)
 
-On the 7-inch P4 master, development firmware `0.7.4-dev.14` stopped a signed C6
+On both the 7-inch P4 master and 10.1-inch keypad, development firmware `0.7.4-dev.15` stopped a signed C6
 `3.0.10-ra3` transfer after 591,872 of 1,183,744 acknowledged bytes. The test deliberately
 resends the running revision into the inactive slot and omits END and ACTIVATE. It exercises
 a real partial SDIO write, not a rejected image or a simulated transport. This was software
@@ -112,15 +112,19 @@ fault injection followed by an orderly restart, not a physical power cut.
 The updater reported failure, the event log retained the failure, and the C6 continued carrying
 Wi-Fi without a co-processor trouble. An orderly P4 restart reset the C6 through Hosted;
 the same working `3.0.10-ra3` radio returned, Wi-Fi rejoined and the physical keypad reconnected.
-Both panel applications completed their coordinated `dev.14` update. No C6 bootloader,
+Both panel applications completed their coordinated `dev.15` update. No C6 bootloader,
 partition table, signing key or eFuse was changed.
 
 Failed transfers and image verification failures now end as failed installs, replacing the
 previous successful P4 result with the C6 target, previous radio version, failure reason and
 requester. Panel Manager uses its existing "Update failed" card. The result and ownership
-release happen under one service lock. Production result-builder and browser regression tests
-cover the correction; the new firmware has not yet been tried on hardware. Like other failed
-installs, the immediate result is in RAM; the failure event remains in history after reboot.
+release happen under one service lock. Hardware acceptance confirmed the live Panel Manager
+API returns phase 5, `failed: install`, the C6 target/previous version and matching failure
+reason. The production page renderer, supplied that captured hardware response, showed
+"Update failed" without the old check-failure or successful-P4 heading. The keypad console
+also reported the failed radio install with its requester. Production result-builder and
+browser regression tests cover the correction. Like other failed installs, the immediate
+result is in RAM; the failure event remains in history after reboot.
 
 The development-only `c6 test-interrupt` command requests one signed transfer, stops it halfway
 and consumes the injection before starting. It refuses an initially non-idle system and keeps
@@ -154,7 +158,8 @@ speaker/display preferences to run this test.
   C6 firmware booting after orderly restart; see acceptance above (BL-048).
 - [x] Correct CP-005 Panel Manager failure classification and last-result reporting; production
   result-builder and browser regression tests pass (BL-048).
-- [ ] Verify the corrected CP-005 failure card and last-result on hardware (BL-048).
+- [x] Verify the corrected CP-005 failure card and last-result on both panel sizes with `dev.15`;
+  live API, console and production card rendering pass (BL-048).
 - [ ] CP-006: when the SDIO link fails after start-up, reset the C6 (GPIO32), retry, and raise
   the `coprocessor` trouble after 3 failures. Today only the start-up retries every 30 s
   (`net_wifi.c` net_task) (BL-097)

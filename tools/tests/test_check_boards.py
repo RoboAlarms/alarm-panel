@@ -64,6 +64,7 @@ class Tree:
         fw = self.root / "firmware" / name
         (fw / "main").mkdir(parents=True)
         (fw / "sdkconfig.defaults").write_text(defaults_text(values), encoding="utf-8")
+        (fw / "CMakeLists.txt").write_text("set(ALARM_BOARD %s)\n" % name, encoding="utf-8")
         reqs = main_requires if main_requires is not None else "panel_app board_%s" % name
         (fw / "main" / "CMakeLists.txt").write_text(
             "idf_component_register(SRCS app_main.c REQUIRES %s)\n" % reqs, encoding="utf-8")
@@ -177,6 +178,15 @@ class Manifests(unittest.TestCase):
         self.t.board("orphan", FULL, component=False)
         self.assertIn("orphan: no board component components/boards/board_orphan",
                       self.t.problems("orphan"))
+
+    def test_a_coprocessor_project_is_not_a_board(self):
+        """firmware/c6_cp sets no ALARM_BOARD: the C6 co-processor, not a panel board."""
+        self.t.board("tiny", FULL)
+        cp = self.t.root / "firmware" / "c6_cp"
+        cp.mkdir(parents=True)
+        (cp / "sdkconfig.defaults").write_text("CONFIG_IDF_TARGET=\"esp32c6\"\n", encoding="utf-8")
+        (cp / "CMakeLists.txt").write_text("project(crowpanel_c6_cp)\n", encoding="utf-8")
+        self.assertEqual([p.name for p in cb.boards(self.t.root)], ["tiny"])
 
     def test_the_table_lists_every_board(self):
         self.t.board("tiny", FULL)

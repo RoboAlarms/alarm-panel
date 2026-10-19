@@ -69,7 +69,10 @@
 #define LV_USE_ASSERT_MALLOC        1
 #define LV_USE_ASSERT_STYLE         1
 #define LV_USE_ASSERT_MEM_INTEGRITY 0
-#define LV_USE_ASSERT_OBJ           1
+/* Off, as on the panel: with it, every call on an object first walks every object of every
+ * screen to prove it alive, and the walk took 30 min instead of 30 s for the same pictures.
+ * NULL objects still end the run; set it to 1 to hunt the use of a deleted object. */
+#define LV_USE_ASSERT_OBJ           0
 /* A failed assertion ends the run (LVGL's default loops for ever, which leaves a CI job to time
  * out). The message is already printed. */
 #include <stdlib.h>

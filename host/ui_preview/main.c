@@ -50,6 +50,26 @@ static const char *s_out = "ui_preview_out";
 static int s_shots;
 static int s_clicks;
 
+/* Where the walk's time goes (printed at the end): the waits, the frames LVGL draws in them,
+ * and each screenshot's drawing, checks and PNG. */
+static double now_s(void)
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec / 1e9;
+}
+static double s_t_wait, s_t_frames, s_t_draw, s_t_checks, s_t_png, s_t_voice, s_t_frame0;
+static unsigned s_frames;
+static void on_frame(lv_event_t *e)
+{
+    if (lv_event_get_code(e) == LV_EVENT_REFR_START) {
+        s_t_frame0 = now_s();
+    } else {
+        s_t_frames += now_s() - s_t_frame0;
+        s_frames++;
+    }
+}
+
 static uint32_t tick_cb(void)
 {
     return s_ms;
@@ -73,11 +93,13 @@ static void pointer_read(lv_indev_t *indev, lv_indev_data_t *data)
 /* Advance the world: engine time and LVGL time together, in 10 ms steps. */
 static void run(uint32_t ms)
 {
+    const double t0 = now_s();
     for (uint32_t t = 0; t < ms; t += 10u) {
         s_ms += 10u;
         host_panel_advance(10u);
         lv_timer_handler();
     }
+    s_t_wait += now_s() - t0;
 }
 
 /* -Locale (docs/features/37 I18N-022, I18N-024): the walk in a test language. Texts are found
@@ -6610,8 +6632,14 @@ static void walk_smart_home(void)
 
 static void shot(const char *name)
 {
+    const double t0 = now_s();
+    const unsigned frames0 = s_frames;
+    const double tf0 = s_t_frames;
     lv_obj_invalidate(lv_screen_active());
     lv_refr_now(NULL);
+    const double t1 = now_s();
+    s_frames = frames0; /* not a wait's frame */
+    s_t_frames = tf0;
     {
         report_clipping(lv_screen_active(), name);
         report_clipping(lv_layer_top(), name);
@@ -6651,6 +6679,7 @@ static void shot(const char *name)
         expect(lv_obj_get_style_image_recolor_opa(brand, LV_PART_MAIN) == LV_OPA_COVER,
                "rail logo is not fully tinted by the state colour");
     }
+    const double t2 = now_s();
     static uint8_t rgb[W * H * 3];
     for (int i = 0; i < W * H; i++) {
         const uint16_t c = s_fb[i];
@@ -6678,6 +6707,10 @@ static void shot(const char *name)
     fclose(f);
     shot_png_free(png);
     printf("  %s\n", path);
+    const double t3 = now_s();
+    s_t_draw += t1 - t0;
+    s_t_checks += t2 - t1;
+    s_t_png += t3 - t2;
 }
 
 static void make_dir(const char *path)
@@ -10205,6 +10238,8 @@ int main(int argc, char **argv)
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(disp, s_fb, NULL, sizeof(s_fb), LV_DISPLAY_RENDER_MODE_DIRECT);
     lv_display_set_flush_cb(disp, flush_cb);
+    lv_display_add_event_cb(disp, on_frame, LV_EVENT_REFR_START, NULL);
+    lv_display_add_event_cb(disp, on_frame, LV_EVENT_REFR_READY, NULL);
     lv_indev_t *touch = lv_indev_create();
     lv_indev_set_type(touch, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(touch, pointer_read);
@@ -12745,9 +12780,16 @@ int main(int argc, char **argv)
     }
 #endif
 
-    expect(voice_walk(s_out) == 0, "voice walk: what the panel says (voice_walk.c)");
+    {
+        const double t0 = now_s();
+        expect(voice_walk(s_out) == 0, "voice walk: what the panel says (voice_walk.c)");
+        s_t_voice = now_s() - t0;
+    }
 
     printf("%d screenshots\n", s_shots);
+    printf("Time: waits %.1f s (%u frames drawn in them, %.1f s), screenshots: drawing %.1f s, "
+           "checks %.1f s, PNG %.1f s; voice %.1f s\n",
+           s_t_wait, s_frames, s_t_frames, s_t_draw, s_t_checks, s_t_png, s_t_voice);
     printf("%u labels cut off, %u shortened with ...; %u checks left to the English walk\n",
            s_clipped, s_shortened, s_soft_fails);
 #if LV_USE_STDLIB_MALLOC == LV_STDLIB_BUILTIN

@@ -31,7 +31,7 @@ AP channel changes still need hardware acceptance. The 7-inch display recurrence
 
 ## Nearby enrollment and Wi-Fi provisioning (LINK-053)
 
-Approved 2026-10-18: ESP-NOW discovery first, automatic Wi-Fi setup after both comparison-code
+Approved 2026-10-18 by the owner: ESP-NOW discovery first, automatic Wi-Fi setup after both comparison-code
 confirmations, and **Select Wi-Fi** available before discovery and after pairing. The same
 Panel Manager enrollment instructions serve normal and headless masters. Language, display
 and audio stay local; date, time and time zone continue to follow the master.
@@ -198,10 +198,10 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-001 | One master, up to 8 panel-link keypads on device numbers 1-8, shared with the Zigbee keypads: a new keypad takes the lowest number no Zigbee keypad, no link keypad and no enabled entry of the installer's device table holds, chosen under the Zigbee zone lock (docs/features/20 alarm-devices.md §4); numbers 9-16 are the Z-Wave keypads' (docs/features/36 ZW-031) | unit |
 | LINK-002 | Keypads render the master's status and send commands; they never validate codes | review + unit |
 | LINK-003 | Every data frame is authenticated and encrypted (AES-128-CCM, 8-byte tag) under per-session, per-direction keys; sequence numbers start at 1 and a 64-frame sliding window, updated only after the tag verifies, rejects replayed frames; frames of another session, net or direction are refused | host crypto tests |
-| LINK-004 | Pairing needs the installer at the master (touchscreen installer mode or an authenticated Panel Manager installer session, including a headless master), uses commit-then-reveal, and both sides show the same 6-digit code and peer identity, confirmed on both (defeats a device in the middle; [browser enrollment](../31-Browser-Panel-Manager/keypad-enrollment.md), owner approved 2026-10-18) | unit + HIL |
+| LINK-004 | Pairing needs the installer at the master (touchscreen installer mode or an authenticated Panel Manager installer session, including a headless master), uses commit-then-reveal, and both sides show the same 6-digit code and peer identity, confirmed on both (defeats a device in the middle; [browser enrollment](../31-Browser-Panel-Manager/keypad-enrollment.md), approved 2026-10-18 by the owner) | unit + HIL |
 | LINK-005 | ESP-NOW control frames fit in 250 bytes; a UDP datagram is at most 1200 bytes; bulk data (configuration, events, zones) is paged to the transport's largest frame | unit |
 | LINK-006 | The master sends status on change (repeated at +250 ms and +1 s, at most one per 100 ms per keypad) and at least every 10 s; keypads send heartbeats every 10 s (±1 s jitter) | unit + HIL |
-| LINK-007 | The master raises a device supervision trouble (`alarm_service_device_reachable(n, false)`) for a keypad not heard for its supervision time (5 min by default, per keypad: 1 min, 5 min, 15 min or not supervised; decided 2026-10-15), or one that reports no fresh status for that long; it clears it when both directions are fresh again and before a removed keypad's number is freed; supervision pauses while the master's own Wi-Fi is down (the network trouble covers it) and resumes one period after it is back | unit + HIL |
+| LINK-007 | The master raises a device supervision trouble (`alarm_service_device_reachable(n, false)`) for a keypad not heard for its supervision time (5 min by default, per keypad: 1 min, 5 min, 15 min or not supervised; decided 2026-10-15), or one that reports no fresh status for that long; it clears it when both directions are fresh again and before a removed keypad's number is freed; supervision pauses while the master has no transport to its keypads - its own Wi-Fi down and its ESP-NOW radio not ready (the network trouble covers it) - and resumes one period after either is back; with Wi-Fi down and the radio up it runs | unit + HIL |
 | LINK-008 | A keypad shows "No system communication" after 30 s without an authenticated status and refuses arming; it never shows stale status as current; from start-up until the first status and configuration are in it shows a steady "Connecting" state | unit + HIL |
 | LINK-009 | Automatic failover ESP-NOW <-> LAN within 15 s; duplicates suppressed by sequence number | HIL (ESP-NOW) |
 | LINK-010 | The master's ESP-NOW channel follows its Wi-Fi AP; beacons carry the channel; keypads rescan channels 1-13 when lost, pausing their own Wi-Fi's connection attempts for a radio window only while that Wi-Fi is down (15 s, doubling to 5 min, from 15 s again once the master is heard) | HIL (ESP-NOW) |
@@ -247,7 +247,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-050 | A keypad with `PLINK_CAP_PREFS` reports its settings (field ids frozen in `proto_prefs.h`), its panel id, its voice state and the fields it accepts: at each session's first STATUS, after each save (at most 1 a second), and on PREFS_REQ. HEARTBEAT appends the settings CRC; the master asks again while it differs, at most every 2 s. The master keeps the report in RAM only (built, BL-216; on the panels a change's report reached the master within 1 s) | unit, link |
 | LINK-051 | PREFS_SET carries only listed fields to change. One is in flight per keypad, resent every 1 s and given up at 6 s. The answer is a PREFS with its req, the refusals per field and the values now stored. A req is applied once (the answer is kept 30 s). The keypad checks every value itself and applies it through its screen (UI-046) (built, BL-216; on the panels from the master's console: on the keypad's screen within 1 s, refused as held during an exit time) | unit, link |
 | LINK-052 | Never set through PREFS_SET: codes, role, pairing, home partition, name, supervision, Wi-Fi and IP, time, language and region, updates, factory reset, the setup, the Panel Manager, developer access. PREFS_SET and PREFS_REQ come from the master only (built, BL-216) | unit (`test_plink_frame.c`) |
-| LINK-053 | Enrollment discovers nearby panels without Wi-Fi; only mutually confirmed, authenticated peers may transfer credentials, and only within 10 minutes of that keypad's pairing. Manual Wi-Fi never gets overwritten; failure retains pairing; completion needs a live master connection. Language/audio/display remain local. | codec/link unit tests, LVGL setup walk; hardware pending |
+| LINK-053 | Enrollment discovers nearby panels without Wi-Fi; only mutually confirmed, authenticated peers may transfer credentials, and only within 10 minutes of that keypad's pairing. Manual Wi-Fi never gets overwritten; failure retains pairing; completion needs a live master connection. Language/audio/display remain local. | codec/link unit tests, LVGL setup walk; hardware service acceptance passed (2026-10-18, dev.13); physical setup acceptance open |
 
 ## Frame format (v1)
 
@@ -1654,7 +1654,7 @@ the panel, never trusted to Home Assistant (WCAG 2.3.1, "Display safety" in AGEN
   9. `plink_dev`'s stack high-water mark after the storm.
 
 ### Temporary partition selection implementation (KPD-006)
-The agreed target behavior (2026-10-18) is a switcher below Home's left status card when multiple
+The behavior approved 2026-10-18 by the owner is a switcher below Home's left status card when multiple
 partitions are enabled and switching is allowed on that panel. A locked panel keeps today's
 Home layout, with no partition control, label, or lock notice below the left card.
 Each panel has installer-only default-partition, switching-allowed/locked,
@@ -1798,8 +1798,8 @@ panels; a successful host preview is not hardware acceptance.
 - [x] Multi-partition supervision: a missing link keypad reports against its assigned home;
   restore retains the loss's partition. Host regressions cover a stale disabled device slot,
   configuration saves, reassignment and command rejection outside the newly assigned home.
-- [x] Panel Manager keypad assignments, enrollment and automatic update status (owner approved
-  2026-10-18): production popup editors, configured lists with capacity-limited Add and popup-only
+- [x] Panel Manager keypad assignments, enrollment and automatic update status (approved
+  2026-10-18 by the owner): production popup editors, configured lists with capacity-limited Add and popup-only
   Remove, default/allow/idle/Never policy, hidden return controls when locked, automatic keypad
   supervision. The [shared enrollment service](../31-Browser-Panel-Manager/keypad-enrollment.md)
   supports normal/headless masters; the physical keypad still confirms its code. Normal/headless

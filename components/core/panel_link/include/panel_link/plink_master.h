@@ -21,7 +21,8 @@
  * Supervision (LINK-007): level-based. A keypad is down when nothing authenticated came from it
  * for its supervision time, or it reported a status older than 30 s for that long; port.reachable
  * is called on every change, true before a removed keypad's number is freed. Paused while the
- * master's own network is down (plink_master_net), resumed a period after it is back. A
+ * master has no transport (plink_master_net: its Wi-Fi down and its radio not ready), resumed a
+ * period after either is back. A
  * provisional keypad (paired, no handshake yet) is not supervised and is dropped after 10 min.
  *
  * Smart Home and settings on keypads (LINK-043..051; docs/features/11 "Smart Home and Home
@@ -451,7 +452,8 @@ void plink_master_sound(plink_master_t *m, uint64_t now_ms, uint8_t partition, u
 void plink_master_time(plink_master_t *m, uint64_t now_ms, int64_t epoch_ms, const char *tz);
 /* The master's name (shown on keypads and in pairing). */
 void plink_master_name(plink_master_t *m, const char *name);
-/* The master's own network is up or down (supervision pauses while it's down). */
+/* The master can reach its keypads (its Wi-Fi up, or its ESP-NOW radio ready) or can't:
+ * supervision pauses while it can't (LINK-007). */
 void plink_master_net(plink_master_t *m, uint64_t now_ms, bool up);
 /* A command's answer from the platform (port.run's ticket). */
 void plink_master_result(plink_master_t *m, uint64_t now_ms, uint32_t ticket,

@@ -165,16 +165,16 @@ void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
         out->epoch_ms = x->epoch_ms;
         out->home = x->home;
         out->selected = x->selected;
-    out->switch_allowed = x->switch_allowed;
-    out->return_never = x->return_never;
-    out->return_s = x->return_s;
+        out->switch_allowed = x->switch_allowed;
+        out->return_never = x->return_never;
+        out->return_s = x->return_s;
 
         out->lockout_left_ms = x->lockout_left_ms;
         out->report = x->report;
         out->cfg_crc = x->cfg_crc;
         out->cfg_len = x->cfg_len;
-        fw_flags = (uint8_t)((x->updating ? PLINK_SF_UPDATING : 0u) |
-                             (x->hold ? PLINK_SF_HOLD : 0u));
+        fw_flags =
+            (uint8_t)((x->updating ? PLINK_SF_UPDATING : 0u) | (x->hold ? PLINK_SF_HOLD : 0u));
     }
     const uint64_t taken = snap->taken_ms;
     out->partitions = (uint8_t)(snap->partitions & ALL_PARTS);
@@ -183,8 +183,8 @@ void plink_status_build(const alarm_snapshot_t *snap, uint64_t now_ms,
     out->dev_troubles = snap->dev_troubles;
     out->default_codes = snap->default_codes;
     out->flags = (uint8_t)((snap->program ? PLINK_SF_PROGRAM : 0u) |
-                           (snap->exit_sounds ? PLINK_SF_EXIT_SOUNDS : 0u) |
-                           sounding_flags(snap) | fw_flags);
+                           (snap->exit_sounds ? PLINK_SF_EXIT_SOUNDS : 0u) | sounding_flags(snap) |
+                           fw_flags);
     out->recovery_left_ms = sat32(left_at(snap->recovery_left_ms, taken, now_ms));
     out->zones_used = snap->zones_used <= ALARM_MAX_ZONES ? snap->zones_used : ALARM_MAX_ZONES;
     out->last_event_seq = snap->last_event_seq;

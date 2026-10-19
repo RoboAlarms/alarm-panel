@@ -2085,25 +2085,29 @@ bool plink_dec_prefs_set(const uint8_t *p, size_t len, plink_prefs_set_t *m)
 }
 
 /* LINK-053: bounded secrets, never accepted without the outstanding request. */
+#define WIFI_SSID_AT PLINK_WIFI_REQ_LEN                         /* 4 */
+#define WIFI_PASS_AT (PLINK_WIFI_REQ_LEN + PLINK_WIFI_SSID_LEN) /* 37 */
 bool plink_enc_wifi(const plink_wifi_t *wifi, uint32_t req, uint8_t *out, size_t cap)
 {
-    if (!wifi || !out || cap < 102u || !req ||
-        !memchr(wifi->ssid, 0, 33) || !memchr(wifi->password, 0, 65)) return false;
-    memset(out, 0, 102);
-    for (unsigned i = 0; i < 4; ++i) out[i] = (uint8_t)(req >> (8u * i));
-    memcpy(out + 4, wifi->ssid, strlen(wifi->ssid));
-    if (wifi->ssid[0]) memcpy(out + 37, wifi->password, strlen(wifi->password));
+    if (!wifi || !out || cap < PLINK_WIFI_LEN || !req ||
+        !memchr(wifi->ssid, 0, PLINK_WIFI_SSID_LEN) ||
+        !memchr(wifi->password, 0, PLINK_WIFI_PASS_LEN)) return false;
+    memset(out, 0, PLINK_WIFI_LEN);
+    for (unsigned i = 0; i < PLINK_WIFI_REQ_LEN; ++i) out[i] = (uint8_t)(req >> (8u * i));
+    memcpy(out + WIFI_SSID_AT, wifi->ssid, strlen(wifi->ssid));
+    if (wifi->ssid[0]) memcpy(out + WIFI_PASS_AT, wifi->password, strlen(wifi->password));
     return true;
 }
 bool plink_dec_wifi(const uint8_t *p, size_t n, uint32_t req, plink_wifi_t *out)
 {
     if (!out) return false;
     plink_wipe(out, sizeof *out);
-    if (!p || n < 102u || !req || !memchr(p + 4, 0, 33) || !memchr(p + 37, 0, 65)) return false;
+    if (!p || n < PLINK_WIFI_LEN || !req || !memchr(p + WIFI_SSID_AT, 0, PLINK_WIFI_SSID_LEN) ||
+        !memchr(p + WIFI_PASS_AT, 0, PLINK_WIFI_PASS_LEN)) return false;
     uint32_t id = 0;
-    for (unsigned i = 0; i < 4; ++i) id |= (uint32_t)p[i] << (8u * i);
+    for (unsigned i = 0; i < PLINK_WIFI_REQ_LEN; ++i) id |= (uint32_t)p[i] << (8u * i);
     if (id != req) return false;
-    memcpy(out->ssid, p + 4, 33);
-    if (out->ssid[0]) memcpy(out->password, p + 37, 65);
+    memcpy(out->ssid, p + WIFI_SSID_AT, PLINK_WIFI_SSID_LEN);
+    if (out->ssid[0]) memcpy(out->password, p + WIFI_PASS_AT, PLINK_WIFI_PASS_LEN);
     return true;
 }

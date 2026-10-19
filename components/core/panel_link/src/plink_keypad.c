@@ -3989,8 +3989,8 @@ bool plink_keypad_wifi_request(plink_keypad_t *k, uint64_t now)
 {
     if (!k || !k->paired || !cap_ok(k, PLINK_CAP_WIFI) || panic_waits(k)) return false;
     if (!k->wifi_req) { k->wifi_req = ++k->next_req; if (!k->wifi_req) k->wifi_req = ++k->next_req; }
-    uint8_t req[4];
-    for (unsigned i = 0; i < 4; ++i) req[i] = (uint8_t)(k->wifi_req >> (8u * i));
+    uint8_t req[PLINK_WIFI_REQ_LEN];
+    for (unsigned i = 0; i < PLINK_WIFI_REQ_LEN; ++i) req[i] = (uint8_t)(k->wifi_req >> (8u * i));
     return seal_send(k, now, PLINK_T_WIFI_REQ, req, sizeof req);
 }
 void plink_keypad_wifi_cancel(plink_keypad_t *k)

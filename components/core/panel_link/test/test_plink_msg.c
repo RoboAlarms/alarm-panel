@@ -29,6 +29,7 @@
 #include "plink_wire_fixture_v1.h"
 #include "ui_backend/ui_backend.h"
 #include "unity.h"
+#include "plink_wifi_fixture_v1.h"
 #include "status_goto_fixture_v1.h"
 #include "status_policy_fixture_v1.h"
 
@@ -4836,8 +4837,12 @@ static void test_wire_fixture_v1(void)
         TEST_ASSERT_EQUAL_HEX8_ARRAY(p, OUT, len);
     }
     for (unsigned t = 0; t < 256u; t++) {
-        if (!plink_type_known((uint8_t)t) || t == PLINK_T_NOT_PAIRED || t == PLINK_T_BEACON ||
-            t == PLINK_T_WIFI_REQ || t == PLINK_T_WIFI) {
+        if (!plink_type_known((uint8_t)t) || t == PLINK_T_NOT_PAIRED || t == PLINK_T_BEACON) {
+            continue;
+        }
+        if (t == PLINK_T_WIFI_REQ || t == PLINK_T_WIFI) {
+            /* added after v1: frozen in plink_wifi_fixture_v1.h (test_wifi_fixture_v1) */
+            TEST_ASSERT_TRUE(t == PLINK_WIFI_V1_TYPE_REQ || t == PLINK_WIFI_V1_TYPE);
             continue;
         }
         const char *name = NULL;
@@ -4853,6 +4858,30 @@ static void test_wire_fixture_v1(void)
         }
         TEST_ASSERT_TRUE_MESSAGE(found, name);
     }
+}
+
+/* LINK-053, LINK-017: the frozen WIFI_REQ and WIFI payloads (plink_wifi_fixture_v1.h, built from
+ * the published layout) keep their numbers, read as the values frozen with them, and encode again
+ * to exactly their bytes. */
+static void test_wifi_fixture_v1(void)
+{
+    TEST_ASSERT_EQUAL_HEX8(PLINK_WIFI_V1_TYPE_REQ, PLINK_T_WIFI_REQ);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_WIFI_V1_TYPE, PLINK_T_WIFI);
+    TEST_ASSERT_EQUAL_HEX16(PLINK_WIFI_V1_CAP, PLINK_CAP_WIFI);
+    TEST_ASSERT_EQUAL_size_t(PLINK_WIFI_REQ_LEN, sizeof PLINK_WIFI_REQ_V1);
+    TEST_ASSERT_EQUAL_size_t(PLINK_WIFI_LEN, sizeof PLINK_WIFI_V1);
+    uint32_t id = 0;
+    for (unsigned i = 0; i < sizeof PLINK_WIFI_REQ_V1; i++) {
+        id |= (uint32_t)PLINK_WIFI_REQ_V1[i] << (8u * i);
+    }
+    TEST_ASSERT_EQUAL_HEX32(PLINK_WIFI_V1_REQ_ID, id);
+    plink_wifi_t w;
+    TEST_ASSERT_TRUE(plink_dec_wifi(PLINK_WIFI_V1, sizeof PLINK_WIFI_V1, id, &w));
+    TEST_ASSERT_EQUAL_STRING(PLINK_WIFI_V1_SSID, w.ssid);
+    TEST_ASSERT_EQUAL_STRING(PLINK_WIFI_V1_PASSWORD, w.password);
+    uint8_t again[PLINK_WIFI_LEN];
+    TEST_ASSERT_TRUE(plink_enc_wifi(&w, id, again, sizeof again));
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(PLINK_WIFI_V1, again, sizeof again);
 }
 
 /* LINK-053: maximum lengths, malformed and stale replies, unavailable/open network. */
@@ -4887,6 +4916,7 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_wifi_credentials_codec);
+    RUN_TEST(test_wifi_fixture_v1);
     RUN_TEST(test_wire_numbers);
     RUN_TEST(test_wire_sections);
     RUN_TEST(test_wire_strings);

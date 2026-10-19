@@ -30,24 +30,31 @@
 extern "C" {
 #endif
 
-/* WIFI_REQ: nonzero request id u32 LE. WIFI: echoed id, ssid[33], password[65].
+#define PLINK_PROTO 1u     /* the protocol version this firmware speaks */
+
+/* LINK-053. WIFI_REQ: nonzero request id u32 LE. WIFI: echoed id, ssid[33], password[65].
  * Fixed terminated strings; empty SSID means unavailable. Only in a sealed session
  * with WIFI negotiated. Receivers wipe these buffers immediately after use. */
-typedef struct { char ssid[33]; char password[65]; } plink_wifi_t;
+#define PLINK_WIFI_REQ_LEN  4u  /* WIFI_REQ's payload: the request id */
+#define PLINK_WIFI_SSID_LEN 33u /* with its NUL */
+#define PLINK_WIFI_PASS_LEN 65u /* with its NUL */
+#define PLINK_WIFI_LEN      (PLINK_WIFI_REQ_LEN + PLINK_WIFI_SSID_LEN + PLINK_WIFI_PASS_LEN) /* 102 */
+typedef struct {
+    char ssid[PLINK_WIFI_SSID_LEN];
+    char password[PLINK_WIFI_PASS_LEN];
+} plink_wifi_t;
 bool plink_enc_wifi(const plink_wifi_t *wifi, uint32_t req, uint8_t *out, size_t cap);
 bool plink_dec_wifi(const uint8_t *p, size_t n, uint32_t req, plink_wifi_t *out);
-
-#define PLINK_PROTO 1u     /* the protocol version this firmware speaks */
 
 /* Capability bits (the caps of PAIR_REQ, PAIR_COMMIT, HELLO and WELCOME; LINK-017, LINK-043). A
  * panel offers them at run time (plink_master_init, plink_keypad_init); a session keeps the bits
  * both sides offered, and a type or a field of a capability goes only in a session with its bit.
  * Never renumbered or reused; the next free bit is 0x0010. */
-#define PLINK_CAP_WIFI  0x0008u /* authenticated, requested enrollment credentials */
 #define PLINK_CAP_FW    0x0001u /* updates through the link: FW_INFO..FW_PAGE */
 #define PLINK_CAP_HOME  0x0002u /* Smart Home on keypads: DEV_LIST_REQ..DEV_ACK */
 #define PLINK_CAP_PREFS 0x0004u /* a keypad's settings: PREFS, PREFS_REQ, PREFS_SET, HEARTBEAT's
                                  * section */
+#define PLINK_CAP_WIFI  0x0008u /* authenticated, requested enrollment credentials: WIFI_REQ, WIFI */
 /* What this firmware's codecs know: an offer is masked with it, so a peer's unknown bit is never
  * common. */
 #define PLINK_CAPS_KNOWN (PLINK_CAP_FW | PLINK_CAP_HOME | PLINK_CAP_PREFS | PLINK_CAP_WIFI)

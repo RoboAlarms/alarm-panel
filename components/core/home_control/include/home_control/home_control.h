@@ -58,7 +58,10 @@ typedef struct {
 
 typedef struct {
     void *ctx;
-    /* The device list or a state changed: the UI re-reads. */
+    /* The device list or a state changed: the UI re-reads. Also when a send the source refused
+     * at once (hc_act's HC_ERR_OFFLINE) cleared the failure its row showed. With result, it tells
+     * of every change of a row but one: hc_act's HC_OK (the row shows it pending), which the
+     * caller knows of. */
     void (*changed)(void *ctx);
     /* An action finished (ok, or why not); the device row already carries it. request_id is
      * the one hc_act_auto returned (HCTL-012): every action that was sent hears back exactly
@@ -124,6 +127,13 @@ bool hc_needs_code(dev_kind_t kind, dev_action_t action, int32_t value);
 /* The action makes sense for the kind at all (the UI only offers these). */
 bool hc_action_valid(dev_kind_t kind, dev_action_t action);
 
+/* An ACT_SET_MODE's mode word, the one hc_act takes for a thermostat (the screen's mode keys, a
+ * panel link keypad's DEV_ACT, docs/features/11 LINK-048): DEV_MODE_OFF "off", DEV_MODE_HEAT
+ * "heat", DEV_MODE_COOL "cool", DEV_MODE_AUTO "auto" (dsrc_ha sends "heat_cool" where the
+ * thermostat has only that). Anything else - 0, DEV_MODE_HEAT_COOL, two bits, an unknown bit -
+ * is NULL: the caller refuses the action. */
+const char *hc_mode_word(uint8_t bit);
+
 typedef enum {
     HC_OK = 0,
     HC_ERR_UNKNOWN,  /* no such device */
@@ -133,7 +143,9 @@ typedef enum {
     HC_ERR_NOT_ALLOWED, /* hc_act_auto: outside what an automation may do (HCTL-011, AUT-002) */
 } hc_result_t;          /* append only: values may be logged */
 
-/* Start an action; the outcome arrives through port.result (and the device row). */
+/* Start an action; the outcome arrives through port.result (and the device row). A source that
+ * refuses the send at once: HC_ERR_OFFLINE, nothing pending and nothing failed on the row - a
+ * failure it showed before is cleared, and port.changed says so. */
 hc_result_t hc_act(hc_t *hc, const char *ref, dev_action_t action, int32_t value,
                    const char *mode);
 

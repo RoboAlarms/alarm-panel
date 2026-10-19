@@ -47,6 +47,8 @@
 #include "net_mqtt.h"
 #include "net_wifi.h"
 #include "panel_ota.h"
+#include "panel_prefs.h"
+#include "panel_voice.h"
 #include "nvs.h"
 #include "sdkconfig.h"
 #include "device_service.h"
@@ -73,6 +75,9 @@ static const char *TAG = "ha_link";
 #define RX_MAX        PROTO_LINK_FRAME_MAX
 #define EV_QUEUE      32 /* events waiting for the link task (the alarm task posts them) */
 #define CALL_QUEUE    8  /* device actions waiting to be sent (the TLS session is one task's) */
+#define SET_ANSWERS   (2u * PROTO_LINK_SET_QUEUE) /* settings answers waiting for the link task */
+#define PREFS_GIVE_UP_MS 3000u /* panel_prefs.h: a patch the screen hasn't taken in 3 s is given
+                                * up on (UI_PREFS_TAKE_MS) */
 
 /* One connection, bounded (HAI-002). A client that sends half a frame header, or stops
  * reading while the panel writes, must not be able to keep the link task for itself: it would
@@ -91,6 +96,14 @@ typedef struct {
     uint32_t request_id;
     bool has_value;
 } ha_call_t;
+
+/* A settings_set's answer, from whichever task has it (HAI-019): the screen's task for the
+ * master's own settings, the panel link's for a keypad's. */
+typedef struct {
+    uint32_t ticket;
+    uint8_t err;                     /* ha_link_set_t: HA_LINK_SET_SENT = the target answered */
+    uint8_t why[PROTO_PREFS_F_LAST]; /* then its refusals, by id - 1 */
+} ha_set_answer_t;
 
 typedef struct {
     bool enabled;
@@ -154,6 +167,14 @@ static struct {
     uint64_t status_sent;  /* when the last status went */
     uint32_t ota_seq;      /* the update status it carried (panel_ota_seq) */
     uint8_t *tx;           /* PROTO_LINK_SNAPSHOT_MAX + header, PSRAM */
+    /* the panel's settings and its keypads (HAI-016..018): what the client holds */
+    uint32_t set_hash;     /* the settings document (0: none sent on this connection) */
+    uint32_t set_seq;      /* the panel_prefs_seq, the voice and the keys it was built from */
+    uint8_t set_voice;
+    proto_prefs_mask_t set_can;
+    uint64_t set_next;     /* not before this: at most once a second */
+    uint32_t kp_hash;      /* the keypads list (0: none sent on this connection) */
+    uint64_t kp_next;
 
     /* What other tasks hand over. The queues carry the payloads (FreeRTOS orders the copy
      * against the hand-over in its own critical section) and the flags below are read and
@@ -162,6 +183,7 @@ static struct {
      * link task can reach them, and producers check for NULL all the same. */
     QueueHandle_t ev_q;   /* atomic handle: alarm_event_t, posted by the alarm task */
     QueueHandle_t call_q; /* atomic handle: ha_call_t, posted by the UI or the console */
+    QueueHandle_t set_q;  /* atomic handle: ha_set_answer_t, posted by any task (HAI-019) */
     bool state_dirty;     /* atomic: set by the alarm task's listener */
     bool ev_overflow;     /* atomic: the queue filled, resend the whole picture */
 
@@ -188,6 +210,11 @@ static struct {
     alarm_config_t cfg;    /* names and classes for the payloads (~10 KB) */
     alarm_snapshot_t prev; /* what the client saw last */
     alarm_snapshot_t cur;
+    /* settings_set (HAI-017..019): the requests waiting or in flight, the one being read, and the
+     * keypads as the port last listed them (~4 KB together) */
+    proto_link_setq_t setq;
+    proto_link_settings_set_t set_req;
+    proto_link_keypad_t kp[PROTO_LINK_KEYPADS_MAX];
 } SB ALARM_SLOW_BSS;
 
 /* The Z-Wave devices (ZW-036): the owner's port, set before start; the list the client holds. */
@@ -203,6 +230,21 @@ void ha_link_set_zwave(const ha_link_zw_port_t *port)
         s_zw = *port;
         s_have_zw = true;
     }
+}
+
+/* The link keypads' port (HAI-016..019): written once, then published with a release store, so
+ * the link task that sees the flag sees the whole port. */
+static ha_link_settings_port_t s_kp_port;
+static bool s_kp_port_set; /* atomic */
+
+void ha_link_set_settings(const ha_link_settings_port_t *port)
+{
+    if (port == NULL || port->keypads == NULL || port->set == NULL ||
+        __atomic_load_n(&s_kp_port_set, __ATOMIC_ACQUIRE)) {
+        return; /* once: the link task may be reading it */
+    }
+    s_kp_port = *port;
+    __atomic_store_n(&s_kp_port_set, true, __ATOMIC_RELEASE);
 }
 
 /* The board's model, set by the app before the link starts (services never name a board,
@@ -615,6 +657,8 @@ static bool send_pair_result(conn_t *c, const char *result)
     return send_built(c, &w, buf);
 }
 
+static void push_reset(void); /* below, with what the client holds */
+
 /* The pairing outcome reached while this connection waits (Allow tapped, window ran out). */
 static bool pairing_wait(conn_t *c)
 {
@@ -642,6 +686,7 @@ static bool pairing_wait(conn_t *c)
                 }
                 c->peer_is_paired = true;
                 S.synced = false;
+                push_reset();
                 flag_set(&S.connected, true);
                 flag_set(&S.req_watch, true);
                 zone_service_ha_link_state(true);
@@ -742,8 +787,8 @@ static bool send_watch(conn_t *c)
     return len > 0u && send_raw(c, S.tx, len);
 }
 
-/* Everything the paired client is owed: queued events, then the state (a full snapshot the
- * first time and after a configuration change, a delta otherwise). false: connection broken. */
+/* The diagnostic status (protocol.md "Optional diagnostic status"): before the first snapshot,
+ * every 10 s, and as an update's progress moves. false: connection broken. */
 static bool push_status(conn_t *c)
 {
     const uint64_t now = now_ms();
@@ -798,6 +843,17 @@ static bool push_status(conn_t *c)
     return true;
 }
 
+/* FNV-1a over a document the client holds a copy of; never 0, which means "not sent on this
+ * connection". */
+static uint32_t doc_hash(const uint8_t *doc, size_t len)
+{
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < len; i++) {
+        h = (h ^ doc[i]) * 16777619u;
+    }
+    return h | 1u;
+}
+
 /* The Z-Wave devices' list, when it changed (a state, a device come or gone), at most once a
  * second: the whole list every time - the client replaces what it holds. */
 static bool push_zwave(conn_t *c)
@@ -812,11 +868,7 @@ static bool push_zwave(conn_t *c)
     pj_init(&w, (char *)S.tx, PROTO_LINK_SNAPSHOT_MAX);
     proto_link_zwave_devices(&w, s_zw_list, s_zw_n);
     const size_t len = pj_finish(&w);
-    uint32_t crc = 2166136261u;
-    for (size_t i = 0; i < len; i++) {
-        crc = (crc ^ S.tx[i]) * 16777619u;
-    }
-    crc |= 1u; /* never 0: 0 means "not sent on this connection" */
+    const uint32_t crc = doc_hash(S.tx, len);
     if (len == 0u || crc == S.zw_crc) {
         return true;
     }
@@ -827,25 +879,299 @@ static bool push_zwave(conn_t *c)
     return true;
 }
 
-static bool push_state(conn_t *c)
+/* ---- the panel's settings and its keypads (HAI-016..019; protocol.md "Panel settings and
+ * keypads") ------------------------------------------------------------------------------------ */
+
+/* The master's voice in the link's numbers; *present: this build has one (ui_voice_present). */
+static uint8_t master_voice(bool *present)
 {
-    if (!c->peer_is_paired || c->hello_client[0] == '\0' || S.tx == NULL) {
-        return true; /* nothing is owed before the hello, or to a pairing stranger */
+    panel_voice_status_t v;
+    panel_voice_status(&v);
+    *present = v.state != PANEL_VOICE_OFF;
+    switch (v.state) {
+    case PANEL_VOICE_READY: return PROTO_LINK_VOICE_READY;
+    case PANEL_VOICE_LOADING: return PROTO_LINK_VOICE_LOADING;
+    default: return PROTO_LINK_VOICE_NONE; /* none in this build, no pack, or one it can't use */
     }
-    if (flag_take(&S.req_watch)) {
-        if (!send_watch(c)) {
-            return false;
+}
+
+/* The fields Home Assistant may set on the master: every one its screen takes (UI-046), the
+ * announcements' only where its screen shows them (a build with the voice). */
+static proto_prefs_mask_t master_can(bool voice_present)
+{
+    const proto_prefs_mask_t voice = PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_VOLUME) |
+                                     PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_ENABLED) |
+                                     PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_STATUS) |
+                                     PROTO_PREFS_BIT(PROTO_PREFS_F_VOICE_CHIME);
+    return voice_present ? PROTO_PREFS_KNOWN : (PROTO_PREFS_KNOWN & ~voice);
+}
+
+/* The master's own settings (HAI-017): after the paired hello, then on a save or a change of its
+ * voice, looked at once a second. Only what the panel stored (panel_prefs_current), never
+ * defaults it hasn't loaded yet. */
+static bool push_settings(conn_t *c)
+{
+    const uint64_t now = now_ms();
+    if (now < S.set_next) {
+        return true;
+    }
+    S.set_next = now + 1000u;
+    bool present = false;
+    const uint8_t voice = master_voice(&present);
+    const proto_prefs_mask_t can = master_can(present);
+    const uint32_t seq = panel_prefs_seq();
+    if (S.set_hash != 0u && seq == S.set_seq && voice == S.set_voice && can == S.set_can) {
+        return true;
+    }
+    panel_prefs_t prefs;
+    if (!panel_prefs_current(&prefs)) {
+        return true; /* the screen hasn't loaded them yet */
+    }
+    proto_prefs_values_t values;
+    panel_prefs_to_values(&prefs, &values);
+    pj_writer_t w;
+    pj_init(&w, (char *)S.tx, PROTO_PAYLOAD_MAX);
+    proto_link_settings(&w, &values, can, voice);
+    const size_t len = pj_finish(&w);
+    if (len == 0u) {
+        return true;
+    }
+    S.set_seq = seq;
+    S.set_voice = voice;
+    S.set_can = can;
+    const uint32_t hash = doc_hash(S.tx, len);
+    if (hash == S.set_hash) {
+        return true; /* a save of other options (the language): nothing new to say */
+    }
+    if (!send_raw(c, S.tx, len)) {
+        return false;
+    }
+    S.set_hash = hash;
+    return true;
+}
+
+/* The port's keypads in SB.kp, tidied: an id that isn't one, the master's own or a lower keypad's
+ * twin is cleared (*cleared of them; NULL: not wanted). None without a port. */
+static size_t keypads_list(size_t *cleared)
+{
+    size_t n = 0;
+    if (__atomic_load_n(&s_kp_port_set, __ATOMIC_ACQUIRE)) {
+        n = s_kp_port.keypads(s_kp_port.ctx, SB.kp, PROTO_LINK_KEYPADS_MAX);
+        n = n < PROTO_LINK_KEYPADS_MAX ? n : PROTO_LINK_KEYPADS_MAX;
+    }
+    const size_t gone = proto_link_keypads_tidy(SB.kp, n, S.ident.panel_id);
+    if (cleared != NULL) {
+        *cleared = gone;
+    }
+    return n;
+}
+
+/* The link keypads (HAI-018): the whole list after the paired hello and whenever anything in it
+ * changes, at most once a second, as the Z-Wave devices; an empty list from a master without
+ * keypads (or before the panel link's service gives ha_link its port). */
+static bool push_keypads(conn_t *c)
+{
+    const uint64_t now = now_ms();
+    if (now < S.kp_next) {
+        return true;
+    }
+    S.kp_next = now + 1000u;
+    size_t cleared = 0;
+    const size_t n = keypads_list(&cleared);
+    pj_writer_t w;
+    pj_init(&w, (char *)S.tx, PROTO_LINK_SNAPSHOT_MAX); /* 8 keypads take up to 8 KB */
+    proto_link_keypads(&w, SB.kp, n);
+    const size_t len = pj_finish(&w);
+    const uint32_t hash = doc_hash(S.tx, len);
+    if (len == 0u || hash == S.kp_hash) {
+        return true;
+    }
+    if (cleared > 0u) {
+        ESP_LOGW(TAG, "%u keypad id(s) published as null: not a panel id, this panel's own, or "
+                      "one a lower keypad number reports too", (unsigned)cleared);
+    }
+    if (!send_raw(c, S.tx, len)) {
+        return false;
+    }
+    S.kp_hash = hash;
+    return true;
+}
+
+static const char *set_error(ha_link_set_t r)
+{
+    switch (r) {
+    case HA_LINK_SET_SENT: return "";
+    case HA_LINK_SET_NOT_FOUND: return PROTO_LINK_SET_E_NOT_FOUND;
+    case HA_LINK_SET_OFFLINE: return PROTO_LINK_SET_E_OFFLINE;
+    case HA_LINK_SET_UNSUPPORTED: return PROTO_LINK_SET_E_UNSUPPORTED;
+    case HA_LINK_SET_TIMEOUT: return PROTO_LINK_SET_E_TIMEOUT;
+    default: return PROTO_LINK_SET_E_BUSY;
+    }
+}
+
+/* One settings_result (HAI-017): error "" with the target's refusals (why, NULL: none), or an
+ * error for the whole request. */
+static bool send_set_result(conn_t *c, const proto_link_settings_set_t *req, const char *error,
+                            const uint8_t *why)
+{
+    char *buf = (char *)S.tx; /* link-task-owned PSRAM, no nested 4 KB stack buffers */
+    pj_writer_t w;
+    pj_init(&w, buf, PROTO_PAYLOAD_MAX);
+    proto_link_settings_result(&w, req, error, why);
+    return send_built(c, &w, buf);
+}
+
+/* The screen's answer for the master's own settings (panel_prefs_done_fn): on the screen's task,
+ * so only the hand-over; ctx carries the request's ticket. */
+static void master_prefs_done(void *ctx, uint32_t mailbox, const uint8_t why[PROTO_PREFS_F_LAST])
+{
+    (void)mailbox;
+    ha_link_settings_done((uint32_t)(uintptr_t)ctx, why, PROTO_PREFS_F_LAST);
+}
+
+/* A settings_set (HAI-017, HAI-019): answered at once when it can't go (bad, not_found, offline,
+ * unsupported, nothing to change, no room), else queued for its target's turn. false: the
+ * connection broke. */
+static bool settings_request(conn_t *c, proto_link_settings_set_t *req)
+{
+    if (req->bad) {
+        return send_set_result(c, req, PROTO_LINK_SET_E_BAD, NULL);
+    }
+    uint8_t target = 0u; /* the master itself */
+    proto_prefs_mask_t can = 0u;
+    if (strcmp(req->target, S.ident.panel_id) == 0) {
+        bool present = false;
+        (void)master_voice(&present);
+        can = master_can(present);
+    } else {
+        /* by its own panel id, never by device number: a number is reused after a removal */
+        const size_t n = req->target[0] != '\0' ? keypads_list(NULL) : 0u;
+        const proto_link_keypad_t *k = NULL;
+        for (size_t i = 0; i < n; i++) {
+            if (SB.kp[i].id[0] != '\0' && strcmp(SB.kp[i].id, req->target) == 0) {
+                k = &SB.kp[i];
+            }
+        }
+        if (k == NULL || k->device < 1u || k->device >= PROTO_LINK_SET_TARGETS) {
+            return send_set_result(c, req, PROTO_LINK_SET_E_NOT_FOUND, NULL);
+        }
+        if (!k->online) {
+            return send_set_result(c, req, PROTO_LINK_SET_E_OFFLINE, NULL);
+        }
+        if (!k->reported || k->can == 0u) {
+            return send_set_result(c, req, PROTO_LINK_SET_E_UNSUPPORTED, NULL);
+        }
+        target = k->device;
+        can = k->can;
+    }
+    proto_link_settings_set_accept(req, can);
+    if (req->p.values.have == 0u) {
+        return send_set_result(c, req, "", NULL); /* nothing to send: ok, or its refusals */
+    }
+    if (proto_link_setq_add(&SB.setq, now_ms(), target, req) == NULL) {
+        return send_set_result(c, req, PROTO_LINK_SET_E_BUSY, NULL); /* 8 already waiting */
+    }
+    return true; /* the next pass of push_state sends it when its turn is due */
+}
+
+/* settings_set's answers, give-ups and turns (HAI-019). false: the connection broke. */
+static bool settings_pump(conn_t *c)
+{
+    const uint64_t now = now_ms();
+    proto_link_set_slot_t *s;
+    bool ok = true;
+    /* what came back: the screen's or a keypad's answer, or how a keypad's request ended */
+    QueueHandle_t q = queue_get(&S.set_q);
+    ha_set_answer_t a;
+    while (ok && q != NULL && xQueueReceive(q, &a, 0) == pdTRUE) {
+        s = proto_link_setq_find(&SB.setq, a.ticket);
+        if (s == NULL) {
+            continue; /* late: answered timeout already, or asked on an earlier connection */
+        }
+        ok = a.err == (uint8_t)HA_LINK_SET_SENT
+                 ? send_set_result(c, &s->req, "", a.why)
+                 : send_set_result(c, &s->req, set_error((ha_link_set_t)a.err), NULL);
+        proto_link_setq_free(&SB.setq, s);
+    }
+    /* The master's screen hasn't taken its patch in 3 s (stuck, or none): withdraw it, every field
+     * busy, as the mailbox answers a patch it took too late; when it can't be withdrawn, the
+     * screen has it and its answer is on the way. */
+    for (size_t i = 0; ok && i < PROTO_LINK_SET_QUEUE; i++) {
+        s = &SB.setq.slot[i];
+        if (s->state != PROTO_LINK_SET_FLIGHT || s->target != 0u || s->withdrawn ||
+            now < s->sent_ms + PREFS_GIVE_UP_MS) {
+            continue;
+        }
+        s->withdrawn = true;
+        if (panel_prefs_remote_cancel(s->handle)) {
+            uint8_t why[PROTO_PREFS_F_LAST];
+            for (unsigned id = 1u; id <= PROTO_PREFS_F_LAST; id++) {
+                why[id - 1u] = (s->req.p.values.have & PROTO_PREFS_BIT(id)) != 0u
+                                   ? (uint8_t)PROTO_PREFS_WHY_BUSY
+                                   : 0u;
+            }
+            ok = send_set_result(c, &s->req, "", why);
+            proto_link_setq_free(&SB.setq, s);
         }
     }
-    if (!send_calls(c)) {
-        return false;
+    /* within 7 s whatever happens: busy when it never went (or was withdrawn just now), timeout
+     * when it went and nothing came back */
+    while (ok && (s = proto_link_setq_expired(&SB.setq, now)) != NULL) {
+        const bool unsent = s->state != PROTO_LINK_SET_FLIGHT ||
+                            (s->target == 0u && !s->withdrawn &&
+                             panel_prefs_remote_cancel(s->handle));
+        ok = send_set_result(c, &s->req, unsent ? PROTO_LINK_SET_E_BUSY : PROTO_LINK_SET_E_TIMEOUT,
+                             NULL);
+        proto_link_setq_free(&SB.setq, s);
     }
-    if (!push_status(c)) {
-        return false;
+    /* the turns due now: the master's own to its screen, a keypad's through the port */
+    while (ok && (s = proto_link_setq_next(&SB.setq, now)) != NULL) {
+        ha_link_set_t r = HA_LINK_SET_NOT_FOUND;
+        if (s->target == 0u) {
+            s->handle = panel_prefs_remote_submit(&s->req.p.values, master_prefs_done,
+                                                  (void *)(uintptr_t)s->ticket);
+            r = s->handle != 0u ? HA_LINK_SET_SENT : HA_LINK_SET_BUSY;
+        } else if (__atomic_load_n(&s_kp_port_set, __ATOMIC_ACQUIRE)) {
+            r = s_kp_port.set(s_kp_port.ctx, s->target, s->ticket, &s->req.p.values);
+        }
+        if (r != HA_LINK_SET_SENT) {
+            ok = send_set_result(c, &s->req, set_error(r), NULL);
+            proto_link_setq_free(&SB.setq, s);
+        }
     }
-    if (!push_zwave(c)) {
-        return false;
+    return ok;
+}
+
+/* What the client holds is per connection: a new one gets the whole Z-Wave list, the settings and
+ * the keypads again, and the settings_set requests of the last one are dropped (their answers have
+ * nowhere to go; a late one matches nothing). The turns go on (proto_link_setq_clear). */
+static void push_reset(void)
+{
+    S.zw_crc = 0u;
+    S.zw_next = 0u;
+    S.set_hash = 0u;
+    S.set_next = 0u;
+    S.kp_hash = 0u;
+    S.kp_next = 0u;
+    for (size_t i = 0; i < PROTO_LINK_SET_QUEUE; i++) {
+        const proto_link_set_slot_t *s = &SB.setq.slot[i];
+        if (s->state == PROTO_LINK_SET_FLIGHT && s->target == 0u && !s->withdrawn) {
+            /* no one would give up on it later: a screen that never looks mustn't keep the
+             * mailbox (one the screen has already taken is applied, as asked) */
+            (void)panel_prefs_remote_cancel(s->handle);
+        }
     }
+    proto_link_setq_clear(&SB.setq);
+    QueueHandle_t setq = queue_get(&S.set_q);
+    if (setq != NULL) {
+        (void)xQueueReset(setq);
+    }
+}
+
+/* The alarm's own picture: queued events, then the state (a full snapshot the first time and after
+ * a configuration change, a delta otherwise). false: connection broken. */
+static bool push_alarm(conn_t *c)
+{
     char *buf = (char *)S.tx; /* link-task-owned PSRAM, no nested 4 KB stack buffers */
     pj_writer_t w;
     QueueHandle_t q = queue_get(&S.ev_q);
@@ -914,6 +1240,22 @@ static bool push_state(conn_t *c)
     }
     SB.prev = SB.cur;
     return true;
+}
+
+/* Everything the paired client is owed, its first snapshot before the settings and the keypads.
+ * false: connection broken. */
+static bool push_state(conn_t *c)
+{
+    if (!c->peer_is_paired || c->hello_client[0] == '\0' || S.tx == NULL) {
+        return true; /* nothing is owed before the hello, or to a pairing stranger */
+    }
+    if (flag_take(&S.req_watch)) {
+        if (!send_watch(c)) {
+            return false;
+        }
+    }
+    return send_calls(c) && push_status(c) && push_zwave(c) && push_alarm(c) &&
+           push_settings(c) && push_keypads(c) && settings_pump(c);
 }
 
 /* A control entity's values as the wire carried them (proto_link_values_t, already range-checked)
@@ -1083,6 +1425,15 @@ static bool handle(conn_t *c, const proto_link_in_t *in, const char *json, uint3
         proto_link_zwave_result(&w, id, ok, error);
         S.zw_next = 0u; /* its new state soon */
         return send_built(c, &w, buf);
+    }
+    case PROTO_LINK_IN_SETTINGS_SET: { /* a panel's settings from Home Assistant (HAI-017) */
+        if (!c->peer_is_paired) {
+            return false; /* no code needed: the pinned connection is the check */
+        }
+        if (!proto_link_parse_settings_set(json, len, &SB.set_req)) {
+            return false;
+        }
+        return settings_request(c, &SB.set_req);
     }
     case PROTO_LINK_IN_HELLO:
         if (in->api != PROTO_LINK_API) {
@@ -1256,8 +1607,7 @@ static void connection(void)
     if (c.peer_is_paired) {
         flag_set(&S.connected, true);
         S.synced = false; /* a fresh connection starts with a full snapshot */
-        S.zw_crc = 0u;    /* ... and the whole Z-Wave list */
-        S.zw_next = 0u;
+        push_reset();     /* ... the whole Z-Wave list, the settings and the keypads */
         /* Events from before this connection aren't replayed yet, and actions queued for a
          * dead line answer nothing. xQueueReset is atomic against a producer; one posted in
          * the same instant simply rides along, and the full snapshot that follows tells the
@@ -1430,10 +1780,11 @@ static esp_err_t link_prepare(void)
     SemaphoreHandle_t lock = xSemaphoreCreateMutex();
     QueueHandle_t ev = xQueueCreate(EV_QUEUE, sizeof(alarm_event_t));
     QueueHandle_t calls = xQueueCreate(CALL_QUEUE, sizeof(ha_call_t));
+    QueueHandle_t sets = xQueueCreate(SET_ANSWERS, sizeof(ha_set_answer_t));
     nvs_handle_t nvs = 0;
     uint8_t mac[6] = {0};
     esp_err_t err = ESP_ERR_NO_MEM;
-    if (lock != NULL && ev != NULL && calls != NULL) {
+    if (lock != NULL && ev != NULL && calls != NULL && sets != NULL) {
         err = nvs_open("halink", NVS_READWRITE, &nvs);
         if (err == ESP_OK) {
             /* The P4 has no local Wi-Fi MAC: its radio lives on the C6. Use the P4's
@@ -1455,6 +1806,9 @@ static esp_err_t link_prepare(void)
         if (calls != NULL) {
             vQueueDelete(calls);
         }
+        if (sets != NULL) {
+            vQueueDelete(sets);
+        }
         return err;
     }
     S.nvs = nvs;
@@ -1465,12 +1819,14 @@ static esp_err_t link_prepare(void)
     snprintf(S.ident.model, sizeof(S.ident.model), "%s", s_model);
     snprintf(S.ident.prefix, sizeof(S.ident.prefix), "%s", PROTO_PREFIX_DEFAULT);
     snprintf(S.name, sizeof(S.name), "RoboAlarms Panel");
+    proto_link_setq_init(&SB.setq);
     /* The lock last: the status and the setters wait for it, and find the store loaded. */
     __atomic_store_n(&S.lock, lock, __ATOMIC_RELEASE);
     /* The hand-over queues exist before anything is told where to post (R10). They are
      * published with a release store: whoever picks the handle up sees a finished queue. */
     __atomic_store_n(&S.ev_q, ev, __ATOMIC_RELEASE);
     __atomic_store_n(&S.call_q, calls, __ATOMIC_RELEASE);
+    __atomic_store_n(&S.set_q, sets, __ATOMIC_RELEASE);
     zone_service_ha_set_watch_changed(on_watch_changed, NULL);
     device_service_set_sender(link_send_call, NULL);
     return ESP_OK;
@@ -1590,6 +1946,33 @@ void ha_link_pair_decide(bool allow)
 void ha_link_pair_cancel(void)
 {
     flag_set(&S.req_cancel, true);
+}
+
+/* A settings_set's answer, from any task: a copy into the queue, never a wait (R10). */
+static void set_answer_post(uint32_t ticket, ha_link_set_t err, const uint8_t *why, size_t n)
+{
+    QueueHandle_t q = queue_get(&S.set_q);
+    if (q == NULL || ticket == 0u) {
+        return;
+    }
+    ha_set_answer_t a;
+    memset(&a, 0, sizeof(a));
+    a.ticket = ticket;
+    a.err = (uint8_t)err;
+    for (size_t i = 0; why != NULL && i < n && i < PROTO_PREFS_F_LAST; i++) {
+        a.why[i] = why[i];
+    }
+    (void)xQueueSend(q, &a, 0); /* full: the request is answered "timeout" in time */
+}
+
+void ha_link_settings_done(uint32_t ticket, const uint8_t *why, size_t n)
+{
+    set_answer_post(ticket, HA_LINK_SET_SENT, why, n);
+}
+
+void ha_link_settings_failed(uint32_t ticket, ha_link_set_t err)
+{
+    set_answer_post(ticket, err != HA_LINK_SET_SENT ? err : HA_LINK_SET_BUSY, NULL, 0u);
 }
 
 esp_err_t ha_link_unpair(void)

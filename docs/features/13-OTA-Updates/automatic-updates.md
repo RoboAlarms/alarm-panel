@@ -120,7 +120,7 @@ P1-P3 and P7 also fix today's person-started installs.
   - it is a stepping stone the statement names toward a critical release;
   - the running version is on the signed withdrawn list.
 
-  In this mode the panel's check sends `"want": "critical"`, and the server offers the oldest critical release the panel can reach, not the newest feature release. Today the server picks the newest candidate and flags it when any candidate is critical, and the panel keeps one `critical` flag for the offered version (`panel_ota.h:138`). So a panel on 0.8.0, with a critical 0.8.1 and a feature release 0.9.0 published, would install 0.9.0 by itself. The project ships security fixes as patch releases on the current line.
+  In this mode the panel's check sends `"prefer": "critical"`, and the server offers the oldest critical release the panel can reach, not the newest feature release. Today the server picks the newest candidate and flags it when any candidate is critical, and the panel keeps one `critical` flag for the offered version (`panel_ota.h:138`). So a panel on 0.8.0, with a critical 0.8.1 and a feature release 0.9.0 published, would install 0.9.0 by itself. The project ships security fixes as patch releases on the current line.
 - **Who:**
   - The **system master alone** sets *Install updates* and *When*: with their code at the panel, with their password in the Panel Manager.
   - The **installer** sees both read-only, can always set the mode back to *Ask me first*, and keeps Install, Not today and Stop (OTA-022, README:47).
@@ -331,7 +331,10 @@ P1-P3 and P7 also fix today's person-started installs.
 - **A "never by itself" flag per release.**
 - **Signed statements:** uploaded with the release, stored and served exactly as uploaded. The server checks them against a configured public key and never signs anything.
 - **The check answer** gains optional fields: `rollout {percent, paused}`, `manual` and `statement`.
-- **The check request** gains `want: "critical"`, and the critical-release rules are amended to match.
+- **The check request** gains `prefer: "critical"`, and the critical-release rules are amended to match.
+  Not `want`: that field names the one release a keypad was told to install (the update server's
+  FWS-028, docs/features/11 "Updates through the link"), and a server that doesn't know a field
+  ignores it.
 - **Install results (Q7):** recommended *not now*. If ever added:
   - they only alert the administrators, and never pause anything automatically;
   - at most one report per /24 (IPv4) or /48 (IPv6) network a day;
@@ -410,7 +413,7 @@ P1-P3 and P7 also fix today's person-started installs.
 - A "never install by itself" flag per release.
 - Signed release statements, made offline and uploaded, then served exactly as uploaded. The server checks them against a configured public key and never signs. Re-signed statements are uploaded by the release script.
 - Check answer: optional `rollout {percent, paused}`, `manual` and `statement`.
-- Check request: optional `want: "critical"`. The answer then offers the oldest reachable critical release, or the stepping stone toward it. The critical-release rules are amended.
+- Check request: optional `prefer: "critical"`. The answer then offers the oldest reachable critical release, or the stepping stone toward it. The critical-release rules are amended.
 - (Only if Q7 is yes) `last_update` counts per day: alerts to the administrators only, at most one per /24 or /48 a day, only for versions offered that day. The "nothing sent just for statistics" promise and the privacy notice are reworded.
 
 ## 5. UI changes that need mockups first (UI-044, WEB-026)

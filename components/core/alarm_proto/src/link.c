@@ -691,6 +691,10 @@ bool proto_link_parse(const char *json, size_t len, proto_link_in_t *out)
         out->type = PROTO_LINK_IN_ZWAVE_SET; /* proto_link_parse_zwave_set */
         return true;
     }
+    if (strcmp(type, "settings_set") == 0) {
+        out->type = PROTO_LINK_IN_SETTINGS_SET; /* proto_link_parse_settings_set */
+        return true;
+    }
     if (!saw_type) {
         return false; /* no "t" at all */
     }

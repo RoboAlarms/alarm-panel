@@ -3,15 +3,18 @@
 **Tier:** services (ESP-IDF, board-agnostic) · **Features:**
 [07 UI](../../../docs/features/07-UI-LVGL-Pro/README.md) (ADR-012),
 [33 Modular architecture](../../../docs/features/33-Modular-Architecture-and-Boards/README.md)
-(step 5) · **Tests:** the UI side is proven by the PC preview against the simulated backend;
-this glue is checked on the panel (every Settings page it serves)
+(step 5) · **Tests:** the UI side is proven by the PC preview against the simulated backend
+(a change from elsewhere by `prefs_smoke`, over the PC's copy of the same mailbox); this glue is
+checked on the panel (every Settings page it serves)
 
 The touch UI's backend on ESP-IDF: it fills `ui_backend_t` (`components/core/ui_backend`)
 from the panel's services, so the UI component itself never sees a service. Status, commands,
 codes and installer mode go to `alarm_service` (the local touchscreen is keypad 0); the event
 log to `panel_log`; Wi-Fi, addresses and time to `net_wifi`; the connection check to
 `net_check`; the MQTT and Home Assistant pages to `net_mqtt` and `ha_link`; notifications to
-`net_notify`; updates to `panel_ota`; preferences to `panel_prefs` and the sounder; versions
+`net_notify`; updates to `panel_ota`; preferences to `panel_prefs` and the sounder (and a change
+of them from elsewhere, taken from `panel_prefs`' mailbox and answered there, in both roles:
+`prefs_remote_take`/`_done`, docs/features/07 UI-046); versions
 and the factory reset to `panel_system`; zone sources to `zone_service`; storage to
 `panel_storage`. Calls block the LVGL task until the alarm task has answered; the alarm task
 never waits for LVGL, so this can't deadlock. The Panel Manager wraps the same backend.

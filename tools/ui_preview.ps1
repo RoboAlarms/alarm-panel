@@ -105,6 +105,12 @@ if ($Live) {
 # The UI without its optional pages (docs/features/33 step 6).
 & (Join-Path $build 'ui_smoke_minimal.exe')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# A setting changed from elsewhere goes through the screen (docs/features/07 UI-046).
+& (Join-Path $build 'prefs_smoke.exe')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+# A keypad's calls to its master never hold up the screen (docs/features/11 LINK-054).
+& (Join-Path $build 'calls_smoke.exe')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # The words not drawn in a picture: ui_text.c and Home's headline, detail and note (BL-066). They
 # are checked in English, so a walk in another language skips them.
 if (-not $Locale) {

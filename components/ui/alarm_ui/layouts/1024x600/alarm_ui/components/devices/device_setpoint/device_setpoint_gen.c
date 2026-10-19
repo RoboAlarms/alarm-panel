@@ -50,7 +50,7 @@ lv_obj_t * device_setpoint_create(lv_obj_t * parent, const char * label, const c
         lv_obj_set_style_pad_column(box_0, SPACE_LG, 0);
         lv_obj_t * minus = alarm_ui_run_20(box_0);
         lv_obj_set_ext_click_area(minus, 8);
-        alarm_ui_run_15(minus, &style_device_step_big, 0, &style_device_step_big_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(minus, &style_device_step_big, 0, &style_device_step_big_pressed, LV_STATE_PRESSED);
         lv_obj_set_name(minus, "minus");
         lv_obj_t * lv_label_0 = alarm_ui_run_11(minus, "\xEE\x84\x9C");
         lv_obj_set_style_text_font(lv_label_0, icons_28, 0);
@@ -60,15 +60,15 @@ lv_obj_t * device_setpoint_create(lv_obj_t * parent, const char * label, const c
         alarm_ui_run_3(box_1);
         lv_obj_t * what_label = lv_label_create(box_1);
         lv_label_set_text(what_label, label);
-        alarm_ui_run_45(what_label, "what_label");
+        alarm_ui_run_47(what_label, "what_label");
 
         lv_obj_t * value_label = lv_label_create(box_1);
         lv_label_set_text(value_label, value);
-        alarm_ui_run_35(value_label, font_headline, "value_label");
+        alarm_ui_run_37(value_label, font_headline, "value_label");
 
         lv_obj_t * plus = alarm_ui_run_20(box_0);
         lv_obj_set_ext_click_area(plus, 8);
-        alarm_ui_run_15(plus, &style_device_step_big, 0, &style_device_step_big_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(plus, &style_device_step_big, 0, &style_device_step_big_pressed, LV_STATE_PRESSED);
         lv_obj_set_name(plus, "plus");
         lv_obj_t * lv_label_1 = alarm_ui_run_11(plus, "\xEE\x84\xBD");
         lv_obj_set_style_text_font(lv_label_1, icons_28, 0);

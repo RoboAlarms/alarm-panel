@@ -123,6 +123,19 @@ void zigbee_service_engine_output(alarm_output_t output, uint8_t partition,
                                   alarm_pattern_t pattern);
 void zigbee_service_engine_snapshot(const alarm_snapshot_t *snap);
 
+/* The engine device numbers 1..8 shared with the panel link's keypads (docs/features/11 LINK-001,
+ * devices.md §4), bit d-1:
+ *  - zigbee_service_devices_held: the numbers the Zigbee keypads hold now, read under the zone
+ *    lock (waits for it: never call it holding a lock the zone hub's holder could want); 0
+ *    without Zigbee;
+ *  - zigbee_service_devices_held_now: the same without waiting: false (and *out 0) while the
+ *    zone lock is busy, for a task that must never wait (the panel link's, LINK-027);
+ *  - zigbee_service_set_link_devices: the numbers the link's keypads hold, taken at once by
+ *    every later choice of a Zigbee keypad's number. Safe from any task, never waits. */
+uint32_t zigbee_service_devices_held(void);
+bool zigbee_service_devices_held_now(uint32_t *out);
+void zigbee_service_set_link_devices(uint32_t mask);
+
 /* MQTT (devices.md §15, ZB-026): ~/zigbee/state's values (proto_zb.h), false without Zigbee. */
 typedef struct {
     uint8_t radio;      /* ui_zb_radio_t (proto_zb_radio_t's numbers) */

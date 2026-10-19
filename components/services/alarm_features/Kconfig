@@ -130,6 +130,18 @@ menu "Alarm features"
             Stored in NVS (namespace "automations", at most 308 entries); about 15 KB of PSRAM.
             Needs the Devices registry (HCTL-010).
 
+    config ALARM_LINK
+        bool "Panel link: keypad panels for a master panel over Wi-Fi (plink_service)"
+        default y if SPIRAM
+        default n
+        help
+            Another panel can act as a keypad for this one, or this panel as a keypad for a
+            master elsewhere in the house (docs/features/11): an encrypted UDP link on port
+            6056, found by mDNS, paired with a code compared on both screens. The role is chosen
+            once and stored (NVS "link"). The master keeps an encoded copy of its configuration
+            for the keypads and a keypad a decoded one, about 100 KB of PSRAM. Off, the panel is
+            a master without keypads and the UI shows nothing about them.
+
     config ALARM_FEATURE_PHOTO_SAVER
         bool "Photo screen saver (a JPEG decoded into a full-screen picture)"
         default y if SPIRAM

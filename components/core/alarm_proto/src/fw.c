@@ -730,5 +730,25 @@ void proto_fw_state(pj_writer_t *w, const proto_fw_state_t *st)
     } else {
         pj_knull(w, "update_percentage");
     }
+    /* A master's link keypads (docs/features/11 "What people see"): Home Assistant's update
+     * entity ignores the key; the integration reads it. */
+    if (st->keypads != NULL && st->keypad_count > 0u) {
+        const size_t n =
+            st->keypad_count < PROTO_FW_KEYPADS_MAX ? st->keypad_count : PROTO_FW_KEYPADS_MAX;
+        pj_karr(w, "keypads");
+        for (size_t i = 0; i < n; i++) {
+            const proto_fw_keypad_t *k = &st->keypads[i];
+            pj_obj(w);
+            pj_kuint(w, "device", k->device);
+            if (k->version[0] != '\0') {
+                pj_kstr(w, "version", k->version);
+            } else {
+                pj_knull(w, "version");
+            }
+            pj_kstr(w, "state", k->state);
+            pj_obj_end(w);
+        }
+        pj_arr_end(w);
+    }
     pj_obj_end(w);
 }

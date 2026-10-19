@@ -1458,13 +1458,28 @@ typedef struct {
     uint8_t appearance;
     bool high_contrast;       /* default false */
     /* Announcements (docs/features/08 voice-first-build.md D06; Settings > Screen and sound >
-     * Announcements): the main switch is off as shipped and is switched on only by a person,
-     * and only while the voice is ready (ui_voice_info_t.state UI_VOICE_READY); the three kinds
-     * keep their choice while it is off. The volume above is the voice's too. */
-    bool voice_enabled;       /* default false */
+     * Announcements): the main switch is on as shipped (decided 2026-10-12) and a person switches
+     * it on again only while the voice is ready (ui_voice_info_t.state UI_VOICE_READY); the kinds
+     * keep their choice while it is off. Each panel's own, a link keypad's too (LINK-028). */
+    bool voice_enabled;       /* default true */
     bool voice_status;        /* arming, armed, disarmed, entry, not ready (default true) */
     bool voice_chime;         /* the zone's spoken name after the chime (default true) */
+    uint8_t partition_home; /* saved default, distinct from the current view */
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s; /* default 30, 1..3600 */
 } ui_options_t;
+
+/* A change of these preferences from elsewhere (docs/features/07 UI-046; docs/features/11
+ * "Settings fields", "Applying a change from elsewhere"): Home Assistant through the master, or
+ * the master's console over the panel link. Each field by its frozen settings id (ui_prefs.h
+ * UI_PREFS_F_*, alarm_proto's PROTO_PREFS_F_* numbers), its value in the wire's units: a delay
+ * in ms, a switch 0 or 1. ui_backend_t.prefs_remote_take hands one to the screen. */
+#define UI_PREFS_F_LAST 19u /* the highest settings id this firmware knows */
+typedef struct {
+    uint32_t have;                   /* bit id - 1: value[id - 1] holds that field's new value */
+    uint32_t value[UI_PREFS_F_LAST]; /* index id - 1 */
+} ui_prefs_patch_t;
 
 /* The voice (docs/features/08 voice-first-build.md D03, D06, D09): ui_backend_t.voice_info. */
 typedef enum {
@@ -1518,7 +1533,218 @@ enum {
     UI_APPEARANCE_AUTO = 2,  /* dark during the night hours, light by day (UI-043) */
 };
 
-/* What the UI needs from the platform. Commands block until the engine has answered.
+/* ---- The panel link: master and keypads (docs/features/11, BL-048) --------------------------
+ * A panel is the alarm panel itself (the master, every panel before BL-048) or a keypad for a
+ * master elsewhere in the house. The pages read the link through these four entries
+ * (ui_backend_t.link_*), polled at most once a second (UI-027); NULL entries mean a firmware
+ * without the link: nothing about keypads is shown and the setup has no role step. */
+
+/* ui_link_info_t.role */
+enum {
+    UI_LINK_ROLE_MASTER = 0, /* the alarm panel (the default) */
+    UI_LINK_ROLE_KEYPAD = 1, /* a keypad: the master-only pages are hidden (the role gate) */
+};
+
+/* ui_link_info_t.state on a keypad (plink_link_state_t, docs/features/11 LINK-008). */
+enum {
+    UI_LINK_NOT_PAIRED = 0, /* no master: "Pair again" / the setup's pairing step */
+    UI_LINK_CONNECTING,     /* after a start or a pairing, until the first full sync */
+    UI_LINK_ONLINE,
+    UI_LINK_LOST,           /* "No system communication": arming off, Panic still tries */
+};
+
+typedef struct {
+    uint8_t role;        /* UI_LINK_ROLE_* */
+    /* A keypad: */
+    uint8_t state;       /* UI_LINK_* */
+    bool removed;        /* NOT_PAIRED because the master removed it (the "removed" page) */
+    bool maintenance;    /* LINK-025: 10 min without system communication - Wi-Fi, updates, Pair
+                          * again and "Make it a stand-alone panel" open without a code */
+    bool needs_update;   /* the master's configuration is newer than this keypad can read: Home
+                          * says so and Software update opens without a code */
+    bool panic_pending;  /* a panic is still being sent (LINK-023: up to 1 min) */
+    uint8_t device;      /* its keypad number at the master, 0 none */
+    uint8_t home;        /* the partition it shows and arms */
+    uint32_t home_gen;   /* changes when the master changes the home partition */
+    int64_t since_epoch_ms; /* LOST: the last time the master answered (0 not known) */
+    char master_name[48];   /* the alarm panel's name, e.g. "Harbor House" */
+    /* A master: */
+    uint8_t keypads;     /* keypads paired with it */
+    uint8_t keypads_down;/* of those, not responding */
+    /* Appended (the screens, BL-048): a keypad's alarm panel's address on the network, as About
+     * shows it ("192.0.2.42"); "" not known (About leaves the row out). */
+    char master_addr[24];
+    /* Appended (BL-048 review): a keypad that lost the link keeps sounding a fire or CO tone until
+     * OFF is pressed here or the link returns (decided 2026-10-15): while true, Home offers
+     * Silence, which sends ALARM_CMD_SILENCE through command() and stops the tone here even when
+     * the alarm panel can't be reached. */
+    bool local_alarm;
+    /* The home partition's name as the alarm panel calls it, "" not known: the setup's last step
+     * on a panel becoming a keypad (its own configuration is not the alarm panel's). */
+    char home_name[ALARM_NAME_LEN];
+    /* Appended (keypad updates, docs/features/11 "Updates through the link", proposal P2): a
+     * keypad whose alarm panel sends it its updates (paired with a master whose session offers
+     * the link's updates, PLINK_CAP_FW): it installs only at its master's order. While true,
+     * and outside LINK-025's maintenance and the needs_update state (where its own Install
+     * stays), Software update says "Updates come from <master_name>" with no Install, Check
+     * again or Stop, About's Software update row says "From <master_name>", and the status bar's
+     * update banner says it restarts with master_name. The keypad's own run (stage, bytes, size,
+     * target) is read through fw_status as on any panel. */
+    bool fw_follows;
+    /* With fw_follows, while fw_status reports a download (UI_FW_STAGE_DOWNLOADING): true when
+     * the image comes from the alarm panel over the link (a relay, "Receiving from <master>"),
+     * false when the keypad downloads it from the update server itself ("Downloading"). */
+    bool fw_from_master;
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s;
+    uint8_t selected;
+} ui_link_info_t;
+
+/* Local enrollment progress; never includes network secrets. */
+enum {
+    UI_LINK_WIFI_IDLE = 0,
+    UI_LINK_WIFI_REQUESTING,
+    UI_LINK_WIFI_JOINING,
+    UI_LINK_WIFI_CONNECTED,
+    UI_LINK_WIFI_UNAVAILABLE,
+};
+
+/* ui_link_pair_t.state: either side's pairing (plink_pair_state_t). */
+enum {
+    UI_LINK_PAIR_IDLE = 0,
+    UI_LINK_PAIR_OPEN,    /* master: waiting for a keypad (left_s); keypad: looking / asked */
+    UI_LINK_PAIR_WORKING, /* the two are exchanging keys */
+    UI_LINK_PAIR_COMPARE, /* code shown: the person compares and answers */
+    UI_LINK_PAIR_WAITING, /* this side said yes: waiting for the other */
+    UI_LINK_PAIR_DONE,
+    UI_LINK_PAIR_FAILED,  /* fail says why */
+};
+
+/* ui_link_pair_t.fail (plink_fail_t's numbers). */
+enum {
+    UI_LINK_FAIL_NONE = 0,
+    UI_LINK_FAIL_REFUSED = 1,
+    UI_LINK_FAIL_TIMEOUT = 2,
+    UI_LINK_FAIL_MISMATCH = 3,
+    UI_LINK_FAIL_BUSY = 4,
+    UI_LINK_FAIL_CLOSED = 5,
+    UI_LINK_FAIL_FULL = 6,
+    UI_LINK_FAIL_OVERLAP = 7,
+    UI_LINK_FAIL_LIMIT = 8,
+    UI_LINK_FAIL_CAPACITY = 9,
+    UI_LINK_FAIL_CANCELLED = 10,
+    UI_LINK_FAIL_INTERRUPTED = 11,
+    UI_LINK_FAIL_STORE = 12,
+    UI_LINK_FAIL_VERSION = 13,
+    UI_LINK_FAIL_NOT_FOUND = 100, /* keypad: no alarm panel open for pairing was found */
+    UI_LINK_FAIL_TWO_MASTERS = 101, /* keypad: two alarm panels are open for pairing */
+};
+
+typedef struct {
+    uint8_t state;       /* UI_LINK_PAIR_* */
+    uint8_t fail;        /* UI_LINK_FAIL_* when FAILED */
+    uint8_t attempts;    /* used of 3 */
+    uint32_t left_s;     /* master: the window's seconds left; keypad: looking for this long */
+    char code[8];        /* "588460" while COMPARE or WAITING, else "" */
+    char peer_name[48];  /* the keypad's or the alarm panel's name */
+    char peer_addr[24];  /* its address on the network, e.g. "192.0.2.57" */
+    uint8_t device;      /* DONE: the keypad's number */
+    /* Enrollment Wi-Fi: 0 idle/manual, 1 requesting, 2 joining, 3 connected, 4 unavailable. */
+    uint8_t wifi_setup;
+    bool online; /* authenticated, fresh master status; required for radio-only Done */
+} ui_link_pair_t;
+
+/* ui_link_keypad_t.fw_state: a keypad's part in this panel's updates (docs/features/11 "Updates
+ * through the link"; proposal P2), one status line of its row in the master's Software update. The
+ * master gives its keypads a target version: the one it installs, or the one it runs when it runs
+ * no update. */
+enum {
+    UI_LINK_FW_NONE = 0,    /* not known yet (not heard, or it doesn't take the link's updates):
+                             * its row has no status line */
+    UI_LINK_FW_UP_TO_DATE,  /* it runs the target: "Up to date" (green) */
+    UI_LINK_FW_DOWNLOADING, /* it downloads the target from the update server itself, fw_percent
+                             * done: "Downloading · 45 %" (blue) */
+    UI_LINK_FW_RECEIVING,   /* it receives the target from this panel over the link, fw_percent
+                             * done: "Receiving from this panel · 30 %" (blue) */
+    UI_LINK_FW_READY,       /* it has the target, checked, and restarts together with this panel
+                             * once everything is disarmed: "Ready · restarts with this panel" */
+    UI_LINK_FW_RESTARTING,  /* it restarts with the update (up to 10 minutes, its supervision
+                             * trouble held meanwhile): "Restarting" here, and "Updating" instead of
+                             * "Not responding" in Installer > Keypads and devices */
+    UI_LINK_FW_NOT_UPDATED, /* behind the target and not getting it now, whatever the reason (a
+                             * failed download, a refusal, it went back): it tries again by itself.
+                             * "Not updated yet · tries again by itself" (gray) */
+    UI_LINK_FW_NEWER,       /* it runs a newer version than the target: left alone. "Newer than
+                             * this panel" (gray) */
+};
+
+/* One keypad at the master (Installer > Keypads and devices). */
+typedef struct {
+    uint8_t device;         /* 1..8 */
+    char name[48];
+    uint8_t home;           /* its home partition */
+    uint16_t supervision_s; /* 0 = not supervised */
+    bool connected;         /* heard within its supervision time */
+    bool down;              /* not responding: its trouble is raised */
+    bool waiting;           /* paired, never connected yet */
+    int64_t heard_epoch_ms; /* last heard (0 not known) */
+    char addr[24];
+    char fw[32];            /* the version it runs, "" not known; its row in Software update says
+                             * "Keypad 2 · version 0.6.1" */
+    /* Appended (keypad updates, proposal P2): its part in this panel's updates. */
+    uint8_t fw_state;       /* UI_LINK_FW_* */
+    uint8_t fw_percent;     /* DOWNLOADING and RECEIVING: 0..100 done; the screen reads it at most
+                             * once a second (UI-020) */
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s;
+} ui_link_keypad_t;
+
+typedef enum {
+    /* the master, installer mode with every partition disarmed: */
+    UI_LINK_REQ_PAIR_OPEN = 1,    /* open the 2-minute window */
+    UI_LINK_REQ_PAIR_DECIDE,      /* `allow`: the installer compared the codes */
+    UI_LINK_REQ_PAIR_STOP,        /* close the window / end the attempt */
+    UI_LINK_REQ_KEYPAD_SET,       /* `device`: `name`, `home`, `supervision_s` */
+    UI_LINK_REQ_KEYPAD_REMOVE,    /* `device` (LINK-014) */
+    /* a panel becoming a keypad (the setup), or a keypad pairing again: */
+    UI_LINK_REQ_KP_PAIR_START,    /* look for an alarm panel open for pairing and ask it */
+    UI_LINK_REQ_KP_PAIR_CONFIRM,  /* `allow`: the codes match (true) or not */
+    UI_LINK_REQ_KP_PAIR_RETRY,    /* try again after a failure */
+    UI_LINK_REQ_KP_PAIR_STOP,     /* give up (the setup's Back) */
+    UI_LINK_REQ_KP_DONE,          /* the pairing's Done: store the role and restart as a keypad */
+    UI_LINK_REQ_PARTITION_POLICY, /* installer-only per-keypad switching policy */
+    UI_LINK_REQ_KP_WIFI, /* allow: request automatic credentials; false cancels for manual Wi-Fi */
+} ui_link_request_t;
+
+typedef struct {
+    uint8_t kind; /* ui_link_request_t */
+    bool allow;
+    uint8_t device;
+    uint8_t home;
+    uint16_t supervision_s;
+    char name[48];
+    bool switch_allowed;
+    bool return_never;
+    uint16_t return_s;
+    /* Optional browser confirmation binding. Rechecked by the link task, not a cached UI. */
+    char pair_code[8];
+    uint8_t pair_attempts;
+} ui_link_req_t;
+
+/* What link_request answers. */
+typedef enum {
+    UI_LINK_REQ_OK = 0,
+    UI_LINK_REQ_NOT_ALLOWED, /* the master: installer mode with every partition disarmed needed */
+    UI_LINK_REQ_FULL,        /* PAIR_OPEN: keypad numbers 1-8 are all in use */
+    UI_LINK_REQ_BUSY,        /* something else is under way */
+    UI_LINK_REQ_FAILED,      /* it couldn't be done (storage) */
+    UI_LINK_REQ_REFUSED,     /* not in this role, or a bad argument */
+} ui_link_result_t;
+
+/* What the UI needs from the platform. Commands block until the engine has answered (with
+ * run_later, the UI calls them off its own task: LINK-054).
  * The M4 entries (settings, installer mode, users, event log, network) are optional: a NULL
  * entry hides what depends on it. */
 typedef struct {
@@ -1664,6 +1890,16 @@ typedef struct {
 
     /* ---- this keypad and the panel ---- */
     void (*save_options)(void *ctx, const ui_options_t *opt);
+    /* A change of the preferences from elsewhere (UI-046; ui_prefs.h). Optional as a pair: NULL =
+     * nothing from elsewhere is applied. Polled on every tick of the screen's task (ui_settings.c
+     * prefs_remote_tick). take: true when a patch was waiting, now the screen's, with its ticket;
+     * a patch that waited longer than UI_PREFS_TAKE_MS is never handed out (the backend answers
+     * it BUSY itself). The screen answers each ticket taken exactly once, with done, on the same
+     * task, in the same tick or a later one (at most 2 s later: UI_PREFS_LOOK_MS): why[id - 1] a
+     * UI_PREFS_WHY_* for each field refused, 0 for the rest. A field applied went through
+     * save_options before done. */
+    bool (*prefs_remote_take)(void *ctx, ui_prefs_patch_t *out, uint32_t *ticket);
+    void (*prefs_remote_done)(void *ctx, uint32_t ticket, const uint8_t why[UI_PREFS_F_LAST]);
     void (*remote_get)(void *ctx, bool *web, bool *developer);
     bool (*remote_set)(void *ctx, bool web, bool developer);
     void (*remote_info)(void *ctx, char *out, size_t capacity);
@@ -1819,9 +2055,12 @@ typedef struct {
     auto_put_off_t (*auto_put_off)(void *ctx, uint16_t uid, uint8_t choice, const char *code,
                                    alarm_result_t *code_result);
 
-    /* ---- the voice (docs/features/08 voice-first-build.md D03, D06, D09). Each NULL = no
-     * voice in this build: the UI hides the zone's Spoken name row and the Announcements
-     * page. The panel's panel_voice_*, the simulator's and the preview's own. ---- */
+    /* ---- the voice (docs/features/08 voice-first-build.md D03, D06, D09). voice_info, the
+     * lease and voice_preview NULL = no voice in this build: the UI hides Voice volume, the
+     * Announcements page and the zone's Spoken name row. voice_seen and voice_apply_approve NULL
+     * = no spoken-name editor here (a link keypad: its alarm panel's installer approves the words,
+     * docs/features/11 LINK-028). The panel's panel_voice_*, the simulator's and the preview's
+     * own. ---- */
     void (*voice_info)(void *ctx, ui_voice_info_t *out);
     /* A lease on the active pack's index, for the word lists and Use zone name
      * (voice_pack/vp_words.h) and the words' display texts (vp_find): valid until released,
@@ -1853,6 +2092,28 @@ typedef struct {
      * tones go on. The editor or Announcements page that played one calls it as it closes.
      * Optional (NULL: nothing to stop). */
     void (*voice_preview_stop)(void *ctx);
+
+    /* ---- the panel link (docs/features/11; the types above ui_backend_t). NULL: no link in
+     * this firmware - no Keypads section, no role step, every page as before. ---- */
+    /* The role and, on a keypad, the link's state; false: not known yet (show nothing). */
+    bool (*link_info)(void *ctx, ui_link_info_t *out);
+    /* The pairing under way on either side; false: none. */
+    bool (*link_pair_status)(void *ctx, ui_link_pair_t *out);
+    /* The master's keypads, by number; returns how many (0 on a keypad). */
+    size_t (*link_keypads)(void *ctx, ui_link_keypad_t *out, size_t max);
+    /* A request; a ui_link_result_t. The pairing requests return at once, link_pair_status
+     * follows them. */
+    uint8_t (*link_request)(void *ctx, const ui_link_req_t *req);
+    /* Select a partition or report actual input; never authorizes an alarm action. */
+    alarm_result_t (*partition_select)(void *ctx, uint8_t partition, bool activity);
+
+    /* Optional (LINK-054): runs work(arg) once on a task of the backend's and returns at once;
+     * false: not now (the UI runs it itself). The UI hands over its calls to command,
+     * authenticate, change_code, dev_act and partition_select, one at a time, when they may wait
+     * for another panel (a keypad's master answers them); work calls only those entries and
+     * nothing of LVGL. NULL: every call runs on the UI's task, as an engine on this panel answers
+     * at once. */
+    bool (*run_later)(void *ctx, void (*work)(void *arg), void *arg);
 } ui_backend_t;
 
 /* auto_try's "the runner didn't take it" (automation_service.h's AUTOMATION_TRY_BUSY, asserted
@@ -1867,6 +2128,10 @@ typedef struct {
 static inline void ui_options_defaults(ui_options_t *opt)
 {
     opt->partition = 1;
+    opt->partition_home = 1;
+    opt->switch_allowed = false;
+    opt->return_never = false;
+    opt->return_s = 30;
     opt->clock_mode = 0;
     opt->brightness = 80;
     opt->saver_brightness = 25; /* the screen saver shows a picture */

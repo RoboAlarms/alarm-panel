@@ -91,6 +91,7 @@ void ui_rows_reset(void)
 #if ALARM_UI_ZIGBEE
     ui_zigbee_stop();
 #endif
+    ui_link_stop(); /* leaving Add a keypad closes pairing (BL-048) */
     /* Rows of pages that aren't on screen could point at reused bindings: drop them all. */
     if (S.page_body != NULL) {
         lv_obj_clean(S.page_body);

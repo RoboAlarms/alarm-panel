@@ -9,8 +9,8 @@ the reviewed handshake and self-test, with B002's fixes, verified on the bench 2
 local servers 2026-10-08 (left: BL-186, BL-188; findings BL-197 to BL-201).
 Automatic updates are designed, not built ([automatic-updates.md](automatic-updates.md), BL-190).
 Left: runs 8, 9, 15 and a real power cut (BL-023), release job (BL-050), SD card (BL-061), keypad
-relay (BL-048). · **Milestone:** M6 (P4 + C6), M8 (keypad
-relay) · **Depends on:** 05, 06, 10, 12, 14, 15
+updates at the master's order (docs/features/11 "Updates through the link", BL-048).
+· **Milestone:** M6 (P4 + C6), M8 (keypad updates) · **Depends on:** 05, 06, 10, 12, 14, 15
 
 ## Goal
 Update every device in the system safely: the panel takes a signed image (from a release
@@ -31,11 +31,11 @@ update server is the RoboAlarms update server unless the installer chooses anoth
 | OTA-002 | Releases are described by a JSON manifest: one artifact per device and P4 silicon revision; relative URLs resolve against the manifest's URL. The manifest isn't signed (the image is the trust anchor, OTA-001/014) | `test_fw.c` |
 | OTA-003 | Download into the inactive slot in the background (`esp_http_client`, streaming, HTTPS with the certificate bundle or plain HTTP on the home network, redirects followed); size and SHA-256 from the manifest are checked | build; hardware once Wi-Fi is joined |
 | OTA-004 | **Restart only when safe**: every enabled partition disarmed, no bell and no alarm sounder (trouble beeps are fine), no walk test, installer mode off. A person asks for the install (panel, Home Assistant or console). The question is put to the alarm task itself, and put again after the announcement and the log flush; the boot slot switches in the last moment before the restart, so arming or an alarm during those seconds only costs the attempt and an unplanned restart keeps the old firmware. The Wi-Fi module's update waits the same way: the C6 keeps its old image until the panel restarts, and that restart goes through the same gates and announcement (OTA-028), the update machinery held until then | `test_fw.c` (policy), hardware |
-| OTA-005 | Rollback: the first start of a new image is on probation. Every required part of the panel - the engine, the event log, the screen, sensor input and touch - must **keep** reporting healthy (a heartbeat, not a one-off) for at least 60 s; then it is confirmed. A part that never reports or falls silent fails; one that comes up late gets until 180 s. Otherwise, or after a crash or reset during probation, the previous image returns | hardware (reset during probation, sensor/touch fault injection) |
+| OTA-005 | Rollback: the first start of a new image is on probation. Every required part of the panel - the engine, the event log, the screen, sensor input and touch - must **keep** reporting healthy (a heartbeat, not a one-off) for at least 60 s; then it is confirmed. A part that never reports or falls silent fails; one that comes up late gets until 180 s. Otherwise, or after a crash or reset during probation, the previous image returns. A master's keypads (`PANEL_OTA_OK_KEYPADS`, docs/features/11 LINK-041) are the exception: until 180 s a keypad not back yet, or a pause in its answers, is waited for, never a failure, and 10 s of answers prove them, so one that first answers by 170 s counts; none back by 180 s rolls back, and the version it returns to says so (NVS `ota`/`rbh`, `last.failed`). The times and the rule are in `alarm_proto/ota_selftest.h` | `test_fw.c` (the rule: `test_selftest_part_verdicts`, `test_selftest_steps`, `test_selftest_keypads_come_back`); hardware (reset during probation, sensor/touch fault injection) |
 | OTA-006 | Arming state and configuration survive updates (the configuration blob is forward and backward readable, docs/features/14) | `CORE-CFG-012..017`, hardware |
 | OTA-007 | C6 co-processor: an image in the `cp_fw` partition that differs from what the C6 runs is sent once when the system is idle (ESP-Hosted OTA over SDIO), then the panel restarts; a failed attempt isn't repeated automatically | build; `c6 status` on hardware (update itself not run: no newer image exists) |
-| OTA-008 | Keypad relay: the master caches keypad images (`fw_cache`), offers them over the link, transfers them with per-chunk ACK and resume; the keypad verifies them itself | M8 |
-| OTA-009 | One keypad updates at a time; the master keeps working; keypads update only while their partition is disarmed | M8 |
+| OTA-008 | Keypad updates follow docs/features/11 LINK-029..037: the master orders; a keypad that reaches the update server fetches its own image through its release run; only a keypad that can't gets it relayed over the link, from the master's running image or a copy in PSRAM; the keypad checks everything itself; `fw_cache` isn't used | M8 |
+| OTA-009 | Keypads update after the master's own update is confirmed, one at a time, only while every partition is quiet on the master (`proto_fw_install_allowed`); the master puts off its own restart while a keypad installs or self-tests (docs/features/11 LINK-030, LINK-034) | M8 |
 | OTA-010 | Status everywhere: Settings > About (Software update), the event log (`firmware_update` with a stage) and MQTT (`…/firmware` + Home Assistant `update` entity with install) | `test_fw.c`, `CORE-PROG-009`, preview `about`, `about_update_available`, `about_update_waiting`, `about_rolled_back` |
 | OTA-011 | Offline update from an SD card image (same verification) | later |
 | OTA-012 | Optional anti-rollback (`secure_version`) for security fixes | later (needs eFuses) |
@@ -44,20 +44,21 @@ update server is the RoboAlarms update server unless the installer chooses anoth
 | OTA-015 | A failed release check is a **result**, not a state: the panel looks again by itself, 10 min after the first failure and doubling to at most 6 h (never longer than the scheduled interval). The failure stays on screen until a newer result replaces it. A check never runs over a download, a verified image waiting for an idle system, or a restart | `test_fw.c` |
 | OTA-016 | The release manifest may list language packs (`languages`: locale, url, size, sha256, optional version); the panel fetches from it the packs it needs (docs/features/37 language-packs.md); the pack's own signature is the trust anchor, like the image's; the asset packs likewise (`assets`: kind, url, size, sha256, optional version; docs/features/39 asset-packs.md, OPT-007) | `test_fw.c` |
 | OTA-017 | **The update server is a domain** (BL-186): `roboalarms.com` by default (`CONFIG_PANEL_OTA_DEFAULT_DOMAIN`), and the panel asks `https://firmware.<domain>`. A person types only the domain ("https://" and a trailing "/" are dropped); it shows as the domain everywhere, never the full address. A development address (`http://192.0.2.10:8080`) can be set at the service console only. The old manifest source (`ota`/`src`, OTA-002) is no longer read | `test_fwsrv.c` |
-| OTA-018 | **A check asks the server** (`POST /api/v1/check`) with the channel, board id and revision, chip revision, signed project name, running version, add-on parts and languages, and reads its answer: the offered version, channel, critical flag, notes, image (url, size, SHA-256, signing key) and language packs, or why there is none (up to date, unknown device, needs a stepping stone, held back). Failures follow OTA-015 | `test_fwsrv.c`; hardware |
+| OTA-018 | **A check asks the server** (`POST /api/v1/check`) with the channel, board id and revision, chip revision, signed project name, running version, add-on parts and languages, and reads its answer: the offered version, channel, critical flag, notes, image (url, size, SHA-256, signing key) and language packs, or why there is none (up to date, unknown device, needs a stepping stone, held back). Failures follow OTA-015. A check for a keypad carries `want`, an added key naming the version its master names, sent only when set: the keypad's PROBE and FETCH and a master's copy for it name the version ordered, and a capped keypad's own check names its master's version (docs/features/11 LINK-029). A server that ignores `want` offers its newest: the keypad compares versions, and an offer past its cap is no offer. Only a check with `want` reads the reasons `unknown_version` and `not_offered`, and on it a reason the panel doesn't know refuses (REFUSED 17), where without `want` it reads as up to date (docs/features/11 LINK-031, the why table; the server's side is BL-050) | `test_fwsrv.c` (with `want`: `test_check_request_want`, `test_check_answer_want_reasons`, `test_check_why`); hardware |
 | OTA-019 | **Channel**: stable (default), beta, alpha or dev, chosen by the installer; a change checks at once. The panel reports the channel its running version is on now (`installed`; `installed_channel` in GET `updates`); the screens show the channel chosen, not that one (BL-196) | `test_fwsrv.c`; preview `fwsrv_channel`, `fwsrv_menu_beta` |
 | OTA-020 | **Signing keys**: an update must be signed with the running image's key or with the one key the installer accepted for the current server (the trust record, NVS `ota`/`trust`). A new server is checked first (its keys, `GET /api/v1/keys`, and firmware for this panel); a key the panel doesn't trust needs the installer to see its fingerprint (the first 16 hex digits of its ESP-IDF digest, in groups of four) and confirm - a hold at the panel, a tick and their password in the Panel Manager. What is kept is exactly what was checked. Changing the server replaces the accepted key; going back to this build's server drops it. The panel never swaps a key by itself: a release signed with another key is refused until the installer checks the server again. ESP-IDF's own check stays (OTA-001); the accepted key is added behind it and fails closed | `test_fwsrv.c`; hardware (a second key refused before, accepted after; a tampered image refused) |
 | OTA-021 | **Not with the factory installer code**: while the installer code is the factory one, a server whose key the panel doesn't trust yet is refused, at the panel and in the Panel Manager. Going back to a server with a trusted key stays allowed; the service console isn't held back (whoever has the cable can flash the panel) | `panel_pages.test.cjs`; preview `fwsrv_factory_code`, `fwsrv_refused_factory` |
 | OTA-022 | **Who**: the installer alone sees and changes the update server and the channel (Installer > Updates; the Panel Manager's Updates page, for the installer only). Software update - what is offered, Check again, Install and Stop - is the installer's and the system master's. On the touchscreen everyone else sees only that an update exists or runs (About's tag and row: "Update", "Updating") and can't open it. The Panel Manager's Software updates page is the installer's and the system master's alone; others see only the restart there (the header says Restarting and the sign-in after it says why, OTA-029) | preview `fwsrv_menu`, `software_update_locked`, `about_update_running`, `about_update_running_master`; `panel_pages.test.cjs` |
 | OTA-023 | A server change is logged (`firmware_update` stage `server_changed`) with who made it, reaches MQTT and the owner's notifications like other system events, and is followed by a check | `test_program.c`; hardware |
-| OTA-024 | **Withdrawn and critical**: a running version its publisher withdrew says so at every check; an offered version marked critical (or one that leads to a critical fix) says it is an important fix. Nothing installs by itself (automatic updates: BL-190) | `test_fwsrv.c`; preview `upd_withdrawn`, `upd_withdrawn_alone`, `upd_critical`, `upd_critical_done` |
+| OTA-024 | **Withdrawn and critical**: a running version its publisher withdrew says so at every check; an offered version marked critical (or one that leads to a critical fix) says it is an important fix. Nothing installs by itself on a panel that checks for itself (automatic updates: BL-190); a keypad follows the version its master runs by itself (docs/features/11 LINK-030, decided 2026-10-17) | `test_fwsrv.c`; preview `upd_withdrawn`, `upd_withdrawn_alone`, `upd_critical`, `upd_critical_done` |
 | OTA-025 | Language packs come from the check answer and, for a language added later, from `GET /api/v1/languages`, checked by their own signature as before (OTA-016); both answers carry the asset packs too (`assets`, OPT-007), which the panel keeps with the languages | `test_fwsrv.c` |
-| OTA-026 | **Progress** (BL-188): an update run reports its stage (downloading, verifying, waiting, installing, stopping, rolling back; the Wi-Fi module and a developer's file have no steps), its kind, the version it installs and the one it replaces, bytes of size while downloading, and what holds it while it waits. The touchscreen, the Panel Manager and MQTT show it; live words change at most once a second and nothing moves but a stepped bar (UI-020). Status listeners also run during a download and before the restart, so Home Assistant sees the percent and the install | preview `upd_downloading`, `upd_checking`, `upd_waiting`, `upd_self_test`, `upd_wifi_module`, `upd_file`, `home_update_banner`; `manager_mockup.test.cjs`; hardware |
+| OTA-026 | **Progress** (BL-188): an update run reports its stage (downloading, verifying, waiting, installing, stopping, rolling back; the Wi-Fi module and a developer's file have no steps), its kind (also "from the alarm panel", `PANEL_OTA_KIND_LINK`, with steps and Stop; an ordered run waits with "Waiting for <master>", its master's name; both built, not yet tried on a panel), the version it installs and the one it replaces, bytes of size while downloading, and what holds it while it waits. The touchscreen, the Panel Manager and MQTT show it; live words change at most once a second and nothing moves but a stepped bar (UI-020). Status listeners also run during a download and before the restart, so Home Assistant sees the percent and the install | preview `upd_downloading`, `upd_checking`, `upd_waiting`, `upd_self_test`, `upd_wifi_module`, `upd_file`, `home_update_banner`; `manager_mockup.test.cjs`; hardware |
 | OTA-027 | **Stop**: the installer or the system master can stop a release update before the panel switches to it. Stop is offered while it downloads, is verified and waits; once the restart begins (Installing) it is no longer offered and an open Stop question closes, but a Stop already sent still lands in the seconds the panel holds the restart, which it then gives up. It turns "stopping" at once and ends within seconds (up to a minute on a stalled connection); the download is thrown away and Install starts again. Allowed while armed (in the Panel Manager too). Logged as `stopped` with who stopped it. Never after the boot slot switches: then only the self-test decides | preview `upd_stop_question`, `upd_stopping`; hardware; `panel_pages.test.cjs` |
 | OTA-028 | **The restart**: "installing" is logged, the panel holds 3 s (its log is written; a status-bar banner says it restarts) and asks the alarm task once more. Arming, an alarm or a stop in those seconds puts it off: `restart_put_off` is logged and it tries again 30 s after everything is quiet. Banners give way to alarms and arming | hardware; preview `upd_restarting`, `home_update_restarting`, `home_update_going_back` |
 | OTA-029 | **The last result** (`last`: updated, rolled back, stopped or failed, with the versions, the time, the reason and who) is kept for as long as it helps: stopped and failed until the next Install or check; rolled back until an install replaces the failed version or a newer one is offered; updated for 24 hours (from the event log, so it survives the restart) | preview `upd_stopped`, `upd_failed`, `upd_updated`, `upd_rolled_back`; hardware |
-| OTA-030 | **One run at a time**: Install starts only when nothing runs or self-tests; an Install that finds the update machinery briefly held (a language pack's check) waits up to 30 s, then fails "Another update is running" - never dropped silently. From Install to the end of the self-test the server and the channel can't change | hardware; `panel_pages.test.cjs` |
+| OTA-030 | **One run at a time**: Install starts only when nothing runs or self-tests; an Install that finds the update machinery briefly held (a language pack's check) waits up to 30 s, then fails "Another update is running" - never dropped silently. From Install to the end of the self-test the server and the channel can't change. An ordered run counts as a run; on a keypad paired with a master whose session has `PLINK_CAP_FW`, Install becomes "Updates come from <master>" (docs/features/11 LINK-029) | hardware; `panel_pages.test.cjs` |
 | OTA-031 | A failed self-test logs `rolling_back` before the panel restarts with the previous version (armed or not, OTA-005), so the people watching see why it restarts | hardware |
+| OTA-032 | A panel with keypads puts off its own restart while one installs or self-tests ("A keypad is checking its update", `panel_ota_set_restart_hold`; docs/features/11 LINK-030): every restart into a new image or after the Wi-Fi module's update waits and says why; a rollback after a failed self-test never waits (built, BL-048; not yet called by the link or tried on a panel) | unit; hardware |
 
 ## Design
 
@@ -86,9 +87,9 @@ flowchart LR
 ### Components
 | Where | What |
 |---|---|
-| `components/core/alarm_proto` `proto_fw.h`, `src/fw.c`, `ota_retry.h`, `ota_profile.h` | Portable, host-tested: semantic versions, manifest pick, install policy, base64 + upload line decoding, `…/firmware` state JSON and the HA `update` discovery document; the retry schedule after a failed check (`ota_retry.h`) and which signed project names may replace the running one (`ota_profile.h`), both moved here from `panel_ota` (docs/features/33) |
+| `components/core/alarm_proto` `proto_fw.h`, `src/fw.c`, `src/fw_image.c`, `ota_retry.h`, `ota_profile.h`, `ota_selftest.h` | Portable, host-tested: semantic versions, manifest pick, install policy, base64 + upload line decoding, `…/firmware` state JSON and the HA `update` discovery document; the retry schedule after a failed check (`ota_retry.h`) and which signed project names may replace the running one (`ota_profile.h`), both moved here from `panel_ota` (docs/features/33); the self-test's times and rule (`ota_selftest.h`, OTA-005); for updates through the panel link (`fw_image.c`, docs/features/11) the why numbers, the cap, the header judge and an image's exact length in its slot |
 | `components/core/alarm_proto` `proto_fwsrv.h`, `src/fwsrv.c` | Portable, host-tested: the update server's domain rule, the check request and answer, the keys list, the trust record's blob, the fingerprint, and the signature block's key digest (OTA-017..OTA-020, OTA-024, OTA-025) |
-| `components/services/panel_ota` | ESP-IDF: writer (`panel_ota_begin/write/end/abort/apply`), the restart handshake with the alarm task, probation and rollback, the server check and download, a new server's check and its trust record, the update task, `ota_trust.c` (the accepted key behind ESP-IDF's signature check), `cp_ota.c` (C6), `ota_console.c` (`ota`, `c6`) |
+| `components/services/panel_ota` | ESP-IDF: writer (`panel_ota_begin/write/end/abort/apply`), the restart handshake with the alarm task, probation and rollback, the server check and download, a new server's check and its trust record, the update task, `ota_trust.c` (the accepted key behind ESP-IDF's signature check), `cp_ota.c` (C6), `ota_console.c` (`ota`, `c6`); for the panel link (docs/features/11) a keypad's orders and cap, and `ota_source.c`, a master's image sources for its keypads |
 | `components/core/alarm_core` | `ALARM_EV_FIRMWARE_UPDATE` with `alarm_fw_stage_t` (`installing`, `updated`, `rolled_back`, `coprocessor_updated`, `coprocessor_failed`), recorded through `alarm_service_firmware_event()` |
 | `components/services/net_mqtt` | `…/firmware` state (retained), `homeassistant/update/<node>/firmware/config`, `…/firmware/set` = `install` (only with commands on) |
 | `components/ui/alarm_ui` `ui_update.c` | Settings > About > Software update (opens with the installer's or the system master's code): the status row, Install and its question, Check again, the run's view (level bar, steps, Stop and its question), the last result, and the status-bar banner while an update runs. Installer > Updates (the update server, its key and the channel) is in `ui_installer.c` |
@@ -146,7 +147,15 @@ sets `PROJECT_VER` from it. `pwsh tools/idf.ps1 -Version 0.6.1-test build` build
    `esp_ota_mark_app_valid_cancel_rollback()` and `firmware_update/updated`. A bit that never
    reported or has fallen silent: `esp_ota_mark_app_invalid_rollback_and_reboot()` straight
    away. A bit that is reporting but started late keeps probation open until 180 s, then the
-   same rollback.
+   same rollback. A master's keypads are the exception (`PANEL_OTA_OK_KEYPADS`, required once its
+   link registers `panel_ota_set_keypads_check`; docs/features/11 LINK-041): they come back only
+   after this restart, so until 180 s a keypad not back yet, or quiet for a while, keeps probation
+   open instead of failing it, and 10 s of answers (`PANEL_OTA_KEYPADS_SPAN_MS`) prove them. Still
+   unanswered at 180 s: the same rollback, and the failing image first writes the parts it missed
+   to NVS `ota`/`rbh`, so the version it returns to can say "no keypad answered" (`last.failed`).
+   The times (`PANEL_OTA_CONFIRM_MS`, `_MAX_MS`, the heartbeat contract,
+   `PANEL_OTA_KEYPADS_SPAN_MS`) and the rule (`panel_ota_part_judge`, `panel_ota_selftest_step`)
+   are in `alarm_proto/ota_selftest.h`, host-tested in `test_fw.c`.
 6. A reset or crash during probation: the bootloader marks the image aborted and starts the
    previous one. That one finds the invalid slot (`esp_ota_get_last_invalid_partition`), shows
    "Version X failed its self-test: back on Y" in About and logs `firmware_update/rolled_back`
@@ -176,6 +185,13 @@ in the room.
 | `PANEL_OTA_OK_SENSORS` | the zone hub's task | each completed tick of the sources (`zone_service_passes`), at most 4 s apart |
 | `PANEL_OTA_OK_UI` | the LVGL task | an `lv_timer` callback, i.e. a completed `lv_timer_handler()` pass |
 | `PANEL_OTA_OK_TOUCH` | the GT911 poll on the LVGL task | a read the controller answered - `polls` minus I2C `errors` moving, finger or no finger |
+| `PANEL_OTA_OK_LINK` | a panel link keypad's link task (docs/features/11) | at most once a second while the master's status is under 15 s old, or the keypad isn't paired |
+| `PANEL_OTA_OK_KEYPADS` | the update task, about once a second, from the question a master's link registers (`panel_ota_set_keypads_check`; docs/features/11 LINK-041) | on probation only while the question says yes: a keypad that was online in the minute before "installing" (NVS `link/kup`) has a session again and sends heartbeats, or there is no such keypad; outside probation always |
+
+A panel in the panel link's keypad role (docs/features/11 LINK-020) runs no engine, log or zone
+sources: its mask is screen, touch and the link (`panel_app_config_t.keypad_health_mask`), and its
+"is the system idle?" is answered from its master's status (`panel_ota_set_idle_gate`): only while
+the link is up and that status, under 15 s old, passes `proto_fw_install_allowed()`.
 
 The parts that publish a counter rather than beating themselves are read by the `health` task in
 `components/app/panel_app/src/panel_app.c` every 2 s, which turns "the counter moved" into the
@@ -185,7 +201,8 @@ The same heartbeats are watched **outside** probation: when a required part stop
 15 s the update task logs it and `panel_ota_health_stale()` says which. The platform turns that
 into what the owner sees - `zone_service` raises the "sensors may not be heard" trouble when
 sensor input is the part that stopped (the same one a lost source link raises, ZSRC-015), and
-`health` on the service console names any of the five. The screen, touch and the engine have no
+`health` on the service console names any of the seven (a keypad's panel link and a master's
+keypads too). The screen, touch and the engine have no
 system trouble of their own; see "Open questions".
 
 ### When a release check fails (OTA-015)
@@ -283,18 +300,21 @@ desktop bridge. Verified on the local P4 (2026-09-22): dark and normal upload, s
 and rollback checks.
 
 ### Co-processor (OTA-007)
-The C6 runs ESP-Hosted co-processor firmware (factory: **2.12.3**, host 3.0.7 runs it in
-compatibility mode). `cp_fw` (1.5 MB) holds a plain C6 application image
-(`network_adapter.bin`), written over USB for now:
-```
-parttool.py --port COM4 write_partition --partition-name cp_fw --input network_adapter.bin
-```
+The C6 runs ESP-Hosted co-processor firmware (factory: **2.12.3**; our signed build adds
+the ESP-NOW bridge). `cp_fw` (1.5 MB) holds the signed C6 application from `firmware/c6_cp`.
+For bench staging, resolve `cp_fw`'s offset and size from the P4's built partition table,
+verify the image fits, and write only that data partition. Modern esptool needs its
+cross-chip-header override when staging a C6 image on a P4; never use that override to
+write the C6 application into a P4 application slot. The C6's factory bootloader and
+partition table are not replaced by SDIO OTA.
 At start the panel reads its header (magic, chip id C6, app description, size with checksum,
-hash and signature block). `c6 status` shows both versions; `c6 update [force]` or the automatic
+hash and signature block). Before transfer it verifies the padded image's SHA-256 and RSA
+signature against the trusted key. `c6 status` shows both versions; `c6 update [force]` or the automatic
 path (`CONFIG_PANEL_OTA_CP_AUTO`, once per image version, NVS `ota/cp_try`) streams it with
 `esp_hosted_cp_ota_begin/write/end/activate` in 1 KB chunks, logs `coprocessor_updated`, and
 restarts the panel (ESP-Hosted resets the C6 at start). Failure: `coprocessor_failed`; the C6
-keeps its old image. The release manifest will carry the C6 image once our own C6 build exists
+  keeps its old image. Activation is deferred until final P4 shutdown so the C6 cannot reboot
+  while the P4 is still announcing the restart. Release-manifest packaging remains separate
 ([12](../12-C6-Coprocessor-Firmware/README.md), M7).
 
 ## Interfaces and data
@@ -310,7 +330,9 @@ keeps its old image. The release manifest will carry the C6 image once our own C
   `panel_ota_health_stale()` gives the required bits that have gone quiet, at any time.
 - NVS namespace `ota`: `trust` (the server and its accepted key), `chan` (the channel), `try`,
   `upd` and `rbv` (an update's run, its result and a rollback seen, OTA-029; the old `rb` is
-  converted), `cp_try`. The old `src` (manifest URL) is no longer read.
+  converted), `rbh` (the parts a failed self-test missed, written only on a master that asked its
+  keypads, read back as `last.failed`; docs/features/11 LINK-041), `cp_try`. The old `src`
+  (manifest URL) is no longer read.
 - UI backend ([07](../07-UI-LVGL-Pro/README.md)): `fw_status` (stage, kind, bytes, last result), `fw_check`,
   `fw_install(user)`, `fw_stop(user)`; and the installer's `fw_server`, `fw_server_check`,
   `fw_server_check_get`, `fw_server_check_forget`, `fw_server_commit(key, user)` and
@@ -319,8 +341,9 @@ keeps its old image. The release manifest will carry the C6 image once our own C
   (check, install, Stop); only the installer, in installer mode, reaches the server and the channel.
 
 ## Test and acceptance
-Host: `components/core/alarm_proto/test/test_fw.c` (OTA-002, -004, -010, -013, -014, -015, and
-the signed-profile rule DEV-004/015 of docs/features/30), `test_program.c` (CORE-PROG-009, OTA-023).
+Host: `components/core/alarm_proto/test/test_fw.c` (OTA-002, -004, -005's rule, -010, -013, -014,
+-015, the signed-profile rule DEV-004/015 of docs/features/30, and docs/features/11 LINK-041's
+wait for the keypads), `test_program.c` (CORE-PROG-009, OTA-023).
 `test_fwsrv.c` (OTA-017..OTA-020, OTA-024, OTA-025). Panel Manager: `panel_pages.test.cjs` (the Software updates
 page, OTA-021, OTA-022, OTA-027, OTA-030), `manager_mockup.test.cjs` (every page renders).
 Preview (`pwsh tools/ui_preview.ps1`): `about`, `about_end`, `about_update_available`, `about_update_waiting`,
@@ -330,8 +353,8 @@ Preview (`pwsh tools/ui_preview.ps1`): `about`, `about_end`, `about_update_avail
 `upd_install_question` to `upd_file`, `home_update_banner`, `home_update_restarting`, `home_update_going_back`,
 `home_update_armed`, `about_update_running`, `about_update_running_master`.
 
-The restart handshake and the probation heartbeats are firmware, not host-testable: they need
-the bench runs listed below.
+The restart handshake and the heartbeats themselves are firmware, not host-testable (the
+self-test's rule is, in `ota_selftest.h`): they need the bench runs listed below.
 
 ### Hardware verification (CrowPanel V1.1, P4 v1.3, 2026-09-19)
 | # | Test | Result |
@@ -414,7 +437,7 @@ one on a panel that protects a house.
 - [x] P4 OTA writer, release download, install when idle, probation + rollback (M6)
 - [x] Serial upload (`ota recv`, `tools/ota_serial.py`) (M6)
 - [x] C6 co-processor OTA from `cp_fw` (M6; `components/services/panel_ota/src/cp_ota.c`)
-- [ ] Run a real C6 transfer from `cp_fw` on the panel once our own C6 build exists (OTA-007,
+- [x] Signed C6 transfer from `cp_fw` and coordinated restart verified on both P4 panel sizes (OTA-007,
       CP-004) (BL-048)
 - [x] MQTT update entity, About page, event log (M6)
 - [x] Restart handshake with the alarm task, retry schedule, heartbeat self-test (review fixes,
@@ -442,7 +465,7 @@ one on a panel that protects a house.
       after a change of key switching back by its restart (BL-186, a bench panel 2026-10-08)
 - [ ] A server change with the installer signed in to the Panel Manager: the factory code's 409,
       a development address's 400, the master's and installer's views (BL-186)
-- [ ] Keypad relay protocol over the link (M8) (BL-048)
+- [ ] Keypad updates at the master's order: docs/features/11 "Updates through the link" (M8) (BL-048)
 - [ ] SD card update (OTA-011) (BL-061)
 - [ ] Anti-rollback with `secure_version` for security fixes, once eFuses are used (OTA-012)
       (BL-049)

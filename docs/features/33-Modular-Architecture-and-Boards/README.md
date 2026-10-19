@@ -148,6 +148,7 @@ absent (callers guard) or stubs (callers don't); `alarm_features`' README has th
 | `ALARM_ZSRC_HA` | `zsrc_ha` | y | n |
 | `ALARM_HOME_CONTROL` (needs SPIRAM) | `home_control` service | y | n |
 | `ALARM_FEATURE_AUTOMATIONS` (needs `ALARM_HOME_CONTROL`) | `automation`, `automation_service` (docs/features/41) | y | n |
+| `ALARM_LINK` (needs SPIRAM) | `panel_link`, `plink_service`: keypad panels and the keypad role (docs/features/11) | y | n (its keypad role is docs/features/19 CYD-015) |
 | `ALARM_PANEL_WEB` | `panel_web` | y | n |
 | `ALARM_DEV_REMOTE` | `dev_remote`, screen capture | y | n |
 | `ALARM_ZSRC_ZIGBEE` | `zigbee_host`, `zsrc_zigbee` | y (ADR-047; the radio probe keeps an empty socket from starting the stack) | n |

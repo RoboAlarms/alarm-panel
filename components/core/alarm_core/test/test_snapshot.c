@@ -61,7 +61,8 @@ static void test_unused_and_active_over_restored(void)
     TEST_ASSERT_EQUAL_UINT32(1, alarm_snapshot_troubles(&snap, &cfg, 0xFFu, NULL, 0));
 }
 
-/* BL-137: the viewer's partitions filter zones, never the system or keypads. */
+/* BL-137: the viewer's partitions filter zones, never the system or a keypad whose partition
+ * isn't known (dev_partition 0). */
 static void test_partition_filter(void)
 {
     snap.sys_troubles = 1u << ALARM_TRBL_AC_LOSS;
@@ -72,6 +73,20 @@ static void test_partition_filter(void)
     TEST_ASSERT_EQUAL_UINT32(3, alarm_snapshot_troubles(&snap, &cfg, 0x01u, NULL, 0));
     TEST_ASSERT_EQUAL_UINT32(3, alarm_snapshot_troubles(&snap, &cfg, 0x02u, NULL, 0));
     TEST_ASSERT_EQUAL_UINT32(2, alarm_snapshot_troubles(&snap, &cfg, 0x00u, NULL, 0));
+}
+
+/* LINK-007, CORE-TRBL-008: a link keypad's trouble is listed on its home partition only. */
+static void test_keypad_trouble_listed_on_its_home(void)
+{
+    snap.dev_troubles = (1u << 0) | (1u << 1);
+    snap.dev_partition[0] = 2u; /* keypad 1: partition 2 */
+    snap.dev_partition[1] = 0u; /* keypad 2: every partition */
+    alarm_trouble_item_t it[4];
+    TEST_ASSERT_EQUAL_UINT32(2, alarm_snapshot_troubles(&snap, &cfg, 0x03u, it, 4));
+    TEST_ASSERT_EQUAL_UINT32(1, alarm_snapshot_troubles(&snap, &cfg, 0x01u, it, 4));
+    TEST_ASSERT_EQUAL_UINT16(2, it[0].number);
+    TEST_ASSERT_EQUAL_UINT32(2, alarm_snapshot_troubles(&snap, &cfg, 0x02u, it, 4));
+    TEST_ASSERT_EQUAL_UINT16(1, it[0].number);
 }
 
 /* BL-137: the fingerprint moves when a line is restored, though the count stays. */
@@ -160,6 +175,7 @@ int main(void)
     RUN_TEST(test_unused_and_active_over_restored);
     RUN_TEST(test_partition_filter);
     RUN_TEST(test_count_only_and_short_buffer);
+    RUN_TEST(test_keypad_trouble_listed_on_its_home);
     RUN_TEST(test_sig_follows_restore);
     RUN_TEST(test_window_matches_whole_list);
     RUN_TEST(test_exit_sounds_follows_config);

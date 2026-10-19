@@ -15,9 +15,11 @@
 # ALARM_UI_DEFINITIONS.
 set(ALARM_UI_LOGIC_SRCS
     src/ui_app.c
+    src/ui_calls.c
     src/ui_forms.c
     src/ui_installer.c
     src/ui_lang.c
+    src/ui_link.c
     src/ui_net.c
     src/ui_settings.c
     src/ui_sources.c

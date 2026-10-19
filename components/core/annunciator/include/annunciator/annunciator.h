@@ -107,7 +107,7 @@ typedef struct {
 /* The keypad's announcement preferences (D06) and the existing sound policy. The walk test has no
  * switch: it speaks whenever a voice is ready, Announcements off too (WALK-016). */
 typedef struct {
-    bool voice_enabled;   /* Announcements (default false) */
+    bool voice_enabled;   /* Announcements (default true, D06) */
     bool voice_status;    /* Status messages (default true) */
     bool voice_chime;     /* Zone chime (default true) */
     uint8_t volume;       /* the user volume; 0 = no speech at all */
@@ -127,6 +127,7 @@ typedef struct {
     uint8_t state;           /* alarm_arm_state_t of the keypad partition */
     uint8_t level;           /* alarm_arm_level_t */
     uint8_t arm_flags;       /* ALARM_ARM_* */
+    bool quick_exit;         /* the exit time is a quick exit, not an arming */
     bool exit_sounds;        /* the configuration's exit_sounds option */
     bool walk_test;          /* a walk test runs on the keypad partition */
     uint16_t walk_tested;
@@ -205,7 +206,7 @@ typedef struct {
 /* The policy. Caller-owned; all state lives here. */
 typedef struct {
     ann_ports_t ports;
-    uint8_t keypad;          /* the local keypad's partition (1) */
+    uint8_t keypad;          /* the partition it speaks for (1; a link keypad's home) */
     ann_prefs_t prefs;
     ann_pack_t pack;
     ann_state_t st;          /* the state after the last commit */
@@ -214,6 +215,7 @@ typedef struct {
     bool cycle;
     bool cycle_silent;       /* silent exit, latched at acceptance */
     bool cycle_armed_said;
+    bool join_exit;          /* a baseline in the exit time joins its cycle (a link keypad) */
     uint32_t walk_gen;
     uint32_t warn_gen;
     /* Bumped before deciding each accepted arm, state-changing disarm and entry start: status
@@ -233,6 +235,20 @@ void ann_init(ann_t *a, const ann_ports_t *ports, uint8_t keypad_partition);
 
 /* The next commit is a silent baseline again (restore, reconnection). Cancels all speech. */
 void ann_rebaseline(ann_t *a);
+
+/* The partition it speaks for (D05: an alarm panel's keypad partition; a link keypad's home,
+ * which its master may move): set, then a rebaseline - the next commit is silent, and nothing of
+ * the old partition is said after it. */
+void ann_set_keypad(ann_t *a, uint8_t keypad_partition);
+
+/* A link keypad (docs/features/11 LINK-028): its baseline comes whenever its link does, often in
+ * the middle of an arming its master accepted - so a baseline taken in an arming's exit time
+ * joins that cycle, and its end says the armed mode as the master's voice does; so does a move
+ * from disarmed into an exit time whose arm it didn't hear (its event came too late to say). The
+ * silent exit is latched from the state's flags (auto-stay clears it only at the end). Nothing of
+ * the arming itself is said, and a quick exit's time (no arming) is never joined. Off on an alarm
+ * panel: a restored exit time that ends is no known cycle (D05). */
+void ann_join_exit(ann_t *a, bool on);
 
 /* Preferences and pack. A change that forbids speech cancels it (AUD-015); a new or lost pack
  * cancels everything (its generation). */

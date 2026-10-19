@@ -2,7 +2,7 @@
  * test_annunciator.c - the voice's request policy (docs/features/08 voice-first-build.md D04,
  * D05, D06, D11; docs/features/40 WALK-016). Tags: AUD-008 (chime), AUD-010 (alarms, duress,
  * silent facts), AUD-012 (the queue), AUD-015 (preferences, Preview), AUD-031 (a name's last word
- * as its ending), WALK-016 (walk speech).
+ * as its ending), WALK-016 (walk speech), LINK-028 (a link keypad's partition moved).
  */
 #include <string.h>
 
@@ -533,6 +533,71 @@ static void test_silent_exit_latched(void)
     expect_nothing();
 }
 
+/* LINK-028: a link keypad's baseline in an exit time (its link came back, or it started, after the
+ * master accepted the arm) joins that cycle: the arming isn't said, its end is - the actual mode,
+ * as the master's voice says it, once; a silent exit stays silent though auto-stay clears its
+ * flag; a baseline outside an exit time knows no cycle; an alarm panel never joins. */
+static void test_keypad_joins_an_exit_time(void)
+{
+    start(DISARMED_ST());
+    ann_join_exit(&A, true);
+    ann_rebaseline(&A); /* the link came back in the exit time */
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    expect_nothing();
+    ev(ALARM_EV_AUTO_STAY, 1u, ALARM_LEVEL_STAY, 0u);
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_STAY, 0u));
+    const uint16_t c[2] = {VP_ID_ARMED, VP_ID_HOME};
+    ann_utt_t u = expect_phrase(ANN_KIND_ARMED, c, 2u, 2u);
+    play(&u);
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_STAY, 0u));
+    expect_nothing();
+
+    /* a silent exit, latched from the baseline's flags */
+    ann_rebaseline(&A);
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, ALARM_ARM_SILENT_EXIT));
+    ev(ALARM_EV_AUTO_STAY, 1u, ALARM_LEVEL_STAY, 0u);
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_STAY, 0u));
+    expect_nothing();
+
+    /* a baseline already armed: no cycle, so an entry time that ends says nothing */
+    ann_rebaseline(&A);
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
+    commit(S(ALARM_STATE_ENTRY_DELAY, ALARM_LEVEL_AWAY, 0u));
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
+    expect_nothing();
+
+    /* a quick exit's time (no arming): not joined, its end says nothing, as on the master */
+    ann_rebaseline(&A);
+    ann_state_t q = S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_STAY, 0u);
+    q.quick_exit = true;
+    commit(q);
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_STAY, 0u));
+    expect_nothing();
+
+    /* an arming whose event came too late to say: disarmed, then an exit time - joined */
+    ann_rebaseline(&A);
+    commit(DISARMED_ST());
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    expect_nothing();
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
+    const uint16_t away[2] = {VP_ID_ARMED, VP_ID_AWAY};
+    u = expect_phrase(ANN_KIND_ARMED, away, 2u, 2u);
+    play(&u);
+
+    /* an alarm panel: a restored exit time's end is no known cycle (test_baseline_silent), nor
+     * an exit time without its arm */
+    ann_join_exit(&A, false);
+    ann_rebaseline(&A);
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
+    expect_nothing();
+    ann_rebaseline(&A);
+    commit(DISARMED_ST());
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    commit(S(ALARM_STATE_ARMED, ALARM_LEVEL_AWAY, 0u));
+    expect_nothing();
+}
+
 /* D05: auto-stay is announced as the mode it became. */
 static void test_auto_stay_actual_mode(void)
 {
@@ -815,6 +880,50 @@ static void test_other_partition_silent(void)
     ann_ticket(&A, 7u, true, T);
     expect_nothing();
     TEST_ASSERT_EQUAL_UINT(0u, F.zone_calls);
+}
+
+/* D05 (on a link keypad: its home partition), LINK-028: moved to another partition, the policy
+ * drops what waits of the old one, takes the next commit as a silent baseline, then speaks for the
+ * new partition only. */
+static void test_keypad_moved_to_another_partition(void)
+{
+    start(DISARMED_ST());
+    arm(ALARM_LEVEL_AWAY, 0u, 5u); /* partition 1's arming words wait for their ACK */
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    TEST_ASSERT_EQUAL_size_t(1u, ann_waiting(&A));
+    const uint32_t gen = ann_generation(&A);
+    ann_set_keypad(&A, 2u);
+    TEST_ASSERT_EQUAL_UINT8(2u, A.keypad);
+    TEST_ASSERT_EQUAL_size_t(0u, ann_waiting(&A));
+    TEST_ASSERT_NOT_EQUAL(gen, ann_generation(&A));
+    ann_ticket(&A, 5u, true, T);
+    expect_nothing();
+    /* the baseline: silent, whatever its batch holds */
+    ev(ALARM_EV_DISARMED, 2u, 0u, 0u);
+    ann_sound(&A, 2u, ALARM_SOUND_ACK, 0u, 6u);
+    commit(DISARMED_ST());
+    ann_ticket(&A, 6u, true, T);
+    expect_nothing();
+    /* partition 1 says nothing now: its arm, its chime */
+    ev(ALARM_EV_ARMED, 1u, ALARM_LEVEL_AWAY, 0u);
+    ann_sound(&A, 1u, ALARM_SOUND_ACK, 0u, 7u);
+    ann_sound(&A, 1u, ALARM_SOUND_CHIME, 1u, 8u);
+    commit(DISARMED_ST());
+    ann_ticket(&A, 7u, true, T);
+    ann_ticket(&A, 8u, true, T);
+    expect_nothing();
+    /* partition 2 speaks */
+    ev(ALARM_EV_ARMED, 2u, ALARM_LEVEL_AWAY, 0u);
+    ann_sound(&A, 2u, ALARM_SOUND_ACK, 0u, 9u);
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    ann_ticket(&A, 9u, true, T);
+    const uint16_t arming[3] = {VP_ID_ARMING, VP_ID_AWAY, VP_ID_EXIT_NOW};
+    ann_utt_t u = expect_phrase(ANN_KIND_ARMING, arming, 3u, 2u);
+    play(&u);
+    ann_sound(&A, 2u, ALARM_SOUND_CHIME, 2u, 10u);
+    commit(S(ALARM_STATE_EXIT_DELAY, ALARM_LEVEL_AWAY, 0u));
+    ann_ticket(&A, 10u, true, T);
+    expect_nothing(); /* a chime speaks only while disarmed */
 }
 
 /* D05: the first commit is a silent baseline (start-up, restore); so is the first after
@@ -1219,6 +1328,7 @@ int main(void)
     RUN_TEST(test_speech_is_due_from_the_arm_to_the_words_end);
     RUN_TEST(test_instant_arm);
     RUN_TEST(test_silent_exit_latched);
+    RUN_TEST(test_keypad_joins_an_exit_time);
     RUN_TEST(test_auto_stay_actual_mode);
     RUN_TEST(test_exit_sounds_off);
     RUN_TEST(test_refused_arm);
@@ -1230,6 +1340,7 @@ int main(void)
     RUN_TEST(test_disarm_kept_without_new_action);
     RUN_TEST(test_duress_identical);
     RUN_TEST(test_other_partition_silent);
+    RUN_TEST(test_keypad_moved_to_another_partition);
     RUN_TEST(test_baseline_silent);
     RUN_TEST(test_suppression_by_preferences);
     RUN_TEST(test_loud_cancels_everything);

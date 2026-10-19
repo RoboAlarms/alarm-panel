@@ -32,6 +32,10 @@ typedef struct {
     /* The parts that must keep reporting while a new firmware is on probation
      * (PANEL_OTA_OK_*, docs/features/13 OTA-005). */
     uint32_t health_mask;
+    /* The same for a panel in the panel link's keypad role (docs/features/11, ALARM_LINK): it runs
+     * no engine, log or sensors. 0: this board can't be a keypad, and a stored keypad role is
+     * ignored (the panel runs as the alarm panel). */
+    uint32_t keypad_health_mask;
 
     /* Optional hooks, NULL when the board has nothing to add. */
     void (*log_chip)(void);         /* the silicon line (default: chip and revision) */
@@ -50,7 +54,8 @@ typedef struct {
  * start-up cannot finish (the recovery window restarts the panel, R07). */
 void panel_app_run(const panel_app_config_t *cfg);
 
-/* The power status the alarm task keeps (for a board's console commands). */
+/* The power status the alarm task keeps - the health task on a keypad (for a board's console
+ * commands). */
 esp_err_t panel_app_power_status(power_sample_t *out);
 
 #ifdef __cplusplus

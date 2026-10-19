@@ -13,8 +13,10 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
+#include "alarm_proto/proto_link.h"
 #include "alarm_service.h"
 #include "esp_err.h"
 
@@ -64,6 +66,50 @@ typedef struct {
     bool (*command)(void *ctx, const char *key, int level, uint64_t received_ms);
 } ha_link_zw_port_t;
 void ha_link_set_zwave(const ha_link_zw_port_t *port);
+
+/* ---- panel settings and keypads (docs/features/23 HAI-016..019; protocol.md "Panel settings and
+ * keypads"; docs/features/11 "Smart Home and Home Assistant on keypads") -------------------------
+ * The master's own Screen and sound settings need nothing from the owner: ha_link reports them
+ * (panel_prefs) and hands a settings_set for them to the screen (panel_prefs_remote_submit). The
+ * link keypads come through a port (the panel link's service: ha_link must not depend on it). */
+
+/* What a keypad target's set() did with the fields, or how its request ended. */
+typedef enum {
+    HA_LINK_SET_SENT = 0,    /* set(): on its way; the answer comes by ticket (below) */
+    HA_LINK_SET_NOT_FOUND,   /* "not_found": no such keypad (any more) */
+    HA_LINK_SET_OFFLINE,     /* "offline": no live session, or not heard for 30 s */
+    HA_LINK_SET_UNSUPPORTED, /* "unsupported": no settings over its link (no PREFS) */
+    HA_LINK_SET_BUSY,        /* "busy": one already in flight, or no room: nothing applied */
+    HA_LINK_SET_TIMEOUT,     /* "timeout": sent, never answered (the link gave up) */
+} ha_link_set_t;
+
+typedef struct {
+    void *ctx;
+    /* The link keypads (at most max, PROTO_LINK_KEYPADS_MAX), each with its own panel id once it
+     * reported one, its report and the fields it accepts. Called on the link task about once a
+     * second and on each settings_set: a short copy under the owner's lock, never a wait. */
+    size_t (*keypads)(void *ctx, proto_link_keypad_t *out, size_t max);
+    /* Send keypad `device` (1..8) these fields, each already checked against its range and its
+     * accepts (only values->have's). Never blocks: HA_LINK_SET_SENT when taken (then exactly one
+     * answer follows: ha_link_settings_done or ha_link_settings_failed with this ticket, from any
+     * task), else the refusal now (NOT_FOUND, OFFLINE, UNSUPPORTED, BUSY). */
+    ha_link_set_t (*set)(void *ctx, uint8_t device, uint32_t ticket,
+                         const proto_prefs_values_t *values);
+} ha_link_settings_port_t;
+
+/* Optional (a master without the panel link has no keypads: the list is empty and a keypad
+ * target is not_found). Once, at any time (a later call is ignored); the link task takes the port
+ * on its next pass. */
+void ha_link_set_settings(const ha_link_settings_port_t *port);
+
+/* A keypad's answer to the set() with this ticket: why[id - 1] a PROTO_PREFS_WHY_* for each field
+ * refused, 0 for one applied; n entries (a shorter list leaves the rest 0). Any task, never
+ * blocks: the answer is queued for the link task (a full queue drops it, and the request is
+ * answered "timeout"). An answer for a ticket no longer waiting is dropped. */
+void ha_link_settings_done(uint32_t ticket, const uint8_t *why, size_t n);
+/* The same request ended without an answer from the keypad (OFFLINE, UNSUPPORTED, BUSY,
+ * NOT_FOUND, TIMEOUT): the client gets that error for the whole request. */
+void ha_link_settings_failed(uint32_t ticket, ha_link_set_t err);
 
 /* Loads NVS and starts the link task. Call after net_wifi_start(); returns at once. */
 esp_err_t ha_link_start(void);

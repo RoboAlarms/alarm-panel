@@ -27,7 +27,7 @@ lv_obj_t * arm_strip_create(lv_obj_t * parent)
         lv_style_init(&style_arm_strip);
 
         alarm_ui_run_6(&style_arm_strip, COLOR_SURFACE, (255 * 100 / 100));
-        alarm_ui_run_23(&style_arm_strip, RADIUS_LG);
+        alarm_ui_run_24(&style_arm_strip, RADIUS_LG);
         lv_style_set_pad_top(&style_arm_strip, SPACE_MD);
         lv_style_set_pad_bottom(&style_arm_strip, SPACE_MD);
         lv_style_set_pad_left(&style_arm_strip, SPACE_LG);
@@ -73,17 +73,17 @@ lv_obj_t * arm_strip_create(lv_obj_t * parent)
 
         lv_obj_t * arm_strip_note = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_WRAP);
         alarm_ui_run_29(arm_strip_note, COLOR_AMBER, &subject_arm_strip_note);
-        alarm_ui_run_39(arm_strip_note, &subject_arm_strip_note_on, 0, "arm_strip_note");
+        alarm_ui_run_43(arm_strip_note, &subject_arm_strip_note_on, 0, "arm_strip_note");
 
-        lv_obj_t * arm_strip_put_off = alarm_ui_run_21(box_0, lv_pct(100), LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t * arm_strip_put_off = alarm_ui_run_22(box_0, lv_pct(100), LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_style_flex_main_place(arm_strip_put_off, LV_FLEX_ALIGN_CENTER, 0);
         lv_obj_bind_flag_if_not_eq(arm_strip_put_off, &subject_arm_strip, LV_OBJ_FLAG_HIDDEN, 1);
-        alarm_ui_run_30(arm_strip_put_off, &style_button, 0, &style_button_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_54(arm_strip_put_off, &style_button, 0, &style_button_pressed, LV_STATE_PRESSED);
         lv_obj_set_name(arm_strip_put_off, "arm_strip_put_off");
-        lv_obj_t * lv_label_1 = alarm_ui_run_24(arm_strip_put_off, "\xEE\x82\x87");
+        lv_obj_t * lv_label_1 = alarm_ui_run_23(arm_strip_put_off, "\xEE\x82\x87");
         lv_obj_set_style_text_font(lv_label_1, icons_20, 0);
 
-        alarm_ui_run_16(arm_strip_put_off, alarm_ui_tr_c("Home, the arming warning's button", "Put off"));
+        alarm_ui_run_14(arm_strip_put_off, alarm_ui_tr_c("Home, the arming warning's button", "Put off"));
 
         the_root = box_0;
     }

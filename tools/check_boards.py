@@ -6,7 +6,8 @@ every feature option explicitly, so what the board carries can be read from one 
 firmware build and by its PC simulator profile alike (cmake/alarm_board.cmake reads the same
 lines). A board built on another board's project (set(ALARM_BOARD_BASE <board>) in its
 CMakeLists.txt, cmake/alarm_firmware.cmake) has the base's manifest followed by its own lines,
-read in that order by the build and by both readers. This checks, for every firmware/<board>/:
+read in that order by the build and by both readers. This checks, for every firmware/<board>/ that sets
+ALARM_BOARD (a radio or co-processor project such as firmware/c6_cp is not a board):
 
   - every option in MANIFEST is stated (set, or "# CONFIG_X is not set");
   - the UI layout it names exists (components/ui/alarm_ui/layouts/<WxH>/alarm_ui) when the board has a UI;
@@ -45,6 +46,7 @@ MANIFEST = [
     "ALARM_FEATURE_RTC",
     "ALARM_HOME_CONTROL",
     "ALARM_FEATURE_AUTOMATIONS",
+    "ALARM_LINK",
     "ALARM_ZSRC_RF",
     "ALARM_ZSRC_ZIGBEE",
     "ALARM_ZSRC_ZWAVE",
@@ -56,7 +58,8 @@ MANIFEST = [
 # Features whose memory only fits beside PSRAM (components/services/alarm_features/Kconfig;
 # Z-Wave's network: components/services/zwave_service/Kconfig).
 NEEDS_PSRAM = ["ALARM_FEATURE_HA", "ALARM_PANEL_WEB", "ALARM_DEV_REMOTE",
-               "ALARM_FEATURE_PHOTO_SAVER", "ALARM_HOME_CONTROL", "ALARM_ZSRC_ZWAVE"]
+               "ALARM_FEATURE_PHOTO_SAVER", "ALARM_HOME_CONTROL", "ALARM_ZSRC_ZWAVE",
+               "ALARM_LINK"]
 # Options that only exist inside another one (Kconfig "if"): stated on, they need it on.
 NEEDS = [("ALARM_HOME_CONTROL", "ALARM_FEATURE_HA"),
          ("ALARM_FEATURE_AUTOMATIONS", "ALARM_HOME_CONTROL"),
@@ -64,6 +67,7 @@ NEEDS = [("ALARM_HOME_CONTROL", "ALARM_FEATURE_HA"),
          ("ALARM_ZWAVE_LR", "ALARM_ZSRC_ZWAVE")]
 
 SET = re.compile(r"^CONFIG_([A-Z0-9_]+)=(.*)$")
+BOARD = re.compile(r"^\s*set\(ALARM_BOARD\s+([a-z0-9_]+)\s*\)", re.M)
 BASE = re.compile(r"^\s*set\(ALARM_BOARD_BASE\s+([a-z0-9_]+)\s*\)", re.M)
 FAMILY = re.compile(r"^\s*set\(ALARM_BOARD_FAMILY\s+([a-z0-9_]+)\s*\)", re.M)
 FAMILY_REQUIRED = re.compile(r"\b([a-z0-9_]+_family)\b")
@@ -117,10 +121,13 @@ def read_manifest(board_dir):
 
 
 def boards(root):
+    """The panel boards: firmware/<board>/ projects that set(ALARM_BOARD <board>). A radio or
+    co-processor project (firmware/c6_cp, firmware/radios/h2_rcp) is not a panel board."""
     fw = root / "firmware"
     if not fw.is_dir():
         return []
-    return sorted(p for p in fw.iterdir() if (p / "sdkconfig.defaults").is_file())
+    return sorted(p for p in fw.iterdir()
+                  if (p / "sdkconfig.defaults").is_file() and project_setting(p, BOARD))
 
 
 def check_board(root, board_dir):

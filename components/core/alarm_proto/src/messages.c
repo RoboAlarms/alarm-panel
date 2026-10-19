@@ -8,6 +8,7 @@
 #include "alarm/alarm_strings.h"
 #include "notify/notify_auto.h"
 #include "alarm_proto/proto.h"
+#include "alarm_proto/proto_fw.h"
 #include "alarm_proto/proto_zb.h"
 
 /* ---- identity and topics ----------------------------------------------------------------- */
@@ -517,7 +518,12 @@ void proto_event_fields(pj_writer_t *w, const alarm_config_t *cfg, const alarm_e
         pj_kbool(w, "log_erased", (ev->arg & 1u) != 0u);
         break;
     case ALARM_EV_FIRMWARE_UPDATE:
+        /* a keypad's stages name the keypad by source "keypad" and source_id (docs/features/11) */
         pj_kstr(w, "stage", alarm_fw_stage_name((alarm_fw_stage_t)ev->arg));
+        if (ev->arg == (uint8_t)ALARM_FW_KEYPAD_FAILED) {
+            pj_kuint(w, "why", ev->arg2);
+            pj_kstr(w, "reason", proto_fw_why_name(ev->arg2));
+        }
         break;
     case ALARM_EV_AUTOMATION_FAILED: /* docs/features/41 AUT-009; `automation` below */
         pj_kstr(w, "action", alarm_auto_action_name(ev->arg2));

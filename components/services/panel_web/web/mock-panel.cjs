@@ -569,6 +569,64 @@ const alarm = {
   [18, 'Keyfob', 21, 14, 0]]
   .forEach(([n, name, type, cls, flags]) => Object.assign(alarm.zones[n - 1], {name, type, device_class: cls, flags}));
 Object.assign(alarm.devices[0], {enabled: true, name: 'Panel keypad', partition: 0, supervision_s: 0});
+// BL-048: service-backed keypad fixtures. Physical pairing events are test-only.
+const keypadState = {available: true, capacity: 8, busy: false, keypads: [
+  {number: 1, name: 'Hall keypad', home: 1, allowed: true, never: false, seconds: 30, online: true, firmware: '0.7.4', update_state: 1, update_percent: 100}],
+  ...(process.env.MOCK_HEADLESS ? {} : {local: {home: 1, allowed: false, never: false, seconds: 30}})};
+Object.assign(alarm.devices[0], {name: 'Hall keypad', partition: 1});
+let keypadAttemptOwner = 0;
+function keypadGet(user) {
+  const result = JSON.parse(JSON.stringify(keypadState));
+  if (keypadAttemptOwner !== user) delete result.enrollment;
+  return result;
+}
+function keypadPost(user, b) {
+  const e = keypadState.enrollment;
+  if (b.op === 'start') {
+    if (!/^[a-f0-9]{32}$/.test(b.attempt || '')) return 'Invalid attempt';
+    if (e?.attempt === b.attempt && keypadAttemptOwner === user) return '';
+    if (keypadState.busy) return 'Pairing is busy';
+    if (!alarm.devices.some(d => d.number <= 8 && !d.enabled)) return 'Keypad capacity reached';
+    keypadState.enrollment = {attempt: b.attempt, state: 1, fail: 0, code: '', peer: '', device: 0, left_s: 120, sequence: 0};
+    keypadAttemptOwner = user; keypadState.busy = true; return '';
+  }
+  if (['cancel', 'confirm'].includes(b.op)) {
+    if (!e || e.attempt !== b.attempt || keypadAttemptOwner !== user) return 'Pairing attempt changed; reload';
+    if (!keypadState.busy) return '';
+    if (b.op === 'cancel') { e.state = 6; e.fail = 10; keypadState.busy = false; return ''; }
+    if (b.sequence !== e.sequence || b.code !== e.code || !e.code || typeof b.allow !== 'boolean') return 'Pairing code changed; compare again';
+    if (e.state === 4) { if (!b.allow) { e.state = 6; e.fail = 10; keypadState.busy = false; } return ''; }
+    if (e.state !== 3) return 'Pairing is not ready';
+    e.state = b.allow ? 4 : 6; e.fail = b.allow ? 0 : 3;
+    if (!b.allow) keypadState.busy = false;
+    if (b.allow && e.keypadConfirmed) keypadEvent('confirmed');
+    return '';
+  }
+  if (keypadState.busy) return 'Finish pairing first';
+  const k = b.device === 0 ? keypadState.local : keypadState.keypads.find(k => k.number === b.device);
+  if (!k) return 'Keypad no longer enrolled';
+  if (b.op === 'remove') {
+    if (!b.device) return 'The built-in keypad cannot be removed';
+    keypadState.keypads.splice(keypadState.keypads.indexOf(k), 1); alarm.devices[b.device - 1].enabled = false; return '';
+  }
+  if (b.op !== 'save' || !alarm.partitions[b.home - 1]?.enabled || !Number.isInteger(b.seconds) || b.seconds < 1 || b.seconds > 3600 || typeof b.allowed !== 'boolean' || typeof b.never !== 'boolean') return 'Invalid keypad policy';
+  Object.assign(k, {name: b.name, home: b.home, allowed: b.allowed, seconds: b.seconds, never: b.never});
+  if (b.device) { k.name = b.name; Object.assign(alarm.devices[b.device - 1], {name: b.name, partition: b.home}); }
+  return '';
+}
+function keypadEvent(event) {
+  const e = keypadState.enrollment; if (!e || !keypadState.busy) return;
+  if (event === 'compare') Object.assign(e, {state: 3, code: '588460', peer: 'New keypad', sequence: e.sequence + 1});
+  else if (event === 'confirmed') {
+    e.keypadConfirmed = true;
+    if (e.state !== 4) return;
+    const d = alarm.devices.find(d => !d.enabled && d.number <= 8);
+    if (!d) { e.state = 6; e.fail = 6; keypadState.busy = false; return; }
+    Object.assign(d, {enabled: true, name: 'Keypad ' + d.number, partition: 1});
+    keypadState.keypads.push({number: d.number, name: d.name, home: 1, allowed: false, never: false, seconds: 30, online: true});
+    Object.assign(e, {state: 5, device: d.number}); keypadState.busy = false;
+  } else { Object.assign(e, {state: 6, fail: event === 'overlap' ? 7 : 2}); keypadState.busy = false; }
+}
 // MOCK_PARTITIONS=2: a second partition in use (the garage), for the tests of who sees which.
 if (process.env.MOCK_PARTITIONS === '2') Object.assign(alarm.partitions[1], {enabled: true, name: 'Garage'});
 // ---- Automations (docs/features/41 DESIGN.md section 10, AUT-001..AUT-016; web_automations.c) ---------
@@ -1535,6 +1593,7 @@ async function apiGet(p, s, res, query = new URLSearchParams()) {
   if (p === 'languages') return ok(languagesJson());
   if (p === 'voices') return !voiceOn() ? send(res, 404, {error: 'Voice is not in this firmware'})
     : voice.mode === 'error' ? send(res, 503, {error: 'Memory busy'}) : ok(voiceJson());
+  if (p === 'keypads') return ok(keypadGet(s.user));
   if (p === 'alarm') return ok({...alarm, schema: SCHEMA});
   if (p === 'people') {
     const me = users.find(u => u.number === s.user);
@@ -1624,6 +1683,11 @@ async function apiPost(p, s, body, res) {
     (p === 'updates' && body.action === 'cancel'); // a stop works while armed (OTA-027)
   if (isLocked() && !lockFree) return fail('locked');
   if (p === 'languages') { const [code, answer] = languagesPost(body); return send(res, code, answer); }
+  if (p === 'keypads') {
+    if (s.grant) return fail('password_sign_in_required', 403);
+    const password = needPassword(s, body.me_password); if (password) return send(res, 403, password);
+    const why = keypadPost(s.user, body); return why ? fail(why) : ok();
+  }
   if (p === 'control') return ok();
   if (p === 'automations') { // ACC_SYSTEM, refused while locked (above), as web_automations_post
     // Saving makes this person the maker an alarm action runs as: their own password sign-in, never a grant (panel_web.c).
@@ -1685,6 +1749,15 @@ async function apiPost(p, s, body, res) {
     if (why) return fail(why, 403);
     if (body.revision !== alarm.revision) return fail('Configuration changed or installer mode is already occupied; reload');
     const c = body.changes || {};
+    if (keypadState.busy) return fail('Finish pairing first');
+    if ((c.devices || []).some(d => keypadState.keypads.some(k => k.number === d.number))) return fail('Edit paired keypads in their popup');
+    for (const part of c.partitions || []) if (part.enabled === false) {
+      if (keypadState.local?.home === part.number || keypadState.keypads.some(k => k.home === part.number) ||
+          alarm.zones.some(z => z.type && z.partition === part.number) ||
+          alarm.devices.some(d => d.enabled && d.partition === part.number) || alarm.partitions.filter(p => p.enabled).length === 1)
+        return fail('Move assigned devices and zones first');
+    }
+
     Object.assign(alarm.options, c.options || {});
     if (c.panic_keys) alarm.panic_keys = c.panic_keys;
     for (const group of ['zones', 'partitions', 'devices']) for (const x of c[group] || []) Object.assign(alarm[group][x.number - 1], x);
@@ -1871,6 +1944,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET') return apiGet(p, s, res, url.searchParams);
   // For tests only (the firmware has none): the session's last password is long ago, or just now.
   if (req.method === 'POST' && p === 'mock/automation-warning') { auSetWarning((await readBody(req)).state || ''); return send(res, 200, {ok: true}); }
+  if (req.method === 'POST' && p === 'mock/keypad-event') { keypadEvent((await readBody(req)).event); return send(res, 200, {ok: true}); }
   if (req.method === 'POST' && p === 'mock/confirmation') { s.confirmed = (await readBody(req)).recent ? Date.now() : 0; return send(res, 200, {ok: true}); }
   if (req.method === 'POST' && p === 'backup') { // CFG-005: the installer, a recent password, a backup password
     const body = await readBody(req);

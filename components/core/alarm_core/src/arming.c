@@ -229,6 +229,7 @@ alarm_result_t eng_arm(alarm_engine_t *e, uint8_t p, alarm_arm_level_t level, ui
     }
 
     const alarm_ms_t exit_ms = exit_time_ms(e, p, mode_flags);
+    pr->quick_exit = false;
     if (exit_ms > 0u) {
         pr->state = ALARM_STATE_EXIT_DELAY;
         pr->deadline = ms_add(e->now, exit_ms);
@@ -249,6 +250,19 @@ alarm_result_t eng_arm(alarm_engine_t *e, uint8_t p, alarm_arm_level_t level, ui
     return ALARM_OK;
 }
 
+/* A device's remembered trouble is its partition's (0: every partition's), as it is counted. */
+static uint32_t dev_mem_of(const alarm_engine_t *e, uint8_t p)
+{
+    uint32_t mem = 0u;
+    for (unsigned d = 0; d < ALARM_MAX_DEVICES; d++) {
+        const uint8_t dp = e->dev_trouble_partition[d];
+        if ((e->dev_trouble_mem & (1u << d)) != 0u && (dp == 0u || dp == p)) {
+            mem |= 1u << d;
+        }
+    }
+    return mem;
+}
+
 static void ack_troubles(alarm_engine_t *e, uint8_t p)
 {
     for (uint16_t z = 1u; z <= ALARM_MAX_ZONES; z++) {
@@ -257,14 +271,14 @@ static void ack_troubles(alarm_engine_t *e, uint8_t p)
         }
     }
     e->sys_trouble_mem = 0u;
-    e->dev_trouble_mem = 0u;
+    e->dev_trouble_mem &= ~dev_mem_of(e, p);
     eng_part(e, p)->trouble_unack = false;
     e->sys_dirty = true;
 }
 
 static bool troubles_to_ack(const alarm_engine_t *e, uint8_t p)
 {
-    if (e->parts[p - 1u].trouble_unack || e->sys_trouble_mem != 0u || e->dev_trouble_mem != 0u) {
+    if (e->parts[p - 1u].trouble_unack || e->sys_trouble_mem != 0u || dev_mem_of(e, p) != 0u) {
         return true;
     }
     for (uint16_t z = 1u; z <= ALARM_MAX_ZONES; z++) {
@@ -370,6 +384,8 @@ void eng_exit_restart(alarm_engine_t *e, uint8_t p, bool automatic, uint8_t user
                       const alarm_source_t *src)
 {
     alarm_partition_rt_t *pr = eng_part(e, p);
+    /* from the armed state a quick exit; within an arming's exit time it stays that arming's */
+    pr->quick_exit = pr->state != ALARM_STATE_EXIT_DELAY || pr->quick_exit;
     pr->state = ALARM_STATE_EXIT_DELAY;
     pr->deadline = ms_add(e->now, exit_time_ms(e, p, pr->flags));
     pr->exit_fast_done = false;

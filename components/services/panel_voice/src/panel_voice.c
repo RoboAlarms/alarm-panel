@@ -6,7 +6,8 @@
 // by generation; the old one is freed when its last lease ends.
 //
 // Tasks:
-//   - the alarm task feeds the policy (core annunciator) through panel_voice_engine_*: each
+//   - one producer feeds the policy (core annunciator) through panel_voice_engine_*: the alarm
+//     task on an alarm panel, the link task on a link keypad (a source set, LINK-028). Each call
 //     copies one fact into a preallocated queue with a zero-tick send - no lock, no allocation,
 //     no logging - and the worker applies them in order under s_mu (AUD-011);
 //   - the worker (priority 4, a 256 KiB PSRAM stack for libopus's alloca, D10) asks the policy
@@ -59,7 +60,6 @@ const char *panel_voice_install_name(panel_voice_install_t r)
 static const char *TAG = "voice";
 
 #define PV_NAME "primary"
-#define PV_KEYPAD 1u                      /* the local keypad's partition */
 #define PV_WORKER_STACK (256u * 1024u)    /* PSRAM: libopus's alloca scratch (D10) */
 #define PV_WORKER_PRIO 4
 #define PV_FLASH_STACK 10240u             /* internal RAM, only while it runs (like lang_packs') */
@@ -89,6 +89,13 @@ typedef struct {
     size_t have, off;   /* samples in s_pcm, and how many went to the ring */
     uint64_t started;
 } pv_speech_t;
+
+/* ---- where the facts come from (set before start) ---- */
+static panel_voice_source_t s_src; /* a link keypad's; none on an alarm panel (its engine) */
+static bool s_have_src;
+/* The partition the voice speaks for (D05): 1 on an alarm panel; a link keypad's home, set by its
+ * producer with each baseline. */
+static _Atomic uint8_t s_part = 1u;
 
 /* ---- state (s_mu) ---- */
 static SemaphoreHandle_t s_mu;
@@ -172,8 +179,10 @@ static bool port_zone_words(void *ctx, uint16_t zone, ann_zone_words_t *out)
     if (!s_cfg_valid || s_cfg_cached != s_cfg_seen || zone == 0u || zone > ALARM_MAX_ZONES) {
         return false;
     }
-    if (zone_service_voice_settling(zone)) {
-        return false; /* D07: a changed sensor's approval and binding aren't stored yet */
+    if (!s_have_src && zone_service_voice_settling(zone)) {
+        /* D07: a changed sensor's approval and binding aren't stored yet. A link keypad can't
+         * see the master's settling: it reads the words of the copy it has. */
+        return false;
     }
     *out = s_words[zone - 1u];
     return out->count != 0u;
@@ -265,6 +274,17 @@ static void speech_end(uint32_t *counter)
     memset(&s_sp, 0, sizeof(s_sp));
 }
 
+#if CONFIG_ALARM_BUILD_DEV
+/* What an utterance says, for the log line a muted bench reads (development builds). */
+static const char *kind_name(uint8_t kind)
+{
+    static const char *const names[] = {"none",     "entry",     "arming",       "armed",
+                                        "disarmed", "walk start", "walk end",    "walk warning",
+                                        "not ready", "walk trip", "chime",       "preview"};
+    return kind < sizeof(names) / sizeof(names[0]) ? names[kind] : "?";
+}
+#endif
+
 static void speech_start(void)
 {
     ann_utt_t utt;
@@ -275,7 +295,9 @@ static void speech_start(void)
         copy = s_active;
         copy->leases++;
     }
+    const uint8_t part = s_ann.keypad;
     unlock();
+    (void)part;
     if (!got) {
         return;
     }
@@ -306,6 +328,17 @@ static void speech_start(void)
     const uint8_t volume = s_prefs.volume;
     unlock();
     sb_begin(&s_sb, volume); /* the Voice volume, up to +9 dB (AUD-033); it stays to the end */
+#if CONFIG_ALARM_BUILD_DEV
+    /* A muted bench's proof of what is said, and for which partition (the `voice` counters say
+     * how many): one line per utterance, as it starts. */
+    if (utt.zone != 0u) {
+        ESP_LOGI(TAG, "says %s, zone %u (partition %u, Voice %u %%)", kind_name(utt.kind),
+                 (unsigned)utt.zone, (unsigned)part, (unsigned)volume);
+    } else {
+        ESP_LOGI(TAG, "says %s (partition %u, Voice %u %%)", kind_name(utt.kind), (unsigned)part,
+                 (unsigned)volume);
+    }
+#endif
 }
 
 /* Fills s_pcm from the renderer, through the Voice volume's boost, then with what it held back.
@@ -554,17 +587,44 @@ panel_voice_bench_t panel_voice_bench_play(int16_t *pcm, size_t n)
 }
 #endif
 
+/* The configuration the words come from, and its generation: the source's (a link keypad's copy,
+ * whatever generation it holds), or the engine's (the one the snapshots name: want). */
+static bool config_read(alarm_config_t *out, uint32_t want, uint32_t *seq)
+{
+    if (s_have_src) {
+        return s_src.config(s_src.ctx, out, seq);
+    }
+    *seq = want;
+    return alarm_service_get_config(out) == ESP_OK;
+}
+
+bool pv_config(alarm_config_t *out)
+{
+    uint32_t seq = 0u;
+    return config_read(out, 0u, &seq);
+}
+
+#define PV_CFG_RETRY_MS 500u /* a source's copy older than the snapshots: read again no sooner */
+
 /* Reads the configuration again when it changed (off the alarm task: the engine is called here,
- * never from a listener). */
+ * never from a listener). A copy whose generation isn't the snapshots' is taken but stays stale:
+ * its words never speak (port_zone_words), and it is read again a little later. */
 static void words_refresh(void)
 {
+    static uint64_t s_cfg_tried;
     lock();
     const bool stale = !s_cfg_valid || s_cfg_cached != s_cfg_seen;
-    const uint32_t seq = s_cfg_seen;
+    const uint32_t want = s_cfg_seen;
     unlock();
-    if (!stale || alarm_service_get_config(&s_cfg) != ESP_OK) {
+    if (!stale || (s_cfg_tried != 0u && now_ms() - s_cfg_tried < PV_CFG_RETRY_MS)) {
         return;
     }
+    uint32_t seq = want;
+    if (!config_read(&s_cfg, want, &seq)) {
+        s_cfg_tried = s_have_src ? now_ms() : 0u;
+        return;
+    }
+    s_cfg_tried = seq != want ? now_ms() : 0u;
     lock();
     for (unsigned z = 0u; z < ALARM_MAX_ZONES; z++) {
         const alarm_zone_config_t *zc = &s_cfg.zones[z];
@@ -1031,7 +1091,8 @@ esp_err_t panel_voice_start(void)
     s_mu = xSemaphoreCreateMutexStatic(&s_mu_buf);
     q_start();
     const ann_ports_t ports = {.ctx = NULL, .zone_words = port_zone_words, .clip_samples = port_clip_samples};
-    ann_init(&s_ann, &ports, PV_KEYPAD);
+    ann_init(&s_ann, &ports, atomic_load(&s_part));
+    ann_join_exit(&s_ann, s_have_src); /* a link keypad joins an exit time it comes to late */
     apply_prefs_locked(now_ms());
     s_state = PANEL_VOICE_LOADING;
     atomic_store(&s_inited, true);
@@ -1082,10 +1143,24 @@ void panel_voice_status(panel_voice_status_t *out)
     out->decode_errors = s_decode_errors;
     out->enabled = s_prefs.enabled;
     out->volume = s_prefs.volume;
+    out->partition = s_ann.keypad;
     if (s_active != NULL && s_state == PANEL_VOICE_READY) {
         out->word_gap_ms = s_ann.pack.word_gap_ms != 0u ? s_ann.pack.word_gap_ms : (uint16_t)ANN_WORD_GAP_MS;
     }
     unlock();
+}
+
+void panel_voice_set_source(const panel_voice_source_t *src)
+{
+    if (atomic_load(&s_inited)) {
+        ESP_LOGE(TAG, "the voice's source is set before it starts");
+        return;
+    }
+    s_have_src = src != NULL && src->baseline != NULL && src->config != NULL &&
+                 src->install_locked != NULL;
+    if (s_have_src) {
+        s_src = *src;
+    }
 }
 
 bool panel_voice_ready(void)
@@ -1144,12 +1219,15 @@ void panel_voice_set_power_saving(bool saving)
 }
 
 /* ---- the engine's facts, queued (AUD-011; docs/features/08 D05, D11) ----
- * The alarm task copies each fact into s_q with a zero-tick send; the worker applies them in
- * order. A full queue loses a fact: s_q_drops counts it and every later item carries the count,
- * so the worker cancels all speech (ann_rebaseline), drops what it has of the broken stretch and
- * takes the next snapshot sent after the loss as a silent baseline, asking the alarm task for
- * one at once. The worker also starts that way: the first snapshot it applies is the baseline
- * panel_voice_start took on the alarm task before the listeners were turned on. */
+ * The producer (the alarm task, or a link keypad's link task) copies each fact into s_q with a
+ * zero-tick send; the worker applies them in order. A full queue loses a fact: s_q_drops counts
+ * it and every later item carries the count, so the worker cancels all speech (ann_rebaseline),
+ * drops what it has of the broken stretch and takes the next snapshot sent after the loss as a
+ * silent baseline, asking for one at once (the alarm task, or the source). The worker also
+ * starts that way: the first snapshot it applies is the baseline panel_voice_start took on the
+ * alarm task before the listeners were turned on - or the first a link keypad's producer sends
+ * (panel_voice_engine_baseline), which counts as a loss of its own so the worker takes it as one.
+ * A pause (the link not ONLINE) is a loss with nothing collected after it. */
 
 #define PV_Q_LEN 48u              /* one engine call's events, tones, outputs and snapshot, many times */
 #define PV_TICKET_HOLD_MS 50u     /* an outcome waits this long for its tone's ann_sound at most */
@@ -1159,6 +1237,7 @@ typedef enum { PVQ_EVENT = 0, PVQ_SOUND, PVQ_OUTPUT, PVQ_SNAPSHOT } pv_kind_t;
 typedef struct {
     uint8_t kind;      /* pv_kind_t */
     bool baseline;     /* the snapshot q_baseline() took (a call, not a change) */
+    uint8_t partition; /* a snapshot's: the partition its state is of (s_part when sent) */
     uint32_t epoch;    /* s_q_drops when it was sent */
     uint64_t at;       /* captured (now_ms) */
     union {
@@ -1178,28 +1257,32 @@ typedef struct {
     } u;
 } pv_item_t;
 
-/* Only the alarm task sends; only the worker receives. The storage is touched by no ISR or DMA. */
+/* Only the producer sends; only the worker receives. The storage is touched by no ISR or DMA. */
 static QueueHandle_t s_q;
 static StaticQueue_t s_q_buf;
 static EXT_RAM_BSS_ATTR pv_item_t s_q_store[PV_Q_LEN];
-static _Atomic bool s_collect;      /* the listeners copy (set on the alarm task, with the baseline) */
-static _Atomic uint32_t s_q_drops;  /* facts lost to a full queue */
+static _Atomic bool s_collect;      /* the producer copies (set on its task, with the baseline) */
+static _Atomic uint32_t s_q_drops;  /* facts lost to a full queue; a source's baselines, pauses */
+static _Atomic uint32_t s_q_overflows; /* of them, the full queue's */
 static EXT_RAM_BSS_ATTR alarm_snapshot_t s_q_snap; /* q_baseline's, on the alarm task */
 
 /* the worker's own */
 static uint32_t s_q_epoch;          /* the drops the worker has dealt with */
+static uint32_t s_q_overflows_seen;
 static bool s_q_resync = true;      /* waiting for a baseline: from start-up, after a loss */
-static bool s_q_asked;              /* a baseline was asked of the alarm task for this resync */
+static bool s_q_asked;              /* a baseline was asked for this resync */
 static uint32_t s_q_ticket_fed;     /* the newest tone ticket handed to ann_sound */
 static bool s_tk_held;
 static sounder_ticket_t s_tk;
 static uint64_t s_tk_since;
 
-/* Alarm task only (a listener): never blocks, never logs. */
+/* The producer only (the alarm task's listener, or a link keypad's link task): never blocks,
+ * never logs. */
 static void q_put(pv_item_t *it)
 {
     it->epoch = atomic_load(&s_q_drops);
     if (xQueueSendToBack(s_q, it, 0) != pdTRUE) {
+        atomic_fetch_add(&s_q_overflows, 1u);
         atomic_fetch_add(&s_q_drops, 1u);
     }
     wake();
@@ -1213,8 +1296,9 @@ static void q_baseline(alarm_engine_t *e, alarm_ms_t now, void *ctx)
     (void)now;
     (void)ctx;
     alarm_service_get_snapshot(&s_q_snap); /* current: the alarm task refreshes it after every call */
-    pv_item_t it = {.kind = PVQ_SNAPSHOT, .baseline = true, .at = now_ms()};
-    ann_state_from_snapshot(&s_q_snap, PV_KEYPAD, alarm_engine_config(e)->opt.exit_sounds, &it.u.st);
+    const uint8_t part = atomic_load(&s_part);
+    pv_item_t it = {.kind = PVQ_SNAPSHOT, .baseline = true, .partition = part, .at = now_ms()};
+    ann_state_from_snapshot(&s_q_snap, part, alarm_engine_config(e)->opt.exit_sounds, &it.u.st);
     q_put(&it);
     atomic_store(&s_collect, true);
 }
@@ -1224,11 +1308,24 @@ static void q_start(void)
     s_q = xQueueCreateStatic(PV_Q_LEN, sizeof(pv_item_t), (uint8_t *)s_q_store, &s_q_buf);
 }
 
+/* A baseline wanted: from the source (a link keypad's link task sends one soon), or taken on the
+ * alarm task now (alarm_service_call at start, alarm_service_post after a loss). */
+static bool q_ask_baseline(bool at_start)
+{
+    if (s_have_src) {
+        return s_src.baseline(s_src.ctx);
+    }
+    const esp_err_t err =
+        at_start ? alarm_service_call(q_baseline, NULL) : alarm_service_post(q_baseline, NULL);
+    return err == ESP_OK;
+}
+
 /* panel_voice_start (the start-up task): the baseline is taken on the alarm task, which turns the
- * listeners on there. Not taken (the engine isn't running): the worker asks for it once it runs. */
+ * listeners on there, or asked of the source. Not taken (the engine isn't running): the worker
+ * asks for it once it runs. */
 static void q_take_baseline(void)
 {
-    s_q_asked = alarm_service_call(q_baseline, NULL) == ESP_OK;
+    s_q_asked = q_ask_baseline(true);
     if (!s_q_asked) {
         ESP_LOGW(TAG, "voice baseline not taken yet: the alarm task isn't running");
     }
@@ -1246,11 +1343,20 @@ static void q_check_drops(void)
     ann_rebaseline(&s_ann);
     s_bell_due = 0u;
     unlock();
-    if (!s_q_resync) {
+    /* a link keypad's baselines and pauses count as losses too, but aren't overflows */
+    const uint32_t over = atomic_load(&s_q_overflows);
+    const bool overflow = over != s_q_overflows_seen;
+    if (overflow) {
+        s_q_overflows_seen = over;
         ESP_LOGW(TAG, "voice: the engine's facts overflowed; silent until a new baseline");
     }
+    /* A source's own baseline or pause brings, or leads to, the baseline it needs: the source is
+     * asked only after an overflow (asking at every drop raced with a baseline on its way, and
+     * its second baseline cut what came between). The alarm task is asked every time. An ask
+     * not sent yet stays due: an overflow's two counts can be seen one look apart. */
+    const bool ask_due = s_q_resync && !s_q_asked;
     s_q_resync = true;
-    s_q_asked = false;
+    s_q_asked = s_have_src && !overflow && !ask_due;
 }
 
 static void q_apply(const pv_item_t *it)
@@ -1260,6 +1366,7 @@ static void q_apply(const pv_item_t *it)
         (int32_t)(it->u.snd.ticket - s_q_ticket_fed) > 0) {
         s_q_ticket_fed = it->u.snd.ticket; /* dropped or applied, it has come */
     }
+    bool rebase = false;
     if (s_q_resync) {
         /* Facts before the loss, or of a call cut by it, are dropped; the first snapshot sent
          * after it is a complete state: the silent baseline (the policy was rebaselined). */
@@ -1267,10 +1374,15 @@ static void q_apply(const pv_item_t *it)
             return;
         }
         s_q_resync = false;
+        rebase = true;
     } else if (it->baseline) {
         return; /* asked for, but a live snapshot came first: nothing new in it */
     }
     lock();
+    if (rebase && s_ann.keypad != it->partition) {
+        /* D05 on a link keypad: its home moved; the old partition's speech is gone already */
+        ann_set_keypad(&s_ann, it->partition);
+    }
     switch ((pv_kind_t)it->kind) {
     case PVQ_EVENT:
         ann_event(&s_ann, &it->u.ev);
@@ -1280,7 +1392,7 @@ static void q_apply(const pv_item_t *it)
         break;
     case PVQ_OUTPUT:
         ann_output(&s_ann, it->u.out.output, it->u.out.partition, it->u.out.pattern);
-        if (it->u.out.output == ALARM_OUT_BELL && it->u.out.partition == PV_KEYPAD &&
+        if (it->u.out.output == ALARM_OUT_BELL && it->u.out.partition == s_ann.keypad &&
             it->u.out.pattern == ALARM_PAT_TEST) {
             s_bell_due = it->at + PV_BELL_TEST_MS;
         }
@@ -1301,7 +1413,7 @@ static void q_drain(void)
     }
     q_check_drops();
     if (s_q_resync && !s_q_asked) {
-        s_q_asked = alarm_service_post(q_baseline, NULL) == ESP_OK; /* else the next round */
+        s_q_asked = q_ask_baseline(false); /* else the next round */
     }
 }
 
@@ -1384,9 +1496,36 @@ void panel_voice_engine_snapshot(const alarm_snapshot_t *snap)
     if (!atomic_load(&s_collect) || snap == NULL) {
         return;
     }
-    pv_item_t it = {.kind = PVQ_SNAPSHOT, .at = now_ms()};
-    ann_state_from_snapshot(snap, PV_KEYPAD, snap->exit_sounds, &it.u.st);
+    const uint8_t part = atomic_load(&s_part);
+    pv_item_t it = {.kind = PVQ_SNAPSHOT, .partition = part, .at = now_ms()};
+    ann_state_from_snapshot(snap, part, snap->exit_sounds, &it.u.st);
     q_put(&it);
+}
+
+/* A link keypad's producer: counted as a loss, so the worker drops what it holds and takes this
+ * snapshot - sent with the new count - as its silent baseline, of the partition given. */
+void panel_voice_engine_baseline(uint8_t partition, const alarm_snapshot_t *snap)
+{
+    if (!atomic_load(&s_inited) || snap == NULL || partition < 1u ||
+        partition > ALARM_MAX_PARTITIONS) {
+        return;
+    }
+    atomic_store(&s_part, partition);
+    atomic_fetch_add(&s_q_drops, 1u);
+    pv_item_t it = {.kind = PVQ_SNAPSHOT, .baseline = true, .partition = partition, .at = now_ms()};
+    ann_state_from_snapshot(snap, partition, snap->exit_sounds, &it.u.st);
+    q_put(&it);
+    atomic_store(&s_collect, true);
+}
+
+void panel_voice_engine_pause(void)
+{
+    if (!atomic_load(&s_inited)) {
+        return;
+    }
+    atomic_store(&s_collect, false);
+    atomic_fetch_add(&s_q_drops, 1u); /* the worker stops speech and waits for a baseline */
+    wake();
 }
 
 /* ---- leases ---- */
@@ -1545,6 +1684,9 @@ typedef struct {
  * tell, it says locked. */
 static bool install_locked(void)
 {
+    if (s_have_src) {
+        return s_src.install_locked(s_src.ctx); /* a link keypad: no engine of its own to ask */
+    }
     alarm_snapshot_t *snap = heap_caps_malloc(sizeof(*snap), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (snap == NULL) {
         return true;
@@ -1851,6 +1993,21 @@ void panel_voice_engine_output(alarm_output_t output, uint8_t partition, alarm_p
 void panel_voice_engine_snapshot(const alarm_snapshot_t *snap)
 {
     (void)snap;
+}
+
+void panel_voice_set_source(const panel_voice_source_t *src)
+{
+    (void)src;
+}
+
+void panel_voice_engine_baseline(uint8_t partition, const alarm_snapshot_t *snap)
+{
+    (void)partition;
+    (void)snap;
+}
+
+void panel_voice_engine_pause(void)
+{
 }
 
 const vp_pack_t *panel_voice_pack_acquire(void)

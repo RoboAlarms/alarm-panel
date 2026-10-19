@@ -9,8 +9,11 @@
 
 #include "alarm/alarm_strings.h"
 #include "alarm_proto/proto.h"
+#include "alarm_proto/proto_fw.h"
+#include "alarm_proto/proto_fwsrv.h"
 #include "alarm_proto/proto_zb.h"
 #include "notify/notify_auto.h"
+#include "notify/notify_words.h"
 #include "unity.h"
 
 static alarm_config_t CFG;
@@ -925,6 +928,148 @@ static void test_automation_failed_event_golden(void)
     TEST_ASSERT_NOT_NULL(strstr(doc, "\"automation_failed\""));
 }
 
+/* MQTT-005, OTA-010, docs/features/11 "Updates through the link" (What people see, the event
+ * log): a keypad's update stages go out on ~/event by name, the keypad as source "keypad" and
+ * source_id; keypad_failed adds its why, by number and by the why table's name ("unknown" for one
+ * this firmware doesn't know: a reader takes it by its decade, LINK-039). Keys are added only. */
+static void test_keypad_firmware_event_golden(void)
+{
+    alarm_event_t ev = event(ALARM_EV_FIRMWARE_UPDATE);
+    ev.partition = 0;
+    ev.source.kind = ALARM_SRC_KEYPAD;
+    ev.source.id = 2;
+    ev.arg = ALARM_FW_KEYPAD_FAILED;
+    ev.arg2 = PROTO_FW_WHY_STALLED;
+    ev.flags = ALARM_EVF_REPORT | ALARM_EVF_SYSTEM;
+    proto_event(&W, &CFG, &ev, false);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"seq\":1523,\"ts\":\"2026-09-19T22:41:00Z\",\"event_type\":\"firmware_update\","
+        "\"partition\":null,\"zone\":null,\"zone_name\":null,\"user\":null,"
+        "\"user_name\":null,\"source\":\"keypad\",\"source_id\":2,"
+        "\"stage\":\"keypad_failed\",\"why\":24,\"reason\":\"stalled\","
+        "\"silent\":false,\"replayed\":false}",
+        done());
+
+    /* the other stages carry no why */
+    ev.arg = ALARM_FW_KEYPAD_UPDATED;
+    ev.arg2 = 0;
+    ev.user = 1;
+    pj_init(&W, BUF, sizeof(BUF));
+    proto_event(&W, &CFG, &ev, false);
+    const char *doc = done();
+    TEST_ASSERT_NOT_NULL(strstr(doc, "\"source\":\"keypad\",\"source_id\":2,"
+                                     "\"stage\":\"keypad_updated\",\"silent\":false"));
+    TEST_ASSERT_NULL(strstr(doc, "\"why\""));
+
+    /* every why has its name, the why table's in lower case */
+    static const struct {
+        unsigned why;
+        const char *name;
+    } NAMES[] = {
+        {PROTO_FWSRV_WHY_NO_NETWORK, "no_network"},
+        {PROTO_FWSRV_WHY_NO_LOOKUP, "no_lookup"},
+        {PROTO_FWSRV_WHY_NO_CONNECT, "no_connect"},
+        {PROTO_FWSRV_WHY_SERVER_ERROR, "server_error"},
+        {PROTO_FWSRV_WHY_NOT_A_SERVER, "not_a_server"},
+        {PROTO_FWSRV_WHY_UNKNOWN_DEVICE, "unknown_device"},
+        {PROTO_FWSRV_WHY_HELD_BACK, "held_back"},
+        {PROTO_FWSRV_WHY_STEPPING_STONE, "stepping_stone"},
+        {PROTO_FWSRV_WHY_OTHER_VERSION, "other_version"},
+        {PROTO_FWSRV_WHY_UP_TO_DATE, "up_to_date"},
+        {PROTO_FWSRV_WHY_UNKNOWN_VERSION, "unknown_version"},
+        {PROTO_FWSRV_WHY_NOT_OFFERED, "not_offered"},
+        {PROTO_FWSRV_WHY_REFUSED, "refused"},
+        {PROTO_FW_WHY_BROKE_OFF, "broke_off"},
+        {PROTO_FW_WHY_TOO_SLOW, "too_slow"},
+        {PROTO_FW_WHY_BAD_SIZE, "bad_size"},
+        {PROTO_FW_WHY_BAD_SHA, "bad_sha"},
+        {PROTO_FW_WHY_STALLED, "stalled"},
+        {PROTO_FW_WHY_TIMEOUT, "timeout"},
+        {PROTO_FW_WHY_NO_MEMORY, "no_memory"},
+        {PROTO_FW_WHY_FLASH, "flash"},
+        {PROTO_FW_WHY_KEY, "key"},
+        {PROTO_FW_WHY_CHIP, "chip"},
+        {PROTO_FW_WHY_PROJECT, "project"},
+        {PROTO_FW_WHY_NOT_NEWER, "not_newer"},
+        {PROTO_FW_WHY_SIGNATURE, "signature"},
+        {PROTO_FW_WHY_TOO_BIG, "too_big"},
+        {PROTO_FW_WHY_UNKNOWN_KIND, "unknown_kind"},
+        {PROTO_FW_WHY_UNKNOWN_OP, "unknown_op"},
+        {PROTO_FW_WHY_BUDGET, "budget"},
+        {PROTO_FW_WHY_BAD_ORDER, "bad_order"},
+        {PROTO_FW_WHY_WRONG_VERSION, "wrong_version"},
+        {PROTO_FW_WHY_MASTER_BUSY, "master_busy"},
+        {PROTO_FW_WHY_NOT_QUIET, "not_quiet"},
+        {PROTO_FW_WHY_PANIC_PENDING, "panic_pending"},
+        {PROTO_FW_WHY_KEPT_TONE, "kept_tone"},
+        {PROTO_FW_WHY_NO_STATUS, "no_status"},
+        {PROTO_FW_WHY_BUSY, "busy"},
+        {PROTO_FW_WHY_STOPPED, "stopped"},
+        {PROTO_FW_WHY_CANCELLED, "cancelled"},
+    };
+    unsigned named = 0;
+    for (size_t i = 0; i < sizeof(NAMES) / sizeof(NAMES[0]); i++) {
+        TEST_ASSERT_EQUAL_STRING(NAMES[i].name, proto_fw_why_name(NAMES[i].why));
+    }
+    for (unsigned why = 0; why < 256u; why++) {
+        named += strcmp(proto_fw_why_name(why), "unknown") != 0 ? 1u : 0u;
+    }
+    TEST_ASSERT_EQUAL_UINT(sizeof(NAMES) / sizeof(NAMES[0]), named);
+    TEST_ASSERT_EQUAL_STRING("unknown", proto_fw_why_name(PROTO_FW_WHY_OK));
+    TEST_ASSERT_EQUAL_STRING("unknown", proto_fw_why_name(39u));
+    TEST_ASSERT_EQUAL_STRING("unknown", proto_fw_why_name(77u));
+
+    /* notify spells the why numbers out (alarm_proto requires notify, not the other way round):
+     * its words follow these numbers, each its own reason's (CANCELLED reads "Stopped", as its
+     * decade and the master's row do) */
+    static const struct {
+        unsigned why;
+        const char *line;
+    } WORDS[] = {
+        {PROTO_FWSRV_WHY_UNKNOWN_DEVICE, "The update server has nothing for it"},
+        {PROTO_FWSRV_WHY_HELD_BACK, "The update server holds it back for now"},
+        {PROTO_FWSRV_WHY_STEPPING_STONE, "It needs another version first"},
+        {PROTO_FWSRV_WHY_UNKNOWN_VERSION,
+         "The update server has no release of this version for it"},
+        {PROTO_FWSRV_WHY_NOT_OFFERED, "The update server doesn't offer this version"},
+        {PROTO_FW_WHY_BROKE_OFF, "The download broke off"},
+        {PROTO_FW_WHY_TOO_SLOW, "The download was too slow"},
+        {PROTO_FW_WHY_BAD_SIZE, "It got the wrong size"},
+        {PROTO_FW_WHY_BAD_SHA, "It arrived damaged"},
+        {PROTO_FW_WHY_STALLED, "No data for a minute"},
+        {PROTO_FW_WHY_TIMEOUT, "It waited too long"},
+        {PROTO_FW_WHY_NO_MEMORY, "Not enough memory"},
+        {PROTO_FW_WHY_FLASH, "It couldn't store it"},
+        {PROTO_FW_WHY_KEY, "Its signing key isn't trusted"},
+        {PROTO_FW_WHY_CHIP, "It isn't for this keypad's chip"},
+        {PROTO_FW_WHY_PROJECT, "It isn't from a project it accepts"},
+        {PROTO_FW_WHY_NOT_NEWER, "It isn't newer than the version it runs"},
+        {PROTO_FW_WHY_SIGNATURE, "The signature check failed"},
+        {PROTO_FW_WHY_TOO_BIG, "It's too big for this keypad"},
+        {PROTO_FW_WHY_UNKNOWN_KIND, "It can't take this kind of update"},
+        {PROTO_FW_WHY_UNKNOWN_OP, "It doesn't know this order"},
+        {PROTO_FW_WHY_BUDGET, "3 tries failed, next try tomorrow"},
+        {PROTO_FW_WHY_BAD_ORDER, "It refused the order"},
+        {PROTO_FW_WHY_WRONG_VERSION, "It got another version"},
+        {PROTO_FW_WHY_MASTER_BUSY, "The system is busy"},
+        {PROTO_FW_WHY_NOT_QUIET, "It waits until everything is quiet"},
+        {PROTO_FW_WHY_PANIC_PENDING, "A panic is being sent from it"},
+        {PROTO_FW_WHY_KEPT_TONE, "Its fire or CO alarm still sounds"},
+        {PROTO_FW_WHY_NO_STATUS, "Its link is down"},
+        {PROTO_FW_WHY_BUSY, "Another update runs on it"},
+        {PROTO_FW_WHY_STOPPED, "Stopped at the keypad"},
+        {PROTO_FW_WHY_CANCELLED, "Stopped"},
+    };
+    ev.arg = ALARM_FW_KEYPAD_FAILED;
+    for (size_t i = 0; i < sizeof(WORDS) / sizeof(WORDS[0]); i++) {
+        notify_words_t w;
+        ev.arg2 = (uint8_t)WORDS[i].why;
+        TEST_ASSERT_TRUE(notify_words(NULL, &CFG, &ev, true, &w));
+        TEST_ASSERT_EQUAL_STRING("Keypad 2 update failed", w.title);
+        TEST_ASSERT_EQUAL_STRING(WORDS[i].line, w.body);
+    }
+}
+
 /* Every payload for a full panel fits PROTO_PAYLOAD_MAX (the publish buffer in net_mqtt). */
 /* The longest words a hook may give (D30): a full clause and a full sentence. */
 static bool longest_lookup(void *ctx, const i18n_catalog_t *c, const alarm_config_t *conf,
@@ -1190,6 +1335,7 @@ int main(void)
     RUN_TEST(test_zone_diag_golden);
     RUN_TEST(test_zigbee_event_golden);
     RUN_TEST(test_automation_failed_event_golden);
+    RUN_TEST(test_keypad_firmware_event_golden);
     RUN_TEST(test_armed_by_automation_golden);
     RUN_TEST(test_automation_source_event_golden);
     RUN_TEST(test_put_off_event_golden);

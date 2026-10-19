@@ -173,6 +173,23 @@ static void test_icon_table(void)
         check_str(line.detail, "The device wasn't reachable \xC2\xB7 By automation",
                   "AUT-009: its line");
     }
+    {
+        /* docs/features/11 (What people see) and P2's Activity: a keypad's failed update on its
+         * master, by the keypad's number, with its why in words */
+        alarm_event_t ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.type = ALARM_EV_FIRMWARE_UPDATE;
+        ev.source.kind = ALARM_SRC_KEYPAD;
+        ev.source.id = 2u;
+        ev.arg = ALARM_FW_KEYPAD_FAILED;
+        ev.arg2 = 24u; /* STALLED */
+        ui_line_t line;
+        check(ui_event_line(&cfg, &ev, true, &line) && glyph_ok(line.glyph),
+              "a keypad's failed update has a line and a glyph");
+        check_str(line.title, "Keypad 2 update failed", "a keypad's failed update: its title");
+        check_str(line.detail, "No data for a minute", "a keypad's failed update: its why");
+        check(rgb(line.tone) == rgb(ui_tone_amber()), "a keypad's failed update is amber");
+    }
     for (unsigned t = 0; t < (unsigned)ALARM_TRBL_COUNT; t++) {
         ui_line_t line;
         ui_sys_trouble_line((alarm_sys_trouble_t)t, false, &line);

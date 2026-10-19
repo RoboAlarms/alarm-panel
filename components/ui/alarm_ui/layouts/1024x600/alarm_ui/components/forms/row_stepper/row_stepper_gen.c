@@ -36,7 +36,7 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_36(&style_row_stepper);
+        alarm_ui_run_39(&style_row_stepper);
         lv_style_set_min_height(&style_row_stepper, 68);
         alarm_ui_run_6(&style_row_stepper, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_row_stepper, RADIUS_MD);
@@ -69,7 +69,7 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
         lv_obj_set_style_pad_row(box_1, 2, 0);
         lv_obj_t * title_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(title_label, title);
-        alarm_ui_run_35(title_label, font_label, "title_label");
+        alarm_ui_run_37(title_label, font_label, "title_label");
 
         lv_obj_t * detail_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(detail_label, detail);
@@ -78,7 +78,7 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
 
         lv_obj_t * minus = alarm_ui_run_20(box_0);
         lv_obj_set_ext_click_area(minus, 8);
-        alarm_ui_run_15(minus, &style_step_button, 0, &style_step_button_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(minus, &style_step_button, 0, &style_step_button_pressed, LV_STATE_PRESSED);
         lv_obj_set_name(minus, "minus");
         lv_obj_t * lv_label_0 = alarm_ui_run_11(minus, "\xEE\x84\x9C");
         lv_obj_set_style_text_font(lv_label_0, icons_20, 0);
@@ -86,11 +86,11 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
         lv_obj_t * value_label = lv_label_create(box_0);
         lv_obj_set_width(value_label, 112);
         lv_label_set_text(value_label, value);
-        alarm_ui_run_54(value_label, LV_TEXT_ALIGN_CENTER, "value_label");
+        alarm_ui_run_58(value_label, LV_TEXT_ALIGN_CENTER, "value_label");
 
         lv_obj_t * plus = alarm_ui_run_20(box_0);
         lv_obj_set_ext_click_area(plus, 8);
-        alarm_ui_run_15(plus, &style_step_button, 0, &style_step_button_pressed, LV_STATE_PRESSED);
+        alarm_ui_run_16(plus, &style_step_button, 0, &style_step_button_pressed, LV_STATE_PRESSED);
         lv_obj_set_name(plus, "plus");
         lv_obj_t * lv_label_1 = alarm_ui_run_11(plus, "\xEE\x84\xBD");
         lv_obj_set_style_text_font(lv_label_1, icons_20, 0);

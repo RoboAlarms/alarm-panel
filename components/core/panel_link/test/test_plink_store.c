@@ -1,0 +1,666 @@
+/*
+ * test_plink_store.c - what the panel link keeps in NVS `link` (plink_store.h): the master's
+ * record (its net id and its keypads) and the keypad's (its master). Round trips, damage refused,
+ * a damaged keypad entry dropped while the others load, numbers outside 1..8 and duplicates
+ * dropped, a newer compat refused, fields a later format appends skipped, and the frozen format-1
+ * fixture (plink_store_fixture_v1.h, made independently by vectors_plink_store.py).
+ * Requirements: LINK-001, LINK-017 (docs/features/11)
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "alarm/alarm_codec.h"
+#include "panel_link/plink_store.h"
+#include "unity.h"
+
+#include "plink_store_fixture_v1.h"
+#include "plink_store_policy_fixture_v1.h"
+
+#define HDR 11u
+
+static uint8_t B[PLINK_STORE_MAX + 64];
+
+void setUp(void) {}
+
+void tearDown(void) {}
+
+/* ---- the fixture's values ------------------------------------------------------------------ */
+
+static void fixture_master(plink_master_rec_t *m)
+{
+    memset(m, 0, sizeof(*m));
+    m->net_id = 0x5A3Cu;
+    m->count = 2u;
+    plink_peer_rec_t *p = &m->peer[0];
+    p->device = 1u;
+    p->home = 1u;
+    p->kind = PLINK_KIND_PANEL;
+    p->supervision_s = 60u; /* frozen in the fixture (not the default, which may change) */
+    for (unsigned i = 0; i < PLINK_KEY_LEN; i++) {
+        p->k_pair[i] = (uint8_t)i;
+    }
+    p->paired_epoch_ms = 1790000000000LL;
+    strcpy(p->name, "Hall keypad");
+    p = &m->peer[1];
+    p->device = 3u;
+    p->home = 2u;
+    p->kind = PLINK_KIND_PC;
+    p->flags = PLINK_PEER_PROVISIONAL;
+    p->supervision_s = 300u;
+    for (unsigned i = 0; i < PLINK_KEY_LEN; i++) {
+        p->k_pair[i] = (uint8_t)(0xA0u + i);
+    }
+    strcpy(p->name, "Bureau \xC3\xA9tage");
+}
+
+static void fixture_keypad(plink_keypad_rec_t *k)
+{
+    memset(k, 0, sizeof(*k));
+    k->net_id = 0x5A3Cu;
+    k->device = 3u;
+    k->home = 2u;
+    for (unsigned i = 0; i < PLINK_KEY_LEN; i++) {
+        k->k_pair[i] = (uint8_t)(0xA0u + i);
+    }
+    strcpy(k->master_name, "Harbor House");
+    strcpy(k->panel_id, "3F9A1C");
+}
+
+/* ---- comparing ------------------------------------------------------------------------------ */
+
+static void expect_peer(const plink_peer_rec_t *want, const plink_peer_rec_t *got)
+{
+    TEST_ASSERT_EQUAL_UINT8(want->device, got->device);
+    TEST_ASSERT_EQUAL_UINT8(want->home, got->home);
+    TEST_ASSERT_EQUAL_UINT8(want->kind, got->kind);
+    TEST_ASSERT_EQUAL_UINT8(want->flags, got->flags);
+    TEST_ASSERT_EQUAL_UINT16(want->supervision_s, got->supervision_s);
+    TEST_ASSERT_EQUAL_MEMORY(want->k_pair, got->k_pair, PLINK_KEY_LEN);
+    TEST_ASSERT_TRUE(want->paired_epoch_ms == got->paired_epoch_ms);
+    TEST_ASSERT_EQUAL_STRING(want->name, got->name);
+}
+
+static void expect_master(const plink_master_rec_t *want, const plink_master_rec_t *got)
+{
+    TEST_ASSERT_EQUAL_UINT16(want->net_id, got->net_id);
+    TEST_ASSERT_EQUAL_UINT8(want->count, got->count);
+    for (unsigned i = 0; i < want->count; i++) {
+        expect_peer(&want->peer[i], &got->peer[i]);
+    }
+}
+
+static void expect_keypad(const plink_keypad_rec_t *want, const plink_keypad_rec_t *got)
+{
+    TEST_ASSERT_EQUAL_UINT16(want->net_id, got->net_id);
+    TEST_ASSERT_EQUAL_UINT8(want->device, got->device);
+    TEST_ASSERT_EQUAL_UINT8(want->home, got->home);
+    TEST_ASSERT_EQUAL_MEMORY(want->k_pair, got->k_pair, PLINK_KEY_LEN);
+    TEST_ASSERT_EQUAL_STRING(want->master_name, got->master_name);
+    TEST_ASSERT_EQUAL_STRING(want->panel_id, got->panel_id);
+}
+
+static bool all_zero(const void *p, size_t n)
+{
+    const uint8_t *b = p;
+    for (size_t i = 0; i < n; i++) {
+        if (b[i] != 0u) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* ---- building records by hand (the layout of plink_store.h, not the encoder) ---------------- */
+
+/* A record of kind around payload[0..n) into B, header and CRC included; returns its length. */
+static size_t seal(uint8_t kind, uint8_t compat, const uint8_t *payload, size_t n)
+{
+    const uint32_t crc = alarm_crc32(0u, payload, n);
+    B[0] = 'P';
+    B[1] = 'L';
+    B[2] = kind;
+    B[3] = 1u;
+    B[4] = compat;
+    B[5] = (uint8_t)n;
+    B[6] = (uint8_t)(n >> 8);
+    for (unsigned i = 0; i < 4u; i++) {
+        B[7 + i] = (uint8_t)(crc >> (8u * i));
+    }
+    memmove(B + HDR, payload, n);
+    return HDR + n;
+}
+
+/* Fixes the header's length and CRC after the payload in B was edited. */
+static void reseal(size_t len)
+{
+    const size_t n = len - HDR;
+    const uint32_t crc = alarm_crc32(0u, B + HDR, n);
+    B[5] = (uint8_t)n;
+    B[6] = (uint8_t)(n >> 8);
+    for (unsigned i = 0; i < 4u; i++) {
+        B[7 + i] = (uint8_t)(crc >> (8u * i));
+    }
+}
+
+typedef struct {
+    uint8_t b[PLINK_STORE_MAX];
+    size_t n;
+} raw_t;
+
+static void raw_u8(raw_t *r, uint8_t v)
+{
+    r->b[r->n++] = v;
+}
+
+static void raw_bytes(raw_t *r, const void *p, size_t n)
+{
+    memcpy(r->b + r->n, p, n);
+    r->n += n;
+}
+
+static void raw_str(raw_t *r, const char *s)
+{
+    const size_t n = strlen(s);
+    raw_u8(r, (uint8_t)n);
+    raw_bytes(r, s, n);
+}
+
+/* One master entry: its length byte, format 1's fields, then `extra` bytes a later format
+ * appends (0xEE). name_len_fix != 0 replaces the name's length byte (to damage it). */
+static void raw_peer(raw_t *r, uint8_t device, const char *name, size_t extra, uint8_t name_len_fix)
+{
+    const size_t at = r->n;
+    raw_u8(r, 0u);
+    raw_u8(r, device);
+    raw_u8(r, 1u); /* home */
+    raw_u8(r, PLINK_KIND_PANEL);
+    raw_u8(r, 0u);  /* flags */
+    raw_u8(r, 60u); /* supervision_s */
+    raw_u8(r, 0u);
+    for (unsigned i = 0; i < PLINK_KEY_LEN; i++) {
+        raw_u8(r, (uint8_t)(device * 16u + i));
+    }
+    for (unsigned i = 0; i < 8u; i++) {
+        raw_u8(r, 0u); /* paired_epoch_ms */
+    }
+    const size_t name_at = r->n;
+    raw_str(r, name);
+    if (name_len_fix != 0u) {
+        r->b[name_at] = name_len_fix;
+    }
+    for (size_t i = 0; i < extra; i++) {
+        raw_u8(r, 0xEEu);
+    }
+    r->b[at] = (uint8_t)(r->n - at - 1u);
+}
+
+static void raw_master_head(raw_t *r, uint16_t net_id, uint8_t count)
+{
+    r->n = 0u;
+    raw_u8(r, (uint8_t)net_id);
+    raw_u8(r, (uint8_t)(net_id >> 8));
+    raw_u8(r, count);
+}
+
+/* ---- the tests ------------------------------------------------------------------------------ */
+
+/* LINK-017: every field of both records survives a round trip, a full master included (8
+ * keypads with names as long as the wire allows, multi-byte characters); it fits PLINK_STORE_MAX
+ * and a buffer one byte short is refused without writing past it. */
+static void test_round_trips(void)
+{
+    plink_master_rec_t m;
+    memset(&m, 0, sizeof(m));
+    m.net_id = 0xFFFEu;
+    m.count = PLINK_KEYPADS_MAX;
+    for (unsigned i = 0; i < PLINK_KEYPADS_MAX; i++) {
+        plink_peer_rec_t *p = &m.peer[i];
+        p->device = (uint8_t)(PLINK_KEYPADS_MAX - i); /* any order */
+        p->home = (uint8_t)(1u + i % 4u);
+        p->kind = (uint8_t)(i % 4u);
+        p->flags = (uint8_t)(i & 1u);
+        p->supervision_s = (uint16_t)(i == 0 ? 0u : 0xFFFFu - i);
+        for (unsigned k = 0; k < PLINK_KEY_LEN; k++) {
+            p->k_pair[k] = (uint8_t)(i * 37u + k * 11u + 1u);
+        }
+        p->paired_epoch_ms = i == 1 ? -1 : (int64_t)(1790000000000LL + i);
+        memset(p->name, 'a' + (int)i, PLINK_NAME_MAX);
+        memcpy(p->name, "\xE7\x8E\x8B", 3); /* a 3-byte character first */
+    }
+    size_t len = 0u;
+    TEST_ASSERT_TRUE(plink_store_master_encode(&m, B, sizeof(B), &len));
+    TEST_ASSERT_TRUE(len <= PLINK_STORE_MAX);
+    plink_master_rec_t got;
+    memset(&got, 0xEE, sizeof(got));
+    TEST_ASSERT_TRUE(plink_store_master_decode(B, len, &got));
+    expect_master(&m, &got);
+
+    uint8_t small[PLINK_STORE_MAX + 1];
+    memset(small, 0x5A, sizeof(small));
+    size_t n = 0u;
+    TEST_ASSERT_FALSE(plink_store_master_encode(&m, small, len - 1u, &n));
+    TEST_ASSERT_EQUAL_UINT8(0x5A, small[len - 1u]); /* nothing past cap */
+    TEST_ASSERT_TRUE(all_zero(small, len - 1u));    /* and what fitted, keys too, wiped */
+
+    /* An empty master (no net id chosen yet) */
+    memset(&m, 0, sizeof(m));
+    TEST_ASSERT_TRUE(plink_store_master_encode(&m, B, sizeof(B), &len));
+    TEST_ASSERT_EQUAL_UINT(HDR + 3u, len);
+    TEST_ASSERT_TRUE(plink_store_master_decode(B, len, &got));
+    expect_master(&m, &got);
+    m.count = PLINK_KEYPADS_MAX + 1u;
+    TEST_ASSERT_FALSE(plink_store_master_encode(&m, B, sizeof(B), &len));
+
+    plink_keypad_rec_t k;
+    fixture_keypad(&k);
+    k.device = PLINK_DEVICE_LAST;
+    k.home = 8u;
+    memset(k.master_name, 'M', PLINK_NAME_MAX);
+    TEST_ASSERT_TRUE(plink_store_keypad_encode(&k, B, sizeof(B), &len));
+    TEST_ASSERT_TRUE(len <= PLINK_STORE_MAX);
+    plink_keypad_rec_t kg;
+    memset(&kg, 0xEE, sizeof(kg));
+    TEST_ASSERT_TRUE(plink_store_keypad_decode(B, len, &kg));
+    expect_keypad(&k, &kg);
+    TEST_ASSERT_FALSE(plink_store_keypad_encode(&k, B, len - 1u, &n));
+    TEST_ASSERT_FALSE(plink_store_keypad_encode(&k, B, HDR - 1u, &n));
+    TEST_ASSERT_FALSE(plink_store_keypad_encode(NULL, B, sizeof(B), &n));
+}
+
+/* LINK-017: a record that isn't one is refused whole and the output zeroed: damage under the CRC,
+ * a damaged CRC, the wrong magic or kind, a cut record, a compat newer than this firmware reads.
+ * A newer format that keeps compat 1 still reads. */
+static void test_damage_refused(void)
+{
+    plink_master_rec_t m, got;
+    fixture_master(&m);
+    size_t len = 0u;
+    TEST_ASSERT_TRUE(plink_store_master_encode(&m, B, sizeof(B), &len));
+
+    B[HDR + 20] ^= 0x01u; /* a key byte */
+    memset(&got, 0xEE, sizeof(got));
+    TEST_ASSERT_FALSE(plink_store_master_decode(B, len, &got));
+    TEST_ASSERT_TRUE(all_zero(&got, sizeof(got)));
+    B[HDR + 20] ^= 0x01u;
+    TEST_ASSERT_TRUE(plink_store_master_decode(B, len, &got));
+
+    B[8] ^= 0x80u; /* the CRC itself */
+    TEST_ASSERT_FALSE(plink_store_master_decode(B, len, &got));
+    B[8] ^= 0x80u;
+    B[1] = 'X';
+    TEST_ASSERT_FALSE(plink_store_master_decode(B, len, &got));
+    B[1] = 'L';
+    TEST_ASSERT_FALSE(plink_store_master_decode(B, len - 1u, &got)); /* cut */
+    TEST_ASSERT_FALSE(plink_store_master_decode(B, HDR - 1u, &got));
+    TEST_ASSERT_FALSE(plink_store_master_decode(NULL, len, &got));
+    TEST_ASSERT_FALSE(plink_store_master_decode(B, len, NULL));
+
+    plink_keypad_rec_t k;
+    memset(&k, 0xEE, sizeof(k));
+    TEST_ASSERT_FALSE(plink_store_keypad_decode(B, len, &k)); /* a master's record */
+    TEST_ASSERT_TRUE(all_zero(&k, sizeof(k)));
+
+    B[4] = 2u; /* needs a newer reader */
+    TEST_ASSERT_FALSE(plink_store_master_decode(B, len, &got));
+    TEST_ASSERT_TRUE(all_zero(&got, sizeof(got)));
+    B[4] = 1u;
+    B[3] = 7u; /* a newer format older readers can still read */
+    TEST_ASSERT_TRUE(plink_store_master_decode(B, len, &got));
+    expect_master(&m, &got);
+
+    /* A payload too short for the master's own fields */
+    const uint8_t two[2] = {0x3C, 0x5A};
+    len = seal('M', 1u, two, sizeof(two));
+    TEST_ASSERT_FALSE(plink_store_master_decode(B, len, &got));
+
+    /* The keypad's: no network, a number outside 1..8, fields missing */
+    plink_keypad_rec_t want;
+    fixture_keypad(&want);
+    TEST_ASSERT_TRUE(plink_store_keypad_encode(&want, B, sizeof(B), &len));
+    TEST_ASSERT_TRUE(plink_store_keypad_decode(B, len, &k));
+    TEST_ASSERT_FALSE(plink_store_master_decode(B, len, &got)); /* a keypad's record */
+    static const uint8_t bad_device[] = {0, PLINK_DEVICE_LAST + 1u};
+    for (unsigned i = 0; i < sizeof(bad_device); i++) {
+        TEST_ASSERT_TRUE(plink_store_keypad_encode(&want, B, sizeof(B), &len));
+        B[HDR + 2] = bad_device[i];
+        reseal(len);
+        memset(&k, 0xEE, sizeof(k));
+        TEST_ASSERT_FALSE(plink_store_keypad_decode(B, len, &k));
+        TEST_ASSERT_TRUE(all_zero(&k, sizeof(k)));
+    }
+    TEST_ASSERT_TRUE(plink_store_keypad_encode(&want, B, sizeof(B), &len));
+    B[HDR] = 0u;
+    B[HDR + 1] = 0u;
+    reseal(len);
+    TEST_ASSERT_FALSE(plink_store_keypad_decode(B, len, &k));
+    TEST_ASSERT_TRUE(plink_store_keypad_encode(&want, B, sizeof(B), &len));
+    len -= 7u; /* without the panel id */
+    reseal(len);
+    TEST_ASSERT_FALSE(plink_store_keypad_decode(B, len, &k));
+    TEST_ASSERT_TRUE(all_zero(&k, sizeof(k)));
+}
+
+/* LINK-001, LINK-017: one damaged keypad entry is dropped and the others still load - a name
+ * running past its entry, an entry shorter than format 1's fields, a number outside 1..8, a
+ * number already taken (the first one kept); entries that end before the count say keep what
+ * came before. */
+static void test_damaged_entry_dropped(void)
+{
+    static raw_t r;
+    raw_master_head(&r, 0x1234u, 7u);
+    raw_peer(&r, 1u, "Kitchen", 0u, 0u);
+    raw_peer(&r, 2u, "Stairs", 0u, 40u); /* its name says 40 bytes: past the entry */
+    const size_t short_at = r.n;
+    raw_u8(&r, 10u); /* an entry of 10 bytes: too short */
+    for (unsigned i = 0; i < 10u; i++) {
+        raw_u8(&r, 4u);
+    }
+    raw_peer(&r, 0u, "Nobody", 0u, 0u);   /* number 0 */
+    raw_peer(&r, 9u, "Ninth", 0u, 0u);    /* number 9 */
+    raw_peer(&r, 1u, "Impostor", 0u, 0u); /* 1 again */
+    raw_peer(&r, 5u, "Garage", 0u, 0u);
+    TEST_ASSERT_EQUAL_UINT8(10u, r.b[short_at]);
+    size_t len = seal('M', 1u, r.b, r.n);
+
+    plink_master_rec_t got;
+    TEST_ASSERT_TRUE(plink_store_master_decode(B, len, &got));
+    TEST_ASSERT_EQUAL_UINT16(0x1234u, got.net_id);
+    TEST_ASSERT_EQUAL_UINT8(2u, got.count);
+    TEST_ASSERT_EQUAL_UINT8(1u, got.peer[0].device);
+    TEST_ASSERT_EQUAL_STRING("Kitchen", got.peer[0].name);
+    TEST_ASSERT_EQUAL_UINT8(16u, got.peer[0].k_pair[0]);
+    TEST_ASSERT_EQUAL_UINT8(5u, got.peer[1].device);
+    TEST_ASSERT_EQUAL_STRING("Garage", got.peer[1].name);
+    TEST_ASSERT_EQUAL_UINT8(5u * 16u + 31u, got.peer[1].k_pair[31]);
+
+    /* An entry whose length runs past the payload: what came before it loads. */
+    raw_master_head(&r, 0x1234u, 3u);
+    raw_peer(&r, 4u, "Porch", 0u, 0u);
+    const size_t office_at = r.n;
+    raw_peer(&r, 6u, "Office", 0u, 0u);
+    r.b[office_at] = 200u;
+    len = seal('M', 1u, r.b, r.n);
+    TEST_ASSERT_TRUE(plink_store_master_decode(B, len, &got));
+    TEST_ASSERT_EQUAL_UINT8(1u, got.count);
+    TEST_ASSERT_EQUAL_UINT8(4u, got.peer[0].device);
+
+    /* A count larger than the entries there are */
+    raw_master_head(&r, 0x0101u, 9u);
+    raw_peer(&r, 8u, "Loft", 0u, 0u);
+    len = seal('M', 1u, r.b, r.n);
+    TEST_ASSERT_TRUE(plink_store_master_decode(B, len, &got));
+    TEST_ASSERT_EQUAL_UINT8(1u, got.count);
+    TEST_ASSERT_EQUAL_STRING("Loft", got.peer[0].name);
+}
+
+/* LINK-017: fields a later format appends are skipped - bytes after a keypad entry's fields,
+ * bytes after the master's entries, bytes after the keypad record's fields - and a name longer
+ * than this firmware holds is cut where a character starts. */
+static void test_appended_fields_skipped(void)
+{
+    static raw_t r;
+    raw_master_head(&r, 0x2468u, 2u);
+    raw_peer(&r, 2u, "Back door", 9u, 0u);
+    raw_peer(&r, 7u, "Shed", 1u, 0u);
+    for (unsigned i = 0; i < 12u; i++) {
+        raw_u8(&r, 0x77u); /* the master's own appended fields */
+    }
+    size_t len = seal('M', 1u, r.b, r.n);
+    plink_master_rec_t got;
+    TEST_ASSERT_TRUE(plink_store_master_decode(B, len, &got));
+    TEST_ASSERT_EQUAL_UINT8(2u, got.count);
+    TEST_ASSERT_EQUAL_UINT8(2u, got.peer[0].device);
+    TEST_ASSERT_EQUAL_STRING("Back door", got.peer[0].name);
+    TEST_ASSERT_EQUAL_UINT16(60u, got.peer[0].supervision_s);
+    TEST_ASSERT_EQUAL_UINT8(7u, got.peer[1].device);
+    TEST_ASSERT_EQUAL_STRING("Shed", got.peer[1].name);
+
+    /* The keypad's record with appended fields, and names longer than this firmware's: 50
+     * bytes whose 47th and 48th are one two-byte character, so the cut keeps 46. */
+    char long_name[51];
+    memset(long_name, 'n', 50);
+    long_name[50] = '\0';
+    long_name[46] = (char)0xC3;
+    long_name[47] = (char)0xA9;
+    r.n = 0u;
+    raw_u8(&r, 0x3Cu);
+    raw_u8(&r, 0x5Au);
+    raw_u8(&r, 3u);
+    raw_u8(&r, 2u);
+    for (unsigned i = 0; i < PLINK_KEY_LEN; i++) {
+        raw_u8(&r, (uint8_t)(0xA0u + i));
+    }
+    raw_str(&r, long_name);
+    raw_str(&r, "3F9A1C77"); /* a longer panel id: its first 6 */
+    for (unsigned i = 0; i < 20u; i++) {
+        raw_u8(&r, 0x55u);
+    }
+    len = seal('K', 1u, r.b, r.n);
+    plink_keypad_rec_t k;
+    TEST_ASSERT_TRUE(plink_store_keypad_decode(B, len, &k));
+    TEST_ASSERT_EQUAL_UINT16(0x5A3Cu, k.net_id);
+    TEST_ASSERT_EQUAL_UINT8(3u, k.device);
+    TEST_ASSERT_EQUAL_UINT8(2u, k.home);
+    TEST_ASSERT_EQUAL_UINT8(0xBFu, k.k_pair[31]);
+    TEST_ASSERT_EQUAL_UINT(46u, strlen(k.master_name));
+    TEST_ASSERT_EQUAL_STRING("3F9A1C", k.panel_id);
+}
+
+/* LINK-017: the frozen format-1 records decode forever to these values, and this firmware still
+ * writes exactly their bytes. The fixture was made independently from the layout
+ * (vectors_plink_store.py) and matches what this encoder wrote; regenerate a new one with
+ * DUMP_FIXTURE=1 build/host/test_plink_store when the format changes - never edit this one. */
+static void test_fixture_v1(void)
+{
+    plink_master_rec_t m, got;
+    plink_keypad_rec_t k, kg;
+    fixture_master(&m);
+    fixture_keypad(&k);
+    size_t len = 0u;
+    const char *dump = getenv("DUMP_FIXTURE");
+    if (dump != NULL && strcmp(dump, "1") == 0) {
+        TEST_ASSERT_TRUE(plink_store_master_encode(&m, B, sizeof(B), &len));
+        printf("static const uint8_t PLINK_STORE_MASTER_V1[%u] = {", (unsigned)len);
+        for (size_t i = 0; i < len; i++) {
+            printf("%s0x%02X,", (i % 12u) ? " " : "\n    ", B[i]);
+        }
+        printf("\n};\n");
+        TEST_ASSERT_TRUE(plink_store_keypad_encode(&k, B, sizeof(B), &len));
+        printf("static const uint8_t PLINK_STORE_KEYPAD_V1[%u] = {", (unsigned)len);
+        for (size_t i = 0; i < len; i++) {
+            printf("%s0x%02X,", (i % 12u) ? " " : "\n    ", B[i]);
+        }
+        printf("\n};\n");
+    }
+
+    TEST_ASSERT_TRUE(
+        plink_store_master_decode(PLINK_STORE_MASTER_V1, sizeof(PLINK_STORE_MASTER_V1), &got));
+    expect_master(&m, &got);
+    TEST_ASSERT_TRUE(plink_store_master_encode(&m, B, sizeof(B), &len));
+    TEST_ASSERT_EQUAL_UINT(sizeof(PLINK_STORE_MASTER_V1), len);
+    TEST_ASSERT_EQUAL_MEMORY(PLINK_STORE_MASTER_V1, B, len);
+
+    TEST_ASSERT_TRUE(
+        plink_store_keypad_decode(PLINK_STORE_KEYPAD_V1, sizeof(PLINK_STORE_KEYPAD_V1), &kg));
+    expect_keypad(&k, &kg);
+    TEST_ASSERT_TRUE(plink_store_keypad_encode(&k, B, sizeof(B), &len));
+    TEST_ASSERT_EQUAL_UINT(sizeof(PLINK_STORE_KEYPAD_V1), len);
+    TEST_ASSERT_EQUAL_MEMORY(PLINK_STORE_KEYPAD_V1, B, len);
+}
+
+/* ---- random bytes ------------------------------------------------------------------------- */
+
+static uint64_t RNG;
+
+static uint32_t rnd(void)
+{
+    RNG ^= RNG << 13;
+    RNG ^= RNG >> 7;
+    RNG ^= RNG << 17;
+    return (uint32_t)(RNG >> 32);
+}
+
+static size_t rnd_below(size_t n)
+{
+    return n == 0u ? 0u : (size_t)rnd() % n;
+}
+
+/* A byte a mutation likes: lengths, edges, numbers 1..9 and kinds. */
+static uint8_t interesting(void)
+{
+    static const uint8_t v[] = {0x00, 0x01, 0x02, 0x08, 0x09, 0x0B, 0x2F, 0x30, 0x3A, 0x4B,
+                                0x4D, 0x7F, 0x80, 0xC3, 0xE2, 0xFE, 0xFF};
+    return v[rnd_below(sizeof(v))];
+}
+
+/* One to four random edits of p[from..*len) within cap: a bit flipped, an interesting byte, a
+ * cut, bytes appended, a byte inserted or deleted. */
+static void mutate(uint8_t *p, size_t from, size_t *len, size_t cap)
+{
+    const size_t edits = 1u + rnd_below(4u);
+    for (size_t e = 0; e < edits; e++) {
+        const size_t n = *len;
+        const size_t at = from + rnd_below(n - from + 1u);
+        switch (rnd_below(6u)) {
+        case 0:
+            if (at < n) {
+                p[at] = (uint8_t)(p[at] ^ (1u << rnd_below(8u)));
+            }
+            break;
+        case 1:
+            if (at < n) {
+                p[at] = interesting();
+            }
+            break;
+        case 2: *len = at; break;
+        case 3: {
+            const size_t add = rnd_below(48u);
+            for (size_t i = 0; i < add && *len < cap; i++) {
+                p[(*len)++] = (uint8_t)rnd();
+            }
+            break;
+        }
+        case 4:
+            if (n < cap) {
+                memmove(p + at + 1, p + at, n - at);
+                p[at] = interesting();
+                *len = n + 1u;
+            }
+            break;
+        default:
+            if (at < n) {
+                memmove(p + at, p + at + 1, n - at - 1u);
+                *len = n - 1u;
+            }
+            break;
+        }
+    }
+}
+
+static bool str_ends(const char *s, size_t size)
+{
+    return memchr(s, '\0', size) != NULL;
+}
+
+/* LINK-017, LINK-001 (docs/features/11 "Test and acceptance": random bytes into every parser):
+ * 20000 records - the fixture's master and keypad records with random edits in their payload,
+ * the header's length and CRC made right again so the decoders read the edited bytes (and, one
+ * in ten, the header itself edited) - go into both decoders, each record ending at the end of
+ * its buffer; none crashes or reads outside it, and what one accepts keeps its promises: at most
+ * 8 keypads, numbers 1..8 once each, a keypad record with a network and a number, every string
+ * ended inside its field; and it encodes to a record that decodes to the same. */
+static void test_fuzz_decoders(void)
+{
+    static uint8_t seed_m[PLINK_STORE_MAX], seed_k[PLINK_STORE_MAX], work[PLINK_STORE_MAX];
+    static uint8_t arena[PLINK_STORE_MAX], again[PLINK_STORE_MAX];
+    plink_master_rec_t m, m2;
+    plink_keypad_rec_t k, k2;
+    size_t len_m = 0u, len_k = 0u;
+    fixture_master(&m);
+    fixture_keypad(&k);
+    TEST_ASSERT_TRUE(plink_store_master_encode(&m, seed_m, sizeof(seed_m), &len_m));
+    TEST_ASSERT_TRUE(plink_store_keypad_encode(&k, seed_k, sizeof(seed_k), &len_k));
+    RNG = 0x5704E5EEDull;
+    unsigned took_m = 0u, took_k = 0u;
+    for (uint32_t iter = 0; iter < 20000u; iter++) {
+        const bool master = (iter & 1u) == 0u;
+        size_t len = master ? len_m : len_k;
+        memcpy(work, master ? seed_m : seed_k, len);
+        mutate(work, HDR, &len, sizeof(work));
+        if (len >= HDR) {
+            const size_t payload = len - HDR;
+            work[5] = (uint8_t)payload;
+            work[6] = (uint8_t)(payload >> 8);
+            const uint32_t crc = alarm_crc32(0u, work + HDR, payload);
+            for (unsigned i = 0; i < 4u; i++) {
+                work[7u + i] = (uint8_t)(crc >> (8u * i));
+            }
+        }
+        if (iter % 10u == 9u) {
+            mutate(work, 0u, &len, sizeof(work)); /* the header too */
+        }
+        uint8_t *p = arena + sizeof(arena) - len;
+        memmove(p, work, len);
+        if (plink_store_master_decode(p, len, &m)) {
+            took_m++;
+            TEST_ASSERT_TRUE(m.count <= PLINK_KEYPADS_MAX);
+            uint32_t seen = 0u;
+            for (unsigned i = 0; i < m.count; i++) {
+                const uint8_t d = m.peer[i].device;
+                TEST_ASSERT_TRUE(d >= PLINK_DEVICE_FIRST && d <= PLINK_DEVICE_LAST);
+                TEST_ASSERT_EQUAL_HEX32(0u, seen & (1u << (d - 1u)));
+                seen |= 1u << (d - 1u);
+                TEST_ASSERT_TRUE(str_ends(m.peer[i].name, sizeof(m.peer[i].name)));
+            }
+            size_t n = 0u;
+            TEST_ASSERT_TRUE(plink_store_master_encode(&m, again, sizeof(again), &n));
+            TEST_ASSERT_TRUE(plink_store_master_decode(again, n, &m2));
+            expect_master(&m, &m2);
+        }
+        if (plink_store_keypad_decode(p, len, &k)) {
+            took_k++;
+            TEST_ASSERT_TRUE(k.net_id != 0u);
+            TEST_ASSERT_TRUE(k.device >= PLINK_DEVICE_FIRST && k.device <= PLINK_DEVICE_LAST);
+            TEST_ASSERT_TRUE(str_ends(k.master_name, sizeof(k.master_name)));
+            TEST_ASSERT_TRUE(str_ends(k.panel_id, sizeof(k.panel_id)));
+            size_t n = 0u;
+            TEST_ASSERT_TRUE(plink_store_keypad_encode(&k, again, sizeof(again), &n));
+            TEST_ASSERT_TRUE(plink_store_keypad_decode(again, n, &k2));
+            expect_keypad(&k, &k2);
+        }
+    }
+    /* The edits kept many records readable, so the checks above ran on real decodes. */
+    TEST_ASSERT_TRUE(took_m > 1000u);
+    TEST_ASSERT_TRUE(took_k > 1000u);
+}
+
+/* KPD-006: old records stay locked; policy survives storage byte for byte. */
+static void test_policy_fixture(void)
+{
+    plink_master_rec_t m;
+    TEST_ASSERT_TRUE(plink_store_master_decode(PLINK_STORE_MASTER_V1, sizeof PLINK_STORE_MASTER_V1, &m));
+    TEST_ASSERT_FALSE(m.peer[0].switch_allowed);
+    TEST_ASSERT_TRUE(plink_store_master_decode(PLINK_STORE_POLICY_V1, sizeof PLINK_STORE_POLICY_V1, &m));
+    TEST_ASSERT_TRUE(m.peer[0].switch_allowed);
+    TEST_ASSERT_TRUE(m.peer[0].return_never);
+    TEST_ASSERT_EQUAL_UINT16(30u, m.peer[0].return_s);
+    TEST_ASSERT_FALSE(m.peer[1].switch_allowed);
+    size_t len;
+    TEST_ASSERT_TRUE(plink_store_master_encode(&m, B, sizeof B, &len));
+    TEST_ASSERT_EQUAL_size_t(sizeof PLINK_STORE_POLICY_V1, len);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(PLINK_STORE_POLICY_V1, B, len);
+}
+
+int main(void)
+{
+    UNITY_BEGIN();
+    RUN_TEST(test_policy_fixture);
+    RUN_TEST(test_round_trips);
+    RUN_TEST(test_damage_refused);
+    RUN_TEST(test_damaged_entry_dropped);
+    RUN_TEST(test_appended_fields_skipped);
+    RUN_TEST(test_fixture_v1);
+    RUN_TEST(test_fuzz_decoders);
+    return UNITY_END();
+}

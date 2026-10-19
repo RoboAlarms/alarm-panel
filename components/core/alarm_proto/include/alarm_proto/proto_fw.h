@@ -118,6 +118,14 @@ size_t proto_fw_line_decode(const char *line, uint32_t *seq, uint8_t *out, size_
 
 /* ---- Home Assistant update entity (OTA-010) --------------------------------------------- */
 
+/* A master's link keypad in .../firmware's "keypads" (docs/features/11 "What people see"). */
+#define PROTO_FW_KEYPADS_MAX 8u
+typedef struct {
+    uint8_t device;    /* 1..8 */
+    char version[33];  /* what it runs, "" = not known: null */
+    char state[24];    /* plink_service_fw_row_name(): "up_to_date", "downloading", ... */
+} proto_fw_keypad_t;
+
 typedef struct {
     const char *installed;   /* running version */
     const char *latest;      /* newest known version (= installed when up to date) */
@@ -125,13 +133,145 @@ typedef struct {
     const char *release_url; /* NULL or "" = none: the key is left out */
     bool in_progress;
     int percent;             /* 0..100 while downloading, -1 = none */
+    /* A master's link keypads (appended; docs/features/11): keypad_count of them, at most
+     * PROTO_FW_KEYPADS_MAX; 0 = the key is left out (a panel without keypads, as before). */
+    const proto_fw_keypad_t *keypads;
+    size_t keypad_count;
 } proto_fw_state_t;
 
-/* State JSON for .../firmware (the keys Home Assistant's MQTT update entity reads). */
+/* State JSON for .../firmware (the keys Home Assistant's MQTT update entity reads), and a master's
+ * keypads: "keypads":[{"device":2,"version":"1.4.0","state":"up_to_date"}] (keys added only). */
 void proto_fw_state(pj_writer_t *w, const proto_fw_state_t *st);
 
 /* update entity "Firmware" (device class firmware); can_install adds the install command. */
 void proto_ha_update(pj_writer_t *w, const proto_ident_t *id, bool can_install);
+
+/* ---- updates through the panel link (docs/features/11 "Updates through the link") ------- */
+
+/* What an update run ends in, in the panel link's why numbers (docs/features/11, the why table:
+ * FW_STATE's why). The same numbers as panel_link's PLINK_FW_WHY_* (plink_msg.h), on the wire and
+ * never renumbered. 0 and 1-19, the outcomes of a check, are proto_fwsrv_why_t (proto_fwsrv.h);
+ * these are the other classes. A reader takes a value it doesn't know by its decade. */
+typedef enum {
+    PROTO_FW_WHY_OK = 0,
+    /* 20-29: the transfer (tried again, or the relay instead) */
+    PROTO_FW_WHY_BROKE_OFF = 20,     /* the connection broke off */
+    PROTO_FW_WHY_TOO_SLOW = 21,      /* below the floor (OTA-027) */
+    PROTO_FW_WHY_BAD_SIZE = 22,      /* not the length named (more, fewer, or a server's other) */
+    PROTO_FW_WHY_BAD_SHA = 23,       /* not the SHA-256 named */
+    PROTO_FW_WHY_STALLED = 24,       /* the relay: 60 s without a new byte (the keypad's core) */
+    PROTO_FW_WHY_TIMEOUT = 25,       /* the relay: 30 min paused; a READY image: 24 h, no INSTALL */
+    PROTO_FW_WHY_NO_MEMORY = 26,
+    PROTO_FW_WHY_FLASH = 27,         /* writing the slot, or switching to it, failed */
+    /* 30-49: refused, never tried again (the same signed image fails the same way) */
+    PROTO_FW_WHY_KEY = 30,           /* signed with a key this panel doesn't trust (LINK-036) */
+    PROTO_FW_WHY_CHIP = 31,          /* another chip, or a chip revision outside its range */
+    PROTO_FW_WHY_PROJECT = 32,       /* a signed project this panel doesn't take */
+    PROTO_FW_WHY_NOT_NEWER = 33,     /* not newer than what runs (OTA-014) */
+    PROTO_FW_WHY_SIGNATURE = 34,     /* not an image, or its image or signature check failed */
+    PROTO_FW_WHY_TOO_BIG = 35,       /* larger than the slot */
+    PROTO_FW_WHY_UNKNOWN_KIND = 36,
+    PROTO_FW_WHY_UNKNOWN_OP = 37,
+    PROTO_FW_WHY_BUDGET = 38,
+    PROTO_FW_WHY_BAD_ORDER = 40,     /* an order this panel can't follow */
+    PROTO_FW_WHY_WRONG_VERSION = 41, /* not the version ordered, or past its master's */
+    /* 50-59: waiting */
+    PROTO_FW_WHY_MASTER_BUSY = 50,
+    PROTO_FW_WHY_NOT_QUIET = 51,
+    PROTO_FW_WHY_PANIC_PENDING = 52,
+    PROTO_FW_WHY_KEPT_TONE = 53,
+    PROTO_FW_WHY_NO_STATUS = 54,
+    PROTO_FW_WHY_BUSY = 55,          /* another update runs here */
+    /* 60-69: stopped */
+    PROTO_FW_WHY_STOPPED = 60,       /* a person at this panel (OTA-027) */
+    PROTO_FW_WHY_CANCELLED = 61,     /* its master */
+} proto_fw_why_t;
+
+/* A why's name in the JSON (~/event's keypad_failed "reason", next to its number "why"): the why
+ * table's name in lower case ("stalled", "unknown_device"), for proto_fwsrv_why_t's 1-17 and
+ * these; "unknown" for 0 and for a value this firmware doesn't know (a reader takes it by its
+ * decade, from the number). An external contract: names are added, never changed. */
+const char *proto_fw_why_name(unsigned why);
+
+/* Never past its master (docs/features/11 LINK-029, decision 5): the cap on what a paired keypad
+ * may install by any way but a cable. */
+typedef enum {
+    PROTO_FW_CAP_NONE = 0, /* no master (a stand-alone panel, a master, an unpaired keypad) */
+    PROTO_FW_CAP_UNKNOWN,  /* paired, its master's version not heard yet: nothing passes */
+    PROTO_FW_CAP_AT,       /* at most its master's version */
+} proto_fw_cap_t;
+
+/* May `version` be installed under the cap? NONE: yes; UNKNOWN: no; AT: when it is not newer than
+ * cap_version (semantic precedence, build metadata aside: "0.9.0+local" passes a cap of "0.9.0").
+ * A version or a cap that doesn't parse never passes AT. */
+bool proto_fw_cap_allows(proto_fw_cap_t cap, const char *cap_version, const char *version);
+
+/* A chip revision (major * 100 + minor) inside an image's range: at least min_full, and at most
+ * max_full unless that is 0 or 0xFFFF (no newest, as ESP-IDF's bootloader reads it). */
+bool proto_fw_chip_rev_fits(uint16_t rev_full, uint16_t min_full, uint16_t max_full);
+
+/* What the first PROTO_FW_HEADER_LEN bytes of an ESP-IDF application image say: the image header
+ * (24 bytes), its first segment's header (8) and the application description (256) that opens an
+ * application's first segment. Read byte by byte, little-endian. The writer holds these bytes back
+ * until they pass (LINK-033), so a wrong image is refused before any flash is written. */
+#define PROTO_FW_HEADER_LEN   288u
+#define PROTO_FW_CHIP_ESP32P4 0x0012u /* esp_chip_id_t ESP_CHIP_ID_ESP32P4 */
+#define PROTO_FW_CHIP_ESP32C6 0x000Du /* esp_chip_id_t ESP_CHIP_ID_ESP32C6 */
+
+typedef struct {
+    bool image_magic;      /* the image header's magic (0xE9) */
+    bool app_magic;        /* the application description's magic word (0xABCD5432) */
+    uint8_t segments;      /* segment_count */
+    uint16_t chip_id;      /* PROTO_FW_CHIP_* */
+    uint16_t min_rev_full; /* the oldest chip revision it runs on, major * 100 + minor */
+    uint16_t max_rev_full; /* the newest; 0 or 0xFFFF: no newest */
+    bool hash_appended;
+    char version[33];      /* the description's version, at most 32 characters */
+    char project[33];      /* its signed project name */
+} proto_fw_header_t;
+
+/* false (out zeroed) when buf is NULL or shorter than PROTO_FW_HEADER_LEN. Whether it is an image
+ * at all is proto_fw_header_judge's question. */
+bool proto_fw_header_read(const uint8_t *buf, size_t len, proto_fw_header_t *out);
+
+/* The panel that judges an image: what it is and what it may take. */
+typedef struct {
+    uint16_t chip_id;        /* this chip, PROTO_FW_CHIP_* */
+    uint16_t rev_full;       /* its revision, major * 100 + minor */
+    const char *project;     /* the running image's signed project name */
+    const char *version;     /* the running version */
+    bool allow_older;        /* a person forced it (OTA-014); never on an ordered run */
+    proto_fw_cap_t cap;      /* never past its master */
+    const char *cap_version;
+} proto_fw_self_t;
+
+/* The header's verdict, in the order it is asked (LINK-033: magic, chip, chip revision range,
+ * project, newer; then the cap). Appended only. */
+typedef enum {
+    PROTO_FW_HDR_OK = 0,
+    PROTO_FW_HDR_NOT_AN_IMAGE,   /* no image or application magic */
+    PROTO_FW_HDR_OTHER_CHIP,     /* built for another chip */
+    PROTO_FW_HDR_OTHER_REVISION, /* this chip's revision is outside the image's range */
+    PROTO_FW_HDR_OTHER_PROJECT,  /* ota_profile_accepts() refuses its project */
+    PROTO_FW_HDR_NOT_NEWER,      /* not newer than the running version, unless allow_older */
+    PROTO_FW_HDR_PAST_CAP,       /* newer than its master's version (or that version not known) */
+} proto_fw_hdr_verdict_t;
+
+proto_fw_hdr_verdict_t proto_fw_header_judge(const proto_fw_header_t *h, const proto_fw_self_t *me);
+
+/* The verdict in the why numbers: NOT_AN_IMAGE is SIGNATURE (the image check), the chip and its
+ * revision CHIP, the project PROJECT, NOT_NEWER NOT_NEWER and PAST_CAP WRONG_VERSION. */
+proto_fw_why_t proto_fw_header_why(proto_fw_hdr_verdict_t v);
+
+/* Reads len bytes at offset of a slot into out; false when it can't. */
+typedef bool (*proto_fw_read_fn)(void *ctx, uint32_t offset, void *out, size_t len);
+
+/* The exact length of the application image at the start of a slot of `limit` bytes, for the
+ * relay from a master's own slot (docs/features/11 "The master", image sources): its header, its
+ * segments (1-16), the checksum padded to 16 bytes, the SHA-256 when appended, and the 4 KB
+ * signature sector when one starts at the next 4 KB boundary (its first byte 0xE7, a Secure Boot
+ * v2 signature block). 0 when it isn't an application image for chip_id, or doesn't fit. */
+uint32_t proto_fw_image_size(proto_fw_read_fn read, void *ctx, uint32_t limit, uint16_t chip_id);
 
 #ifdef __cplusplus
 }

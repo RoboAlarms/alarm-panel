@@ -103,8 +103,9 @@ state after a total power loss, and supervises keypads, expanders, sirens and RF
   writer, the zone hub's task, the LVGL task and the touch poll (docs/features/06 P4-018). The
   `health` task in `panel_app.c` relays them every 2 s, `panel_ota` logs any that goes quiet,
   `health` on the console lists them, and sensor input going quiet raises `sensor_radio`. Audio and network have no heartbeat
-  (the panel link does not exist yet), and nothing restarts the panel: no task subscribes to the
-  task watchdog (BL-068).
+  (the panel link has two: a keypad's `PANEL_OTA_OK_LINK` and a master's `PANEL_OTA_OK_KEYPADS`,
+  docs/features/13), and nothing restarts the panel: no task subscribes to the task watchdog
+  (BL-068).
 
 ## Open questions
 - Independent AC-loss detection needs a separately confirmed input-power signal; the STC

@@ -2,8 +2,8 @@
 
 **Status:** Implemented v1 - Wi-Fi through the C6, time from the internet with a time zone, the
 first-time setup and Settings > Wi-Fi with a fixed address and the connection check; verified on
-a panel (joined 2026-09-19, the check's seven steps 2026-09-20). Left: the
-setup's role step and the keypads' mDNS with M7 (BL-048) · **Milestone:** M2, M4, M5 · **Depends on:** 06, 12, 14
+a panel (joined 2026-09-19, the check's seven steps 2026-09-20); the setup's role step and the
+keypads' mDNS with the panel link (BL-048, tried on two panels 2026-10-16) · **Milestone:** M2, M4, M5 · **Depends on:** 06, 12, 14
 
 **Code:** `components/services/platform_esp/src/net_wifi.c`, `net_check.c`;
 `components/ui/alarm_ui/src/ui_net.c`, `ui_wizard.c`
@@ -16,7 +16,7 @@ report problems as troubles.
 ## Requirements
 | ID | Requirement | Verified by |
 |---|---|---|
-| NET-001 | First-boot wizard on the touchscreen: language (English until the language step of docs/features/37 I18N-012, M22 G3), **role** (Master / Keypad), Wi-Fi (scan list + hidden SSID + on-screen keyboard), time zone, optional change of the factory installer (69420) and master (123456) codes (master role), done | preview (role step: M7), HIL |
+| NET-001 | First-boot wizard on the touchscreen: language (English until the language step of docs/features/37 I18N-012, M22 G3), **role** (Master / Keypad), Wi-Fi (scan list + hidden SSID + on-screen keyboard), time zone, optional change of the factory installer (69420) and master (123456) codes (master role), done | preview (the role step and a keypad's pairing too, BL-048; on panels: M7), HIL |
 | NET-002 | Wi-Fi uses the standard `esp_wifi` API through ESP-Hosted/`esp_wifi_remote` (C6 radio); WPA2/WPA3-Personal | HIL: joined a WPA2 network (2026-09-19) |
 | NET-003 | Reconnect with backoff (1 s -> 60 s); raise the `network` trouble after 5 min disconnected (configurable), only when something depends on the network (MQTT or LAN keypads) | unit + HIL |
 | NET-004 | SNTP time sync (default `pool.ntp.org`, configurable) with a POSIX TZ string chosen from a list; re-sync every 6 h | HIL: synced on the panel (2026-09-19) |
@@ -64,13 +64,19 @@ Notes on the table (2026-09-28):
   Default TZ: `UTC0`.
 - Reconnect backoff 1 s doubling to 60 s. The `network` trouble follows NET-003:
   `net_wifi_set_required(<who>, true)` arms it, then 5 minutes without an IP raises it. Each
-  feature that needs the network has its own bit (`NET_WIFI_REQ_MQTT`, `_NOTIFY`, `_HA`; LAN keypads in M7), so one switching off cannot clear another's need. Nothing
+  feature that needs the network has its own bit (`NET_WIFI_REQ_MQTT`, `_NOTIFY`, `_HA`, `_LINK`
+  for a master with keypads), so one switching off cannot clear another's need. Nothing
   required the network in M2, so it never fired then. A failed `esp_wifi_connect()` call
   schedules the same backoff retry (no disconnect event follows it), an unreadable network-trial
   record is cleared instead of aborting start-up, and the low-latency deadline for remote viewing
   is forgotten once passed (it wrapped after 24.9 days and switched power saving off for weeks;
   [B006](../../bugs/B006-notifications-lost-after-outage.md), 8367725; seeing its fix on a panel is
   BL-025).
+- Wi-Fi power save is off while anything holds low latency (`net_wifi_hold_low_latency(owner,
+  on)`, one hold per reason: remote viewing, the panel link's master with keypads and every
+  keypad, docs/features/11 LINK-024); only the `net` task changes the radio's mode and restores
+  the one it found when the last hold goes. A link keypad runs no time server while paired
+  (`net_wifi_set_time_server(false)`): it follows its master's time.
 - `clock_not_set` is raised at start when the clock reads before 2025 and cleared by the first
   SNTP sync (it doesn't beep by default). SNTP uses `pool.ntp.org` and re-syncs every 6 h
   (`CONFIG_LWIP_SNTP_UPDATE_DELAY`). Events carry `epoch_ms = 0` until then ("time unknown").
@@ -166,8 +172,9 @@ says what the clock says and what set it last and, with a module, opens "Set the
 - [x] SNTP + TZ + clock trouble (M2)
 - [x] Configurable NTP server (M4)
 - [x] Setup wizard screens (M4)
-- [ ] The setup's role step (Master / Keypad, then pairing for a keypad), with the keypad role in
-  M7 (NET-001) (BL-048)
+- [x] The setup's role step (Master / Keypad, then pairing for a keypad) (NET-001): the screens
+  (`ui_wizard.c`) and the firmware behind `ui_backend_t.link_*` (a panel in its setup pairs as
+  a keypad, keeps its Wi-Fi and restarts as one) (BL-048, 18cc635, c7e4396, 32894bf)
 - [x] Network settings screen: scan, password, hidden networks, forget (M4)
 - [x] Fixed address, network mask, router and name servers behind the cog (NET-011)
 - [x] "Check the connection", step by step, with what went wrong (NET-012)
@@ -179,7 +186,8 @@ says what the clock says and what set it last and, with a module, opens "Set the
   `roboalarms-<panel ID>`, `_roboalarms._tcp` (M12, docs/features/23) and `_roboalarms-dev._tcp`
   (docs/features/30); the names differ from NET-006's, see the notes under the table
   (`ha_link.c` `mdns_apply()`, `dev_remote.c` `maintenance()`)
-- [ ] mDNS: announce `_roboalarms-link._udp` for LAN keypads, with the panel link (M7) (BL-048)
+- [x] mDNS: `_roboalarms-link._udp` on UDP 6056 while the master has a keypad or pairing is open,
+  found by keypads (`plink_service`; LINK-021) (BL-048, c7e4396)
 - [x] NET-006 follows the names as built, the hostname announced while a service is, the LAN
       keypads' service `_roboalarms-link._udp` (decided 2026-09-28; the row updated)
 - [x] Joining Wi-Fi and SNTP on the real panel (2026-09-19)

@@ -74,7 +74,9 @@ class SafetyTests(unittest.TestCase):
 
     def test_every_firmware_board_is_in_the_catalogue(self):
         boards = json.loads((PKG / "boards.json").read_text(encoding="utf-8"))["boards"]
-        firmware = {p.name for p in (ROOT / "firmware").iterdir() if (p / "CMakeLists.txt").exists()}
+        # A panel board's project sets ALARM_BOARD; firmware/c6_cp (the C6 co-processor) does not.
+        firmware = {p.name for p in (ROOT / "firmware").iterdir() if (p / "CMakeLists.txt").exists()
+                    and "set(ALARM_BOARD " in (p / "CMakeLists.txt").read_text(encoding="utf-8")}
         self.assertEqual(firmware - set(boards), set(), "add them to tools/flasher/roboflash/boards.json")
         for name, info in boards.items():
             for key in ("name", "long_name", "chip", "flash_size", "usb", "download_mode", "offered"):

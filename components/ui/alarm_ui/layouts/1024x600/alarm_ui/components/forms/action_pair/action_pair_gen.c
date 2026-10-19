@@ -26,7 +26,7 @@ lv_obj_t * action_pair_create(lv_obj_t * parent)
         /*Init all styles*/
         lv_style_init(&style_action_pair);
 
-        alarm_ui_run_36(&style_action_pair);
+        alarm_ui_run_39(&style_action_pair);
         lv_style_set_layout(&style_action_pair, LV_LAYOUT_FLEX);
         lv_style_set_flex_flow(&style_action_pair, LV_FLEX_FLOW_ROW);
         lv_style_set_flex_cross_place(&style_action_pair, LV_FLEX_ALIGN_START);

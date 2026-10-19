@@ -219,6 +219,113 @@ static void zigbee_device_words(const i18n_catalog_t *cat, const alarm_config_t 
     }
 }
 
+/* Why a keypad's update ended with nothing installed (ALARM_FW_KEYPAD_FAILED's arg2), in the
+ * words of the master's Keypads rows (proposal P2). The numbers are the panel link's why table
+ * (docs/features/11; PROTO_FWSRV_WHY_* and PROTO_FW_WHY_* in alarm_proto, which requires notify, so
+ * they are spelled out here; test_proto checks that the two agree). A value this firmware doesn't
+ * know reads by its decade (LINK-039); 70 and up, a later firmware's class, has no line (NULL). */
+static const char *keypad_fw_why(const i18n_catalog_t *cat, uint8_t why)
+{
+    /* TR: Activity: why a keypad's update ended with nothing installed, the line under "Keypad
+     * {0} update failed". At most 95 bytes. */
+    switch (why) {
+    case 10u: return i18n_text(cat, NULL, "The update server has nothing for it");
+    case 11u: return i18n_text(cat, NULL, "The update server holds it back for now");
+    case 12u: return i18n_text(cat, NULL, "It needs another version first");
+    case 15u:
+        return i18n_text(cat, NULL, "The update server has no release of this version for it");
+    case 16u: return i18n_text(cat, NULL, "The update server doesn't offer this version");
+    case 20u: return i18n_text(cat, NULL, "The download broke off");
+    case 21u: return i18n_text(cat, NULL, "The download was too slow");
+    case 22u: return i18n_text(cat, NULL, "It got the wrong size");
+    case 23u: return i18n_text(cat, NULL, "It arrived damaged");
+    case 24u: return i18n_text(cat, NULL, "No data for a minute");
+    case 25u: return i18n_text(cat, NULL, "It waited too long");
+    case 26u: return i18n_text(cat, NULL, "Not enough memory");
+    case 27u: return i18n_text(cat, NULL, "It couldn't store it");
+    case 30u: return i18n_text(cat, NULL, "Its signing key isn't trusted");
+    case 31u: return i18n_text(cat, NULL, "It isn't for this keypad's chip");
+    case 32u: return i18n_text(cat, NULL, "It isn't from a project it accepts");
+    case 33u: return i18n_text(cat, NULL, "It isn't newer than the version it runs");
+    case 34u: return i18n_text(cat, NULL, "The signature check failed");
+    case 35u: return i18n_text(cat, NULL, "It's too big for this keypad");
+    case 36u: return i18n_text(cat, NULL, "It can't take this kind of update");
+    case 37u: return i18n_text(cat, NULL, "It doesn't know this order");
+    case 38u: return i18n_text(cat, NULL, "3 tries failed, next try tomorrow");
+    case 40u: return i18n_text(cat, NULL, "It refused the order");
+    case 41u: return i18n_text(cat, NULL, "It got another version");
+    case 50u: return i18n_text(cat, NULL, "The system is busy");
+    case 51u: return i18n_text(cat, NULL, "It waits until everything is quiet");
+    case 52u: return i18n_text(cat, NULL, "A panic is being sent from it");
+    case 53u: return i18n_text(cat, NULL, "Its fire or CO alarm still sounds");
+    case 54u: return i18n_text(cat, NULL, "Its link is down");
+    case 55u: return i18n_text(cat, NULL, "Another update runs on it");
+    case 60u: return i18n_text(cat, NULL, "Stopped at the keypad");
+    default: break;
+    }
+    /* TR: Activity: why a keypad's update ended with nothing installed, by kind, for a reason
+     * this panel has no words of its own for. At most 95 bytes. */
+    switch (why / 10u) {
+    case 0u: return why == 0u ? NULL : i18n_text(cat, NULL, "It can't reach the update server");
+    case 1u: return i18n_text(cat, NULL, "The update server won't offer it");
+    case 2u: return i18n_text(cat, NULL, "The transfer failed");
+    case 3u:
+    case 4u: return i18n_text(cat, NULL, "The keypad refused it");
+    case 5u: return i18n_text(cat, NULL, "It waits");
+    case 6u: return i18n_text(cat, "keypad update", "Stopped");
+    default: return NULL;
+    }
+}
+
+/* A keypad's update through the panel link, as its master logs it (docs/features/11 "Updates
+ * through the link", What people see; proposal P2's Activity): the keypad by its number (P2
+ * decision 6) until a name lookup shared with Zigbee and Z-Wave exists. */
+static void keypad_fw_words(const i18n_catalog_t *cat, const alarm_event_t *ev, notify_words_t *out)
+{
+    const unsigned n = ev->source.id;
+    out->icon = NOTIFY_ICON_REFRESH;
+    out->accent = NOTIFY_ACCENT_BLUE;
+    switch (ev->arg) {
+    case ALARM_FW_KEYPAD_INSTALLING:
+        /* TR: Activity: a keypad restarts with the update its master sent it; {0} is the keypad's
+         * number. At most 63 bytes. */
+        (void)I18N_FORMAT(out->title, sizeof(out->title),
+                          i18n_text(cat, NULL, "Keypad {0} installing an update"), n);
+        /* TR: The line under "Keypad {0} installing an update". At most 95 bytes. */
+        put(out->body, sizeof(out->body), i18n_text(cat, NULL, "It restarts with the new version"));
+        break;
+    case ALARM_FW_KEYPAD_UPDATED:
+        /* TR: Activity: a keypad's new version passed its self-test; {0} is the keypad's number.
+         * At most 63 bytes. */
+        (void)I18N_FORMAT(out->title, sizeof(out->title),
+                          i18n_text(cat, NULL, "Keypad {0} updated"), n);
+        put(out->body, sizeof(out->body),
+            i18n_text(cat, NULL, "The new version passed its self-test"));
+        break;
+    case ALARM_FW_KEYPAD_ROLLED_BACK:
+        out->accent = NOTIFY_ACCENT_AMBER;
+        /* TR: Activity: a keypad's new version failed and it went back to the one it ran; {0} is
+         * the keypad's number. At most 63 bytes. */
+        (void)I18N_FORMAT(out->title, sizeof(out->title),
+                          i18n_text(cat, NULL, "Keypad {0} update rolled back"), n);
+        put(out->body, sizeof(out->body),
+            i18n_text(cat, NULL, "The new version failed; the previous one runs"));
+        break;
+    default: { /* ALARM_FW_KEYPAD_FAILED */
+        out->accent = NOTIFY_ACCENT_AMBER;
+        /* TR: Activity: a keypad's update ended with nothing installed; the line under it says
+         * why. {0} is the keypad's number. At most 63 bytes. */
+        (void)I18N_FORMAT(out->title, sizeof(out->title),
+                          i18n_text(cat, NULL, "Keypad {0} update failed"), n);
+        const char *why = keypad_fw_why(cat, ev->arg2);
+        if (why != NULL) { /* else no line, as notify_words left it */
+            put(out->body, sizeof(out->body), why);
+        }
+        break;
+    }
+    }
+}
+
 /* An automation as the one who did it (docs/features/41 D30, AUT-009), never the person who
  * saved it: "By automation · At 10:00 AM on weekdays" (with_clause and the hook knows it), "By
  * automation · changed since" (edited after the event), "By a deleted automation", or "By
@@ -769,6 +876,12 @@ bool notify_words(const i18n_catalog_t *cat, const alarm_config_t *cfg, const al
             I18N_NOOP("The panel keeps the version it runs"),
             I18N_NOOP("The new version failed its self-test; the previous one returns"),
             I18N_NOOP("It installs once everything is quiet")};
+        if (ev->arg >= ALARM_FW_KEYPAD_INSTALLING && ev->arg <= ALARM_FW_KEYPAD_FAILED) {
+            keypad_fw_words(cat, ev, out);
+            break;
+        }
+        /* this panel's own; a stage this firmware doesn't know (a newer writer's record) reads
+         * as an update */
         const unsigned stage = ev->arg <= ALARM_FW_RESTART_PUT_OFF ? ev->arg : ALARM_FW_UPDATED;
         out->icon = NOTIFY_ICON_REFRESH;
         out->accent = (stage == ALARM_FW_ROLLED_BACK || stage == ALARM_FW_CP_FAILED ||

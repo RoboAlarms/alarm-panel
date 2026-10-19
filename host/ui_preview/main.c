@@ -22,6 +22,7 @@
 #include "i18n/i18n.h"
 #include "host_panel.h"
 #include "voice_walk.h"
+#include "host_link_demo.h"
 #include "host_zigbee_demo.h"
 #include "shot_png.h"
 #include "lvgl.h"
@@ -3798,7 +3799,12 @@ static lv_obj_t *spilled_from(lv_obj_t *label, const lv_area_t *text)
             (row == label || outside(&row_box, &box, false))) {
             return NULL;
         }
-        if (across && scrolls && dir == LV_DIR_HOR && row != label &&
+        /* Smart Home's area tabs scroll across on purpose: a long note takes its room from them,
+         * the open tab kept in view (UI-020, BL-171), so a tab past their edge is scrolled, not
+         * cut. Their box is a scrollable row that LVGL lets scroll either way (BL-216). */
+        const char *box_name = lv_obj_get_name(a);
+        const bool tabs = box_name != NULL && strcmp(box_name, "device_areas") == 0;
+        if (across && scrolls && (dir == LV_DIR_HOR || tabs) && row != label &&
             outside(&row_box, &box, true)) {
             return NULL;
         }
@@ -5963,6 +5969,31 @@ static void walk_smart_home(void)
         run(1200);
         expect(find_label(by_name("device_grid"), "Ran at 8:30 PM") != NULL,
                "HCTL-006 (BL-179): Good Night's time didn't come back");
+    }
+    /* HCTL-006, LINK-046 (BL-216, proposal P1's bl-216-kp-devices-lost): no device can be reached
+     * (Home Assistant's link dropped; on a link keypad, its alarm panel's device data stopped):
+     * every tile offline since then, and the note says so whole on its one line beside Favorites'
+     * four tabs, its room taken from the tabs as the other notes take it (UI-020) */
+    {
+        lv_obj_t *tabs = by_name("device_areas");
+        const int32_t widest = lv_obj_get_style_max_width(tabs, LV_PART_MAIN);
+        host_panel_devices_unreachable(true, host_panel_device("switch.pool_pump")->since_ms);
+        run(1200);
+        printf("  note, nothing reachable: %s (tabs at most %d px, %d px with every device)\n",
+               lv_subject_get_string(&subject_devices_note),
+               (int)lv_obj_get_style_max_width(tabs, LV_PART_MAIN), (int)widest);
+        expect(note_shows("Your devices can't be reached right now") && note_drawn_whole(),
+               "UI-020 (BL-216): \"Your devices can't be reached right now\" isn't whole");
+        expect(find_label(device_tile_of("Front Door"), "Offline since 9:12 PM") != NULL &&
+                   find_label(device_tile_of("Hallway"), "Offline since 9:12 PM") != NULL,
+               "HCTL-006 (BL-216): with nothing reachable, a tile isn't offline since 9:12 PM");
+        /* no shot here: the link keypad's bl-216-kp-devices-lost is this page in this state */
+        host_panel_devices_unreachable(false, 0);
+        run(1200);
+        expect(strcmp(lv_subject_get_string(&subject_devices_note),
+                      "Back Door unlocked · 2 lights on") == 0 &&
+                   lv_obj_get_style_max_width(tabs, LV_PART_MAIN) == widest,
+               "UI-020 (BL-216): the note or the tabs didn't come back once the devices did");
     }
 
     /* HCTL-004: a tap switches a light; B030: an off light's tap turns it on (the simulator, as
@@ -10218,6 +10249,1076 @@ static void update_progress_shots(void)
     fw_open_page();
 }
 
+/* ---- BL-048: the panel link (docs/features/11; host_link_demo.h) ------------------------------
+ * The setup on a panel's first start with the role and a keypad's pairing, a keypad's Home,
+ * Emergency, Settings and About, and the alarm panel's Keypads and devices with adding, a keypad's
+ * page and removing it. Shots are named as the proposal's screens (BL-048-panel-link.js). */
+#if ALARM_LV_BUDGET_KB == 0
+static void link_state(host_link_demo_t what)
+{
+    host_link_demo_state(what);
+    run(1100); /* the screen reads the link once a second (UI-027) */
+}
+
+static void link_has(const char *text, const char *what)
+{
+    expect(find_label(lv_screen_active(), text) != NULL ||
+               find_label_with(lv_screen_active(), text) != NULL,
+           what);
+}
+
+static uint8_t link_last_kind(void)
+{
+    ui_link_req_t r;
+    host_link_demo_last_request(&r);
+    return r.kind;
+}
+
+static bool link_tile_dimmed(void)
+{
+    lv_obj_t *tile = lv_obj_get_child(by_name("panel_arm"), 0);
+    return tile != NULL && lv_obj_has_state(tile, LV_STATE_DISABLED);
+}
+
+/* Press the hold button that shows this text and keep the finger there for ms (the caller lets
+ * go: s_pressed = false). */
+static void link_hold(const char *text, uint32_t ms)
+{
+    lv_obj_t *label = find_label(lv_screen_active(), text);
+    expect(label != NULL, "BL-048: no hold button to press");
+    if (label == NULL) {
+        return;
+    }
+    scroll_into_view(lv_obj_get_parent(label));
+    run(50);
+    lv_area_t a;
+    lv_obj_get_coords(lv_obj_get_parent(label), &a);
+    s_px = (a.x1 + a.x2) / 2;
+    s_py = (a.y1 + a.y2) / 2;
+    s_pressed = true;
+    run(ms);
+}
+
+static void walk_link_setup(const ui_options_t *start)
+{
+    printf("The panel link: the setup's role and a keypad's pairing (BL-048)\n");
+    host_panel_init(1789857660000LL); /* 10:41 PM */
+    ui_app_apply_options(start);
+    run(500);
+    wake();
+    tap_name("nav_home");
+    run(300);
+    link_state(HOST_LINK_FRESH);
+    host_panel_forget_wifi();
+    ui_app_first_setup();
+    run(300);
+    past_the_language();
+    expect(find_label(by_name("wiz_body"), "Choose its role") != NULL,
+           "BL-048: Welcome on a first start doesn't list the role");
+    expect(lv_subject_get_int(&subject_wiz_steps) == 6,
+           "BL-048: the alarm panel's setup with the role doesn't count six steps");
+    expect(find_visible(lv_screen_active(), "wiz_exit") == NULL,
+           "BL-048: a first start offers Leave setup");
+    shot("bl-048-setup-welcome");
+    tap_name("wiz_next");
+    run(300);
+    expect_step(1, "BL-048: the role is the setup's first counted step");
+    link_has("The alarm panel", "BL-048: the role step has no alarm panel row");
+    shot("bl-048-setup-role");
+    tap_text("A keypad");
+    run(300);
+    expect(lv_subject_get_int(&subject_wiz_steps) == 4,
+           "BL-048: a keypad's setup doesn't count four steps");
+    expect_step(1, "BL-048: choosing a keypad moved the setup on");
+    shot("bl-048-setup-role-keypad");
+    tap_name("wiz_next");
+    run(300);
+    expect_step(2, "LINK-053: nearby enrollment is the second step");
+    link_has("Find your alarm panel", "LINK-053: missing nearby discovery");
+    link_has("Select Wi-Fi", "LINK-053: missing manual fallback before discovery");
+    shot("bl-048-radio-start");
+    tap_name("wiz_next");
+    run(300);
+    expect_step(3, "BL-048: the pairing isn't a keypad's third step");
+    expect(link_last_kind() == UI_LINK_REQ_KP_PAIR_START,
+           "BL-048: the pairing step didn't start looking");
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 0, "BL-048: Next is lit while it looks");
+    link_has("Looking for the alarm panel", "BL-048: the pairing step doesn't say it looks");
+    shot("bl-048-setup-pair-looking");
+    run(31000);
+    link_has("Still looking", "BL-048: 30 s without an alarm panel doesn't say what to check");
+    link_has("Select Wi-Fi", "LINK-053: missing fallback after discovery timeout");
+    shot("bl-048-setup-pair-not-found");
+    host_link_demo_master_found();
+    run(1100);
+    link_has("Found Harbor House", "BL-048: the alarm panel found isn't named");
+    link_has("588 460", "BL-048: the code isn't shown in two groups of three");
+    shot("bl-048-setup-pair-code");
+    tap_text("No, cancel");
+    run(300);
+    link_has("Not paired: the codes didn't match", "BL-048: No doesn't end the pairing");
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 1, "BL-048: no Try again after a mismatch");
+    shot("bl-048-setup-pair-mismatch");
+    tap_name("wiz_next"); /* Try again */
+    run(300);
+    expect(link_last_kind() == UI_LINK_REQ_KP_PAIR_RETRY,
+           "BL-048: Try again didn't ask to try again");
+    link_has("Looking for the alarm panel", "BL-048: Try again doesn't look again");
+    host_link_demo_master_found();
+    run(1100);
+    host_link_demo_pair_fail(UI_LINK_FAIL_REFUSED);
+    run(1100);
+    link_has("Not paired: rejected at the alarm panel", "BL-048: a rejection isn't said");
+    shot("bl-048-setup-pair-refused");
+    tap_name("wiz_next");
+    run(300);
+    host_link_demo_master_found();
+    run(1100);
+    host_link_demo_pair_fail(UI_LINK_FAIL_TIMEOUT);
+    run(1100);
+    link_has("Not paired: no answer in time", "BL-048: a timeout isn't said");
+    shot("bl-048-setup-pair-timeout");
+    tap_name("wiz_next");
+    run(300);
+    host_link_demo_master_found();
+    run(1100);
+    tap_text("Yes, pair");
+    run(300);
+    expect(link_last_kind() == UI_LINK_REQ_KP_PAIR_CONFIRM, "BL-048: Yes, pair wasn't sent");
+    link_has("The codes match", "BL-048: Yes doesn't wait for the installer");
+    shot("bl-048-setup-pair-waiting");
+    host_link_demo_master_allows();
+    run(1100);
+    expect_step(4, "BL-048: a paired keypad isn't on its last step");
+    link_has("Keypad paired", "LINK-053: pairing must be retained during Wi-Fi setup");
+    host_link_demo_wifi_setup(1, true);
+    run(1100);
+    link_has("Setting up Wi-Fi", "LINK-053: missing automatic provisioning progress");
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 0, "LINK-053: premature completion");
+    shot("bl-048-radio-sharing");
+    host_link_demo_wifi_setup(4, false);
+    run(1100);
+    link_has("Reconnecting to the alarm panel", "LINK-053: lost link hidden");
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 0, "LINK-053: offline completion allowed");
+    shot("bl-048-radio-lost");
+    host_link_demo_wifi_setup(4, true);
+    run(1100);
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 1, "LINK-053: radio-only completion disabled");
+    shot("bl-048-radio-done-radio");
+    tap_text("Select Wi-Fi");
+    run(2000);
+    expect(link_last_kind() == UI_LINK_REQ_KP_WIFI, "LINK-053: fallback erased enrollment");
+    expect_step(2, "LINK-053: manual network selection missing");
+    shot("bl-048-setup-keypad-wifi");
+    tap_text("Harbor House");
+    sheet_text("correct horse");
+    tap_name("sheet_done");
+    run(3500);
+    tap_name("wiz_next");
+    run(1100);
+    expect_step(4, "LINK-053: manual Wi-Fi restarted pairing");
+    link_has("Wi-Fi connected", "LINK-053: Wi-Fi success not shown");
+    expect(find_visible(lv_screen_active(), "wiz_back") == NULL,
+           "BL-048: a paired keypad's last step has Back");
+    shot("bl-048-setup-pair-done");
+    tap_name("wiz_next"); /* Done: the role is stored, the panel is a keypad */
+    run(300);
+    expect(link_last_kind() == UI_LINK_REQ_KP_DONE, "BL-048: Done didn't store the role");
+    expect(find_visible(lv_screen_active(), "wiz_next") == NULL,
+           "BL-048: Done didn't leave the setup");
+    run(1100);
+    link_has("Connecting", "BL-048: a new keypad's Home doesn't say it connects");
+    expect(link_tile_dimmed(),
+           "BL-048: the arming tiles open while the keypad connects (LINK-008)");
+    shot("bl-048-kp-home-connecting");
+
+    /* LINK-053: stored pairing may publish after the first UI frame on reboot.
+     * Resume directly into Wi-Fi setup, then offer manual selection for an older
+     * master/unavailable credentials without throwing away the stored pairing. */
+    host_panel_forget_wifi();
+    host_link_demo_resume_pairing(false);
+    run(1100);
+    ui_app_first_setup();
+    run(300);
+    link_has("Find your alarm panel", "LINK-053: missing pending-publication state");
+    host_link_demo_resume_pairing(true);
+    run(2200);
+    expect_step(4, "LINK-053: persisted pairing did not resume after publication");
+    expect(link_last_kind() == UI_LINK_REQ_KP_WIFI, "LINK-053: resume did not request Wi-Fi");
+    link_has("Keypad paired", "LINK-053: resume lost enrollment");
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 0, "LINK-053: resume allowed offline Done");
+    shot("bl-048-radio-resume");
+    /* BL-048: removed at the alarm panel (or its record erased) before Done - the setup goes
+     * back near the alarm panel by itself, and a new pairing goes on to its last step again */
+    host_link_demo_unpaired();
+    run(1100);
+    link_has("Find your alarm panel", "BL-048: a removed keypad's setup stays on its last step");
+    host_link_demo_resume_pairing(true);
+    run(2200);
+    expect_step(4, "BL-048: pairing again didn't reach the last step");
+    host_link_demo_wifi_setup(4, true);
+    run(1100);
+    link_has("Select Wi-Fi", "LINK-053: older-master fallback missing");
+    tap_text("Select Wi-Fi");
+    run(2200); /* wait for the simulated network scan */
+    expect_step(2, "LINK-053: resumed manual selection missing");
+    expect(link_last_kind() == UI_LINK_REQ_KP_WIFI, "LINK-053: fallback changed pairing");
+    tap_text("Harbor House");
+    sheet_text("correct horse");
+    tap_name("sheet_done");
+    run(3500);
+    tap_name("wiz_next");
+    run(1100);
+    expect_step(4, "LINK-053: resume manual Wi-Fi re-enrolled");
+    link_has("Wi-Fi connected", "LINK-053: resume did not complete Wi-Fi");
+    tap_name("wiz_next");
+    run(300);
+}
+
+#if CONFIG_ALARM_HOME_CONTROL
+/* BL-216 (docs/features/11 "Smart Home and Home Assistant on keypads"; proposal P1, approved
+ * 2026-10-16): a keypad's Smart Home is its alarm panel's page unchanged - the same tiles, note,
+ * pad and words, from Harbor House's devices through the link (host_link_demo.h) - each tap judged
+ * on the alarm panel, an unlock's code pad opened with no round trip. An unlock whose answer is
+ * lost reads "Not confirmed" once the keypad gives it up (HCTL-012, LINK-047). Without device data
+ * - the alarm panel answering but its device data stopped for 30 s, or the link lost - every tile
+ * reads offline since the last of it, the note says so, and a tap sends nothing (LINK-046). Shots
+ * named as the proposal's screens. */
+static void walk_link_keypad_devices(void)
+{
+    printf("A keypad: Smart Home, its alarm panel's devices (BL-216)\n");
+    const lv_color_t connected = lv_subject_get_color(&subject_tone_color); /* the frame's tone */
+    tap_name("nav_devices");
+    run(300);
+    expect(note_shows("Back Door unlocked · 2 lights on") &&
+               tile_says("Front Door", "Locked", false) && tile_says("Back Door", "Unlocked", true),
+           "BL-216: a keypad's Smart Home isn't its alarm panel's page");
+    shot("bl-216-kp-devices");
+    const unsigned acts = host_panel_device_acts();
+    tap_device("Front Door");
+    run(300);
+    expect(lv_subject_get_int(&subject_modal_pad) == 1 && host_panel_device_acts() == acts,
+           "BL-216, HCTL-005: a keypad's unlock didn't open the pad at once, with nothing sent");
+    shot("bl-216-kp-device-unlock");
+    /* the alarm panel's answers lost: pending, then given up after 3 s; Back Door locked meanwhile
+     * at the alarm panel */
+    host_link_demo_devices_unanswered(true);
+    type("123456k");
+    run(300);
+    expect(lv_subject_get_int(&subject_modal_pad) == 0 &&
+               tile_says("Front Door", "Unlocking…", false) &&
+               host_panel_device("lock.front_door")->state == UI_DEV_ST_LOCKED,
+           "BL-216: an unanswered unlock isn't shown under way, or reached the alarm panel");
+    host_panel_device_state("lock.back_door", UI_DEV_ST_LOCKED);
+    run(3100);
+    expect(tile_says("Front Door", "Not confirmed", true) &&
+               note_shows("Couldn't confirm Front Door unlocked") && note_drawn_whole(),
+           "HCTL-012, LINK-047 (BL-216): an unlock given up doesn't read \"Not confirmed\", or the "
+           "note doesn't say it whole");
+    shot("bl-216-kp-devices-unconfirmed");
+    /* a tap tries it again, with the pad; answered, the tile is the alarm panel's again */
+    host_link_demo_devices_unanswered(false);
+    tap_device("Front Door");
+    run(300);
+    type("123456k");
+    run(300);
+    expect(host_panel_device("lock.front_door")->state == UI_DEV_ST_UNLOCKED &&
+               tile_says("Front Door", "Unlocked", true),
+           "BL-216: the retried unlock didn't unlock Front Door at the alarm panel");
+    tap_device("Front Door"); /* locking asks no code */
+    run(300);
+    host_panel_device_state("lock.back_door", UI_DEV_ST_UNLOCKED);
+    run(1200);
+    expect(host_panel_device("lock.front_door")->state == UI_DEV_ST_LOCKED &&
+               note_shows("Back Door unlocked · 2 lights on"),
+           "BL-216: the keypad's Smart Home didn't follow the alarm panel back");
+    /* LINK-046: the alarm panel still answers, but no device data for 30 s */
+    host_link_demo_devices_stop(true);
+    run(29000);
+    expect(tile_says("Front Door", "Locked", false),
+           "LINK-046: device data read stale before 30 s");
+    run(2000);
+    expect(note_shows("Your devices can't be reached right now") &&
+               find_label_with(device_tile_of("Front Door"), "Offline since") != NULL &&
+               lv_color_eq(lv_subject_get_color(&subject_tone_color), connected),
+           "LINK-046 (BL-216): 30 s without device data doesn't read offline, or the frame isn't "
+           "the connected one");
+    tap_device("Kitchen Lights");
+    run(300);
+    expect(host_panel_device_acts() == acts + 2u,
+           "LINK-046 (BL-216): a tap without device data reached the alarm panel");
+    host_link_demo_devices_stop(false);
+    run(1200);
+    expect(note_shows("Back Door unlocked · 2 lights on"),
+           "LINK-046 (BL-216): the devices didn't come back with their data");
+    /* the link lost: every tile offline since the last word, the keypad's frame without system
+     * communication */
+    link_state(HOST_LINK_KEYPAD_LOST);
+    {
+        lv_obj_t *door = find_label_with(device_tile_of("Front Door"), "Offline since");
+        printf("  a keypad without its alarm panel: \"%s\", the note \"%s\"\n",
+               door != NULL ? lv_label_get_text(door) : "-",
+               lv_subject_get_string(&subject_devices_note));
+        expect(door != NULL && note_shows("Your devices can't be reached right now") &&
+                   note_drawn_whole() && find_visible(lv_screen_active(), "nav_devices") != NULL,
+               "LINK-046 (BL-216): a keypad without its alarm panel doesn't read its devices "
+               "offline whole, or hides Smart Home");
+    }
+    shot("bl-216-kp-devices-lost");
+    tap_device("Porch Light");
+    run(300);
+    expect(host_panel_device_acts() == acts + 2u && device_sheet_open() == NULL,
+           "LINK-046 (BL-216): a tap without the alarm panel did something");
+    tap_name("nav_home");
+    run(300);
+}
+#endif
+
+static void walk_link_keypad(void)
+{
+    printf("A keypad: Home, Emergency, Settings and About (BL-048)\n");
+    link_state(HOST_LINK_KEYPAD_ONLINE);
+    run(3000); /* the rail's Smart Home follows within a few seconds */
+    expect(!link_tile_dimmed(), "BL-048: the arming tiles stay dimmed once connected");
+    /* BL-216 (proposal P1, approved 2026-10-16): a keypad's rail shows Smart Home under the alarm
+     * panel's rule, a listed device that isn't from Z-Wave (here the house's, as its backend's
+     * dev_list gives them) */
+    expect(find_visible(lv_screen_active(), "nav_devices") != NULL,
+           "BL-216: a keypad whose alarm panel lists devices has no Smart Home on its rail");
+    expect(lv_subject_get_int(&subject_bar_banner) == 8 ||
+               lv_subject_get_int(&subject_bar_banner) == 0,
+           "BL-048: a keypad's factory-code reminder doesn't point to the alarm panel");
+    shot("bl-048-kp-home-ready");
+    {
+        /* The alarm panel moves this keypad to another partition: its options follow it,
+         * range-checked (docs/features/11 "Roles on a P4 panel", home_gen). */
+        const unsigned saves = host_panel_options_saves();
+        host_link_demo_home(9); /* no such partition: use safe home */
+        run(2100);
+        lv_obj_t *label = lv_obj_find_by_name(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), "title_label");
+        expect(strcmp(lv_label_get_text(label), "Home") == 0, "invalid assignment uses home");
+        host_link_demo_home(2);
+        run(2100);
+        expect(strcmp(lv_label_get_text(label), "Partition 2") == 0,
+               "BL-048: the keypad didn't follow its new home partition");
+        host_link_demo_home(1);
+        run(2100);
+        expect(strcmp(lv_label_get_text(label), "Home") == 0,
+               "BL-048: the keypad didn't come back to partition 1");
+        expect(host_panel_options_saves() == saves, "assignment does not rewrite audio preferences");
+    }
+#if CONFIG_ALARM_HOME_CONTROL
+    walk_link_keypad_devices();
+#endif
+    link_state(HOST_LINK_KEYPAD_LOST);
+    link_has("No system communication",
+             "BL-048: a keypad without the alarm panel doesn't say so (LINK-008)");
+    link_has("State unknown · Arming is off",
+             "BL-048: the lost keypad's state card doesn't say arming is off");
+    expect(find_visible(lv_screen_active(), "link_strip") != NULL,
+           "BL-048: no Check the alarm panel strip");
+    expect(link_tile_dimmed(), "BL-048: the arming tiles open without the alarm panel (LINK-008)");
+    expect(find_visible(lv_screen_active(), "nav_panic") != NULL,
+           "BL-048: Panic is gone without the alarm panel");
+    expect(lv_subject_get_int(&subject_bar_banner) != 8,
+           "BL-048: a lost keypad shows the codes' reminder as current");
+    tap(lv_obj_get_child(by_name("panel_arm"), 0));
+    run(300);
+    expect(lv_subject_get_int(&subject_panel) == 0, "BL-048: a dimmed arming tile opened the pad");
+    shot("bl-048-kp-home-lost");
+    tap_name("nav_panic");
+    run(300);
+    link_has("Hold a button for 2 seconds to set off the alarm on Harbor House",
+             "BL-048: Emergency on a keypad doesn't name the alarm panel");
+    link_has("No system communication · This keypad keeps trying for 1 minute",
+             "BL-048: Emergency without the alarm panel doesn't say it keeps trying (LINK-023)");
+    shot("bl-048-kp-emergency-lost");
+    tap_name("nav_zones");
+    run(300);
+    link_has("Unknown",
+             "BL-048: a keypad without the alarm panel shows its zones' last state (LINK-008)");
+    tap_name("nav_home");
+    run(300);
+    link_state(HOST_LINK_KEYPAD_ONLINE);
+    tap_name("bar_settings");
+    run(300);
+    expect(find_visible(lv_screen_active(), "set_users") == NULL &&
+               find_visible(lv_screen_active(), "set_integrations") == NULL &&
+               find_visible(lv_screen_active(), "set_walk") == NULL &&
+               find_visible(lv_screen_active(), "set_automations") == NULL,
+           "BL-048: a keypad's Settings list the alarm panel's sections");
+    /* LINK-028 (decided 2026-10-16): a keypad speaks with its own voice - its Voice volume and
+     * Announcements, as on the alarm panel; the zones' spoken names stay the alarm panel's */
+    expect(find_label(by_name("page_body"), "Voice volume") != NULL &&
+               find_label(by_name("page_body"), "Announcements") != NULL,
+           "BL-048: a keypad's Screen and sound has no Voice volume or Announcements (LINK-028)");
+    shot("bl-048-kp-settings");
+    tap_link("Announcements");
+    run(300);
+    expect(find_label(by_name("page_body"), "Status messages") != NULL &&
+               find_label(by_name("page_body"), "Zone chime") != NULL &&
+               find_label(by_name("page_body"), "Uses the Voice volume in Screen and sound. Alarms, "
+                                                "fire and CO always sound at full volume.") != NULL,
+           "BL-048: a keypad's Announcements page isn't the alarm panel's (LINK-028)");
+    lv_obj_scroll_to_y(by_name("page_body"), 0, LV_ANIM_OFF);
+    run(50);
+    shot("bl-048-kp-announcements");
+    tap_name("page_back");
+    run(300);
+    tap_name("set_time");
+    run(300);
+    link_has("From Harbor House", "BL-048: a keypad's clock doesn't say where it comes from");
+    tap_text("Enter a master or installer code");
+    run(200);
+    if (lv_subject_get_int(&subject_settings_pad) == 1) {
+        type("123456k");
+        run(300);
+    }
+    link_has("Set on Harbor House",
+             "BL-048: a keypad's time zone doesn't say it is the alarm panel's");
+    expect(find_label(by_name("page_body"), "Time server") == NULL,
+           "BL-048: a keypad offers a time server");
+    shot("bl-048-kp-time");
+    tap_name("set_about");
+    run(300);
+    link_has("Keypad 2 of Harbor House", "BL-048: About doesn't say what this is a keypad of");
+    link_has("Connected · shows and arms Home",
+             "BL-048: About doesn't say the keypad is connected");
+    expect(find_label(by_name("page_body"), "Installer") == NULL,
+           "BL-048: a keypad's About has Installer");
+    shot("bl-048-kp-about");
+    scroll_to_text("page_body", "Make it a stand-alone panel");
+    shot("bl-048-kp-about-end");
+    tap_text("Make it a stand-alone panel");
+    run(300);
+    expect(find_label(lv_screen_active(), "Hold to erase everything") == NULL,
+           "BL-048: a stand-alone panel opens without the installer code (LINK-025: only after 10 "
+           "min)");
+    tap_text("Enter the installer code");
+    run(200);
+    type("69420k");
+    run(300);
+    link_hold("Hold to erase everything", 1100);
+    shot("bl-048-kp-standalone");
+    s_pressed = false;
+    run(4000); /* "Keep holding for 2 seconds" goes */
+    tap_name("nav_home");
+    run(300);
+    link_state(HOST_LINK_KEYPAD_REMOVED);
+#if CONFIG_ALARM_HOME_CONTROL
+    run(4000); /* off its view the rail looks every 5 s */
+    expect(find_visible(lv_screen_active(), "nav_devices") == NULL,
+           "BL-216: a removed keypad keeps its alarm panel's Smart Home");
+#endif
+    link_has("Not paired", "BL-048: a removed keypad doesn't say so (LINK-014)");
+    link_has("Harbor House removed this keypad",
+             "BL-048: a removed keypad doesn't say who removed it");
+    expect(find_visible(lv_screen_active(), "nav_panic") == NULL,
+           "BL-048: a removed keypad offers Panic");
+    shot("bl-048-kp-removed");
+    tap_text("Pair again");
+    run(300);
+    expect_step(3, "BL-048: Pair again doesn't open the pairing step");
+    expect(link_last_kind() == UI_LINK_REQ_KP_PAIR_START, "BL-048: Pair again doesn't look");
+    tap_name("wiz_exit");
+    run(300);
+    expect(link_last_kind() == UI_LINK_REQ_KP_PAIR_STOP,
+           "BL-048: Leave setup doesn't stop looking");
+    expect(find_visible(lv_screen_active(), "wiz_next") == NULL,
+           "BL-048: Leave setup didn't leave");
+}
+
+/* What the review of the keypad role added (BL-048): the fire or CO tone a keypad keeps through a
+ * lost link and its Silence (decided 2026-10-15) - it wakes the screen from its saver and keeps it
+ * awake and lit as an alarm does, by night too (UI-009, UI-043) - a keypad that needs an update to
+ * read its alarm panel's settings, and the no-code pages while the last status said armed
+ * (LINK-025) with Troubles' Acknowledge still dimmed (UI-022). */
+static void walk_link_keypad_kept(const ui_options_t *start)
+{
+    printf("A keypad: its kept fire tone, an update it needs, maintenance while armed (BL-048)\n");
+    tap_name("nav_home");
+    run(300);
+    link_state(HOST_LINK_KEYPAD_LOST);
+    /* Night hours all day long (00:01 to 00:00), dimmed after a minute, dark after five. */
+    ui_options_t o = *start;
+    o.saver_after_ms = 60000u;
+    o.off_after_ms = 300000u;
+    o.night_off_after_ms = 300000u;
+    o.night_on = true;
+    o.night_start = 1u;
+    o.night_end = 0u;
+    ui_app_apply_options(&o);
+    run(1100);
+    expect_light(o.night_brightness, "BL-048: a calm keypad at night isn't at the night's brightness");
+    run(61000);
+    expect_saver(true, "UI-009: a keypad without system communication, untouched for a minute");
+    host_link_demo_local_alarm(true);
+    run(1100);
+    expect_saver(false, "BL-048: a fire tone kept on a keypad didn't wake the screen from its saver");
+    expect_light(o.brightness, "BL-048: a keypad's kept fire tone isn't lit as an alarm is at night");
+    run(o.off_after_ms + 60000u);
+    expect_saver(false, "BL-048: the screen saver came while a keypad's kept fire tone sounds");
+    expect_light(o.brightness, "BL-048: the screen dimmed while a keypad's kept fire tone sounds");
+    expect(lv_subject_get_int(&subject_panel) == 6 && /* Silence */
+               find_visible(lv_screen_active(), "panel_silence") != NULL,
+           "BL-048: a keypad keeping a fire tone without the alarm panel offers no Silence");
+    link_has("Stops the alarm sound on this keypad", "BL-048: Silence doesn't say what it stops");
+    expect(find_visible(lv_screen_active(), "link_strip") != NULL,
+           "BL-048: the kept fire tone hides Check the alarm panel");
+    expect(lv_subject_get_int(&subject_alarm_active) == 0,
+           "BL-048: a keypad without the alarm panel shows an alarm look (LINK-008)");
+    shot("bl-048-kp-home-lost-silence");
+    tap(lv_obj_get_child(by_name("panel_silence"), 0));
+    run(300);
+    expect(strcmp(lv_subject_get_string(&subject_toast), "Silenced on this keypad") == 0,
+           "BL-048: Silence on a keypad without the alarm panel doesn't say it stopped here");
+    host_link_demo_local_alarm(false); /* the service stops the tone and says so */
+    run(1100);
+    expect(lv_subject_get_int(&subject_panel) == 0 && link_tile_dimmed(),
+           "BL-048: after Silence the dimmed arming tiles don't come back");
+    expect_light(o.night_brightness, "BL-048: after Silence the keypad keeps an alarm's brightness");
+    ui_app_apply_options(start);
+    run(4000); /* the toast goes */
+
+    link_state(HOST_LINK_KEYPAD_CONNECTING);
+    host_link_demo_needs_update(true);
+    run(1100);
+#if CONFIG_ALARM_HOME_CONTROL
+    run(4000); /* off its view the rail looks every 5 s */
+    expect(find_visible(lv_screen_active(), "nav_devices") == NULL,
+           "BL-216: a keypad connecting has Smart Home before its list is in");
+#endif
+    link_has("Update this keypad: Settings > About",
+             "BL-048: a keypad that needs an update doesn't say so");
+    shot("bl-048-kp-home-update");
+    tap_name("bar_settings");
+    run(300);
+    tap_name("set_about");
+    run(300);
+    tap_link("Software update");
+    run(300);
+    expect(find_label(lv_screen_active(), "The system master or installer code updates the "
+                                          "software") == NULL,
+           "BL-048: a keypad that needs an update asks for a code it can't check");
+    tap_name("nav_home");
+    run(300);
+    host_link_demo_needs_update(false);
+
+    /* LINK-025 while the last status said armed: Settings opens for the no-code pages, and closes
+     * once the alarm panel answers armed. */
+    alarm_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = ALARM_CMD_ARM;
+    cmd.partition = 1;
+    cmd.level = ALARM_LEVEL_AWAY;
+    snprintf(cmd.code, sizeof(cmd.code), "%s", "123456");
+    expect(host_panel_remote_command(&cmd) == ALARM_OK, "BL-048: the house would not arm");
+    link_state(HOST_LINK_KEYPAD_LOST);
+    host_link_demo_maintenance(true);
+    run(1100);
+    expect(lv_subject_get_int(&subject_settings_locked) == 0 &&
+               lv_subject_get_int(&subject_locked) == 1,
+           "BL-048: the gear isn't lit, or Acknowledge and Chime don't stay dimmed (UI-022)");
+    tap_name("bar_settings");
+    run(300);
+    expect(lv_subject_get_int(&subject_view) == 5, /* Settings */
+           "BL-048: maintenance can't open Settings while the last status said armed (LINK-025)");
+    tap_name("set_wifi");
+    run(300);
+    expect(find_label(lv_screen_active(), "A master or installer code changes the network") == NULL,
+           "BL-048: maintenance's Wi-Fi asks for a code (LINK-025)");
+    link_state(HOST_LINK_KEYPAD_ONLINE);
+    run(300);
+    expect(lv_subject_get_int(&subject_view) != 5,
+           "BL-048: Settings stays open once the alarm panel answers armed (UI-022)");
+    cmd.type = ALARM_CMD_DISARM;
+    expect(host_panel_remote_command(&cmd) == ALARM_OK, "BL-048: the house would not disarm");
+    run(1100);
+    tap_name("nav_home");
+    run(300);
+}
+
+static void walk_link_master(const ui_options_t *start)
+{
+    printf("The alarm panel: Keypads and devices (BL-048)\n");
+    host_panel_init(1789857660000LL + 17LL * 60000LL); /* 10:58 PM */
+    ui_app_apply_options(start);
+    run(500);
+    wake();
+    tap_name("nav_home");
+    run(300);
+    link_state(HOST_LINK_MASTER);
+    tap_name("bar_settings");
+    run(300);
+    open_installer();
+    run(300);
+    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
+        tap_text("Enter the installer code");
+        type("69420k");
+        run(300);
+    }
+    tap_link("Keypads and devices");
+    run(300);
+    link_has("Another RoboAlarms panel on this Wi-Fi can be a keypad for this one.",
+             "BL-048: Keypads and devices has no keypads section");
+    shot("bl-048-devices-empty");
+    tap_text("Add a keypad");
+    run(300);
+    expect(link_last_kind() == UI_LINK_REQ_PAIR_OPEN, "BL-048: Add a keypad didn't open pairing");
+    run(13000);
+    expect(find_label_with(lv_screen_active(), "Waiting for a keypad · 1 min 4") != NULL,
+           "BL-048: Add a keypad doesn't count its 2 minutes down");
+    shot("bl-048-add-open");
+    host_link_demo_keypad_asks();
+    run(1100);
+    link_has("Does the keypad show this code?", "BL-048: the code isn't asked on the alarm panel");
+    link_has("588 460", "BL-048: the alarm panel's code isn't the keypad's");
+    shot("bl-048-add-code");
+    tap_text("Yes, allow");
+    run(300);
+    link_has("Allowed here", "BL-048: Yes, allow doesn't wait for the keypad");
+    shot("bl-048-add-allowed");
+    host_link_demo_keypad_confirms();
+    run(1100);
+    expect(host_link_demo_keypads() == 1u, "BL-048: the keypad wasn't added");
+    link_has("Added as Keypad 2", "BL-048: adding a keypad doesn't say its number");
+    run(1100);
+    link_has("Keypad 2", "BL-048: the new keypad isn't listed as Keypad 2");
+    shot("bl-048-add-done");
+    run(4000); /* the toast goes */
+    tap_text("Add a keypad");
+    run(300);
+    run(121000);
+    link_has("No keypad asked to pair", "BL-048: the 2 minutes running out isn't said");
+    shot("bl-048-add-nothing");
+    tap_name("page_back");
+    run(300);
+    expect(link_last_kind() == UI_LINK_REQ_PAIR_STOP,
+           "BL-048: leaving Add a keypad doesn't close pairing");
+    host_link_demo_numbers_held(0x00FDu); /* every number but 2, the new keypad's */
+    tap_text("Add a keypad");
+    run(300);
+    link_has("Not started: keypad numbers 1 to 8 are all in use.",
+             "BL-048: no number free isn't said");
+    shot("bl-048-add-full");
+    tap_name("page_back");
+    run(300);
+    link_state(HOST_LINK_MASTER_TWO);
+    link_has("Hall keypad", "BL-048: the keypads aren't listed");
+    link_has("Not responding", "BL-048: a silent keypad isn't said (LINK-007)");
+    expect(find_label(by_name("page_body"), "Device 2") == NULL &&
+               find_label(by_name("page_body"), "Device 3") == NULL,
+           "BL-048: the numbers keypads hold are in the table too (LINK-001)");
+    shot("bl-048-devices");
+    tap_text("Hall keypad");
+    run(300);
+    link_has("Keypad 2 · saved when you go back",
+             "BL-048: a keypad's page doesn't give its number");
+    shot("bl-048-keypad-page");
+    tap_text("Supervision");
+    run(300);
+    expect(find_label(by_name("pick_list"), "1 min") != NULL &&
+               find_label(by_name("pick_list"), "5 min") != NULL &&
+               find_label(by_name("pick_list"), "15 min") != NULL &&
+               find_label(by_name("pick_list"), "Not supervised") != NULL,
+           "BL-048: a keypad's supervision isn't 1, 5 or 15 min or not supervised");
+    tap_text("15 min");
+    run(300);
+    {
+        ui_link_keypad_t k;
+        expect(host_link_demo_keypad(2, &k) && k.supervision_s == 900u,
+               "BL-048: a keypad's supervision wasn't saved");
+    }
+    tap_name("page_back");
+    run(300);
+    tap_text("Bedroom keypad");
+    run(300);
+    link_hold("Remove this keypad", 1100);
+    shot("bl-048-keypad-page-silent");
+    run(1100); /* held for 2 seconds: removed, no dialog */
+    s_pressed = false;
+    run(300);
+    expect(host_link_demo_keypads() == 1u, "BL-048: the hold didn't remove the keypad (LINK-014)");
+    link_has("Bedroom keypad removed", "BL-048: removing a keypad isn't said");
+    run(4000);
+    tap_name("page_back");
+    run(300);
+    scroll_to_text("page_body", "Leave installer mode");
+    tap_text("Leave installer mode");
+    run(300);
+    tap_name("nav_home");
+    run(300);
+}
+
+/* Keypad updates (docs/features/11 "Updates through the link"; proposal P2, approved 2026-10-17):
+ * the alarm panel's Software update lists its keypads, which update with it, each with one status
+ * line and nothing to tap; Install's question says they update with it; Keypads and devices says
+ * "Updating" for a keypad restarting with its update; Activity has their stages. On a keypad that
+ * follows its alarm panel: Software update says where its updates come from and how far one is
+ * (no Install, Check again or Stop), About's row names the alarm panel, and Home has the steady
+ * banner. Each scene starts at the drawing's time; shots named as the proposal's screens. */
+#define KU_650AM 1789887000000LL /* Sep 20, 6:50 AM */
+
+static ui_fw_status_t ku_fw(uint8_t stage)
+{
+    ui_fw_status_t st = fw_run(stage);
+    snprintf(st.running, sizeof(st.running), "0.6.1");
+    snprintf(st.latest, sizeof(st.latest), "0.6.2");
+    snprintf(st.target, sizeof(st.target), "0.6.2");
+    snprintf(st.previous, sizeof(st.previous), "0.6.1");
+    if (stage == UI_FW_STAGE_NONE) {
+        st.phase = UI_FW_IDLE;
+    }
+    return st;
+}
+
+static void ku_scene(const ui_options_t *start, int64_t at, host_link_demo_t link)
+{
+    host_panel_init(at);
+    ui_app_apply_options(start);
+    run(500);
+    wake();
+    tap_name("nav_home");
+    run(300);
+    link_state(link);
+}
+
+/* The clock moves on, the panel left alone (the screen saver may come: woken after). */
+static void ku_minutes(unsigned minutes)
+{
+    for (unsigned m = 0; m < minutes; m++) {
+        s_ms += 60000u;
+        host_panel_advance(60000u);
+    }
+    run(1500);
+    wake();
+    run(300);
+}
+
+static bool ku_page_has(const char *text)
+{
+    return find_label(by_name("page_body"), text) != NULL;
+}
+
+static void walk_keypad_updates(const ui_options_t *start)
+{
+    printf("Keypad updates: the alarm panel's keypads, a keypad's own pages (BL-048, P2)\n");
+    /* the alarm panel, 0.6.2 offered, its three keypads up to date on 0.6.1 */
+    ku_scene(start, KU_650AM, HOST_LINK_MASTER_THREE);
+    ui_fw_status_t st = ku_fw(UI_FW_STAGE_NONE);
+    host_panel_fw_preset(&st);
+    fw_open_page();
+    run(1500);
+    expect(ku_page_has("Keypads update with this panel. They restart together once everything is "
+                       "disarmed.") &&
+               ku_page_has("Hall keypad") && ku_page_has("Keypad 2 · version 0.6.1") &&
+               ku_page_has("Up to date"),
+           "BL-048 P2: the alarm panel's Software update doesn't list its keypads");
+    tap_text("Install version 0.6.2");
+    run(300);
+    expect(find_label_with(lv_screen_active(), "then its keypads update with it") != NULL,
+           "BL-048 P2: Install's question doesn't say the keypads update with it");
+    shot("bl-048-fw-master-install-question");
+    tap_name("dialog_cancel");
+    run(300);
+
+    /* downloading, the keypads with it: one downloads, one receives, one is ready */
+    ku_scene(start, KU_650AM + 2LL * 60000LL, HOST_LINK_MASTER_THREE);
+    st = ku_fw(UI_FW_STAGE_DOWNLOADING);
+    st.percent = 42;
+    st.size = 2831155u;
+    st.bytes = 1153434u;
+    host_panel_fw_preset(&st);
+    host_link_demo_keypad_fw(2, NULL, UI_LINK_FW_DOWNLOADING, 45);
+    host_link_demo_keypad_fw(3, NULL, UI_LINK_FW_RECEIVING, 30);
+    host_link_demo_keypad_fw(4, NULL, UI_LINK_FW_READY, 0);
+    fw_open_page();
+    run(1500);
+    expect(ku_page_has("Downloading · 45 %") && ku_page_has("Receiving from this panel · 30 %") &&
+               ku_page_has("Ready · restarts with this panel") &&
+               ku_page_has("Stop the update"),
+           "BL-048 P2: the keypads' rows don't follow the update, or Stop is gone");
+    shot("bl-048-fw-master-keypads");
+    /* UI-020: a percent follows once a second, in place */
+    host_link_demo_keypad_fw(2, NULL, UI_LINK_FW_DOWNLOADING, 46);
+    run(1100);
+    expect(ku_page_has("Downloading · 46 %"), "BL-048 P2: a keypad's percent doesn't follow");
+    /* every other status line */
+    host_link_demo_keypad_fw(2, NULL, UI_LINK_FW_RESTARTING, 0);
+    host_link_demo_keypad_fw(3, NULL, UI_LINK_FW_NEWER, 0);
+    host_link_demo_keypad_fw(4, NULL, UI_LINK_FW_NOT_UPDATED, 0);
+    run(1100);
+    expect(ku_page_has("Restarting") && ku_page_has("Newer than this panel") &&
+               ku_page_has("Not updated yet · tries again by itself"),
+           "BL-048 P2: a keypad's status line lacks its words");
+
+    /* after the update: two up to date, one not yet */
+    ku_scene(start, KU_650AM + 41LL * 60000LL, HOST_LINK_MASTER_THREE);
+    st = ku_fw(UI_FW_STAGE_NONE);
+    st.available = false;
+    snprintf(st.running, sizeof(st.running), "0.6.2");
+    st.last.result = UI_FW_LAST_UPDATED;
+    snprintf(st.last.version, sizeof(st.last.version), "0.6.2");
+    st.last.at = (uint32_t)((KU_650AM + 24LL * 60000LL) / 1000);
+    st.checked = (uint32_t)((KU_650AM + 27LL * 60000LL) / 1000);
+    host_panel_fw_preset(&st);
+    host_link_demo_keypad_fw(2, "0.6.2", UI_LINK_FW_UP_TO_DATE, 0);
+    host_link_demo_keypad_fw(3, "0.6.2", UI_LINK_FW_UP_TO_DATE, 0);
+    host_link_demo_keypad_fw(4, "0.6.1", UI_LINK_FW_NOT_UPDATED, 0);
+    fw_open_page();
+    run(1500);
+    expect(ku_page_has("Updated to version 0.6.2") && ku_page_has("Keypad 4 · version 0.6.1") &&
+               ku_page_has("Not updated yet · tries again by itself"),
+           "BL-048 P2: after the update the keypads' rows don't say which have it");
+    shot("bl-048-fw-master-keypads-done");
+
+    /* Installer > Keypads and devices: a keypad restarting with its update */
+    ku_scene(start, 1789857660000LL + 17LL * 60000LL, HOST_LINK_MASTER_TWO); /* 10:58 PM */
+    host_link_demo_keypad_fw(3, NULL, UI_LINK_FW_RESTARTING, 0);
+    st = ku_fw(UI_FW_STAGE_NONE);
+    st.available = false;
+    host_panel_fw_preset(&st);
+    tap_name("bar_settings");
+    run(300);
+    open_installer();
+    run(300);
+    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
+        tap_text("Enter the installer code");
+        type("69420k");
+        run(300);
+    }
+    tap_link("Keypads and devices");
+    run(1100);
+    expect(ku_page_has("Updating") && !ku_page_has("Not responding"),
+           "BL-048 P2: a keypad restarting with its update isn't \"Updating\"");
+    shot("bl-048-fw-installer-keypads");
+    tap_name("page_back");
+    run(300);
+    scroll_to_text("page_body", "Leave installer mode");
+    tap_text("Leave installer mode");
+    run(300);
+    tap_name("nav_home");
+    run(300);
+
+    /* Activity: the keypads' stages in the alarm panel's log */
+    ku_scene(start, KU_650AM + 22LL * 60000LL, HOST_LINK_MASTER_THREE); /* 7:12 AM */
+    host_panel_fw_event(ALARM_FW_INSTALLING, 0, 0);
+    ku_minutes(2);
+    host_panel_fw_event(ALARM_FW_UPDATED, 0, 0);
+    host_panel_fw_event(ALARM_FW_KEYPAD_UPDATED, 3, 0);
+    host_panel_fw_event(ALARM_FW_KEYPAD_ROLLED_BACK, 2, 0);
+    ku_minutes(11);
+    host_panel_fw_event(ALARM_FW_KEYPAD_FAILED, 4, 20); /* BROKE_OFF */
+    ku_minutes(6);
+    tap_name("nav_activity");
+    run(500);
+    tap_text("System"); /* the filter the drawing shows */
+    run(500);
+    expect(lv_subject_get_int(&subject_event_filter) == 5 &&
+               find_label(by_name("event_list"), "Keypad 4 update failed") != NULL &&
+               find_label(by_name("event_list"), "The download broke off") != NULL &&
+               find_label(by_name("event_list"), "Keypad 2 update rolled back") != NULL &&
+               find_label(by_name("event_list"), "Keypad 3 updated") != NULL,
+           "BL-048 P2: Activity lacks the keypads' update stages");
+    shot("bl-048-fw-master-activity");
+    tap_text("All");
+    run(300);
+    tap_name("nav_home");
+    run(300);
+
+    /* a keypad (Hall keypad, 2) following Harbor House's updates */
+    ku_scene(start, KU_650AM + 2LL * 60000LL, HOST_LINK_KEYPAD_ONLINE);
+    host_link_demo_fw_follows(true, false);
+    st = ku_fw(UI_FW_STAGE_NONE);
+    st.available = false;
+    snprintf(st.latest, sizeof(st.latest), "0.6.1");
+    host_panel_fw_preset(&st);
+    run(3000); /* the rail's Smart Home follows within a few seconds */
+    tap_name("bar_settings");
+    run(300);
+    tap_name("set_about");
+    run(1100);
+    expect(ku_page_has("From Harbor House"),
+           "BL-048 P2: a keypad's About doesn't say its updates come from Harbor House");
+    shot("bl-048-fw-kp-about");
+    st = ku_fw(UI_FW_STAGE_DOWNLOADING);
+    st.available = false;
+    st.percent = 45;
+    st.size = 2831155u;
+    st.bytes = 1274020u;
+    host_panel_fw_preset(&st);
+    run(1500);
+    expect(ku_page_has("Updating"),
+           "BL-048 P2: a keypad's About doesn't say Updating while it runs");
+    tap_text("Software update");
+    run(300);
+    if (lv_subject_get_int(&subject_settings_pad) == 1) {
+        type("123456k");
+        run(1200);
+    }
+    expect(ku_page_has("Updates come from Harbor House") && ku_page_has("Version 0.6.1") &&
+               ku_page_has("Updating to version 0.6.2") && ku_page_has("Downloading · 45 %"),
+           "BL-048 P2: a keypad's Software update doesn't say where updates come from, or how far");
+    expect(!ku_page_has("Install version 0.6.2") && !ku_page_has("Check again") &&
+               !ku_page_has("Stop the update") && !ku_page_has("Steps"),
+           "BL-048 P2: a keypad's Software update offers Install, Check again, Stop or steps");
+    {
+        lv_obj_t *body = by_name("page_body");
+        lv_obj_t *row = find_label(body, "Updating to version 0.6.2");
+        while (row != NULL && lv_obj_get_parent(row) != body) {
+            row = lv_obj_get_parent(row);
+        }
+        lv_obj_t *level = row != NULL ? lv_obj_find_by_name(row, "level") : NULL;
+        expect(level != NULL && !lv_obj_has_flag(level, LV_OBJ_FLAG_HIDDEN) &&
+                   lv_bar_get_value(level) == 45,
+               "BL-048 P2: a keypad's run row has no stepped bar at 45");
+    }
+    shot("bl-048-fw-kp-update");
+    host_link_demo_fw_follows(true, true);
+    st.percent = 46;
+    host_panel_fw_preset(&st);
+    run(2100); /* the link is read once a second, and the page once a second after it */
+    expect(ku_page_has("Receiving from Harbor House · 46 %"),
+           "BL-048 P2: a keypad receiving from Harbor House doesn't say so");
+    st = ku_fw(UI_FW_STAGE_WAITING);
+    st.available = false;
+    st.size = 2831155u;
+    host_panel_fw_preset(&st);
+    run(1100);
+    expect(ku_page_has("Ready · restarts with Harbor House once everything is disarmed"),
+           "BL-048 P2: a keypad with its update doesn't say it restarts with Harbor House");
+    /* Home: the steady banner, the same words from the first byte to the restart */
+    host_link_demo_fw_follows(true, false);
+    st = ku_fw(UI_FW_STAGE_DOWNLOADING);
+    st.available = false;
+    st.percent = 45;
+    st.size = 2831155u;
+    st.bytes = 1274020u;
+    host_panel_fw_preset(&st);
+    tap_name("nav_home");
+    run(1500);
+    expect(lv_subject_get_int(&subject_bar_banner) == 6 &&
+               strcmp(lv_subject_get_string(&subject_update_banner),
+                      "Updating · restarts with Harbor House") == 0,
+           "BL-048 P2: a keypad's Home has no banner naming Harbor House");
+    shot("bl-048-fw-kp-home");
+    st = ku_fw(UI_FW_STAGE_WAITING);
+    st.available = false;
+    host_panel_fw_preset(&st);
+    run(1500);
+    expect(strcmp(lv_subject_get_string(&subject_update_banner),
+                  "Updating · restarts with Harbor House") == 0,
+           "BL-048 P2: a keypad's banner changes its words while it waits");
+    host_link_demo_fw_follows(false, false);
+    st = ku_fw(UI_FW_STAGE_NONE);
+    st.available = false;
+    host_panel_fw_preset(&st);
+    run(1500);
+}
+
+/* KPD-006: real touch input on every page renews the temporary view, not a timer
+ * started once at selection. Alarm authorization is covered by panel-link tests. */
+static void walk_partition_policy(const ui_options_t *start)
+{
+    host_panel_init(1789857660000LL);
+    host_link_demo_state(HOST_LINK_MASTER);
+    ui_backend_t be;
+    host_panel_backend(&be);
+    alarm_config_t *cfg = malloc(sizeof *cfg);
+    expect(cfg != NULL && be.get_config(be.ctx, cfg), "partition walk configuration");
+    cfg->partitions[1].enabled = true;
+    snprintf(cfg->partitions[1].name, ALARM_NAME_LEN, "Studio");
+    expect(be.set_config(be.ctx, cfg) == ALARM_OK, "enable Studio");
+    free(cfg);
+    ui_options_t opt = *start;
+    opt.partition = opt.partition_home = 1;
+    opt.switch_allowed = false;
+    opt.return_s = 30;
+    ui_app_apply_options(&opt);
+    run(1500);
+    wake();
+    tap_name("nav_home");
+    expect(lv_obj_has_flag(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), LV_OBJ_FLAG_HIDDEN), "locked panel hides switcher");
+    shot("bl-048-partition-locked");
+    opt.switch_allowed = true;
+    ui_app_apply_options(&opt);
+    run(1500);
+    expect(!lv_obj_has_flag(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), LV_OBJ_FLAG_HIDDEN), "switcher below left card");
+    lv_area_t switch_bounds, night_bounds;
+    lv_obj_get_coords(lv_obj_get_child(by_name("partition_switch"), 0), &switch_bounds);
+    lv_obj_get_coords(lv_obj_get_child(by_name("panel_arm"), 2), &night_bounds);
+    expect(switch_bounds.y2 == night_bounds.y2, "partition switcher and Night tile bottom edges align");
+    shot("bl-048-partition-home");
+    tap_text("Switch partition");
+    shot("bl-048-partition-chooser");
+    tap_text("Studio");
+    run(1500);
+    expect(strcmp(lv_label_get_text(lv_obj_find_by_name(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), "title_label")), "Studio") == 0, "selection without a code");
+    shot("bl-048-partition-away");
+    const unsigned saves = host_panel_options_saves();
+    tap_name("nav_activity");
+    run(20000);
+    tap_name("nav_activity"); /* actual touch while looking at Activity */
+    run(20000);
+    expect(strcmp(lv_label_get_text(lv_obj_find_by_name(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), "title_label")), "Studio") == 0, "Activity input renews idle return");
+    run(11000);
+    expect(strcmp(lv_label_get_text(lv_obj_find_by_name(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), "title_label")), "Studio") != 0, "30 idle seconds returns home");
+    expect(host_panel_options_saves() == saves, "temporary selection must not write preferences");
+    tap_name("nav_home");
+    opt.return_never = true;
+    ui_app_apply_options(&opt);
+    run(1500);
+    tap_text("Switch partition");
+    tap_text("Studio");
+    run(35000);
+    expect(strcmp(lv_label_get_text(lv_obj_find_by_name(lv_obj_find_by_name(lv_screen_active(), "partition_switch"), "title_label")), "Studio") == 0, "Never keeps the selected view");
+    tap_name("bar_settings");
+    run(300);
+    open_installer();
+    run(300);
+    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
+        tap_text("Enter the installer code");
+        type("69420k");
+        run(300);
+    }
+    tap_link("Keypads and devices");
+    tap_text("This panel");
+    run(300);
+    shot("bl-048-partition-policy-never");
+    tap_text("Never return automatically");
+    run(300);
+    ui_options_t saved;
+    expect(host_panel_saved_options(&saved) && !saved.return_never && saved.return_s == 30,
+           "Never off restores the saved 30 second delay");
+    shot("bl-048-partition-policy");
+    tap_name("nav_home");
+    host_link_demo_state(HOST_LINK_KEYPAD_ONLINE);
+    host_link_demo_partition_policy(true, false, 30);
+    run(2100);
+    tap_text("Switch partition");
+    tap_text("Studio");
+    run(20000);
+    tap_name("nav_activity");
+    run(20000);
+    ui_link_info_t info;
+    expect(be.link_info(be.ctx, &info) && info.selected == 2, "remote Activity renews selection");
+    run(12000);
+    expect(be.link_info(be.ctx, &info) && info.selected == 0, "remote idle returns home");
+    printf("Partition policy walk passed\n");
+}
+
+static void walk_panel_link(const ui_options_t *start)
+{
+    walk_link_setup(start);
+    walk_link_keypad();
+    walk_link_keypad_kept(start);
+    walk_link_master(start);
+    walk_keypad_updates(start); /* proposal P2, appended: the shots before keep their numbers */
+    host_link_demo_state(HOST_LINK_OFF); /* as without the link, for what follows */
+    run(1100);
+}
+#endif
+
 int main(int argc, char **argv)
 {
     if (argc > 1) {
@@ -10300,12 +11401,20 @@ int main(int argc, char **argv)
     run(400);
 
 #if ALARM_LV_BUDGET_KB == 0
+    if (getenv("ALARM_PREVIEW_PARTITION") != NULL) {
+        walk_partition_policy(&start);
+        return 0;
+    }
     if (getenv("ALARM_PREVIEW_THEMES") != NULL) { /* only the appearances' walk, to work on it */
         walk_themes();
         return 0;
     }
     if (getenv("ALARM_PREVIEW_LETTERS") != NULL) { /* only the walk without the letters pack */
         walk_without_letters(&start);
+        return 0;
+    }
+    if (getenv("ALARM_PREVIEW_LINK") != NULL) { /* only the panel link's segment (BL-048) */
+        walk_panel_link(&start);
         return 0;
     }
     if (getenv("ALARM_PREVIEW_ZIGBEE") != NULL) { /* only the real Zigbee's segment, to work on it */
@@ -12744,6 +13853,10 @@ int main(int argc, char **argv)
     walk_auto_arm(&start); /* BL-170 C5, appended: the shots before keep their numbers */
     walk_voice(&start);    /* BL-202, appended too */
     walk_without_letters(&start); /* BL-124, appended: the shots before keep their numbers */
+    walk_panel_link(&start);      /* BL-048, appended too */
+    /* KPD-006 (BL-048), appended too: its pictures are partition-switch.js's, so
+     * ui_mockup.py check finds them in the walk's own shots */
+    walk_partition_policy(&start);
 #endif
 
 #if ALARM_LV_BUDGET_KB > 0

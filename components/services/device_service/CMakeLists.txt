@@ -4,6 +4,6 @@
 # panel has no Devices screen and the service answers with stubs (HCTL-010).
 idf_component_register(SRCS "src/device_service.c"
                        INCLUDE_DIRS "include"
-                       REQUIRES home_control
+                       REQUIRES alarm_core home_control
                        PRIV_REQUIRES alarm_mem alarm_proto platform_esp rtc_clock zone_hub console
                                      zwave_service)

@@ -3,8 +3,10 @@
 **Status:** Implemented v1 - The key parser (`alarm_keyseq`, host-tested, used by the console's
 `keys`), the touch keypad with the panic hold and the keypad messages run on a panel and in the PC
 preview, with the lockout countdown and a test of Home's words (`ui_words_test`); the flows'
-acceptance on a panel is BL-024. Left: remote keypads (M7, BL-048), a classic two-line view
-(BL-073).
+acceptance on a panel is BL-024. Remote keypads over Wi-Fi run with the panel link
+(docs/features/11, tried on two panels 2026-10-16). Partition switching (KPD-006, BL-048) is implemented with per-panel policy, no-code selection and
+interaction-based idle return, host/preview tested; live acceptance remains. A classic two-line
+view is BL-073.
 · **Milestone:** M1 (parser), M3 (UI), M7 (remote keypads) · **Depends on:** 01, 07, 08, 11
 
 ## Goal
@@ -63,7 +65,7 @@ key is the submit.
 | KPD-003 | Panic buttons need a 2 s hold with visual progress; a silent panic or a refused command confirms with a toast, an audible panic needs none because the screen becomes the alarm (as built) | UI preview |
 | KPD-004 | Keypads show the classic message set (below) for every status | UI preview, ui_words_test |
 | KPD-005 | Keypads play the partition's continuous pattern and one-shot sounds ([08](../08-Audio-and-Annunciation/README.md)) | M3 |
-| KPD-006 | A keypad belongs to a home partition; GOTO switches temporarily and returns after 2 min idle | M7 |
+| KPD-006 | Each panel has an installer-set default partition, permission to switch or remain locked there, and an installer-set idle return delay (default 30 s). Selecting another enabled partition needs no code; alarm actions keep their normal authorization | M7 |
 | KPD-007 | A remote keypad that loses the master shows "No system communication" after 30 s and disables arming controls; panic still attempts to send | M7 |
 | KPD-008 | The keypad shows a lockout countdown when its source is locked out | `test_users.c`, UI preview |
 
@@ -135,7 +137,8 @@ Front Door", "Alarm occurred", "Carbon monoxide".
       test_golden_wording, test_every_event_type_has_words)
 - [x] Host tests for Home's words and ui_text.c (ui_words_test) (BL-066, 5153415)
 - [ ] Classic two-line keypad view, optional, driven by `alarm_keyseq` like the console (BL-073)
-- Remote keypads (KPD-006, KPD-007) come with the panel link: docs/features/11 (LINK-008),
-  BL-048.
+- Remote keypads: KPD-007 ("No system communication", Panic still sent) and KPD-008 (each
+  keypad's own lockout) are built with the panel link (docs/features/11 LINK-008, LINK-023);
+  KPD-006 (GOTO) is docs/features/01's box (BL-048).
 - Trying the arming flows and the panic hold on a panel is part of BL-024 (the touchscreen on a
   panel), whose boxes are in docs/features/07 Tasks.

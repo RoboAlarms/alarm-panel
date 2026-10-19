@@ -546,6 +546,7 @@ void eng_supervision_due(alarm_engine_t *e)
             continue;
         }
         if (e->now >= ms_add(e->devices[d].checkin, MS(dc->supervision_s))) {
+            e->dev_trouble_partition[d] = dc->partition;
             e->dev_trouble |= bit;
             e->dev_trouble_mem &= ~bit;
             for (uint8_t p = 1u; p <= ALARM_MAX_PARTITIONS; p++) {

@@ -113,7 +113,7 @@ the bootloader starts at 0x2000 on the P4, and the v3.x bootloader is already 0x
 | nvs_keys | data/nvs_keys | | 4 KB | NVS encryption keys (production) |
 | assets | data/littlefs | | 2.5 MB | the pack store (ADR-045): language packs now, voice libraries later (docs/features/37 [language-packs.md](../37-Globalization/language-packs.md)); found by its label, never mounted as LittleFS (the subtype is as the table was first written) |
 | cp_fw | data/undefined | | 1.5 MB | C6 co-processor image for co-processor OTA |
-| fw_cache | data/undefined | | 2 MB | keypad firmware images for the OTA relay |
+| fw_cache | data/undefined | | 2 MB | scratch for `display stress`; not used for keypad images (docs/features/11 "Updates through the link") |
 | eventlog | data/undefined | | 384 KB | event log ring: 6144 records, at least 6080 kept ([05](../05-Event-Log/README.md)) |
 | coredump | data/coredump | | 64 KB | crash analysis |
 

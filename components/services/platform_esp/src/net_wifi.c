@@ -46,7 +46,8 @@ static esp_netif_t *s_netif;
 static TaskHandle_t s_task;
 static bool s_wifi_ready;
 static atomic_uint s_interactive_until_ms;
-static bool s_interactive_radio; /* network task owns the power-save transition */
+static atomic_uint s_latency_holds; /* net_wifi_latency_owner_t bits held */
+static bool s_low_latency_radio; /* network task owns the power-save transition */
 static wifi_ps_type_t s_saved_power_save;
 static bool s_have_creds;
 static bool s_connect_failed;   /* esp_wifi_connect() itself failed: the net task retries */
@@ -57,12 +58,14 @@ static atomic_uint s_time_syncs;
 static volatile bool s_required;
 static atomic_uint s_required_mask; /* net_wifi_requester_t bits */
 static bool s_sntp_started;
+static atomic_bool s_sntp_off; /* net_wifi_set_time_server(false): a link keypad's master's time */
 static uint32_t s_retry_ms = RETRY_MIN_MS;
 static char s_ntp[64]; /* lwIP keeps a pointer to the server name */
 static net_wifi_ap_t s_scan[NET_WIFI_SCAN_MAX] ALARM_SLOW_BSS; /* task-only: slow memory */
 static size_t s_scan_count;
 static bool s_scan_done = true;
 static bool s_scanning;
+static int64_t s_radio_until_us; /* net task only */
 static net_ip_config_t s_ip; /* address settings; only the net task applies them */
 static SemaphoreHandle_t s_config_lock;
 typedef struct {
@@ -87,6 +90,14 @@ static void trial_tick(void);
 #define NOTIFY_NTP       0x10u
 #define NOTIFY_IPCFG     0x20u
 #define NOTIFY_ADDR      0x40u
+#define NOTIFY_LATENCY   0x80u
+#define NOTIFY_RADIO     0x100u
+
+void net_wifi_radio_window(void)
+{
+    if (s_task)
+        xTaskNotify(s_task, NOTIFY_RADIO, eSetBits);
+}
 
 static void set_state(net_wifi_state_t st)
 {
@@ -160,7 +171,7 @@ static void time_synced(struct timeval *tv)
 
 static void start_sntp(void)
 {
-    if (s_sntp_started) {
+    if (s_sntp_started || atomic_load(&s_sntp_off)) {
         return;
     }
     strlcpy(s_ntp, NET_WIFI_DEFAULT_NTP, sizeof(s_ntp));
@@ -419,29 +430,58 @@ void net_wifi_note_interaction(void)
 {
     atomic_store(&s_interactive_until_ms, (uint32_t)(esp_timer_get_time() / 1000) + 5000);
 }
-static void interactive_radio_tick(void)
+
+void net_wifi_hold_low_latency(net_wifi_latency_owner_t owner, bool on)
+{
+    const unsigned before = on ? atomic_fetch_or(&s_latency_holds, (unsigned)owner)
+                               : atomic_fetch_and(&s_latency_holds, ~(unsigned)owner);
+    const unsigned after = on ? (before | (unsigned)owner) : (before & ~(unsigned)owner);
+    if ((before != 0u) != (after != 0u) && s_task != NULL) {
+        xTaskNotify(s_task, NOTIFY_LATENCY, eSetBits); /* the net task applies it now */
+    }
+}
+
+/* The holds now: the ones taken, and remote viewing's while its five seconds run. */
+static unsigned latency_holds(void)
 {
     uint32_t until = atomic_load(&s_interactive_until_ms);
     const uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-    const bool active = until && (int32_t)(now - until) < 0;
-    if (!active && until != 0u) {
+    const bool viewing = until && (int32_t)(now - until) < 0;
+    if (!viewing && until != 0u) {
         /* Forget the deadline once it has passed: 24.9 days later the signed difference would
          * have gone negative again and switched power saving off for weeks. */
         atomic_compare_exchange_strong(&s_interactive_until_ms, &until, 0u);
     }
-    if (active && !s_interactive_radio) {
+    return atomic_load(&s_latency_holds) | (viewing ? (unsigned)NET_WIFI_LATENCY_REMOTE : 0u);
+}
+
+/* The net task alone changes the radio's power save: off while any hold stands, and the mode it
+ * found restored when the last one goes. */
+static void low_latency_tick(void)
+{
+    const unsigned holds = latency_holds();
+    if (holds != 0u && !s_low_latency_radio) {
         wifi_ps_type_t previous;
         if (esp_wifi_get_ps(&previous) == ESP_OK &&
             (previous == WIFI_PS_NONE || esp_wifi_set_ps(WIFI_PS_NONE) == ESP_OK)) {
             s_saved_power_save = previous;
-            s_interactive_radio = true;
-            ESP_LOGI(TAG, "Remote viewing: low-latency Wi-Fi (previous power save %d)", previous);
+            s_low_latency_radio = true;
+            ESP_LOGI(TAG, "low-latency Wi-Fi for %s%s (previous power save %d)",
+                     (holds & NET_WIFI_LATENCY_REMOTE) != 0u ? "remote viewing " : "",
+                     (holds & NET_WIFI_LATENCY_LINK) != 0u ? "the panel link" : "", previous);
         }
-    } else if (!active && s_interactive_radio) {
+    } else if (holds == 0u && s_low_latency_radio) {
         if (s_saved_power_save == WIFI_PS_NONE || esp_wifi_set_ps(s_saved_power_save) == ESP_OK) {
-            s_interactive_radio = false;
-            ESP_LOGI(TAG, "Remote viewing ended: restored Wi-Fi power save %d", s_saved_power_save);
+            s_low_latency_radio = false;
+            ESP_LOGI(TAG, "low-latency Wi-Fi ended: restored power save %d", s_saved_power_save);
         }
+    }
+}
+
+void net_wifi_set_time_server(bool on)
+{
+    if (atomic_exchange(&s_sntp_off, !on) != !on && s_task != NULL) {
+        xTaskNotify(s_task, NOTIFY_NTP, eSetBits); /* stopped, or started when connected */
     }
 }
 static bool wifi_bringup(void)
@@ -553,14 +593,23 @@ static void scan_collect(void)
     ESP_LOGI(TAG, "scan found %u networks", (unsigned)count);
 }
 
+void net_wifi_coprocessor_version(const char *version)
+{
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    snprintf(s_status.coproc_fw, sizeof(s_status.coproc_fw), "%s", version);
+    xSemaphoreGive(s_lock);
+}
+
 static void read_coprocessor_version(void)
 {
 #if CONFIG_ESP_HOSTED_HOST
     esp_hosted_coprocessor_fwver_t ver = {0};
     if (esp_hosted_get_coprocessor_fwversion(&ver) == 0) {
         xSemaphoreTake(s_lock, portMAX_DELAY);
-        snprintf(s_status.coproc_fw, sizeof(s_status.coproc_fw), "%" PRIu32 ".%" PRIu32 ".%" PRIu32,
-                 ver.major1, ver.minor1, ver.patch1);
+        if (s_status.coproc_fw[0] == '\0') {
+            snprintf(s_status.coproc_fw, sizeof(s_status.coproc_fw),
+                     "%" PRIu32 ".%" PRIu32 ".%" PRIu32, ver.major1, ver.minor1, ver.patch1);
+        }
         xSemaphoreGive(s_lock);
         ESP_LOGI(TAG, "Wi-Fi co-processor firmware %s", s_status.coproc_fw);
     } else {
@@ -571,6 +620,10 @@ static void read_coprocessor_version(void)
 
 static void connect_now(void)
 {
+    if (esp_timer_get_time() < s_radio_until_us) {
+        s_connect_failed = true;
+        return;
+    }
     if (!s_have_creds) {
         return;
     }
@@ -613,12 +666,17 @@ static void net_task(void *arg)
         uint32_t bits = 0;
         xTaskNotifyWait(0, UINT32_MAX, &bits, pdMS_TO_TICKS(1000));
         trial_tick();
+        if ((bits & NOTIFY_RADIO) && !s_scanning && !s_trial_active) {
+            s_radio_until_us = esp_timer_get_time() + 5000000;
+            (void)esp_wifi_disconnect();
+            retry_at = xTaskGetTickCount() + pdMS_TO_TICKS(5000);
+        }
         if (s_connect_failed && retry_at == 0) {
             s_connect_failed = false;
             retry_at = xTaskGetTickCount() + pdMS_TO_TICKS(s_retry_ms);
             s_retry_ms = (s_retry_ms * 2u > RETRY_MAX_MS) ? RETRY_MAX_MS : s_retry_ms * 2u;
         }
-        interactive_radio_tick();
+        low_latency_tick();
         if (bits & NOTIFY_CONFIG) {
             esp_wifi_disconnect();
             apply_credentials();
@@ -942,6 +1000,56 @@ esp_err_t net_wifi_set_credentials(const char *ssid, const char *password)
         return ESP_ERR_INVALID_STATE;
     xSemaphoreTake(s_config_lock, portMAX_DELAY);
     esp_err_t e = s_trial_active ? ESP_ERR_INVALID_STATE : store_credentials(ssid, password);
+    xSemaphoreGive(s_config_lock);
+    return e;
+}
+void net_wifi_retry_connection(void)
+{
+    if (!s_config_lock) return;
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    if (!s_trial_active && s_task && s_wifi_ready) xTaskNotify(s_task, NOTIFY_CONFIG, eSetBits);
+    xSemaphoreGive(s_config_lock);
+}
+
+bool net_wifi_enrollment_read(char ssid[33], char password[65])
+{
+    memset(ssid, 0, 33);
+    memset(password, 0, 65);
+    if (!s_config_lock) return false;
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    nvs_handle_t h;
+    bool ok = false;
+    if (!s_trial_active && nvs_open(NS, NVS_READONLY, &h) == ESP_OK) {
+        size_t sn = 33, pn = 65;
+        esp_err_t se = nvs_get_str(h, "ssid", ssid, &sn);
+        esp_err_t pe = nvs_get_str(h, "pass", password, &pn);
+        ok = se == ESP_OK && ssid[0] && (pe == ESP_OK || pe == ESP_ERR_NVS_NOT_FOUND);
+        nvs_close(h);
+    }
+    xSemaphoreGive(s_config_lock);
+    if (!ok) { memset(ssid, 0, 33); mbedtls_platform_zeroize(password, 65); }
+    return ok;
+}
+esp_err_t net_wifi_enrollment_install(const char *ssid, const char *password)
+{
+    if (!s_config_lock || !ssid || !ssid[0] || strlen(ssid) > 32 || !password || strlen(password) > 64)
+        return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    nvs_handle_t h;
+    esp_err_t e = s_trial_active ? ESP_ERR_INVALID_STATE : nvs_open(NS, NVS_READWRITE, &h);
+    if (e == ESP_OK) {
+        char current[33] = {0};
+        size_t len = sizeof current;
+        e = nvs_get_str(h, "ssid", current, &len);
+        if (e == ESP_ERR_NVS_NOT_FOUND || (e == ESP_OK && !current[0])) {
+            /* Password first: an interrupted save never installs a new SSID with an old password. */
+            e = nvs_set_str(h, "pass", password);
+            if (e == ESP_OK) e = nvs_set_str(h, "ssid", ssid);
+            if (e == ESP_OK) e = nvs_commit(h);
+        } else if (e == ESP_OK) e = ESP_ERR_INVALID_STATE;
+        nvs_close(h);
+    }
+    if (e == ESP_OK && s_task && s_wifi_ready) xTaskNotify(s_task, NOTIFY_CONFIG, eSetBits);
     xSemaphoreGive(s_config_lock);
     return e;
 }

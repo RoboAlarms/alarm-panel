@@ -22,6 +22,8 @@ typedef struct {
     uint32_t sys_troubles;          /* active system troubles (bit = alarm_sys_trouble_t) */
     uint32_t sys_troubles_restored; /* restored, waiting for code + OFF */
     uint32_t dev_troubles;          /* missing devices (bit = device - 1) */
+    /* a missing device's partition, a link keypad's home (0: every partition, or not known) */
+    uint8_t dev_partition[ALARM_MAX_DEVICES];
     uint8_t default_codes;          /* ALARM_DEFAULT_CODE_* still in use */
     bool program;                   /* installer mode: nothing can be armed */
     uint32_t recovery_left_ms;      /* power-up recovery window left at taken_ms, 0 = closed */

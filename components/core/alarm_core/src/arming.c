@@ -250,6 +250,19 @@ alarm_result_t eng_arm(alarm_engine_t *e, uint8_t p, alarm_arm_level_t level, ui
     return ALARM_OK;
 }
 
+/* A device's remembered trouble is its partition's (0: every partition's), as it is counted. */
+static uint32_t dev_mem_of(const alarm_engine_t *e, uint8_t p)
+{
+    uint32_t mem = 0u;
+    for (unsigned d = 0; d < ALARM_MAX_DEVICES; d++) {
+        const uint8_t dp = e->dev_trouble_partition[d];
+        if ((e->dev_trouble_mem & (1u << d)) != 0u && (dp == 0u || dp == p)) {
+            mem |= 1u << d;
+        }
+    }
+    return mem;
+}
+
 static void ack_troubles(alarm_engine_t *e, uint8_t p)
 {
     for (uint16_t z = 1u; z <= ALARM_MAX_ZONES; z++) {
@@ -258,14 +271,14 @@ static void ack_troubles(alarm_engine_t *e, uint8_t p)
         }
     }
     e->sys_trouble_mem = 0u;
-    e->dev_trouble_mem = 0u;
+    e->dev_trouble_mem &= ~dev_mem_of(e, p);
     eng_part(e, p)->trouble_unack = false;
     e->sys_dirty = true;
 }
 
 static bool troubles_to_ack(const alarm_engine_t *e, uint8_t p)
 {
-    if (e->parts[p - 1u].trouble_unack || e->sys_trouble_mem != 0u || e->dev_trouble_mem != 0u) {
+    if (e->parts[p - 1u].trouble_unack || e->sys_trouble_mem != 0u || dev_mem_of(e, p) != 0u) {
         return true;
     }
     for (uint16_t z = 1u; z <= ALARM_MAX_ZONES; z++) {

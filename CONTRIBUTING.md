@@ -179,10 +179,15 @@ or a feature option. `python tools/check_architecture.py` checks the rules (CI r
   `build/mockups/manager/index.html`, the real pages with their pretend panel in the page (any role,
   state or proposal); a change to the pages starts there as a
   proposal (its README, WEB-026). `node --test components/services/panel_web/test/manager_mockup.test.cjs` checks it (CI).
-- CI (`.github/workflows/host-tests.yml`) runs the host tests with sanitizers,
-  `lvpro_gen.py --check` for the 7" layout, `check_ui_contract.py`, `embed_image.py --check`,
-  `i18n.py extract --check`, `check` and `build --check` (docs/features/37), and the 7"'s UI
-  preview in English (then `ui_mockup.py check`), in `en-XA` and changed to `en-XA` while running. Run the same locally.
+- CI (`.github/workflows/host-tests.yml`) runs its jobs side by side, the fastest first: the quick
+  checks (`python tools/quick_check.py`, the same script to run before a push: `lvpro_gen.py
+  --check` for the 7" layout, `check_ui_contract.py`, `embed_image.py --check`, the tiers, the
+  board manifests, `check_backlog.py`, `i18n.py extract --check`, `check` and `build --check`,
+  docs/features/37), the host tests with sanitizers, the tool tests, the Panel Manager tests, and
+  the 7"'s UI preview walks, one job each: English (then `ui_mockup.py check`), its smoke
+  programs, Z-Wave, and `en-XA` started in it and changed to it while running. CI runs for pull
+  requests and `main` (a newer push to a pull request cancels the older run); a branch without
+  a pull request runs it by hand: `gh workflow run host-tests --ref <branch>`.
   `.github/workflows/firmware.yml` builds the P4 v1 and v3 firmware signed with a throwaway key
   and runs `tools/check_image_size.py <build> --ram`: an image may fill at most 85 % of its OTA
   slot (docs/features/19 CYD-013).

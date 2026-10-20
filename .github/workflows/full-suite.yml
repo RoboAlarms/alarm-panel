@@ -1,0 +1,194 @@
+name: full-suite
+
+# The longer checks a pull request doesn't wait for (host-tests.yml has those): the tool tests,
+# the Panel Manager pages and the touchscreen walks. They run after every merge to main, every
+# night, and by hand on any branch before a change that needs them (Actions > full-suite > Run
+# workflow, or `gh workflow run full-suite --ref <branch>`). A failure here after a merge is fixed
+# on main straight away. Locally: `python tools/quick_check.py --tools` and
+# `pwsh tools/ui_preview.ps1` (CONTRIBUTING.md "Build and test").
+#   tools        the tool tests (tools/tests)
+#   panel-web    the Panel Manager pages, as written and as the firmware ships them
+#   ui-preview   the touchscreen walks, one job each: English, its smoke programs, Z-Wave, and
+#                en-XA started in the test language and switched to it live
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * *" # every night, 06:17 UTC
+  workflow_dispatch:
+
+# A newer run on a branch run by hand replaces the one before it; runs on main always finish.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CCACHE_DIR: /home/runner/.ccache
+  CCACHE_MAXSIZE: 500M
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
+jobs:
+  tools:
+    name: tool tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Tool regressions (remote development client, architecture checker)
+        run: |
+          python3 -m pip install -r tools/panelctl-requirements.txt
+          python3 -m unittest discover -s tools/tests -v
+
+  # The Panel Manager pages, as written and as the firmware ships them, side by side.
+  panel-web:
+    name: panel-web (${{ matrix.files }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        files: [source, minified]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Browser capture scheduling regressions
+        if: matrix.files == 'source'
+        run: node --test components/services/panel_web/test/panel_frames.test.cjs
+      # The test languages first: one test renders every page in en-XA to find words not looked up
+      # (docs/features/37 I18N-031).
+      - name: Panel Manager pages render against the mock panel
+        if: matrix.files == 'source'
+        run: |
+          python3 tools/i18n.py pseudo --build
+          node --test components/services/panel_web/test/panel_pages.test.cjs
+      # The files the firmware ships are minified (BL-122): the same tests against them.
+      - name: Panel Manager tests against the minified files
+        if: matrix.files == 'minified'
+        run: |
+          python3 tools/i18n.py pseudo --build
+          python3 components/services/panel_web/minify_asset.py --all components/services/panel_web/web build/panel_web_shipped
+          PANEL_WEB_DIR="$PWD/build/panel_web_shipped" node --test components/services/panel_web/test/panel_frames.test.cjs components/services/panel_web/test/panel_pages.test.cjs
+      - name: The Panel Manager mockup builds, and its pages and proposals render (WEB-026)
+        if: matrix.files == 'source'
+        run: node --test components/services/panel_web/test/manager_mockup.test.cjs
+
+  # Each walk takes 20-30 minutes on its own, so each has its own job.
+  ui-preview:
+    name: ui-preview (${{ matrix.walk }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        walk: [english, smoke, zwave, en-XA]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Ninja and ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+      - name: Compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-ui-preview-${{ matrix.walk }}-${{ github.sha }}
+          restore-keys: ccache-ui-preview-${{ matrix.walk }}-
+
+      - name: Build the UI preview (clones LVGL 9.5.0)
+        if: matrix.walk == 'english' || matrix.walk == 'smoke'
+        run: |
+          cmake -S host/ui_preview -B build/ui_preview -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/ui_preview
+      - name: Render every screen state
+        if: matrix.walk == 'english'
+        run: ./build/ui_preview/ui_preview build/ui_preview/shots
+      - name: The touchscreen mockup matches the design system and the preview (UI-044)
+        if: matrix.walk == 'english'
+        run: python3 tools/ui_mockup.py check --shots-dir build/ui_preview/shots
+      - uses: actions/upload-artifact@v7
+        if: matrix.walk == 'english'
+        with:
+          name: ui-screenshots
+          path: build/ui_preview/shots
+
+      - name: The UI without its optional pages starts and hides them (docs/features/33)
+        if: matrix.walk == 'smoke'
+        run: ./build/ui_preview/ui_smoke_minimal
+      - name: The touchscreen words, ui_text.c and Home (BL-066, KPD-004)
+        if: matrix.walk == 'smoke'
+        run: ./build/ui_preview/ui_words_test
+      - name: The simulator runs the automations, Harbor House's seeded (docs/features/41)
+        if: matrix.walk == 'smoke'
+        run: ./build/ui_preview/auto_smoke
+      - name: A setting changed from elsewhere goes through the screen (UI-046)
+        if: matrix.walk == 'smoke'
+        run: ./build/ui_preview/prefs_smoke
+
+      # Z-Wave (docs/features/36) is an option of the P4 build (the manifest leaves it out by
+      # default), so the English walk has no Z-Wave pages; this builds them with Linux GCC and
+      # walks them against the simulated radio.
+      - name: The Z-Wave pages build and walk (docs/features/36)
+        if: matrix.walk == 'zwave'
+        run: |
+          cmake -S host/ui_preview -B build/ui_preview-zwave -G Ninja -DCMAKE_BUILD_TYPE=Release -DALARM_SIM_ZWAVE=ON
+          cmake --build build/ui_preview-zwave
+          ./build/ui_preview-zwave/ui_preview build/ui_preview-zwave/shots
+      # ZW-021: the simulator's Z-Wave flows, windowless, checked against the engine's real state
+      # (host/ui_preview/zwave_smoke.c); exits non-zero when a check fails.
+      - name: The simulator's Z-Wave world, scripted (ZW-021)
+        if: matrix.walk == 'zwave'
+        run: ./build/ui_preview-zwave/zwave_smoke
+
+      # Every walk fails when a label's text is cut off (docs/features/37 I18N-022); en-XA is the
+      # test language about 40 % longer than English (I18N-024). I18N-014: started in English and
+      # changed to en-XA while running (and held through an alarm), every screen is the same
+      # picture as the walk that started in en-XA. The two walks run side by side.
+      - name: Build the walks in the longer test language, started in it and switched to it live
+        if: matrix.walk == 'en-XA'
+        run: |
+          python3 tools/i18n.py pseudo --build
+          cmake -S host/ui_preview -B build/ui_preview-en-XA -G Ninja -DCMAKE_BUILD_TYPE=Release -DALARM_PREVIEW_LOCALE=en-XA
+          cmake --build build/ui_preview-en-XA
+          cmake -S host/ui_preview -B build/ui_preview-en-XA-live -G Ninja -DCMAKE_BUILD_TYPE=Release -DALARM_PREVIEW_LOCALE=en-XA -DALARM_PREVIEW_LIVE=ON
+          cmake --build build/ui_preview-en-XA-live
+      - name: Every screen in the longer test language, nothing cut off, and the same when switched live (docs/features/37)
+        if: matrix.walk == 'en-XA'
+        run: |
+          ./build/ui_preview-en-XA/ui_preview build/ui_preview-en-XA/shots > walk-en-XA.log 2>&1 &
+          started=$!
+          ./build/ui_preview-en-XA-live/ui_preview build/ui_preview-en-XA-live/shots > walk-en-XA-live.log 2>&1 &
+          live=$!
+          rc_started=0; wait "$started" || rc_started=$?
+          rc_live=0; wait "$live" || rc_live=$?
+          for walk in en-XA en-XA-live; do
+            echo "::group::The $walk walk's log"; cat "walk-$walk.log"; echo "::endgroup::"
+          done
+          if [ "$rc_started" -ne 0 ]; then
+            tail -n 40 walk-en-XA.log
+            echo "::error::The walk started in en-XA failed (exit $rc_started)"
+          fi
+          if [ "$rc_live" -ne 0 ]; then
+            tail -n 40 walk-en-XA-live.log
+            echo "::error::The walk switched to en-XA live failed (exit $rc_live)"
+          fi
+          [ "$rc_started" -eq 0 ] && [ "$rc_live" -eq 0 ] || exit 1
+          differ=0
+          for f in build/ui_preview-en-XA/shots/*.png; do
+            if ! cmp -s "$f" "build/ui_preview-en-XA-live/shots/$(basename "$f")"; then
+              echo "differs: $(basename "$f")"; differ=1
+            fi
+          done
+          if [ "$differ" -ne 0 ]; then
+            echo "::error::The walk switched to en-XA live differs from the one started in it (artifact ui-screenshots-en-XA)"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        if: failure() && matrix.walk == 'en-XA'
+        with:
+          name: ui-screenshots-en-XA
+          path: |
+            build/ui_preview-en-XA/shots
+            build/ui_preview-en-XA-live/shots
+
+      - name: Compiler cache use
+        if: always()
+        run: ccache --show-stats
+      # The 4" board's preview and smoke test (-DALARM_BOARD=e32r40t, artifact
+      # ui-screenshots-e32r40t) are left out while docs/features/19 is blocked; run them locally with
+      # `pwsh tools/ui_preview.ps1 -Board e32r40t`.

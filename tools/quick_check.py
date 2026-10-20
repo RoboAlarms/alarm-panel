@@ -4,8 +4,9 @@
 Generated code against its source (the UI layouts, images, the rail logo, the Zigbee
 signatures), the UI contract, the component tiers, the board manifests, the backlog and the
 translation catalogs. CI's "quick checks" job runs this same script (.github/workflows/
-host-tests.yml), so a pass here is a pass there; the builds, tests and preview walks come after
-(CONTRIBUTING.md "Build and test"). Every check runs even when one fails; the exit code is 1 if
+host-tests.yml), so a pass here is a pass there; the unit tests run beside it, and the preview
+walks and firmware builds after a merge (full-suite.yml, firmware.yml; CONTRIBUTING.md
+"Build and test"). Every check runs even when one fails; the exit code is 1 if
 any did.
 
     python tools/quick_check.py            # the quick checks (about 30 s)

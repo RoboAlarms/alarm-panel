@@ -95,7 +95,7 @@ normal flash does not need them (CONTRIBUTING.md "Display safety"):
   (`tools/quick_check.py`: the generated code, `check_ui_contract.py` (docs/features/19 CYD-007),
   the tiers, the board manifests, `check_backlog.py`, the catalogs) and job `alarm-core`, the host
   tests with sanitizers (and a check that the libraries themselves were instrumented).
-- CI after a merge to main, nightly and by hand (`gh workflow run full-suite --ref <branch>`):
+- CI nightly on main and by hand (`gh workflow run full-suite --ref <branch>`):
   `.github/workflows/full-suite.yml` runs the tool tests (`tools/tests`), the Panel Manager's
   Node tests (`components/services/panel_web/test`), and builds and walks the 7"'s UI preview,
   its smoke programs, the Z-Wave pages (docs/features/36) and the en-XA walks, and uploads the
@@ -104,7 +104,7 @@ normal flash does not need them (CONTRIBUTING.md "Display safety"):
   its layout check, its preview and smoke test and its firmware build are off in CI, and
   `check_ui_contract.py` skips layouts in its `ON_HOLD` list; each workflow comment says how to
   put it back.
-- CI: `.github/workflows/firmware.yml` (after a merge to main, nightly and by hand, docs/features/33 step 10): builds every
+- CI: `.github/workflows/firmware.yml` (nightly on main and by hand, docs/features/33 step 10): builds every
   board's firmware in the `espressif/idf:v6.1` container (the P4 v1 and v3; the E32R40T is left
   out while docs/features/19 is on hold),
   signed with a key made for the run (CI images are never for a panel), then

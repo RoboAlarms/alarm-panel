@@ -1,10 +1,10 @@
 name: full-suite
 
 # The longer checks a pull request doesn't wait for (host-tests.yml has those): the tool tests,
-# the Panel Manager pages and the touchscreen walks. They run after every merge to main, every
-# night, and by hand on any branch before a change that needs them (Actions > full-suite > Run
-# workflow, or `gh workflow run full-suite --ref <branch>`). A failure here after a merge is fixed
-# on main straight away. Locally: `python tools/quick_check.py --tools` and
+# the Panel Manager pages and the touchscreen walks. They run every night on main, and by hand on
+# any branch before a change that needs them (Actions > full-suite > Run workflow, or `gh workflow
+# run full-suite --ref <branch>`); never on a push. A nightly failure is fixed on main the next
+# day. Locally: `python tools/quick_check.py --tools` and
 # `pwsh tools/ui_preview.ps1` (CONTRIBUTING.md "Build and test").
 #   tools        the tool tests (tools/tests)
 #   panel-web    the Panel Manager pages, as written and as the firmware ships them
@@ -12,13 +12,11 @@ name: full-suite
 #                en-XA started in the test language and switched to it live
 
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: "17 6 * * *" # every night, 06:17 UTC
   workflow_dispatch:
 
-# A newer run on a branch run by hand replaces the one before it; runs on main always finish.
+# A newer run on a branch replaces the one before it; runs on main always finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

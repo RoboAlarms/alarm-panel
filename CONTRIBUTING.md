@@ -184,16 +184,16 @@ or a feature option. `python tools/check_architecture.py` checks the rules (CI r
   layout, `check_ui_contract.py`, `embed_image.py --check`, the tiers, the board manifests,
   `check_backlog.py`, `i18n.py extract --check`, `check` and `build --check`, docs/features/37)
   and the unit tests with sanitizers, side by side (a newer push cancels the older run).
-- The rest runs after every merge to `main`, every night and by hand on any branch, never
-  holding a pull request up: `.github/workflows/full-suite.yml` (the tool tests, the Panel Manager
+- The rest runs every night on `main` and by hand on any branch, never on a push or a pull
+  request: `.github/workflows/full-suite.yml` (the tool tests, the Panel Manager
   tests, and the 7"'s UI preview walks, one job each: English, then `ui_mockup.py check`, its
   smoke programs, Z-Wave, and `en-XA` started in it and changed to it while running) and
   `.github/workflows/firmware.yml` (the P4 v1 and v3 firmware, signed with a throwaway key, and
   `tools/check_image_size.py <build> --ram`: an image may fill at most 85 % of its OTA slot,
   docs/features/19 CYD-013). Before merging a change they cover, run them yourself: the preview
   for anything on the screen, a firmware build for firmware code, or on GitHub `gh workflow run
-  full-suite --ref <branch>` and `gh workflow run firmware --ref <branch>`. One that fails on
-  `main` after a merge is fixed there straight away.
+  full-suite --ref <branch>` and `gh workflow run firmware --ref <branch>`. One that fails in the
+  nightly run is fixed on `main` the next day.
 - **The 4" E32R40T is on hold (docs/features/19 blocked, 2026-09-24):** CI does not build its
   firmware, check its layout or run its preview; `check_ui_contract.py` skips `480x320`
   (`ON_HOLD`, `--all` checks it) and the Flasher does not offer the board (`"offered": false` in

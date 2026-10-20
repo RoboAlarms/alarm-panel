@@ -13,13 +13,11 @@ name: firmware
 #             options: ""
 #             build_dir: build
 
-# As full-suite.yml: after every merge to main, every night and by hand on any branch (`gh workflow
-# run firmware --ref <branch>`), never holding a pull request up. A change to the firmware's own
+# As full-suite.yml: every night on main and by hand on any branch (`gh workflow run firmware
+# --ref <branch>`); never on a push or a pull request. A change to the firmware's own
 # code, a Kconfig or sdkconfig.defaults, partitions or the image size is built locally before it
 # merges (CONTRIBUTING.md "Build and test").
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: "47 6 * * *" # every night, 06:47 UTC
   workflow_dispatch:

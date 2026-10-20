@@ -5,7 +5,7 @@ Generated code against its source (the UI layouts, images, the rail logo, the Zi
 signatures), the UI contract, the component tiers, the board manifests, the backlog and the
 translation catalogs. CI's "quick checks" job runs this same script (.github/workflows/
 host-tests.yml), so a pass here is a pass there; the unit tests run beside it, and the preview
-walks and firmware builds after a merge (full-suite.yml, firmware.yml; CONTRIBUTING.md
+walks and firmware builds nightly or by hand (full-suite.yml, firmware.yml; CONTRIBUTING.md
 "Build and test"). Every check runs even when one fails; the exit code is 1 if
 any did.
 

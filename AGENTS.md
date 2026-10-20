@@ -80,8 +80,7 @@ Details, flags and the other boards: CONTRIBUTING.md "Build and test".
   (`lvpro_gen.py --check` and the rest), the UI contract, the tiers, `check_backlog.py`, the `i18n.py`
   checks; `--tools` adds the tool tests. A pull request waits only for those and the unit tests;
   the preview walks, the Panel Manager tests, the firmware builds and the image-size check run
-  after a merge to `main` and nightly (CONTRIBUTING.md), so run what your change touches before
-  it merges. CI's GCC 13 warns where a newer local GCC doesn't: cast bytes to `unsigned` before
+  nightly or by hand (CONTRIBUTING.md), so run what your change touches before it merges. CI's GCC 13 warns where a newer local GCC doesn't: cast bytes to `unsigned` before
   shifting.
 - The first build creates `secrets/ota_signing_key.pem` (git-ignored): a panel you install accepts
   only updates signed with it. Never commit it, never replace it. Your builds and the official

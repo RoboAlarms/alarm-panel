@@ -5,8 +5,7 @@ name: host-tests
 #   quick        tools/quick_check.py, the same script a contributor runs before a push (~30 s)
 #   alarm-core   the portable C's unit tests under the sanitizers, CTest in parallel
 # Everything else - the tool tests, the Panel Manager pages, the touchscreen walks and the
-# firmware builds - is full-suite.yml and firmware.yml: after a merge to main, every night, and
-# by hand on any branch (`gh workflow run full-suite --ref <branch>`), never holding a pull
+# firmware builds - is full-suite.yml and firmware.yml: every night, and by hand on any branch (`gh workflow run full-suite --ref <branch>`), never holding a pull
 # request up. The C builds go through ccache, kept between runs. A newer push to a pull request
 # cancels the run it replaces; runs on main always finish.
 on:

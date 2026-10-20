@@ -3561,7 +3561,9 @@ test('AUT-001 WEB-026: the list says each automation in the touchscreen\'s sente
   for (const words of ['When Front door opens', 'Turn on Porch Light for 10 minutes', 'When the panel is armed Away', 'Lock Front Door · Run Good Night',
     'When a fire or CO alarm sounds', 'Turn off Hallway', 'At 11:00 PM on weekdays', 'Close Garage Door', 'Front Door didn’t answer', '4 of 16 automations'])
     assert.ok(text.includes(words), `the list says "${words}"`);
-  assert.match(text, /Ran at \d+:42 PM/, 'the state line of the porch light');
+  // The mock's 7:42 PM is today by the runner's clock, which near midnight UTC is another day in
+  // the panel's time zone: then the line names the day instead of the time.
+  assert.match(text, /Ran (at \d+:42 PM|on [A-Z][a-z]{2} \d{1,2})/, 'the state line of the porch light');
   assert.match(view.html, /<span class="tag ">Off<\/span>/, 'the garage door one is off');
   assert.match(view.html, /<span class="tag warn">Didn’t work<\/span>/, 'a problem is amber');
   assert.match(view.html, /data-go="automations" data-arg="new"(?! disabled)/, 'Add is there');

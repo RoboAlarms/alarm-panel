@@ -628,7 +628,10 @@ class ControllerTests(unittest.TestCase):
             self.assertRegex(cm.exception.title, "still (downloading|getting)")
             self.assertEqual(self.started, [])
         self.assertTrue(wait(lambda: self.c.device_dict("COM6")["firmware"]["ready_version"] == "0.6.2"))
-        self.assertEqual(self.c.device_dict("COM6")["image_key"], "crowpanel_p4-v1-release")
+        # the image is picked just after the version is ready: wait for it too, or a slow runner
+        # reads it in between
+        self.assertTrue(wait(lambda: self.c.device_dict("COM6")["image_key"] == "crowpanel_p4-v1-release"),
+                        self.c.device_dict("COM6")["image_key"])
 
     def test_a_development_build_only_when_the_person_chooses_it(self):  # FLS-033, decided 2026-10-12
         srv = testkit.FakeServer()

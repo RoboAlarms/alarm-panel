@@ -179,6 +179,31 @@ static bool is_on(const ui_dev_t *d)
     return d->state == UI_DEV_ST_ON;
 }
 
+/* A change that reads as done the moment it is made (BL-219, approved 2026-10-19): what a light, a
+ * switch, a fan, a thermostat or a scene does. A lock, a garage door, a cover and a valve say they
+ * are under way until they report: a security panel never says "Locked" or "Closed" before it is. */
+static bool at_once(const ui_dev_t *d, uint8_t action)
+{
+    switch (d->kind) {
+    case DEV_LIGHT:
+    case DEV_SWITCH:
+    case DEV_FAN:
+        return action == ACT_ON || action == ACT_OFF || action == ACT_TOGGLE || action == ACT_SET_LEVEL;
+    case DEV_CLIMATE: return action == ACT_SET_TEMP || action == ACT_SET_MODE;
+    case DEV_SCENE:
+    case DEV_SCRIPT: return action == ACT_RUN;
+    default: return false;
+    }
+}
+
+/* An action under way that the tile says so for (HCTL-006): not one that shows at once, even when
+ * someone else - the console, an automation - started it: its tile shows the report until the next
+ * one, as Home Assistant's own screens do (BL-219). */
+static bool under_way(const ui_dev_t *d)
+{
+    return d->status == UI_DEV_PENDING && !at_once(d, d->action);
+}
+
 static bool entrance(const ui_dev_t *d)
 {
     return d->kind == DEV_COVER && (d->caps & UI_DEV_CAP_ENTRANCE) != 0u;
@@ -603,7 +628,7 @@ static void tile_words(const ui_dev_t *d, char *out, size_t len)
         i18n_utf8_copy(out, len, TR_C("device state", "Not confirmed"));
         return;
     }
-    const char *w = d->status == UI_DEV_PENDING || d->status == UI_DEV_FAILED
+    const char *w = under_way(d) || d->status == UI_DEV_FAILED
                         ? action_words(d->action, d->status == UI_DEV_FAILED)
                         : NULL;
     if (w != NULL) {
@@ -636,6 +661,183 @@ static uint8_t tap_action(const ui_dev_t *d)
     case DEV_SCENE:
     case DEV_SCRIPT: return ACT_RUN;
     default: return ACT_NONE; /* a thermostat: its stepper, or its sheet */
+    }
+}
+
+/* ---- what was asked (BL-219, HCTL-006, HCTL-012) ------------------------------------------- */
+
+/* A change a person makes that shows at once (at_once) reads as done the moment it is made, as Home
+ * Assistant's own screens do (proposal BL-219, approved 2026-10-19): the tile, its sheet and the
+ * page's note show what was asked until the device sends a new report, and from then on the report,
+ * whatever it says. With no new report, what was asked stays until EXPECT_SETTLE_MS after the device
+ * has answered (Home Assistant's toggle gives it 2 s), then the last report shows again. A refusal,
+ * no answer ("Not confirmed") and offline show as before (HCTL-012): what was asked goes, and
+ * nothing is sent again by itself. A touch while the last change is still on its way is the newest
+ * wish: it shows at once and is sent once the device has answered the last one (it would refuse it
+ * as busy before). Only this task reads and writes the table. */
+#define EXPECT_MAX       8u
+#define EXPECT_SETTLE_MS 2000u
+#define EXPECT_LIFE_MS   60000u /* past any answer's own limit (HC_ACT_TIMEOUT_MS, 30 s) */
+
+typedef struct {
+    char ref[DEV_REF_LEN]; /* "" unused */
+    uint8_t action;        /* what was asked last, and its value */
+    int32_t value;
+    uint8_t state;         /* what the tile shows meanwhile */
+    int8_t level;
+    uint8_t hvac_action;
+    int32_t setpoint;
+    int64_t since_ms;
+    uint32_t sig;          /* the device's report as it was when it was asked (report_sig) */
+    uint8_t was;           /* its status then */
+    uint8_t status;        /* its status as last read: its tile shows it idle */
+    bool moved;            /* its status has been other than `was` since */
+    bool queued;           /* `action` waits behind the last change, not sent yet */
+    bool calling;          /* `action` went out, its answer isn't back */
+    uint32_t at;           /* lv_tick: asked, or sent */
+    uint32_t idle_at;      /* lv_tick: answered and not busy since; 0 not yet */
+} expect_t;
+
+static UI_SLOW_BSS expect_t E[EXPECT_MAX];
+
+static ui_dev_t *find_mut(const char *ref)
+{
+    for (size_t i = 0; i < D.n; i++) {
+        if (strcmp(D.devs[i].ref, ref) == 0) {
+            return &D.devs[i];
+        }
+    }
+    return NULL;
+}
+
+static expect_t *expect_find(const char *ref)
+{
+    for (size_t i = 0; i < EXPECT_MAX; i++) {
+        if (E[i].ref[0] != '\0' && strcmp(E[i].ref, ref) == 0) {
+            return &E[i];
+        }
+    }
+    return NULL;
+}
+
+static void expect_drop(expect_t *e)
+{
+    memset(e, 0, sizeof(*e));
+}
+
+/* What a report says about what a person changes: a new report is one where this differs. What a
+ * thermostat is doing and the room's temperature change by themselves, so they aren't in it. */
+static uint32_t report_sig(const ui_dev_t *d)
+{
+    const uint32_t parts[] = {d->state, (uint32_t)(uint8_t)d->level, (uint32_t)d->setpoint,
+                              (uint32_t)(uint64_t)d->since_ms, (uint32_t)((uint64_t)d->since_ms >> 32)};
+    uint32_t sig = 2166136261u;
+    for (size_t i = 0; i < sizeof(parts) / sizeof(parts[0]); i++) {
+        sig = (sig ^ parts[i]) * 16777619u;
+    }
+    return sig;
+}
+
+/* What the tile shows once `action` is done, from what it shows now (d). */
+static void expect_shape(expect_t *e, const ui_dev_t *d, uint8_t action, int32_t value)
+{
+    e->state = d->state;
+    e->level = d->level;
+    e->hvac_action = d->hvac_action;
+    e->setpoint = d->setpoint;
+    e->since_ms = d->since_ms;
+    const int8_t pct = (int8_t)(value < 0 ? 0 : value > 100 ? 100 : value);
+    switch (action) {
+    case ACT_ON:
+        if (d->kind == DEV_LIGHT && value >= 0) { /* a brightness with the "on": 0 is off (B030) */
+            e->level = pct;
+            e->state = pct > 0 ? UI_DEV_ST_ON : UI_DEV_ST_OFF;
+            break;
+        }
+        e->state = UI_DEV_ST_ON;
+        if (e->level == 0) {
+            e->level = -1; /* on at its last level, which only its report knows: "On" */
+        }
+        break;
+    case ACT_OFF: e->state = UI_DEV_ST_OFF; break;
+    case ACT_TOGGLE:
+        e->state = is_on(d) ? UI_DEV_ST_OFF : UI_DEV_ST_ON;
+        if (e->state == UI_DEV_ST_ON && e->level == 0) {
+            e->level = -1;
+        }
+        break;
+    case ACT_SET_LEVEL:
+        e->level = pct;
+        e->state = pct > 0 ? UI_DEV_ST_ON : UI_DEV_ST_OFF;
+        break;
+    case ACT_SET_TEMP: e->setpoint = value; break;
+    case ACT_SET_MODE:
+        if (d->state != (uint8_t)value) {
+            e->hvac_action = DEV_HVAC_UNKNOWN; /* the new mode's word until it reports (BL-171) */
+        }
+        e->state = (uint8_t)value;
+        break;
+    case ACT_RUN:
+        if (S.be.epoch_ms != NULL && S.be.epoch_ms(S.be.ctx) > 0) {
+            e->since_ms = S.be.epoch_ms(S.be.ctx); /* "Ran at" now */
+        }
+        break;
+    default: break;
+    }
+}
+
+/* What was asked, over the device's report: the tile, its sheet and the note read it. */
+static void expect_lay(const expect_t *e, ui_dev_t *d)
+{
+    d->state = e->state;
+    d->level = e->level;
+    d->hvac_action = e->hvac_action;
+    d->setpoint = e->setpoint;
+    d->since_ms = e->since_ms;
+    d->status = UI_DEV_IDLE;
+    d->action = ACT_NONE;
+    d->unsure = 0u;
+}
+
+/* After each read of the list (poll): what was asked stays, or the report wins. */
+static void expect_read(void)
+{
+    for (size_t i = 0; i < EXPECT_MAX; i++) {
+        expect_t *e = &E[i];
+        if (e->ref[0] == '\0') {
+            continue;
+        }
+        ui_dev_t *d = find_mut(e->ref);
+        if (d == NULL || d->status == UI_DEV_OFFLINE || lv_tick_elaps(e->at) > EXPECT_LIFE_MS) {
+            expect_drop(e); /* gone, or offline: its tile says so (HCTL-006, BL-181) */
+            continue;
+        }
+        const uint32_t sig = report_sig(d);
+        e->status = d->status;
+        if (d->status != e->was) {
+            e->moved = true;
+        }
+        if (e->queued) {
+            /* the newest wish waits behind the last change: whatever that one does, this one is
+             * what the person wants now; its report starts from here */
+            e->sig = sig;
+            e->was = d->status;
+            e->moved = false;
+        } else if (d->status == UI_DEV_FAILED && (e->was != UI_DEV_FAILED || e->moved)) {
+            expect_drop(e); /* refused, or not confirmed: the tile says so (HCTL-012) */
+            continue;
+        } else if (sig != e->sig) {
+            expect_drop(e); /* a new report: it wins, whatever it says */
+            continue;
+        } else if (e->calling || d->status == UI_DEV_PENDING) {
+            e->idle_at = 0u;
+        } else if (e->idle_at == 0u) {
+            e->idle_at = lv_tick_get() | 1u;
+        } else if (lv_tick_elaps(e->idle_at) >= EXPECT_SETTLE_MS) {
+            expect_drop(e); /* answered, and no new report: the last report again */
+            continue;
+        }
+        expect_lay(e, d);
     }
 }
 
@@ -685,6 +887,13 @@ static bool code_entered(const char *code)
  * list may have changed meanwhile (LINK-054), so it is found again by its ref. */
 static void sent(const ui_call_t *c)
 {
+    expect_t *e = expect_find(c->ref);
+    if (e != NULL && e->calling) {
+        e->calling = false;
+        if (c->dev != UI_DEV_OK) {
+            expect_drop(e); /* not sent: the report shows again, and the toast says why */
+        }
+    }
     if (c->dev == UI_DEV_NEED_CODE) {
         const ui_dev_t *d = find(c->ref);
         if (d == NULL) {
@@ -710,15 +919,74 @@ static void sent(const ui_call_t *c)
     show();
 }
 
-/* Sends an action; one that needs a code asks for it first (HCTL-005). */
+/* Sends what was asked of a device that has nothing under way (BL-219). */
+static void expect_send(expect_t *e)
+{
+    e->queued = false;
+    e->calling = true;
+    e->was = e->status;
+    e->moved = false;
+    e->idle_at = 0u;
+    e->at = lv_tick_get();
+    char ref[DEV_REF_LEN]; /* the answer may clear the entry: its ref is kept here */
+    memcpy(ref, e->ref, sizeof(ref));
+    if (!ui_call_dev_act(ref, e->action, e->value, NULL, sent, 0u)) {
+        expect_t *still = expect_find(ref);
+        if (still != NULL) {
+            expect_drop(still);
+        }
+        refusal(UI_DEV_BUSY);
+        poll();
+        show();
+    }
+}
+
+/* The newest wishes go out once their devices have answered the last change. */
+static void expect_flush(void)
+{
+    for (size_t i = 0; i < EXPECT_MAX; i++) {
+        expect_t *e = &E[i];
+        if (e->ref[0] != '\0' && e->queued && !e->calling && e->status != UI_DEV_PENDING) {
+            expect_send(e);
+        }
+    }
+}
+
+/* Sends an action; one that needs a code asks for it first (HCTL-005). One that shows at once
+ * shows now, and goes out now or once the last change is answered (BL-219). */
 static void send(const ui_dev_t *d, uint8_t action, int32_t value)
 {
     if (S.be.dev_act == NULL || action == ACT_NONE) {
         return;
     }
-    if (!ui_call_dev_act(d->ref, action, value, NULL, sent, 0u)) {
-        refusal(UI_DEV_BUSY);
+    expect_t *e = at_once(d, action) ? expect_find(d->ref) : NULL;
+    if (e == NULL && at_once(d, action)) {
+        for (size_t i = 0; i < EXPECT_MAX && e == NULL; i++) {
+            if (E[i].ref[0] == '\0') {
+                e = &E[i];
+                snprintf(e->ref, sizeof(e->ref), "%s", d->ref);
+                e->sig = report_sig(d); /* nothing laid over it yet: d is the report */
+                e->was = e->status = d->status;
+            }
+        }
     }
+    if (e == NULL) { /* one that is under way until it reports, or the table is full */
+        if (!ui_call_dev_act(d->ref, action, value, NULL, sent, 0u)) {
+            refusal(UI_DEV_BUSY);
+        }
+        return;
+    }
+    expect_shape(e, d, action, value);
+    e->action = action;
+    e->value = value;
+    e->queued = true;
+    e->at = lv_tick_get();
+    ui_dev_t *shown = find_mut(e->ref);
+    if (shown != NULL) {
+        expect_lay(e, shown);
+    }
+    show();
+    expect_flush();
 }
 
 static const tile_t *tile_of(lv_event_t *e)
@@ -755,7 +1023,7 @@ static void on_tile(lv_event_t *e)
         return;
     }
     const ui_dev_t *d = t != NULL ? find(t->ref) : NULL;
-    if (d == NULL || d->status == UI_DEV_OFFLINE || d->status == UI_DEV_PENDING) {
+    if (d == NULL || d->status == UI_DEV_OFFLINE || under_way(d)) {
         return;
     }
     if (d->status == UI_DEV_FAILED &&
@@ -868,11 +1136,12 @@ static uint32_t sheet_shape(const ui_dev_t *d)
            (has_setpoint(d) ? 0x1000000u : 0u);
 }
 
-/* Whether a change may be sent now: the device answers and has nothing under way. */
+/* Whether a change may be sent now: the device answers and has nothing under way (a change that
+ * shows at once waits as the newest wish, BL-219). */
 static const ui_dev_t *sheet_ready(void)
 {
     const ui_dev_t *d = sheet_dev();
-    return d != NULL && d->status != UI_DEV_OFFLINE && d->status != UI_DEV_PENDING ? d : NULL;
+    return d != NULL && d->status != UI_DEV_OFFLINE && !under_way(d) ? d : NULL;
 }
 
 static void sheet_closed(void)
@@ -1081,7 +1350,7 @@ static void sheet_update(const ui_dev_t *d)
         ui_set_str(&subject_sheet_note, words); /* wrapped whole: it may take another line */
         refit = true;
     }
-    const bool warn = d->status == UI_DEV_FAILED || (amber(d) && d->status != UI_DEV_PENDING && !offline);
+    const bool warn = d->status == UI_DEV_FAILED || (amber(d) && !under_way(d) && !offline);
     words_color(ui_find(X.obj, "sheet_state"), warn ? ui_tone_amber() : COLOR_TEXT_2);
     if (X.sw != NULL) {
         unusable(X.sw, offline);
@@ -1450,7 +1719,7 @@ static void tile_update(tile_t *t, const ui_dev_t *d)
 {
     const lv_color_t c = tone(d);
     const bool offline = d->status == UI_DEV_OFFLINE;
-    const bool pending = d->status == UI_DEV_PENDING;
+    const bool pending = under_way(d);
     lv_obj_t *chip = ui_find(t->obj, "chip");
     ui_chip_tone(chip, glyph(d), c);
     /* Under way, the chip at 40 %. Offline (BL-181), the tile stays at full opacity, its name and
@@ -2507,6 +2776,7 @@ static void poll(void)
         }
     }
     D.n = kept;
+    expect_read(); /* what was asked, until the report says otherwise (BL-219) */
     /* HCTL-003: Smart Home on the rail while a device is listed - a link keypad's are its alarm
      * panel's, through the link (BL-216, proposal P1 approved 2026-10-16) */
     ui_set_int(&subject_devices_avail, D.n > 0u ? 1 : 0);
@@ -2580,6 +2850,7 @@ void ui_devices_tick(void)
     if (!D.drag && lv_tick_elaps(D.polled) >= every) { /* a held tile: after its release */
         poll();
         show();
+        expect_flush();
     }
 }
 

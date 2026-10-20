@@ -5626,8 +5626,8 @@ static void on_render(lv_event_t *e)
 
 /* A sheet whose header and body are taller than the card (HCTL-004, BL-184): the body is trimmed to
  * stay inside the card, its border counted on both sides; a finger scrolls the body while the
- * header and Close stay still; and with the body scrolled to its end, its words changing (a pending
- * change, "Changing...", and back) keep where it was, clamped to its new range, in every frame drawn
+ * header and Close stay still; and with the body scrolled to its end, its words changing (a failed
+ * change, "Didn't change", and back; a change under way no longer changes them, BL-219) keep where it was, clamped to its new range, in every frame drawn
  * (the refit after a change of words used to snap it back to its top). On the open sheet of `ref`,
  * whose source is idle; sends nothing. */
 static void sheet_body_keeps_its_scroll(const char *ref, const char *what)
@@ -5700,7 +5700,7 @@ static void sheet_body_keeps_its_scroll(const char *ref, const char *what)
     s_scroll_frames = 0;
     lv_display_t *disp = lv_display_get_default();
     lv_display_add_event_cb(disp, on_render, LV_EVENT_RENDER_START, NULL);
-    host_panel_device_pending(ref, ACT_SET_MODE);
+    host_panel_device_failed(ref, ACT_SET_MODE);
     run(1200);
     const int32_t pend = lv_obj_get_scroll_y(body);
     const int32_t pend_max = pend + lv_obj_get_scroll_bottom(body);
@@ -5715,7 +5715,7 @@ static void sheet_body_keeps_its_scroll(const char *ref, const char *what)
              "frame showed it at %d",
              what, before, lv_label_get_text(state), (int)pend, (int)want, (int)pend_low);
     expect(changed && pend_frames > 0u && pend >= want - 2 && pend <= want + 2 && pend_low >= want - 2, msg);
-    shot("device_sheet_long_scrolled_pending");
+    shot("device_sheet_long_scrolled_failed");
     s_scroll_low = INT32_MAX;
     s_scroll_frames = 0;
     host_panel_device_settle(ref);
@@ -5996,6 +5996,129 @@ static void walk_smart_home(void)
                "UI-020 (BL-216): the note or the tabs didn't come back once the devices did");
     }
 
+    /* BL-219 (proposal BL-219, approved 2026-10-19): a change to a light, a switch, a fan, a
+     * thermostat or a scene shows at once, as Home Assistant's own screens do, and the device's next
+     * report wins; a lock still says it is under way. A slow source takes each call and reports
+     * only when the walk says. Everything is put back as it was for the shots that follow. */
+    {
+        host_panel_devices_slow(true);
+        /* a tap: on at once, before any report; no "Turning on…", the chip at full strength, the
+         * note counting it */
+        tap_device("Kitchen Lights");
+        run(1300);
+        lv_obj_t *k = device_tile_of("Kitchen Lights");
+        expect(host_panel_device("light.kitchen")->state == UI_DEV_ST_OFF &&
+                   host_panel_device("light.kitchen")->status == UI_DEV_PENDING,
+               "BL-219: the slow source reported the tap already");
+        expect(k != NULL && find_label(k, "On") != NULL && find_label_with(k, "Turning") == NULL &&
+                   lv_obj_get_style_opa(lv_obj_find_by_name(k, "chip"), LV_PART_MAIN) == LV_OPA_COVER,
+               "BL-219: a tapped light doesn't read On at once, or reads as under way");
+        expect(note_shows("Back Door unlocked · 3 lights on"),
+               "BL-219: the note doesn't count the light just switched on");
+        shot("bl-219-devices-at-once");
+        /* the device does it and reports: the tile follows the report */
+        host_panel_device_answer(true);
+        run(1300);
+        expect(find_label(device_tile_of("Kitchen Lights"), "On · 100%") != NULL,
+               "BL-219: the report didn't show once it came");
+        /* the device is done with a change but its report stays as it was (it ignored it): the
+         * tile shows what was asked, then the report again 2 s after the answer */
+        tap_device("Kitchen Lights");
+        run(300);
+        expect(find_label(device_tile_of("Kitchen Lights"), "Off") != NULL,
+               "BL-219: Off didn't show at once");
+        host_panel_device_answer(false);
+        run(1300);
+        expect(find_label(device_tile_of("Kitchen Lights"), "Off") != NULL,
+               "BL-219: the tile went back to the report sooner than 2 s after the answer");
+        run(3000);
+        expect(find_label(device_tile_of("Kitchen Lights"), "On · 100%") != NULL,
+               "BL-219: with no new report, the tile didn't go back to the last one");
+        /* refused: back to the report, and the tile says so (HCTL-012) */
+        tap_device("Kitchen Lights");
+        run(300);
+        host_panel_device_failed("light.kitchen", ACT_OFF);
+        run(1300);
+        k = device_tile_of("Kitchen Lights");
+        expect(k != NULL && find_label(k, "Didn't turn off") != NULL,
+               "BL-219, HCTL-012: a refused change didn't say so");
+        host_panel_device_settle("light.kitchen");
+        run(1300);
+        /* the newest wish: a touch while the last change is on its way shows at once and goes out
+         * once the device has answered that one; never refused as busy */
+        tap_device("Kitchen Lights");
+        run(300);
+        tap_device("Kitchen Lights");
+        run(300);
+        expect(find_label(device_tile_of("Kitchen Lights"), "On · 100%") != NULL &&
+                   host_panel_device("light.kitchen")->action == ACT_OFF,
+               "BL-219: a second tap while the first was on its way didn't show at once");
+        host_panel_device_answer(true);
+        run(1300);
+        expect(host_panel_device("light.kitchen")->status == UI_DEV_PENDING &&
+                   host_panel_device("light.kitchen")->action == ACT_ON,
+               "BL-219: the newest wish didn't go out once the last change was answered");
+        expect(find_label(device_tile_of("Kitchen Lights"), "On · 100%") != NULL,
+               "BL-219: the tile showed the last change's report over the newest wish");
+        host_panel_device_answer(true);
+        run(1300);
+        expect(host_panel_device("light.kitchen")->state == UI_DEV_ST_ON &&
+                   find_label(device_tile_of("Kitchen Lights"), "On · 100%") != NULL,
+               "BL-219: the newest wish wasn't done");
+        /* a lock says it is under way until it reports: never "Locked" before it is */
+        tap_device("Back Door");
+        run(1300);
+        lv_obj_t *b = device_tile_of("Back Door");
+        expect(b != NULL && find_label(b, "Locking…") != NULL &&
+                   host_panel_device("lock.back_door")->state == UI_DEV_ST_UNLOCKED,
+               "BL-219: a lock didn't say \"Locking…\" until it reported");
+        shot("bl-219-lock-under-way");
+        host_panel_device_answer(true);
+        run(1300);
+        expect(find_label(device_tile_of("Back Door"), "Locked") != NULL,
+               "BL-219: the lock's report didn't show");
+        /* a thermostat's + shows its new set point at once */
+        lv_obj_t *hall = device_tile_of("Hallway");
+        lv_obj_t *plus = hall != NULL ? lv_obj_find_by_name(hall, "plus") : NULL;
+        expect(plus != NULL, "BL-219: Hallway's tile has no +");
+        if (plus != NULL) {
+            tap(plus);
+            run(300);
+            expect(find_label(device_tile_of("Hallway"), "73°") != NULL &&
+                       host_panel_device("climate.hallway")->setpoint == 7200,
+                   "BL-219: the set point didn't show at once");
+            host_panel_device_answer(false); /* it ignored it: 72° again */
+            run(4300);
+            expect(find_label(device_tile_of("Hallway"), "72°") != NULL,
+                   "BL-219: the set point didn't go back to the report");
+        }
+        /* the sheet's slider stays where the finger lifted, and so does the tile's */
+        hold_device("Porch Light");
+        tap_sheet_slider(40);
+        {
+            lv_obj_t *sheet = device_sheet_open();
+            lv_obj_t *slider = sheet != NULL ? lv_obj_find_by_name(sheet, "slider") : NULL;
+            const int32_t v = slider != NULL ? lv_slider_get_value(slider) : -1;
+            char want[32];
+            snprintf(want, sizeof(want), "On · %d%%", (int)v);
+            expect(v >= 30 && v <= 50 && host_panel_device("light.porch")->level == 80 &&
+                       strcmp(lv_subject_get_string(&subject_sheet_note), want) == 0 &&
+                       find_label(device_tile_of("Porch Light"), want) != NULL,
+                   "BL-219: the sheet's slider or the words didn't stay where the finger lifted");
+            shot("bl-219-sheet-at-once");
+        }
+        host_panel_device_answer(false); /* it ignored it: 80 % again */
+        run(4300);
+        expect(find_label(device_tile_of("Porch Light"), "On · 80%") != NULL,
+               "BL-219: the brightness didn't go back to the report");
+        close_device_sheet();
+        host_panel_devices_slow(false);
+        host_panel_device_state("light.kitchen", UI_DEV_ST_OFF);
+        host_panel_device_state("lock.back_door", UI_DEV_ST_UNLOCKED);
+        run(1300);
+        expect(note_shows("Back Door unlocked · 2 lights on"), "BL-219: Smart Home wasn't put back");
+    }
+
     /* HCTL-004: a tap switches a light; B030: an off light's tap turns it on (the simulator, as
      * Home Assistant, takes an "on" with brightness 0 as off) */
     tap_device("Kitchen Lights");
@@ -6164,14 +6287,17 @@ static void walk_smart_home(void)
                        h->state == CASES[i].mode && h->hvac_action == CASES[i].action,
                    what);
         }
-        /* under way and failed come first; the mode asked for isn't the mode: settled with the
-         * reported mode still Off, a reported idle reads Off, and Idle once Heat is reported */
+        /* failed comes first; the mode asked for isn't the mode: settled with the reported mode
+         * still Off, a reported idle reads Off, and Idle once Heat is reported. A mode change
+         * someone else started (an automation) shows the report while it is under way: no
+         * "Changing…" (HCTL-006, BL-219) */
         host_panel_device_state("climate.hallway", UI_DEV_ST_OFF);
         host_panel_device_climate("climate.hallway", DEV_HVAC_IDLE, 7100);
         host_panel_device_pending("climate.hallway", ACT_SET_MODE);
         run(1200);
-        expect(climate_says("Hallway", "Changing…"),
-               "HCTL-006 (BL-171): a thermostat changing its mode doesn't read \"Changing…\" before its rest");
+        expect(climate_says("Hallway", "Off · 71° now"),
+               "HCTL-006 (BL-219): a thermostat whose mode someone else is changing doesn't show its "
+               "report (\"Off · 71° now\"), or reads \"Changing…\"");
         host_panel_device_settle("climate.hallway");
         run(1200);
         expect(climate_says("Hallway", "Off · 71° now"),

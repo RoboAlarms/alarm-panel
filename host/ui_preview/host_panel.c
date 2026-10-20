@@ -6322,8 +6322,20 @@ void host_panel_devices_limits(bool on)
     t->modes = UI_DEV_MODE_OFF | UI_DEV_MODE_HEAT | UI_DEV_MODE_COOL | UI_DEV_MODE_AUTO;
 }
 
+/* BL-219: a slow source (host_panel_devices_slow) and the one action it holds */
+static struct {
+    bool on;
+    bool held;
+    char ref[DEV_REF_LEN];
+    uint8_t action;
+    int32_t value;
+} s_slow;
+
 void host_panel_device_failed(const char *ref, uint8_t action)
 {
+    if (s_slow.held && strcmp(s_slow.ref, ref) == 0) {
+        s_slow.held = false; /* the source refused what it held */
+    }
     for (size_t i = 0; i < s_dev.n; i++) {
         if (strcmp(s_dev.dev[i].ref, ref) == 0) {
             s_dev.dev[i].status = UI_DEV_FAILED;
@@ -6565,8 +6577,44 @@ static ui_dev_result_t be_dev_act(void *ctx, const char *ref, uint8_t action, in
             return UI_DEV_CODE_REFUSED;
         }
     }
+    if (s_slow.on) {
+        if (s_slow.held) {
+            return UI_DEV_BUSY;
+        }
+        s_slow.held = true; /* taken; it reports once host_panel_device_answer says (BL-219) */
+        snprintf(s_slow.ref, sizeof(s_slow.ref), "%s", ref);
+        s_slow.action = action;
+        s_slow.value = value;
+        d->status = UI_DEV_PENDING;
+        d->action = action;
+        d->unsure = 0u;
+        return UI_DEV_OK;
+    }
     dev_apply(d, action, value);
     return UI_DEV_OK;
+}
+
+void host_panel_devices_slow(bool on)
+{
+    s_slow.on = on;
+    s_slow.held = false;
+}
+
+void host_panel_device_answer(bool report)
+{
+    if (!s_slow.held) {
+        return;
+    }
+    s_slow.held = false;
+    ui_dev_t *d = (ui_dev_t *)host_panel_device(s_slow.ref);
+    if (d == NULL) {
+        return;
+    }
+    if (report) {
+        dev_apply(d, s_slow.action, s_slow.value);
+    } else {
+        host_panel_device_settle(s_slow.ref); /* done with it; the report as it was */
+    }
 }
 
 /* ---- automations (docs/features/41 U12) ------------------------------------------------------

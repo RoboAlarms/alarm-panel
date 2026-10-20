@@ -355,6 +355,13 @@ void host_panel_device_settle(const char *ref);
 /* An action under way (HCTL-006): its status pending and its action, as the source reports them;
  * the state stays the one reported until settle (a mode asked for isn't the mode, BL-171). */
 void host_panel_device_pending(const char *ref, uint8_t action);
+/* A slow source (BL-219): on, the next action a device is sent is taken (UI_DEV_OK) and left under
+ * way, its report unchanged, until host_panel_device_answer: report true, the device does it and
+ * reports; false, it is done with it and its report stays as it was (it ignored it). Another
+ * action meanwhile is refused as busy, as home_control refuses it. host_panel_device_failed ends it
+ * as refused. Off (the default) answers at once, as before. */
+void host_panel_devices_slow(bool on);
+void host_panel_device_answer(bool report);
 /* The device's source can't reach it (HCTL-006): offline since since_ms, its state and values kept
  * as last reported; host_panel_device_settle brings it back (BL-181). */
 void host_panel_device_offline(const char *ref, int64_t since_ms);

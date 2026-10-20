@@ -36,7 +36,7 @@ lv_obj_t * day_toggle_create(lv_obj_t * parent)
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_19(&style_day_toggle, 64, 64, RADIUS_FULL);
+        alarm_ui_run_20(&style_day_toggle, 64, 64, RADIUS_FULL);
         alarm_ui_run_6(&style_day_toggle, COLOR_RAISED, (255 * 100 / 100));
         alarm_ui_run_45(&style_day_toggle, font_caption, COLOR_TEXT_2);
         lv_style_set_bg_color(&style_day_toggle_pressed, COLOR_PRESSED);
@@ -60,7 +60,7 @@ lv_obj_t * day_toggle_create(lv_obj_t * parent)
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_20(parent);
+        lv_obj_t * box_0 = alarm_ui_run_21(parent);
         alarm_ui_run_60(box_0, LV_OBJ_FLAG_CHECKABLE, true, 4);
         alarm_ui_run_16(box_0, &style_day_toggle, 0, &style_day_toggle_pressed, LV_STATE_PRESSED);
         lv_obj_add_style(box_0, &style_day_toggle_on, LV_STATE_CHECKED);

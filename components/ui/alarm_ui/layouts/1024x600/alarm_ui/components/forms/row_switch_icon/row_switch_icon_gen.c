@@ -47,7 +47,7 @@ lv_obj_t * row_switch_icon_create(lv_obj_t * parent, const char * glyph, lv_colo
         alarm_ui_run_6(&style_row_setting_icon, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_row_setting_icon, RADIUS_MD);
         alarm_ui_run_7(&style_row_setting_icon, SPACE_MD, SPACE_LG, SPACE_SM, SPACE_SM, SPACE_MD);
-        alarm_ui_run_19(&style_switch_icon, 64, 36, RADIUS_FULL);
+        alarm_ui_run_20(&style_switch_icon, 64, 36, RADIUS_FULL);
         alarm_ui_run_6(&style_switch_icon, COLOR_PRESSED, (255 * 100 / 100));
         alarm_ui_run_63(&style_switch_icon_indicator, RADIUS_FULL, (255 * 0 / 100));
         alarm_ui_run_6(&style_switch_icon_on, COLOR_GREEN, (255 * 100 / 100));

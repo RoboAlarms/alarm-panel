@@ -133,6 +133,7 @@ enum {
     SECTION_ABOUT,
     SECTION_WALK,        /* docs/features/40 */
     SECTION_AUTOMATIONS = 9, /* after Integrations (docs/features/41; ALARM_UI_AUTOMATIONS) */
+    SECTION_SMART_HOME = 10, /* what asks for a master code (BL-220; ALARM_UI_DEVICES) */
 };
 
 /* Who may open a Settings page (docs/features/14, "Who can change what"). */
@@ -261,6 +262,7 @@ typedef enum {
     PAGE_LINK_ADD,        /* Installer > Keypads and devices > Add a keypad */
     PAGE_LINK_KEYPAD,     /* a keypad on Wi-Fi, arg = its number (1..8) */
     PAGE_LINK_STANDALONE, /* a keypad's About > Make it a stand-alone panel (a factory reset) */
+    PAGE_SMART_HOME,      /* Settings > Smart Home: what asks for a master code (BL-220) */
 } page_id_t;
 
 typedef struct {
@@ -857,6 +859,10 @@ void ui_devices_init(void);
 void ui_devices_tick(void);             /* reads the devices: once a second on the view, else every few */
 void ui_devices_shown(void);            /* the view was opened: its tiles, now */
 void ui_devices_language_changed(void); /* every word it wrote, again */
+/* Settings > Smart Home (BL-220 R5): whether this panel keeps the house's settings and has a
+ * device, and the page's rows (Arranging asks for a master code; a switch per device). */
+bool ui_devices_settings_available(void);
+void ui_devices_settings_build(lv_obj_t *body, char *note, size_t nlen);
 #endif
 
 /* ---- ui_integrations.c --------------------------------------------------------------------- */

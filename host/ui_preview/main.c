@@ -21,6 +21,7 @@
 #include "alarm_ui_gen.h"
 #include "i18n/i18n.h"
 #include "host_panel.h"
+#include "home_control/hc_home.h"
 #include "voice_walk.h"
 #include "host_link_demo.h"
 #include "host_zigbee_demo.h"
@@ -4130,129 +4131,26 @@ static lv_obj_t *device_tile_of(const char *name)
     return o;
 }
 
-/* Smart Home's note as the screen draws it, whole: the subject's text in a visible label of the
- * page's header. The label is one line that LVGL ends in "..." where the text is too wide (its
- * text then differs), so a match is the whole note on screen (UI-020, UI-023, BL-171). */
-static bool note_shows(const char *text)
+/* BL-220 R7 (the owner, 2026-10-19): no "Smart Home" title and no note over the page - the
+ * header is hidden, its note empty, and the tabs start the row with the pencil at its end. */
+static bool no_title(void)
 {
-    lv_obj_t *l = find_label(by_name("device_header"), text);
-    return strcmp(lv_subject_get_string(&subject_devices_note), text) == 0 && l != NULL &&
-           strcmp(lv_label_get_text(l), text) == 0;
-}
-
-/* A check that holds in every language (the note's outcome words, read through the walk's own
- * catalog): failing it fails the run, -Locale walks included. */
-static void expect_in_any_language(bool ok, const char *what)
-{
-    if (!ok) {
-        fprintf(stderr, "%s\n", what);
-        exit(1);
-    }
-}
-
-/* The note's first fact is the sentence pattern (English, or the walk's language) with a name in
- * its {0}: the words before and after it whole, the name between them shortened or not. */
-static bool note_has_outcome(const char *note, const char *english)
-{
-    const char *dot = strstr(note, " \xC2\xB7 ");
-    const size_t first = dot != NULL ? (size_t)(dot - note) : strlen(note);
-    const char *patterns[2] = {english, i18n_text(s_cat, NULL, english)};
-    for (size_t i = 0; i < 2u; i++) {
-        const char *at = strstr(patterns[i], "{0}");
-        if (at == NULL) {
-            continue;
-        }
-        const size_t head = (size_t)(at - patterns[i]);
-        const size_t tail = strlen(at + 3);
-        if (first >= head + tail + 1u && strncmp(note, patterns[i], head) == 0 &&
-            memcmp(note + first - tail, at + 3, tail) == 0) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/* The note's label draws its whole text: one line that needs no "...", or (the last resort) the
- * lines it wraps to inside the label's height. */
-static bool note_drawn_whole(void)
-{
-    lv_obj_t *l = lv_obj_get_child(by_name("device_header"), 1);
-    const char *text = lv_subject_get_string(&subject_devices_note);
-    if (l == NULL || strcmp(lv_label_get_text(l), text) != 0) {
+    lv_obj_t *head = lv_obj_find_by_name(lv_screen_active(), "device_header"); /* hidden: no by_name */
+    lv_obj_t *tabs = by_name("device_areas");
+    lv_obj_t *pencil = by_name("device_arrange");
+    if (head == NULL || tabs == NULL || pencil == NULL) {
         return false;
     }
-    lv_point_t size;
-    lv_text_get_size(&size, text, lv_obj_get_style_text_font(l, LV_PART_MAIN),
-                     lv_obj_get_style_text_letter_space(l, LV_PART_MAIN),
-                     lv_obj_get_style_text_line_space(l, LV_PART_MAIN),
-                     lv_label_get_long_mode(l) == LV_LABEL_LONG_MODE_WRAP ? lv_obj_get_content_width(l)
-                                                                           : LV_COORD_MAX,
-                     LV_TEXT_FLAG_NONE);
-    return size.x <= lv_obj_get_content_width(l) && size.y <= lv_obj_get_content_height(l);
-}
-
-/* UI-020, HCTL-012 (BL-171, addendum 6): with the area tabs at the layout's widest (a house of many
- * rooms), even the note's shortest form - one fact, the name down to "…" - is wider than the line
- * left beside them ("Couldn't confirm … turned off" needs about 264 px of 252). The outcome is
- * never cut: the note takes its room from the tabs (which scroll, the open tab in view) and the
- * tiles stay where they are; once the failure goes, the tabs are as wide as before. In every
- * language the walk runs in (English, es-US, en-XA). */
-static void note_with_the_widest_tabs(void)
-{
-    host_panel_devices_rooms(true);
-    run(1200);
-    lv_obj_t *tabs = by_name("device_areas");
-    lv_obj_t *grid = by_name("device_grid");
-    const int32_t widest = lv_obj_get_style_max_width(tabs, LV_PART_MAIN);
-    lv_obj_update_layout(tabs);
-    const int32_t grid_y = lv_obj_get_y(grid);
-    expect_in_any_language(lv_obj_get_width(tabs) == widest,
-                           "UI-020 (BL-171): many rooms didn't take the area tabs to their widest");
-    static const struct {
-        const char *ref;
-        uint8_t action;
-        const char *english;
-    } CASES[] = {
-        {"light.living_lamp", ACT_OFF, "Couldn't confirm {0} turned off"},
-        {"lock.front_door", ACT_UNLOCK, "Couldn't confirm {0} unlocked"},
-        {"light.living_lamp", ACT_NONE, "Couldn't confirm the result for {0}"},
-    };
-    for (size_t i = 0; i < sizeof(CASES) / sizeof(CASES[0]); i++) {
-        const char *name = host_panel_device(CASES[i].ref)->name;
-        char was[DEV_NAME_LEN];
-        snprintf(was, sizeof(was), "%s", name);
-        host_panel_device_rename(CASES[i].ref, "Living Room Lamp Over The Reading Chair By Door");
-        host_panel_device_unconfirmed(CASES[i].ref, CASES[i].action);
-        run(1200);
-        const char *n = lv_subject_get_string(&subject_devices_note);
-        printf("  note beside the widest tabs: %s\n", n);
-        expect_in_any_language(note_has_outcome(n, CASES[i].english),
-                               "HCTL-012 (BL-171): beside the widest tabs, the note lost its outcome words");
-        expect_in_any_language(note_drawn_whole(),
-                               "UI-020 (BL-171): beside the widest tabs, the note as drawn doesn't show its whole text");
-        expect_in_any_language(lv_obj_get_y(grid) == grid_y,
-                               "UI-020 (BL-171): the note's room moved the tiles");
-        lv_obj_t *on = NULL;
-        for (uint32_t c = 0; c < lv_obj_get_child_count(tabs) && on == NULL; c++) {
-            lv_obj_t *seg = lv_obj_get_child(tabs, (int32_t)c);
-            on = find_label(seg, "Living room") != NULL ? seg : NULL;
-        }
-        lv_area_t a = {0};
-        lv_area_t box = {0};
-        if (on != NULL) {
-            lv_obj_get_coords(on, &a);
-            lv_obj_get_coords(tabs, &box);
-        }
-        expect_in_any_language(on != NULL && a.x1 >= box.x1 && a.x2 <= box.x2,
-                               "UI-020 (BL-171): the open tab went out of view when the note took room");
-        host_panel_device_settle(CASES[i].ref);
-        host_panel_device_rename(CASES[i].ref, was);
-        run(1200);
-    }
-    expect_in_any_language(lv_obj_get_width(tabs) == widest,
-                           "UI-020 (BL-171): the area tabs didn't come back to their widest");
-    host_panel_devices_rooms(false);
-    run(1200);
+    lv_obj_update_layout(lv_screen_active());
+    lv_area_t t;
+    lv_area_t pen;
+    lv_area_t row;
+    lv_obj_get_coords(tabs, &t);
+    lv_obj_get_coords(pencil, &pen);
+    lv_obj_get_coords(lv_obj_get_parent(tabs), &row);
+    return lv_obj_has_flag(head, LV_OBJ_FLAG_HIDDEN) &&
+           lv_subject_get_string(&subject_devices_note)[0] == '\0' && t.x1 == row.x1 &&
+           pen.x2 == row.x2 && t.x2 < pen.x1;
 }
 
 /* A tab wholly inside the tabs' box (scrolled into view, not cut at an edge). */
@@ -4268,95 +4166,50 @@ static bool tab_in_view(lv_obj_t *tabs, lv_obj_t *seg)
     return a.x1 >= box.x1 && a.x2 <= box.x2;
 }
 
-/* UI-020, HCTL-012 (BL-171): the same beside the widest tabs, with the open tab a room whose name
- * is as wide as a room's name gets (33 bytes of "W", wider than the tabs can be): narrowing the
- * other tabs alone can't give the note its room, and the open tab must not push the tabs past the
- * layout's widest. The open tab's name is shortened with "…" where it must be, so it stays in view
- * and the note shows its whole outcome on its one line - one fact, a fact and "1 light on", two
- * failures - and the tiles stay where they are; once the failure goes, the tabs are as wide as
- * before. In every language the walk runs in (English, es-US, en-XA). */
-static void note_with_a_long_open_room(void)
+/* BL-220 R7: with no title beside them the tabs take the row up to the pencil - a house of many
+ * rooms scrolls them, the open one in view and the pencil where it was - and a room's long name
+ * stays inside them; the tiles don't move. Every device as before afterwards. */
+static void tabs_take_the_row(void)
 {
     static const char ROOM[] = "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW";
-    static const char LONG_NAME[] = "Living Room Lamp Over The Reading Chair By Door";
+    lv_obj_t *tabs = by_name("device_areas");
+    lv_obj_t *grid = by_name("device_grid");
+    lv_obj_update_layout(lv_screen_active());
+    const int32_t grid_y = lv_obj_get_y(grid);
     host_panel_devices_rooms(true);
+    run(1200);
+    lv_obj_update_layout(tabs);
+    expect(no_title() && lv_obj_get_y(grid) == grid_y,
+           "BL-220 R7: with many rooms the tabs don't start the row, the pencil moved, or the tiles did");
+    expect(lv_obj_get_width(tabs) == lv_obj_get_style_max_width(tabs, LV_PART_MAIN) &&
+               lv_obj_get_width(tabs) > 560,
+           "BL-220 R7: many rooms didn't take the tabs to the row's width (wider than beside a title)");
+    printf("  many rooms: tabs %d px\n", (int)lv_obj_get_width(tabs));
     host_panel_devices_area_rename("Living room", ROOM);
     run(1200);
     tap_area(ROOM);
     run(1200);
-    lv_obj_t *tabs = by_name("device_areas");
-    lv_obj_t *grid = by_name("device_grid");
-    lv_obj_t *note = lv_obj_get_child(by_name("device_header"), 1);
-    const int32_t widest = lv_obj_get_style_max_width(tabs, LV_PART_MAIN);
     lv_obj_update_layout(tabs);
-    const int32_t grid_y = lv_obj_get_y(grid);
-    const int32_t line = lv_font_get_line_height(lv_obj_get_style_text_font(note, LV_PART_MAIN));
-    /* the open tab: the registry's first room, after Favorites */
-    lv_obj_t *on = lv_obj_get_child(tabs, 1);
-    expect_in_any_language(on != NULL && strncmp(lv_label_get_text(lv_obj_get_child(on, 0)), "WWW", 3) == 0 &&
-                               lv_obj_get_width(tabs) <= widest && tab_in_view(tabs, on),
-                           "UI-020 (BL-171): the long room's tab isn't the second tab, or isn't wholly in view");
-    printf("  long open room: tabs %d px of %d, its tab %d px\n", (int)lv_obj_get_width(tabs),
-           (int)widest, on != NULL ? (int)lv_obj_get_width(on) : -1);
-    static const struct {
-        const char *ref;
-        uint8_t action;
-        const char *also; /* a second failure, NULL none */
-        uint8_t also_action;
-        bool lamp_on;     /* "1 light on" as a second fact */
-        const char *english;
-    } CASES[] = {
-        {"light.living_lamp", ACT_OFF, NULL, ACT_NONE, false, "Couldn't confirm {0} turned off"},
-        {"lock.front_door", ACT_UNLOCK, NULL, ACT_NONE, true, "Couldn't confirm {0} unlocked"},
-        {"lock.front_door", ACT_UNLOCK, "light.living_lamp", ACT_OFF, true, "Couldn't confirm {0} unlocked"},
-        {"light.living_lamp", ACT_NONE, NULL, ACT_NONE, false, "Couldn't confirm the result for {0}"},
-    };
-    for (size_t i = 0; i < sizeof(CASES) / sizeof(CASES[0]); i++) {
-        char was[DEV_NAME_LEN];
-        char also_was[DEV_NAME_LEN] = "";
-        snprintf(was, sizeof(was), "%s", host_panel_device(CASES[i].ref)->name);
-        host_panel_device_rename(CASES[i].ref, LONG_NAME);
-        host_panel_device_unconfirmed(CASES[i].ref, CASES[i].action);
-        if (CASES[i].also != NULL) {
-            snprintf(also_was, sizeof(also_was), "%s", host_panel_device(CASES[i].also)->name);
-            host_panel_device_rename(CASES[i].also, LONG_NAME);
-            host_panel_device_unconfirmed(CASES[i].also, CASES[i].also_action);
-        }
-        if (!CASES[i].lamp_on) {
-            host_panel_device_state("light.living_lamp", UI_DEV_ST_OFF);
-        }
-        run(1200);
-        lv_obj_update_layout(tabs);
-        const char *n = lv_subject_get_string(&subject_devices_note);
-        printf("  note beside a long open room: %s (note %d x %d px, %d line(s); tabs %d px, open tab %d px)\n",
-               n, (int)lv_obj_get_content_width(note), (int)lv_obj_get_height(note),
-               (int)((lv_obj_get_height(note) + line - 1) / line), (int)lv_obj_get_width(tabs),
-               on != NULL ? (int)lv_obj_get_width(on) : -1);
-        expect_in_any_language(note_has_outcome(n, CASES[i].english),
-                               "HCTL-012 (BL-171): beside a long open room, the note lost its outcome words");
-        expect_in_any_language(note_drawn_whole() && lv_obj_get_height(note) == line,
-                               "UI-020 (BL-171): beside a long open room, the note as drawn isn't its whole text on one line");
-        expect_in_any_language(lv_obj_get_width(tabs) <= widest,
-                               "UI-020 (BL-171): the long open room's tab pushed the tabs past the layout's widest");
-        expect_in_any_language(lv_obj_get_y(grid) == grid_y,
-                               "UI-020 (BL-171): beside a long open room, the note's room moved the tiles");
-        expect_in_any_language(tab_in_view(tabs, on),
-                               "UI-020 (BL-171): the long open room's tab went out of view when the note took room");
-        host_panel_device_settle(CASES[i].ref);
-        host_panel_device_rename(CASES[i].ref, was);
-        if (CASES[i].also != NULL) {
-            host_panel_device_settle(CASES[i].also);
-            host_panel_device_rename(CASES[i].also, also_was);
-        }
-        host_panel_device_state("light.living_lamp", UI_DEV_ST_ON);
-        run(1200);
+    lv_obj_t *on = NULL;
+    for (uint32_t c = 0; c < lv_obj_get_child_count(tabs) && on == NULL; c++) {
+        lv_obj_t *seg = lv_obj_get_child(tabs, (int32_t)c);
+        on = find_label_with(seg, "WWW") != NULL ? seg : NULL;
     }
-    lv_obj_update_layout(tabs);
-    expect_in_any_language(lv_obj_get_width(tabs) == widest && tab_in_view(tabs, on),
-                           "UI-020 (BL-171): the tabs didn't come back to their widest, or the long room's tab went out of view");
+    expect(tab_in_view(tabs, on) && no_title(),
+           "BL-220 R7: a long room's open tab isn't wholly in view, or pushed the pencil");
     host_panel_devices_area_rename(ROOM, "Living room");
     host_panel_devices_rooms(false);
     run(1200);
+    /* the rooms made from the areas that went stay until Smart Home is opened again (hc_home_adopt
+     * drops them only then, so a source listing a few at a time can't shuffle the tabs) */
+    expect(find_label_with(by_name("device_areas"), "WWW") != NULL,
+           "BL-220 R3: an area's empty room went while Smart Home was looked at");
+    tap_name("nav_home");
+    run(300);
+    tap_name("nav_devices");
+    run(1200);
+    expect(find_label_with(by_name("device_areas"), "WWW") == NULL,
+           "BL-220 R3: an empty room made from an area didn't go when Smart Home opened again");
     tap_area("Living room");
     run(1200);
 }
@@ -4367,137 +4220,6 @@ static bool tile_says(const char *name, const char *words, bool amber)
     lv_obj_t *tile = device_tile_of(name);
     lv_obj_t *l = tile != NULL ? find_label(tile, words) : NULL;
     return l != NULL && lv_color_eq(lv_obj_get_style_text_color(l, LV_PART_MAIN), COLOR_AMBER) == amber;
-}
-
-/* HCTL-006 (BL-182, decided 2026-10-07: keep the page's order): the note's two facts are picked by
- * priority - jammed, then unlocked locks and open entrance covers, then offline, then failed
- * actions - and within each by the page's order; nothing cycles or ranks by time. In the Living
- * room (Front Door, Hallway, Good Night, Living Room Lamp, in that order; short names so that two
- * failures fit the one line), then Outside for the priorities against failures earlier on the
- * page. Every device and the note are as before afterwards. */
-static void note_keeps_the_page_order(void)
-{
-    static const struct {
-        const char *ref;
-        const char *name;
-    } SHORT[] = {
-        {"lock.front_door", "Door"},
-        {"climate.hallway", "Hall"},
-        {"scene.good_night", "Night"},
-        {"light.living_lamp", "Lamp"},
-    };
-    char was[sizeof(SHORT) / sizeof(SHORT[0])][DEV_NAME_LEN];
-    for (size_t i = 0; i < sizeof(SHORT) / sizeof(SHORT[0]); i++) {
-        snprintf(was[i], sizeof(was[i]), "%s", host_panel_device(SHORT[i].ref)->name);
-        host_panel_device_rename(SHORT[i].ref, SHORT[i].name);
-    }
-    tap_area("Living room");
-    run(1200);
-    expect(note_shows("1 light on"), "HCTL-006 (BL-182): the Living room's note doesn't start at \"1 light on\"");
-
-    /* two failures: the first two on the page */
-    host_panel_device_failed("climate.hallway", ACT_SET_TEMP);
-    host_panel_device_failed("scene.good_night", ACT_RUN);
-    run(1200);
-    printf("  note, two failures: %s\n", lv_subject_get_string(&subject_devices_note));
-    expect(note_shows("Hall didn't change · Night didn't run"),
-           "HCTL-006 (BL-182): two failures don't read \"Hall didn't change · Night didn't run\"");
-    /* a third, lower down the page: it doesn't displace the first two, and its tile says it */
-    host_panel_device_failed("light.living_lamp", ACT_TOGGLE);
-    run(1200);
-    expect(note_shows("Hall didn't change · Night didn't run"),
-           "HCTL-006 (BL-182): a later failure lower down the page displaced one of the first two");
-    expect(tile_says("Lamp", "Didn't switch", true),
-           "HCTL-006 (BL-182): the failure the note has no room for isn't on its own tile, in amber");
-    shot("devices_note_page_order");
-    /* polls that bring nothing new leave the words and the layout still: nothing cycles */
-    {
-        lv_obj_t *label = lv_obj_get_child(by_name("device_header"), 1);
-        lv_obj_t *tabs = by_name("device_areas");
-        lv_obj_t *grid = by_name("device_grid");
-        lv_obj_update_layout(lv_screen_active());
-        lv_area_t at;
-        lv_obj_get_coords(label, &at);
-        const int32_t tabs_w = lv_obj_get_width(tabs);
-        const int32_t grid_y = lv_obj_get_y(grid);
-        char text[UI_SUBJECT_STRING_LENGTH];
-        snprintf(text, sizeof(text), "%s", lv_subject_get_string(&subject_devices_note));
-        bool still = true;
-        for (int poll = 0; poll < 5; poll++) {
-            run(1200);
-            lv_obj_update_layout(lv_screen_active());
-            lv_area_t now;
-            lv_obj_get_coords(label, &now);
-            still = still && strcmp(lv_subject_get_string(&subject_devices_note), text) == 0 &&
-                    strcmp(lv_label_get_text(label), text) == 0 && now.x1 == at.x1 && now.y1 == at.y1 &&
-                    now.x2 == at.x2 && now.y2 == at.y2 && lv_obj_get_width(tabs) == tabs_w &&
-                    lv_obj_get_y(grid) == grid_y;
-        }
-        expect(still, "HCTL-006, UI-023 (BL-182): polls with nothing new moved the note's words or layout");
-    }
-    /* an entry earlier on the page displaces a later one */
-    host_panel_device_failed("lock.front_door", ACT_LOCK);
-    run(1200);
-    expect(note_shows("Door didn't lock · Hall didn't change"),
-           "HCTL-006 (BL-182): a failure earlier on the page didn't displace a later one");
-    shot("devices_note_earlier_entry");
-    /* a resolution shows the next entry */
-    host_panel_device_settle("lock.front_door");
-    run(1200);
-    expect(note_shows("Hall didn't change · Night didn't run"),
-           "HCTL-006 (BL-182): with Door's failure resolved, Night's didn't come back");
-    host_panel_device_settle("climate.hallway");
-    run(1200);
-    expect(note_shows("Night didn't run · Lamp didn't switch"),
-           "HCTL-006 (BL-182): with Hall's failure resolved, the next one (Lamp) didn't show");
-    /* an unlocked lock comes before a failure */
-    host_panel_device_state("lock.front_door", UI_DEV_ST_UNLOCKED);
-    run(1200);
-    expect(note_shows("Door unlocked · Night didn't run"),
-           "HCTL-006 (BL-182): an unlocked lock didn't come before the failures");
-    host_panel_device_state("lock.front_door", UI_DEV_ST_LOCKED);
-    host_panel_device_settle("scene.good_night");
-    host_panel_device_settle("light.living_lamp");
-    for (size_t i = 0; i < sizeof(SHORT) / sizeof(SHORT[0]); i++) {
-        host_panel_device_rename(SHORT[i].ref, was[i]);
-    }
-    run(1200);
-    expect(note_shows("1 light on"), "HCTL-006 (BL-182): the Living room's note didn't come back to \"1 light on\"");
-
-    /* Outside (Porch Light, Garage Door, Side Gate, Patio Lights, Pool Pump, ...): a jam, an open
-     * entrance cover and an offline device come before a failure earlier on the page. Short names
-     * again, so that two facts fit ("Side Gate jammed · Garage Door open" is wider than the line). */
-    tap_area("Outside");
-    host_panel_device_rename("lock.side_gate", "Gate");
-    host_panel_device_rename("cover.garage_door", "Garage");
-    run(1200);
-    host_panel_device_failed("light.porch", ACT_OFF);
-    run(1200);
-    expect(note_shows("Gate jammed · Pool Pump offline"),
-           "HCTL-006 (BL-182): a failure first on the page displaced the jam or the offline pump");
-    host_panel_device_state("cover.garage_door", UI_DEV_ST_OPEN);
-    run(1200);
-    expect(note_shows("Gate jammed · Garage open"),
-           "HCTL-006 (BL-182): an open garage door didn't come after the jam and before the offline pump");
-    shot("devices_note_priority");
-    host_panel_device_state("lock.side_gate", UI_DEV_ST_LOCKED);
-    run(1200);
-    expect(note_shows("Garage open · Pool Pump offline"),
-           "HCTL-006 (BL-182): with the jam gone, the open garage door and the offline pump don't lead");
-    host_panel_device_state("cover.garage_door", UI_DEV_ST_CLOSED);
-    run(1200);
-    printf("  note, offline before an earlier failure: %s\n", lv_subject_get_string(&subject_devices_note));
-    expect(strncmp(lv_subject_get_string(&subject_devices_note), "Pool Pump offline", 17) == 0,
-           "HCTL-006 (BL-182): the offline pump didn't come before Porch Light's failure");
-    host_panel_device_state("lock.side_gate", UI_DEV_ST_JAMMED);
-    host_panel_device_settle("light.porch");
-    host_panel_device_rename("lock.side_gate", "Side Gate");
-    host_panel_device_rename("cover.garage_door", "Garage Door");
-    run(1200);
-    expect(note_shows("Side Gate jammed · Pool Pump offline"),
-           "HCTL-006 (BL-182): Outside's note didn't come back");
-    tap_area("Living room");
-    run(1200);
 }
 
 /* A thermostat's words on its tile and its open sheet alike (HCTL-004, BL-171). */
@@ -4937,7 +4659,15 @@ static uint32_t tile_places(lv_area_t *out, uint32_t max)
 
 static bool header_says(const char *text)
 {
-    return find_label(by_name("device_arrange_header"), text) != NULL;
+    lv_obj_t *head = by_name("device_arrange_header");
+    if (find_label(head, text) != NULL) {
+        return true;
+    }
+    /* BL-220: Room shares the picked tile's row, so a name may end in LVGL's "..." there */
+    lv_obj_t *title = head != NULL ? lv_obj_get_child(head, 0) : NULL;
+    const char *t = title != NULL ? lv_label_get_text(title) : "";
+    const size_t n = strlen(t);
+    return n > 3u && strcmp(t + n - 3u, "...") == 0 && strncmp(t, text, n - 3u) == 0;
 }
 
 /* HCTL-008: Arrange's drag - a held tile is lifted (picked, as a tap picks it) and takes the place
@@ -5247,18 +4977,19 @@ static void walk_arrange(void)
     expect(device_before("Front Door", "Porch Light") && device_before("Kitchen Lights", "Good Night") &&
                device_is_wide("Kitchen Lights") && !device_is_wide("Porch Light"),
            "HCTL-008: the arrangement wasn't kept");
-    /* a room's page arranges too, without Add and Remove */
+    /* a room's page arranges too, without Remove; Add moves devices into the room and Rooms
+     * changes the rooms (BL-220 D5, R2), and a picked tile has Room (R1) */
     tap_area("Kitchen");
     run(300);
     tap_name("device_arrange");
     run(300);
-    expect(!shown("device_arrange_add"),
-           "HCTL-008: a room's page offers Add");
+    expect(shown("device_arrange_add") && shown("device_arrange_rooms"),
+           "BL-220: a room's page doesn't offer Add and Rooms");
     tap_device("Back Door");
     run(300);
-    expect(!shown("device_arrange_remove") &&
-               shown("device_arrange_next"),
-           "HCTL-008: a room's page offers Remove, or no arrows");
+    expect(!shown("device_arrange_remove") && shown("device_arrange_next") &&
+               shown("device_arrange_room"),
+           "HCTL-008, BL-220: a room's page offers Remove, or no arrows, or no Room");
     tap_name("device_arrange_next");
     run(300);
     expect(device_before("Kitchen Lights", "Back Door"), "HCTL-008: a room's page didn't move the tile");
@@ -5911,6 +5642,280 @@ static int64_t preview_now_ms(void)
     return b.epoch_ms(b.ctx);
 }
 
+/* ---- BL-220: rooms made on the panel, a master code by setting, the start screen ----------
+ * The proposal BL-220-device-rooms.js (approved 2026-10-19), its screens as shots. Everything is
+ * put back as it was: the rooms follow Home Assistant's areas again, nothing asks for a code, and
+ * the screen rests on Security. */
+static hc_home_t s_home_seen;
+
+/* The house's settings as the panel stores them now. */
+static const hc_home_t *home_now(void)
+{
+    static uint8_t blob[HC_HOME_BLOB_MAX];
+    const size_t len = host_panel_dev_home(blob, sizeof(blob));
+    if (len == 0u || !hc_home_decode(&s_home_seen, blob, len)) {
+        hc_home_clear(&s_home_seen);
+    }
+    return &s_home_seen;
+}
+
+/* The name of the room a device is in now, "" none. */
+static const char *room_now(const char *ref)
+{
+    const hc_home_t *h = home_now();
+    const int r = hc_home_room_of(h, ref, host_panel_device(ref)->area);
+    return r >= 0 ? h->rooms[r].name : "";
+}
+
+static void tap_pick(const char *title)
+{
+    lv_obj_t *l = find_label(by_name("pick_list"), title);
+    expect(l != NULL, "BL-220: a row missing from the sheet");
+    if (l != NULL) {
+        tap(l);
+    }
+    run(300);
+}
+
+static void walk_rooms(void)
+{
+    printf("Smart Home: rooms (BL-220)\n");
+    tap_name("nav_devices");
+    run(300);
+    tap_area("Favorites");
+    run(300);
+    /* R3: Home Assistant's areas became the panel's rooms, in the order they came */
+    {
+        const hc_home_t *h = home_now();
+        expect(h->nrooms == 3u && strcmp(h->rooms[0].name, "Living room") == 0 &&
+                   strcmp(room_now("light.porch"), "Outside") == 0,
+               "BL-220 R3: the areas didn't become rooms, or Porch Light isn't in Outside");
+    }
+    shot("bl-220-no-header");
+    /* R1: a picked tile's Room - its source's room ticked - then New room, named on the keyboard */
+    tap_name("device_arrange");
+    run(300);
+    expect(shown("device_arrange_rooms") && shown("device_arrange_add"),
+           "BL-220 R2: Arrange has no Rooms beside Add");
+    tap_device("Porch Light");
+    run(300);
+    expect(shown("device_arrange_room"), "BL-220 R1: a picked tile has no Room");
+    shot("bl-220-arrange-pick");
+    tap_name("device_arrange_room");
+    run(300);
+    expect(lv_subject_get_int(&subject_sheet) == 2 &&
+               find_label(by_name("pick_list"), "Room from its source") != NULL &&
+               find_label(by_name("pick_list"), "New room") != NULL &&
+               find_label(by_name("pick_list"), "No room") != NULL,
+           "BL-220 R1: the room picker doesn't offer its source's room, New room and No room");
+    tap_pick("New room");
+    sheet_text("Patio");
+    shot("bl-220-room-new");
+    tap_name("sheet_done");
+    run(300);
+    expect(strcmp(room_now("light.porch"), "Patio") == 0 && hc_home_placed(home_now(), "light.porch"),
+           "BL-220 R1: New room didn't make Patio with Porch Light in it");
+    /* a name another room has is refused, and the keyboard opens again with it */
+    tap_name("device_arrange_room");
+    run(300);
+    tap_pick("New room");
+    sheet_text("outside");
+    tap_name("sheet_done");
+    run(300);
+    expect(find_visible(lv_screen_active(), "sheet_text") != NULL && home_now()->nrooms == 4u,
+           "BL-220 R2: a room's name taken twice wasn't refused");
+    tap_name("sheet_cancel");
+    run(300);
+    /* the room picker with rooms: Porch Light in Patio, ticked */
+    tap_name("device_arrange_room");
+    run(300);
+    shot("bl-220-room-pick");
+    tap_name("pick_close");
+    run(300);
+    tap_name("device_arrange_done");
+    run(300);
+    expect(find_label(by_name("device_areas"), "Patio") != NULL && no_title(),
+           "BL-220: the new room has no tab");
+    tap_area("Patio");
+    run(300);
+    expect(device_tile_of("Porch Light") != NULL && device_tile_of("Garage Door") == NULL,
+           "BL-220: Patio's page isn't Porch Light alone");
+    shot("bl-220-room-made");
+
+    /* R2: Rooms - rename, earlier, remove (its devices stay, in no room) */
+    tap_name("device_arrange");
+    run(300);
+    tap_name("device_arrange_rooms");
+    run(300);
+    expect(find_label(by_name("pick_list"), "Patio") != NULL && find_label(by_name("pick_list"), "New room") != NULL,
+           "BL-220 R2: Rooms doesn't list the rooms and New room");
+    shot("bl-220-rooms-sheet");
+    tap_pick("Patio");
+    shot("bl-220-room-sheet");
+    tap_pick("Rename");
+    sheet_text("Back patio");
+    tap_name("sheet_done");
+    run(300);
+    expect(strcmp(room_now("light.porch"), "Back patio") == 0, "BL-220 R2: Rename didn't rename Patio");
+    tap_pick("Earlier");
+    {
+        const hc_home_t *h = home_now();
+        expect(h->nrooms == 4u && strcmp(h->rooms[2].name, "Back patio") == 0,
+               "BL-220 R2: Earlier didn't move the room one tab to the left");
+    }
+    tap_pick("Remove room");
+    expect(lv_subject_get_int(&subject_sheet) == 3, "BL-220 R2: Remove room didn't ask first");
+    shot("bl-220-room-remove");
+    tap_name("dialog_ok");
+    run(300);
+    expect(home_now()->nrooms == 3u && strcmp(room_now("light.porch"), "") == 0 &&
+               hc_home_placed(home_now(), "light.porch"),
+           "BL-220 R2: removing the room didn't leave Porch Light in no room");
+    if (lv_subject_get_int(&subject_sheet) != 0) {
+        tap_name("pick_close"); /* Rooms again */
+        run(300);
+    }
+    /* R3: back to its source's room */
+    tap_device("Porch Light");
+    run(300);
+    tap_name("device_arrange_room");
+    run(300);
+    tap_pick("Room from its source");
+    expect(strcmp(room_now("light.porch"), "Outside") == 0 && !hc_home_placed(home_now(), "light.porch"),
+           "BL-220 R3: \"Room from its source\" didn't put Porch Light back in Outside");
+    tap_name("device_arrange_done");
+    run(300);
+
+    /* D5: Add on a room's page moves a device into it */
+    tap_area("Kitchen");
+    run(300);
+    tap_name("device_arrange");
+    run(300);
+    tap_name("device_arrange_add");
+    run(300);
+    expect(find_label(by_name("pick_list"), "Garage Door") != NULL &&
+               find_label(by_name("pick_list"), "Back Door") == NULL,
+           "BL-220 D5: a room's Add doesn't list the devices of other rooms only");
+    shot("bl-220-room-add");
+    tap_pick("Garage Door");
+    expect(strcmp(room_now("cover.garage_door"), "Kitchen") == 0 && lv_subject_get_int(&subject_sheet) == 2,
+           "BL-220 D5: Add didn't move Garage Door into Kitchen, or closed the list");
+    tap_name("pick_close");
+    run(300);
+    tap_device("Garage Door");
+    run(300);
+    tap_name("device_arrange_room");
+    run(300);
+    tap_pick("Room from its source");
+    tap_name("device_arrange_done");
+    run(300);
+    expect(strcmp(room_now("cover.garage_door"), "Outside") == 0, "BL-220: Garage Door didn't go back");
+
+    /* R5: Settings > Smart Home, a master's code first */
+    tap_name("bar_settings");
+    run(300);
+    expect(shown("set_smarthome"), "BL-220 R5: the Settings list has no Smart Home");
+    tap_name("set_smarthome");
+    run(300);
+    if (lv_subject_get_int(&subject_settings_pad) == 1) {
+        type("123456k");
+        run(300);
+    }
+    expect(find_label(lv_screen_active(), "Arranging asks for a master code") != NULL &&
+               find_label(lv_screen_active(), "Hallway") != NULL,
+           "BL-220 R5: Settings > Smart Home doesn't have Arrange's switch and the devices");
+    tap_text("Hallway");
+    run(300);
+    expect(hc_home_protected(home_now(), "climate.hallway"),
+           "BL-220 R5: the Hallway's switch didn't make it ask for a master code");
+    shot("bl-220-settings-smart-home");
+    /* a protected thermostat: a key on its tile, its + opens the pad, a master's code passes, and
+     * the next change goes through without asking (D7) */
+    tap_name("nav_devices");
+    run(1200);
+    tap_area("Favorites");
+    run(300);
+    lv_obj_t *hall = device_tile_of("Hallway");
+    expect(hall != NULL && find_label(hall, "\xEE\x92\xA3") != NULL,
+           "BL-220 R5: a protected device's tile has no key");
+    const int32_t was = host_panel_device("climate.hallway")->setpoint;
+    const unsigned acts = host_panel_device_acts();
+    tap(lv_obj_find_by_name(hall, "plus"));
+    run(300);
+    expect(lv_subject_get_int(&subject_modal_pad) == 1 &&
+               host_panel_device("climate.hallway")->setpoint == was,
+           "BL-220 R5: a protected thermostat's + didn't ask for a master code first");
+    shot("bl-220-device-code");
+    type("123456k");
+    run(1300);
+    expect(lv_subject_get_int(&subject_modal_pad) == 0 &&
+               host_panel_device("climate.hallway")->setpoint != was,
+           "BL-220 R5: the master code didn't let the change through");
+    tap(lv_obj_find_by_name(device_tile_of("Hallway"), "plus"));
+    run(1300);
+    expect(lv_subject_get_int(&subject_modal_pad) == 0 && host_panel_device_acts() > acts + 2u,
+           "BL-220 D7: the next change asked for the code again within 90 s");
+    /* R5: arranging asks for a master code once it is switched on */
+    tap_name("bar_settings");
+    run(300);
+    tap_name("set_smarthome");
+    run(300);
+    if (lv_subject_get_int(&subject_settings_pad) == 1) {
+        type("123456k");
+        run(300);
+    }
+    tap_text("Arranging asks for a master code");
+    run(300);
+    expect(hc_home_arrange_code(home_now()), "BL-220 R5: Arrange's switch didn't switch");
+    tap_name("nav_devices");
+    run(1200);
+    tap_name("device_arrange");
+    run(300);
+    expect(lv_subject_get_int(&subject_modal_pad) == 1 && !shown("device_arrange_done"),
+           "BL-220 R5: the pencil didn't ask for a master code");
+    shot("bl-220-arrange-code");
+    type("123456k");
+    run(300);
+    expect(shown("device_arrange_done"), "BL-220 R5: the master code didn't open Arrange");
+    tap_name("device_arrange_done");
+    run(300);
+
+    /* R8: Smart Home as the start screen - after 90 s left alone the panel rests there */
+    tap_name("bar_settings");
+    run(300);
+    tap_name("set_display");
+    run(300);
+    tap_text("Start screen");
+    run(300);
+    shot("bl-220-start-screen-pick");
+    tap_pick("Smart Home");
+    {
+        ui_options_t saved;
+        expect(host_panel_saved_options(&saved) && saved.start_view == UI_START_SMART_HOME,
+               "BL-220 R8: the start screen wasn't stored");
+    }
+    tap_name("nav_home");
+    run(91000);
+    wake();
+    run(300);
+    expect(lv_subject_get_int(&subject_view) == 6, "BL-220 R8: 90 s alone didn't rest on Smart Home");
+    /* back as it was: Security, no codes, the rooms Home Assistant's */
+    tap_name("bar_settings");
+    run(300);
+    tap_name("set_display");
+    run(300);
+    tap_text("Start screen");
+    run(300);
+    tap_pick("Security");
+    host_panel_dev_home_set(NULL, 0);
+    tap_name("nav_home");
+    run(300);
+    tap_name("nav_devices");
+    run(1200);
+    tap_area("Favorites");
+    run(300);
+}
+
 /* Smart Home (docs/features/24, BL-045; mockup-next n-devices, n-devices-outside, n-device-unlock). */
 static void shot(const char *name);
 static void walk_smart_home(void)
@@ -5919,8 +5924,8 @@ static void walk_smart_home(void)
     /* HCTL-003: with a device, the rail has Smart Home; Favorites opens first */
     tap_name("nav_devices");
     run(300);
-    expect(strcmp(lv_subject_get_string(&subject_devices_note), "Back Door unlocked · 2 lights on") == 0,
-           "UI-023: Smart Home's note doesn't say what needs you and what is on");
+    expect(no_title() && tile_says("Back Door", "Unlocked", true),
+           "BL-220 R7: Smart Home has a title or a note over it, or Back Door isn't unlocked");
     shot("devices");
     /* HCTL-006 (BL-179): today's time; an earlier day's date, with the year for an earlier year;
      * none for a time more than a minute ahead of the clock. The preview's clock is UTC, so local
@@ -5972,28 +5977,22 @@ static void walk_smart_home(void)
     }
     /* HCTL-006, LINK-046 (BL-216, proposal P1's bl-216-kp-devices-lost): no device can be reached
      * (Home Assistant's link dropped; on a link keypad, its alarm panel's device data stopped):
-     * every tile offline since then, and the note says so whole on its one line beside Favorites'
-     * four tabs, its room taken from the tabs as the other notes take it (UI-020) */
+     * every tile offline since then; no note over the page (BL-220 R7) */
     {
         lv_obj_t *tabs = by_name("device_areas");
         const int32_t widest = lv_obj_get_style_max_width(tabs, LV_PART_MAIN);
         host_panel_devices_unreachable(true, host_panel_device("switch.pool_pump")->since_ms);
         run(1200);
-        printf("  note, nothing reachable: %s (tabs at most %d px, %d px with every device)\n",
-               lv_subject_get_string(&subject_devices_note),
-               (int)lv_obj_get_style_max_width(tabs, LV_PART_MAIN), (int)widest);
-        expect(note_shows("Your devices can't be reached right now") && note_drawn_whole(),
-               "UI-020 (BL-216): \"Your devices can't be reached right now\" isn't whole");
+        expect(no_title(), "BL-220 R7: nothing reachable put a note over the page");
         expect(find_label(device_tile_of("Front Door"), "Offline since 9:12 PM") != NULL &&
                    find_label(device_tile_of("Hallway"), "Offline since 9:12 PM") != NULL,
                "HCTL-006 (BL-216): with nothing reachable, a tile isn't offline since 9:12 PM");
         /* no shot here: the link keypad's bl-216-kp-devices-lost is this page in this state */
         host_panel_devices_unreachable(false, 0);
         run(1200);
-        expect(strcmp(lv_subject_get_string(&subject_devices_note),
-                      "Back Door unlocked · 2 lights on") == 0 &&
+        expect(tile_says("Back Door", "Unlocked", true) &&
                    lv_obj_get_style_max_width(tabs, LV_PART_MAIN) == widest,
-               "UI-020 (BL-216): the note or the tabs didn't come back once the devices did");
+               "UI-020 (BL-216): the tiles or the tabs didn't come back once the devices did");
     }
 
     /* BL-219 (proposal BL-219, approved 2026-10-19): a change to a light, a switch, a fan, a
@@ -6013,8 +6012,6 @@ static void walk_smart_home(void)
         expect(k != NULL && find_label(k, "On") != NULL && find_label_with(k, "Turning") == NULL &&
                    lv_obj_get_style_opa(lv_obj_find_by_name(k, "chip"), LV_PART_MAIN) == LV_OPA_COVER,
                "BL-219: a tapped light doesn't read On at once, or reads as under way");
-        expect(note_shows("Back Door unlocked · 3 lights on"),
-               "BL-219: the note doesn't count the light just switched on");
         shot("bl-219-devices-at-once");
         /* the device does it and reports: the tile follows the report */
         host_panel_device_answer(true);
@@ -6116,7 +6113,8 @@ static void walk_smart_home(void)
         host_panel_device_state("light.kitchen", UI_DEV_ST_OFF);
         host_panel_device_state("lock.back_door", UI_DEV_ST_UNLOCKED);
         run(1300);
-        expect(note_shows("Back Door unlocked · 2 lights on"), "BL-219: Smart Home wasn't put back");
+        expect(tile_says("Back Door", "Unlocked", true) && find_label(device_tile_of("Kitchen Lights"), "Off") != NULL,
+               "BL-219: Smart Home wasn't put back");
     }
 
     /* HCTL-004: a tap switches a light; B030: an off light's tap turns it on (the simulator, as
@@ -6392,27 +6390,21 @@ static void walk_smart_home(void)
            "HCTL-004: the sheet's Lock didn't lock");
     close_device_sheet();
 
-    /* HCTL-006, HCTL-012, UI-023 (BL-171): the page's note says what didn't happen where the
-     * source refused it, and that it couldn't be confirmed where no answer came (or the link dropped
-     * with it in flight); the tile says "Didn't run" or "Not confirmed", in amber either way */
+    /* HCTL-006, HCTL-012 (BL-171): the tile says "Didn't run" where the source refused it, and
+     * "Not confirmed" where no answer came (or the link dropped with it in flight), in amber either
+     * way; no note over the page (BL-220 R7) */
     tap_area("Living room");
     run(1200);
-    expect(note_shows("1 light on"), "UI-023: the Living room's note doesn't say \"1 light on\"");
+    expect(no_title(), "BL-220 R7: the Living room has a note over it");
     {
         const int64_t ran = host_panel_device("scene.good_night")->since_ms; /* the 8:30 PM sample */
         host_panel_device_failed("scene.good_night", ACT_RUN);
         run(1200);
-        expect(note_shows("Good Night didn't run · 1 light on"),
-               "HCTL-006 (BL-171): a refused scene's note doesn't read \"Good Night didn't run · 1 light on\"");
         expect(tile_says("Good Night", "Didn't run", true),
                "HCTL-006: a refused scene's tile doesn't say \"Didn't run\" in amber");
         shot("devices_failed_note");
         host_panel_device_unconfirmed("scene.good_night", ACT_RUN);
         run(1200);
-        /* UI-020 (BL-171): "... · 1 light on" is wider than the Living room's one line (the tabs
-         * take the rest): the second fact gives way whole rather than the line ending in "..." */
-        expect(note_shows("Couldn't confirm Good Night ran"),
-               "HCTL-012 (BL-171): an unconfirmed scene's note doesn't read \"Couldn't confirm Good Night ran\" whole");
         expect(tile_says("Good Night", "Not confirmed", true) &&
                    find_label(device_tile_of("Good Night"), "Didn't run") == NULL,
                "HCTL-012 (BL-171): an unconfirmed scene's tile doesn't say \"Not confirmed\" in amber, or says \"Didn't run\"");
@@ -6420,44 +6412,15 @@ static void walk_smart_home(void)
         /* HCTL-012: a tap tries it again */
         tap_device("Good Night");
         run(1200);
-        expect(host_panel_device("scene.good_night")->status == UI_DEV_IDLE && note_shows("1 light on"),
-               "HCTL-012: a tap on an unconfirmed scene didn't run it again, or the note kept the failure");
+        expect(host_panel_device("scene.good_night")->status == UI_DEV_IDLE &&
+                   find_label(device_tile_of("Good Night"), "Not confirmed") == NULL,
+               "HCTL-012: a tap on an unconfirmed scene didn't run it again, or its tile kept the failure");
         host_panel_device_since("scene.good_night", ran);
         run(1200);
         expect(find_label(by_name("device_grid"), "Ran at 8:30 PM") != NULL,
                "HCTL-006: Good Night's 8:30 PM didn't come back after the retry");
     }
-    /* BL-171, I18N-010: a long name is shortened with "…" so the outcome is never cut: an ASCII name
-     * of 47 bytes and a multibyte one; the first fact at most 59 bytes, and the note as drawn shows
-     * it whole: the name shortens to the line's width, then "1 light on" gives way (UI-020) */
-    {
-        static const char *const LONG[] = {
-            "Living Room Lamp Over The Reading Chair By Door",
-            "L\xC3\xA1mpara de la sala junto al sill\xC3\xB3n de lectura",
-        };
-        for (size_t i = 0; i < sizeof(LONG) / sizeof(LONG[0]); i++) {
-            host_panel_device_rename("light.living_lamp", LONG[i]);
-            host_panel_device_unconfirmed("light.living_lamp", ACT_OFF);
-            run(1200);
-            const char *n = lv_subject_get_string(&subject_devices_note);
-            const char *dot = strstr(n, " · ");
-            const size_t first = dot != NULL ? (size_t)(dot - n) : strlen(n);
-            static const char END[] = "\xE2\x80\xA6 turned off";
-            expect(strncmp(n, "Couldn't confirm L", 18) == 0 && first <= 59u && first >= sizeof(END) - 1u &&
-                       memcmp(n + first - (sizeof(END) - 1u), END, sizeof(END) - 1u) == 0 &&
-                       i18n_utf8_valid(n, strlen(n)) && (dot == NULL || strcmp(dot, " · 1 light on") == 0),
-                   "BL-171, I18N-010: a long name cut the note's outcome, or wasn't shortened with \"…\"");
-            printf("  note: %s\n", n);
-            expect(note_shows(n), "UI-020 (BL-171): the note as drawn doesn't show the whole text");
-        }
-        host_panel_device_rename("light.living_lamp", "Living Room Lamp");
-        host_panel_device_settle("light.living_lamp");
-        run(1200);
-        expect(note_shows("1 light on"), "BL-171: the Living room's note didn't come back to \"1 light on\"");
-    }
-    note_with_the_widest_tabs();
-    note_with_a_long_open_room();
-    note_keeps_the_page_order();
+    tabs_take_the_row();
     /* HCTL-004, HCTL-012 (BL-171): a tap on a failed change of a value opens the device's sheet and
      * sends nothing: the value that failed isn't kept, and a retry would send the one it has now */
     {
@@ -6486,15 +6449,17 @@ static void walk_smart_home(void)
         }
         host_panel_device_settle("climate.hallway");
         run(1200);
-        expect(note_shows("1 light on"), "BL-171: the Living room's note didn't come back to \"1 light on\"");
+        expect(find_label(device_tile_of("Hallway"), "Didn't change") == NULL,
+               "BL-171: the Hallway's tile didn't come back");
     }
 
     /* HCTL-006: under way, failed and offline, in words */
     host_panel_devices_garage_closing();
     tap_area("Outside");
     run(1200);
-    expect(strcmp(lv_subject_get_string(&subject_devices_note), "Side Gate jammed · Pool Pump offline") == 0,
-           "HCTL-006: Outside's note doesn't name the jam and the offline pump");
+    expect(find_label(device_tile_of("Side Gate"), "Jammed") != NULL &&
+               find_label_with(device_tile_of("Pool Pump"), "Offline since") != NULL,
+           "HCTL-006: Outside's tiles don't show the jam and the offline pump");
     expect(find_label(by_name("device_grid"), "Didn't turn on") != NULL,
            "HCTL-006: Patio Lights doesn't say its last action failed");
     shot("devices_outside");
@@ -6775,6 +6740,7 @@ static void walk_smart_home(void)
     expect(device_tile_of("Upstairs") == NULL, "Smart Home: the range thermostat didn't go away");
     long_names_stay_in_bounds(); /* BL-184 */
     walk_arrange();
+    walk_rooms(); /* BL-220 */
 
     /* HCTL-003: with no device, no Smart Home: the view goes home and the rail drops it */
     host_panel_devices(false);
@@ -10616,8 +10582,7 @@ static void walk_link_keypad_devices(void)
     const lv_color_t connected = lv_subject_get_color(&subject_tone_color); /* the frame's tone */
     tap_name("nav_devices");
     run(300);
-    expect(note_shows("Back Door unlocked · 2 lights on") &&
-               tile_says("Front Door", "Locked", false) && tile_says("Back Door", "Unlocked", true),
+    expect(no_title() && tile_says("Front Door", "Locked", false) && tile_says("Back Door", "Unlocked", true),
            "BL-216: a keypad's Smart Home isn't its alarm panel's page");
     shot("bl-216-kp-devices");
     const unsigned acts = host_panel_device_acts();
@@ -10637,10 +10602,8 @@ static void walk_link_keypad_devices(void)
            "BL-216: an unanswered unlock isn't shown under way, or reached the alarm panel");
     host_panel_device_state("lock.back_door", UI_DEV_ST_LOCKED);
     run(3100);
-    expect(tile_says("Front Door", "Not confirmed", true) &&
-               note_shows("Couldn't confirm Front Door unlocked") && note_drawn_whole(),
-           "HCTL-012, LINK-047 (BL-216): an unlock given up doesn't read \"Not confirmed\", or the "
-           "note doesn't say it whole");
+    expect(tile_says("Front Door", "Not confirmed", true),
+           "HCTL-012, LINK-047 (BL-216): an unlock given up doesn't read \"Not confirmed\"");
     shot("bl-216-kp-devices-unconfirmed");
     /* a tap tries it again, with the pad; answered, the tile is the alarm panel's again */
     host_link_demo_devices_unanswered(false);
@@ -10656,7 +10619,7 @@ static void walk_link_keypad_devices(void)
     host_panel_device_state("lock.back_door", UI_DEV_ST_UNLOCKED);
     run(1200);
     expect(host_panel_device("lock.front_door")->state == UI_DEV_ST_LOCKED &&
-               note_shows("Back Door unlocked · 2 lights on"),
+               tile_says("Back Door", "Unlocked", true),
            "BL-216: the keypad's Smart Home didn't follow the alarm panel back");
     /* LINK-046: the alarm panel still answers, but no device data for 30 s */
     host_link_demo_devices_stop(true);
@@ -10664,8 +10627,7 @@ static void walk_link_keypad_devices(void)
     expect(tile_says("Front Door", "Locked", false),
            "LINK-046: device data read stale before 30 s");
     run(2000);
-    expect(note_shows("Your devices can't be reached right now") &&
-               find_label_with(device_tile_of("Front Door"), "Offline since") != NULL &&
+    expect(find_label_with(device_tile_of("Front Door"), "Offline since") != NULL &&
                lv_color_eq(lv_subject_get_color(&subject_tone_color), connected),
            "LINK-046 (BL-216): 30 s without device data doesn't read offline, or the frame isn't "
            "the connected one");
@@ -10675,18 +10637,15 @@ static void walk_link_keypad_devices(void)
            "LINK-046 (BL-216): a tap without device data reached the alarm panel");
     host_link_demo_devices_stop(false);
     run(1200);
-    expect(note_shows("Back Door unlocked · 2 lights on"),
+    expect(tile_says("Back Door", "Unlocked", true),
            "LINK-046 (BL-216): the devices didn't come back with their data");
     /* the link lost: every tile offline since the last word, the keypad's frame without system
      * communication */
     link_state(HOST_LINK_KEYPAD_LOST);
     {
         lv_obj_t *door = find_label_with(device_tile_of("Front Door"), "Offline since");
-        printf("  a keypad without its alarm panel: \"%s\", the note \"%s\"\n",
-               door != NULL ? lv_label_get_text(door) : "-",
-               lv_subject_get_string(&subject_devices_note));
-        expect(door != NULL && note_shows("Your devices can't be reached right now") &&
-                   note_drawn_whole() && find_visible(lv_screen_active(), "nav_devices") != NULL,
+        printf("  a keypad without its alarm panel: \"%s\"\n", door != NULL ? lv_label_get_text(door) : "-");
+        expect(door != NULL && no_title() && find_visible(lv_screen_active(), "nav_devices") != NULL,
                "LINK-046 (BL-216): a keypad without its alarm panel doesn't read its devices "
                "offline whole, or hides Smart Home");
     }

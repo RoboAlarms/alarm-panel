@@ -28,7 +28,7 @@ lv_obj_t * device_stepper_create(lv_obj_t * parent, const char * label, const ch
         lv_style_init(&style_device_step);
         lv_style_init(&style_device_step_pressed);
 
-        alarm_ui_run_19(&style_device_step, 48, 48, RADIUS_FULL);
+        alarm_ui_run_20(&style_device_step, 48, 48, RADIUS_FULL);
         alarm_ui_run_6(&style_device_step, COLOR_RAISED, (255 * 100 / 100));
         lv_style_set_text_color(&style_device_step, COLOR_TEXT);
         lv_style_set_bg_color(&style_device_step_pressed, COLOR_PRESSED);
@@ -48,7 +48,7 @@ lv_obj_t * device_stepper_create(lv_obj_t * parent, const char * label, const ch
         alarm_ui_run_1(box_0, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(box_0);
         lv_obj_set_style_pad_column(box_0, SPACE_MD, 0);
-        lv_obj_t * minus = alarm_ui_run_20(box_0);
+        lv_obj_t * minus = alarm_ui_run_21(box_0);
         lv_obj_set_ext_click_area(minus, 8);
         alarm_ui_run_16(minus, &style_device_step, 0, &style_device_step_pressed, LV_STATE_PRESSED);
         lv_obj_set_name(minus, "minus");
@@ -68,7 +68,7 @@ lv_obj_t * device_stepper_create(lv_obj_t * parent, const char * label, const ch
         lv_label_set_text(value_label, value);
         alarm_ui_run_37(value_label, font_title, "value_label");
 
-        lv_obj_t * plus = alarm_ui_run_20(box_0);
+        lv_obj_t * plus = alarm_ui_run_21(box_0);
         lv_obj_set_ext_click_area(plus, 8);
         alarm_ui_run_16(plus, &style_device_step, 0, &style_device_step_pressed, LV_STATE_PRESSED);
         lv_obj_set_name(plus, "plus");

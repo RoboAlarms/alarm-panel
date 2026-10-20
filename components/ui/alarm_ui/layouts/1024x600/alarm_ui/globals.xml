@@ -194,8 +194,9 @@
 		<int name="subject_panic_link" value="0" help="1 = Emergency on a keypad without system communication: the amber line that it keeps trying" />
 
 		<!-- Settings (view 5) -->
-		<int name="subject_settings_section" value="0" help="0 screen and sound, 1 users, 2 Wi-Fi and network, 3 time and language, 4 integrations, 5 event log, 6 installer, 7 about, 8 walk test, 9 automations" />
+		<int name="subject_settings_section" value="0" help="0 screen and sound, 1 users, 2 Wi-Fi and network, 3 time and language, 4 integrations, 5 event log, 6 installer, 7 about, 8 walk test, 9 automations, 10 Smart Home" />
 		<int name="subject_automations_avail" value="0" help="1 = this build has home control: the Settings list shows Automations (HCTL-010)" />
+		<int name="subject_smarthome_avail" value="0" help="1 = the alarm panel has devices: the Settings list shows Smart Home (BL-220)" />
 		<int name="subject_update_waiting" value="0" help="About's tag in the Settings list: 0 none, 1 Update (a newer version, or one waiting), 2 Updating (a run), 3 Rolled back" />
 		<int name="subject_settings_pad" value="0" help="1 = the settings page shows the code pad" />
 		<string name="subject_page_title" value="Display and sound" help="Title of the settings page" />

@@ -433,16 +433,18 @@ const M = (() => {
    * colour (amber when an action failed).
    * arrange: the screen is being arranged, so the tile shows a grip, a dashed edge and its control
    * dimmed (a tap picks it, it doesn't switch anything); selected: the one picked, edged in blue.
+   * locked (BL-220 proposal): the device asks for the master code before a change, a key beside the arrow.
    */
   const device_tile = ({glyph, tone = 'gray', name, state, stateTone, more = true, wide = false, control = '', pending = false, offline = false,
-    arrange = false, selected = false}) => {
+    arrange = false, selected = false, locked = false}) => {
     const chip = icon_chip({glyph, size: 48, font: 28, color: tone});
     // BL-184: the name one line and dots; two on a wide tile without a control under it
     const words = `<div class="words">${text(name, 'label', null, wide && !control ? 'two_lines' : 'dots')}${text(state, 'caption', stateTone || (tone === 'amber' && !pending ? 'amber' : 'text_2'), 'dots')}</div>`;
     const corner = arrange ? `<div class="grip">${icon('grip-vertical', 20)}</div>`
       : more && !offline ? `<div class="more">${icon('chevron-right', 20)}</div>` : '';
-    return `<div class="${cls('device_tile', wide && 'wide', pending && 'pending', offline && 'offline', arrange && 'arrange', selected && 'selected')}">
-      ${wide ? `<div class="top">${chip}${words}</div>${control}` : chip + words}${corner}</div>`;
+    const key = locked && !arrange ? `<div class="key">${icon('key-round', 20)}</div>` : '';
+    return `<div class="${cls('device_tile', wide && 'wide', pending && 'pending', offline && 'offline', arrange && 'arrange', selected && 'selected', key && 'locked')}">
+      ${wide ? `<div class="top">${chip}${words}</div>${control}` : chip + words}${key}${corner}</div>`;
   };
   /** A wide tile's level (a thick lv_slider): drag it to set the brightness. value 0..100 */
   const device_level = ({value = 0, tone = 'blue', glyph = 'sun'}) => `<div class="device_level" style="color:${color(tone)}">

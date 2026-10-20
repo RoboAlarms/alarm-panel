@@ -762,6 +762,24 @@ static bool alarm_mode(ui_mode_t m)
 }
 
 /* Exit time, armed, entry time or an alarm: the code is the only thing to enter on Home. */
+/* Where the screen rests (BL-220 R8, D8): Smart Home where this screen's start screen says so,
+ * while it is in the rail and the partition is disarmed; Security otherwise - and an entry time or
+ * an alarm takes Security by itself (apply_mode). */
+#define START_SETTLE_MS  3000u   /* a start: nobody touched it for this long */
+#define START_GIVE_UP_MS 120000u /* ... nor this long since the start: no devices came */
+static bool s_start_pending = true;
+
+static int32_t rest_view(void)
+{
+#if ALARM_UI_DEVICES
+    if (S.opt.start_view == UI_START_SMART_HOME && lv_subject_get_int(&subject_devices_avail) == 1 &&
+        (S.mode == MODE_READY || S.mode == MODE_NOT_READY) && !S.wizard_on) {
+        return VIEW_DEVICES;
+    }
+#endif
+    return VIEW_HOME;
+}
+
 static bool disarm_mode(ui_mode_t m)
 {
     return m == MODE_EXIT || m == MODE_AWAY || m == MODE_STAY || m == MODE_NIGHT ||
@@ -4017,7 +4035,7 @@ static void tick(lv_timer_t *t)
     const ui_light_stage_t want = ui_light_stage(&S.opt, idle, S.night);
     if (calm && want != UI_LIGHT_AWAKE) {
         if (!S.saver_on) {
-            ui_set_int(&subject_view, VIEW_HOME);
+            ui_set_int(&subject_view, rest_view()); /* what a touch wakes it to */
         }
         saver_enter(want);
     } else if (S.saver_on && !calm) {
@@ -4029,10 +4047,24 @@ static void tick(lv_timer_t *t)
         pad_idle_expired();
     }
     const uint32_t home_after = view == VIEW_SETTINGS ? SETTINGS_IDLE_MS : HOME_AFTER_MS;
+    const int32_t rest = rest_view();
     if (!S.saver_on && !setup && idle >= home_after && S.pad_host == HOST_HOME &&
-        (S.pad == PAD_NONE || pad_resident() || view == VIEW_SETTINGS) && view != VIEW_HOME) {
+        (S.pad == PAD_NONE || pad_resident() || view == VIEW_SETTINGS) && view != rest) {
         ui_sheet_close();
-        ui_set_int(&subject_view, VIEW_HOME);
+        ui_set_int(&subject_view, rest);
+    }
+    /* BL-220 R8: after a start, Smart Home as soon as its devices are in, while nobody touches the
+     * screen; given up after two minutes (no device came) or at the first touch */
+    if (s_start_pending) {
+        const uint32_t up = lv_tick_get();
+        const bool touched = idle + 1000u < up; /* activity since the start */
+        if (touched || up >= START_GIVE_UP_MS) {
+            s_start_pending = false; /* the 90 s rest takes it from here */
+        } else if (rest == VIEW_DEVICES && view == VIEW_HOME && !S.saver_on && !setup &&
+                   S.pad == PAD_NONE && idle >= START_SETTLE_MS) {
+            ui_set_int(&subject_view, VIEW_DEVICES);
+            s_start_pending = false;
+        }
     }
 }
 

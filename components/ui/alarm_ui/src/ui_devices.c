@@ -29,11 +29,21 @@
  * the grid's top or bottom edge, it scrolls the grid a step at a time. The arrows stay the way to
  * move a tile without dragging (WCAG 2.5.7); nothing slides (UI-020): the tiles are put.
  *
+ * Rooms (BL-220; the mockup's proposals/BL-220-device-rooms.js, approved 2026-10-19): the tabs
+ * after Favorites are the house's rooms (home_control/hc_home.h), kept by the alarm panel through
+ * dev_home_get/set. A device from a source with areas follows its source into the room of that
+ * area until a person puts it somewhere; a picked tile's Room, Arrange's Rooms and a room page's
+ * Add change them, at once. There is no title over the page: the tabs start the row. A device the
+ * household set to ask for a master code shows a key, and the backend judges the code
+ * (UI_DEV_NEED_CODE); arranging may ask for one too (Settings > Smart Home, built here). A link
+ * keypad keeps no rooms: its master sends each device's room as its area, in the rooms' order.
+ *
  * Compiled only with ALARM_UI_DEVICES (sources.cmake).
  */
 #include <stdio.h>
 #include <string.h>
 
+#include "home_control/hc_home.h"
 #include "ui_backend/ui_dev_model.h"
 #include "ui_internal.h"
 
@@ -74,6 +84,15 @@ static const int32_t FAN_SPEED[] = {0, 33, 67, 100};
 #define G_SUNSNOW   "\xEE\x8D\xB2" /* U+E372 sun-snow */
 #define G_GRIP      "\xEE\x83\xAB" /* U+E0EB grip-vertical */
 #define G_PLUS      "\xEE\x84\xBD" /* U+E13D plus */
+#define G_PENCIL    "\xEE\x87\xB9" /* U+E1F9 pencil */
+#define G_DOOR      "\xEE\x8F\x96" /* U+E3D6 door-open */
+#define G_KEY       "\xEE\x92\xA3" /* U+E4A3 key-round */
+#define G_SMART     "\xEE\x98\xBC" /* U+E63C house-wifi: Smart Home, a device's source */
+#define G_NO_ROOM   "\xEE\x90\x82" /* U+E402 circle-slash */
+#define G_TRASH     "\xEE\x86\x8E" /* U+E18E trash-2 */
+#define G_LEFT      "\xEE\x81\x88" /* U+E048 arrow-left */
+#define G_RIGHT     "\xEE\x81\x89" /* U+E049 arrow-right */
+#define ROOM_ROWS   (HC_HOME_ROOMS + 3u) /* a picker: its source, the rooms, New room, No room */
 
 typedef struct {
     lv_obj_t *obj;
@@ -115,10 +134,7 @@ static UI_SLOW_BSS struct {
     lv_obj_t *grid;
     lv_obj_t *tabs;
     lv_obj_t *tab_on;     /* the open tab's segment, NULL before the tabs are built */
-    int32_t tab_on_w;     /* its width with its whole name (before tab_cap) */
-    int32_t tab_cap;      /* the width its name is shortened to with "…", 0 whole (note_make_room) */
-    int32_t tabs_max;     /* the layout's widest for the tabs (its style_max_width) */
-    bool note_two_lines;  /* the note wraps to a second line (note_make_room's last resort) */
+    int32_t tabs_max;     /* the tabs' widest: the row up to the pencil (BL-220 R7) */
     /* the action waiting for a code (HCTL-005) */
     char ask_ref[DEV_REF_LEN];
     uint8_t ask_action;
@@ -148,10 +164,31 @@ static UI_SLOW_BSS struct {
     char add_detail[UI_DEVL_MAX][96];
     uint8_t add_dev[UI_DEVL_MAX];
     size_t nadd;
+    /* Rooms and master codes (BL-220): the house's settings, kept by the alarm panel */
+    hc_home_t *home;
+    bool home_on;               /* this panel keeps them (dev_home_get/set): not a link keypad */
+    bool home_drop;             /* the next poll may drop an empty room made from an area */
+    uint8_t *home_blob;         /* HC_HOME_BLOB_MAX */
+    char (*src)[DEV_AREA_LEN];  /* UI_DEVL_MAX: each device's source area, before its room */
+    hc_home_seen_t seen[UI_DEVL_MAX];
+    lv_obj_t *arr_room;
+    lv_obj_t *arr_rooms;
+    lv_obj_t *spacer;
+    uint8_t room_kind[ROOM_ROWS]; /* a room sheet's rows: what each does, and for which room */
+    uint8_t room_id[ROOM_ROWS];
+    size_t nroom_rows;
+    ui_choice_t room_choice[ROOM_ROWS];
+    char room_detail[ROOM_ROWS][96];
+    char room_ref[DEV_REF_LEN]; /* the device whose room is picked, "" none (Rooms' New room) */
+    uint8_t room_edit;          /* the room whose sheet is open */
+    char typed[HC_HOME_NAME_MAX + 1u]; /* a name typed that couldn't be used, to type again */
+    char set_refs[UI_DEVL_MAX][DEV_REF_LEN]; /* Settings > Smart Home's switches, by row */
 } D;
 
 static void poll(void);
 static void show(void);
+static int room_of_tab(void);
+static const char *no_room_tab(void);
 static void arrange_pick(const char *ref);
 static void note(void);
 static void on_tile_hold(lv_event_t *e);
@@ -480,124 +517,6 @@ static const char *action_words(uint8_t action, bool failed)
     }
 }
 
-/* The page's note for a failed action (HCTL-006, HCTL-012, BL-171): what didn't happen where the
- * source refused it; "Couldn't confirm" where no answer came, the connection dropped with it in
- * flight or the source sent it and couldn't confirm it (d->unsure), never "didn't" for an
- * outcome that isn't known. {0} is the device's name. */
-static const char *failed_sentence(const ui_dev_t *d)
-{
-    const char *definite;
-    const char *unknown;
-    switch (d->action) {
-    case ACT_ON:
-        /* TR: Smart Home's note: the last action on a device was refused and it didn't turn on; {0}
-         * is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes */
-        definite = TR("{0} didn't turn on");
-        /* TR: Smart Home's note: a device was told to turn on but no answer came (or the connection
-         * dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The
-         * note may hold two facts. At most 40 bytes */
-        unknown = TR("Couldn't confirm {0} turned on");
-        break;
-    case ACT_OFF:
-        /* TR: Smart Home's note: the last action on a device was refused and it didn't turn off;
-         * {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-         */
-        definite = TR("{0} didn't turn off");
-        /* TR: Smart Home's note: a device was told to turn off but no answer came (or the
-         * connection dropped), so whether it did isn't known; {0} is its name, shortened with "…"
-         * to fit. The note may hold two facts. At most 40 bytes */
-        unknown = TR("Couldn't confirm {0} turned off");
-        break;
-    case ACT_TOGGLE:
-        /* TR: Smart Home's note: the last action on a device was refused and it didn't switch; {0}
-         * is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes */
-        definite = TR("{0} didn't switch");
-        /* TR: Smart Home's note: a device was told to switch but no answer came (or the connection
-         * dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The
-         * note may hold two facts. At most 40 bytes */
-        unknown = TR("Couldn't confirm {0} switched");
-        break;
-    case ACT_LOCK:
-        /* TR: Smart Home's note: the last action on a lock was refused and it didn't lock; {0} is
-         * its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes */
-        definite = TR("{0} didn't lock");
-        /* TR: Smart Home's note: a lock was told to lock but no answer came (or the connection
-         * dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The
-         * note may hold two facts. At most 40 bytes */
-        unknown = TR("Couldn't confirm {0} locked");
-        break;
-    case ACT_UNLOCK:
-        /* TR: Smart Home's note: the last action on a lock was refused and it didn't unlock; {0} is
-         * its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes */
-        definite = TR("{0} didn't unlock");
-        /* TR: Smart Home's note: a lock was told to unlock but no answer came (or the connection
-         * dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The
-         * note may hold two facts. At most 40 bytes */
-        unknown = TR("Couldn't confirm {0} unlocked");
-        break;
-    case ACT_OPEN:
-        /* TR: Smart Home's note: the last action on a device was refused and it didn't open; {0} is
-         * its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes */
-        definite = TR("{0} didn't open");
-        /* TR: Smart Home's note: a device was told to open but no answer came (or the connection
-         * dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The
-         * note may hold two facts. At most 40 bytes */
-        unknown = TR("Couldn't confirm {0} opened");
-        break;
-    case ACT_CLOSE:
-        /* TR: Smart Home's note: the last action on a device was refused and it didn't close; {0}
-         * is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes */
-        definite = TR("{0} didn't close");
-        /* TR: Smart Home's note: a device was told to close but no answer came (or the connection
-         * dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The
-         * note may hold two facts. At most 40 bytes */
-        unknown = TR("Couldn't confirm {0} closed");
-        break;
-    case ACT_STOP:
-        /* TR: Smart Home's note: the last action on a device was refused and it didn't stop; {0} is
-         * its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes */
-        definite = TR("{0} didn't stop");
-        /* TR: Smart Home's note: a device was told to stop but no answer came (or the connection
-         * dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The
-         * note may hold two facts. At most 40 bytes */
-        unknown = TR("Couldn't confirm {0} stopped");
-        break;
-    case ACT_RUN:
-        /* TR: Smart Home's note: the last action on a scene or script was refused and it didn't
-         * run; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40
-         * bytes */
-        definite = TR("{0} didn't run");
-        /* TR: Smart Home's note: a scene or script was told to run but no answer came (or the
-         * connection dropped), so whether it did isn't known; {0} is its name, shortened with "…"
-         * to fit. The note may hold two facts. At most 40 bytes */
-        unknown = TR("Couldn't confirm {0} ran");
-        break;
-    case ACT_SET_LEVEL:
-    case ACT_SET_TEMP:
-    case ACT_SET_MODE:
-        /* TR: Smart Home's note: the last action on a device was refused and it didn't change a
-         * value (brightness, position, speed, set point, mode); {0} is its name, shortened with "…"
-         * to fit. The note may hold two facts. At most 40 bytes */
-        definite = TR("{0} didn't change");
-        /* TR: Smart Home's note: a device was told to change a value (brightness, position, speed,
-         * set point, mode) but no answer came (or the connection dropped), so whether it did isn't
-         * known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most
-         * 40 bytes */
-        unknown = TR("Couldn't confirm {0} changed");
-        break;
-    default:
-        /* TR: Smart Home's note: the last action on a device failed; {0} is its name, shortened
-         * with "…" to fit. The note may hold two facts. At most 40 bytes */
-        definite = TR("{0} didn't respond");
-        /* TR: Smart Home's note: a device was told to do something but no answer came (or the
-         * connection dropped), so the result isn't known; {0} is its name, shortened with "…" to
-         * fit. The note may hold two facts. At most 40 bytes */
-        unknown = TR("Couldn't confirm the result for {0}");
-        break;
-    }
-    return d->unsure != 0u ? unknown : definite;
-}
-
 static void tile_words(const ui_dev_t *d, char *out, size_t len)
 {
     if (d->status == UI_DEV_OFFLINE) {
@@ -866,7 +785,13 @@ static void code_sent(const ui_call_t *c)
     }
     if (c->dev == UI_DEV_CODE_REFUSED) {
         ui_beep(UI_BEEP_ERROR);
-        ui_pad_error(ui_result_text(c->r));
+        if (c->r == ALARM_ERR_NOT_AUTHORIZED && D.home_on && hc_home_protected(D.home, D.ask_ref)) {
+            /* TR: the code pad's line when a code that isn't a master's was typed for a device
+             * that asks for a master code (BL-220). At most 63 bytes */
+            ui_pad_error(TR("Only a master code can change it"));
+        } else {
+            ui_pad_error(ui_result_text(c->r));
+        }
         return;
     }
     ui_pad_cancel();
@@ -903,7 +828,12 @@ static void sent(const ui_call_t *c)
         D.ask_action = c->action;
         D.ask_value = c->value;
         char title[64];
-        if (c->action == ACT_UNLOCK) {
+        const bool guarded = !hc_needs_code((dev_kind_t)d->kind, (dev_action_t)c->action, c->value);
+        if (guarded) {
+            /* TR: the code pad's title before a change to a device the household set to ask for a
+             * master code (BL-220); {0} is its name */
+            I18N_FORMAT(title, sizeof(title), TR("Change {0}"), d->name);
+        } else if (c->action == ACT_UNLOCK) {
             /* TR: the code pad's title before an unlock; {0} is the lock's name */
             I18N_FORMAT(title, sizeof(title), TR("Unlock {0}"), d->name);
         } else {
@@ -911,7 +841,14 @@ static void sent(const ui_call_t *c)
             I18N_FORMAT(title, sizeof(title), TR("Open {0}"), d->name);
         }
         ui_pad_ask(HOST_MODAL, c->action == ACT_UNLOCK ? G_LOCK_OPEN : glyph(d), title, NULL,
-                   ui_tone_amber(), code_entered);
+                   guarded ? tone(d) : ui_tone_amber(), code_entered);
+        if (guarded) {
+            char said[UI_SUBJECT_STRING_LENGTH];
+            /* TR: under the code pad's title: why it asks (BL-220); {0} is the device's name. At
+             * most 127 bytes */
+            I18N_FORMAT(said, sizeof(said), TR("{0} asks for a master code"), d->name);
+            ui_pad_ask_note(said);
+        }
         return;
     }
     refusal(c->dev);
@@ -1627,6 +1564,20 @@ static void tile_create(size_t index, const ui_dev_t *d, bool wide)
     lv_obj_add_event_cb(t->obj, on_tile_hold, LV_EVENT_INDEV_RESET, (void *)(uintptr_t)index);
     lv_obj_add_event_cb(ui_find(t->obj, "more"), on_more, LV_EVENT_CLICKED, (void *)(uintptr_t)index);
     lv_obj_t *top = ui_find(t->obj, "top");
+    if (D.home_on && !D.arranging && hc_home_protected(D.home, d->ref)) {
+        /* BL-220: it asks for a master code before a change - a key beside the arrow */
+        lv_obj_t *key = lv_label_create(t->obj);
+        lv_obj_add_flag(key, LV_OBJ_FLAG_FLOATING);
+        lv_obj_remove_flag(key, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_text_font(key, icons_20, 0);
+        lv_obj_set_style_text_color(key, COLOR_TEXT_3, 0);
+        lv_label_set_text(key, G_KEY);
+        lv_obj_align(key, LV_ALIGN_TOP_RIGHT, -(DEVICE_GRIP_X + 44), 0);
+        lv_obj_set_style_translate_y(key, DEVICE_GRIP_Y, 0);
+        if (wide) {
+            lv_obj_set_style_pad_right(top, lv_obj_get_style_pad_right(top, LV_PART_MAIN) + 32, 0);
+        }
+    }
     if (!wide) {
         /* one cell: the chip over the words, the words at the bottom */
         lv_obj_set_flex_flow(top, LV_FLEX_FLOW_COLUMN);
@@ -1864,11 +1815,16 @@ static void arrange_chrome(void)
     }
     const bool a = D.arranging;
     const bool picked = a && D.pick[0] != '\0';
-    lv_obj_set_flag(D.head, LV_OBJ_FLAG_HIDDEN, a);
+    lv_obj_add_flag(D.head, LV_OBJ_FLAG_HIDDEN); /* no title over the page (BL-220 R7) */
+    lv_obj_set_flag(D.spacer, LV_OBJ_FLAG_HIDDEN, a);
     lv_obj_set_flag(D.tabs, LV_OBJ_FLAG_HIDDEN, a);
     lv_obj_set_flag(D.pencil, LV_OBJ_FLAG_HIDDEN, a);
     lv_obj_set_flag(D.arr_head, LV_OBJ_FLAG_HIDDEN, !a);
-    lv_obj_set_flag(D.arr_add, LV_OBJ_FLAG_HIDDEN, !(a && !picked && D.tab_favorites));
+    /* Add: to Favorites, or (BL-220) into the room whose page this is */
+    lv_obj_set_flag(D.arr_add, LV_OBJ_FLAG_HIDDEN,
+                    !(a && !picked && (D.tab_favorites || room_of_tab() >= 0)));
+    lv_obj_set_flag(D.arr_rooms, LV_OBJ_FLAG_HIDDEN, !(a && !picked && D.home_on));
+    lv_obj_set_flag(D.arr_room, LV_OBJ_FLAG_HIDDEN, !(picked && D.home_on));
     lv_obj_set_flag(D.arr_prev, LV_OBJ_FLAG_HIDDEN, !picked);
     lv_obj_set_flag(D.arr_next, LV_OBJ_FLAG_HIDDEN, !picked);
     lv_obj_set_flag(D.arr_size, LV_OBJ_FLAG_HIDDEN, !picked);
@@ -1887,8 +1843,7 @@ static void arrange_chrome(void)
     } else {
         const char *room = D.tab;
         if (room[0] == '\0') {
-            /* TR: Smart Home, the page of the devices without a room: its tab. At most 23 bytes */
-            room = TR_C("smart home", "Other");
+            room = no_room_tab();
         }
         /* TR: Smart Home's title while arranging a room's page; {0} is the room. At most 63
          * bytes */
@@ -1939,9 +1894,8 @@ static void arrange_pick(const char *ref)
     arrange_chrome();
 }
 
-static void on_arrange_start(lv_event_t *e)
+static void arrange_begin(void)
 {
-    (void)e;
     if (!D.ready || D.n == 0u || D.arranging) {
         return;
     }
@@ -1951,6 +1905,65 @@ static void on_arrange_start(lv_event_t *e)
     D.page_sig = 0;
     show();
     arrange_chrome();
+}
+
+/* A code of a master (system or partition) or the installer's (BL-220 D6). */
+static bool master_user(uint8_t user)
+{
+    if (user == 0u || user > ALARM_MAX_USERS || S.cfg == NULL) {
+        return false;
+    }
+    const alarm_authority_t a = S.cfg->users[user - 1u].authority;
+    return a == ALARM_AUTH_MASTER || a == ALARM_AUTH_PARTITION_MASTER || a == ALARM_AUTH_INSTALLER;
+}
+
+static bool arrange_code_entered(const char *code);
+
+static void arrange_code_checked(const ui_call_t *c)
+{
+    if (!ui_pad_asks(arrange_code_entered)) {
+        return; /* the pad closed meanwhile */
+    }
+    if (c->r != ALARM_OK) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_pad_error(ui_result_text(c->r));
+        return;
+    }
+    if (!master_user(c->user)) {
+        ui_beep(UI_BEEP_ERROR);
+        /* TR: the code pad's line when a code that isn't a master's was typed to arrange Smart
+         * Home (BL-220). At most 63 bytes */
+        ui_pad_error(TR("Only a master code can arrange it"));
+        return;
+    }
+    ui_pad_cancel();
+    arrange_begin();
+}
+
+static bool arrange_code_entered(const char *code)
+{
+    if (!ui_call_authenticate(code, arrange_code_checked, 0u)) {
+        ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+    return false;
+}
+
+/* The pencil: Arrange, after a master's code where Settings > Smart Home asks for one (BL-220). */
+static void on_arrange_start(lv_event_t *e)
+{
+    (void)e;
+    if (!D.ready || D.n == 0u || D.arranging) {
+        return;
+    }
+    if (D.home_on && hc_home_arrange_code(D.home)) {
+        /* TR: the code pad's title before arranging Smart Home when it asks for a master code */
+        ui_pad_ask(HOST_MODAL, G_SMART, TR("Arrange Smart Home"), NULL, ui_tone_blue(),
+                   arrange_code_entered);
+        /* TR: under that pad's title (BL-220). At most 127 bytes */
+        ui_pad_ask_note(TR("Arranging asks for a master code"));
+        return;
+    }
+    arrange_begin();
 }
 
 static void arrange_end(void)
@@ -2253,11 +2266,606 @@ static void add_open(int32_t scroll_y)
     }
 }
 
+static void room_add_open(int32_t scroll_y);
+
 static void on_arrange_add(lv_event_t *e)
 {
     (void)e;
-    if (D.arranging) {
+    if (D.arranging && D.tab_favorites) {
         add_open(0);
+    } else if (D.arranging) {
+        room_add_open(0);
+    }
+}
+
+/* ---- Rooms (BL-220): the house's, kept by the alarm panel (home_control/hc_home.h) ---------- */
+
+enum {
+    ROOM_SOURCE = 1, /* the room from its source */
+    ROOM_IN,         /* a room */
+    ROOM_NEW,
+    ROOM_NONE,
+    ROOM_RENAME,
+    ROOM_EARLIER,
+    ROOM_LATER,
+    ROOM_REMOVE,
+};
+
+static void home_load(void)
+{
+    if (!D.home_on) {
+        return;
+    }
+    const size_t len = S.be.dev_home_get(S.be.ctx, D.home_blob, HC_HOME_BLOB_MAX);
+    if (len == 0u || !hc_home_decode(D.home, D.home_blob, len)) {
+        hc_home_clear(D.home); /* the defaults: no rooms, nothing asks for a code */
+    }
+}
+
+/* Stores the settings as they are now; a failure says so and goes back to what is stored. */
+static bool home_save(void)
+{
+    const size_t len = hc_home_encode(D.home, D.home_blob, HC_HOME_BLOB_MAX);
+    if (len == 0u || !S.be.dev_home_set(S.be.ctx, D.home_blob, len)) {
+        /* TR: Smart Home: a change to the rooms or the master codes couldn't be stored */
+        ui_toast(TR("The change couldn't be saved"));
+        home_load();
+        return false;
+    }
+    return true;
+}
+
+/* Each device's room as its area, so the pages and the tabs are the rooms (a poll's last step);
+ * the source's area is kept beside it. New areas get their rooms here (hc_home_adopt). */
+static void home_apply(void)
+{
+    for (size_t i = 0; i < D.n; i++) {
+        snprintf(D.src[i], DEV_AREA_LEN, "%s", D.devs[i].area);
+        D.seen[i].ref = D.devs[i].ref;
+        D.seen[i].area = D.src[i];
+    }
+    if (!D.home_on) {
+        return;
+    }
+    const bool drop = D.home_drop;
+    D.home_drop = false;
+    if (hc_home_adopt(D.home, D.seen, D.n, drop)) {
+        (void)home_save();
+    }
+    for (size_t i = 0; i < D.n; i++) {
+        const char *name = hc_home_room_name(D.home, D.devs[i].ref, D.src[i]);
+        if (name != D.src[i]) {
+            snprintf(D.devs[i].area, sizeof(D.devs[i].area), "%s", name);
+        }
+    }
+}
+
+/* The room whose page is open, its index in the rooms; -1 Favorites, Other or a keypad. */
+static int room_of_tab(void)
+{
+    if (!D.home_on || D.tab_favorites || D.tab[0] == '\0') {
+        return -1;
+    }
+    return hc_home_room_named(D.home, D.tab);
+}
+
+/* The tab of the devices without a room: "Other" beside rooms, "All devices" with none (R6). */
+static const char *no_room_tab(void)
+{
+    if (D.nareas <= 1u) {
+        /* TR: Smart Home's tab for every device while there are no rooms (BL-220). At most 23
+         * bytes */
+        return TR_C("smart home", "All devices");
+    }
+    /* TR: Smart Home's tab for the devices in no room. At most 23 bytes */
+    return TR_C("smart home", "Other");
+}
+
+static size_t room_count(uint8_t id)
+{
+    const int r = hc_home_room_index(D.home, id);
+    size_t k = 0;
+    for (size_t i = 0; r >= 0 && i < D.n; i++) {
+        k += hc_home_room_of(D.home, D.devs[i].ref, D.src[i]) == r ? 1u : 0u;
+    }
+    return k;
+}
+
+static void devices_words(char *out, size_t len, size_t n)
+{
+    /* TR: Smart Home's rooms: how many devices a room has */
+    I18N_FORMAT(out, len, TRN("{0} device", "{0} devices", n), (unsigned)n);
+}
+
+/* The rooms changed: the devices' rooms, the tabs and the page again, now. */
+static void rooms_changed(void)
+{
+    D.tabs_built = false;
+    D.page_sig = 0;
+    poll();
+    show();
+    if (D.arranging) {
+        arrange_chrome();
+    }
+}
+
+static size_t room_row(size_t k, uint8_t kind, uint8_t id, const char *g, lv_color_t tone,
+                       const char *title, const char *detail)
+{
+    if (k >= ROOM_ROWS) {
+        return k;
+    }
+    D.room_kind[k] = kind;
+    D.room_id[k] = id;
+    ui_choice_t *c = &D.room_choice[k];
+    c->glyph = g;
+    c->tone = tone;
+    c->title = title;
+    c->detail = NULL;
+    if (detail != NULL) {
+        i18n_utf8_copy(D.room_detail[k], sizeof(D.room_detail[0]), detail);
+        c->detail = D.room_detail[k];
+    }
+    D.nroom_rows = k + 1u;
+    return k + 1u;
+}
+
+/* A name a person typed: usable, or a toast that says why not (BL-220 R2). */
+static bool name_usable(const char *text, uint8_t self)
+{
+    switch (hc_home_name_check(D.home, text, self)) {
+    case HC_HOME_NAME_OK: return true;
+    case HC_HOME_NAME_EMPTY:
+        /* TR: Smart Home: a room's name was left empty. At most 63 bytes */
+        ui_toast(TR("Type a name for the room"));
+        return false;
+    case HC_HOME_NAME_TAKEN: {
+        char said[UI_SUBJECT_STRING_LENGTH];
+        /* TR: Smart Home: another room has that name; {0} is the name. At most 127 bytes */
+        I18N_FORMAT(said, sizeof(said), TR("There is already a room called {0}"), text);
+        ui_toast(said);
+        return false;
+    }
+    default:
+        /* TR: Smart Home: the rooms are at their limit (24). At most 63 bytes */
+        ui_toast(TR("No more rooms can be added"));
+        return false;
+    }
+}
+
+static void rooms_open(void);
+static void room_sheet_open(uint8_t id);
+static void new_room_sheet(void);
+
+/* New room's name: from a tile's Room, the tile goes in it; from Rooms, its empty page opens. */
+static void new_room_typed(const char *text)
+{
+    snprintf(D.typed, sizeof(D.typed), "%s", text != NULL ? text : "");
+    if (!D.home_on || !name_usable(D.typed, 0u)) {
+        if (hc_home_name_check(D.home, D.typed, 0u) != HC_HOME_NAME_FULL) {
+            new_room_sheet(); /* to type it again */
+        }
+        return;
+    }
+    const uint8_t id = hc_home_add(D.home, D.typed);
+    if (id == 0u) {
+        return;
+    }
+    if (D.room_ref[0] != '\0') {
+        (void)hc_home_place(D.home, D.room_ref, id);
+    }
+    if (!home_save()) {
+        return;
+    }
+    if (D.room_ref[0] == '\0') {
+        const int r = hc_home_room_index(D.home, id);
+        D.tab_favorites = false; /* the new room's page, to add devices to */
+        snprintf(D.tab, sizeof(D.tab), "%s", D.home->rooms[r].name);
+        D.pick[0] = '\0';
+    }
+    rooms_changed();
+}
+
+static void new_room_sheet(void)
+{
+    char note[UI_SUBJECT_STRING_LENGTH] = "";
+    const ui_dev_t *d = D.room_ref[0] != '\0' ? find(D.room_ref) : NULL;
+    if (d != NULL) {
+        /* TR: the line under "New room" when it is made from a tile's Room; {0} is the device's
+         * name. At most 127 bytes */
+        I18N_FORMAT(note, sizeof(note), TR("{0} goes in it"), d->name);
+    }
+    /* TR: Smart Home: the title of the keyboard that names a new room (BL-220). At most 47 bytes */
+    ui_text_sheet_kind(TR("New room"), note, D.typed, UI_TEXT_WORDS, HC_HOME_NAME_MAX, new_room_typed);
+    /* TR: the keyboard's button that makes the new room. At most 15 bytes */
+    ui_text_sheet_ok(TR_C("new room", "Add"));
+}
+
+static void on_room_pick(int32_t index)
+{
+    if (!D.home_on || index < 0 || (size_t)index >= D.nroom_rows) {
+        return;
+    }
+    bool changed = false;
+    switch (D.room_kind[index]) {
+    case ROOM_SOURCE: changed = hc_home_follow(D.home, D.room_ref); break;
+    case ROOM_IN: changed = hc_home_place(D.home, D.room_ref, D.room_id[index]); break;
+    case ROOM_NONE: changed = hc_home_place(D.home, D.room_ref, 0u); break;
+    case ROOM_NEW:
+        D.typed[0] = '\0';
+        new_room_sheet();
+        return;
+    default: return;
+    }
+    if (changed && home_save()) {
+        rooms_changed();
+    }
+}
+
+/* A picked tile's Room (BL-220 R1): its source's room, the rooms, New room, No room. */
+static void room_pick_open(void)
+{
+    const ui_dev_t *d = find(D.room_ref);
+    if (d == NULL || !D.home_on) {
+        return;
+    }
+    const size_t i = (size_t)(d - D.devs);
+    const char *src = D.src[i];
+    const int now = hc_home_room_of(D.home, d->ref, src);
+    const bool placed = hc_home_placed(D.home, d->ref);
+    size_t k = 0;
+    int32_t sel = -1;
+    char line[96];
+    if (src[0] != '\0') {
+        const int r = hc_home_room_for_area(D.home, src);
+        /* TR: Smart Home, a tile's Room: the line under "Room from its source"; {0} is the room its
+         * source puts it in. At most 95 bytes */
+        I18N_FORMAT(line, sizeof(line), TR("{0} now · Moves when its source moves it"),
+                    r >= 0 ? D.home->rooms[r].name : src);
+        sel = placed ? -1 : (int32_t)k;
+        /* TR: Smart Home, a tile's Room: back to the room the device's source gives it. At most
+         * 47 bytes */
+        k = room_row(k, ROOM_SOURCE, 0u, G_SMART, placed ? ui_tone_gray() : ui_tone_blue(),
+                     TR("Room from its source"), line);
+    }
+    for (size_t r = 0; r < D.home->nrooms; r++) {
+        const bool here = placed && now == (int)r;
+        devices_words(line, sizeof(line), room_count(D.home->rooms[r].id));
+        if (here) {
+            sel = (int32_t)k;
+        }
+        k = room_row(k, ROOM_IN, D.home->rooms[r].id, G_DOOR, here ? ui_tone_blue() : ui_tone_gray(),
+                     D.home->rooms[r].name, line);
+    }
+    if (D.home->nrooms < HC_HOME_ROOMS) {
+        /* TR: Smart Home, a tile's Room: the line under "New room"; {0} is the device's name. At
+         * most 95 bytes */
+        I18N_FORMAT(line, sizeof(line), TR("Name it, and {0} goes in it"), d->name);
+        k = room_row(k, ROOM_NEW, 0u, G_PLUS, ui_tone_blue(), TR("New room"), line);
+    }
+    if (now < 0 && (placed || src[0] == '\0')) {
+        sel = (int32_t)k;
+    }
+    /* TR: Smart Home, a tile's Room: the device in no room, and the line under it. At most 47
+     * bytes each */
+    k = room_row(k, ROOM_NONE, 0u, G_NO_ROOM, ui_tone_gray(), TR("No room"), TR("Shown in Other"));
+    char title[96];
+    /* TR: Smart Home: the title of a tile's Room; {0} is the device's name. At most 63 bytes */
+    I18N_FORMAT(title, sizeof(title), TR("Room for {0}"), d->name);
+    /* TR: the line under that title. At most 127 bytes */
+    ui_pick_sheet(title, TR("Where it shows besides Favorites"), D.room_choice, k, sel, on_room_pick);
+}
+
+static void on_arrange_room(lv_event_t *e)
+{
+    (void)e;
+    if (D.arranging && D.pick[0] != '\0') {
+        snprintf(D.room_ref, sizeof(D.room_ref), "%s", D.pick);
+        room_pick_open();
+    }
+}
+
+static void room_renamed(const char *text)
+{
+    const int r = hc_home_room_index(D.home, D.room_edit);
+    snprintf(D.typed, sizeof(D.typed), "%s", text != NULL ? text : "");
+    if (r < 0) {
+        return;
+    }
+    if (!name_usable(D.typed, D.room_edit)) {
+        char title[96];
+        /* TR: Smart Home: the title of the keyboard that renames a room; {0} is its name. At most
+         * 63 bytes */
+        I18N_FORMAT(title, sizeof(title), TR("Rename {0}"), D.home->rooms[r].name);
+        ui_text_sheet_kind(title, NULL, D.typed, UI_TEXT_WORDS, HC_HOME_NAME_MAX, room_renamed);
+        return;
+    }
+    const bool open = !D.tab_favorites && hc_home_same_name(D.tab, D.home->rooms[r].name);
+    if (hc_home_rename(D.home, D.room_edit, D.typed) && home_save()) {
+        if (open) {
+            snprintf(D.tab, sizeof(D.tab), "%s", D.home->rooms[r].name);
+        }
+        rooms_changed();
+    }
+    room_sheet_open(D.room_edit);
+}
+
+static void room_removed(void)
+{
+    const int r = hc_home_room_index(D.home, D.room_edit);
+    if (r < 0) {
+        return;
+    }
+    if (!D.tab_favorites && hc_home_same_name(D.tab, D.home->rooms[r].name)) {
+        D.tab_favorites = true; /* its page goes with it */
+        D.pick[0] = '\0';
+    }
+    if (hc_home_remove(D.home, D.room_edit, D.seen, D.n) && home_save()) {
+        rooms_changed();
+    }
+    rooms_open();
+}
+
+static void on_room_sheet_pick(int32_t index)
+{
+    const int r = hc_home_room_index(D.home, D.room_edit);
+    if (r < 0 || index < 0 || (size_t)index >= D.nroom_rows) {
+        return;
+    }
+    char title[96];
+    switch (D.room_kind[index]) {
+    case ROOM_RENAME:
+        snprintf(D.typed, sizeof(D.typed), "%s", D.home->rooms[r].name);
+        I18N_FORMAT(title, sizeof(title), TR("Rename {0}"), D.home->rooms[r].name);
+        ui_text_sheet_kind(title, NULL, D.typed, UI_TEXT_WORDS, HC_HOME_NAME_MAX, room_renamed);
+        return;
+    case ROOM_EARLIER:
+    case ROOM_LATER:
+        if (hc_home_move(D.home, D.room_edit, D.room_kind[index] == ROOM_EARLIER ? -1 : 1) &&
+            home_save()) {
+            rooms_changed();
+        }
+        room_sheet_open(D.room_edit);
+        return;
+    case ROOM_REMOVE: {
+        char note[UI_SHEET_NOTE_LENGTH];
+        char count[48];
+        devices_words(count, sizeof(count), room_count(D.room_edit));
+        /* TR: Smart Home: the question before removing a room; {0} is its name. At most 63 bytes */
+        I18N_FORMAT(title, sizeof(title), TR("Remove {0}?"), D.home->rooms[r].name);
+        /* TR: under that question; {0} is how many devices ("2 devices"). At most 191 bytes */
+        I18N_FORMAT(note, sizeof(note),
+                    TR("Its {0} stay on the panel and show in Other. Favorites doesn't change."),
+                    count);
+        /* TR: the button that removes the room. At most 23 bytes */
+        ui_confirm(title, note, TR_C("room", "Remove"), room_removed);
+        return;
+    }
+    default: return;
+    }
+}
+
+/* One room's sheet: Rename, Earlier, Later, Remove room (BL-220 R2); X goes back to Rooms. */
+static void room_sheet_open(uint8_t id)
+{
+    const int r = hc_home_room_index(D.home, id);
+    if (r < 0) {
+        rooms_open();
+        return;
+    }
+    D.room_edit = id;
+    size_t k = 0;
+    /* TR: Smart Home, a room's sheet: its rows and the lines under them. At most 47 bytes each */
+    k = room_row(k, ROOM_RENAME, id, G_PENCIL, ui_tone_blue(), TR("Rename"), NULL);
+    k = room_row(k, ROOM_EARLIER, id, G_LEFT, ui_tone_blue(), TR("Earlier"), TR("One tab to the left"));
+    k = room_row(k, ROOM_LATER, id, G_RIGHT, ui_tone_blue(), TR("Later"), TR("One tab to the right"));
+    k = room_row(k, ROOM_REMOVE, id, G_TRASH, ui_tone_red(), TR("Remove room"),
+                 TR("Its devices go to Other"));
+    char count[48];
+    char note[UI_SUBJECT_STRING_LENGTH];
+    devices_words(count, sizeof(count), room_count(id));
+    /* TR: Smart Home, a room's sheet: the line under its name; {0} how many devices ("2 devices"),
+     * {1} its tab's place, {2} how many rooms. At most 127 bytes */
+    I18N_FORMAT(note, sizeof(note), TR("{0} · Tab {1} of {2}"), count, (unsigned)(r + 1),
+                (unsigned)D.home->nrooms);
+    ui_pick_sheet(D.home->rooms[r].name, note, D.room_choice, k, -1, on_room_sheet_pick);
+    if (r == 0) {
+        ui_pick_sheet_dim(1);
+    }
+    if (r + 1 == (int)D.home->nrooms) {
+        ui_pick_sheet_dim(2);
+    }
+    ui_pick_sheet_on_cancel(rooms_open);
+}
+
+static void on_rooms_pick(int32_t index)
+{
+    if (index < 0 || (size_t)index >= D.nroom_rows) {
+        return;
+    }
+    if (D.room_kind[index] == ROOM_IN) {
+        room_sheet_open(D.room_id[index]);
+    } else if (D.room_kind[index] == ROOM_NEW) {
+        D.room_ref[0] = '\0';
+        D.typed[0] = '\0';
+        new_room_sheet();
+    }
+}
+
+/* Arrange's Rooms (BL-220 R2): the rooms in the tabs' order, and New room. */
+static void rooms_open(void)
+{
+    if (!D.home_on) {
+        return;
+    }
+    size_t k = 0;
+    D.nroom_rows = 0;
+    char line[96];
+    for (size_t r = 0; r < D.home->nrooms; r++) {
+        devices_words(line, sizeof(line), room_count(D.home->rooms[r].id));
+        k = room_row(k, ROOM_IN, D.home->rooms[r].id, G_DOOR, ui_tone_blue(), D.home->rooms[r].name,
+                     line);
+    }
+    if (D.home->nrooms < HC_HOME_ROOMS) {
+        /* TR: Smart Home, Rooms: the line under "New room". At most 95 bytes */
+        k = room_row(k, ROOM_NEW, 0u, G_PLUS, ui_tone_blue(), TR("New room"),
+                     TR("An empty room, to add devices to"));
+    }
+    /* TR: Smart Home, arranging: the title of the rooms' sheet, and the line under it, with rooms
+     * or without. At most 127 bytes each */
+    ui_pick_sheet(TR("Rooms"),
+                  D.home->nrooms > 0u ? TR("The tabs beside Favorites, in their order")
+                                      : TR("No rooms yet"),
+                  D.room_choice, k, -1, on_rooms_pick);
+}
+
+static void on_arrange_rooms(lv_event_t *e)
+{
+    (void)e;
+    if (D.arranging) {
+        rooms_open();
+    }
+}
+
+static void on_room_add_pick(int32_t index)
+{
+    lv_obj_t *list = ui_find(S.main, "pick_list");
+    const int32_t y = list != NULL ? lv_obj_get_scroll_y(list) : 0;
+    const int r = room_of_tab();
+    if (!D.arranging || r < 0) {
+        return;
+    }
+    if (index >= 0 && (size_t)index < D.nadd &&
+        hc_home_place(D.home, D.devs[D.add_dev[index]].ref, D.home->rooms[r].id) && home_save()) {
+        rooms_changed();
+    }
+    room_add_open(y);
+}
+
+/* Add on a room's page (BL-220 D5): the devices in other rooms or none, each with where it is
+ * now; a tap moves one in, at the end, and the list stays open for the next. */
+static void room_add_open(int32_t scroll_y)
+{
+    const int r = room_of_tab();
+    if (r < 0) {
+        return;
+    }
+    D.nadd = 0;
+    for (size_t i = 0; i < D.n && D.nadd < UI_DEVL_MAX; i++) {
+        const ui_dev_t *d = &D.devs[i];
+        if (hc_home_room_of(D.home, d->ref, D.src[i]) == r) {
+            continue;
+        }
+        char st[48];
+        tile_words(d, st, sizeof(st));
+        char both[sizeof(st) + DEV_AREA_LEN + 4];
+        snprintf(both, sizeof(both), "%s · %s", d->area[0] != '\0' ? d->area : no_room_tab(), st);
+        i18n_utf8_copy(D.add_detail[D.nadd], sizeof(D.add_detail[0]), both);
+        ui_choice_t *c = &D.add_choice[D.nadd];
+        c->glyph = glyph(d);
+        c->tone = tone(d);
+        c->title = d->name;
+        c->detail = D.add_detail[D.nadd];
+        D.add_dev[D.nadd++] = (uint8_t)i;
+    }
+    char title[96];
+    /* TR: Smart Home, arranging a room: the title of the sheet that moves devices into it; {0} is
+     * the room. At most 63 bytes */
+    I18N_FORMAT(title, sizeof(title), TR("Add to {0}"), D.home->rooms[r].name);
+    /* TR: the line under that title, with devices to move or without. At most 127 bytes each */
+    ui_pick_sheet(title,
+                  D.nadd > 0u ? TR("Tap a device to move it here")
+                              : TR("Every device is in this room already"),
+                  D.add_choice, D.nadd, -1, on_room_add_pick);
+    lv_obj_t *list = ui_find(S.main, "pick_list");
+    for (size_t i = 0; list != NULL && i < D.nadd; i++) {
+        lv_obj_t *trail = ui_find(lv_obj_get_child(list, (int32_t)i), "trail_label");
+        if (trail != NULL) {
+            lv_label_set_text(trail, G_PLUS);
+            lv_obj_remove_flag(trail, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (list != NULL) {
+        lv_obj_scroll_to_y(list, scroll_y, LV_ANIM_OFF);
+    }
+}
+
+/* ---- Settings > Smart Home (BL-220 R5): what asks for a master code ---- */
+
+bool ui_devices_settings_available(void)
+{
+    return D.ready && D.home_on && D.n > 0u;
+}
+
+static void on_arrange_code_toggle(bool on, void *ctx)
+{
+    (void)ctx;
+    if (D.home_on && hc_home_set_arrange_code(D.home, on)) {
+        (void)home_save();
+    }
+}
+
+static void on_protect_toggle(bool on, void *ctx)
+{
+    const size_t i = (size_t)(uintptr_t)ctx;
+    if (D.home_on && i < UI_DEVL_MAX && D.set_refs[i][0] != '\0' &&
+        hc_home_protect(D.home, D.set_refs[i], on) && home_save()) {
+        D.page_sig = 0; /* the key on its tile */
+    }
+}
+
+static void protect_row(lv_obj_t *body, size_t *row, size_t i)
+{
+    const ui_dev_t *d = &D.devs[i];
+    char detail[160];
+    const char *where = d->area[0] != '\0' ? d->area : no_room_tab();
+    const char *also = NULL;
+    if (d->kind == DEV_LOCK) {
+        /* TR: Settings > Smart Home: under a lock, beside its room. At most 63 bytes */
+        also = TR("Unlocking asks for a code anyway");
+    } else if (d->kind == DEV_VALVE || entrance(d) || d->kind == DEV_COVER) {
+        /* TR: Settings > Smart Home: under a garage door, a cover or a valve. At most 63 bytes */
+        also = TR("Opening asks for a code anyway");
+    }
+    if (also != NULL) {
+        snprintf(detail, sizeof(detail), "%s · %s", where, also);
+    } else {
+        i18n_utf8_copy(detail, sizeof(detail), where);
+    }
+    snprintf(D.set_refs[*row], sizeof(D.set_refs[0]), "%s", d->ref);
+    ui_row_toggle_icon(body, glyph(d), tone(d), d->name, detail, hc_home_protected(D.home, d->ref),
+                       on_protect_toggle, (void *)(uintptr_t)*row);
+    (*row)++;
+}
+
+void ui_devices_settings_build(lv_obj_t *body, char *note, size_t nlen)
+{
+    /* TR: Settings > Smart Home, the line under the title (BL-220). At most 127 bytes */
+    i18n_utf8_copy(note, nlen, TR("What asks for a master code"));
+    if (!D.ready || !D.home_on) {
+        return;
+    }
+    home_load();
+    poll();
+    /* TR: Settings > Smart Home: a switch and the line under it. At most 63 bytes each */
+    ui_row_toggle_icon(body, G_PENCIL, ui_tone_blue(), TR("Arranging asks for a master code"),
+                       TR("Moving tiles, their sizes, Favorites and rooms"),
+                       hc_home_arrange_code(D.home), on_arrange_code_toggle, NULL);
+    /* TR: Settings > Smart Home, a section heading over a switch for each device */
+    ui_section(body, TR("Devices that ask for a master code before a change"));
+    memset(D.set_refs, 0, sizeof(D.set_refs));
+    size_t row = 0;
+    for (size_t r = 0; r < D.home->nrooms; r++) { /* by room, in the tabs' order */
+        for (size_t i = 0; i < D.n && row < UI_DEVL_MAX; i++) {
+            if (hc_home_room_of(D.home, D.devs[i].ref, D.src[i]) == (int)r) {
+                protect_row(body, &row, i);
+            }
+        }
+    }
+    for (size_t i = 0; i < D.n && row < UI_DEVL_MAX; i++) {
+        if (hc_home_room_of(D.home, D.devs[i].ref, D.src[i]) < 0) {
+            protect_row(body, &row, i);
+        }
     }
 }
 
@@ -2284,11 +2892,15 @@ static void on_tab(lv_event_t *e)
     lv_obj_scroll_to_y(D.grid, 0, LV_ANIM_OFF);
 }
 
-/* The areas, in the registry's order; the devices without one last, as "Other". */
+/* The areas, in the registry's order; the devices without one last, as "Other". With the house's
+ * rooms (BL-220): every room in the tabs' order, empty ones too, before them. */
 static bool collect_areas(void)
 {
     D.nareas = 0;
     bool none = false;
+    for (size_t r = 0; D.home_on && r < D.home->nrooms && D.nareas < AREA_MAX - 1u; r++) {
+        snprintf(D.areas[D.nareas++], DEV_AREA_LEN, "%s", D.home->rooms[r].name);
+    }
     for (size_t i = 0; i < D.n; i++) {
         const char *a = D.devs[i].area;
         if (a[0] == '\0') {
@@ -2328,34 +2940,31 @@ static void build_tabs(void)
     }
     lv_obj_clean(D.tabs);
     D.tab_on = NULL;
-    D.tab_on_w = 0;
-    D.tab_cap = 0; /* new segments: every name whole */
     lv_obj_t *active = NULL;
     for (size_t i = 0; i <= D.nareas; i++) {
         /* TR: Smart Home's first tab: the devices picked for it */
         const char *name = i == 0u ? TR_C("smart home", "Favorites")
-                           : D.areas[i - 1u][0] == '\0'
-                               /* TR: Smart Home's tab for the devices in no area */
-                               ? TR_C("smart home", "Other")
-                               : D.areas[i - 1u];
+                           : D.areas[i - 1u][0] == '\0' ? no_room_tab()
+                                                          : D.areas[i - 1u];
         lv_obj_t *seg = segment_create(D.tabs, name);
-        lv_obj_set_style_pad_left(seg, SPACE_MD, 0); /* room for the note beside the tabs */
+        lv_obj_set_style_pad_left(seg, SPACE_MD, 0);
         lv_obj_set_style_pad_right(seg, SPACE_MD, 0);
+        /* a room's long name (47 bytes) ends in "..." on its tab, which stays a part of the row
+         * (BL-220): the whole name is in Rooms and Rename */
+        lv_obj_t *words = lv_obj_get_child(seg, 0);
+        lv_point_t size;
+        lv_text_get_size(&size, name, lv_obj_get_style_text_font(words, LV_PART_MAIN),
+                         lv_obj_get_style_text_letter_space(words, LV_PART_MAIN), 0, LV_COORD_MAX,
+                         LV_TEXT_FLAG_NONE);
+        if (size.x > DEVICE_WIDE_W) { /* LVGL writes its "..." only into a label of a set width */
+            lv_label_set_long_mode(words, LV_LABEL_LONG_MODE_DOTS);
+            lv_obj_set_width(words, DEVICE_WIDE_W);
+        }
         const bool on = i == 0u ? D.tab_favorites : !D.tab_favorites && strcmp(D.areas[i - 1u], D.tab) == 0;
         if (on) {
             lv_obj_add_style(seg, &style_segment_active, 0);
             active = seg;
             D.tab_on = seg;
-            /* its width with the whole name, measured from its words (what note_make_room's
-             * shortening gives back) */
-            lv_obj_t *label = lv_obj_get_child(seg, 0);
-            lv_point_t size;
-            lv_text_get_size(&size, name, lv_obj_get_style_text_font(label, LV_PART_MAIN),
-                             lv_obj_get_style_text_letter_space(label, LV_PART_MAIN), 0, LV_COORD_MAX,
-                             LV_TEXT_FLAG_NONE);
-            D.tab_on_w = size.x + lv_obj_get_style_pad_left(seg, LV_PART_MAIN) +
-                         lv_obj_get_style_pad_right(seg, LV_PART_MAIN) +
-                         2 * lv_obj_get_style_border_width(seg, LV_PART_MAIN);
         }
         lv_obj_add_event_cb(seg, on_tab, LV_EVENT_CLICKED, (void *)(uintptr_t)i);
     }
@@ -2366,238 +2975,23 @@ static void build_tabs(void)
     D.tabs_built = true;
 }
 
-/* One fact of the page's note with a device's name in it: the sentence whole, the name shortened
- * with "…" where both don't fit len - 1 bytes, so the outcome is never cut - also where a
- * translation repeats the name (I18N-010, BL-171). */
-static void fact_with_name(char *out, size_t len, const char *pattern, const char *name)
-{
-    i18n_format_fit(out, len, pattern, name);
-}
-
-/* A fact of the note: a sentence with {0} for a device's name, or (name NULL) words as they are. */
-typedef struct {
-    const char *pattern;
-    const char *name;
-} note_fact_t;
-
-#define NOTE_FACT     60u /* bytes of one fact; two and " · " fit the note's 127 */
-#define NOTE_NAME_MIN 12u /* a name's bytes kept on the line before a second fact gives way */
-
-/* The note's facts joined with " · ", each name given at most `room` bytes. */
-static void note_join(char *out, size_t len, const note_fact_t *f, size_t nf, size_t room)
-{
-    char facts[2][NOTE_FACT];
-    for (size_t i = 0; i < nf && i < 2u; i++) {
-        if (f[i].name == NULL) {
-            i18n_utf8_copy(facts[i], sizeof(facts[0]), f[i].pattern);
-            continue;
-        }
-        const size_t words = i18n_format_fit(facts[i], sizeof(facts[0]), f[i].pattern, "");
-        const size_t cap = words + room + 1u < sizeof(facts[0]) ? words + room + 1u : sizeof(facts[0]);
-        fact_with_name(facts[i], cap, f[i].pattern, f[i].name);
-    }
-    if (nf >= 2u) {
-        snprintf(out, len, "%s · %s", facts[0], facts[1]);
-    } else {
-        i18n_utf8_copy(out, len, nf == 1u ? facts[0] : "");
-    }
-}
-
-static lv_obj_t *note_label(void)
-{
-    return D.head != NULL ? lv_obj_get_child(D.head, 1) : NULL;
-}
-
-/* How wide text is drawn in the note's label (its font and letter spacing), on one line. */
-static int32_t note_text_width(lv_obj_t *label, const char *text)
-{
-    lv_point_t size;
-    lv_text_get_size(&size, text, lv_obj_get_style_text_font(label, LV_PART_MAIN),
-                     lv_obj_get_style_text_letter_space(label, LV_PART_MAIN), 0, LV_COORD_MAX,
-                     LV_TEXT_FLAG_NONE);
-    return size.x;
-}
-
-/* The tabs beside the header in one row (the layout's flex row): what they give up, the header
- * gets (its flex_grow). */
-static bool tabs_beside_note(void)
-{
-    return D.tabs != NULL && D.head != NULL && lv_obj_get_parent(D.tabs) == lv_obj_get_parent(D.head);
-}
-
-/* The tabs' own padding and border: what they take beside their segments. */
-static int32_t tabs_frame(void)
-{
-    return lv_obj_get_style_pad_left(D.tabs, LV_PART_MAIN) + lv_obj_get_style_pad_right(D.tabs, LV_PART_MAIN) +
-           2 * lv_obj_get_style_border_width(D.tabs, LV_PART_MAIN);
-}
-
-/* The tabs' width at the layout's widest: every segment with its whole name (the open tab's as
- * measured when it was built, whatever note_make_room shortened it to), capped by the layout's
- * style_max_width. */
-static int32_t tabs_full_width(void)
-{
-    const uint32_t n = lv_obj_get_child_count(D.tabs);
-    int32_t w = tabs_frame();
-    for (uint32_t i = 0; i < n; i++) {
-        lv_obj_t *seg = lv_obj_get_child(D.tabs, (int32_t)i);
-        w += seg == D.tab_on && D.tab_on_w > 0 ? D.tab_on_w : lv_obj_get_width(seg);
-    }
-    if (n > 1u) {
-        w += (int32_t)(n - 1u) * lv_obj_get_style_pad_column(D.tabs, LV_PART_MAIN);
-    }
-    return w < D.tabs_max ? w : D.tabs_max;
-}
-
-/* The note's one line with the tabs at the layout's widest (what a narrower strip made by
- * note_make_room gives back), 0 while the label isn't laid out yet. */
-static int32_t note_room_full(lv_obj_t *label)
-{
-    const int32_t w = lv_obj_get_content_width(label);
-    if (w <= 0 || !tabs_beside_note() || lv_obj_has_flag(D.tabs, LV_OBJ_FLAG_HIDDEN)) {
-        return w > 0 ? w : 0;
-    }
-    const int32_t back = lv_obj_get_width(D.tabs) - tabs_full_width();
-    return back < 0 ? w + back : w;
-}
-
-/* Whether text fits the note's one line as drawn with the tabs at their widest: its label's font
- * and width. True while the label isn't laid out yet (the next refresh measures it). */
-static bool note_fits(const char *text)
-{
-    lv_obj_t *label = note_label();
-    const int32_t w = label != NULL ? note_room_full(label) : 0;
-    return w <= 0 || note_text_width(label, text) <= w;
-}
-
-/* The open tab's whole width (its segment's padding and border beside its name). */
-static int32_t tab_frame(lv_obj_t *seg)
-{
-    return lv_obj_get_style_pad_left(seg, LV_PART_MAIN) + lv_obj_get_style_pad_right(seg, LV_PART_MAIN) +
-           2 * lv_obj_get_style_border_width(seg, LV_PART_MAIN);
-}
-
-/* The open tab's name shortened with "…" so its segment is w px wide, or (w 0) whole again; set
- * only when it changes. True when it changed. */
-static bool tab_cap_set(int32_t w)
-{
-    lv_obj_t *label = D.tab_on != NULL ? lv_obj_get_child(D.tab_on, 0) : NULL;
-    if (label == NULL || w == D.tab_cap) {
-        return false;
-    }
-    D.tab_cap = w;
-    if (w > 0) {
-        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
-        lv_obj_set_size(label, w - tab_frame(D.tab_on),
-                        lv_font_get_line_height(lv_obj_get_style_text_font(label, LV_PART_MAIN)));
-    } else {
-        lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_WRAP);
-        lv_obj_set_size(label, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    }
-    return true;
-}
-
-/* The narrowest the open tab's name is shortened to: as wide as Favorites, the first tab (or, when
- * Favorites is the one open, its padding and "…"). */
-static int32_t tab_floor(void)
-{
-    lv_obj_t *first = lv_obj_get_child(D.tabs, 0);
-    if (first != NULL && first != D.tab_on) {
-        return lv_obj_get_width(first);
-    }
-    lv_obj_t *label = lv_obj_get_child(D.tab_on, 0);
-    return tab_frame(D.tab_on) + note_text_width(label, "\xE2\x80\xA6");
-}
-
-/* UI-020, HCTL-012 (BL-171, addendum 6): the note's outcome is never cut. Its shortest form (one
- * fact, the name down to "…") that is still wider than the line takes the room it needs from the
- * tabs, which scroll as they do when a house has many rooms; the tiles stay where they are. The
- * open tab stays in view: where the other tabs alone can't give the room (the open room's name is
- * long), the open tab's name is shortened with "…" too, never narrower than Favorites, and the tabs
- * never grow past the layout's widest. An open tab wider than the tabs can ever be is shortened the
- * same way, so it is always whole in view. Only where even that leaves too little (a language far
- * longer than any we have) does the note wrap to a second line. Everything goes back once the note
- * fits again. Measured after the layout; a style is set only when it changes, so a steady note
- * moves nothing (UI-020). */
-static void note_make_room(const char *text, bool fits)
-{
-    lv_obj_t *label = note_label();
-    if (label == NULL || !tabs_beside_note()) {
-        return;
-    }
-    const int32_t frame = tabs_frame();
-    int32_t want = D.tabs_max;
-    int32_t cap = 0;
-    bool wrap = false;
-    if (D.tab_on != NULL && D.tab_on_w > D.tabs_max - frame) {
-        cap = D.tabs_max - frame; /* never wider than the tabs can be */
-    }
-    if (!fits) {
-        const int32_t room = note_room_full(label);
-        const int32_t full = tabs_full_width();
-        want = full - (note_text_width(label, text) - room);
-        if (D.tab_on == NULL) {
-            if (want < frame) {
-                want = frame;
-                wrap = true;
-            }
-        } else {
-            const int32_t open = cap > 0 ? cap : D.tab_on_w;
-            if (want < frame + open) {
-                int32_t least = tab_floor();
-                least = least < open ? least : open;
-                cap = want - frame;
-                if (cap < least) {
-                    cap = least;
-                    wrap = true;
-                }
-                want = frame + cap;
-            }
-        }
-        want = want < D.tabs_max ? want : D.tabs_max;
-    }
-    if (cap >= D.tab_on_w) {
-        cap = 0; /* its whole name fits */
-    }
-    bool moved = tab_cap_set(cap);
-    if (lv_obj_get_style_max_width(D.tabs, LV_PART_MAIN) != want) {
-        lv_obj_set_style_max_width(D.tabs, want, LV_PART_MAIN);
-        moved = true;
-    }
-    if (moved) {
-        lv_obj_update_layout(D.tabs);
-    }
-    /* measured as drawn: a rounding the arithmetic missed wraps rather than cutting */
-    wrap = wrap || (!fits && note_text_width(label, text) > lv_obj_get_content_width(label));
-    if (wrap != D.note_two_lines) {
-        D.note_two_lines = wrap;
-        lv_label_set_long_mode(label, wrap ? LV_LABEL_LONG_MODE_WRAP : LV_LABEL_LONG_MODE_DOTS);
-        const int32_t line = lv_font_get_line_height(lv_obj_get_style_text_font(label, LV_PART_MAIN));
-        lv_obj_set_height(label, wrap ? 2 * line + lv_obj_get_style_text_line_space(label, LV_PART_MAIN)
-                                      : line);
-        moved = true;
-    }
-    if (moved && D.tab_on != NULL) {
-        lv_obj_update_layout(D.tabs);
-        lv_obj_scroll_to_view(D.tab_on, LV_ANIM_OFF);
-    }
-}
-
-/* The note under the title: what needs you, then what is on (mockup-next n-devices): at most two
- * facts, on one line rather than pushing the tiles down (UI-020). What a fact says about a device
- * is never the part cut: its name shortens first, to NOTE_NAME_MIN bytes, then the second fact
- * gives way, then the name goes down to "…", and what still doesn't fit takes its room from the
- * tabs (note_make_room) (BL-171). Live words: written at most once a second (UI-023). */
+/* The line under Arrange's title: what a tap and a hold do. Outside Arrange nothing (BL-220 R7, the
+ * owner 2026-10-19: no title and no note over the page - the tabs take the row, and each tile says
+ * its own state, a failure in amber, an offline time; HCTL-006's note went with it). */
 static void note(void)
 {
     if (D.arranging) {
         /* TR: Smart Home, arranging a page with nothing picked: holding a tile and dragging it moves
          * it, a tap picks it for its size and Remove. One line beside Add and Done: keep it as
          * short. At most 127 bytes */
-        const char *tap = D.tab_favorites
+        const char *tap = !D.home_on && D.tab_favorites
                               ? TR("Hold a tile to drag it, or tap it to resize or remove it")
+                          : !D.home_on
                               /* TR: the same on a room's page, where tiles can't be removed */
-                              : TR("Hold a tile to drag it, or tap it to resize it");
+                              ? TR("Hold a tile to drag it, or tap it to resize it")
+                              /* TR: the same where a tile's room can be changed too (BL-220). At
+                               * most 127 bytes */
+                              : TR("Hold a tile to drag it, or tap it to change it");
         /* TR: Smart Home, arranging with a tile picked: holding and dragging it, or the arrows,
          * move it. One line beside the arrows, Small, Wide, Remove and Done: keep it as short.
          * At most 127 bytes */
@@ -2605,80 +2999,7 @@ static void note(void)
         ui_set_str(&subject_devices_note, D.pick[0] != '\0' ? picked : tap);
         return;
     }
-    note_fact_t f[2] = {{NULL, NULL}, {NULL, NULL}};
-    size_t nf = 0;
-    size_t lights = 0;
-    size_t offline = 0;
-    for (int pass = 0; pass < 4 && nf < 2u; pass++) {
-        for (size_t p = 0; p < D.npage && nf < 2u; p++) {
-            const ui_dev_t *d = &D.devs[D.page[p]];
-            if (pass == 0 && d->status != UI_DEV_OFFLINE && d->state == UI_DEV_ST_JAMMED) {
-                /* TR: Smart Home's note: a lock reports a jam; {0} is its name, shortened with "…"
-                 * to fit. At most 40 bytes */
-                f[nf].pattern = TR("{0} jammed");
-                f[nf++].name = d->name;
-            } else if (pass == 1 && d->status != UI_DEV_OFFLINE && d->kind == DEV_LOCK &&
-                       d->state == UI_DEV_ST_UNLOCKED) {
-                /* TR: Smart Home's note: a lock is unlocked; {0} is its name, shortened with "…" to
-                 * fit. At most 40 bytes */
-                f[nf].pattern = TR("{0} unlocked");
-                f[nf++].name = d->name;
-            } else if (pass == 1 && d->status != UI_DEV_OFFLINE && entrance(d) &&
-                       d->state == UI_DEV_ST_OPEN) {
-                /* TR: Smart Home's note: a garage door is open; {0} is its name, shortened with "…"
-                 * to fit. At most 40 bytes */
-                f[nf].pattern = TR_C("smart home note", "{0} open");
-                f[nf++].name = d->name;
-            } else if (pass == 2 && d->status == UI_DEV_OFFLINE) {
-                /* TR: Smart Home's note: a device can't be reached; {0} is its name, shortened with
-                 * "…" to fit. At most 40 bytes */
-                f[nf].pattern = TR("{0} offline");
-                f[nf++].name = d->name;
-            } else if (pass == 3 && d->status == UI_DEV_FAILED) {
-                /* what didn't happen, or that it isn't known whether it did (HCTL-012) */
-                f[nf].pattern = failed_sentence(d);
-                f[nf++].name = d->name;
-            }
-        }
-    }
-    for (size_t p = 0; p < D.npage; p++) {
-        const ui_dev_t *d = &D.devs[D.page[p]];
-        lights += d->kind == DEV_LIGHT && d->status != UI_DEV_OFFLINE && is_on(d) ? 1u : 0u;
-        offline += d->status == UI_DEV_OFFLINE ? 1u : 0u;
-    }
-    char count[NOTE_FACT];
-    if (nf < 2u && lights > 0u) {
-        /* TR: Smart Home's note: how many lights are on */
-        I18N_FORMAT(count, sizeof(count), TRN("{0} light on", "{0} lights on", lights), (unsigned)lights);
-        f[nf].pattern = count;
-        f[nf++].name = NULL;
-    }
-    char text[UI_SUBJECT_STRING_LENGTH] = "";
-    bool fits = true;
-    if (D.npage > 0u && offline == D.npage) {
-        /* TR: Smart Home's note when no device on the page can be reached (the link is down) */
-        i18n_utf8_copy(text, sizeof(text), TR("Your devices can't be reached right now"));
-        fits = note_fits(text); /* no name to shorten: whole, its room from the tabs (BL-216) */
-    } else if (nf == 0u) {
-        /* TR: Smart Home's note when nothing needs attention and no light is on */
-        i18n_utf8_copy(text, sizeof(text), TR("Nothing needs you"));
-    } else {
-        const bool named = f[0].name != NULL || (nf > 1u && f[1].name != NULL);
-        fits = false;
-        for (size_t n = nf; n > 0u && !fits; n--) {
-            const size_t least = n > 1u ? NOTE_NAME_MIN : 3u; /* 3: "…" alone */
-            for (size_t room = NOTE_FACT - 1u;; room--) {
-                note_join(text, sizeof(text), f, n, room);
-                fits = note_fits(text);
-                if (fits || !named || room <= least) {
-                    break;
-                }
-            }
-        }
-    }
-    /* what didn't fit on the line takes its room from the tabs, never from the outcome */
-    note_make_room(text, fits);
-    ui_set_str(&subject_devices_note, text);
+    ui_set_str(&subject_devices_note, "");
 }
 
 /* What the tiles on screen are built for: the page, its devices in order, their sizes. */
@@ -2702,6 +3023,16 @@ static void show(void)
     }
     if (collect_areas() || !D.tabs_built) {
         build_tabs();
+    }
+    if (!D.arranging) {
+        /* BL-220 R7: no title beside the tabs - they may take the row, up to the pencil */
+        lv_obj_t *row = lv_obj_get_parent(D.tabs);
+        const int32_t room = lv_obj_get_content_width(row) - lv_obj_get_width(D.pencil) -
+                             lv_obj_get_style_pad_column(row, LV_PART_MAIN) * 2;
+        if (room > 0 && room != D.tabs_max) {
+            D.tabs_max = room;
+            lv_obj_set_style_max_width(D.tabs, room, 0);
+        }
     }
     D.npage = ui_devl_page(D.layout, D.devs, D.n, D.tab_favorites ? NULL : D.tab, D.page,
                            UI_DEVL_MAX);
@@ -2776,6 +3107,7 @@ static void poll(void)
         }
     }
     D.n = kept;
+    home_apply(); /* each device's room as its area (BL-220) */
     expect_read(); /* what was asked, until the report says otherwise (BL-219) */
     /* HCTL-003: Smart Home on the rail while a device is listed - a link keypad's are its alarm
      * panel's, through the link (BL-216, proposal P1 approved 2026-10-16) */
@@ -2797,7 +3129,7 @@ void ui_devices_init(void)
      * tiles down while someone looks at them (UI-020). */
     D.head = ui_find(S.main, "device_header");
     D.arr_head = ui_find(S.main, "device_arrange_header");
-    D.tabs_max = lv_obj_get_style_max_width(D.tabs, LV_PART_MAIN); /* note_make_room gives it back */
+    D.tabs_max = lv_obj_get_style_max_width(D.tabs, LV_PART_MAIN); /* show() widens it to the row */
     for (size_t h = 0; h < 2u; h++) {
         lv_obj_t *header = h == 0u ? D.head : D.arr_head;
         /* both lines of the arranging header are one line each: a long name ends in "..." */
@@ -2815,11 +3147,17 @@ void ui_devices_init(void)
     D.arr_size = ui_find(S.main, "device_arrange_size");
     D.arr_remove = ui_find(S.main, "device_arrange_remove");
     D.arr_done = ui_find(S.main, "device_arrange_done");
+    D.arr_room = ui_find(S.main, "device_arrange_room");
+    D.arr_rooms = ui_find(S.main, "device_arrange_rooms");
+    D.spacer = ui_find(S.main, "device_spacer");
     if (D.head == NULL || D.arr_head == NULL || D.pencil == NULL || D.arr_add == NULL ||
         D.arr_prev == NULL || D.arr_next == NULL || D.arr_size == NULL || D.arr_remove == NULL ||
-        D.arr_done == NULL) {
+        D.arr_done == NULL || D.arr_room == NULL || D.arr_rooms == NULL || D.spacer == NULL) {
         return;
     }
+    lv_obj_add_flag(D.head, LV_OBJ_FLAG_HIDDEN); /* no title over the page (BL-220 R7) */
+    lv_obj_add_event_cb(D.arr_room, on_arrange_room, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(D.arr_rooms, on_arrange_rooms, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(D.pencil, on_arrange_start, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(D.arr_add, on_arrange_add, LV_EVENT_CLICKED, NULL);
     lv_obj_add_event_cb(D.arr_prev, on_arrange_move, LV_EVENT_CLICKED, NULL);
@@ -2830,10 +3168,18 @@ void ui_devices_init(void)
     D.devs =ui_slow_alloc(sizeof(ui_dev_t) * UI_DEVL_MAX);
     D.layout = ui_slow_alloc(sizeof(ui_devl_t));
     D.blob = ui_slow_alloc(UI_DEVL_READ_MAX);
-    if (D.devs == NULL || D.layout == NULL || D.blob == NULL) {
+    D.src = ui_slow_alloc(sizeof(*D.src) * UI_DEVL_MAX);
+    if (D.devs == NULL || D.layout == NULL || D.blob == NULL || D.src == NULL) {
         return;
     }
+    /* BL-220: the house's rooms and master codes, where this panel keeps them (not a keypad) */
+    if (S.be.dev_home_get != NULL && S.be.dev_home_set != NULL) {
+        D.home = ui_slow_alloc(sizeof(hc_home_t));
+        D.home_blob = ui_slow_alloc(HC_HOME_BLOB_MAX);
+        D.home_on = D.home != NULL && D.home_blob != NULL;
+    }
     D.ready = true;
+    home_load();
     load_layout();
     poll();
 }
@@ -2860,6 +3206,9 @@ void ui_devices_shown(void)
         return;
     }
     load_layout(); /* Arrange may have changed it */
+    home_load();
+    D.home_drop = true; /* an empty room made from an area may go now (hc_home_adopt) */
+    D.tabs_built = false;
     D.page_sig = 0;
     poll();
     show();

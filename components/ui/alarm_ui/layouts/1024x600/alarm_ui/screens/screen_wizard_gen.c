@@ -54,7 +54,7 @@ lv_obj_t * screen_wizard_create(void)
 
         lv_obj_t * wiz_disk = alarm_ui_run_0(wiz_side, 168, 168);
         lv_obj_set_style_margin_top(wiz_disk, SPACE_XXL, 0);
-        alarm_ui_run_21(wiz_disk, RADIUS_FULL, COLOR_BLUE, OPA_TINT);
+        alarm_ui_run_22(wiz_disk, RADIUS_FULL, COLOR_BLUE, OPA_TINT);
         lv_obj_set_name(wiz_disk, "wiz_disk");
         lv_obj_t * wiz_icon = alarm_ui_run_33(wiz_disk);
         alarm_ui_run_4(wiz_icon, icons_96, COLOR_BLUE);
@@ -65,7 +65,7 @@ lv_obj_t * screen_wizard_create(void)
         alarm_ui_run_12(wiz_title, font_headline, &subject_wiz_title);
 
         lv_obj_t * wiz_note = alarm_ui_run_2(wiz_side, LV_LABEL_LONG_MODE_WRAP);
-        alarm_ui_run_29(wiz_note, COLOR_TEXT_2, &subject_wiz_note);
+        alarm_ui_run_30(wiz_note, COLOR_TEXT_2, &subject_wiz_note);
 
         lv_obj_t * box_6 = alarm_ui_run_0(wiz_side, 8, 8);
         lv_obj_set_flex_grow(box_6, 1);
@@ -87,11 +87,11 @@ lv_obj_t * screen_wizard_create(void)
 
         lv_obj_t * wiz_main = box_create(lv_obj_0);
         lv_obj_set_x(wiz_main, 400);
-        alarm_ui_run_31(wiz_main, 624, lv_pct(100));
+        alarm_ui_run_32(wiz_main, 624, lv_pct(100));
         lv_obj_set_style_pad_all(wiz_main, SPACE_XL, 0);
         alarm_ui_run_1(wiz_main, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(wiz_main, SPACE_LG, 0);
-        lv_obj_t * wiz_body_area = alarm_ui_run_30(wiz_main);
+        lv_obj_t * wiz_body_area = alarm_ui_run_31(wiz_main);
         lv_obj_set_flag(wiz_body_area, LV_OBJ_FLAG_SCROLLABLE, false);
         lv_obj_set_style_pad_all(wiz_body_area, 0, 0);
         lv_obj_set_style_bg_opa(wiz_body_area, (255 * 0 / 100), 0);
@@ -109,16 +109,16 @@ lv_obj_t * screen_wizard_create(void)
         lv_obj_set_flag(wiz_shade, LV_OBJ_FLAG_CLICKABLE, false);
         lv_obj_set_flag(wiz_shade, LV_OBJ_FLAG_SCROLLABLE, false);
         lv_obj_set_style_border_width(wiz_shade, 0, 0);
-        alarm_ui_run_21(wiz_shade, 0, COLOR_BG, (255 * 100 / 100));
-        alarm_ui_run_69(wiz_shade, COLOR_BG, LV_GRAD_DIR_VER, (255 * 0 / 100), (255 * 100 / 100), 255);
+        alarm_ui_run_22(wiz_shade, 0, COLOR_BG, (255 * 100 / 100));
+        alarm_ui_run_70(wiz_shade, COLOR_BG, LV_GRAD_DIR_VER, (255 * 0 / 100), (255 * 100 / 100), 255);
         lv_obj_set_name(wiz_shade, "wiz_shade");
 
-        lv_obj_t * wiz_pad_area = alarm_ui_run_30(wiz_main);
+        lv_obj_t * wiz_pad_area = alarm_ui_run_31(wiz_main);
         alarm_ui_run_1(wiz_pad_area, LV_FLEX_FLOW_COLUMN);
         alarm_ui_run_3(wiz_pad_area);
         lv_obj_bind_flag_if_eq(wiz_pad_area, &subject_wiz_pad, LV_OBJ_FLAG_HIDDEN, 0);
         lv_obj_t * wiz_pad = code_pad_create(wiz_pad_area, 1, 300);
-        alarm_ui_run_31(wiz_pad, 428, lv_pct(100));
+        alarm_ui_run_32(wiz_pad, 428, lv_pct(100));
         lv_obj_set_name(wiz_pad, "wiz_pad");
 
         lv_obj_t * wiz_footer = alarm_ui_run_0(wiz_main, lv_pct(100), LV_SIZE_CONTENT);
@@ -128,7 +128,7 @@ lv_obj_t * screen_wizard_create(void)
         lv_obj_set_style_pad_column(wiz_footer, SPACE_MD, 0);
         lv_obj_set_style_pad_row(wiz_footer, SPACE_SM, 0);
         lv_obj_bind_flag_if_eq(wiz_footer, &subject_wiz_pad, LV_OBJ_FLAG_HIDDEN, 1);
-        lv_obj_t * wiz_back = alarm_ui_run_22(wiz_footer, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t * wiz_back = alarm_ui_run_18(wiz_footer, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
         alarm_ui_run_54(wiz_back, &style_button, 0, &style_button_pressed, LV_STATE_PRESSED);
         lv_obj_bind_flag_if_eq(wiz_back, &subject_wiz_back, LV_OBJ_FLAG_HIDDEN, 0);
         alarm_ui_run_10(wiz_back, ui_on_wizard_back, "wiz_back");
@@ -138,13 +138,13 @@ lv_obj_t * screen_wizard_create(void)
         alarm_ui_run_14(wiz_back, alarm_ui_tr("Back"));
 
         lv_obj_t * wiz_spinner = lv_spinner_create(wiz_footer);
-        alarm_ui_run_31(wiz_spinner, 32, 32);
+        alarm_ui_run_32(wiz_spinner, 32, 32);
         alarm_ui_run_50(wiz_spinner);
 
         lv_obj_t * box_7 = alarm_ui_run_0(wiz_footer, 8, 8);
         lv_obj_set_flex_grow(box_7, 1);
 
-        lv_obj_t * wiz_next = alarm_ui_run_22(wiz_footer, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t * wiz_next = alarm_ui_run_18(wiz_footer, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
         alarm_ui_run_54(wiz_next, &style_button, 0, &style_button_primary, 0);
         alarm_ui_run_52(wiz_next, &style_button_tone_pressed, LV_STATE_PRESSED, &style_disabled, &subject_wiz_next_on, 0);
         alarm_ui_run_10(wiz_next, ui_on_wizard_next, "wiz_next");
@@ -168,7 +168,7 @@ lv_obj_t * screen_wizard_create(void)
         alarm_ui_run_9(wiz_toast, COLOR_PRESSED, 0, (255 * 100 / 100), RADIUS_FULL);
         alarm_ui_run_40(wiz_toast, COLOR_TOAST_LINE);
         alarm_ui_run_26(wiz_toast, SPACE_XL, SPACE_XL);
-        alarm_ui_run_70(wiz_toast, 12, 12);
+        alarm_ui_run_71(wiz_toast, 12, 12);
         alarm_ui_run_1(wiz_toast, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(wiz_toast);
         lv_obj_bind_flag_if_eq(wiz_toast, &subject_toast_visible, LV_OBJ_FLAG_HIDDEN, 0);

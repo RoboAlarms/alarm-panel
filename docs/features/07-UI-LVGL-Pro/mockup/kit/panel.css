@@ -90,6 +90,8 @@
 .device_tile .top { display: flex; align-items: center; gap: var(--space_md); padding-right: 40px; min-width: 0; }
 .device_tile .words { display: flex; flex-direction: column; min-width: 0; padding-right: var(--space_xs); }
 .device_tile .top .words { flex: 1 1 0; }
+.device_tile .key { position: absolute; top: 0; right: 48px; width: 32px; height: 72px; display: flex; align-items: center; justify-content: center; color: var(--color_text_3); }
+.device_tile.locked .top { padding-right: 80px; }
 .device_tile .more { position: absolute; top: 0; right: 0; width: 64px; height: 72px; display: flex; align-items: center; justify-content: center; color: var(--color_text_3); }
 .device_tile.pending .icon_chip { opacity: .4; }
 /* Offline (BL-181): the tile and its words stay at full opacity, the chip at opa_device_offline_chip */

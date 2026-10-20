@@ -41,7 +41,7 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
         alarm_ui_run_6(&style_row_stepper, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_radius(&style_row_stepper, RADIUS_MD);
         alarm_ui_run_7(&style_row_stepper, SPACE_LG, SPACE_MD, SPACE_MD, SPACE_MD, SPACE_MD);
-        alarm_ui_run_19(&style_step_button, 48, 48, RADIUS_FULL);
+        alarm_ui_run_20(&style_step_button, 48, 48, RADIUS_FULL);
         alarm_ui_run_6(&style_step_button, COLOR_RAISED, (255 * 100 / 100));
         lv_style_set_text_color(&style_step_button, COLOR_TEXT);
         lv_style_set_bg_color(&style_step_button_pressed, COLOR_PRESSED);
@@ -76,7 +76,7 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
         alarm_ui_run_4(detail_label, font_caption, COLOR_TEXT_2);
         lv_obj_set_name(detail_label, "detail_label");
 
-        lv_obj_t * minus = alarm_ui_run_20(box_0);
+        lv_obj_t * minus = alarm_ui_run_21(box_0);
         lv_obj_set_ext_click_area(minus, 8);
         alarm_ui_run_16(minus, &style_step_button, 0, &style_step_button_pressed, LV_STATE_PRESSED);
         lv_obj_set_name(minus, "minus");
@@ -88,7 +88,7 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
         lv_label_set_text(value_label, value);
         alarm_ui_run_58(value_label, LV_TEXT_ALIGN_CENTER, "value_label");
 
-        lv_obj_t * plus = alarm_ui_run_20(box_0);
+        lv_obj_t * plus = alarm_ui_run_21(box_0);
         lv_obj_set_ext_click_area(plus, 8);
         alarm_ui_run_16(plus, &style_step_button, 0, &style_step_button_pressed, LV_STATE_PRESSED);
         lv_obj_set_name(plus, "plus");

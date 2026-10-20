@@ -69,13 +69,13 @@ lv_obj_t * arm_strip_create(lv_obj_t * parent)
         alarm_ui_run_12(arm_strip_title, font_title, &subject_arm_strip_title);
 
         lv_obj_t * arm_strip_detail = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_WRAP);
-        alarm_ui_run_29(arm_strip_detail, COLOR_TEXT_2, &subject_arm_strip_detail);
+        alarm_ui_run_30(arm_strip_detail, COLOR_TEXT_2, &subject_arm_strip_detail);
 
         lv_obj_t * arm_strip_note = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_WRAP);
-        alarm_ui_run_29(arm_strip_note, COLOR_AMBER, &subject_arm_strip_note);
+        alarm_ui_run_30(arm_strip_note, COLOR_AMBER, &subject_arm_strip_note);
         alarm_ui_run_43(arm_strip_note, &subject_arm_strip_note_on, 0, "arm_strip_note");
 
-        lv_obj_t * arm_strip_put_off = alarm_ui_run_22(box_0, lv_pct(100), LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t * arm_strip_put_off = alarm_ui_run_18(box_0, lv_pct(100), LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_style_flex_main_place(arm_strip_put_off, LV_FLEX_ALIGN_CENTER, 0);
         lv_obj_bind_flag_if_not_eq(arm_strip_put_off, &subject_arm_strip, LV_OBJ_FLAG_HIDDEN, 1);
         alarm_ui_run_54(arm_strip_put_off, &style_button, 0, &style_button_pressed, LV_STATE_PRESSED);

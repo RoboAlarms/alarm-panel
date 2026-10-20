@@ -35,6 +35,7 @@ void panel_prefs_defaults(panel_prefs_t *out)
     out->switch_allowed = false;
     out->return_never = false;
     out->return_s = 30;
+    out->start_view = 0;
     out->brightness = 80;
     out->saver_brightness = 25; /* the screen saver shows a picture */
     out->saver_after_ms = 60000u;
@@ -118,6 +119,7 @@ static void load_stored(panel_prefs_t *out)
     out->partition_home = get_u8(h, "part_home", 1, 1, ALARM_MAX_PARTITIONS);
     out->switch_allowed = get_u8(h, "part_switch", 0, 0, 1) != 0u;
     out->return_never = get_u8(h, "part_never", 0, 0, 1) != 0u;
+    out->start_view = get_u8(h, "start_view", 0, 0, 1);
     uint16_t delay = 30u;
     if (nvs_get_u16(h, "part_idle", &delay) == ESP_OK && delay >= 1u && delay <= 3600u)
         out->return_s = delay;
@@ -252,6 +254,7 @@ static esp_err_t save_stored(const panel_prefs_t *p)
     if (err == ESP_OK) err = nvs_set_u8(h, "part_switch", p->switch_allowed ? 1u : 0u);
     if (err == ESP_OK) err = nvs_set_u8(h, "part_never", p->return_never ? 1u : 0u);
     if (err == ESP_OK) err = nvs_set_u16(h, "part_idle", p->return_s);
+    if (err == ESP_OK) err = nvs_set_u8(h, "start_view", p->start_view);
     if (err == ESP_OK) {
         err = nvs_commit(h);
     }

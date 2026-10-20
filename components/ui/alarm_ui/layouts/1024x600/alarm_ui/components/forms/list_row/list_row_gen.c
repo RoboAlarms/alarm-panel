@@ -44,7 +44,7 @@ lv_obj_t * list_row_create(lv_obj_t * parent, const char * glyph, lv_color_t col
         lv_style_set_radius(&style_list_row, RADIUS_MD);
         alarm_ui_run_7(&style_list_row, SPACE_MD, SPACE_LG, SPACE_SM, SPACE_SM, SPACE_MD);
         lv_style_set_bg_color(&style_list_row_pressed, COLOR_RAISED);
-        alarm_ui_run_19(&style_list_row_level, lv_pct(100), 8, RADIUS_FULL);
+        alarm_ui_run_20(&style_list_row_level, lv_pct(100), 8, RADIUS_FULL);
         alarm_ui_run_6(&style_list_row_level, COLOR_PRESSED, (255 * 100 / 100));
         lv_style_set_margin_top(&style_list_row_level, SPACE_SM);
         alarm_ui_run_63(&style_list_row_level_indicator, RADIUS_FULL, (255 * 100 / 100));
@@ -67,7 +67,7 @@ lv_obj_t * list_row_create(lv_obj_t * parent, const char * glyph, lv_color_t col
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_20(parent);
+        lv_obj_t * box_0 = alarm_ui_run_21(parent);
         alarm_ui_run_16(box_0, &style_list_row, 0, &style_list_row_pressed, LV_STATE_PRESSED);
         lv_obj_t * chip = icon_chip_create(box_0, glyph, 44, icons_20, color);
         lv_obj_set_name(chip, "chip");

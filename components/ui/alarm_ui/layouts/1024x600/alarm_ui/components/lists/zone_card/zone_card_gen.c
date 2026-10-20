@@ -82,7 +82,7 @@ lv_obj_t * zone_card_create(lv_obj_t * parent, const char * glyph, const char * 
         lv_label_set_text(detail_label, detail);
         alarm_ui_run_47(detail_label, "detail_label");
 
-        lv_obj_t * bypass = alarm_ui_run_22(box_0, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t * bypass = alarm_ui_run_18(box_0, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_ext_click_area(bypass, 8);
         alarm_ui_run_16(bypass, &style_zone_bypass, 0, &style_zone_bypass_pressed, LV_STATE_PRESSED);
         alarm_ui_run_10(bypass, ui_on_zone_bypass, "bypass");

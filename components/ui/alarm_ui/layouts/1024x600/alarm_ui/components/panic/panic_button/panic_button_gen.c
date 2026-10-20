@@ -42,7 +42,7 @@ lv_obj_t * panic_button_create(lv_obj_t * parent, const char * glyph, const char
         lv_style_set_arc_opa(&style_panic_ring, (255 * 0 / 100));
         lv_style_set_arc_width(&style_panic_ring_indicator, 10);
         lv_style_set_arc_rounded(&style_panic_ring_indicator, true);
-        alarm_ui_run_19(&style_panic_button, 176, 176, RADIUS_FULL);
+        alarm_ui_run_20(&style_panic_button, 176, 176, RADIUS_FULL);
         lv_style_set_bg_opa(&style_panic_button, (255 * 16 / 100));
         lv_style_set_border_width(&style_panic_button, 2);
         lv_style_set_border_opa(&style_panic_button, (255 * 50 / 100));
@@ -75,7 +75,7 @@ lv_obj_t * panic_button_create(lv_obj_t * parent, const char * glyph, const char
         lv_obj_t * ring_box = alarm_ui_run_0(box_0, 212, 212);
         lv_obj_set_flag(ring_box, LV_OBJ_FLAG_EVENT_BUBBLE, true);
         lv_obj_t * progress = lv_arc_create(ring_box);
-        alarm_ui_run_31(progress, lv_pct(100), lv_pct(100));
+        alarm_ui_run_32(progress, lv_pct(100), lv_pct(100));
         lv_arc_set_bg_start_angle(progress, 0);
         lv_arc_set_bg_end_angle(progress, 360);
         lv_arc_set_rotation(progress, 270);
@@ -85,8 +85,7 @@ lv_obj_t * panic_button_create(lv_obj_t * parent, const char * glyph, const char
         lv_obj_set_flag(progress, LV_OBJ_FLAG_CLICKABLE, false);
         lv_obj_set_style_arc_color(progress, color, LV_PART_INDICATOR);
         alarm_ui_run_16(progress, &style_panic_ring, 0, &style_panic_ring_indicator, LV_PART_INDICATOR);
-        lv_obj_add_style(progress, &style_knob_off, LV_PART_KNOB);
-        lv_obj_set_name(progress, "progress");
+        alarm_ui_run_68(progress, &style_knob_off, LV_PART_KNOB, "progress");
 
         lv_obj_t * button = box_create(ring_box);
         lv_obj_set_align(button, LV_ALIGN_CENTER);

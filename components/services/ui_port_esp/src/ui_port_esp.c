@@ -534,6 +534,7 @@ static void save_options(void *ctx, const ui_options_t *opt)
         .switch_allowed = opt->switch_allowed,
         .return_never = opt->return_never,
         .return_s = opt->return_s,
+        .start_view = opt->start_view,
 
     };
 #if CONFIG_ALARM_FEATURE_VOICE
@@ -1361,6 +1362,22 @@ static bool dev_layout_set(void *ctx, const uint8_t *blob, size_t len)
 }
 #endif
 
+#if CONFIG_ALARM_HOME_CONTROL
+/* The house's Smart Home settings live with the device judge (device_service.h, BL-220): the
+ * touchscreen's task has an internal-RAM stack, so the set may write NVS. */
+static size_t dev_home_get(void *ctx, uint8_t *out, size_t max)
+{
+    (void)ctx;
+    return device_service_home_get(out, max);
+}
+
+static bool dev_home_set(void *ctx, const uint8_t *blob, size_t len)
+{
+    (void)ctx;
+    return device_service_home_set(blob, len);
+}
+#endif
+
 /* ---- Automations (automation_service, docs/features/41) ----
  * The touchscreen calls these on the LVGL task, holding board_ui_lock; its stack is internal RAM
  * (board_display.c's task_stack_caps), so the edits may write NVS there (automation_service.h
@@ -1687,6 +1704,8 @@ void ui_port_esp_backend(ui_backend_t *out)
     out->dev_act = dev_act;
     out->dev_layout_get = dev_layout_get;
     out->dev_layout_set = dev_layout_set;
+    out->dev_home_get = dev_home_get;
+    out->dev_home_set = dev_home_set;
 #endif
 #if CONFIG_ALARM_FEATURE_AUTOMATIONS
     out->auto_list = auto_list;
@@ -1750,6 +1769,7 @@ void ui_port_esp_options(ui_options_t *out)
     out->switch_allowed = p.switch_allowed;
     out->return_never = p.return_never;
     out->return_s = p.return_s;
+    out->start_view = p.start_view;
 
     memcpy(out->lang, p.lang, sizeof(out->lang));
     memcpy(out->region, p.region, sizeof(out->region));

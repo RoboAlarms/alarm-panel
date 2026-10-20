@@ -329,6 +329,9 @@ void host_panel_devices_garage_closing(void);
 const ui_dev_t *host_panel_device(const char *ref);
 /* The Smart Home layout as stored (dev_layout_set, HCTL-008): its bytes into out (max), the length. */
 size_t host_panel_dev_layout(uint8_t *out, size_t max);
+/* The house's Smart Home settings (hc_home.h, BL-220): set them (NULL, 0: none) or read them. */
+void host_panel_dev_home_set(const uint8_t *blob, size_t len);
+size_t host_panel_dev_home(uint8_t *out, size_t max);
 /* The automation editors' shots and tests (docs/features/41): on adds a script (never offered to
  * an automation, AUT-002) and a lock and a garage door when the house lacks them, at the end of
  * the list; off takes them away again. Off by default, so Smart Home's shots don't change. */

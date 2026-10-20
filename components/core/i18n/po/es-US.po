@@ -522,7 +522,6 @@ msgstr "h:mm a"
 #: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_settings.c
 #: components/ui/alarm_ui/src/ui_walk.c
-#: components/ui/alarm_ui/src/ui_wizard.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 # review: draft
 #, fuzzy
@@ -7869,10 +7868,12 @@ msgstr "Una contraseña del navegador tiene al menos 12 caracteres."
 msgid "Saved."
 msgstr "Guardado."
 
+#. Smart Home: the question before removing a room; {0} is its name. At most 63 bytes
 #. a confirmation's title; {0} is the zone's name (cut to 31 bytes). At most 30 bytes
 #. a confirmation's title; {0} is a device's model. At most 95 bytes
 #. a confirmation's title; {0} is a device's name. At most 95 bytes
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_devices.c
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 # review: draft
@@ -9090,6 +9091,7 @@ msgstr ""
 
 #. A button row's text (one line).
 #. First-time setup: the main button, bottom right. At most 127 bytes.
+#. A list row's title (one line; a long one ends in ...).
 #: components/services/panel_web/web/panel-pages.js
 #: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/src/ui_link.c
@@ -9600,11 +9602,8 @@ msgid "Insert a card to use it."
 msgstr "Inserte una tarjeta para usarla."
 
 #. the text sheet's button: asks the server before anything is kept. At most 23 bytes
-#. the setup's pairing step after 30 s with nothing found: the heading over what to check
-#. A section heading above a group of rows (one line).
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_update.c
-#: components/ui/alarm_ui/src/ui_wizard.c
 # review: draft
 #, fuzzy
 msgid "Check"
@@ -11351,6 +11350,10 @@ msgid "Devices"
 msgstr "Dispositivos"
 
 #: components/services/panel_web/web/panel-pages.js
+msgid "Waiting for status"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
 msgid "Not responding"
 msgstr ""
 
@@ -11382,10 +11385,8 @@ msgstr ""
 
 #. A button row's text (one line).
 #. Installer > Keypads and devices > Add a keypad, the page title. At most 47 bytes
-#. A list row's title (one line; a long one ends in ...).
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_link.c
-#: components/ui/alarm_ui/src/ui_wizard.c
 msgid "Add a keypad"
 msgstr ""
 
@@ -11430,7 +11431,7 @@ msgid "Choose Keypad in its setup."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "For Wi-Fi, join this system’s network."
+msgid "Tap Find panel. If out of range, tap Select Wi-Fi."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -12926,10 +12927,6 @@ msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 msgid "The panel isn’t answering. It may be restarting to install the update."
-msgstr ""
-
-#: components/services/panel_web/web/panel-pages.js
-msgid "Waiting for status"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -17240,7 +17237,9 @@ msgstr "Eliminado sin su respuesta"
 msgid "This device"
 msgstr "Este dispositivo"
 
+#. Smart Home, a room's sheet: its rows and the lines under them. At most 47 bytes each
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_devices.c
 # review: draft
 #, fuzzy
 msgid "Rename"
@@ -17252,7 +17251,9 @@ msgstr "Renombrar"
 msgid "Save {0}’s settings?"
 msgstr "¿Guardar los ajustes de {0}?"
 
+#. Smart Home: the title of the keyboard that renames a room; {0} is its name. At most 63 bytes
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_devices.c
 # review: draft
 #, fuzzy
 msgid "Rename {0}"
@@ -20936,6 +20937,13 @@ msgstr[2] "Use al menos {0} dígitos"
 msgid "Those didn't match. Try again"
 msgstr "No coincidieron. Inténtelo de nuevo"
 
+#. The code pad's hint line. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_app.c
+# review: draft
+#, fuzzy
+msgid "Your current code is wrong"
+msgstr "Su código actual es incorrecto"
+
 #. the code pad's error when OK is pressed with nothing typed. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_app.c
 # review: draft
@@ -20952,13 +20960,6 @@ msgid_plural "Codes have at least {0} digits"
 msgstr[0] "Los códigos tienen al menos {0} dígito"
 msgstr[1] "Los códigos tienen al menos {0} dígitos"
 msgstr[2] "Los códigos tienen al menos {0} dígitos"
-
-#. The code pad's hint line. At most 127 bytes.
-#: components/ui/alarm_ui/src/ui_app.c
-# review: draft
-#, fuzzy
-msgid "Your current code is wrong"
-msgstr "Su código actual es incorrecto"
 
 #. Home, facts at the foot of the state card, " · " between them; "Chime on" says chime is switched on
 #. Text from the layout XML, no context.
@@ -23489,160 +23490,6 @@ msgstr "Cambiando…"
 msgid "Didn't respond"
 msgstr "No respondió"
 
-#. Smart Home's note: the last action on a device was refused and it didn't turn on; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't turn on"
-msgstr "{0} no se encendió"
-
-#. Smart Home's note: a device was told to turn on but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm {0} turned on"
-msgstr "No se pudo confirmar que {0} se encendió"
-
-#. Smart Home's note: the last action on a device was refused and it didn't turn off; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't turn off"
-msgstr "{0} no se apagó"
-
-#. Smart Home's note: a device was told to turn off but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm {0} turned off"
-msgstr "No se pudo confirmar que {0} se apagó"
-
-#. Smart Home's note: the last action on a device was refused and it didn't switch; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't switch"
-msgstr "{0} no cambió de estado"
-
-#. Smart Home's note: a device was told to switch but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm {0} switched"
-msgstr "No se pudo confirmar el cambio de {0}"
-
-#. Smart Home's note: the last action on a lock was refused and it didn't lock; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't lock"
-msgstr "{0} no se cerró con llave"
-
-#. Smart Home's note: a lock was told to lock but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm {0} locked"
-msgstr "No se pudo confirmar el cierre de {0}"
-
-#. Smart Home's note: the last action on a lock was refused and it didn't unlock; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't unlock"
-msgstr "{0} no se abrió con llave"
-
-#. Smart Home's note: a lock was told to unlock but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm {0} unlocked"
-msgstr "Sin confirmar la apertura con llave de {0}"
-
-#. Smart Home's note: the last action on a device was refused and it didn't open; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't open"
-msgstr "{0} no se abrió"
-
-#. Smart Home's note: a device was told to open but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm {0} opened"
-msgstr "No se pudo confirmar que {0} se abrió"
-
-#. Smart Home's note: the last action on a device was refused and it didn't close; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't close"
-msgstr "{0} no se cerró"
-
-#. Smart Home's note: a device was told to close but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm {0} closed"
-msgstr "No se pudo confirmar que {0} se cerró"
-
-#. Smart Home's note: the last action on a device was refused and it didn't stop; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't stop"
-msgstr "{0} no se detuvo"
-
-#. Smart Home's note: a device was told to stop but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm {0} stopped"
-msgstr "No se pudo confirmar que {0} se detuvo"
-
-#. Smart Home's note: the last action on a scene or script was refused and it didn't run; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't run"
-msgstr "{0} no se ejecutó"
-
-#. Smart Home's note: a scene or script was told to run but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm {0} ran"
-msgstr "No se pudo confirmar que {0} se ejecutó"
-
-#. Smart Home's note: the last action on a device was refused and it didn't change a value (brightness, position, speed, set point, mode); {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't change"
-msgstr "{0} no cambió"
-
-#. Smart Home's note: a device was told to change a value (brightness, position, speed, set point, mode) but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm {0} changed"
-msgstr "No se pudo confirmar que {0} cambió"
-
-#. Smart Home's note: the last action on a device failed; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} didn't respond"
-msgstr "{0} no respondió"
-
-#. Smart Home's note: a device was told to do something but no answer came (or the connection dropped), so the result isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Couldn't confirm the result for {0}"
-msgstr "No se pudo confirmar el resultado de {0}"
-
 #. a device's tile while it can't be reached ("Offline since 9:12 PM")
 #: components/ui/alarm_ui/src/ui_devices.c
 # review: draft
@@ -23696,6 +23543,21 @@ msgstr "Sigue ocupado con el último cambio"
 #, fuzzy
 msgid "It can't be reached right now"
 msgstr "No se puede alcanzar ahora mismo"
+
+#. the code pad's line when a code that isn't a master's was typed for a device that asks for a master code (BL-220). At most 63 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Only a master code can change it"
+msgstr ""
+
+#. the code pad's title before a change to a device the household set to ask for a master code (BL-220); {0} is its name
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Change {0}"
+msgstr ""
+
+#. under the code pad's title: why it asks (BL-220); {0} is the device's name. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "{0} asks for a master code"
+msgstr ""
 
 #. A slider row's title (one line).
 #: components/ui/alarm_ui/src/ui_devices.c
@@ -23791,22 +23653,29 @@ msgstr "Fijar en"
 msgid "Arrange Favorites"
 msgstr "Ordenar Favoritos"
 
-#. Smart Home, the page of the devices without a room: its tab. At most 23 bytes
-#. Smart Home's first tab: the devices picked for it
-#. Smart Home's tab for the devices in no area
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgctxt "smart home"
-msgid "Other"
-msgstr "Otros"
-
 #. Smart Home's title while arranging a room's page; {0} is the room. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_devices.c
 # review: draft
 #, fuzzy
 msgid "Arrange {0}"
 msgstr "Ordenar {0}"
+
+#. the code pad's line when a code that isn't a master's was typed to arrange Smart Home (BL-220). At most 63 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Only a master code can arrange it"
+msgstr ""
+
+#. the code pad's title before arranging Smart Home when it asks for a master code
+#. The code pad's title. At most 63 bytes.
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Arrange Smart Home"
+msgstr ""
+
+#. under that pad's title (BL-220). At most 127 bytes
+#. Settings > Smart Home: a switch and the line under it. At most 63 bytes each
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Arranging asks for a master code"
+msgstr ""
 
 #. Smart Home: the arranged layout couldn't be stored; it is lost at the next start
 #. A toast (one line over the screen). At most 127 bytes.
@@ -23853,6 +23722,210 @@ msgstr "Todos los dispositivos ya están en Favoritos"
 msgid "Add to Favorites"
 msgstr "Agregar a Favoritos"
 
+#. Smart Home: a change to the rooms or the master codes couldn't be stored
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "The change couldn't be saved"
+msgstr ""
+
+#. Smart Home's tab for every device while there are no rooms (BL-220). At most 23 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgctxt "smart home"
+msgid "All devices"
+msgstr ""
+
+#. Smart Home's tab for the devices in no room. At most 23 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+msgctxt "smart home"
+msgid "Other"
+msgstr "Otros"
+
+#. Smart Home's rooms: how many devices a room has
+#. the number of Zigbee devices, in a row. At most 20 bytes
+#. the number of Z-Wave devices, in a row. At most 20 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgid "{0} device"
+msgid_plural "{0} devices"
+msgstr[0] "{0} dispositivo"
+msgstr[1] "{0} dispositivos"
+msgstr[2] "{0} dispositivos"
+
+#. Smart Home: a room's name was left empty. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Type a name for the room"
+msgstr ""
+
+#. Smart Home: another room has that name; {0} is the name. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "There is already a room called {0}"
+msgstr ""
+
+#. Smart Home: the rooms are at their limit (24). At most 63 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "No more rooms can be added"
+msgstr ""
+
+#. the line under "New room" when it is made from a tile's Room; {0} is the device's name. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "{0} goes in it"
+msgstr ""
+
+#. Smart Home: the title of the keyboard that names a new room (BL-220). At most 47 bytes
+#. Smart Home, Rooms: the line under "New room". At most 95 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "New room"
+msgstr ""
+
+#. the keyboard's button that makes the new room. At most 15 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgctxt "new room"
+msgid "Add"
+msgstr ""
+
+#. Smart Home, a tile's Room: the line under "Room from its source"; {0} is the room its source puts it in. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "{0} now · Moves when its source moves it"
+msgstr ""
+
+#. Smart Home, a tile's Room: back to the room the device's source gives it. At most 47 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Room from its source"
+msgstr ""
+
+#. Smart Home, a tile's Room: the line under "New room"; {0} is the device's name. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Name it, and {0} goes in it"
+msgstr ""
+
+#. Smart Home, a tile's Room: the device in no room, and the line under it. At most 47 bytes each
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "No room"
+msgstr ""
+
+#. Smart Home, a tile's Room: the device in no room, and the line under it. At most 47 bytes each
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Shown in Other"
+msgstr ""
+
+#. Smart Home: the title of a tile's Room; {0} is the device's name. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Room for {0}"
+msgstr ""
+
+#. the line under that title. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Where it shows besides Favorites"
+msgstr ""
+
+#. under that question; {0} is how many devices ("2 devices"). At most 191 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Its {0} stay on the panel and show in Other. Favorites doesn't change."
+msgstr ""
+
+#. the button that removes the room. At most 23 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgctxt "room"
+msgid "Remove"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Earlier"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "One tab to the left"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Later"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "One tab to the right"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Remove room"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Its devices go to Other"
+msgstr ""
+
+#. Smart Home, a room's sheet: the line under its name; {0} how many devices ("2 devices"), {1} its tab's place, {2} how many rooms. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "{0} · Tab {1} of {2}"
+msgstr ""
+
+#. Smart Home, Rooms: the line under "New room". At most 95 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "An empty room, to add devices to"
+msgstr ""
+
+#. Smart Home, arranging: the title of the rooms' sheet, and the line under it, with rooms or without. At most 127 bytes each
+#. Text from the layout XML, no context.
+#: components/ui/alarm_ui/src/ui_devices.c
+#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
+msgid "Rooms"
+msgstr ""
+
+#. Smart Home, arranging: the title of the rooms' sheet, and the line under it, with rooms or without. At most 127 bytes each
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "The tabs beside Favorites, in their order"
+msgstr ""
+
+#. Smart Home, arranging: the title of the rooms' sheet, and the line under it, with rooms or without. At most 127 bytes each
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "No rooms yet"
+msgstr ""
+
+#. Smart Home, arranging a room: the title of the sheet that moves devices into it; {0} is the room. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Add to {0}"
+msgstr ""
+
+#. the line under that title, with devices to move or without. At most 127 bytes each
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Tap a device to move it here"
+msgstr ""
+
+#. the line under that title, with devices to move or without. At most 127 bytes each
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Every device is in this room already"
+msgstr ""
+
+#. Settings > Smart Home: under a lock, beside its room. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Unlocking asks for a code anyway"
+msgstr ""
+
+#. Settings > Smart Home: under a garage door, a cover or a valve. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Opening asks for a code anyway"
+msgstr ""
+
+#. Settings > Smart Home, the line under the title (BL-220). At most 127 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "What asks for a master code"
+msgstr ""
+
+#. Settings > Smart Home: a switch and the line under it. At most 63 bytes each
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Moving tiles, their sizes, Favorites and rooms"
+msgstr ""
+
+#. Settings > Smart Home, a section heading over a switch for each device
+#. A section heading above a group of rows (one line).
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Devices that ask for a master code before a change"
+msgstr ""
+
 #. Smart Home's first tab: the devices picked for it
 #: components/ui/alarm_ui/src/ui_devices.c
 # review: draft
@@ -23876,65 +23949,18 @@ msgstr "Mantenga un mosaico para arrastrarlo, o tóquelo para cambiar su tamaño
 msgid "Hold a tile to drag it, or tap it to resize it"
 msgstr "Mantenga un mosaico para arrastrarlo, o tóquelo para cambiar su tamaño"
 
+#. Smart Home, arranging a page with nothing picked: holding a tile and dragging it moves it, a tap picks it for its size and Remove. One line beside Add and Done: keep it as short. At most 127 bytes
+#. the same where a tile's room can be changed too (BL-220). At most 127 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+msgid "Hold a tile to drag it, or tap it to change it"
+msgstr ""
+
 #. Smart Home, arranging with a tile picked: holding and dragging it, or the arrows, move it. One line beside the arrows, Small, Wide, Remove and Done: keep it as short. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_devices.c
 # review: draft
 #, fuzzy
 msgid "Hold to drag, or use arrows"
 msgstr "Mantenga para arrastrar, o use las flechas"
-
-#. Smart Home's note: a lock reports a jam; {0} is its name, shortened with "…" to fit. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} jammed"
-msgstr "{0} atascada"
-
-#. Smart Home's note: a lock is unlocked; {0} is its name, shortened with "…" to fit. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} unlocked"
-msgstr "{0} abierta con llave"
-
-#. Smart Home's note: a garage door is open; {0} is its name, shortened with "…" to fit. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgctxt "smart home note"
-msgid "{0} open"
-msgstr "{0} abierta"
-
-#. Smart Home's note: a device can't be reached; {0} is its name, shortened with "…" to fit. At most 40 bytes
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} offline"
-msgstr "{0} sin conexión"
-
-#. Smart Home's note: how many lights are on
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "{0} light on"
-msgid_plural "{0} lights on"
-msgstr[0] "{0} luz encendida"
-msgstr[1] "{0} luces encendidas"
-msgstr[2] "{0} luces encendidas"
-
-#. Smart Home's note when no device on the page can be reached (the link is down)
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Your devices can't be reached right now"
-msgstr "No se pueden alcanzar sus dispositivos ahora mismo"
-
-#. Smart Home's note when nothing needs attention and no light is on
-#: components/ui/alarm_ui/src/ui_devices.c
-# review: draft
-#, fuzzy
-msgid "Nothing needs you"
-msgstr "Nada requiere su atención"
 
 #. a count in a number row, for example the length of a code; {0} is the number. At most 20 bytes
 #: components/ui/alarm_ui/src/ui_forms.c
@@ -24244,7 +24270,6 @@ msgstr "Áreas que arman por separado"
 #. A list row's title (one line; a long one ends in ...).
 #. the page title. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_wizard.c
 # review: draft
 #, fuzzy
 msgid "Keypads and devices"
@@ -26166,6 +26191,11 @@ msgstr ""
 msgid "Choose a partition"
 msgstr ""
 
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Switch partition"
+msgstr ""
+
 #. a keypad on Wi-Fi that stopped answering: when it was last heard ("10:12 PM" or "Sep 19"). At most 40 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Not heard since {0}"
@@ -26239,10 +26269,7 @@ msgid "Allowed here"
 msgstr ""
 
 #. Add a keypad: where the keypad that asked is (its address follows). At most 47 bytes
-#. the setup's pairing step while it looks (nothing moves: no spinner)
-#. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_link.c
-#: components/ui/alarm_ui/src/ui_wizard.c
 msgid "On your Wi-Fi"
 msgstr ""
 
@@ -26517,11 +26544,6 @@ msgstr ""
 #. Make it a stand-alone panel, in amber; {0} is the alarm panel's name. At most 160 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "{0} shows a trouble for this keypad until it is removed there."
-msgstr ""
-
-#. A list row's detail line, under its title (one line).
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Switch partition"
 msgstr ""
 
 #. how strong a Wi-Fi network's signal is, after the state or the address on the same line ("Password · good signal"). At most 20 bytes
@@ -27935,6 +27957,40 @@ msgctxt "night hours"
 msgid "{0} to {1}"
 msgstr "{0} a {1}"
 
+#. Settings > Screen and sound, the start screen's choices: the rail's places. At most 23 bytes
+#: components/ui/alarm_ui/src/ui_settings.c
+msgctxt "start screen"
+msgid "Security"
+msgstr ""
+
+#. Settings > Screen and sound, the start screen's choices: the rail's places. At most 23 bytes
+#: components/ui/alarm_ui/src/ui_settings.c
+msgctxt "start screen"
+msgid "Smart Home"
+msgstr ""
+
+#. Settings > Screen and sound > Start screen, the line under "Security". At most 127 bytes
+#: components/ui/alarm_ui/src/ui_settings.c
+msgid "The alarm state and arming"
+msgstr ""
+
+#. the line under "Smart Home". At most 127 bytes
+#: components/ui/alarm_ui/src/ui_settings.c
+msgid "Your devices; Security while armed"
+msgstr ""
+
+#. Settings > Screen and sound, the title of the start screen's choices, and the line under it. At most 127 bytes each
+#. Settings > Screen and sound: the row that picks where the screen rests, and the line under it. At most 47 and 127 bytes
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_settings.c
+msgid "Start screen"
+msgstr ""
+
+#. Settings > Screen and sound, the title of the start screen's choices, and the line under it. At most 127 bytes each
+#: components/ui/alarm_ui/src/ui_settings.c
+msgid "An alarm or entry time always shows Security"
+msgstr ""
+
 #. Settings > Screen and sound > Appearance, the line under "Automatic": the night hours {0} ("10:00 PM to 6:00 AM"). At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
 # review: draft
@@ -28066,6 +28122,12 @@ msgstr "Apagado"
 #, fuzzy
 msgid "Screen"
 msgstr "Pantalla"
+
+#. Settings > Screen and sound: the row that picks where the screen rests, and the line under it. At most 47 and 127 bytes
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_settings.c
+msgid "Where this screen rests; an alarm always shows Security"
+msgstr ""
 
 #. Settings > Screen and sound, the line under Appearance when it is Automatic. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
@@ -28591,6 +28653,18 @@ msgstr "Un código maestro o de instalador ajusta la hora"
 #, fuzzy
 msgid "A master or installer code starts a walk test"
 msgstr "Un código maestro o de instalador inicia una prueba de caminata"
+
+#. Settings, the page title (BL-220). At most 47 bytes
+#. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_settings.c
+msgctxt "settings"
+msgid "Smart Home"
+msgstr ""
+
+#. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_settings.c
+msgid "A master or installer code changes what asks for one"
+msgstr ""
 
 #: components/ui/alarm_ui/src/ui_sources.c
 # review: draft
@@ -30816,40 +30890,43 @@ msgstr ""
 msgid "To change this later, the panel must be reset to its factory settings."
 msgstr ""
 
+#. First-time setup: the step's title on the left. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Find your alarm panel"
+msgstr ""
+
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "A keypad reaches the alarm panel over Wi-Fi, so this step can't be skipped."
+msgid "Pair nearby to get Wi-Fi settings automatically."
 msgstr ""
 
+#. A list row's title (one line; a long one ends in ...).
+#. First-time setup: the main button, bottom right. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Find panel"
+msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#. the setup's pairing step after 30 s with nothing found: the heading over what to check
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Join the network the alarm panel uses."
-msgstr ""
-
-#. the setup's pairing step on a keypad: the heading over what the installer does there
-#. A section heading above a group of rows (one line).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "On the alarm panel"
+msgid "Open Add keypad in Panel Manager or on the alarm panel."
 msgstr ""
 
 #. A list row's title (one line; a long one ends in ...).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Open Installer"
+msgid "Select Wi-Fi"
 msgstr ""
 
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Settings > About > Installer, with the installer code"
+msgid "If the alarm panel is out of range"
 msgstr ""
 
-#. A list row's detail line, under its title (one line).
+#. First-time setup: the explanation under the step's title. At most 127 bytes.
+#. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "In the Installer menu"
-msgstr ""
-
-#. A list row's detail line, under its title (one line).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "This keypad then finds it by itself"
+msgid "Join the network the alarm panel uses."
 msgstr ""
 
 #. the setup's pairing step: an alarm panel open for pairing was found; {0} is its name. At most 60 bytes
@@ -30922,7 +30999,7 @@ msgstr ""
 
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "It finds the alarm panel on your Wi-Fi. The installer allows it there."
+msgid "Find it nearby, or select Wi-Fi if it is out of range."
 msgstr ""
 
 #. A list row's title (one line; a long one ends in ...).
@@ -30933,36 +31010,6 @@ msgstr ""
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_wizard.c
 msgid "No alarm panel with pairing open yet"
-msgstr ""
-
-#. the setup's pairing step: what to check; {0} is the Wi-Fi network's name. At most 90 bytes
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "This keypad is on {0}: the alarm panel must be too"
-msgstr ""
-
-#. A list row's title (one line; a long one ends in ...).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "The same Wi-Fi"
-msgstr ""
-
-#. A list row's title (one line; a long one ends in ...).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Pairing open on the alarm panel"
-msgstr ""
-
-#. A list row's detail line, under its title (one line).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Installer > Keypads and devices > Add a keypad, for 2 minutes"
-msgstr ""
-
-#. A list row's title (one line; a long one ends in ...).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Not a guest network"
-msgstr ""
-
-#. A list row's detail line, under its title (one line).
-#: components/ui/alarm_ui/src/ui_wizard.c
-msgid "A guest network keeps devices apart"
 msgstr ""
 
 #: components/ui/alarm_ui/src/ui_wizard.c
@@ -31003,26 +31050,55 @@ msgstr ""
 msgid "Looking for the alarm panel"
 msgstr ""
 
+#. the setup's pairing step while it looks (nothing moves: no spinner)
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Nearby or on your Wi-Fi"
+msgstr ""
+
 #. First-time setup: the step's title on the left. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
-# review: draft
-#, fuzzy
-msgid "You're all set"
-msgstr "Todo listo"
+msgid "Keypad paired"
+msgstr ""
 
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "This panel is now a keypad. The alarm, zones and codes live on the alarm panel."
+msgid "Your pairing is saved. Language, display and sound stay on this keypad."
 msgstr ""
 
-#. the setup's last step on a keypad; {0} is the partition it shows and arms. At most 90 bytes
+#. A list row's title (one line; a long one ends in ...).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Shows and arms {0}"
+msgid "Connected to the alarm panel"
 msgstr ""
 
-#. the setup's last step on a keypad: its time zone {0}, taken from the alarm panel named {1}. At most 90 bytes
+#. A list row's title (one line; a long one ends in ...).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "{0}, from {1}"
+msgid "Reconnecting to the alarm panel"
+msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Wi-Fi connected"
+msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Setting up Wi-Fi"
+msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Wi-Fi is not connected"
+msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Getting settings from the alarm panel and joining its network."
+msgstr ""
+
+#. First-time setup: the main button, bottom right. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Continue without Wi-Fi"
 msgstr ""
 
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
@@ -31121,6 +31197,13 @@ msgstr "Omítalo por ahora y la barra de estado se lo recuerda hasta que cambie 
 #, fuzzy
 msgid "It shows on the screen saver and in the event log."
 msgstr "Se muestra en el protector de pantalla y en el registro de eventos."
+
+#. First-time setup: the step's title on the left. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+# review: draft
+#, fuzzy
+msgid "You're all set"
+msgstr "Todo listo"
 
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
@@ -31253,18 +31336,6 @@ msgstr "No se inició: este panel aún no puede hacer eso."
 #, fuzzy
 msgid "No devices"
 msgstr "Sin dispositivos"
-
-#. the number of Zigbee devices, in a row. At most 20 bytes
-#. the number of Z-Wave devices, in a row. At most 20 bytes
-#: components/ui/alarm_ui/src/ui_zigbee.c
-#: components/ui/alarm_ui/src/ui_zwave.c
-# review: draft
-#, fuzzy
-msgid "{0} device"
-msgid_plural "{0} devices"
-msgstr[0] "{0} dispositivo"
-msgstr[1] "{0} dispositivos"
-msgstr[2] "{0} dispositivos"
 
 #. how long a device has been silent (days, 2 or more). At most 18 bytes
 #: components/ui/alarm_ui/src/ui_zigbee.c
@@ -36758,6 +36829,11 @@ msgstr "Agregar"
 
 #. Text from the layout XML, no context.
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
+msgid "Room"
+msgstr ""
+
+#. Text from the layout XML, no context.
+#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
 # review: draft
 #, fuzzy
 msgctxt "event log filter"
@@ -39373,3 +39449,295 @@ msgstr "Salir"
 #, fuzzy
 #~ msgid "Checked every {0}"
 #~ msgstr "Revisado cada {0}"
+
+#: components/services/panel_web/web/panel-pages.js
+#~ msgid "For Wi-Fi, join this system’s network."
+#~ msgstr ""
+
+#. Smart Home's note: the last action on a device was refused and it didn't turn on; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't turn on"
+#~ msgstr "{0} no se encendió"
+
+#. Smart Home's note: a device was told to turn on but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm {0} turned on"
+#~ msgstr "No se pudo confirmar que {0} se encendió"
+
+#. Smart Home's note: the last action on a device was refused and it didn't turn off; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't turn off"
+#~ msgstr "{0} no se apagó"
+
+#. Smart Home's note: a device was told to turn off but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm {0} turned off"
+#~ msgstr "No se pudo confirmar que {0} se apagó"
+
+#. Smart Home's note: the last action on a device was refused and it didn't switch; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't switch"
+#~ msgstr "{0} no cambió de estado"
+
+#. Smart Home's note: a device was told to switch but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm {0} switched"
+#~ msgstr "No se pudo confirmar el cambio de {0}"
+
+#. Smart Home's note: the last action on a lock was refused and it didn't lock; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't lock"
+#~ msgstr "{0} no se cerró con llave"
+
+#. Smart Home's note: a lock was told to lock but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm {0} locked"
+#~ msgstr "No se pudo confirmar el cierre de {0}"
+
+#. Smart Home's note: the last action on a lock was refused and it didn't unlock; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't unlock"
+#~ msgstr "{0} no se abrió con llave"
+
+#. Smart Home's note: a lock was told to unlock but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm {0} unlocked"
+#~ msgstr "Sin confirmar la apertura con llave de {0}"
+
+#. Smart Home's note: the last action on a device was refused and it didn't open; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't open"
+#~ msgstr "{0} no se abrió"
+
+#. Smart Home's note: a device was told to open but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm {0} opened"
+#~ msgstr "No se pudo confirmar que {0} se abrió"
+
+#. Smart Home's note: the last action on a device was refused and it didn't close; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't close"
+#~ msgstr "{0} no se cerró"
+
+#. Smart Home's note: a device was told to close but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm {0} closed"
+#~ msgstr "No se pudo confirmar que {0} se cerró"
+
+#. Smart Home's note: the last action on a device was refused and it didn't stop; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't stop"
+#~ msgstr "{0} no se detuvo"
+
+#. Smart Home's note: a device was told to stop but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm {0} stopped"
+#~ msgstr "No se pudo confirmar que {0} se detuvo"
+
+#. Smart Home's note: the last action on a scene or script was refused and it didn't run; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't run"
+#~ msgstr "{0} no se ejecutó"
+
+#. Smart Home's note: a scene or script was told to run but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm {0} ran"
+#~ msgstr "No se pudo confirmar que {0} se ejecutó"
+
+#. Smart Home's note: the last action on a device was refused and it didn't change a value (brightness, position, speed, set point, mode); {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't change"
+#~ msgstr "{0} no cambió"
+
+#. Smart Home's note: a device was told to change a value (brightness, position, speed, set point, mode) but no answer came (or the connection dropped), so whether it did isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm {0} changed"
+#~ msgstr "No se pudo confirmar que {0} cambió"
+
+#. Smart Home's note: the last action on a device failed; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} didn't respond"
+#~ msgstr "{0} no respondió"
+
+#. Smart Home's note: a device was told to do something but no answer came (or the connection dropped), so the result isn't known; {0} is its name, shortened with "…" to fit. The note may hold two facts. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Couldn't confirm the result for {0}"
+#~ msgstr "No se pudo confirmar el resultado de {0}"
+
+#. Smart Home's note: a lock reports a jam; {0} is its name, shortened with "…" to fit. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} jammed"
+#~ msgstr "{0} atascada"
+
+#. Smart Home's note: a lock is unlocked; {0} is its name, shortened with "…" to fit. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} unlocked"
+#~ msgstr "{0} abierta con llave"
+
+#. Smart Home's note: a garage door is open; {0} is its name, shortened with "…" to fit. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgctxt "smart home note"
+#~ msgid "{0} open"
+#~ msgstr "{0} abierta"
+
+#. Smart Home's note: a device can't be reached; {0} is its name, shortened with "…" to fit. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} offline"
+#~ msgstr "{0} sin conexión"
+
+#. Smart Home's note: how many lights are on
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "{0} light on"
+#~ msgid_plural "{0} lights on"
+#~ msgstr[0] "{0} luz encendida"
+#~ msgstr[1] "{0} luces encendidas"
+#~ msgstr[2] "{0} luces encendidas"
+
+#. Smart Home's note when no device on the page can be reached (the link is down)
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Your devices can't be reached right now"
+#~ msgstr "No se pueden alcanzar sus dispositivos ahora mismo"
+
+#. Smart Home's note when nothing needs attention and no light is on
+#: components/ui/alarm_ui/src/ui_devices.c
+# review: draft
+#, fuzzy
+#~ msgid "Nothing needs you"
+#~ msgstr "Nada requiere su atención"
+
+#. First-time setup: the explanation under the step's title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "A keypad reaches the alarm panel over Wi-Fi, so this step can't be skipped."
+#~ msgstr ""
+
+#. the setup's pairing step on a keypad: the heading over what the installer does there
+#. A section heading above a group of rows (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "On the alarm panel"
+#~ msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "Open Installer"
+#~ msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "Settings > About > Installer, with the installer code"
+#~ msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "In the Installer menu"
+#~ msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "This keypad then finds it by itself"
+#~ msgstr ""
+
+#. First-time setup: the explanation under the step's title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "It finds the alarm panel on your Wi-Fi. The installer allows it there."
+#~ msgstr ""
+
+#. the setup's pairing step: what to check; {0} is the Wi-Fi network's name. At most 90 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "This keypad is on {0}: the alarm panel must be too"
+#~ msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "The same Wi-Fi"
+#~ msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "Pairing open on the alarm panel"
+#~ msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "Installer > Keypads and devices > Add a keypad, for 2 minutes"
+#~ msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "Not a guest network"
+#~ msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "A guest network keeps devices apart"
+#~ msgstr ""
+
+#. First-time setup: the explanation under the step's title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "This panel is now a keypad. The alarm, zones and codes live on the alarm panel."
+#~ msgstr ""
+
+#. the setup's last step on a keypad; {0} is the partition it shows and arms. At most 90 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "Shows and arms {0}"
+#~ msgstr ""
+
+#. the setup's last step on a keypad: its time zone {0}, taken from the alarm panel named {1}. At most 90 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+#~ msgid "{0}, from {1}"
+#~ msgstr ""

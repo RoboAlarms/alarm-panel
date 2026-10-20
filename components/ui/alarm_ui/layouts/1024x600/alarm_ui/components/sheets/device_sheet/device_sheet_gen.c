@@ -38,7 +38,7 @@ lv_obj_t * device_sheet_create(lv_obj_t * parent)
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_19(&style_dsheet_switch, 64, 36, RADIUS_FULL);
+        alarm_ui_run_20(&style_dsheet_switch, 64, 36, RADIUS_FULL);
         alarm_ui_run_6(&style_dsheet_switch, COLOR_PRESSED, (255 * 100 / 100));
         alarm_ui_run_63(&style_dsheet_switch_indicator, RADIUS_FULL, (255 * 0 / 100));
         alarm_ui_run_6(&style_dsheet_switch_on, COLOR_GREEN, (255 * 100 / 100));
@@ -65,7 +65,7 @@ lv_obj_t * device_sheet_create(lv_obj_t * parent)
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_0(parent, lv_pct(100), lv_pct(100));
-        alarm_ui_run_32(box_0, &style_backdrop);
+        alarm_ui_run_29(box_0, &style_backdrop);
         lv_obj_set_name_static(box_0, "device_sheet_#");
         lv_obj_t * device_card = alarm_ui_run_0(box_0, 600, LV_SIZE_CONTENT);
         lv_obj_set_style_max_height(device_card, PICK_MAX_H, 0);
@@ -86,7 +86,7 @@ lv_obj_t * device_sheet_create(lv_obj_t * parent)
         alarm_ui_run_12(lv_label_0, font_title, &subject_sheet_title);
 
         lv_obj_t * sheet_state = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_WRAP);
-        alarm_ui_run_29(sheet_state, COLOR_TEXT_2, &subject_sheet_note);
+        alarm_ui_run_30(sheet_state, COLOR_TEXT_2, &subject_sheet_note);
         lv_obj_set_name(sheet_state, "sheet_state");
 
         lv_obj_t * sheet_switch = lv_switch_create(box_1);
@@ -99,7 +99,7 @@ lv_obj_t * device_sheet_create(lv_obj_t * parent)
         lv_obj_t * device_close = alarm_ui_run_0(box_1, 44, 44);
         alarm_ui_run_60(device_close, LV_OBJ_FLAG_CLICKABLE, true, 10);
         lv_obj_set_style_margin_top(device_close, 2, 0);
-        alarm_ui_run_21(device_close, RADIUS_FULL, COLOR_RAISED, (255 * 100 / 100));
+        alarm_ui_run_22(device_close, RADIUS_FULL, COLOR_RAISED, (255 * 100 / 100));
         alarm_ui_run_10(device_close, ui_on_sheet_cancel, "device_close");
         lv_obj_t * lv_label_1 = alarm_ui_run_11(device_close, "\xEE\x86\xB2");
         alarm_ui_run_4(lv_label_1, icons_20, COLOR_TEXT_2);

@@ -39,7 +39,7 @@ lv_obj_t * clock_picker_create(lv_obj_t * parent, int32_t cal_w, int32_t day_h, 
         lv_obj_set_name(clock_time, "clock_time");
 
         lv_obj_t * box_3 = alarm_ui_run_0(box_0, lv_pct(100), LV_SIZE_CONTENT);
-        alarm_ui_run_18(box_3);
+        alarm_ui_run_19(box_3);
         alarm_ui_run_1(box_3, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(box_3);
         lv_obj_set_style_pad_column(box_3, SPACE_LG, 0);

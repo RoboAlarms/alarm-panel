@@ -58,14 +58,14 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
         lv_style_set_pad_top(&style_pad, SPACE_MD);
         alarm_ui_run_17(&style_pad, LV_FLEX_FLOW_COLUMN);
         lv_style_set_pad_row(&style_pad, SPACE_MD);
-        alarm_ui_run_19(&style_pad_icon, 64, 64, RADIUS_FULL);
+        alarm_ui_run_20(&style_pad_icon, 64, 64, RADIUS_FULL);
         lv_style_set_bg_opa(&style_pad_icon, (255 * 22 / 100));
         lv_style_set_text_opa(&style_pad_hint_under_dots, 0);
         lv_style_set_flex_cross_place(&style_pad_words_alone, LV_FLEX_ALIGN_CENTER);
         lv_style_set_text_align(&style_pad_words_alone, LV_TEXT_ALIGN_CENTER);
-        alarm_ui_run_19(&style_pad_dot, 14, 14, RADIUS_FULL);
+        alarm_ui_run_20(&style_pad_dot, 14, 14, RADIUS_FULL);
         alarm_ui_run_6(&style_pad_dot, COLOR_TEXT, (255 * 100 / 100));
-        alarm_ui_run_19(&style_pad_close, 36, 36, RADIUS_FULL);
+        alarm_ui_run_20(&style_pad_close, 36, 36, RADIUS_FULL);
         alarm_ui_run_6(&style_pad_close, COLOR_RAISED, (255 * 100 / 100));
         lv_style_set_text_color(&style_pad_close, COLOR_TEXT_2);
         lv_style_set_bg_color(&style_pad_close_pressed, COLOR_PRESSED);
@@ -121,7 +121,7 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
 
         lv_obj_t * pad_top = alarm_ui_run_0(box_0, lv_pct(100), LV_SIZE_CONTENT);
         lv_obj_set_flex_grow(pad_top, top_grow);
-        alarm_ui_run_70(pad_top, SPACE_MD, SPACE_MD);
+        alarm_ui_run_71(pad_top, SPACE_MD, SPACE_MD);
         alarm_ui_run_1(pad_top, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_flex_main_place(pad_top, LV_FLEX_ALIGN_CENTER, 0);
         alarm_ui_run_3(pad_top);
@@ -165,7 +165,7 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
         lv_obj_t * pad_dots = box_create(pad_words);
         lv_obj_set_align(pad_dots, LV_ALIGN_BOTTOM_LEFT);
         lv_obj_set_flag(pad_dots, LV_OBJ_FLAG_FLOATING, true);
-        alarm_ui_run_31(pad_dots, LV_SIZE_CONTENT, 24);
+        alarm_ui_run_32(pad_dots, LV_SIZE_CONTENT, 24);
         alarm_ui_run_1(pad_dots, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(pad_dots);
         lv_obj_set_style_pad_column(pad_dots, 12, 0);
@@ -221,7 +221,7 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
         lv_obj_t * chip_2 = chip_create(pad_options, alarm_ui_tr("Bypass open"), &subject_opt_bypass);
         lv_obj_bind_flag_if_eq(chip_2, &subject_opt_bypass_avail, LV_OBJ_FLAG_HIDDEN, 0);
 
-        lv_obj_t * pad_silence = alarm_ui_run_22(box_0, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t * pad_silence = alarm_ui_run_18(box_0, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
         alarm_ui_run_16(pad_silence, &style_pad_silence, 0, &style_pad_silence_pressed, LV_STATE_PRESSED);
         lv_obj_bind_flag_if_eq(pad_silence, &subject_pad_silence, LV_OBJ_FLAG_HIDDEN, 0);
         lv_obj_add_event_cb(pad_silence, ui_on_silence, LV_EVENT_CLICKED, NULL);

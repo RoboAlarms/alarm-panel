@@ -36,7 +36,7 @@ lv_obj_t * hold_button_create(lv_obj_t * parent, const char * text, lv_color_t c
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_19(&style_hold_button, lv_pct(100), 64, RADIUS_MD);
+        alarm_ui_run_20(&style_hold_button, lv_pct(100), 64, RADIUS_MD);
         lv_style_set_bg_opa(&style_hold_button, (255 * 14 / 100));
         lv_style_set_border_width(&style_hold_button, 1);
         lv_style_set_clip_corner(&style_hold_button, true);
@@ -60,12 +60,12 @@ lv_obj_t * hold_button_create(lv_obj_t * parent, const char * text, lv_color_t c
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_20(parent);
+        lv_obj_t * box_0 = alarm_ui_run_21(parent);
         lv_obj_set_style_bg_color(box_0, color, 0);
         lv_obj_set_style_border_color(box_0, color, 0);
         lv_obj_add_style(box_0, &style_hold_button, 0);
         lv_obj_t * fill = lv_bar_create(box_0);
-        alarm_ui_run_31(fill, lv_pct(100), lv_pct(100));
+        alarm_ui_run_32(fill, lv_pct(100), lv_pct(100));
         lv_bar_set_min_value(fill, 0);
         lv_bar_set_max_value(fill, 100);
         lv_bar_set_value(fill, 0, LV_ANIM_OFF);

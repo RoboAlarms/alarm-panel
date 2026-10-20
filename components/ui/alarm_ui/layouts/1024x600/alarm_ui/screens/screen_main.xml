@@ -330,15 +330,18 @@
 				</box>
 			</box>
 
-			<!-- Smart Home (docs/features/24, BL-045): the areas as tabs, Favorites first, and the
+			<!-- Smart Home (docs/features/24, BL-045): the rooms as tabs, Favorites first, and the
 			     pencil that arranges the page; tiles of one or two cells in a grid of four columns.
-			     ui_devices.c fills the tabs and places the tiles. -->
+			     ui_devices.c fills the tabs and places the tiles. No title over the page (BL-220 R7):
+			     device_header stays for the code that looks it up, hidden; the tabs start the row. -->
 			<box name="view_devices" width="100%" height="100%" style_layout="flex" style_flex_flow="column" style_pad_row="#space_lg">
 				<bind_flag_if_not_eq subject="subject_view" flag="hidden" ref_value="6" />
 				<box width="100%" height="content" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_md">
-					<view_header name="device_header" title="Smart Home" note="subject_devices_note" flex_grow="1" />
+					<view_header name="device_header" title="Smart Home" note="subject_devices_note" flex_grow="1" hidden="true" />
 					<view_header name="device_arrange_header" title="" note="subject_devices_note" flex_grow="1" hidden="true" />
 					<box name="device_areas" width="content" height="content" style_max_width="560" scrollable="true" scrollbar_mode="off" style_bg_color="#color_surface" style_bg_opa="100%" style_radius="#radius_lg" style_pad_all="4" style_layout="flex" style_flex_flow="row" style_pad_column="4" />
+					<!-- BL-220: pushes the pencil to the row's end beside the tabs -->
+					<box name="device_spacer" width="1" height="1" flex_grow="1" />
 					<box name="device_arrange" width="44" height="44" clickable="true" style_radius="#radius_full" style_bg_color="#color_raised" style_bg_opa="100%">
 						<lv_label align="center" text="&#xE1F9;" style_text_font="icons_20" />
 					</box>
@@ -355,6 +358,19 @@
 						<lv_label align="center" text="&#xE049;" style_text_font="icons_20" />
 					</box>
 					<box name="device_arrange_size" width="content" height="content" hidden="true" style_bg_color="#color_surface" style_bg_opa="100%" style_radius="#radius_lg" style_pad_all="4" style_layout="flex" style_flex_flow="row" style_pad_column="4" />
+					<!-- BL-220: a picked tile's room, and the rooms themselves -->
+					<box name="device_arrange_room" width="content" hidden="true" clickable="true">
+						<style name="style_button" />
+						<style name="style_button_pressed" selector="pressed" />
+						<lv_label text="&#xE3D6;" style_text_font="icons_20" />
+						<lv_label text="Room" style_text_font="font_label" />
+					</box>
+					<box name="device_arrange_rooms" width="content" hidden="true" clickable="true">
+						<style name="style_button" />
+						<style name="style_button_pressed" selector="pressed" />
+						<lv_label text="&#xE0F5;" style_text_font="icons_20" />
+						<lv_label text="Rooms" style_text_font="font_label" />
+					</box>
 					<box name="device_arrange_remove" width="content" hidden="true" clickable="true">
 						<style name="style_button" />
 						<style name="style_button_pressed" selector="pressed" />
@@ -517,6 +533,12 @@
 						<bind_flag_if_not_eq subject="subject_automations_avail" flag="hidden" ref_value="1" />
 						<bind_style name="style_nav_active" subject="subject_settings_section" ref_value="9" />
 						<event_cb callback="ui_on_settings_section" trigger="clicked" user_data="automations" />
+					</settings_item>
+					<!-- BL-220: what asks for a master code; the alarm panel's, while it has devices -->
+					<settings_item name="set_smarthome" glyph="&#xE63C;" title="Smart Home">
+						<bind_flag_if_not_eq subject="subject_smarthome_avail" flag="hidden" ref_value="1" />
+						<bind_style name="style_nav_active" subject="subject_settings_section" ref_value="10" />
+						<event_cb callback="ui_on_settings_section" trigger="clicked" user_data="smarthome" />
 					</settings_item>
 					<settings_item name="set_walk" glyph="&#xE3B9;" title="Walk test">
 						<bind_style name="style_nav_active" subject="subject_settings_section" ref_value="8" />

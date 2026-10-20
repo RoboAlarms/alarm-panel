@@ -122,6 +122,9 @@ static void select_section(int32_t section)
 #if ALARM_UI_AUTOMATIONS
     case SECTION_AUTOMATIONS: page_root(PAGE_AUTOMATIONS); break;
 #endif
+#if ALARM_UI_DEVICES
+    case SECTION_SMART_HOME: page_root(PAGE_SMART_HOME); break;
+#endif
     default: page_root(PAGE_DISPLAY); break;
     }
 }
@@ -137,7 +140,7 @@ static bool section_gated(int32_t section)
 {
     return ui_link_keypad() && (section == SECTION_USERS || section == SECTION_INTEGRATIONS ||
                                 section == SECTION_WALK || section == SECTION_AUTOMATIONS ||
-                                section == SECTION_INSTALLER);
+                                section == SECTION_SMART_HOME || section == SECTION_INSTALLER);
 }
 
 static void role_gate(void)
@@ -172,6 +175,10 @@ void ui_settings_open(void)
      * to Activity there is room for it (BL-131 finding 7). Not on a keypad (BL-048). */
     ui_set_int(&subject_automations_avail, ui_automations_available() && !ui_link_keypad() ? 1 : 0);
 #endif
+#if ALARM_UI_DEVICES
+    /* Smart Home's line (BL-220): the alarm panel's, while it has a device; not on a keypad */
+    ui_set_int(&subject_smarthome_avail, ui_devices_settings_available() && !ui_link_keypad() ? 1 : 0);
+#endif
     role_gate();
     ui_set_int(&subject_view, VIEW_SETTINGS);
     int32_t section = lv_subject_get_int(&subject_settings_section);
@@ -201,6 +208,9 @@ void ui_settings_section(const char *which)
         {NOTR("walk"), SECTION_WALK},
 #if ALARM_UI_AUTOMATIONS
         {NOTR("automations"), SECTION_AUTOMATIONS},
+#endif
+#if ALARM_UI_DEVICES
+        {NOTR("smarthome"), SECTION_SMART_HOME},
 #endif
     };
     int32_t section = SECTION_DISPLAY;
@@ -386,6 +396,9 @@ static void section_look(const char **glyph, lv_color_t *tone)
     case SECTION_WALK: *glyph = UI_ICON_FOOTPRINTS; *tone = ui_tone_blue(); break;
 #if ALARM_UI_AUTOMATIONS
     case SECTION_AUTOMATIONS: *glyph = UI_ICON_ZAP; *tone = ui_tone_amber(); break;
+#endif
+#if ALARM_UI_DEVICES
+    case SECTION_SMART_HOME: *glyph = UI_ICON_HOUSE_WIFI; *tone = ui_tone_blue(); break;
 #endif
     default: *glyph = UI_ICON_SUN; *tone = ui_tone_blue(); break;
     }
@@ -625,6 +638,50 @@ static void appearance_chosen(int32_t index)
     ui_page_rebuild(); /* the row says the new choice */
 }
 
+#if ALARM_UI_DEVICES
+/* Settings > Screen and sound > Start screen (BL-220 R8): Security or Smart Home. */
+static const char *const START_TEXT[] = {
+    /* TR: Settings > Screen and sound, the start screen's choices: the rail's places. At most 23
+     * bytes */
+    TR_NOOP_C("start screen", "Security"), TR_NOOP_C("start screen", "Smart Home")};
+#define START_CHOICES (sizeof(START_TEXT) / sizeof(START_TEXT[0]))
+
+static size_t start_index(void)
+{
+    return S.opt.start_view == UI_START_SMART_HOME ? 1u : 0u;
+}
+
+static void start_chosen(int32_t index)
+{
+    if (index >= 0 && (size_t)index < START_CHOICES) {
+        S.opt.start_view = index == 1 ? UI_START_SMART_HOME : UI_START_SECURITY;
+        s_opts_dirty = true;
+        save_options_now();
+    }
+    ui_page_rebuild(); /* the row says the new choice */
+}
+
+static void pick_start(void *ctx)
+{
+    (void)ctx;
+    static ui_choice_t choices[START_CHOICES];
+    const ui_choice_t all[START_CHOICES] = {
+        {UI_ICON_SHIELD, ui_tone_gray(), TR_C("start screen", START_TEXT[0]),
+         /* TR: Settings > Screen and sound > Start screen, the line under "Security". At most 127
+          * bytes */
+         TR("The alarm state and arming")},
+        {UI_ICON_HOUSE_WIFI, ui_tone_blue(), TR_C("start screen", START_TEXT[1]),
+         /* TR: the line under "Smart Home". At most 127 bytes */
+         TR("Your devices; Security while armed")},
+    };
+    memcpy(choices, all, sizeof(choices));
+    /* TR: Settings > Screen and sound, the title of the start screen's choices, and the line under
+     * it. At most 127 bytes each */
+    ui_pick_sheet(TR("Start screen"), TR("An alarm or entry time always shows Security"), choices,
+                  START_CHOICES, (int32_t)start_index(), start_chosen);
+}
+#endif
+
 static void pick_appearance(void *ctx)
 {
     (void)ctx;
@@ -853,6 +910,17 @@ static void build_display(lv_obj_t *body, char *title, size_t tlen, char *note, 
 
     /* TR: Settings > Screen and sound, a section heading */
     ui_section(body, TR("Screen"));
+#if ALARM_UI_DEVICES
+    /* BL-220 R8: where this screen rests, while Smart Home is in the rail */
+    if (lv_subject_get_int(&subject_devices_avail) == 1) {
+        /* TR: Settings > Screen and sound: the row that picks where the screen rests, and the line
+         * under it. At most 47 and 127 bytes */
+        ui_row_link(body, UI_ICON_HOUSE_WIFI, ui_tone_blue(), TR("Start screen"),
+                    TR("Where this screen rests; an alarm always shows Security"),
+                    TR_C("start screen", START_TEXT[start_index()]), UI_ICON_CHEVRON_RIGHT,
+                    pick_start, NULL);
+    }
+#endif
     /* The appearance first, where people look for how the screen looks (BL-132) */
     const char *look = NULL;
     if (appearance_index() == UI_APPEARANCE_AUTO) {
@@ -1967,6 +2035,21 @@ static void build_page(void)
     case PAGE_AUTOMATIONS:
     case PAGE_AUTOMATION:
         ui_automations_build(pg->id, pg->arg, body, title, sizeof(title), note, sizeof(note));
+        break;
+#endif
+#if ALARM_UI_DEVICES
+    case PAGE_SMART_HOME:
+        /* TR: Settings, the page title (BL-220). At most 47 bytes */
+        i18n_utf8_copy(title, sizeof(title), TR_C("settings", "Smart Home"));
+        /* D6: a master's code (system or partition) or the installer's, as Wi-Fi asks */
+        if (!ui_settings_allowed(ACCESS_SHARED)) {
+            /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
+            ui_settings_locked(body, ACCESS_SHARED, TR_C("settings", "Smart Home"),
+                               TR("A master or installer code changes what asks for one"), note,
+                               sizeof(note));
+        } else {
+            ui_devices_settings_build(body, note, sizeof(note));
+        }
         break;
 #endif
 #if ALARM_UI_ZIGBEE

@@ -56,6 +56,10 @@ typedef enum {
  * partition). In order:
  *   - REFUSED for an unknown ref, a Z-Wave row (Smart Home doesn't show them yet, BL-169) or an
  *     action that doesn't fit the device's live kind (hc_action_valid);
+ *   - a device that asks for a master code (hc_home.h, BL-220 R5): NEED_CODE without a code,
+ *     unless the same src gave a master's code for such a device within DEVICE_SERVICE_GRANT_MS;
+ *     with one, only a code of a master (system or partition) or the installer is accepted
+ *     (anything else CODE_REFUSED, ALARM_ERR_NOT_AUTHORIZED), and it covers an unlock too;
  *   - where hc_needs_code says so (unlock, an opening), NEED_CODE without a code; with one, the
  *     engine checks it for src and partition like any keypad code (a wrong one counts toward
  *     src's lockout); an arm-only or a guest code is refused as ALARM_ERR_NOT_AUTHORIZED, a
@@ -71,6 +75,30 @@ typedef enum {
 ds_person_t device_service_person_act(const alarm_source_t *src, uint8_t partition,
                                       const char *ref, uint8_t action, int32_t value,
                                       uint8_t mode_bit, const char *code, alarm_result_t *why);
+
+/* ---- the house's Smart Home settings (home_control/hc_home.h, BL-220) ----------------------
+ * One blob, the same for every screen: the rooms, where a person put each device, the devices
+ * that ask for a master code, and whether arranging asks for one. Kept in NVS ("ui", "dev_home")
+ * and in RAM, read at the start. Without home control: nothing is stored. */
+
+/* The settings as stored: their length, 0 when there are none (the defaults) or max is short. */
+size_t device_service_home_get(uint8_t *out, size_t max);
+
+/* Stores new settings (a blob hc_home_decode accepts) and moves device_service_seq, so the keypads'
+ * device list follows. Writes NVS: call it only from a task whose stack is in internal RAM (the
+ * touchscreen's). False when the blob isn't one or couldn't be stored. */
+bool device_service_home_set(const uint8_t *blob, size_t len);
+
+#if CONFIG_ALARM_HOME_CONTROL
+/* For a screen that knows no rooms (a link keypad, HCTL-013): each row's area becomes its room's
+ * name ("" none), and the rows are put in the rooms' order, a room's devices keeping the
+ * registry's order among themselves. */
+void device_service_home_apply(hc_device_t *rows, size_t n);
+#endif
+
+/* How long a master code, once given for a device that asks for one, lets the same screen change
+ * such devices without asking again (BL-220 D7): from the last such change. */
+#define DEVICE_SERVICE_GRANT_MS 90000u
 
 /* Expires a device command whose reply never came (HCTL-012). Call it about once a second with
  * the monotonic clock (alarm_service_now()); safe before device_service_start(). */

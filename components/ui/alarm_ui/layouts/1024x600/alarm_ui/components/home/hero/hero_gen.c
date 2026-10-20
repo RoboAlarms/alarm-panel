@@ -81,7 +81,7 @@ lv_obj_t * hero_create(lv_obj_t * parent)
         lv_obj_t * ring_box = alarm_ui_run_0(box_0, 236, 236);
         lv_obj_set_style_margin_bottom(ring_box, SPACE_MD, 0);
         lv_obj_t * ring = lv_arc_create(ring_box);
-        alarm_ui_run_31(ring, lv_pct(100), lv_pct(100));
+        alarm_ui_run_32(ring, lv_pct(100), lv_pct(100));
         lv_arc_set_bg_start_angle(ring, 0);
         lv_arc_set_bg_end_angle(ring, 360);
         lv_arc_set_rotation(ring, 270);
@@ -116,7 +116,7 @@ lv_obj_t * hero_create(lv_obj_t * parent)
 
         lv_obj_t * hero_detail = alarm_ui_run_2(box_0, LV_LABEL_LONG_MODE_WRAP);
         lv_obj_set_style_text_align(hero_detail, LV_TEXT_ALIGN_CENTER, 0);
-        alarm_ui_run_29(hero_detail, COLOR_TEXT_2, &subject_detail);
+        alarm_ui_run_30(hero_detail, COLOR_TEXT_2, &subject_detail);
 
         lv_obj_t * hero_note = alarm_ui_run_2(box_0, LV_LABEL_LONG_MODE_DOTS);
         lv_obj_set_style_text_align(hero_note, LV_TEXT_ALIGN_CENTER, 0);

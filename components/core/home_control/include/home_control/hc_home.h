@@ -209,12 +209,22 @@ static inline unsigned hc_home_room_rank(const hc_home_t *h, const char *ref, co
     return hc_home_room_name(h, ref, area)[0] != '\0' ? HC_HOME_ROOMS : HC_HOME_ROOMS + 1u;
 }
 
+/* strnlen is POSIX, not C11: the length of s, at most max. */
+static inline size_t hc_home_len(const char *s, size_t max)
+{
+    size_t n = 0;
+    while (n < max && s[n] != '\0') {
+        n++;
+    }
+    return n;
+}
+
 /* ---- the blob ---- */
 
 static inline size_t hc_home_put_str(uint8_t *out, size_t at, size_t cap, const char *s, size_t max,
                                      bool empty_ok, bool *ok)
 {
-    const size_t len = strnlen(s, max + 1u);
+    const size_t len = hc_home_len(s, max + 1u);
     if (len > max || (len == 0u && !empty_ok) || at + 1u + len > cap) {
         *ok = false;
         return at;
@@ -345,7 +355,7 @@ static inline bool hc_home_clean_name(const char *in, char out[HC_HOME_NAME_MAX 
     while (*in == ' ') {
         in++;
     }
-    size_t n = strnlen(in, 4096u);
+    size_t n = hc_home_len(in, 4096u);
     while (n > 0u && in[n - 1u] == ' ') {
         n--;
     }
@@ -420,7 +430,7 @@ static inline uint8_t hc_home_add_room(hc_home_t *h, const char *name, const cha
     r->id = id;
     memcpy(r->name, clean, strlen(clean) + 1u);
     if (src != NULL) {
-        const size_t n = strnlen(src, HC_HOME_NAME_MAX);
+        const size_t n = hc_home_len(src, HC_HOME_NAME_MAX);
         memcpy(r->src, src, n);
         r->src[n] = '\0';
     }
@@ -471,7 +481,7 @@ static inline hc_home_dev_t *hc_home_dev_entry(hc_home_t *h, const char *ref)
     if (d >= 0) {
         return &h->devs[d];
     }
-    const size_t len = ref == NULL ? 0u : strnlen(ref, DEV_REF_LEN);
+    const size_t len = ref == NULL ? 0u : hc_home_len(ref, DEV_REF_LEN);
     if (len == 0u || len > HC_HOME_REF_MAX || h->ndevs >= HC_HOME_DEVICES) {
         return NULL;
     }
@@ -547,8 +557,11 @@ static inline bool hc_home_set_arrange_code(hc_home_t *h, bool on)
     if (hc_home_arrange_code(h) == on) {
         return false;
     }
-    h->flags = (uint8_t)(on ? (h->flags | HC_HOME_F_ARRANGE_CODE)
-                            : (h->flags & ~HC_HOME_F_ARRANGE_CODE));
+    if (on) {
+        h->flags = (uint8_t)(h->flags | HC_HOME_F_ARRANGE_CODE);
+    } else {
+        h->flags = (uint8_t)(h->flags & (uint8_t)~HC_HOME_F_ARRANGE_CODE);
+    }
     return true;
 }
 

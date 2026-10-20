@@ -44,7 +44,7 @@ lv_obj_t * segment_create(lv_obj_t * parent, const char * text)
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_22(parent, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t * box_0 = alarm_ui_run_18(parent, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
         alarm_ui_run_16(box_0, &style_segment, 0, &style_segment_pressed, LV_STATE_PRESSED);
         lv_obj_t * lv_label_0 = lv_label_create(box_0);
         lv_label_set_text(lv_label_0, text);

@@ -24,7 +24,7 @@ lv_obj_t * clock_sheet_create(lv_obj_t * parent)
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_0(parent, lv_pct(100), lv_pct(100));
-        alarm_ui_run_32(box_0, &style_backdrop);
+        alarm_ui_run_29(box_0, &style_backdrop);
         lv_obj_set_name_static(box_0, "clock_sheet_#");
         lv_obj_t * clock_card = alarm_ui_run_0(box_0, 880, LV_SIZE_CONTENT);
         alarm_ui_run_34(clock_card);
@@ -36,7 +36,7 @@ lv_obj_t * clock_sheet_create(lv_obj_t * parent)
         alarm_ui_run_1(box_2, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(box_2, 2, 0);
         lv_obj_t * lv_label_0 = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_DOTS);
-        alarm_ui_run_73(lv_label_0, alarm_ui_tr("Set the date and time"));
+        alarm_ui_run_74(lv_label_0, alarm_ui_tr("Set the date and time"));
 
         lv_obj_t * lv_label_1 = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(lv_label_1, alarm_ui_tr("The internet corrects it once the panel is online"));

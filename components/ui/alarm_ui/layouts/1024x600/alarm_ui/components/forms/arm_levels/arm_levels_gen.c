@@ -79,7 +79,7 @@ lv_obj_t * arm_levels_create(lv_obj_t * parent)
         lv_obj_t * box_0 = alarm_ui_run_0(parent, lv_pct(100), 64);
         alarm_ui_run_1(box_0, LV_FLEX_FLOW_ROW);
         lv_obj_set_style_pad_column(box_0, SPACE_SM, 0);
-        lv_obj_t * level_away = alarm_ui_run_20(box_0);
+        lv_obj_t * level_away = alarm_ui_run_21(box_0);
         alarm_ui_run_16(level_away, &style_arm_level, 0, &style_arm_level_pressed, LV_STATE_PRESSED);
         alarm_ui_run_67(level_away, &style_arm_level_away, LV_STATE_CHECKED, "level_away");
         lv_obj_t * lv_label_0 = alarm_ui_run_23(level_away, "\xEE\x84\x8E");
@@ -88,7 +88,7 @@ lv_obj_t * arm_levels_create(lv_obj_t * parent)
         lv_obj_t * lv_label_1 = alarm_ui_run_14(level_away, alarm_ui_tr_c("arming mode", "Away"));
         lv_obj_set_style_text_font(lv_label_1, font_label, 0);
 
-        lv_obj_t * level_stay = alarm_ui_run_20(box_0);
+        lv_obj_t * level_stay = alarm_ui_run_21(box_0);
         alarm_ui_run_16(level_stay, &style_arm_level, 0, &style_arm_level_pressed, LV_STATE_PRESSED);
         alarm_ui_run_67(level_stay, &style_arm_level_stay, LV_STATE_CHECKED, "level_stay");
         lv_obj_t * lv_label_2 = alarm_ui_run_23(level_stay, "\xEE\x83\xB5");
@@ -97,7 +97,7 @@ lv_obj_t * arm_levels_create(lv_obj_t * parent)
         lv_obj_t * lv_label_3 = alarm_ui_run_14(level_stay, alarm_ui_tr_c("arming mode", "Stay"));
         lv_obj_set_style_text_font(lv_label_3, font_label, 0);
 
-        lv_obj_t * level_night = alarm_ui_run_20(box_0);
+        lv_obj_t * level_night = alarm_ui_run_21(box_0);
         alarm_ui_run_16(level_night, &style_arm_level, 0, &style_arm_level_pressed, LV_STATE_PRESSED);
         alarm_ui_run_67(level_night, &style_arm_level_night, LV_STATE_CHECKED, "level_night");
         lv_obj_t * lv_label_4 = alarm_ui_run_23(level_night, "\xEE\x84\x9E");

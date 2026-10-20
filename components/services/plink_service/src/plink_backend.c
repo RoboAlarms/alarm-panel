@@ -471,9 +471,13 @@ static void keypad_backend(ui_backend_t *be)
      * Arrange is each panel's own (decision 2) */
     be->dev_list = kp_dev_list;
     be->dev_act = kp_dev_act;
+    be->dev_home_get = NULL; /* the rooms come from the master as each device's area (BL-220) */
+    be->dev_home_set = NULL;
 #else
     be->dev_list = NULL;
     be->dev_act = NULL;
+    be->dev_home_get = NULL;
+    be->dev_home_set = NULL;
 #endif
     be->auto_list = NULL;
     be->auto_gen = NULL;

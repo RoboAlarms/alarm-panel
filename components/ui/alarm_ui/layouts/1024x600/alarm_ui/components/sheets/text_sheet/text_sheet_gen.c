@@ -141,7 +141,7 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
         alarm_ui_run_12(lv_label_0, font_title, &subject_sheet_title);
 
         lv_obj_t * lv_label_1 = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_DOTS);
-        alarm_ui_run_29(lv_label_1, COLOR_TEXT_2, &subject_sheet_note);
+        alarm_ui_run_30(lv_label_1, COLOR_TEXT_2, &subject_sheet_note);
 
         lv_obj_t * sheet_cancel = alarm_ui_run_5(box_1, &style_button_pressed, LV_STATE_PRESSED);
         alarm_ui_run_10(sheet_cancel, ui_on_sheet_cancel, "sheet_cancel");

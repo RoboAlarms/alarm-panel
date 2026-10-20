@@ -24,6 +24,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "home_control/dsrc_ha.h"
+#include "home_control/hc_home.h"
+#include "nvs.h"
 #include "rtc_clock/clock_keeper.h"
 #if CONFIG_ALARM_ZSRC_ZWAVE
 #include "alarm_proto/proto_zw.h"
@@ -61,7 +63,18 @@ static struct {
     /* device_service_seq: moved under the device lock (hc's port) or right after an act, read
      * lock-free by anyone. Atomics. */
     uint32_t seq;
+    /* The house's Smart Home settings (hc_home.h, BL-220): PSRAM, under the lock. */
+    hc_home_t *home;
+    /* A master code given for a device that asks for one (BL-220 D7): per screen, until when. */
+    struct {
+        uint8_t kind;
+        uint16_t id;
+        uint64_t until;
+    } grant[4];
 } S;
+
+#define HOME_NS  "ui"
+#define HOME_KEY "dev_home"
 
 /* Long enough for a fresh link's catalog and first states to land (DESIGN.md section 3). */
 #define SOURCE_SETTLE_MS UINT64_C(30000)
@@ -212,6 +225,25 @@ static void zw_feed(void)
 /* ---- public --------------------------------------------------------------------------------- */
 
 /* Both objects are large and go to slow memory when there is any, internal RAM otherwise. */
+/* The stored settings, or the defaults (hc_home.h): read once, at the start. */
+static void home_load(hc_home_t *home)
+{
+    hc_home_clear(home);
+    nvs_handle_t h;
+    if (nvs_open(HOME_NS, NVS_READONLY, &h) != ESP_OK) {
+        return;
+    }
+    size_t len = 0;
+    uint8_t *blob = NULL;
+    if (nvs_get_blob(h, HOME_KEY, NULL, &len) == ESP_OK && len > 0u &&
+        len <= 2u * HC_HOME_BLOB_MAX && (blob = alarm_mem_prefer_slow_calloc(1, len)) != NULL &&
+        nvs_get_blob(h, HOME_KEY, blob, &len) == ESP_OK && !hc_home_decode(home, blob, len)) {
+        ESP_LOGW(TAG, "the stored Smart Home settings don't read: the defaults apply");
+    }
+    heap_caps_free(blob);
+    nvs_close(h);
+}
+
 static void *big_calloc(size_t size)
 {
     return alarm_mem_prefer_slow_calloc(1, size);
@@ -238,7 +270,10 @@ esp_err_t device_service_start(void)
     struct zw_feed *zwf = big_calloc(sizeof(*zwf));
     ok = ok && zw != NULL && zwf != NULL;
 #endif
+    hc_home_t *home = big_calloc(sizeof(*home));
+    ok = ok && home != NULL;
     if (!ok) {
+        heap_caps_free(home);
         if (lk != NULL) {
             vSemaphoreDelete(lk);
         }
@@ -266,9 +301,11 @@ esp_err_t device_service_start(void)
         hc_register(hc, dsrc_ha_ops(), ha);
     }
 
+    home_load(home);
     S.lock = lk;
     S.hc = hc;
     S.ha = ha;
+    S.home = home;
 #if CONFIG_ALARM_ZSRC_ZWAVE
     S.zw = zw;
     S.zwf = zwf;
@@ -478,6 +515,120 @@ uint32_t device_service_seq(void)
     return __atomic_load_n(&S.seq, __ATOMIC_ACQUIRE);
 }
 
+/* ---- the house's Smart Home settings (BL-220) ---- */
+
+size_t device_service_home_get(uint8_t *out, size_t max)
+{
+    if (!ready() || out == NULL) {
+        return 0u;
+    }
+    lock();
+    const bool any = S.home->nrooms > 0u || S.home->ndevs > 0u || S.home->flags != 0u;
+    const size_t len = any ? hc_home_encode(S.home, out, max) : 0u;
+    unlock();
+    return len;
+}
+
+bool device_service_home_set(const uint8_t *blob, size_t len)
+{
+    if (!ready() || blob == NULL || len == 0u || len > HC_HOME_BLOB_MAX) {
+        return false;
+    }
+    hc_home_t *fresh = alarm_mem_prefer_slow_calloc(1, sizeof(*fresh));
+    if (fresh == NULL) {
+        return false;
+    }
+    bool ok = hc_home_decode(fresh, blob, len);
+    nvs_handle_t h;
+    if (ok && nvs_open(HOME_NS, NVS_READWRITE, &h) == ESP_OK) {
+        ok = nvs_set_blob(h, HOME_KEY, blob, len) == ESP_OK && nvs_commit(h) == ESP_OK;
+        nvs_close(h);
+    } else {
+        ok = false;
+    }
+    if (ok) {
+        lock();
+        memcpy(S.home, fresh, sizeof(*fresh));
+        unlock();
+        seq_bump(); /* the keypads' rooms follow */
+    }
+    heap_caps_free(fresh);
+    return ok;
+}
+
+void device_service_home_apply(hc_device_t *rows, size_t n)
+{
+    if (!ready() || rows == NULL) {
+        return;
+    }
+    if (n > HC_MAX_DEVICES) {
+        n = HC_MAX_DEVICES;
+    }
+    /* the ranks first, from the sources' areas; then the names; then a stable sort by rank */
+    uint8_t rank[HC_MAX_DEVICES];
+    lock();
+    for (size_t i = 0; i < n; i++) {
+        dev_info_t *info = &rows[i].info;
+        rank[i] = (uint8_t)hc_home_room_rank(S.home, info->ref, info->area);
+        const char *name = hc_home_room_name(S.home, info->ref, info->area);
+        if (name != info->area) {
+            const size_t len = strnlen(name, sizeof(info->area) - 1u);
+            memmove(info->area, name, len);
+            info->area[len] = '\0';
+        }
+    }
+    unlock();
+    for (size_t i = 1; i < n; i++) { /* insertion: stable, and n is at most 64 */
+        for (size_t k = i; k > 0u && rank[k - 1u] > rank[k]; k--) {
+            const uint8_t r = rank[k];
+            rank[k] = rank[k - 1u];
+            rank[k - 1u] = r;
+            hc_device_t t;
+            memcpy(&t, &rows[k], sizeof(t));
+            memcpy(&rows[k], &rows[k - 1u], sizeof(t));
+            memcpy(&rows[k - 1u], &t, sizeof(t));
+        }
+    }
+}
+
+static bool protected_ref(const char *ref)
+{
+    lock();
+    const bool p = hc_home_protected(S.home, ref);
+    unlock();
+    return p;
+}
+
+/* Whether a screen gave a master code for a device that asks for one less than the grant ago;
+ * renew: it gives one now (each such change renews it). */
+static bool granted(const alarm_source_t *src, bool renew)
+{
+    const uint64_t now = stamp_now();
+    lock();
+    bool yes = false;
+    size_t slot = 0u;
+    uint64_t oldest = UINT64_MAX;
+    for (size_t i = 0; i < sizeof(S.grant) / sizeof(S.grant[0]); i++) {
+        if (S.grant[i].kind == (uint8_t)src->kind && S.grant[i].id == src->id &&
+            S.grant[i].until > now) {
+            yes = true;
+            slot = i;
+            break;
+        }
+        if (S.grant[i].until < oldest) {
+            oldest = S.grant[i].until;
+            slot = i;
+        }
+    }
+    if (renew) {
+        S.grant[slot].kind = (uint8_t)src->kind;
+        S.grant[slot].id = src->id;
+        S.grant[slot].until = now + DEVICE_SERVICE_GRANT_MS;
+    }
+    unlock();
+    return yes;
+}
+
 /* The touchscreen's own judge until BL-216 (ui_port_esp.c's dev_act), moved here unchanged so a
  * link keypad's action is judged by the same code (docs/features/11 "Device actions"). */
 ds_person_t device_service_person_act(const alarm_source_t *src, uint8_t partition,
@@ -493,10 +644,18 @@ ds_person_t device_service_person_act(const alarm_source_t *src, uint8_t partiti
         !hc_action_valid((dev_kind_t)d.info.kind, (dev_action_t)action)) {
         return DS_PERSON_REFUSED;
     }
-    /* HCTL-005, judged here and not by the screen: an unlock or an opening needs a code the
-     * engine accepts, a wrong one counting toward the keypad's lockout like any other. */
-    if (hc_needs_code((dev_kind_t)d.info.kind, (dev_action_t)action, value)) {
-        if (code == NULL || code[0] == '\0') {
+    /* BL-220 R5: a device the household set to ask for a master code asks for one, unless this
+     * screen gave one for such a device within the grant (D7). An unlock or an opening still
+     * needs its code each time (HCTL-005), then a master's. */
+    const bool coded = code != NULL && code[0] != '\0';
+    const bool guarded = protected_ref(ref);
+    const bool needs = hc_needs_code((dev_kind_t)d.info.kind, (dev_action_t)action, value);
+    if (guarded && !needs && !coded && granted(src, false)) {
+        (void)granted(src, true);
+    } else if (guarded || needs) {
+        /* HCTL-005, judged here and not by the screen: an unlock or an opening needs a code the
+         * engine accepts, a wrong one counting toward the keypad's lockout like any other. */
+        if (!coded) {
             return DS_PERSON_NEED_CODE;
         }
         uint8_t user = 0;
@@ -507,6 +666,15 @@ ds_person_t device_service_person_act(const alarm_source_t *src, uint8_t partiti
          * the silent duress report disarming sends (decided in BL-045). */
         if (r == ALARM_OK && (authority == ALARM_AUTH_ARM_ONLY || authority == ALARM_AUTH_GUEST)) {
             r = ALARM_ERR_NOT_AUTHORIZED;
+        }
+        /* BL-220 D6: a guarded device takes a master's code (system or partition) or the
+         * installer's, and it lets this screen make the next such changes for a while. */
+        if (r == ALARM_OK && guarded && authority != ALARM_AUTH_MASTER &&
+            authority != ALARM_AUTH_PARTITION_MASTER && authority != ALARM_AUTH_INSTALLER) {
+            r = ALARM_ERR_NOT_AUTHORIZED;
+        }
+        if (r == ALARM_OK && guarded) {
+            (void)granted(src, true);
         }
         if (r != ALARM_OK) {
             if (why != NULL) {
@@ -661,6 +829,18 @@ esp_err_t device_service_console_register(void)
 esp_err_t device_service_start(void)
 {
     return ESP_OK;
+}
+size_t device_service_home_get(uint8_t *out, size_t max)
+{
+    (void)out;
+    (void)max;
+    return 0u;
+}
+bool device_service_home_set(const uint8_t *blob, size_t len)
+{
+    (void)blob;
+    (void)len;
+    return false;
 }
 void device_service_tick(uint64_t now_ms)
 {

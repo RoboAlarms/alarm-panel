@@ -183,6 +183,7 @@ lv_subject_t subject_panic_hint;
 lv_subject_t subject_panic_link;
 lv_subject_t subject_settings_section;
 lv_subject_t subject_automations_avail;
+lv_subject_t subject_smarthome_avail;
 lv_subject_t subject_update_waiting;
 lv_subject_t subject_settings_pad;
 lv_subject_t subject_page_title;
@@ -554,7 +555,7 @@ void alarm_ui_init_gen(const char * asset_path)
         lv_style_set_text_color(&style_text_3, COLOR_TEXT_3);
         lv_style_set_text_color(&style_text_error, COLOR_RED);
         lv_style_set_text_color(&style_text_warn, COLOR_AMBER);
-        alarm_ui_run_19(&style_nav_item, 88, 68, RADIUS_MD);
+        alarm_ui_run_20(&style_nav_item, 88, 68, RADIUS_MD);
         alarm_ui_run_17(&style_nav_item, LV_FLEX_FLOW_COLUMN);
         lv_style_set_pad_row(&style_nav_item, 4);
         lv_style_set_text_color(&style_nav_item, COLOR_TEXT_2);
@@ -607,7 +608,7 @@ void alarm_ui_init_gen(const char * asset_path)
         lv_style_set_radius(&style_roller_selected, RADIUS_SM);
         alarm_ui_run_6(&style_roller_selected, COLOR_RAISED, (255 * 100 / 100));
         alarm_ui_run_45(&style_roller_selected, font_title, COLOR_TEXT);
-        alarm_ui_run_19(&style_step, 36, 6, RADIUS_FULL);
+        alarm_ui_run_20(&style_step, 36, 6, RADIUS_FULL);
         alarm_ui_run_6(&style_step, COLOR_LINE, (255 * 100 / 100));
         lv_style_set_bg_color(&style_step_on, COLOR_BLUE);
 
@@ -1050,6 +1051,7 @@ void alarm_ui_init_gen(const char * asset_path)
     lv_subject_init_int(&subject_panic_link, 0);
     lv_subject_init_int(&subject_settings_section, 0);
     lv_subject_init_int(&subject_automations_avail, 0);
+    lv_subject_init_int(&subject_smarthome_avail, 0);
     lv_subject_init_int(&subject_update_waiting, 0);
     lv_subject_init_int(&subject_settings_pad, 0);
     static char subject_page_title_buf[UI_SUBJECT_STRING_LENGTH];
@@ -1254,6 +1256,7 @@ void alarm_ui_init_gen(const char * asset_path)
     lv_xml_register_subject(NULL, "subject_panic_link", &subject_panic_link);
     lv_xml_register_subject(NULL, "subject_settings_section", &subject_settings_section);
     lv_xml_register_subject(NULL, "subject_automations_avail", &subject_automations_avail);
+    lv_xml_register_subject(NULL, "subject_smarthome_avail", &subject_smarthome_avail);
     lv_xml_register_subject(NULL, "subject_update_waiting", &subject_update_waiting);
     lv_xml_register_subject(NULL, "subject_settings_pad", &subject_settings_pad);
     lv_xml_register_subject(NULL, "subject_page_title", &subject_page_title);

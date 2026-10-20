@@ -22,6 +22,7 @@
 #include "voice_pack/voice_pack.h"
 #include "voice_render.h"
 #include "home_control/home_control.h"
+#include "home_control/hc_home.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -6108,6 +6109,10 @@ static struct {
     size_t n;
     uint8_t layout[UI_DEVL_BLOB_MAX];
     size_t layout_len;
+    /* the house's Smart Home settings (hc_home.h, BL-220), as the panel's device_service keeps them */
+    uint8_t home[HC_HOME_BLOB_MAX];
+    size_t home_len;
+    int64_t granted_until; /* a master code given for a guarded device: H.now ms, 0 none */
     bool none; /* host_panel_devices(false): a panel without any */
     size_t extra; /* host_panel_devices_extra(true): how many were added at the end */
 } s_dev;
@@ -6322,8 +6327,20 @@ void host_panel_devices_limits(bool on)
     t->modes = UI_DEV_MODE_OFF | UI_DEV_MODE_HEAT | UI_DEV_MODE_COOL | UI_DEV_MODE_AUTO;
 }
 
+/* BL-219: a slow source (host_panel_devices_slow) and the one action it holds */
+static struct {
+    bool on;
+    bool held;
+    char ref[DEV_REF_LEN];
+    uint8_t action;
+    int32_t value;
+} s_slow;
+
 void host_panel_device_failed(const char *ref, uint8_t action)
 {
+    if (s_slow.held && strcmp(s_slow.ref, ref) == 0) {
+        s_slow.held = false; /* the source refused what it held */
+    }
     for (size_t i = 0; i < s_dev.n; i++) {
         if (strcmp(s_dev.dev[i].ref, ref) == 0) {
             s_dev.dev[i].status = UI_DEV_FAILED;
@@ -6544,8 +6561,20 @@ static ui_dev_result_t be_dev_act(void *ctx, const char *ref, uint8_t action, in
     if (d->status == UI_DEV_PENDING) {
         return UI_DEV_BUSY;
     }
-    if (hc_needs_code((dev_kind_t)d->kind, (dev_action_t)action, value)) {
-        if (code == NULL || code[0] == '\0') {
+    /* BL-220: the panel's judge (device_service_person_act) - a device that asks for a master code
+     * takes one, then the next such changes go through for DEVICE_SERVICE_GRANT_MS (90 s) */
+    static hc_home_t home;
+    if (s_dev.home_len == 0u || !hc_home_decode(&home, s_dev.home, s_dev.home_len)) {
+        hc_home_clear(&home);
+    }
+    const bool coded = code != NULL && code[0] != '\0';
+    const bool guarded = hc_home_protected(&home, ref);
+    const bool needs = hc_needs_code((dev_kind_t)d->kind, (dev_action_t)action, value);
+    const bool granted = s_dev.granted_until > (int64_t)H.now;
+    if (guarded && !needs && !coded && granted) {
+        s_dev.granted_until = (int64_t)H.now + 90000;
+    } else if (guarded || needs) {
+        if (!coded) {
             return UI_DEV_NEED_CODE;
         }
         uint8_t user = 0;
@@ -6557,6 +6586,13 @@ static ui_dev_result_t be_dev_act(void *ctx, const char *ref, uint8_t action, in
             if (a == ALARM_AUTH_ARM_ONLY || a == ALARM_AUTH_GUEST) {
                 r = ALARM_ERR_NOT_AUTHORIZED;
             }
+            if (r == ALARM_OK && guarded && a != ALARM_AUTH_MASTER &&
+                a != ALARM_AUTH_PARTITION_MASTER && a != ALARM_AUTH_INSTALLER) {
+                r = ALARM_ERR_NOT_AUTHORIZED;
+            }
+        }
+        if (r == ALARM_OK && guarded) {
+            s_dev.granted_until = (int64_t)H.now + 90000;
         }
         if (r != ALARM_OK) {
             if (code_result != NULL) {
@@ -6565,8 +6601,44 @@ static ui_dev_result_t be_dev_act(void *ctx, const char *ref, uint8_t action, in
             return UI_DEV_CODE_REFUSED;
         }
     }
+    if (s_slow.on) {
+        if (s_slow.held) {
+            return UI_DEV_BUSY;
+        }
+        s_slow.held = true; /* taken; it reports once host_panel_device_answer says (BL-219) */
+        snprintf(s_slow.ref, sizeof(s_slow.ref), "%s", ref);
+        s_slow.action = action;
+        s_slow.value = value;
+        d->status = UI_DEV_PENDING;
+        d->action = action;
+        d->unsure = 0u;
+        return UI_DEV_OK;
+    }
     dev_apply(d, action, value);
     return UI_DEV_OK;
+}
+
+void host_panel_devices_slow(bool on)
+{
+    s_slow.on = on;
+    s_slow.held = false;
+}
+
+void host_panel_device_answer(bool report)
+{
+    if (!s_slow.held) {
+        return;
+    }
+    s_slow.held = false;
+    ui_dev_t *d = (ui_dev_t *)host_panel_device(s_slow.ref);
+    if (d == NULL) {
+        return;
+    }
+    if (report) {
+        dev_apply(d, s_slow.action, s_slow.value);
+    } else {
+        host_panel_device_settle(s_slow.ref); /* done with it; the report as it was */
+    }
 }
 
 /* ---- automations (docs/features/41 U12) ------------------------------------------------------
@@ -7631,6 +7703,46 @@ static bool be_dev_layout_set(void *ctx, const uint8_t *blob, size_t len)
     return true;
 }
 
+static size_t be_dev_home_get(void *ctx, uint8_t *out, size_t max)
+{
+    (void)ctx;
+    if (s_dev.home_len == 0 || s_dev.home_len > max) {
+        return 0;
+    }
+    memcpy(out, s_dev.home, s_dev.home_len);
+    return s_dev.home_len;
+}
+
+static bool be_dev_home_set(void *ctx, const uint8_t *blob, size_t len)
+{
+    (void)ctx;
+    hc_home_t *check = calloc(1, sizeof(*check));
+    const bool ok = check != NULL && len > 0 && len <= sizeof(s_dev.home) &&
+                    hc_home_decode(check, blob, len);
+    free(check);
+    if (!ok) {
+        return false;
+    }
+    memcpy(s_dev.home, blob, len);
+    s_dev.home_len = len;
+    return true;
+}
+
+void host_panel_dev_home_set(const uint8_t *blob, size_t len)
+{
+    if (blob == NULL || len == 0u) {
+        s_dev.home_len = 0;
+        s_dev.granted_until = 0;
+        return;
+    }
+    (void)be_dev_home_set(NULL, blob, len);
+}
+
+size_t host_panel_dev_home(uint8_t *out, size_t max)
+{
+    return be_dev_home_get(NULL, out, max);
+}
+
 static uint32_t be_lang_generation(void *ctx)
 {
     (void)ctx;
@@ -7792,6 +7904,8 @@ void host_panel_backend(ui_backend_t *out)
     out->dev_act = CONFIG_ALARM_HOME_CONTROL ? be_dev_act : NULL;
     out->dev_layout_get = CONFIG_ALARM_HOME_CONTROL ? be_dev_layout_get : NULL;
     out->dev_layout_set = CONFIG_ALARM_HOME_CONTROL ? be_dev_layout_set : NULL;
+    out->dev_home_get = CONFIG_ALARM_HOME_CONTROL ? be_dev_home_get : NULL;
+    out->dev_home_set = CONFIG_ALARM_HOME_CONTROL ? be_dev_home_set : NULL;
     /* the automations come with their feature (ui_port_esp_backend: automation_service) */
     out->auto_list = CONFIG_ALARM_FEATURE_AUTOMATIONS ? be_auto_list : NULL;
     out->auto_gen = CONFIG_ALARM_FEATURE_AUTOMATIONS ? be_auto_gen : NULL;

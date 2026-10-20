@@ -47,7 +47,7 @@ lv_obj_t * chip_create(lv_obj_t * parent, const char * text, lv_subject_t * subj
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_22(parent, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_t * box_0 = alarm_ui_run_18(parent, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_flag(box_0, LV_OBJ_FLAG_CHECKABLE, true);
         lv_obj_bind_checked(box_0, subject);
         alarm_ui_run_16(box_0, &style_chip, 0, &style_chip_checked, LV_STATE_CHECKED);

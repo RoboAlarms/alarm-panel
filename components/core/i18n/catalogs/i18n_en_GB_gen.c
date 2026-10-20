@@ -10,27 +10,29 @@ extern const i18n_catalog_t i18n_catalog_en_GB;
 static const i18n_entry_t entries[] = {
     {0x09018abfu, 423u | I18N_ENTRY_WEB},
     {0x0b984865u, 556u},
-    {0x14ac18c9u, 903u},
+    {0x14ac18c9u, 1100u},
     {0x1cf6dcbcu, 535u},
-    {0x23fff466u, 925u},
+    {0x23fff466u, 1122u},
     {0x30848604u, 101u},
+    {0x3d591fb1u, 643u},
     {0x42463213u, 13u},
     {0x42adee1au, 568u},
-    {0x65da579du, 723u},
+    {0x65da579du, 920u},
     {0x698fa8ffu, 40u},
-    {0x6ea8dc1cu, 643u},
+    {0x6ea8dc1cu, 840u},
     {0x6f16966eu, 587u},
     {0x6fcb755au, 486u},
     {0x77c09d7eu, 314u | I18N_ENTRY_WEB},
     {0x821c1ac1u, 0u},
     {0x8c14fe85u, 466u | I18N_ENTRY_WEB},
-    {0x8c40e68au, 654u},
-    {0x9122cf68u, 701u},
+    {0x8c40e68au, 851u},
+    {0x9122cf68u, 898u},
     {0xa36dece2u, 499u},
-    {0xa7a176c3u, 784u},
-    {0xb6a572b3u, 678u},
-    {0xba3cd364u, 744u},
+    {0xa7a176c3u, 981u},
+    {0xb6a572b3u, 875u},
+    {0xba3cd364u, 941u},
     {0xbd2409e9u, 446u | I18N_ENTRY_WEB},
+    {0xbfdb2ef4u, 792u},
     {0xc1ee1837u, 513u},
     {0xc27b13d5u, 222u | I18N_ENTRY_WEB},
     {0xcb1f5fb9u, 472u},
@@ -40,6 +42,8 @@ static const i18n_entry_t entries[] = {
     {0xec2b60e5u, 505u},
     {0xf02cf968u, 18u},
     {0xf4021eadu, 21u},
+    {0xf6b95f38u, 749u},
+    {0xf745658eu, 677u},
     {0xf9a410f7u, 355u | I18N_ENTRY_WEB},
     {0xfe071015u, 24u | I18N_ENTRY_WEB},
 };
@@ -70,6 +74,10 @@ static const char strings[] =
     "Arrange Favourites\000"
     "Every device is on Favourites already\000"
     "Add to Favourites\000"
+    "Where it shows besides Favourites\000"
+    "Its {0} stay on the panel and show in Other. Favourites doesn't change.\000"
+    "The tabs beside Favourites, in their order\000"
+    "Moving tiles, their sizes, Favourites and rooms\000"
     "Favourites\000"
     "EEEE d MMMM y \302\267 h:mm a\000"
     "EEEE d MMMM y \302\267 HH:mm\000"
@@ -82,5 +90,5 @@ static const char strings[] =
     ;
 
 const i18n_catalog_t i18n_catalog_en_GB = {
-    "en-GB", I18N_PLURALS_EN, 1, 34u, entries, strings,
+    "en-GB", I18N_PLURALS_EN, 1, 38u, entries, strings,
 };

@@ -47,7 +47,7 @@ lv_obj_t * device_tile_create(lv_obj_t * parent, const char * glyph, const char 
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_20(parent);
+        lv_obj_t * box_0 = alarm_ui_run_21(parent);
         alarm_ui_run_16(box_0, &style_device_tile, 0, &style_device_tile_pressed, LV_STATE_PRESSED);
         lv_obj_t * top = alarm_ui_run_0(box_0, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_1(top, LV_FLEX_FLOW_ROW);
@@ -62,7 +62,7 @@ lv_obj_t * device_tile_create(lv_obj_t * parent, const char * glyph, const char 
         alarm_ui_run_1(words, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_name(words, "words");
         lv_obj_t * title_label = lv_label_create(words);
-        alarm_ui_run_31(title_label, lv_pct(100), DEVICE_NAME_H);
+        alarm_ui_run_32(title_label, lv_pct(100), DEVICE_NAME_H);
         lv_label_set_long_mode(title_label, LV_LABEL_LONG_MODE_DOTS);
         lv_label_set_text(title_label, title);
         lv_obj_set_style_text_font(title_label, font_label, 0);
@@ -70,7 +70,7 @@ lv_obj_t * device_tile_create(lv_obj_t * parent, const char * glyph, const char 
         lv_obj_set_name(title_label, "title_label");
 
         lv_obj_t * detail_label = lv_label_create(words);
-        alarm_ui_run_31(detail_label, lv_pct(100), DEVICE_STATE_H);
+        alarm_ui_run_32(detail_label, lv_pct(100), DEVICE_STATE_H);
         lv_label_set_long_mode(detail_label, LV_LABEL_LONG_MODE_DOTS);
         lv_label_set_text(detail_label, detail);
         lv_obj_set_style_text_font(detail_label, font_caption, 0);

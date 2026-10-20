@@ -1468,7 +1468,14 @@ typedef struct {
     bool switch_allowed;
     bool return_never;
     uint16_t return_s; /* default 30, 1..3600 */
+    /* Where this screen rests (BL-220 R8): UI_START_SECURITY (default) or UI_START_SMART_HOME,
+     * which counts only while Smart Home is in the rail. Each screen's own. */
+    uint8_t start_view;
 } ui_options_t;
+
+/* ui_options_t.start_view: stored as these numbers - append only. */
+#define UI_START_SECURITY   0u
+#define UI_START_SMART_HOME 1u
 
 /* A change of these preferences from elsewhere (docs/features/07 UI-046; docs/features/11
  * "Settings fields", "Applying a change from elsewhere"): Home Assistant through the master, or
@@ -1985,6 +1992,14 @@ typedef struct {
      * longer than max; set: false when it couldn't be stored. */
     size_t (*dev_layout_get)(void *ctx, uint8_t *out, size_t max);
     bool (*dev_layout_set)(void *ctx, const uint8_t *blob, size_t len);
+    /* The house's Smart Home settings (home_control/hc_home.h, BL-220): the rooms, each device's
+     * room, the devices that ask for a master code, whether arranging asks for one. The alarm
+     * panel's, stored and given back byte for byte; dev_act judges the master code from them.
+     * Optional as a pair: NULL - a link keypad, which shows the rooms its master sends as each
+     * device's area - leaves rooms and codes off the screen. get: its length, 0 when nothing is
+     * stored (the defaults) or it is longer than max; set: false when it couldn't be stored. */
+    size_t (*dev_home_get)(void *ctx, uint8_t *out, size_t max);
+    bool (*dev_home_set)(void *ctx, const uint8_t *blob, size_t len);
 
     /* ---- Zigbee (Installer > Zigbee; docs/features/20 devices.md §9, BL-144/BL-145). Optional as
      * a set: a NULL zb_status - or one that returns false, this panel runs no Zigbee service -
@@ -2132,6 +2147,7 @@ static inline void ui_options_defaults(ui_options_t *opt)
     opt->switch_allowed = false;
     opt->return_never = false;
     opt->return_s = 30;
+    opt->start_view = UI_START_SECURITY;
     opt->clock_mode = 0;
     opt->brightness = 80;
     opt->saver_brightness = 25; /* the screen saver shows a picture */

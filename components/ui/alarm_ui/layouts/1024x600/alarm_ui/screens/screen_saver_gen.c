@@ -31,18 +31,18 @@ lv_obj_t * screen_saver_create(void)
         lv_obj_add_style(lv_obj_0, &style_saver, 0);
         lv_obj_add_event_cb(lv_obj_0, ui_on_wake, LV_EVENT_CLICKED, NULL);
         lv_obj_t * saver_bg = lv_image_create(lv_obj_0);
-        alarm_ui_run_31(saver_bg, lv_pct(100), lv_pct(100));
+        alarm_ui_run_32(saver_bg, lv_pct(100), lv_pct(100));
         lv_obj_set_name(saver_bg, "saver_bg");
 
         lv_obj_t * saver_shade = alarm_ui_run_0(lv_obj_0, lv_pct(100), lv_pct(100));
         lv_obj_set_style_bg_color(saver_shade, lv_color_hex(0x000000), 0);
         lv_obj_set_style_bg_opa(saver_shade, (255 * 100 / 100), 0);
-        alarm_ui_run_69(saver_shade, lv_color_hex(0x000000), LV_GRAD_DIR_HOR, (255 * 82 / 100), (255 * 0 / 100), 150);
+        alarm_ui_run_70(saver_shade, lv_color_hex(0x000000), LV_GRAD_DIR_HOR, (255 * 82 / 100), (255 * 0 / 100), 150);
 
         lv_obj_t * saver_clock = box_create(lv_obj_0);
         lv_obj_set_x(saver_clock, 56);
         lv_obj_set_y(saver_clock, 40);
-        alarm_ui_run_31(saver_clock, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        alarm_ui_run_32(saver_clock, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(saver_clock, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(saver_clock, 0, 0);
         lv_obj_t * box_0 = alarm_ui_run_0(saver_clock, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
@@ -63,7 +63,7 @@ lv_obj_t * screen_saver_create(void)
 
         lv_obj_t * saver_state = box_create(lv_obj_0);
         alarm_ui_run_56(saver_state, LV_ALIGN_BOTTOM_LEFT, 48, -48);
-        alarm_ui_run_31(saver_state, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        alarm_ui_run_32(saver_state, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_max_width(saver_state, 560, 0);
         alarm_ui_run_9(saver_state, COLOR_BG, 0, (255 * 74 / 100), RADIUS_XL);
         alarm_ui_run_40(saver_state, lv_color_hex(0xFFFFFF));

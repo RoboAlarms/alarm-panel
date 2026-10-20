@@ -354,6 +354,9 @@ static void build_and_post(bool after_act)
     const uint32_t seq = device_service_seq();
     xSemaphoreTake(s_dev_lock, portMAX_DELAY);
     const size_t rows = device_service_list(s_rows, HC_MAX_DEVICES);
+    /* BL-220: a keypad shows the house's rooms - each device's room as its area, in the rooms'
+     * order - so its tabs are the alarm panel's (HCTL-013) */
+    device_service_home_apply(s_rows, rows);
     size_t len = 0u;
     uint32_t crc = 0u;
     const bool ok = plink_home_list_build(s_rows, rows, s_dblob[b], PLINK_DEV_BLOB_MAX, &len, &crc);

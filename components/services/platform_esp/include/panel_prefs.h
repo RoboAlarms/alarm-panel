@@ -52,6 +52,7 @@ typedef struct {
     bool switch_allowed;
     bool return_never;
     uint16_t return_s; /* default 30, 1..3600 */
+    uint8_t start_view; /* BL-220: 0 Security (default), 1 Smart Home (ui_options_t's) */
 } panel_prefs_t;
 
 void panel_prefs_defaults(panel_prefs_t *out);

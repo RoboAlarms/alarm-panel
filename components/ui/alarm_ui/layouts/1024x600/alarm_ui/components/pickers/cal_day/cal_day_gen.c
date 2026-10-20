@@ -66,7 +66,7 @@ lv_obj_t * cal_day_create(lv_obj_t * parent)
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_20(parent);
+        lv_obj_t * box_0 = alarm_ui_run_21(parent);
         alarm_ui_run_16(box_0, &style_cal_day, 0, &style_cal_day_pressed, LV_STATE_PRESSED);
         alarm_ui_run_16(box_0, &style_cal_day_today, LV_STATE_USER_1, &style_cal_day_chosen, LV_STATE_CHECKED);
         lv_obj_t * day_label = alarm_ui_run_11(box_0, "");

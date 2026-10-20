@@ -5,5 +5,5 @@
 idf_component_register(SRCS "src/device_service.c"
                        INCLUDE_DIRS "include"
                        REQUIRES alarm_core home_control
-                       PRIV_REQUIRES alarm_mem alarm_proto platform_esp rtc_clock zone_hub console
+                       PRIV_REQUIRES alarm_mem alarm_proto nvs_flash platform_esp rtc_clock zone_hub console
                                      zwave_service)

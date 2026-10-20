@@ -66,7 +66,7 @@ lv_obj_t * device_level_create(lv_obj_t * parent, int32_t value)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
         lv_obj_t * box_0 = alarm_ui_run_0(parent, lv_pct(100), 48);
         lv_obj_t * level = lv_slider_create(box_0);
-        alarm_ui_run_31(level, lv_pct(100), lv_pct(100));
+        alarm_ui_run_32(level, lv_pct(100), lv_pct(100));
         lv_slider_set_min_value(level, 0);
         lv_slider_set_max_value(level, 100);
         lv_slider_set_value(level, value, LV_ANIM_OFF);

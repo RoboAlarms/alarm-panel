@@ -47,7 +47,7 @@ lv_obj_t * arm_tile_create(lv_obj_t * parent, const char * glyph, const char * t
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_20(parent);
+        lv_obj_t * box_0 = alarm_ui_run_21(parent);
         alarm_ui_run_16(box_0, &style_arm_tile, 0, &style_arm_tile_pressed, LV_STATE_PRESSED);
         icon_chip_create(box_0, glyph, 76, icons_40, color);
 

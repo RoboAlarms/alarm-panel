@@ -23,7 +23,7 @@ lv_obj_t * nav_item_create(lv_obj_t * parent, const char * glyph, const char * t
 
     #if ALARM_UI_CHECK_COMPILE_TARGET(ALARM_UI_TARGET_ALL)
     if (alarm_ui_check_target(ALARM_UI_TARGET_ALL)) {
-        lv_obj_t * box_0 = alarm_ui_run_20(parent);
+        lv_obj_t * box_0 = alarm_ui_run_21(parent);
         alarm_ui_run_54(box_0, &style_nav_item, 0, &style_nav_item_pressed, LV_STATE_PRESSED);
         lv_obj_t * lv_label_0 = lv_label_create(box_0);
         lv_label_set_text(lv_label_0, glyph);

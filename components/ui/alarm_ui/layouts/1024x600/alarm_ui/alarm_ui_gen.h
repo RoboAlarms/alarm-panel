@@ -700,6 +700,7 @@ extern lv_subject_t subject_panic_hint;
 extern lv_subject_t subject_panic_link;
 extern lv_subject_t subject_settings_section;
 extern lv_subject_t subject_automations_avail;
+extern lv_subject_t subject_smarthome_avail;
 extern lv_subject_t subject_update_waiting;
 extern lv_subject_t subject_settings_pad;
 extern lv_subject_t subject_page_title;

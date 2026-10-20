@@ -13,9 +13,18 @@ name: firmware
 #             options: ""
 #             build_dir: build
 
+# As full-suite.yml: every night on main and by hand on any branch (`gh workflow run firmware
+# --ref <branch>`); never on a push or a pull request. A change to the firmware's own
+# code, a Kconfig or sdkconfig.defaults, partitions or the image size is built locally before it
+# merges (CONTRIBUTING.md "Build and test").
 on:
-  push:
-  pull_request:
+  schedule:
+    - cron: "47 6 * * *" # every night, 06:47 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   build:
@@ -40,6 +49,11 @@ jobs:
     defaults:
       run:
         shell: bash
+    # ESP-IDF compiles through ccache (idf.py reads IDF_CCACHE_ENABLE), kept between runs.
+    env:
+      IDF_CCACHE_ENABLE: 1
+      CCACHE_DIR: /github/home/.ccache
+      CCACHE_MAXSIZE: 1G
     steps:
       - uses: actions/checkout@v7
       - name: A signing key for this run only
@@ -53,12 +67,21 @@ jobs:
         with:
           path: firmware/${{ matrix.project }}/managed_components
           key: managed-${{ matrix.project }}-${{ matrix.build_dir }}-${{ hashFiles(format('firmware/{0}/dependencies.lock', matrix.project)) }}
+      - name: Compiler cache
+        uses: actions/cache@v4
+        with:
+          path: /github/home/.ccache
+          key: ccache-${{ matrix.project }}-${{ matrix.build_dir }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.project }}-${{ matrix.build_dir }}-
       - name: Build
         run: tools/idf.sh --project ${{ matrix.project }} ${{ matrix.options }} build
       - name: Image size against the OTA slot, static RAM
         run: |
           . "$IDF_PATH/export.sh" >/dev/null
           python tools/check_image_size.py firmware/${{ matrix.project }}/${{ matrix.build_dir }} --ram
+      - name: Compiler cache use
+        if: always()
+        run: ccache --show-stats || true
       - name: Where the image's bytes go (OPT-003)
         if: matrix.project == 'crowpanel_p4' && matrix.build_dir == 'build_v1'
         run: |

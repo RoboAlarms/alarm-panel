@@ -1,16 +1,61 @@
 name: host-tests
 
+# What a pull request has to pass before it merges, and only that: the quick checks and the unit
+# tests, side by side, in about 10 minutes.
+#   quick        tools/quick_check.py, the same script a contributor runs before a push (~30 s)
+#   alarm-core   the portable C's unit tests under the sanitizers, CTest in parallel
+# Everything else - the tool tests, the Panel Manager pages, the touchscreen walks and the
+# firmware builds - is full-suite.yml and firmware.yml: every night, and by hand on any branch (`gh workflow run full-suite --ref <branch>`), never holding a pull
+# request up. The C builds go through ccache, kept between runs. A newer push to a pull request
+# cancels the run it replaces; runs on main always finish.
 on:
+  # Branches are checked through their pull request (open a draft early, AGENTS.md), so a push to
+  # one runs CI once, not twice; a branch without one can still run it by hand (Actions > Run
+  # workflow, or `gh workflow run host-tests --ref <branch>`).
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CCACHE_DIR: /home/runner/.ccache
+  CCACHE_MAXSIZE: 500M
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
 
 jobs:
+  # The generated code, the contracts, the tiers, the manifests, the backlog and the catalogs:
+  # python tools/quick_check.py runs the same list locally.
+  quick:
+    name: quick checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The 4" layout (components/ui/alarm_ui/layouts/480x320/alarm_ui) is left out while
+      # docs/features/19 is blocked (decided 2026-09-24): its generated code, its contract with the
+      # UI code and its preview are not checked here until the 4" work resumes. Then add
+      #   python3 tools/lvpro_gen.py components/ui/alarm_ui/layouts/480x320/alarm_ui --check
+      # to tools/quick_check.py, take 480x320 out of ON_HOLD in tools/check_ui_contract.py, and
+      # restore the 4" preview below.
+      - name: Generated code, UI contract, tiers, board manifests, backlog, translation catalogs
+        run: python3 tools/quick_check.py
+
   alarm-core:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Install Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Install Ninja and ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+      - name: Compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-alarm-core-${{ github.sha }}
+          restore-keys: ccache-alarm-core-
       - name: Configure (with address/undefined sanitizers)
         run: cmake -S host -B build/host -G Ninja -DALARM_SANITIZE=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
       - name: Sanitizers must instrument the portable libraries, not just the test harnesses (R19)
@@ -43,111 +88,11 @@ jobs:
           EOF
       - name: Build
         run: cmake --build build/host
+      # In parallel: the longest test (plink_link, about 2 min) sets the pace instead of the sum of
+      # them all (about 4.5 min). Only link_smoke opens sockets.
       - name: Test
-        run: ctest --test-dir build/host --output-on-failure
-      - name: Component tiers stay one-way (docs/features/33)
-        run: python3 tools/check_architecture.py
-      - name: Every board manifest is complete and consistent (docs/features/33)
-        run: python3 tools/check_boards.py
-      - name: Every open task in docs/features has its backlog row (docs/BACKLOG.md)
-        run: python3 tools/check_backlog.py
-      - name: Tool regressions (remote development client, architecture checker)
-        run: |
-          python3 -m pip install -r tools/panelctl-requirements.txt
-          python3 -m unittest discover -s tools/tests -v
-      - name: The translation template matches the source, words are marked and catalogs are well formed (docs/features/37)
-        run: |
-          python3 tools/i18n.py extract --check
-          python3 tools/i18n.py check
-          python3 tools/i18n.py build --check
+        run: ctest --test-dir build/host --output-on-failure --parallel "$(nproc)"
+      - name: Compiler cache use
+        if: always()
+        run: ccache --show-stats
 
-  ui-preview:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Install Ninja
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
-      # The 4" layout (components/ui/alarm_ui/layouts/480x320) is left out while docs/features/19 is blocked (decided
-      # 2026-09-24): its generated code, its contract with the UI code and its preview are not
-      # checked here until the 4" work resumes. Then add back
-      #   python3 tools/lvpro_gen.py components/ui/alarm_ui/layouts/480x320/alarm_ui --check
-      # take 480x320 out of ON_HOLD in tools/check_ui_contract.py, and restore the 4" preview
-      # step below.
-      - name: Generated UI code matches the XML, for every finished screen layout
-        run: python3 tools/lvpro_gen.py components/ui/alarm_ui/layouts/1024x600/alarm_ui --check
-      - name: The layouts not on hold offer what the UI code uses (docs/features/19 CYD-007)
-        run: python3 tools/check_ui_contract.py
-      - name: Embedded images match their JPEGs
-        run: python3 tools/embed_image.py --check components/ui/alarm_ui/images/*.jpg
-      - name: Embedded rail logo matches its alpha mask
-        run: python3 tools/embed_logo.py --check
-      - name: Generated Zigbee device signatures match their JSON rows (docs/features/20 testing.md)
-        run: python3 tools/zb_signatures.py --check
-      - name: Browser capture scheduling regressions
-        run: node --test components/services/panel_web/test/panel_frames.test.cjs
-      # The test languages first: one test renders every page in en-XA to find words not looked up
-      # (docs/features/37 I18N-031).
-      - name: Panel Manager pages render against the mock panel
-        run: |
-          python3 tools/i18n.py pseudo --build
-          node --test components/services/panel_web/test/panel_pages.test.cjs
-      # The files the firmware ships are minified (BL-122): the same tests against them.
-      - name: Panel Manager tests against the minified files
-        run: |
-          python3 components/services/panel_web/minify_asset.py --all components/services/panel_web/web build/panel_web_shipped
-          PANEL_WEB_DIR="$PWD/build/panel_web_shipped" node --test components/services/panel_web/test/panel_frames.test.cjs components/services/panel_web/test/panel_pages.test.cjs
-      - name: The Panel Manager mockup builds, and its pages and proposals render (WEB-026)
-        run: node --test components/services/panel_web/test/manager_mockup.test.cjs
-      - name: Build the UI preview (clones LVGL 9.5.0)
-        run: |
-          cmake -S host/ui_preview -B build/ui_preview -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build/ui_preview
-      - name: Render every screen state
-        run: ./build/ui_preview/ui_preview build/ui_preview/shots
-      - name: The touchscreen mockup matches the design system and the preview (UI-044)
-        run: python3 tools/ui_mockup.py check --shots-dir build/ui_preview/shots
-      - name: The UI without its optional pages starts and hides them (docs/features/33)
-        run: ./build/ui_preview/ui_smoke_minimal
-      - name: The touchscreen words, ui_text.c and Home (BL-066, KPD-004)
-        run: ./build/ui_preview/ui_words_test
-      - name: The simulator runs the automations, Harbor House's seeded (docs/features/41)
-        run: ./build/ui_preview/auto_smoke
-      - name: A setting changed from elsewhere goes through the screen (UI-046)
-        run: ./build/ui_preview/prefs_smoke
-      # Z-Wave (docs/features/36) is an option of the P4 build (the manifest leaves it out by
-      # default), so the walk above has no Z-Wave pages; this builds them with Linux GCC and walks
-      # them against the simulated radio.
-      - name: The Z-Wave pages build and walk (docs/features/36)
-        run: |
-          cmake -S host/ui_preview -B build/ui_preview-zwave -G Ninja -DCMAKE_BUILD_TYPE=Release -DALARM_SIM_ZWAVE=ON
-          cmake --build build/ui_preview-zwave
-          ./build/ui_preview-zwave/ui_preview build/ui_preview-zwave/shots
-      # ZW-021: the simulator's Z-Wave flows, windowless, checked against the engine's real state
-      # (host/ui_preview/zwave_smoke.c); exits non-zero when a check fails.
-      - name: The simulator's Z-Wave world, scripted (ZW-021)
-        run: ./build/ui_preview-zwave/zwave_smoke
-      # Every walk fails when a label's text is cut off (docs/features/37 I18N-022); this one walks
-      # the screens in en-XA, the test language about 40 % longer than English (I18N-024).
-      - name: Every screen in the longer test language, nothing cut off (docs/features/37)
-        run: |
-          python3 tools/i18n.py pseudo --build
-          cmake -S host/ui_preview -B build/ui_preview-en-XA -G Ninja -DCMAKE_BUILD_TYPE=Release -DALARM_PREVIEW_LOCALE=en-XA
-          cmake --build build/ui_preview-en-XA
-          ./build/ui_preview-en-XA/ui_preview build/ui_preview-en-XA/shots
-      # I18N-014: started in English and changed to en-XA while running (and held through an
-      # alarm), every screen is the same picture as the walk that started in en-XA.
-      - name: A language changed while running reaches every screen (docs/features/37)
-        run: |
-          cmake -S host/ui_preview -B build/ui_preview-en-XA-live -G Ninja -DCMAKE_BUILD_TYPE=Release -DALARM_PREVIEW_LOCALE=en-XA -DALARM_PREVIEW_LIVE=ON
-          cmake --build build/ui_preview-en-XA-live
-          ./build/ui_preview-en-XA-live/ui_preview build/ui_preview-en-XA-live/shots
-          for f in build/ui_preview-en-XA/shots/*.png; do
-            cmp -s "$f" "build/ui_preview-en-XA-live/shots/$(basename "$f")" || { echo "differs: $(basename "$f")"; exit 1; }
-          done
-      - uses: actions/upload-artifact@v7
-        with:
-          name: ui-screenshots
-          path: build/ui_preview/shots
-      # The 4" board's preview and smoke test (-DALARM_BOARD=e32r40t, artifact
-      # ui-screenshots-e32r40t) are left out while docs/features/19 is blocked; run them locally with
-      # `pwsh tools/ui_preview.ps1 -Board e32r40t`.

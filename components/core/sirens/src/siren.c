@@ -202,8 +202,9 @@ uint16_t siren_crc16(const uint8_t *buf, size_t len)
     for (size_t i = 0; i < len; i++) {
         crc = (uint16_t)(crc ^ (uint16_t)((unsigned)buf[i] << 8));
         for (int b = 0; b < 8; b++) {
-            crc = ((crc & 0x8000u) != 0u) ? (uint16_t)((unsigned)(crc << 1) ^ 0x1021u)
-                                          : (uint16_t)(crc << 1);
+            const unsigned poly = ((unsigned)crc & 0x8000u) != 0u ? 0x1021u : 0u;
+            const unsigned next = ((unsigned)crc << 1) ^ poly;
+            crc = (uint16_t)(next & 0xFFFFu);
         }
     }
     return crc;

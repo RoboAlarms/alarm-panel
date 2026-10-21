@@ -203,6 +203,8 @@ void host_panel_zwave_press_stray(void);
 void host_panel_zwave_keypad_silent(bool silent);   /* its power gone: it hears nothing */
 void host_panel_zwave_keypad_lose_replies(unsigned n); /* its next n answers lost */
 void host_panel_zwave_fw_offline(bool offline);
+void host_panel_zwave_radio_unlisted(bool unlisted); /* the service answers nothing for the radio */
+void host_panel_zwave_radio_advised(bool advised);   /* its software older than Zooz advises */
 void host_panel_zwave_status_force(unsigned what); /* BL-152: 1 jammed, 2 not answering, 0 as is */
 void host_panel_zwave_wake_door(void);            /* its button: it wakes up */
 void host_panel_zwave_press_light(void);          /* ZW-034: the light switch's pairing button */
@@ -273,6 +275,16 @@ bool host_panel_zwave_bind_door(uint16_t zone);
 uint16_t host_panel_zone_flags(uint16_t zone);
 bool host_panel_sensor_radio_trouble(void);
 #endif
+
+/* Sirens and outputs (BL-037): the preview's demo (a wired siren on GPIO 49 for Home that also
+ * sounds for partition 2's alarms, an armed light on GPIO 51, one 433 MHz siren), or none; the
+ * pretend siren pin's level; the pretend transmitter's count. */
+void host_panel_sirens_demo(bool on);
+/* An end-of-line loop's resistance on a terminal (ZONE-005): UINT32_MAX open, 0 a short. */
+void host_panel_loop_ohms(uint8_t gpio, uint32_t ohms);
+bool host_panel_siren_pin(uint8_t gpio);
+uint32_t host_panel_rf_sent(void);
+
 
 /* The keypad sounder (docs/features/08). The panel wires exactly these four things
  * (firmware/crowpanel_p4/main/app_main.c and components/ui/alarm_ui/port/ui_port_esp.c): the

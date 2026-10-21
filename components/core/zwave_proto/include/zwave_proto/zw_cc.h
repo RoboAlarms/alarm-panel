@@ -75,6 +75,7 @@ typedef enum {
     ZW_CC_MULTI_CHANNEL_ASSOCIATION           = 0x8Eu,
     ZW_CC_MULTI_COMMAND                       = 0x8Fu,
     ZW_CC_ENTRY_CONTROL                       = 0x6Fu,
+    ZW_CC_SOUND_SWITCH                        = 0x79u,
     ZW_CC_ALARM_SENSOR                        = 0x9Cu,
     ZW_CC_SECURITY_0                          = 0x98u,
     ZW_CC_SECURITY_2                          = 0x9Fu,

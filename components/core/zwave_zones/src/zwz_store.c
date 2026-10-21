@@ -50,11 +50,13 @@ uint8_t zwz_store_run(zwz_store_t *s, zwz_panel_t *p, uint64_t now, const zwz_st
     uint8_t cfg[ZWZ_CFG_BLOB];
     uint8_t chk[ZWZ_CHECKINS_BLOB];
     uint8_t garage[ZWO_GARAGE_BLOB];
+    uint8_t siren[ZWS_BLOB_MAX];
     size_t nodes_len = 0u;
     size_t keys_len = 0u;
     size_t cfg_len = 0u;
     size_t chk_len = 0u;
     size_t garage_len = 0u;
+    size_t siren_len = 0u;
     size_t prov_len = 0u;
     uint16_t gen = 0u;
     if (s->retry_at != 0u && now < s->retry_at) {
@@ -70,6 +72,7 @@ uint8_t zwz_store_run(zwz_store_t *s, zwz_panel_t *p, uint64_t now, const zwz_st
         cfg_len = zwz_panel_take_cfg(p, cfg, sizeof cfg);
         chk_len = zwz_panel_take_checkins(p, chk, sizeof chk);
         garage_len = zwz_panel_take_garage(p, garage, sizeof garage);
+        siren_len = zwz_panel_take_siren(p, siren, sizeof siren);
         if (port->prov_buf != NULL) {
             prov_len = zwz_panel_take_prov(p, port->prov_buf, port->prov_cap);
         }
@@ -99,13 +102,17 @@ uint8_t zwz_store_run(zwz_store_t *s, zwz_panel_t *p, uint64_t now, const zwz_st
     if (prov_len > 0u && !store_blob(port, ZWZ_STORE_KEY_PROV, port->prov_buf, prov_len)) {
         failed |= ZWZ_DIRTY_PROV;
     }
+    if (siren_len > 0u && !store_blob(port, ZWZ_STORE_KEY_SIREN, siren, siren_len)) {
+        failed |= ZWZ_DIRTY_SIREN;
+    }
     /* a value that did not fit its buffer stays dirty in zwz_panel: count it as refused */
     const unsigned taken = (nodes_len > 0u ? ZWZ_DIRTY_NODES : 0u) |
                            (keys_len > 0u ? ZWZ_DIRTY_KEYS : 0u) |
                            (cfg_len > 0u ? ZWZ_DIRTY_CFG : 0u) |
                            (chk_len > 0u ? ZWZ_DIRTY_CHECKINS : 0u) |
                            (garage_len > 0u ? ZWZ_DIRTY_GARAGE : 0u) |
-                           (prov_len > 0u ? ZWZ_DIRTY_PROV : 0u);
+                           (prov_len > 0u ? ZWZ_DIRTY_PROV : 0u) |
+                           (siren_len > 0u ? ZWZ_DIRTY_SIREN : 0u);
     failed |= (uint8_t)((unsigned)dirty & ~taken);
     /* ZW-014: what is in storage now - the node cache's ends zwz_panel_identity_held() */
     const uint8_t stored = (uint8_t)(taken & ~(unsigned)failed);

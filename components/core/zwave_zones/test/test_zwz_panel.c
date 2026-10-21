@@ -75,6 +75,10 @@ typedef struct {
     unsigned kp_calls;       /* ZW-038: port.keypad_reachable, its calls and the last one */
     uint8_t kp_device;
     bool kp_reachable;
+    uint8_t siren[ZWS_BLOB_MAX]; /* NVS zwave/siren */
+    size_t siren_len;
+    unsigned bell_calls;     /* OUT-017, OUT-018: port.bell_trouble, its calls and the last word */
+    bool bell_on;
     uint8_t refuse_nodes;    /* ZW-014: NVS refuses the node cache (REFUSE_*) */
     unsigned refused_writes;
 } world_t;
@@ -227,6 +231,12 @@ static void store(void)
         memcpy(W.garage, buf, n);
         W.garage_len = n;
     }
+    n = zwz_panel_take_siren(&W.p, buf, sizeof buf);
+    if (n > 0u) {
+        TEST_ASSERT_TRUE(n <= sizeof W.siren);
+        memcpy(W.siren, buf, n);
+        W.siren_len = n;
+    }
     TEST_ASSERT_EQUAL_UINT8(W.refuse_nodes != REFUSE_NONE ? (zwz_panel_dirty(&W.p) & ZWZ_DIRTY_NODES)
                                                           : 0u,
                             zwz_panel_dirty(&W.p));
@@ -313,6 +323,13 @@ static void port_keypad_reachable(void *ctx, uint8_t device, bool reachable)
     W.kp_reachable = reachable;
 }
 
+static void port_bell_trouble(void *ctx, bool active)
+{
+    (void)ctx;
+    W.bell_calls++;
+    W.bell_on = active;
+}
+
 static void boot(void)
 {
     static const fake_host_t fh = {NULL, n_control, n_frame, n_text, n_poll, n_deadline};
@@ -325,7 +342,8 @@ static void boot(void)
                                          .zone_position = port_position,
                                          .disarmed = port_disarmed,
                                          .local_time = port_local_time,
-                                         .keypad_reachable = port_keypad_reachable};
+                                         .keypad_reachable = port_keypad_reachable,
+                                         .bell_trouble = port_bell_trouble};
     const uint64_t t = W.wire.now;
     zsrc_zw_init(&W.src, &sink);
     zone_hub_init(&W.hub, &hport);
@@ -343,6 +361,9 @@ static void boot(void)
     }
     if (W.prov_len > 0u) {
         TEST_ASSERT_TRUE(zwz_panel_load_prov(&W.p, W.prov, W.prov_len));
+    }
+    if (W.siren_len > 0u) {
+        TEST_ASSERT_TRUE(zwz_panel_load_siren(&W.p, W.siren, W.siren_len));
     }
     fake_wire_init(&W.wire, &W.zac, &fh, t);
     zwz_panel_start(&W.p, t);
@@ -2623,7 +2644,7 @@ _Static_assert(ZWZ_NVS_ENTRIES(ZWO_GARAGE_BLOB) == 3u, "garage");
 _Static_assert(ZWZ_NVS_ENTRIES(ZW_PROV_BLOB_MAX) == 59u, "prov");
 _Static_assert(ZWZ_NVS_ENTRIES(ZWF_BLOB_SIZE) == 5u && ZWZ_NVS_ENTRIES(ZWKC_BLOB_SIZE) == 6u,
                "keypad_fb and keypad_ctl");
-_Static_assert(ZWZ_NVS_WORST == 1753u, "zwave at its largest: devices.md's budget");
+_Static_assert(ZWZ_NVS_WORST == 1758u, "zwave at its largest: devices.md's budget");
 _Static_assert(ZWZ_NVS_NODE_GROWTH == 27u, "one more record: 25 entries, a header, the rounding");
 /* ZW-039: the reserve covers the configuration's rewrite at its largest and a record's growth;
  * adding stops before it. */
@@ -3503,6 +3524,82 @@ static void test_switch_and_dimmer(void)
     TEST_ASSERT_TRUE(res == ZWO_ERR_SEND || res == ZWO_ERR_TIMEOUT);
     TEST_ASSERT_FALSE(zwz_panel_output_ended(&W.p, &slot, &req, &res));
     sw.lose_in = 0u;
+}
+
+/* OUT-016..OUT-019 (docs/features/36 sirens.md): a Binary Switch device assigned as a siren -
+ * no longer a switch for the pages or Home Assistant; the engine's bell switches it on and off;
+ * a siren that hears nothing is the bell trouble until it takes the command; kept across a
+ * restart; its removal drops it. */
+static void test_siren_follows_the_bell(void)
+{
+    static fake_zdev_t sw;
+    switch_device(&sw, 0x5B21u, 0x25u, 0u);
+    TEST_ASSERT_EQUAL_UINT8(UI_ZW_RES_ADDED, include(&sw, 0u));
+    const uint16_t sn = progress().node;
+    const uint16_t sg = zwz_panel_generation(&W.p, sn);
+    run_for(3000u);
+    zws_config_t c;
+    zws_defaults(&c, sn, sg, 0u, 0u); /* kind: the panel picks */
+    TEST_ASSERT_EQUAL_INT(ZWS_ERR_UNKNOWN, zwz_panel_siren_set(&W.p, W.wire.now, &(zws_config_t){
+                                                                  .used = true, .node = sn,
+                                                                  .generation = (uint16_t)(sg + 1u),
+                                                                  .partitions = 1u,
+                                                                  .burglary = true}));
+    c.kind = ZWS_KIND_SOUND; /* it has no Sound Switch */
+    TEST_ASSERT_EQUAL_INT(ZWS_ERR_ARG, zwz_panel_siren_set(&W.p, W.wire.now, &c));
+    c.kind = 0u;
+    TEST_ASSERT_EQUAL_INT(ZWS_OK, zwz_panel_siren_set(&W.p, W.wire.now, &c));
+    TEST_ASSERT_EQUAL_UINT8(ZWS_KIND_BINARY, zwz_panel_siren(&W.p, 0u)->c.kind);
+    run_for(0u);
+    TEST_ASSERT_TRUE(W.siren_len > 0u);
+    TEST_ASSERT_EQUAL_INT(ZWO_ERR_ARG, zwz_panel_output_set(&W.p, W.wire.now, sn, sg, 0u, 100,
+                                                            W.wire.now));
+    proto_zw_device_t ha[4];
+    TEST_ASSERT_EQUAL_UINT(0u, zwz_panel_ha_devices(&W.p, W.wire.now, ha, 4u));
+
+    zwz_panel_siren_armed(&W.p, W.wire.now, 1u, false);
+    zwz_panel_engine_output(&W.p, W.wire.now, 1u, ALARM_OUT_BELL, ALARM_PAT_STEADY);
+    run_for(2000u);
+    TEST_ASSERT_EQUAL_HEX8(0xFFu, sw.m.sw[0]);
+    zwz_panel_engine_output(&W.p, W.wire.now, 1u, ALARM_OUT_BELL, ALARM_PAT_OFF);
+    run_for(2000u);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, sw.m.sw[0]);
+    TEST_ASSERT_FALSE(W.bell_on);
+
+    /* it hears nothing: after ZWS_SEND_TRIES the bell trouble, then it takes it and it clears */
+    sw.lose_in = 1000u;
+    zwz_panel_engine_output(&W.p, W.wire.now, 1u, ALARM_OUT_BELL, ALARM_PAT_STEADY);
+    run_for(60000u);
+    TEST_ASSERT_TRUE(W.bell_on);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, sw.m.sw[0]);
+    sw.lose_in = 0u;
+    run_for(ZWS_RETRY_SLOW_MS + ZWS_CONFIRM_MS);
+    TEST_ASSERT_EQUAL_HEX8(0xFFu, sw.m.sw[0]);
+    TEST_ASSERT_FALSE(W.bell_on);
+    zwz_panel_engine_output(&W.p, W.wire.now, 1u, ALARM_OUT_BELL, ALARM_PAT_OFF);
+    run_for(2000u);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, sw.m.sw[0]);
+
+    /* "Test it": on, then off */
+    TEST_ASSERT_EQUAL_INT(ZWS_OK, zwz_panel_siren_test(&W.p, W.wire.now, sn, 0u));
+    run_for(1000u);
+    TEST_ASSERT_EQUAL_HEX8(0xFFu, sw.m.sw[0]);
+    run_for(ZWS_TEST_MS + 1000u);
+    TEST_ASSERT_EQUAL_HEX8(0x00u, sw.m.sw[0]);
+
+    /* kept across a restart */
+    boot();
+    TEST_ASSERT_NOT_NULL(zwz_panel_siren(&W.p, 0u));
+    TEST_ASSERT_EQUAL_UINT16(sn, zwz_panel_siren(&W.p, 0u)->c.node);
+
+    /* removed: its assignment goes, and is stored without it */
+    remove_by_hand(&sw);
+    run_for(0u);
+    TEST_ASSERT_NULL(zwz_panel_siren(&W.p, 0u));
+    zws_config_t none[ZWS_SIRENS];
+    TEST_ASSERT_TRUE(zws_decode(W.siren, W.siren_len, none));
+    TEST_ASSERT_FALSE(none[0].used);
+    TEST_ASSERT_EQUAL_INT(ZWS_ERR_UNKNOWN, zwz_panel_siren_clear(&W.p, W.wire.now, sn, 0u));
 }
 
 /* ZW-034, ZW-035: a three-relay device and a tilt sensor make a garage door - its relays through
@@ -4523,6 +4620,7 @@ int main(void)
     RUN_TEST(test_firmware_update_not_woken);
     RUN_TEST(test_switch_and_dimmer);
     RUN_TEST(test_multi_relay_garage);
+    RUN_TEST(test_siren_follows_the_bell);
     RUN_TEST(test_nvs_reserve_add_and_replace);
     RUN_TEST(test_nvs_need_grows_with_the_cache);
     RUN_TEST(test_nvs_reserve_smartstart);

@@ -262,6 +262,31 @@ esp_err_t cc1101_rx_ook(cc1101_t *c, uint32_t freq_khz)
     return ESP_OK;
 }
 
+esp_err_t cc1101_tx_ook(cc1101_t *c)
+{
+    ESP_RETURN_ON_ERROR(cc1101_strobe(c, CC1101_SIDLE), TAG, "idle");
+    if (!wait_state(c, CC1101_MARC_IDLE)) {
+        return ESP_ERR_TIMEOUT;
+    }
+    /* PATABLE: a burst write of its first two entries (0 for a 0, the power for a 1) */
+    const uint8_t pa[3] = {(uint8_t)(CC1101_PATABLE | HDR_BURST), CC1101_PA_OOK_OFF,
+                           CC1101_PA_OOK_ON};
+    ESP_RETURN_ON_ERROR(exchange(c, pa, NULL, sizeof(pa)), TAG, "patable");
+    ESP_RETURN_ON_ERROR(cc1101_strobe(c, CC1101_STX), TAG, "tx");
+    if (!wait_state(c, CC1101_MARC_TX)) {
+        ESP_LOGW(TAG, "did not settle in TX (state %s)", cc1101_state_name(cc1101_marcstate(c)));
+        (void)cc1101_strobe(c, CC1101_SIDLE);
+        return ESP_ERR_TIMEOUT;
+    }
+    return ESP_OK;
+}
+
+esp_err_t cc1101_tx_end(cc1101_t *c)
+{
+    ESP_RETURN_ON_ERROR(cc1101_strobe(c, CC1101_SIDLE), TAG, "idle");
+    return wait_state(c, CC1101_MARC_IDLE) ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
 esp_err_t cc1101_check(cc1101_t *c, bool *lost)
 {
     uint8_t v = 0;

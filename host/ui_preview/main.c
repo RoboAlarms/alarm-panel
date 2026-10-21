@@ -21,6 +21,7 @@
 #include "alarm_ui_gen.h"
 #include "i18n/i18n.h"
 #include "host_panel.h"
+#include "zone_hub/zone_eol.h"
 #include "home_control/hc_home.h"
 #include "voice_walk.h"
 #include "host_link_demo.h"
@@ -2469,6 +2470,43 @@ static void walk_zwave_network_care(void)
     shot("zwave_radio_updating");
     wait_for_text("Updated: it runs 2.30 now.", 600000u, "ZW-025: the radio's update did not finish");
     shot("zwave_radio_updated");
+    /* the radio's file from an SD card (network.md §14): the simulator's card has none */
+    scroll_to_text("page_body", "Install from an SD card");
+    tap_text("Install from an SD card");
+    run(300);
+    expect(visible_text("Update the radio from the SD card?"),
+           "ZW-025: installing from the SD card does not ask first");
+    tap_text("Update");
+    run(1500);
+    expect(find_label(by_name("page_body"),
+                      "No .gbl file on the SD card. Copy the radio's file from its maker to the "
+                      "card's top folder, or to a folder named zwave.") != NULL,
+           "ZW-025: a card without the radio's file doesn't say what to do");
+    shot("zwave_radio_sd_no_file");
+    /* nothing found for it (approved words, 2026-10-20): the SD card and the Panel Manager remain */
+    host_panel_zwave_radio_unlisted(true);
+    scroll_to_text("page_body", "Check for an update");
+    tap_text("Check for an update");
+    run(300);
+    wait_for_text("No update was found for this radio. Its maker's own file can still be installed "
+                  "from an SD card or the Panel Manager.",
+                  20000u, "ZW-025: a check that finds nothing doesn't say what remains");
+    shot("zwave_radio_none_found");
+    host_panel_zwave_radio_unlisted(false);
+    /* older than its maker advises: the page points to Check for an update */
+    host_panel_zwave_radio_advised(true);
+    tap_name("page_back");
+    run(300);
+    scroll_to_text("page_body", "Radio · Update its software");
+    tap_text("Radio · Update its software");
+    run(500);
+    scroll_to_text("page_body", "Its software is older than its maker advises. Tap Check for an "
+                                "update below to install the newer one.");
+    expect(visible_text("Its software is older than its maker advises. Tap Check for an update "
+                        "below to install the newer one."),
+           "ZW-025: an old radio's page doesn't point to Check for an update");
+    shot("zwave_radio_advised");
+    host_panel_zwave_radio_advised(false);
     for (int i = 0; i < 4 && find_label(lv_screen_active(), "Leave installer mode") == NULL; i++) {
         tap_name("page_back"); /* back to the installer menu, wherever "Done" left it */
         run(300);
@@ -7305,6 +7343,8 @@ static void walk_zigbee_roles(void)
            "ZB-023: the siren's volume isn't High");
     expect(strcmp(row_label("Partitions", "value_label"), "All") == 0,
            "ZB-023: the siren's partitions aren't All");
+    expect(strcmp(row_label("Also sounds for", "value_label"), "None") == 0,
+           "OUT-015: a Zigbee siren's Also sounds for isn't None");
     expect(strcmp(row_label("Supervision", "value_label"), "After 1 h") == 0,
            "ZB-023: the siren's supervision isn't after 1 hour");
     expect(zb_switch_on("Strobe with it") && !zb_switch_on("Chirp when arming and disarming"),
@@ -7458,6 +7498,120 @@ static void zb_back_to(const char *text)
         run(300);
     }
     expect(find_label(by_name("page_body"), text) != NULL, text);
+}
+
+/* BL-037: Installer > Sirens and outputs, a wired siren, a 433 MHz siren and its pairing, adding a
+ * wired output, and Installer > 433 MHz (docs/features/16; the mockup's BL-037 proposal), with the
+ * simulator's demo sirens (host_panel_sirens_demo); from the installer menu, back on it at the end,
+ * the demo cleared so later pictures are as before. */
+static void walk_sirens(void)
+{
+    host_panel_sirens_demo(true);
+    tap_link("Partitions"); /* the menu is built again with the demo's sirens */
+    run(300);
+    tap_name("page_back");
+    run(300);
+    scroll_to_text("page_body", "Sirens and outputs");
+    zb_has("What sounds and what switches when the alarm does",
+           "OUT-009: the installer menu has no Sirens and outputs row");
+    zb_has("2 sirens", "OUT-009: the Sirens and outputs row doesn't count the sirens");
+    shot("bl-037-installer-menu");
+    scroll_to_text("page_body", "433 MHz");
+    zb_has("Sensors and sirens on 433 MHz", "RF-026: the installer menu has no 433 MHz row");
+    zb_has("1 sensor, 1 siren", "RF-026: the 433 MHz row doesn't count its sensors and sirens");
+
+    /* Sirens and outputs */
+    scroll_to_text("page_body", "Sirens and outputs");
+    tap_link("Sirens and outputs");
+    run(300);
+    zb_has("On the panel's terminals", "OUT-009: Sirens and outputs has no wired section");
+    zb_has("Terminal GPIO 49 · Home", "OUT-009: the wired siren's line doesn't give its terminal");
+    zb_has("Armed light", "OUT-009: the armed light isn't listed");
+    zb_has("433 MHz siren 1", "OUT-010: the 433 MHz siren isn't listed");
+    shot("bl-037-sirens");
+
+    /* a wired siren's page */
+    tap_link("Siren");
+    run(300);
+    zb_has("It sounds for", "OUT-009: the wired siren's page doesn't lead with what it sounds for");
+    expect(zb_switch_on("Burglary and panic") && zb_switch_on("Fire and CO"),
+           "OUT-009: the wired siren's alarms aren't as kept");
+    zb_has("Also sounds for", "OUT-015: the wired siren has no Also sounds for");
+    shot("bl-037-wired");
+    zb_scroll_to_top_of("How it is wired");
+    expect(strcmp(row_label("Terminal", "value_label"), "GPIO 49") == 0,
+           "OUT-009: the wired siren's terminal isn't GPIO 49");
+    expect(strcmp(row_label("Relay board", "value_label"), "Switches on low") == 0,
+           "OUT-009: the wired siren's relay board isn't on low");
+    expect(strcmp(row_label("Supervision input", "value_label"), "GPIO 50") == 0,
+           "OUT-004: the wired siren's supervision input isn't GPIO 50");
+    expect(host_panel_siren_pin(49), "OUT-006: an active-low siren's pin isn't high (off) at rest");
+    tap_link("Test it");
+    run(200);
+    zb_toast("Sounding for 2 seconds", "OUT-009: the wired siren's test doesn't say it sounds");
+    expect(!host_panel_siren_pin(49), "OUT-009: the wired siren's test doesn't drive its pin");
+    run(2500);
+    expect(host_panel_siren_pin(49), "OUT-009: the wired siren's test doesn't end");
+    zb_scroll_to_top_of("How it is wired");
+    shot("bl-037-wired-end");
+    tap_name("page_back");
+    run(300);
+
+    /* a 433 MHz siren and its pairing */
+    scroll_to_text("page_body", "433 MHz siren 1");
+    tap_link("433 MHz siren 1");
+    run(300);
+    zb_has("Not supervised: the panel can't hear this siren. Test it now and then.",
+           "OUT-012: the 433 MHz siren's page doesn't say it isn't supervised");
+    shot("bl-037-rf-siren");
+    scroll_to_text("page_body", "Pair it again");
+    tap_link("Pair it again");
+    run(300);
+    const uint32_t sent = host_panel_rf_sent();
+    tap_text("Send the pairing signal");
+    run(4000);
+    expect(host_panel_rf_sent() >= (uint32_t)(sent + 3u), "OUT-011: the pairing signal didn't go out three times");
+    shot("bl-037-rf-siren-pair");
+    tap_name("page_back");
+    run(300);
+    tap_name("page_back");
+    run(300);
+
+    /* adding a wired output: what it is, then its terminal */
+    scroll_to_text("page_body", "Add a wired siren or output");
+    tap_link("Add a wired siren or output");
+    run(300);
+    expect(find_label(by_name("pick_list"), "Smoke detector power") != NULL,
+           "OUT-009: adding a wired output doesn't offer the smoke detectors' power");
+    shot("bl-037-wired-add");
+    tap_text("Strobe");
+    run(300);
+    expect(find_label(by_name("pick_list"), "GPIO 49") == NULL,
+           "OUT-021: a terminal another output uses is offered");
+    tap_text("GPIO 52");
+    run(400);
+    zb_has("It follows", "OUT-009: the new strobe's page didn't open");
+    tap_name("page_back");
+    run(300);
+    tap_name("page_back");
+    run(300);
+
+    /* Installer > 433 MHz */
+    scroll_to_text("page_body", "433 MHz");
+    tap_link("433 MHz");
+    run(1200);
+    zb_has("Receiver", "RF-026: the 433 MHz page has no receiver row");
+    zb_has("Working", "RF-026: the 433 MHz page's receiver isn't working");
+    zb_has("433 MHz sirens can be sounded", "RF-026: the 433 MHz page has no transmitter row");
+    zb_has("Back Door", "RF-026: the 433 MHz page doesn't list the zone on a 433 MHz contact");
+    shot("bl-037-rf");
+    tap_name("page_back");
+    run(300);
+    host_panel_sirens_demo(false);
+    tap_link("Partitions");
+    run(300);
+    tap_name("page_back");
+    run(300);
 }
 
 static void walk_zigbee(const ui_options_t *start)
@@ -8002,6 +8156,7 @@ static void walk_zigbee(const ui_options_t *start)
 
     tap_name("page_back");
     run(300);
+    walk_sirens(); /* BL-037: on the installer menu */
     scroll_to_text("page_body", "Leave installer mode");
     tap_text("Leave installer mode");
     run(300);
@@ -12567,6 +12722,40 @@ int main(int argc, char **argv)
     scroll_into_view(facts);
     run(100);
     shot("zone_wired");
+    tap_name("page_back");
+    run(300);
+
+    /* ZONE-005 (BL-063): a wired zone on a terminal that measures, made an end-of-line loop in
+     * its Sensor settings; a short across the loop is its tamper */
+    tap_text("Add a zone");
+    run(300);
+    tap_text("Wired contact");
+    run(300);
+    host_panel_wire(50, true);
+    run(1500);
+    tap_text("GPIO 50");
+    run(500);
+    host_panel_wire(50, false);
+    run(1500);
+    scroll_to_text("page_body", "Sensor settings");
+    tap_text("Sensor settings");
+    run(300);
+    tap_text("Contact");
+    run(300);
+    expect(find_label(by_name("pick_list"), "Closed, end-of-line resistor") != NULL,
+           "ZONE-005: a terminal that measures doesn't offer end-of-line loops");
+    shot("zone_eol_contact");
+    tap_text("Closed, end-of-line resistor");
+    run(1500);
+    expect(strcmp(row_label("Contact", "value_label"), "Closed, end-of-line resistor") == 0,
+           "ZONE-005: the zone's Contact isn't its end-of-line loop");
+    host_panel_loop_ohms(50, 0u); /* someone bridges the loop */
+    run(1500);
+    shot("zone_eol_short");
+    host_panel_loop_ohms(50, ZEOL_OHM);
+    run(1500);
+    tap_name("page_back");
+    run(300);
     tap_name("page_back");
     run(300);
 

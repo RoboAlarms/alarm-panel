@@ -9,6 +9,8 @@ alarm_add_test(zw_fwcat SOURCES test_zw_fwcat.c LIBS zwave_zones unity)
 alarm_add_test(zw_fwjob SOURCES test_zw_fwjob.c LIBS zwave_zones unity)
 # What the devices switch, and a garage door (docs/features/36 ZW-034, ZW-035).
 alarm_add_test(zw_outputs SOURCES test_zw_outputs.c LIBS zwave_zones unity)
+# Z-Wave sirens as the panel's bell (docs/features/16 OUT-016..OUT-019, docs/features/36 sirens.md).
+alarm_add_test(zw_siren SOURCES test_zw_siren.c LIBS zwave_zones sirens unity STRICT)
 alarm_add_test(zwave_zones SOURCES test_zwave_zones.c ${ZWAVE_HOST_TEST}/fake_zac93.c
                ${ZWAVE_HOST_TEST}/fake_zdev.c ${ZWAVE_HOST_TEST}/fake_zdev_cc.c
                ${ZWAVE_HOST_TEST}/zw_host_crypto.c

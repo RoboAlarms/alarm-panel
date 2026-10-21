@@ -12,8 +12,11 @@
 #include "ui_port_esp.h"
 #include "panel_storage.h"
 
+#include <dirent.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/time.h>
 
 #include "alarm/alarm_keyseq.h"
@@ -21,6 +24,9 @@
 #include "alarm_proto/proto_prefs.h"
 #include "alarm_service.h"
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "ha_link.h"
 #include "asset_packs.h"
 #include "lang_packs.h"
@@ -36,6 +42,8 @@
 #include "panel_voice.h"
 #include "sounder.h"
 #include "ui_backend/ui_prefs.h"
+#include "outputs_service.h"
+#include "rf_service.h"
 #include "zigbee_service.h"
 #include "zone_service.h"
 #include "zwave_service.h"
@@ -1585,6 +1593,297 @@ static size_t zb_codes(void *ctx, ui_zb_code_t *out, size_t max)
 }
 #endif
 
+/* ---- sirens and outputs, 433 MHz (docs/features/16, 25; BL-037): outputs_service, rf_service --- */
+
+#if CONFIG_ALARM_OUTPUTS
+/* Changes need installer mode, as every installer page's backend asks (the engine's own word). */
+static bool out_installer(void)
+{
+    static EXT_RAM_BSS_ATTR alarm_snapshot_t snap; /* the UI task's alone: too big for its stack */
+    alarm_service_get_snapshot(&snap);
+    return snap.program;
+}
+
+static uint8_t out_answer(esp_err_t err)
+{
+    switch (err) {
+    case ESP_OK: return UI_OUT_OK;
+    case ESP_ERR_INVALID_STATE: return UI_OUT_IN_USE;
+    case ESP_ERR_NOT_FOUND: return UI_OUT_NO_TRANSMITTER;
+    case ESP_ERR_NO_MEM: return UI_OUT_FULL;
+    case ESP_FAIL: return UI_OUT_FAILED;
+    default: return UI_OUT_INVALID;
+    }
+}
+
+/* A test refused for its armed partitions or for sounding answers INVALID_STATE too. */
+static uint8_t test_answer(esp_err_t err)
+{
+    return err == ESP_ERR_INVALID_STATE ? UI_OUT_NOT_ALLOWED : out_answer(err);
+}
+
+static bool out_status(void *ctx, ui_out_status_t *out)
+{
+    (void)ctx;
+    memset(out, 0, sizeof(*out));
+    rf_service_status_t rf;
+    rf_service_status(&rf);
+    outputs_wired_info_t w[OW_CHANNELS];
+    outputs_service_wired(w);
+    uint8_t pins[16];
+    out->wired = outputs_service_free_terminals(OW_CHANNELS, pins, 16u) != 0u;
+    for (size_t i = 0; i < OW_CHANNELS; i++) {
+        out->wired = out->wired || w[i].c.function != OW_FN_NONE;
+        out->trouble = out->trouble || w[i].trouble;
+    }
+    out->where = "J7 header";
+    out->rf_receiver = !rf.enabled                  ? UI_RF_RX_NONE
+                       : rf.module == RF_MODULE_OFF ? UI_RF_RX_OFF
+                       : !rf.present                ? UI_RF_RX_NONE
+                       : rf.jammed                  ? UI_RF_RX_JAMMED
+                                                    : UI_RF_RX_WORKING;
+    out->rf_transmitter = outputs_service_rf_transmitter();
+    out->rf_heard_ms = rf.have_last ? rf.last_at_ms : 0u;
+    out->now_ms = alarm_service_now();
+    outputs_rf_info_t r[RFS_SIRENS];
+    outputs_service_rf(r);
+    for (size_t i = 0; i < RFS_SIRENS; i++) {
+        out->trouble = out->trouble || (r[i].c.used && !r[i].transmitter);
+    }
+    return true;
+}
+
+static void out_wired(void *ctx, ui_out_wired_t out[UI_OUT_WIRED_MAX])
+{
+    (void)ctx;
+    outputs_wired_info_t w[OW_CHANNELS];
+    outputs_service_wired(w);
+    memset(out, 0, sizeof(ui_out_wired_t) * UI_OUT_WIRED_MAX);
+    for (size_t i = 0; i < UI_OUT_WIRED_MAX && i < OW_CHANNELS; i++) {
+        const ow_config_t *c = &w[i].c;
+        out[i] = (ui_out_wired_t){.function = c->function, .gpio = c->gpio,
+                                  .sense = c->sense == OW_SENSE_NONE ? UI_OUT_NO_PIN : c->sense,
+                                  .partitions = c->partitions, .also = c->also,
+                                  .burglary = c->burglary, .fire = c->fire, .squawk = c->squawk,
+                                  .active_low = c->active_low, .on = w[i].on, .trouble = w[i].trouble};
+    }
+}
+
+static uint8_t out_wired_set(void *ctx, uint8_t slot, const ui_out_wired_t *c)
+{
+    (void)ctx;
+    if (!out_installer()) {
+        return UI_OUT_NOT_ALLOWED;
+    }
+    const ow_config_t oc = {.function = c->function, .gpio = c->gpio, .partitions = c->partitions,
+                            .also = c->also, .burglary = c->burglary, .fire = c->fire,
+                            .squawk = c->squawk, .active_low = c->active_low,
+                            .sense = c->sense == UI_OUT_NO_PIN ? OW_SENSE_NONE : c->sense};
+    return out_answer(c->function == OW_FN_NONE ? outputs_service_wired_clear(slot)
+                                                : outputs_service_wired_set(slot, &oc));
+}
+
+static uint8_t out_wired_test(void *ctx, uint8_t slot)
+{
+    (void)ctx;
+    return test_answer(outputs_service_wired_test(slot));
+}
+
+static size_t out_terminals(void *ctx, uint8_t slot, uint8_t *out, size_t max)
+{
+    (void)ctx;
+    return outputs_service_free_terminals(slot, out, max);
+}
+
+static void out_rf(void *ctx, ui_out_rf_t out[UI_OUT_RF_MAX])
+{
+    (void)ctx;
+    outputs_rf_info_t r[RFS_SIRENS];
+    outputs_service_rf(r);
+    memset(out, 0, sizeof(ui_out_rf_t) * UI_OUT_RF_MAX);
+    for (size_t i = 0; i < UI_OUT_RF_MAX && i < RFS_SIRENS; i++) {
+        out[i] = (ui_out_rf_t){.used = r[i].c.used, .address = r[i].c.address,
+                               .partitions = r[i].c.partitions, .also = r[i].c.also,
+                               .burglary = r[i].c.burglary, .fire = r[i].c.fire,
+                               .squawk = r[i].c.squawk, .sounding = r[i].sounding};
+    }
+}
+
+static uint8_t out_rf_add(void *ctx, uint8_t *slot)
+{
+    (void)ctx;
+    if (!out_installer()) {
+        return UI_OUT_NOT_ALLOWED;
+    }
+    size_t s = 0u;
+    const esp_err_t err = outputs_service_rf_add(&s);
+    *slot = (uint8_t)s;
+    return out_answer(err);
+}
+
+static uint8_t out_rf_set(void *ctx, uint8_t slot, const ui_out_rf_t *c)
+{
+    (void)ctx;
+    if (!out_installer()) {
+        return UI_OUT_NOT_ALLOWED;
+    }
+    outputs_rf_info_t r[RFS_SIRENS];
+    outputs_service_rf(r);
+    if (slot >= RFS_SIRENS || !r[slot].c.used) {
+        return UI_OUT_FAILED;
+    }
+    rfs_config_t rc = r[slot].c;
+    rc.partitions = c->partitions;
+    rc.also = c->also;
+    rc.burglary = c->burglary;
+    rc.fire = c->fire;
+    rc.squawk = c->squawk;
+    return out_answer(outputs_service_rf_set(slot, &rc));
+}
+
+static uint8_t out_rf_clear(void *ctx, uint8_t slot)
+{
+    (void)ctx;
+    if (!out_installer()) {
+        return UI_OUT_NOT_ALLOWED;
+    }
+    return out_answer(outputs_service_rf_clear(slot));
+}
+
+static uint8_t out_rf_pair(void *ctx, uint8_t slot)
+{
+    (void)ctx;
+    return test_answer(outputs_service_rf_pair(slot));
+}
+
+static uint8_t out_rf_test(void *ctx, uint8_t slot)
+{
+    (void)ctx;
+    return test_answer(outputs_service_rf_test(slot));
+}
+#endif
+
+/* ---- the Z-Wave radio's own file from the SD card (docs/features/36 network.md §14, BL-037's
+ * follow-up "Z-Wave updates"): one .gbl at the card's top or in its "zwave" folder, read by a
+ * worker task of its own (the card is never read on the UI's task) and handed to
+ * zwave_service_radio_file - the same checks as the Panel Manager's upload. The install's
+ * progress is the radio update's own (zw_progress). ---- */
+#if CONFIG_ALARM_ZSRC_ZWAVE && CONFIG_ALARM_FEATURE_STORAGE
+#define RADIO_FILE_MAX (1024u * 1024u)
+
+static _Atomic uint8_t s_radio_sd = UI_ZW_SD_IDLE;
+static uint8_t s_radio_sd_user;
+
+static bool gbl_name(const char *name)
+{
+    const size_t n = strlen(name);
+    return n > 4u && (strcasecmp(name + n - 4u, ".gbl") == 0) && name[0] != '.';
+}
+
+/* The one .gbl in dir (path + "/" + name into out): 0 none, 1 found, 2 several. */
+static int find_gbl(const char *dir, char *out, size_t len)
+{
+    DIR *d = opendir(dir);
+    if (d == NULL) {
+        return 0;
+    }
+    int found = 0;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL) {
+        if (e->d_type == DT_DIR || !gbl_name(e->d_name)) {
+            continue;
+        }
+        if (++found == 1) {
+            snprintf(out, len, "%s/%s", dir, e->d_name);
+        }
+    }
+    closedir(d);
+    return found > 1 ? 2 : found;
+}
+
+static void radio_sd_task(void *arg)
+{
+    (void)arg;
+    uint8_t result = UI_ZW_SD_NO_CARD;
+    const char *root = NULL;
+    if (panel_storage_acquire(&root) && root != NULL) {
+        char path[320];
+        char dir[96];
+        snprintf(dir, sizeof(dir), "%s/zwave", root);
+        int found = find_gbl(dir, path, sizeof(path));
+        if (found == 0) {
+            found = find_gbl(root, path, sizeof(path));
+        }
+        if (found == 0) {
+            result = UI_ZW_SD_NO_FILE;
+        } else if (found == 2) {
+            result = UI_ZW_SD_SEVERAL;
+        } else {
+            FILE *f = fopen(path, "rb");
+            long size = -1;
+            if (f != NULL && fseek(f, 0, SEEK_END) == 0) {
+                size = ftell(f);
+                rewind(f);
+            }
+            uint8_t *data = (size > 16 && size <= (long)RADIO_FILE_MAX)
+                                ? heap_caps_malloc((size_t)size, MALLOC_CAP_SPIRAM)
+                                : NULL;
+            if (f == NULL) {
+                result = UI_ZW_SD_NO_FILE;
+            } else if (size <= 16 || size > (long)RADIO_FILE_MAX) {
+                result = UI_ZW_SD_TOO_BIG;
+            } else if (data == NULL || fread(data, 1u, (size_t)size, f) != (size_t)size) {
+                result = UI_ZW_SD_REFUSED;
+            } else {
+                alarm_snapshot_t *snap = heap_caps_malloc(sizeof(*snap), MALLOC_CAP_SPIRAM);
+                bool allowed = false;
+                if (snap != NULL) {
+                    alarm_service_get_snapshot(snap);
+                    allowed = snap->program && !alarm_snapshot_any_armed(snap);
+                    heap_caps_free(snap);
+                }
+                const ui_zw_req_result_t r =
+                    zwave_service_radio_file(data, (size_t)size, allowed, s_radio_sd_user);
+                result = r == UI_ZW_REQ_OK            ? UI_ZW_SD_STARTED
+                         : r == UI_ZW_REQ_NOT_ALLOWED ? UI_ZW_SD_NOT_ALLOWED
+                         : r == UI_ZW_REQ_BUSY        ? UI_ZW_SD_BUSY
+                                                      : UI_ZW_SD_REFUSED;
+            }
+            if (f != NULL) {
+                fclose(f);
+            }
+            heap_caps_free(data);
+        }
+        panel_storage_release();
+    }
+    atomic_store(&s_radio_sd, result);
+    vTaskDelete(NULL);
+}
+
+static uint8_t zw_radio_sd_install(void *ctx, uint8_t user)
+{
+    (void)ctx;
+    uint8_t idle = atomic_load(&s_radio_sd);
+    if (idle == UI_ZW_SD_READING) {
+        return UI_ZW_SD_BUSY;
+    }
+    s_radio_sd_user = user;
+    atomic_store(&s_radio_sd, (uint8_t)UI_ZW_SD_READING);
+    /* internal stack: it writes no flash itself, but reads the card (the SD driver's DMA) */
+    if (xTaskCreatePinnedToCore(radio_sd_task, "zw_sd", 4096, NULL, 2, NULL, tskNO_AFFINITY) != pdPASS) {
+        atomic_store(&s_radio_sd, (uint8_t)UI_ZW_SD_IDLE);
+        return UI_ZW_SD_BUSY;
+    }
+    return UI_ZW_SD_READING;
+}
+
+static uint8_t zw_radio_sd_state(void *ctx)
+{
+    (void)ctx;
+    return atomic_load(&s_radio_sd);
+}
+#endif
+
 void ui_port_esp_backend(ui_backend_t *out)
 {
     memset(out, 0, sizeof(*out));
@@ -1729,6 +2028,23 @@ void ui_port_esp_backend(ui_backend_t *out)
     out->zw_prov = zw_prov;
     out->zw_prov_register = zw_prov_register;
     out->zw_prov_change = zw_prov_change;
+#if CONFIG_ALARM_FEATURE_STORAGE
+    out->zw_radio_sd_install = zw_radio_sd_install;
+    out->zw_radio_sd_state = zw_radio_sd_state;
+#endif
+#endif
+#if CONFIG_ALARM_OUTPUTS
+    out->out_status = out_status;
+    out->out_wired = out_wired;
+    out->out_wired_set = out_wired_set;
+    out->out_wired_test = out_wired_test;
+    out->out_terminals = out_terminals;
+    out->out_rf = out_rf;
+    out->out_rf_add = out_rf_add;
+    out->out_rf_set = out_rf_set;
+    out->out_rf_clear = out_rf_clear;
+    out->out_rf_pair = out_rf_pair;
+    out->out_rf_test = out_rf_test;
 #endif
 #if CONFIG_ALARM_ZSRC_ZIGBEE
     out->zb_status = zb_status;

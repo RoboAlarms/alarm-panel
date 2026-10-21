@@ -52,7 +52,16 @@ size_t zwfj_check_radio(zwfj_t *j, const zw_module_facts_t *f, const char *regio
     zwfj_init(j);
     j->state = UI_ZW_FW_CHECKING;
     j->dev = dev; /* node 0, generation 0: the radio */
+    j->radio = true;
     return n;
+}
+
+const char *zwfj_region(bool chosen_set, uint8_t chosen, const zw_module_facts_t *f)
+{
+    if (chosen_set) {
+        return zwfc_region(chosen);
+    }
+    return f != NULL && f->region_known ? zwfc_region(f->region) : NULL;
 }
 
 static void fail(zwfj_t *j, uint8_t state, const char *words)
@@ -128,7 +137,8 @@ void zwfj_check_answer(zwfj_t *j, int http_status, const char *body, size_t len,
         fail(j, UI_ZW_FW_CHECK_FAILED, w);
         return;
     }
-    switch (zwfc_best(body, len, &j->dev, region, false, &j->update)) {
+    const zwfc_verdict_t verdict = zwfc_best(body, len, &j->dev, region, false, &j->update);
+    switch (verdict) {
     case ZWFC_UPDATE:
         if (j->update.file_count != 1u || j->update.files[0].target != 0u) {
             char w[96];
@@ -140,8 +150,15 @@ void zwfj_check_answer(zwfj_t *j, int http_status, const char *body, size_t len,
         j->state = UI_ZW_FW_AVAILABLE;
         notes(j);
         return;
-    case ZWFC_UP_TO_DATE: fail(j, UI_ZW_FW_UP_TO_DATE, ""); return;
-    case ZWFC_UNKNOWN_DEVICE: fail(j, UI_ZW_FW_UNKNOWN, ""); return;
+    case ZWFC_UP_TO_DATE:
+    case ZWFC_UNKNOWN_DEVICE:
+        if (j->radio && zwfc_radio_builtin(&j->dev, region, &j->update)) {
+            j->state = UI_ZW_FW_AVAILABLE; /* Zooz's file the service doesn't offer this radio */
+            notes(j);
+            return;
+        }
+        fail(j, verdict == ZWFC_UP_TO_DATE ? UI_ZW_FW_UP_TO_DATE : UI_ZW_FW_UNKNOWN, "");
+        return;
     default:
         fail(j, UI_ZW_FW_CHECK_FAILED, "The update service's answer couldn't be read. Try again "
                                        "later.");

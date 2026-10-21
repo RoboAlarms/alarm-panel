@@ -31,6 +31,7 @@
 #include "sounder.h"
 #include "zone_hub/zsrc_rf.h"
 #include "zone_service.h"
+#include "zone_hub/zone_eol.h"
 
 static const char *TAG = "console";
 
@@ -349,8 +350,9 @@ static void zone_usage(void)
            "reachable test\n"
            "       zone <n> source   where zone n's sensor is\n"
            "       zone <n> bind sim  drive zone n from here (simulator input n)\n"
-           "       zone <n> bind wired <gpio> [nc|no] [10|350|700|1200]   a contact on a "
-           "terminal (see 'terminals')\n"
+           "       zone <n> bind wired <gpio> [nc|no|eol-nc|eol-no|deol] [10|350|700|1200]   a "
+           "contact on a terminal (see 'terminals'; eol-*/deol: a 2k end-of-line loop with a "
+           "4.7k pull-up, on a terminal that measures)\n"
            "       zone <n> bind ha <entity_id>   a sensor Home Assistant shares with the "
            "panel\n"
            "       zone <n> unbind    no sensor\n"
@@ -396,6 +398,12 @@ static int zone_bind(uint16_t z, int argc, char **argv)
         for (int i = 5; i < argc; i++) {
             if (strcmp(argv[i], "no") == 0) {
                 m->invert = true;
+            } else if (strcmp(argv[i], "eol-nc") == 0) { /* ZONE-005: end-of-line loops */
+                b.in[ZSRC_ROLE_MAIN].addr.input = ZEOL_IN_NC;
+            } else if (strcmp(argv[i], "eol-no") == 0) {
+                b.in[ZSRC_ROLE_MAIN].addr.input = ZEOL_IN_NO;
+            } else if (strcmp(argv[i], "deol") == 0) {
+                b.in[ZSRC_ROLE_MAIN].addr.input = ZEOL_IN_DEOL;
             } else if (strcmp(argv[i], "nc") != 0) {
                 const unsigned long ms = strtoul(argv[i], NULL, 10);
                 if (ms != 10u && ms != 350u && ms != 700u && ms != 1200u) {

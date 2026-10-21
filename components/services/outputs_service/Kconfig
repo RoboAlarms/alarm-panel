@@ -1,0 +1,14 @@
+menu "Sirens and outputs (outputs_service)"
+
+    config ALARM_OUTPUTS
+        bool "Wired outputs and 433 MHz sirens"
+        default y
+        help
+            The panel's own sirens and outputs (docs/features/16): a siren, a strobe, the smoke
+            detectors' power or an "armed" light on a wired terminal through a relay or MOSFET
+            module, and the cheap one-way 433 MHz sirens, which the panel transmits to (a
+            CC1101, or a transmitter module set with `rf txpin`). Nothing is driven until an
+            output is configured (`out` on the console, or Installer > Sirens and outputs), and
+            a terminal an output takes is no longer offered to the wired zones.
+
+endmenu

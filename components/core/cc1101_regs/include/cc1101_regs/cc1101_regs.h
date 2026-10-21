@@ -23,6 +23,7 @@ extern "C" {
 #define CC1101_SRES  0x30u
 #define CC1101_SCAL  0x33u
 #define CC1101_SRX   0x34u
+#define CC1101_STX   0x35u /* OUT-022: transmit (the 433 MHz sirens) */
 #define CC1101_SIDLE 0x36u
 #define CC1101_SFRX  0x3Au
 #define CC1101_SNOP  0x3Du
@@ -44,6 +45,14 @@ extern "C" {
 
 #define CC1101_MARC_IDLE 0x01u
 #define CC1101_MARC_RX   0x0Du
+#define CC1101_MARC_TX   0x13u
+
+/* OUT-022: OOK transmit for the 433 MHz sirens. FREND0 (0x11, the receive table's) picks PATABLE[1]
+ * for a 1 and PATABLE[0] for a 0: off, and +10 dBm at 433 MHz (TI's table for 433, the EU SRD
+ * limit of 10 mW). In asynchronous serial mode GDO0 becomes the data input while in TX. */
+#define CC1101_PATABLE       0x3Eu
+#define CC1101_PA_OOK_OFF    0x00u
+#define CC1101_PA_OOK_ON     0xC0u
 
 /* GDO0's configuration after a power-on or brown-out reset (CLK_XOSC/192, a ~135 kHz clock):
  * reading this back where the table put 0x0D means the chip has reset under the panel. */

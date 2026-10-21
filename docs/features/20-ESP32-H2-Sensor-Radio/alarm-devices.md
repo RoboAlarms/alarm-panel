@@ -40,8 +40,11 @@ supported (the quirk says "use Home Assistant"): the decision is the clusters', 
 **The assignment** (page 14, `ui_zb_siren_t`, stored as `zbpanel/wd`): the partitions it sounds
 for; what it sounds for - burglary (and audible panic) and/or fire (fire and CO); its strobe with
 it; a chirp when the partition arms and disarms; volume (low to very high; hidden for a model
-that ignores it); how long it may be silent before it is a trouble (§4). Up to `ZBW_SIRENS_MAX`
-(4). A siren takes no engine device number: the panel supervises it itself (§4).
+that ignores it); how long it may be silent before it is a trouble (§4); and the partitions
+whose alarms it also sounds for (`also`, docs/features/16 OUT-015: their alarms and strobe, never
+their squawks or bell tests). Up to `ZBW_SIRENS_MAX` (4). A siren takes no engine device number:
+the panel supervises it itself (§4). A smoke detector whose sounder is an IAS WD offers the same
+settings on its own page and stays a sensor (BL-215).
 
 **Decided in building it (siren page).** Two switches, "Burglary and panic" and "Fire and CO"
 (not three: panic rides with burglary); CO sounds the siren's emergency tone, fire its fire

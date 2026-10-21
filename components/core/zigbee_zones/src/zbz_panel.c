@@ -2315,6 +2315,12 @@ static ui_zb_req_result_t req_siren(zbz_panel_t *p, const ui_zb_request_t *req,
     a.squawk = in->squawk;
     a.volume = in->volume;
     a.supervision_min = in->supervision_min;
+    if (in->also == UI_ZB_ALSO_KEEP) {
+        const zbw_siren_t *was = zbw_find(&p->wd, d->id);
+        a.also = was != NULL ? was->a.also : 0u;
+    } else {
+        a.also = in->also;
+    }
     a.model_flags = m != NULL ? m->flags : 0u;
     a.max_duration_s = m != NULL ? m->max_duration_s : 0u;
     a.max_read = d->wd_max_read; /* ZB03: as its setup read it */
@@ -3403,7 +3409,9 @@ static void fits(const zbz_panel_t *p, const zbz_device_t *d, ui_zb_device_page_
     const uint8_t role = d->role != 0u ? d->role : zbz_role_of(d);
     const bool ready = d->setup == (uint8_t)ZBZ_SETUP_DONE;
     const uint8_t fit = (uint8_t)(ready ? UI_ZB_FIT_AVAILABLE : UI_ZB_FIT_NOT_READY);
-    if (role == (uint8_t)ZBZ_ROLE_SIREN) {
+    /* BL-215: a smoke detector with a sounder of its own (an IAS WD server, ZB01) offers the
+     * siren's settings on its page too; it stays a sensor */
+    if (role == (uint8_t)ZBZ_ROLE_SIREN || siren_capable(d)) {
         out->siren.fit = fit;
         for (size_t k = 0; k < ZBW_SIRENS_MAX; k++) {
             const zbw_assign_t *a = &p->wd.siren[k].a;
@@ -3413,6 +3421,7 @@ static void fits(const zbz_panel_t *p, const zbz_device_t *d, ui_zb_device_page_
                 out->siren.fire = a->fire;
                 out->siren.strobe = a->strobe;
                 out->siren.squawk = a->squawk;
+                out->siren.also = a->also;
                 out->siren.volume = a->volume;
                 out->siren.supervision_min = a->supervision_min;
                 out->siren.live = a->ieee == d->ieee;

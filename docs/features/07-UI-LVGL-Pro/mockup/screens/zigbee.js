@@ -74,8 +74,10 @@ const menuBody = (zigbee) => [
   M.row_link({glyph: 'door-closed', color: 'green', title: 'Zones', detail: 'Sensors, types, names', value: '12 in use', goTo: 'installer-zones'}),
   M.row_link({glyph: 'radio-tower', title: 'Z-Wave', detail: 'Sensors on the panel\'s Z-Wave radio', value: '5 devices'}),
   zigbee,
+  M.row_link({glyph: 'radio', title: '433 MHz', detail: 'Sensors and sirens on 433 MHz', value: '0 sensors, 0 sirens', goTo: 'bl-037-rf'}),
   M.row_link({glyph: 'warehouse', color: 'violet', title: 'Partitions', detail: 'Areas that arm separately', value: '1 in use'}),
   M.row_link({glyph: 'cpu', title: 'Keypads and devices', detail: 'Supervised keypads and expanders', value: 'None'}),
+  M.row_link({glyph: 'siren', color: 'red', title: 'Sirens and outputs', detail: 'What sounds and what switches when the alarm does', value: 'None', goTo: 'bl-037-sirens'}),
   M.section('How the alarm works'),
   M.row_link({glyph: 'sliders-horizontal', title: 'Delays and arming', detail: 'Entry and exit times, sirens, panic keys, codes', goTo: 'installer-options'}),
 ].join('');
@@ -427,6 +429,7 @@ page({id: 'zigbee-siren-end', shot: 'bl-147-siren-end', title: 'A Zigbee siren\'
   M.row_toggle({glyph: 'bell', title: 'Chirp when arming and disarming', detail: 'One chirp to arm, two to disarm'}),
   M.row_link({glyph: 'volume-2', title: 'Volume', value: 'High'}),
   M.row_link({glyph: 'warehouse', color: 'violet', title: 'Partitions', value: 'All'}),
+  M.row_link({glyph: 'layers', color: 'violet', title: 'Also sounds for', detail: 'Other partitions\' alarms, never their chirps', value: 'None'}),
   M.section('Check it'),
   M.row_link({glyph: 'bell-ring', title: 'Test it', detail: 'Sounds it for 2 seconds', trail: ''}),
   M.row_link({glyph: 'clock-alert', color: 'amber', title: 'Supervision', detail: 'A siren trouble when it isn\'t heard', value: 'After 1 hour'}),

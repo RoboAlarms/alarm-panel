@@ -306,8 +306,10 @@ bool zbw_wanted(const zbw_t *w, const zbw_siren_t *s, zbw_warning_t *out)
     }
     alarm_pattern_t best = ALARM_PAT_OFF;
     bool strobe_out = false;
+    /* its own partitions and the ones it also sounds for (OUT-015): their alarms and strobe */
+    const uint8_t serves = (uint8_t)(s->a.partitions | s->a.also);
     for (unsigned p = 0; p < ALARM_MAX_PARTITIONS; p++) {
-        if ((s->a.partitions & (1u << p)) == 0u) {
+        if ((serves & (1u << p)) == 0u) {
             continue;
         }
         const alarm_pattern_t pat = (alarm_pattern_t)w->bell[p];
@@ -530,6 +532,7 @@ static bool assign_ok(const zbw_assign_t *a)
 {
     return a->id != 0u && a->ieee != 0u && a->endpoint != 0u && a->endpoint <= ENDPOINT_MAX &&
            a->partitions != 0u && (a->partitions & (uint8_t)~PART_MASK) == 0u &&
+           (a->also & (uint8_t)~PART_MASK) == 0u &&
            a->volume <= ZBW_LEVEL_VERY_HIGH &&
            (a->supervision_min == 0u || a->supervision_min >= ZBW_SUPERVISION_MIN_MIN);
 }
@@ -576,6 +579,7 @@ zbw_result_t zbw_assign(zbw_t *w, const zbw_assign_t *a)
         s->a = *a;
         s->a.used = true;
         s->a.device = 0u;
+        s->a.also = (uint8_t)(a->also & (uint8_t)~a->partitions); /* never one of its own */
         w->dirty = true;
         update_trouble(w);
         return ZBW_OK;
@@ -596,6 +600,7 @@ zbw_result_t zbw_assign(zbw_t *w, const zbw_assign_t *a)
     s->a = *a;
     s->a.used = true;
     s->a.device = 0u;
+    s->a.also = (uint8_t)(a->also & (uint8_t)~a->partitions); /* never one of its own */
     w->dirty = true;
     return ZBW_OK;
 }
@@ -884,6 +889,7 @@ size_t zbw_encode(const zbw_t *w, uint8_t *out, size_t cap)
         out[at++] = 0u; /* device: a siren takes none */
         out[at++] = (uint8_t)(a->supervision_min & 0xFFu);
         out[at++] = (uint8_t)((unsigned)a->supervision_min >> 8);
+        out[at++] = a->also;
     }
     return at;
 }
@@ -909,6 +915,7 @@ static void read_entry(const uint8_t *p, size_t n, zbw_assign_t *a)
     a->volume = e[13];
     /* e[14], the device, is ignored: a siren takes none */
     a->supervision_min = (uint16_t)((unsigned)e[15] | ((unsigned)e[16] << 8));
+    a->also = (uint8_t)(e[17] & (uint8_t)~a->partitions); /* never one of its own */
 }
 
 bool zbw_decode(zbw_t *w, const uint8_t *buf, size_t len)

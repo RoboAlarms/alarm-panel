@@ -14,6 +14,9 @@
 #include <string.h>
 
 #include "driver/gpio.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
+#include "esp_adc/adc_oneshot.h"
 #include "esp_check.h"
 #include "esp_attr.h"
 #include "esp_heap_caps.h"
@@ -283,6 +286,83 @@ static uint8_t gpio_read(void *ctx, uint8_t gpio)
     (void)ctx;
     return gpio_get_level((gpio_num_t)gpio) != 0 ? 1u : 0u;
 }
+
+/* ---- end-of-line loops (ZONE-005, BL-063): the terminal's voltage through the ADC ----------- *
+ * A terminal measures when the chip has an ADC channel on it (the P4's ADC2 on J7 GPIO 49-52).
+ * One oneshot unit per ADC, made on first use; 12 dB attenuation (up to about 3.1 V: an open loop
+ * at 3.3 V reads at the top, which zone_eol reads as open); four reads averaged; calibrated to
+ * millivolts where the chip has a scheme, else scaled. The reference is the 3V3 rail the installer's
+ * pull-up goes to. Only the zones task reads (under the hub's lock). */
+#define EOL_VREF_MV 3300u
+#define EOL_READS   4
+
+static adc_oneshot_unit_handle_t s_adc[2];
+static adc_cali_handle_t s_cali[2];
+static bool s_cali_ok[2];
+
+static bool adc_of(uint8_t gpio, adc_unit_t *unit, adc_channel_t *ch)
+{
+    return adc_oneshot_io_to_channel((int)gpio, unit, ch) == ESP_OK && (int)*unit >= 0 && (int)*unit < 2;
+}
+
+static bool gpio_setup_analog(void *ctx, uint8_t gpio, bool on)
+{
+    (void)ctx;
+    adc_unit_t unit;
+    adc_channel_t ch;
+    if (!adc_of(gpio, &unit, &ch)) {
+        return false;
+    }
+    if (!on) {
+        return gpio_reset_pin((gpio_num_t)gpio) == ESP_OK;
+    }
+    /* no pull-up of the chip's: the loop's divider is the installer's 4.7 k and the resistor */
+    (void)gpio_set_pull_mode((gpio_num_t)gpio, GPIO_FLOATING);
+    if (s_adc[unit] == NULL) {
+        const adc_oneshot_unit_init_cfg_t init = {.unit_id = unit};
+        if (adc_oneshot_new_unit(&init, &s_adc[unit]) != ESP_OK) {
+            s_adc[unit] = NULL;
+            return false;
+        }
+#if ADC_CALI_SCHEME_CURVE_FITTING_SUPPORTED
+        const adc_cali_curve_fitting_config_t cal = {.unit_id = unit, .atten = ADC_ATTEN_DB_12,
+                                                     .bitwidth = ADC_BITWIDTH_DEFAULT};
+        s_cali_ok[unit] = adc_cali_create_scheme_curve_fitting(&cal, &s_cali[unit]) == ESP_OK;
+#endif
+    }
+    const adc_oneshot_chan_cfg_t cfg = {.atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT};
+    return adc_oneshot_config_channel(s_adc[unit], ch, &cfg) == ESP_OK;
+}
+
+static bool gpio_read_mv(void *ctx, uint8_t gpio, uint32_t *mv, uint32_t *vref_mv)
+{
+    (void)ctx;
+    adc_unit_t unit;
+    adc_channel_t ch;
+    if (!adc_of(gpio, &unit, &ch) || s_adc[unit] == NULL) {
+        return false;
+    }
+    int sum = 0;
+    for (int i = 0; i < EOL_READS; i++) {
+        int raw = 0;
+        if (adc_oneshot_read(s_adc[unit], ch, &raw) != ESP_OK) {
+            return false;
+        }
+        sum += raw;
+    }
+    const int raw = sum / EOL_READS;
+    int v = 0;
+    if (s_cali_ok[unit] && adc_cali_raw_to_voltage(s_cali[unit], raw, &v) == ESP_OK) {
+        *mv = v > 0 ? (uint32_t)v : 0u;
+    } else {
+        *mv = (uint32_t)raw * EOL_VREF_MV / 4095u;
+    }
+    *vref_mv = EOL_VREF_MV;
+    return true;
+}
+
+/* The board's terminals, each marked where it can measure (an end-of-line loop). */
+static zsrc_wired_terminal_t s_terms[ZSRC_WIRED_MAX];
 #endif
 
 /* ---- storage ------------------------------------------------------------------------------- */
@@ -601,8 +681,16 @@ esp_err_t zone_service_start(const zone_service_config_t *cfg)
 #endif
 #if CONFIG_ALARM_ZSRC_WIRED
     if (cfg != NULL && cfg->terminals != NULL && cfg->terminal_count > 0u) {
-        const zsrc_gpio_port_t gpio = {.ctx = NULL, .setup = gpio_setup, .read = gpio_read};
-        zsrc_wired_init(&s_wired, cfg->terminals, cfg->terminal_count, &gpio, &sink);
+        const zsrc_gpio_port_t gpio = {.ctx = NULL, .setup = gpio_setup, .read = gpio_read,
+                                       .setup_analog = gpio_setup_analog, .read_mv = gpio_read_mv};
+        const size_t n = cfg->terminal_count < ZSRC_WIRED_MAX ? cfg->terminal_count : ZSRC_WIRED_MAX;
+        for (size_t i = 0; i < n; i++) {
+            adc_unit_t unit;
+            adc_channel_t ch;
+            s_terms[i] = cfg->terminals[i];
+            s_terms[i].eol = adc_of(s_terms[i].gpio, &unit, &ch);
+        }
+        zsrc_wired_init(&s_wired, s_terms, n, &gpio, &sink);
         zone_hub_register(s_hub, zsrc_wired_ops(), &s_wired, now);
     }
 #else
@@ -1059,6 +1147,35 @@ bool zone_service_learn(uint8_t kind, bool on)
     unlock();
     wake();
     return ok;
+}
+
+bool zone_service_reserve_terminal(uint8_t gpio, bool reserved)
+{
+#if CONFIG_ALARM_ZSRC_WIRED
+    zone_service_lock();
+    /* no terminals offered to zones: nothing to keep apart */
+    const bool ok = s_wired.n == 0u || zsrc_wired_reserve(&s_wired, gpio, reserved);
+    zone_service_unlock();
+    zone_service_wake();
+    return ok;
+#else
+    (void)gpio;
+    (void)reserved;
+    return true; /* no wired zones: nothing to keep apart */
+#endif
+}
+
+bool zone_service_terminal_in_use(uint8_t gpio)
+{
+#if CONFIG_ALARM_ZSRC_WIRED
+    zone_service_lock();
+    const bool used = zsrc_wired_in_use(&s_wired, gpio);
+    zone_service_unlock();
+    return used;
+#else
+    (void)gpio;
+    return false;
+#endif
 }
 
 bool zone_service_learning(uint8_t kind)

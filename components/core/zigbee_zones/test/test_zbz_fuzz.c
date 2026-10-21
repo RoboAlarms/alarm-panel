@@ -35,6 +35,7 @@
 #include "codes_fixture_v1.h"
 #include "registry_fixture_v1.h"
 #include "wd_fixture_v1.h"
+#include "wd_fixture_v2.h"
 
 void setUp(void) {}
 void tearDown(void) {}
@@ -944,9 +945,10 @@ static void check_ace(const uint8_t *in, size_t len)
 static void test_wd_and_ace_blobs_fuzz(void)
 {
     check_wd(WD_FIXTURE_V1, sizeof(WD_FIXTURE_V1));
-    TEST_ASSERT_TRUE(zbw_decode(&g_wd_a, WD_FIXTURE_V1, sizeof(WD_FIXTURE_V1)));
-    TEST_ASSERT_EQUAL_UINT(sizeof(WD_FIXTURE_V1), encode_guarded(enc_wd, &g_wd_a, ZBW_BLOB_MAX));
-    SAME_MEM(WD_FIXTURE_V1, g_out, sizeof(WD_FIXTURE_V1));
+    check_wd(WD_FIXTURE_V2, sizeof(WD_FIXTURE_V2));
+    TEST_ASSERT_TRUE(zbw_decode(&g_wd_a, WD_FIXTURE_V2, sizeof(WD_FIXTURE_V2)));
+    TEST_ASSERT_EQUAL_UINT(sizeof(WD_FIXTURE_V2), encode_guarded(enc_wd, &g_wd_a, ZBW_BLOB_MAX));
+    SAME_MEM(WD_FIXTURE_V2, g_out, sizeof(WD_FIXTURE_V2));
     check_ace(ACE_FIXTURE_V1, sizeof(ACE_FIXTURE_V1));
     TEST_ASSERT_TRUE(zba_decode(&g_ace_a, ACE_FIXTURE_V1, sizeof(ACE_FIXTURE_V1)));
     static uint8_t in[ZBA_BLOB_MAX + ZBW_BLOB_MAX + 16u];

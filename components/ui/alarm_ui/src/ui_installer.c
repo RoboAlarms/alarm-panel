@@ -432,6 +432,7 @@ static void build_menu(lv_obj_t *body, char *note, size_t nlen)
 #if ALARM_UI_ZIGBEE
     ui_zigbee_menu_row(body); /* docs/features/20 devices.md §9, BL-144: after Z-Wave */
 #endif
+    ui_sirens_rf_menu_row(body); /* BL-037: 433 MHz, after Zigbee (only with something on it) */
     in_use_words(parts, text, sizeof(text));
     ui_row_link(body, UI_ICON_WAREHOUSE, ui_tone_violet(), TR("Partitions"),
                 TR("Areas that arm separately"), text, UI_ICON_CHEVRON_RIGHT, open_page,
@@ -440,6 +441,7 @@ static void build_menu(lv_obj_t *body, char *note, size_t nlen)
     ui_row_link(body, UI_ICON_CPU, ui_tone_blue(), TR("Keypads and devices"),
                 TR("Supervised keypads and expanders"), text, UI_ICON_CHEVRON_RIGHT, open_page,
                 (void *)(intptr_t)PAGE_DEVICES);
+    ui_sirens_menu_row(body); /* BL-037: every siren the panel sounds */
 
     ui_section(body, TR("How the alarm works"));
     ui_row_link(body, UI_ICON_SLIDERS, ui_tone_blue(), TR("Delays and arming"),

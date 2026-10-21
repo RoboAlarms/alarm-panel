@@ -804,9 +804,26 @@ gates and sheds.
   from GetSerialApiCapabilities, its firmware version and SDK - through the same update-job code
   as a device (`zwfj_check_radio`, node 0). Only when the installer asks (touchscreen Radio
   details, Panel Manager Radio page, `zwave radio-update check`). The service needs no API key,
-  only a descriptive User-Agent (the firmware-updates README, 2026-09-27). It lists Zooz's ZST39
-  (027A:0004:0610) but not the ZAC93 today: the answer is then "doesn't list this radio yet", and
-  the installer's own file (the Panel Manager's upload, `PUT /api/v1/zwave-radio`) is the way.
+  only a descriptive User-Agent (the firmware-updates README, 2026-09-27).
+- **The region asked** (2026-10-20): the installer's region when one was chosen, else the one the
+  radio reports (`zwfj_region`). The service lists the ZAC93's files per region (US, Europe) and
+  offers none of them to a request without one; before this the panel sent none unless the
+  installer had chosen a region, and every ZAC93 read "doesn't list this radio yet".
+- **The ZAC93's own files, built in** (2026-10-20, `zwfc_radio_builtin`): the service's ZAC93
+  entry (`firmwares/zooz/ZAC93-V02.json`) matches only a radio already on 2.0-2.255, while Zooz's
+  change log says 1.x radios take 2.00 and later. When the service answers but offers nothing, a
+  radio that is exactly Zooz's ZAC93 (027A:0004:0611), older than the newest file, in the US or
+  Europe region, is offered that file - Zooz's own URL and the SHA-256 of the service's entry,
+  built into the firmware (2.30, SDK 7.24.2, about 135 KB). A newer Zooz release reaches the
+  panel through the service, or through the list in a panel update. The installer's own file (an
+  SD card, the Panel Manager's upload, `PUT /api/v1/zwave-radio`) stays the way for anything else.
+- **On hardware** (2026-10-20, the 7" bench panel, a hardware-2 ZAC93 on J7): the radio on 1.10 /
+  SDK 7.18.3 was offered 2.30 from the built-in list (the service offered nothing), downloaded,
+  checked and installed over the wire in about 3 minutes (1079 blocks, no resend); it came back on
+  2.30 / SDK 7.24.2 with its home ID, node ID, region and device, and the next check found it
+  "up to date" through the service - so on 2.30 it still reports an identity the service's entry
+  matches (Zooz's change log says 2.20 changed the version and product type the bootloader
+  checks).
 - **Installing:** the service's file is checked against its SHA-256; any file is checked as a
   whole Gecko bootloader file (its tag chain and the end tag's CRC-32) before the radio is
   touched. Then serial-api.md §8, as Z-Wave JS's `firmwareUpdateOTW`: the host takes the link
@@ -826,6 +843,14 @@ gates and sheds.
   `held` ("Wait: a sensor radio is updating").
 - **Logged** as `zwave_device_software` with the radio's own stages (arg2 3-5, device 0):
   started (by whom), updated, failed.
+- **From an SD card** (2026-10-20, the "Z-Wave updates" follow-up of BL-037): the touchscreen's
+  Radio details offer "Install from an SD card" in installer mode: the one `.gbl` at the card's top
+  or in a folder named `zwave` is read by a worker task (never the UI's) into PSRAM and handed to
+  the same `zwave_service_radio_file` as the Panel Manager's upload, with the same checks. No card,
+  no file, two files or a file over 1 MB each say so in a sentence. When the radio's software is
+  older than Zooz advises (`update_advised`, below 2.20) the page says to tap Check for an update;
+  when a check finds nothing, it says the maker's own file can still go in from an SD card or the
+  Panel Manager (both words approved by the owner 2026-10-20). Tried in the preview only (a card without a file).
 - **Not yet:** the NVM backup below.
 
 - **Backup** of the module's NVM (serial-api.md 6.22) to the SD card or the Panel Manager, with

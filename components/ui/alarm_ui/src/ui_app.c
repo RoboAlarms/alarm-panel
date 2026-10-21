@@ -4008,6 +4008,7 @@ static void tick(lv_timer_t *t)
 #if ALARM_UI_ZIGBEE
     ui_zigbee_tick();
 #endif
+    ui_sirens_tick();
 #if ALARM_UI_DEVICES
     ui_devices_tick();
 #endif

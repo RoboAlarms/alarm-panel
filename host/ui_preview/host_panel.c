@@ -7,6 +7,9 @@
  * components/core/event_log ring on a RAM flash; Wi-Fi, time zone and preferences are simulated.
  */
 #include "host_panel.h"
+#include "sirens/out_wired.h"
+#include "zone_hub/zone_eol.h"
+#include "sirens/rf_siren.h"
 #include "host_link_demo.h"
 #include "host_zigbee_demo.h"
 #include "host_zigbee_real.h"
@@ -231,6 +234,7 @@ static struct {
         uint64_t fw_due;
         uint8_t fw_user;
         bool fw_offline;
+        bool radio_unlisted; /* the service answers nothing for the radio */
         uint8_t fw_image[1024];
         /* network.md §14: the radio's own - its job (node 0), the service a second away, the
          * .gbl it offers (2.30) and the image the bootloader receives */
@@ -271,8 +275,9 @@ static bool s_zw_later; /* host_panel_zwave_later(): outlives host_panel_init()'
 
 /* The panel's wired terminals (board_pins.h BOARD_WIRED_TERMINALS). */
 static const zsrc_wired_terminal_t TERMINALS[] = {
-    {2, "J7 header"},  {3, "J7 header"},  {4, "J7 header"},  {5, "J7 header"},
-    {49, "J7 header"}, {50, "J7 header"}, {51, "J7 header"}, {52, "J7 header"},
+    {2, "J7 header", false},  {3, "J7 header", false},  {4, "J7 header", false},
+    {5, "J7 header", false},  {49, "J7 header", true},  {50, "J7 header", true},
+    {51, "J7 header", true},  {52, "J7 header", true}, /* GPIO 49-52 measure (ADC2) */
 };
 
 static const alarm_source_t SRC = {.kind = ALARM_SRC_KEYPAD, .id = 0};
@@ -417,10 +422,12 @@ static void on_status(void *ctx, uint8_t partition)
 
 /* The bell and strobe, for the real Zigbee's sirens: kept, handed on in after() (a port never
  * re-enters the engine). */
+static void sirens_output(alarm_output_t output, uint8_t partition, alarm_pattern_t pattern);
 static void on_output(void *ctx, alarm_output_t output, uint8_t partition, alarm_pattern_t pattern)
 {
     (void)ctx;
     vx_output(output, partition, pattern);
+    sirens_output(output, partition, pattern);
     if (partition > ALARM_MAX_PARTITIONS ||
         (output != ALARM_OUT_BELL && output != ALARM_OUT_STROBE)) {
         return;
@@ -606,8 +613,434 @@ static uint8_t pin_read(void *ctx, uint8_t gpio)
     return gpio < sizeof(H.pins) ? H.pins[gpio] : 0u;
 }
 
+/* End-of-line loops (ZONE-005): each terminal's loop resistance (UINT32_MAX open), read as the
+ * voltage the installer's 4.7 k pull-up at 3.3 V makes of it. host_panel_wire() opens and closes a
+ * normally closed loop; host_panel_loop_ohms() sets any value (a short, two resistors). */
+static uint32_t s_loop_ohms[64];
+
+static bool pin_setup_analog(void *ctx, uint8_t gpio, bool on)
+{
+    (void)ctx;
+    (void)on;
+    return gpio < 64u;
+}
+
+static bool pin_read_mv(void *ctx, uint8_t gpio, uint32_t *mv, uint32_t *vref_mv)
+{
+    (void)ctx;
+    if (gpio >= 64u) {
+        return false;
+    }
+    const uint32_t ohms = s_loop_ohms[gpio];
+    *vref_mv = 3300u;
+    *mv = ohms == UINT32_MAX ? 3300u : (uint32_t)(3300ull * ohms / ((uint64_t)ohms + ZEOL_PULLUP_OHM));
+    return true;
+}
+
+void host_panel_loop_ohms(uint8_t gpio, uint32_t ohms)
+{
+    if (gpio < 64u) {
+        s_loop_ohms[gpio] = ohms;
+    }
+}
+
 static void zb_real_start(const zsrc_sink_t *sink);
 static void zb_real_news(void);
+
+/* ---- sirens and outputs (docs/features/16, BL-037; ui_backend_t out_*) ----------------------
+ * The real components/core/sirens on pretend pins and a pretend 433 MHz transmitter, driven by the
+ * engine's own outputs, as outputs_service drives them on a panel. A wired output takes its
+ * terminal from the wired zones (zsrc_wired_reserve), as zone_service does; a supervision input
+ * reads H.pins like a zone's terminal. The 433 MHz transmitter is the pretend CC1101: it is there
+ * while the receiver is. Nothing here is configured until someone adds an output, so every other
+ * picture stays as it was. */
+static struct {
+    ow_t ow;
+    rfs_t rf;
+    bool started;
+    bool level[64];      /* what each pretend output pin drives */
+    uint32_t sent;       /* transmissions the pretend transmitter took */
+    uint8_t armed_bits;
+    bool armed_known;
+    bool trouble_wired, trouble_rf;
+    int trouble_told; /* the bell trouble as the engine last heard it, -1 never */
+} s_sir;
+
+static bool sir_setup(void *ctx, uint8_t gpio, bool output, bool level)
+{
+    (void)ctx;
+    bool terminal = false;
+    for (size_t i = 0; i < sizeof(TERMINALS) / sizeof(TERMINALS[0]); i++) {
+        terminal = terminal || TERMINALS[i].gpio == gpio;
+    }
+    if (!terminal || gpio >= 64u || !zsrc_wired_reserve(&H.wired, gpio, true)) {
+        return false;
+    }
+    if (output) {
+        s_sir.level[gpio] = level;
+    }
+    return true;
+}
+
+static void sir_release(void *ctx, uint8_t gpio)
+{
+    (void)ctx;
+    (void)zsrc_wired_reserve(&H.wired, gpio, false);
+}
+
+static void sir_write(void *ctx, uint8_t gpio, bool level)
+{
+    (void)ctx;
+    if (gpio < 64u && s_sir.level[gpio] != level) {
+        s_sir.level[gpio] = level;
+    }
+}
+
+static uint8_t sir_read(void *ctx, uint8_t gpio)
+{
+    (void)ctx;
+    return gpio < sizeof(H.pins) ? H.pins[gpio] : 0u;
+}
+
+static void sir_trouble_wired(void *ctx, bool on)
+{
+    (void)ctx;
+    s_sir.trouble_wired = on; /* told to the engine by sirens_poll: a port never re-enters it */
+}
+
+static bool sir_send(void *ctx, const rf_packet_t *pkt, uint16_t unit_us, uint8_t frames)
+{
+    (void)ctx;
+    (void)pkt;
+    (void)unit_us;
+    (void)frames;
+    if (!H.rf_present) {
+        return false;
+    }
+    s_sir.sent++;
+    return true;
+}
+
+static void sir_trouble_rf(void *ctx, bool on)
+{
+    (void)ctx;
+    s_sir.trouble_rf = on;
+}
+
+static void sirens_start(void)
+{
+    memset(&s_sir, 0, sizeof(s_sir));
+    const ow_port_t wp = {.setup = sir_setup, .release = sir_release, .write = sir_write,
+                          .read = sir_read, .bell_trouble = sir_trouble_wired};
+    ow_init(&s_sir.ow, &wp);
+    const rfs_port_t rp = {.send = sir_send, .bell_trouble = sir_trouble_rf};
+    rfs_init(&s_sir.rf, &rp);
+    rfs_transmitter(&s_sir.rf, H.now, H.rf_present);
+    s_sir.trouble_told = -1;
+    s_sir.started = true;
+}
+
+/* The engine's outputs (a port: the sirens never call the engine back from here). */
+static void sirens_output(alarm_output_t output, uint8_t partition, alarm_pattern_t pattern)
+{
+    if (!s_sir.started) {
+        return;
+    }
+    ow_output(&s_sir.ow, H.now, partition, output, pattern);
+    rfs_output(&s_sir.rf, H.now, partition, output, pattern);
+}
+
+/* Each snapshot: the partitions' armed states (the first one without a chirp). */
+static void sirens_snapshot(const alarm_snapshot_t *snap)
+{
+    if (!s_sir.started) {
+        return;
+    }
+    uint8_t bits = 0u;
+    for (uint8_t i = 0; i < ALARM_MAX_PARTITIONS && i < 8u; i++) {
+        if ((snap->partitions & (1u << i)) != 0u && snap->part[i].state != ALARM_STATE_DISARMED) {
+            bits = (uint8_t)(bits | (1u << i));
+        }
+    }
+    for (uint8_t i = 0; i < ALARM_MAX_PARTITIONS && i < 8u; i++) {
+        const uint8_t bit = (uint8_t)(1u << i);
+        if (!s_sir.armed_known) {
+            ow_set_armed(&s_sir.ow, H.now, (uint8_t)(i + 1u), (bits & bit) != 0u);
+            rfs_set_armed(&s_sir.rf, (uint8_t)(i + 1u), (bits & bit) != 0u);
+        } else if (((bits ^ s_sir.armed_bits) & bit) != 0u) {
+            ow_armed(&s_sir.ow, H.now, (uint8_t)(i + 1u), (bits & bit) != 0u);
+            rfs_armed(&s_sir.rf, H.now, (uint8_t)(i + 1u), (bits & bit) != 0u);
+        }
+    }
+    s_sir.armed_bits = bits;
+    s_sir.armed_known = true;
+}
+
+static void sirens_poll(void)
+{
+    if (!s_sir.started) {
+        return;
+    }
+    if (s_sir.rf.transmitter != H.rf_present) {
+        rfs_transmitter(&s_sir.rf, H.now, H.rf_present);
+    }
+    ow_poll(&s_sir.ow, H.now);
+    rfs_poll(&s_sir.rf, H.now);
+    const int want = (s_sir.trouble_wired || s_sir.trouble_rf) ? 1 : 0;
+    if (want != s_sir.trouble_told && (want != 0 || s_sir.trouble_told >= 0)) {
+        s_sir.trouble_told = want;
+        alarm_engine_system_trouble(&H.eng, ALARM_TRBL_BELL, want != 0, H.now);
+        H.dirty = true;
+    }
+}
+
+static uint64_t sirens_next_deadline(void)
+{
+    if (!s_sir.started) {
+        return UINT64_MAX;
+    }
+    const uint64_t a = ow_next_deadline(&s_sir.ow, H.now);
+    const uint64_t b = rfs_next_deadline(&s_sir.rf, H.now);
+    return a < b ? a : b;
+}
+
+static bool be_out_status(void *ctx, ui_out_status_t *out)
+{
+    (void)ctx;
+    memset(out, 0, sizeof(*out));
+    if (!s_sir.started) {
+        return false;
+    }
+    out->wired = true;
+    out->where = "J7 header";
+    out->rf_receiver = !H.rf_present ? UI_RF_RX_NONE : H.rf_noise ? UI_RF_RX_JAMMED : UI_RF_RX_WORKING;
+    out->rf_transmitter = H.rf_present;
+    out->now_ms = H.now;
+    for (uint16_t z = 1; z <= ALARM_MAX_ZONES; z++) {
+        zone_hub_info_t info;
+        if (zone_hub_info(&H.hub, z, &info) && info.binding.in[ZSRC_ROLE_MAIN].addr.kind == ZSRC_RF &&
+            info.heard_at > out->rf_heard_ms) {
+            out->rf_heard_ms = info.heard_at;
+        }
+    }
+    out->trouble = s_sir.trouble_wired || s_sir.trouble_rf;
+    return true;
+}
+
+static void be_out_wired(void *ctx, ui_out_wired_t out[UI_OUT_WIRED_MAX])
+{
+    (void)ctx;
+    memset(out, 0, sizeof(ui_out_wired_t) * UI_OUT_WIRED_MAX);
+    for (size_t i = 0; i < UI_OUT_WIRED_MAX && i < OW_CHANNELS; i++) {
+        const ow_channel_t *ch = &s_sir.ow.ch[i];
+        out[i] = (ui_out_wired_t){.function = ch->c.function, .gpio = ch->c.gpio,
+                                  .sense = ch->c.sense == OW_SENSE_NONE ? UI_OUT_NO_PIN : ch->c.sense,
+                                  .partitions = ch->c.partitions, .also = ch->c.also,
+                                  .burglary = ch->c.burglary, .fire = ch->c.fire,
+                                  .squawk = ch->c.squawk, .active_low = ch->c.active_low,
+                                  .on = ch->on, .trouble = ch->trouble};
+    }
+}
+
+/* Changes need installer mode, as outputs_service's backend asks (the engine's program mode). */
+static bool sir_may_change(void)
+{
+    return H.snap.program;
+}
+
+static uint8_t ow_answer(ow_result_t r)
+{
+    switch (r) {
+    case OW_OK: return UI_OUT_OK;
+    case OW_ERR_IN_USE: return UI_OUT_IN_USE;
+    case OW_ERR_PIN: return UI_OUT_IN_USE; /* a zone's terminal: the reservation was refused */
+    case OW_ERR_ARMED: return UI_OUT_NOT_ALLOWED;
+    case OW_ERR_BUSY: return UI_OUT_BUSY;
+    default: return UI_OUT_INVALID;
+    }
+}
+
+static uint8_t be_out_wired_set(void *ctx, uint8_t slot, const ui_out_wired_t *c)
+{
+    (void)ctx;
+    if (!sir_may_change()) {
+        return UI_OUT_NOT_ALLOWED;
+    }
+    const ow_config_t oc = {.function = c->function, .gpio = c->gpio, .partitions = c->partitions,
+                            .also = c->also, .burglary = c->burglary, .fire = c->fire,
+                            .squawk = c->squawk, .active_low = c->active_low,
+                            .sense = c->sense == UI_OUT_NO_PIN ? OW_SENSE_NONE : c->sense};
+    const uint8_t r = ow_answer(ow_set(&s_sir.ow, H.now, slot, &oc));
+    return r;
+}
+
+static uint8_t be_out_wired_test(void *ctx, uint8_t slot)
+{
+    (void)ctx;
+    return ow_answer(ow_test(&s_sir.ow, H.now, slot));
+}
+
+static size_t be_out_terminals(void *ctx, uint8_t slot, uint8_t *out, size_t max)
+{
+    (void)ctx;
+    size_t n = 0u;
+    for (size_t i = 0; i < sizeof(TERMINALS) / sizeof(TERMINALS[0]) && n < max; i++) {
+        const uint8_t g = TERMINALS[i].gpio;
+        const int owner = ow_find_pin(&s_sir.ow, g);
+        if ((owner < 0 || (size_t)owner == slot) && !zsrc_wired_in_use(&H.wired, g)) {
+            out[n++] = g;
+        }
+    }
+    return n;
+}
+
+static void be_out_rf(void *ctx, ui_out_rf_t out[UI_OUT_RF_MAX])
+{
+    (void)ctx;
+    memset(out, 0, sizeof(ui_out_rf_t) * UI_OUT_RF_MAX);
+    for (size_t i = 0; i < UI_OUT_RF_MAX && i < RFS_SIRENS; i++) {
+        const rfs_siren_t *sr = &s_sir.rf.s[i];
+        out[i] = (ui_out_rf_t){.used = sr->c.used, .address = sr->c.address,
+                               .partitions = sr->c.partitions, .also = sr->c.also,
+                               .burglary = sr->c.burglary, .fire = sr->c.fire,
+                               .squawk = sr->c.squawk, .sounding = sr->sound != SIREN_QUIET};
+    }
+}
+
+static uint8_t rfs_answer(rfs_result_t r)
+{
+    switch (r) {
+    case RFS_OK: return UI_OUT_OK;
+    case RFS_ERR_ARMED: return UI_OUT_NOT_ALLOWED;
+    case RFS_ERR_BUSY: return UI_OUT_BUSY;
+    case RFS_ERR_IN_USE: return UI_OUT_IN_USE;
+    case RFS_ERR_SEND: return UI_OUT_NO_TRANSMITTER;
+    case RFS_ERR_UNKNOWN: return UI_OUT_FAILED;
+    default: return UI_OUT_INVALID;
+    }
+}
+
+static uint8_t be_out_rf_add(void *ctx, uint8_t *slot)
+{
+    (void)ctx;
+    if (!sir_may_change()) {
+        return UI_OUT_NOT_ALLOWED;
+    }
+    const int free_slot = rfs_free_slot(&s_sir.rf);
+    if (free_slot < 0) {
+        return UI_OUT_FULL;
+    }
+    uint32_t avoid[RFS_SIRENS];
+    size_t n = 0u;
+    for (size_t i = 0; i < RFS_SIRENS; i++) {
+        if (s_sir.rf.s[i].c.used) {
+            avoid[n++] = s_sir.rf.s[i].c.address;
+        }
+    }
+    rfs_config_t c;
+    /* a fixed seed: the preview's pictures show the same address every run */
+    rfs_defaults(&c, rfs_pick_address(0x9E3B5u + (uint32_t)free_slot * 0x1F3u, avoid, n));
+    *slot = (uint8_t)free_slot;
+    return rfs_answer(rfs_set(&s_sir.rf, H.now, (size_t)free_slot, &c));
+}
+
+static uint8_t be_out_rf_set(void *ctx, uint8_t slot, const ui_out_rf_t *c)
+{
+    (void)ctx;
+    if (!sir_may_change()) {
+        return UI_OUT_NOT_ALLOWED;
+    }
+    if (slot >= RFS_SIRENS || !s_sir.rf.s[slot].c.used) {
+        return UI_OUT_FAILED;
+    }
+    rfs_config_t rc = s_sir.rf.s[slot].c;
+    rc.partitions = c->partitions;
+    rc.also = c->also;
+    rc.burglary = c->burglary;
+    rc.fire = c->fire;
+    rc.squawk = c->squawk;
+    return rfs_answer(rfs_set(&s_sir.rf, H.now, slot, &rc));
+}
+
+static uint8_t be_out_rf_clear(void *ctx, uint8_t slot)
+{
+    (void)ctx;
+    if (!sir_may_change()) {
+        return UI_OUT_NOT_ALLOWED;
+    }
+    return rfs_answer(rfs_clear(&s_sir.rf, H.now, slot));
+}
+
+static uint8_t be_out_rf_pair(void *ctx, uint8_t slot)
+{
+    (void)ctx;
+    return rfs_answer(rfs_pair(&s_sir.rf, H.now, slot));
+}
+
+static uint8_t be_out_rf_test(void *ctx, uint8_t slot)
+{
+    (void)ctx;
+    return rfs_answer(rfs_test(&s_sir.rf, H.now, slot));
+}
+
+/* The preview's demo (host_panel.h): a wired siren for Home that also sounds for the shop's
+ * alarms, an armed light, and one 433 MHz siren; off again clears them. */
+void host_panel_sirens_demo(bool on)
+{
+    if (!s_sir.started) {
+        return;
+    }
+    if (!on) {
+        /* zone 4 back on the simulator, as zones_start bound it */
+        zone_hub_binding_t sim;
+        memset(&sim, 0, sizeof(sim));
+        sim.in[ZSRC_ROLE_MAIN].addr = zsrc_sim_address(4u);
+        (void)zone_hub_bind(&H.hub, 4u, &sim, H.now);
+        for (uint8_t i = 0; i < OW_CHANNELS; i++) {
+            (void)ow_clear(&s_sir.ow, i);
+        }
+        for (uint8_t i = 0; i < RFS_SIRENS; i++) {
+            if (s_sir.rf.s[i].c.used) {
+                (void)rfs_clear(&s_sir.rf, H.now, i);
+            }
+        }
+        return;
+    }
+    const ow_config_t siren = {.function = OW_FN_SIREN, .gpio = 49u, .partitions = 0x01u,
+                               .also = 0x02u, .burglary = true, .fire = true, .squawk = true,
+                               .active_low = true, .sense = 50u};
+    const ow_config_t light = {.function = OW_FN_ARMED, .gpio = 51u, .partitions = 0x01u,
+                               .sense = OW_SENSE_NONE};
+    (void)ow_set(&s_sir.ow, H.now, 0u, &siren);
+    (void)ow_set(&s_sir.ow, H.now, 1u, &light);
+    rfs_config_t c;
+    rfs_defaults(&c, 0x9E3B5u);
+    (void)rfs_set(&s_sir.rf, H.now, 0u, &c);
+    /* the Back Door (zone 4) on a 433 MHz contact, A2B3C code 6, heard just now and closed again */
+    zone_hub_binding_t rf;
+    memset(&rf, 0, sizeof(rf));
+    rf.in[ZSRC_ROLE_MAIN].addr = zsrc_rf_address(ZSRC_RF_PROTO_EV1527, 0xA2B3Cu, 6u);
+    (void)zone_hub_bind(&H.hub, 4u, &rf, H.now);
+    const zsrc_rf_packet_t open = zsrc_rf_ev1527((0xA2B3Cu << 4) | 6u);
+    const zsrc_rf_packet_t shut = zsrc_rf_ev1527((0xA2B3Cu << 4) | 9u);
+    for (unsigned i = 0; i < 4u; i++) {
+        zsrc_rf_packet(&H.rf, &open, H.now + i * 40u);
+    }
+    for (unsigned i = 0; i < 4u; i++) {
+        zsrc_rf_packet(&H.rf, &shut, H.now + 1000u + i * 40u);
+    }
+}
+
+/* The pretend siren's line, for the simulator's log and tests. */
+bool host_panel_siren_pin(uint8_t gpio)
+{
+    return gpio < 64u && s_sir.level[gpio];
+}
+
+uint32_t host_panel_rf_sent(void)
+{
+    return s_sir.sent;
+}
 
 static void zones_start(const alarm_config_t *cfg)
 {
@@ -619,7 +1052,11 @@ static void zones_start(const alarm_config_t *cfg)
                               .link_now = sink_link_now};
     zsrc_sim_init(&H.sim, &sink);
     zone_hub_register(&H.hub, zsrc_sim_ops(), &H.sim, H.now);
-    const zsrc_gpio_port_t gpio = {.ctx = NULL, .setup = pin_setup, .read = pin_read};
+    for (size_t i = 0; i < 64u; i++) {
+        s_loop_ohms[i] = ZEOL_OHM; /* every loop normal until the walk says otherwise */
+    }
+    const zsrc_gpio_port_t gpio = {.ctx = NULL, .setup = pin_setup, .read = pin_read,
+                                   .setup_analog = pin_setup_analog, .read_mv = pin_read_mv};
     zsrc_wired_init(&H.wired, TERMINALS, sizeof(TERMINALS) / sizeof(TERMINALS[0]), &gpio, &sink);
     zone_hub_register(&H.hub, zsrc_wired_ops(), &H.wired, H.now);
     zsrc_ha_init(&H.ha_src, &sink); /* usable once the pretend Home Assistant pairs */
@@ -652,6 +1089,7 @@ static void zones_start(const alarm_config_t *cfg)
         }
     }
     zone_hub_start(&H.hub, H.now);
+    sirens_start(); /* after the wired source: an output reserves its terminal there */
 }
 
 static void after(void)
@@ -673,6 +1111,7 @@ static void after(void)
             }
             vx_snapshot(&H.snap);
             auto_feed_snapshot(&H.snap);
+            sirens_snapshot(&H.snap);
         }
         if (!auto_pump()) {
             break;
@@ -1358,7 +1797,8 @@ static void zwave_radio_run(void)
     zwfj_t *j = &H.zw.radiojob;
     if (j->state == UI_ZW_FW_CHECKING) {
         static char answer[1024];
-        const size_t n = sim_radio_answer(answer, sizeof answer);
+        const size_t n = H.zw.radio_unlisted ? (size_t)snprintf(answer, sizeof answer, "[]")
+                                             : sim_radio_answer(answer, sizeof answer);
         zwfj_check_answer(j, H.zw.fw_offline ? 0 : 200, answer, n, zw_region_word());
     } else if (j->state == UI_ZW_FW_DOWNLOADING) {
         static uint8_t file[2048];
@@ -1423,7 +1863,7 @@ static size_t sim_fw_answer(char *out, size_t cap)
 static const char *zw_region_word(void)
 {
     const zwz_cfg_t *c = &H.zw.panel.setup.cfg;
-    return c->region_set ? zwfc_region(c->region) : NULL;
+    return zwfj_region(c->region_set, c->region, zw_host_facts(&H.zw.panel.net.host));
 }
 
 /* What the service's HTTPS exchange is on the panel, a second later: the check's answer, or the
@@ -2404,6 +2844,16 @@ void host_panel_zwave_fw_offline(bool offline)
     H.zw.fw_offline = offline;
 }
 
+void host_panel_zwave_radio_unlisted(bool unlisted)
+{
+    H.zw.radio_unlisted = unlisted;
+}
+
+void host_panel_zwave_radio_advised(bool advised)
+{
+    H.zw.panel.net.host.facts.update_note = advised;
+}
+
 /* A request goes to the network at once, as the zwave task takes it: then the wire runs, what
  * changed is stored and what happened logged. */
 static ui_zw_req_result_t be_zw_request(void *ctx, const ui_zw_request_t *req)
@@ -2534,6 +2984,26 @@ static ui_zw_prov_result_t be_zw_prov_change(void *ctx, const uint8_t dsk[16], u
     zwave_world_run();
     after();
     return r;
+}
+
+/* The radio's file from the SD card: the simulator has a card without one (the guidance shows). */
+static uint8_t s_zw_sd = UI_ZW_SD_IDLE;
+
+static uint8_t be_zw_radio_sd_install(void *ctx, uint8_t user)
+{
+    (void)ctx;
+    (void)user;
+    s_zw_sd = UI_ZW_SD_READING;
+    return s_zw_sd;
+}
+
+static uint8_t be_zw_radio_sd_state(void *ctx)
+{
+    (void)ctx;
+    if (s_zw_sd == UI_ZW_SD_READING) {
+        s_zw_sd = UI_ZW_SD_NO_FILE; /* read at once: no .gbl on it */
+    }
+    return s_zw_sd;
 }
 
 static void be_zw_progress(void *ctx, ui_zw_progress_t *out)
@@ -2883,6 +3353,8 @@ void host_panel_advance(alarm_ms_t ms)
         next = a < next ? a : next;
         const uint64_t vd = vx_next_deadline(); /* ... and the voice's: a tone's end, an utterance's */
         next = vd < next ? vd : next;
+        const uint64_t sd = sirens_next_deadline(); /* ... and the sirens': patterns, codes (BL-037) */
+        next = sd < next ? sd : next;
         H.now = next < end && next > H.now ? next : end;
         zone_hub_tick(&H.hub, H.now);
         if (s_zb_real) {
@@ -2893,6 +3365,7 @@ void host_panel_advance(alarm_ms_t ms)
             zsrc_zb_energy(&H.zb, H.zb_noise ? -20 : -85, H.now);
         }
         alarm_engine_tick(&H.eng, H.now);
+        sirens_poll();
         vx_power_poll();
         vx_commit(); /* this tick's events with its snapshot, whether or not automations run */
         vx_pump();
@@ -2926,6 +3399,7 @@ void host_panel_wire(uint8_t gpio, bool open)
 {
     if (gpio < sizeof(H.pins)) {
         H.pins[gpio] = open ? 1u : 0u;
+        s_loop_ohms[gpio] = open ? UINT32_MAX : ZEOL_OHM; /* an end-of-line loop the same */
     }
 }
 
@@ -7941,6 +8415,17 @@ void host_panel_backend(ui_backend_t *out)
     out->zb_request = hp_zb_request;
     out->zb_progress = hp_zb_progress;
     out->zb_codes = hp_zb_codes;
+    out->out_status = be_out_status; /* the sirens and outputs (BL-037) */
+    out->out_wired = be_out_wired;
+    out->out_wired_set = be_out_wired_set;
+    out->out_wired_test = be_out_wired_test;
+    out->out_terminals = be_out_terminals;
+    out->out_rf = be_out_rf;
+    out->out_rf_add = be_out_rf_add;
+    out->out_rf_set = be_out_rf_set;
+    out->out_rf_clear = be_out_rf_clear;
+    out->out_rf_pair = be_out_rf_pair;
+    out->out_rf_test = be_out_rf_test;
 #if ALARM_SIM_ZWAVE
     out->zw_status = be_zw_status; /* false until the world runs */
     out->zw_devices = be_zw_devices;
@@ -7950,5 +8435,7 @@ void host_panel_backend(ui_backend_t *out)
     out->zw_prov = be_zw_prov;
     out->zw_prov_register = be_zw_prov_register;
     out->zw_prov_change = be_zw_prov_change;
+    out->zw_radio_sd_install = be_zw_radio_sd_install;
+    out->zw_radio_sd_state = be_zw_radio_sd_state;
 #endif
 }

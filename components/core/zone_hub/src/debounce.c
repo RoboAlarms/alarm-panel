@@ -11,6 +11,31 @@ void zone_debounce_init(zone_debounce_t *d, uint16_t hold_ms)
     d->hold_ms = hold_ms;
 }
 
+bool zone_debounce_sample_level(zone_debounce_t *d, uint8_t level, uint64_t now)
+{
+    if (!d->primed) {
+        d->primed = true;
+        d->stable = level;
+        d->waiting = false;
+        return true;
+    }
+    if (level == d->stable) {
+        d->waiting = false;
+        return false;
+    }
+    if (!d->waiting || d->pending != level) {
+        d->waiting = true;
+        d->pending = level;
+        d->since = now;
+    }
+    if (now - d->since >= d->hold_ms) {
+        d->stable = level;
+        d->waiting = false;
+        return true;
+    }
+    return false;
+}
+
 bool zone_debounce_sample(zone_debounce_t *d, uint8_t level, uint64_t now)
 {
     const uint8_t l = level != 0u ? 1u : 0u;

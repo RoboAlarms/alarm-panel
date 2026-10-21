@@ -71,7 +71,7 @@ set(ZB_HOST host_zigbee_demo.c host_zigbee_real.c host_link_demo.c)
 # simulator's speech path.
 add_executable(ui_preview main.c voice_walk.c ../ui_sim/sim_audio.c host_panel.c ${ZB_HOST})
 target_include_directories(ui_preview PRIVATE ../ui_sim)
-target_link_libraries(ui_preview PRIVATE alarm_ui alarm_proto automation shot_png zigbee_zones_fake)
+target_link_libraries(ui_preview PRIVATE alarm_ui alarm_proto automation sirens shot_png zigbee_zones_fake)
 if(WIN32)
     target_link_libraries(ui_preview PRIVATE winmm) # sim_audio.c's waveOut, never opened here
 endif()
@@ -106,7 +106,7 @@ if(ALARM_SIM_ZWAVE)
                                ${ZWAVE_TEST}/fake_zac93.c ${ZWAVE_TEST}/fake_zdev.c
                                ${ZWAVE_TEST}/fake_zdev_cc.c ${ZWAVE_TEST}/zw_host_crypto.c)
     target_include_directories(zwave_smoke PRIVATE ${ZWAVE_TEST})
-    target_link_libraries(zwave_smoke PRIVATE alarm_ui alarm_proto automation zwave_host zwave_proto
+    target_link_libraries(zwave_smoke PRIVATE alarm_ui alarm_proto automation sirens zwave_host zwave_proto
                                               zwave_zones zigbee_zones_fake)
     target_compile_definitions(zwave_smoke PRIVATE ${screen} ALARM_SIM_ZWAVE=1)
     target_compile_options(zwave_smoke PRIVATE -Wall -Wextra -Werror)
@@ -120,7 +120,7 @@ set(ALARM_UI_WITH_ZIGBEE OFF) # on by default (sources.cmake): left out here too
 alarm_add_ui_library(LAYOUT ${ALARM_BOARD_LAYOUT} TARGET alarm_ui_minimal)
 unset(ALARM_UI_WITH_ZIGBEE)
 add_executable(ui_smoke_minimal smoke_minimal.c host_panel.c ${ZB_HOST})
-target_link_libraries(ui_smoke_minimal PRIVATE alarm_ui_minimal alarm_proto automation zigbee_zones_fake)
+target_link_libraries(ui_smoke_minimal PRIVATE alarm_ui_minimal alarm_proto automation sirens zigbee_zones_fake)
 target_compile_definitions(ui_smoke_minimal PRIVATE ${screen})
 target_compile_options(ui_smoke_minimal PRIVATE -Wall -Wextra -Werror)
 alarm_host_voice_pack(ui_smoke_minimal)
@@ -129,7 +129,7 @@ alarm_host_voice_pack(ui_smoke_minimal)
 # UI's subjects with the panel driven into each state (BL-066, KPD-004). Needs ui_text.h, which is
 # the UI's own header.
 add_executable(ui_words_test ui_words_test.c host_panel.c ${ZB_HOST})
-target_link_libraries(ui_words_test PRIVATE alarm_ui alarm_proto automation zigbee_zones_fake)
+target_link_libraries(ui_words_test PRIVATE alarm_ui alarm_proto automation sirens zigbee_zones_fake)
 target_include_directories(ui_words_test PRIVATE ${ALARM_COMPONENTS_DIR}/ui/alarm_ui/src)
 target_compile_definitions(ui_words_test PRIVATE ${screen})
 target_compile_options(ui_words_test PRIVATE -Wall -Wextra -Werror)
@@ -141,7 +141,7 @@ alarm_host_voice_pack(ui_words_test)
 # the mailbox's BUSY). Windowless; exits non-zero when a check fails. Needs ui_internal.h, the UI's
 # own header.
 add_executable(prefs_smoke prefs_smoke.c host_panel.c ${ZB_HOST})
-target_link_libraries(prefs_smoke PRIVATE alarm_ui alarm_proto automation zigbee_zones_fake)
+target_link_libraries(prefs_smoke PRIVATE alarm_ui alarm_proto automation sirens zigbee_zones_fake)
 target_include_directories(prefs_smoke PRIVATE ${ALARM_COMPONENTS_DIR}/ui/alarm_ui/src)
 target_compile_definitions(prefs_smoke PRIVATE ${screen})
 target_compile_options(prefs_smoke PRIVATE -Wall -Wextra -Werror)
@@ -151,7 +151,7 @@ alarm_host_voice_pack(prefs_smoke)
 # and runner on the simulator's devices, with Harbor House's seeded automations (auto_smoke.c).
 # Windowless; exits non-zero when a check fails.
 add_executable(auto_smoke auto_smoke.c host_panel.c ${ZB_HOST})
-target_link_libraries(auto_smoke PRIVATE alarm_ui alarm_proto automation zigbee_zones_fake)
+target_link_libraries(auto_smoke PRIVATE alarm_ui alarm_proto automation sirens zigbee_zones_fake)
 target_compile_definitions(auto_smoke PRIVATE ${screen})
 target_compile_options(auto_smoke PRIVATE -Wall -Wextra -Werror)
 alarm_host_voice_pack(auto_smoke)
@@ -161,7 +161,7 @@ add_test(NAME prefs_smoke COMMAND prefs_smoke)
 # The screen's calls that wait for another panel (LINK-054): the real touch UI with a run_later that
 # holds each call until the test answers it, as a keypad's master does over the link (calls_smoke.c).
 add_executable(calls_smoke calls_smoke.c host_panel.c ${ZB_HOST})
-target_link_libraries(calls_smoke PRIVATE alarm_ui alarm_proto automation zigbee_zones_fake)
+target_link_libraries(calls_smoke PRIVATE alarm_ui alarm_proto automation sirens zigbee_zones_fake)
 target_include_directories(calls_smoke PRIVATE ${ALARM_COMPONENTS_DIR}/ui/alarm_ui/src)
 target_compile_definitions(calls_smoke PRIVATE ${screen})
 target_compile_options(calls_smoke PRIVATE -Wall -Wextra -Werror)
@@ -172,7 +172,7 @@ add_test(NAME calls_smoke COMMAND calls_smoke)
 # over the packed en-US voice and the host engine (voice_smoke.c). Windowless; skipped (77)
 # without a pack.
 add_executable(voice_smoke voice_smoke.c host_panel.c ${ZB_HOST})
-target_link_libraries(voice_smoke PRIVATE alarm_ui alarm_proto automation zigbee_zones_fake)
+target_link_libraries(voice_smoke PRIVATE alarm_ui alarm_proto automation sirens zigbee_zones_fake)
 target_compile_definitions(voice_smoke PRIVATE ${screen})
 target_compile_options(voice_smoke PRIVATE -Wall -Wextra -Werror)
 alarm_host_voice_pack(voice_smoke)
@@ -184,7 +184,7 @@ set_tests_properties(voice_smoke PROPERTIES SKIP_RETURN_CODE 77)
 add_executable(voice_walk_smoke voice_walk_main.c voice_walk.c ../ui_sim/sim_audio.c host_panel.c
                                 ${ZB_HOST})
 target_include_directories(voice_walk_smoke PRIVATE ../ui_sim)
-target_link_libraries(voice_walk_smoke PRIVATE alarm_ui alarm_proto automation zigbee_zones_fake)
+target_link_libraries(voice_walk_smoke PRIVATE alarm_ui alarm_proto automation sirens zigbee_zones_fake)
 if(WIN32)
     target_link_libraries(voice_walk_smoke PRIVATE winmm) # offline mode: no audio device
 endif()

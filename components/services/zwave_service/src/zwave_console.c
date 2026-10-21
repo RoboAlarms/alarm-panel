@@ -18,6 +18,12 @@
  *   zwave region [<name>]           the radio's region (installer: it restarts the radio)
  *   zwave jam [<dBm>]               the background noise, jammed or not; the threshold
  *   zwave trace on|off              frames in hex on the log (development builds)
+ *   zwave siren                     the sirens the engine's bell drives (OUT-016..OUT-019)
+ *   zwave siren <n> [<ep>] parts <mask> [also <mask>] [burglary|fire|both] [squawk|nosquawk]
+ *         [tone <burglary> <fire> <co> <arm> <disarm>] [vol <0-100>] [super <min>]
+ *                                   assign or change one (Sound Switch if it has it, else Binary
+ *                                   Switch); masks bit 0 = partition 1; tone 255 its default
+ *   zwave siren <n> [<ep>] clear | test
  *   zwave reset-network confirm     every device loses the panel: new keys, a new network
  *
  * Every command that changes the network refuses while a partition is armed, like `zone <n>
@@ -143,7 +149,7 @@ static const char *op_words(uint8_t op)
 {
     static const char *const W[] = {"none", "add", "remove", "remove failed", "replace", "ping",
                                     "identify", "routes", "check-in", "region", "reset",
-                                    "restart", "software update"};
+                                    "restart", "software update", "radio update"};
     return op < sizeof W / sizeof W[0] ? W[op] : "?";
 }
 
@@ -1342,6 +1348,172 @@ static int cmd_control(int argc, char **argv)
     return result == UI_ZW_REQ_OK ? 0 : 1;
 }
 
+/* A number, decimal or 0x hex, at most max. */
+static bool parse_num(const char *s, unsigned long max, unsigned long *out)
+{
+    char *end = NULL;
+    const unsigned long v = strtoul(s, &end, 0);
+    if (end == s || *end != '\0' || v > max) {
+        return false;
+    }
+    *out = v;
+    return true;
+}
+
+static void siren_list(void)
+{
+    zws_siren_t s[ZWS_SIRENS];
+    bool used[ZWS_SIRENS];
+    zone_service_lock();
+    const zwz_panel_t *p = zwsvc_panel();
+    for (size_t i = 0; i < ZWS_SIRENS; i++) {
+        const zws_siren_t *x = zwz_panel_siren(p, i);
+        used[i] = x != NULL;
+        if (x != NULL) {
+            s[i] = *x;
+        }
+    }
+    const bool radio = p->sirens.radio_up;
+    zone_service_unlock();
+    const uint64_t now = zwsvc_now_ms();
+    for (size_t i = 0; i < ZWS_SIRENS; i++) {
+        if (!used[i]) {
+            printf("siren %u: none\n", (unsigned)(i + 1u));
+            continue;
+        }
+        const zws_config_t *c = &s[i].c;
+        printf("siren %u: node %u generation %u ep %u, %s, partitions 0x%02x also 0x%02x, %s%s%s, "
+               "tones %u/%u/%u arm %u disarm %u, volume %u%s, supervision %u min\n",
+               (unsigned)(i + 1u), (unsigned)c->node, (unsigned)c->generation,
+               (unsigned)c->endpoint,
+               c->kind == ZWS_KIND_SOUND ? "Sound Switch" : "Binary Switch",
+               (unsigned)c->partitions, (unsigned)c->also,
+               c->burglary && c->fire ? "burglary and fire" : c->fire ? "fire" : "burglary",
+               c->squawk ? ", squawk" : "", "", (unsigned)c->tone_burglary,
+               (unsigned)c->tone_fire, (unsigned)c->tone_co, (unsigned)c->tone_arm,
+               (unsigned)c->tone_disarm, (unsigned)c->volume, c->volume == 0u ? " (its own)" : "",
+               (unsigned)(c->supervision_min != 0u ? c->supervision_min : ZWS_SUPERVISION_DEF_MIN));
+        printf("   now: %s%s%s%s; heard %lu s ago%s; %lu set(s) confirmed, %lu report(s)\n",
+               s[i].value != 0u ? "sounding" : "quiet",
+               s[i].pending ? ", command not confirmed yet" : "",
+               s[i].unconfirmed ? ", TROUBLE: commands not taken" : "",
+               s[i].silent ? ", TROUBLE: not heard" : "",
+               (unsigned long)(now >= s[i].heard_at ? (now - s[i].heard_at) / 1000u : 0u),
+               radio ? "" : " (the radio is down: silence not counted)",
+               (unsigned long)s[i].sets, (unsigned long)s[i].reports);
+    }
+}
+
+/* `zwave siren`: Z-Wave sirens driven by the engine's bell (docs/features/36 sirens.md). */
+static int cmd_siren(int argc, char **argv)
+{
+    static const char USAGE[] =
+        "zwave siren [<node> [<ep>] parts <mask> [also <mask>] [burglary|fire|both] "
+        "[squawk|nosquawk] [tone <b> <f> <co> <arm> <disarm>] [vol <0-100>] [super <min>] | "
+        "<node> [<ep>] clear|test]\n";
+    if (argc == 2) {
+        siren_list();
+        return 0;
+    }
+    uint16_t node = 0u;
+    if (!parse_u16(argv[2], &node)) {
+        printf("%s", USAGE);
+        return 1;
+    }
+    int a = 3;
+    unsigned long v = 0u;
+    uint8_t ep = 0u;
+    if (a < argc && parse_num(argv[a], 127u, &v)) {
+        ep = (uint8_t)v;
+        a++;
+    }
+    zwsvc_req_t req;
+    memset(&req, 0, sizeof req);
+    req.kind = ZWSVC_REQ_SIREN;
+    req.siren.node = node;
+    req.siren.endpoint = ep;
+    if (a < argc && (strcmp(argv[a], "clear") == 0 || strcmp(argv[a], "test") == 0) &&
+        a + 1 == argc) {
+        const bool clear = strcmp(argv[a], "clear") == 0;
+        if (clear && !disarmed()) {
+            return 1;
+        }
+        req.siren_op = clear ? ZWSVC_SIREN_CLEAR : ZWSVC_SIREN_TEST;
+        req.allowed = zone_service_all_disarmed();
+        const ui_zw_req_result_t r = zwsvc_submit(&req);
+        printf("%s%s\n", req_words(r),
+               !clear && r == UI_ZW_REQ_NOT_ALLOWED ? " (one of its partitions is armed)" : "");
+        return r == UI_ZW_REQ_OK ? 0 : 1;
+    }
+    /* assign or change: from its assignment as it is, else the defaults */
+    zone_service_lock();
+    const zwz_panel_t *p = zwsvc_panel();
+    const uint16_t generation = zwz_panel_generation(p, node);
+    zws_defaults(&req.siren, node, generation, ep, 0u);
+    for (size_t i = 0; i < ZWS_SIRENS; i++) {
+        const zws_siren_t *x = zwz_panel_siren(p, i);
+        if (x != NULL && x->c.node == node && x->c.endpoint == ep && x->c.generation == generation) {
+            req.siren = x->c;
+            req.siren.kind = 0u; /* the panel picks again from what it lists */
+        }
+    }
+    zone_service_unlock();
+    if (generation == 0u) {
+        printf("no device %u in this network\n", (unsigned)node);
+        return 1;
+    }
+    bool ok = a < argc;
+    while (ok && a < argc) {
+        const char *w = argv[a++];
+        if ((strcmp(w, "parts") == 0 || strcmp(w, "also") == 0) && a < argc &&
+            parse_num(argv[a], (1u << ALARM_MAX_PARTITIONS) - 1u, &v)) {
+            if (w[0] == 'p') {
+                req.siren.partitions = (uint8_t)v;
+            } else {
+                req.siren.also = (uint8_t)v;
+            }
+            a++;
+        } else if (strcmp(w, "burglary") == 0 || strcmp(w, "fire") == 0 ||
+                   strcmp(w, "both") == 0) {
+            req.siren.burglary = w[0] != 'f';
+            req.siren.fire = w[0] != 'b' || w[1] == 'o';
+        } else if (strcmp(w, "squawk") == 0 || strcmp(w, "nosquawk") == 0) {
+            req.siren.squawk = w[0] == 's';
+        } else if (strcmp(w, "tone") == 0 && a + 5 <= argc) {
+            uint8_t *t[5] = {&req.siren.tone_burglary, &req.siren.tone_fire, &req.siren.tone_co,
+                             &req.siren.tone_arm, &req.siren.tone_disarm};
+            for (size_t k = 0; k < 5u && ok; k++) {
+                ok = parse_num(argv[a++], 255u, &v);
+                *t[k] = (uint8_t)v;
+            }
+        } else if (strcmp(w, "vol") == 0 && a < argc && parse_num(argv[a], ZWS_VOLUME_MAX, &v)) {
+            req.siren.volume = (uint8_t)v;
+            a++;
+        } else if (strcmp(w, "super") == 0 && a < argc && parse_num(argv[a], 0xFFFFu, &v)) {
+            req.siren.supervision_min = (uint16_t)v;
+            a++;
+        } else {
+            ok = false;
+        }
+    }
+    if (!ok) {
+        printf("%s", USAGE);
+        return 1;
+    }
+    if (!disarmed()) {
+        return 1;
+    }
+    req.siren_op = ZWSVC_SIREN_SET;
+    req.allowed = true;
+    const ui_zw_req_result_t r = zwsvc_submit(&req);
+    printf("%s%s\n", req_words(r),
+           r == UI_ZW_REQ_INVALID
+               ? " (a device whose setup is done, listing Sound Switch or Binary Switch at that "
+                 "end point; a partition; burglary or fire; volume 0-100; supervision 0 or 60+ min)"
+               : "");
+    return r == UI_ZW_REQ_OK ? 0 : 1;
+}
+
 static int cmd_checkin(int argc, char **argv)
 {
     uint16_t node = 0u;
@@ -1557,6 +1729,7 @@ static int cmd_zwave(int argc, char **argv)
     if (strcmp(sub, "firmware") == 0) { return cmd_firmware(argc, argv); }
     if (strcmp(sub, "output") == 0) { return cmd_output(argc, argv); }
     if (strcmp(sub, "garage") == 0) { return cmd_garage(argc, argv); }
+    if (strcmp(sub, "siren") == 0) { return cmd_siren(argc, argv); }
     if (strcmp(sub, "smartstart") == 0) { return cmd_smartstart(argc, argv); }
     if (strcmp(sub, "power") == 0) { return cmd_power(argc, argv); }
     if (strcmp(sub, "radio-update") == 0) { return cmd_radio_update(argc, argv); }
@@ -1599,6 +1772,7 @@ static int cmd_zwave(int argc, char **argv)
            "ping <n>|interview <n>|setup <n>|remove-failed <n>|keypad-feedback|keypad-control|"
            "firmware [<n> check|install|stop]|output <n> [<ep> on|off|<0-100>]|"
            "garage <n> <ep> open|close|clear|set <zone> [<s>]|"
+           "siren [<n> [<ep>] parts <mask> ...|clear|test]|"
            "smartstart [list|add <code> [<name>]|on|off|forget <i>]|"
            "checkin <n> 1h|4h|12h|"
            "region [<name>]|jam [<dBm>]|power [<dBm>|lr 10|14|20]|radio-update [check|install]|"
@@ -1613,7 +1787,7 @@ esp_err_t zwave_service_console_register(void)
         .command = "zwave",
         .help = "Z-Wave radio (ZAC93): status, place, reset-pin, restart, reset, add, remove, stop, "
                 "allow, pin, nodes, node <n>, ping <n>, interview <n>, checkin <n> 1h|4h|12h, "
-                "region, trace, keypad-feedback, reset-network confirm",
+                "region, trace, keypad-feedback, siren, reset-network confirm",
         .hint = "[status|place|add|remove|nodes|node|...]",
         .func = cmd_zwave,
     };

@@ -9,7 +9,7 @@ idf_component_register(SRCS "src/zwave_service.c" "src/zw_link.c" "src/zw_psa.c"
                             "src/zw_trace.c" "src/zwave_console.c" "src/zwave_dev.c"
                             "src/zw_fwsvc.c"
                        INCLUDE_DIRS "include"
-                       REQUIRES esp_common ui_backend
-                       PRIV_REQUIRES alarm_core alarm_mem alarm_proto board_info console esp_app_format
+                       REQUIRES alarm_core esp_common ui_backend
+                       PRIV_REQUIRES alarm_mem alarm_proto board_info console esp_app_format
                                      esp_driver_gpio esp_driver_uart esp_http_client esp_timer mbedtls nvs_flash
                                      platform_esp zone_hub zwave_host zwave_proto zwave_zones)

@@ -17,6 +17,7 @@
 #include "zone_hub/zsrc_rf.h"
 #include "zone_hub/zsrc_sim.h"
 #include "zone_hub/zsrc_wired.h"
+#include "zone_hub/zone_eol.h"
 
 /* ---- harness: a recording port, a fake source, optionally the real engine ---------------- */
 
@@ -1255,7 +1256,7 @@ static uint8_t PIN[64];
 static bool PIN_SETUP[64];
 static zsrc_wired_t W;
 static const zsrc_wired_terminal_t TERMS[] = {
-    {2, "J7 header"}, {3, "J7 header"}, {4, "J7 header"}, {25, NULL}};
+    {2, "J7 header", false}, {3, "J7 header", false}, {4, "J7 header", false}, {25, NULL, false}};
 
 static bool gpio_setup(void *ctx, uint8_t gpio, bool on)
 {
@@ -1430,7 +1431,7 @@ static void test_terminal_no_longer_offered_is_check(void)
     TEST_ASSERT_EQUAL_INT(ZONE_HUB_OK, zone_hub_encode(&H, BLOB, sizeof(BLOB), &len));
 
     /* the next start: GPIO 4 went to the custom place, the other terminals are still offered */
-    static const zsrc_wired_terminal_t LEFT[] = {{2, "J7 header"}, {3, "J7 header"}, {25, NULL}};
+    static const zsrc_wired_terminal_t LEFT[] = {{2, "J7 header", false}, {3, "J7 header", false}, {25, NULL, false}};
     const zone_hub_port_t port = {.ctx = NULL, .zone_event = port_event, .changed = port_changed};
     zone_hub_init(&H, &port);
     memset(PIN_SETUP, 0, sizeof(PIN_SETUP));
@@ -1513,6 +1514,204 @@ static void test_wired_learning(void)
     zone_hub_bind(&H, 2, &pir, NOW);
     zone_hub_info(&H, 2, &info);
     TEST_ASSERT_EQUAL_STRING("GPIO 25", info.address);
+}
+
+/* OUT-021: a terminal an output takes is no zone's: refused while a zone watches it; reserved, it
+ * is no valid address, never set up while learning and not offered; given back, it is again. */
+static void test_wired_terminal_reserved_for_an_output(void)
+{
+    wired_setup();
+    const zone_hub_binding_t door = main_only(ZSRC_WIRED, 2);
+    TEST_ASSERT_EQUAL_INT(ZONE_HUB_OK, zone_hub_bind(&H, 1, &door, NOW));
+    TEST_ASSERT_TRUE(zsrc_wired_in_use(&W, 2));
+    TEST_ASSERT_FALSE(zsrc_wired_reserve(&W, 2, true)); /* the door's */
+    TEST_ASSERT_FALSE(zsrc_wired_reserve(&W, 99, true)); /* no terminal */
+    TEST_ASSERT_TRUE(zone_hub_learn(&H, ZSRC_WIRED, true, NOW));
+    TEST_ASSERT_TRUE(PIN_SETUP[4]);
+    TEST_ASSERT_TRUE(zsrc_wired_reserve(&W, 4, true)); /* set up for learning: given back */
+    TEST_ASSERT_FALSE(PIN_SETUP[4]);
+    zsrc_candidate_t c[8];
+    const size_t n = zone_hub_candidates(&H, ZSRC_WIRED, "", 0, c, 8);
+    TEST_ASSERT_EQUAL_UINT(3, n);
+    for (size_t i = 0; i < n; i++) {
+        TEST_ASSERT_NOT_EQUAL(4u, c[i].addr.id);
+    }
+    TEST_ASSERT_TRUE(zone_hub_learn(&H, ZSRC_WIRED, false, NOW));
+    TEST_ASSERT_TRUE(zone_hub_learn(&H, ZSRC_WIRED, true, NOW));
+    TEST_ASSERT_FALSE(PIN_SETUP[4]);
+    TEST_ASSERT_TRUE(zone_hub_learn(&H, ZSRC_WIRED, false, NOW));
+    const zone_hub_binding_t pir = main_only(ZSRC_WIRED, 4);
+    TEST_ASSERT_NOT_EQUAL(ZONE_HUB_OK, zone_hub_bind(&H, 2, &pir, NOW));
+    TEST_ASSERT_TRUE(zsrc_wired_reserve(&W, 4, false));
+    TEST_ASSERT_EQUAL_INT(ZONE_HUB_OK, zone_hub_bind(&H, 2, &pir, NOW));
+    TEST_ASSERT_TRUE(PIN_SETUP[4]);
+}
+
+/* ---- end-of-line loops (ZONE-005, BL-063) ---------------------------------------------------- */
+
+static uint32_t MV[64];       /* each terminal's voltage */
+static bool ANALOG[64];       /* set up as an analog input */
+static const zsrc_wired_terminal_t EOL_TERMS[] = {{49, "J7 header", true}, {2, "J7 header", false}};
+
+static bool gpio_setup_analog(void *ctx, uint8_t gpio, bool on)
+{
+    (void)ctx;
+    ANALOG[gpio] = on;
+    return true;
+}
+
+static bool gpio_read_mv(void *ctx, uint8_t gpio, uint32_t *mv, uint32_t *vref)
+{
+    (void)ctx;
+    *mv = MV[gpio];
+    *vref = 3300u;
+    return true;
+}
+
+/* The voltage a loop of `ohms` gives with the 4.7 k pull-up at 3.3 V (UINT32_MAX: open). */
+static uint32_t loop_mv(uint32_t ohms)
+{
+    return ohms == UINT32_MAX ? 3300u : (uint32_t)(3300ull * ohms / (ohms + ZEOL_PULLUP_OHM));
+}
+
+static void eol_setup(void)
+{
+    const zone_hub_port_t port = {.ctx = NULL, .zone_event = port_event, .changed = port_changed};
+    zone_hub_init(&H, &port);
+    memset(PIN, 0, sizeof(PIN));
+    memset(PIN_SETUP, 0, sizeof(PIN_SETUP));
+    memset(ANALOG, 0, sizeof(ANALOG));
+    for (size_t i = 0; i < 64u; i++) {
+        MV[i] = loop_mv(ZEOL_OHM);
+    }
+    const zsrc_gpio_port_t gpio = {.ctx = NULL, .setup = gpio_setup, .read = gpio_read,
+                                   .setup_analog = gpio_setup_analog, .read_mv = gpio_read_mv};
+    const zsrc_sink_t sink = {.ctx = NULL, .input = sink_input, .event = sink_event};
+    zsrc_wired_init(&W, EOL_TERMS, sizeof(EOL_TERMS) / sizeof(EOL_TERMS[0]), &gpio, &sink);
+    TEST_ASSERT_EQUAL_INT(ZONE_HUB_OK, zone_hub_register(&H, zsrc_wired_ops(), &W, NOW));
+    zone_hub_start(&H, NOW);
+    clear_records();
+}
+
+static zone_hub_binding_t eol_binding(uint8_t gpio, uint8_t input)
+{
+    zone_hub_binding_t b;
+    memset(&b, 0, sizeof(b));
+    b.in[ZSRC_ROLE_MAIN].addr = zsrc_wired_eol_address(gpio, input);
+    return b;
+}
+
+/* ZONE-005: what a loop's resistance reads as - short under half the resistor, normal, tripped
+ * (two resistors, DEOL only), open beyond five resistors - and what each wiring makes of it. */
+static void test_eol_readings(void)
+{
+    TEST_ASSERT_EQUAL_INT(ZEOL_SHORT, zeol_classify(ZEOL_IN_NC, loop_mv(0u), 3300u));
+    TEST_ASSERT_EQUAL_INT(ZEOL_SHORT, zeol_classify(ZEOL_IN_NC, loop_mv(900u), 3300u));
+    TEST_ASSERT_EQUAL_INT(ZEOL_NORMAL, zeol_classify(ZEOL_IN_NC, loop_mv(2000u), 3300u));
+    TEST_ASSERT_EQUAL_INT(ZEOL_NORMAL, zeol_classify(ZEOL_IN_NC, loop_mv(4000u), 3300u));
+    TEST_ASSERT_EQUAL_INT(ZEOL_OPEN, zeol_classify(ZEOL_IN_NC, loop_mv(12000u), 3300u));
+    TEST_ASSERT_EQUAL_INT(ZEOL_OPEN, zeol_classify(ZEOL_IN_NC, 3300u, 3300u));
+    TEST_ASSERT_EQUAL_INT(ZEOL_NORMAL, zeol_classify(ZEOL_IN_DEOL, loop_mv(2000u), 3300u));
+    TEST_ASSERT_EQUAL_INT(ZEOL_TRIPPED, zeol_classify(ZEOL_IN_DEOL, loop_mv(4000u), 3300u));
+    TEST_ASSERT_EQUAL_INT(ZEOL_OPEN, zeol_classify(ZEOL_IN_DEOL, loop_mv(UINT32_MAX), 3300u));
+    /* 5 % resistors and a few ohms of wire stay where they are */
+    TEST_ASSERT_EQUAL_INT(ZEOL_NORMAL, zeol_classify(ZEOL_IN_DEOL, loop_mv(2150u), 3300u));
+    TEST_ASSERT_EQUAL_INT(ZEOL_TRIPPED, zeol_classify(ZEOL_IN_DEOL, loop_mv(3750u), 3300u));
+    const zeol_meaning_t nc_open = zeol_mean(ZEOL_IN_NC, ZEOL_OPEN);
+    const zeol_meaning_t nc_short = zeol_mean(ZEOL_IN_NC, ZEOL_SHORT);
+    TEST_ASSERT_TRUE(nc_open.fault && !nc_open.tamper && !nc_open.trouble);
+    TEST_ASSERT_TRUE(!nc_short.fault && nc_short.tamper);
+    const zeol_meaning_t no_short = zeol_mean(ZEOL_IN_NO, ZEOL_SHORT);
+    const zeol_meaning_t no_open = zeol_mean(ZEOL_IN_NO, ZEOL_OPEN);
+    TEST_ASSERT_TRUE(no_short.fault && !no_short.trouble);
+    TEST_ASSERT_TRUE(!no_open.fault && no_open.trouble); /* a fire loop's cut wire */
+    const zeol_meaning_t d_trip = zeol_mean(ZEOL_IN_DEOL, ZEOL_TRIPPED);
+    TEST_ASSERT_TRUE(d_trip.fault && !d_trip.tamper);
+    TEST_ASSERT_TRUE(zeol_mean(ZEOL_IN_DEOL, ZEOL_OPEN).tamper);
+    TEST_ASSERT_TRUE(zeol_mean(ZEOL_IN_DEOL, ZEOL_SHORT).tamper);
+    TEST_ASSERT_FALSE(zeol_mean(ZEOL_IN_DEOL, ZEOL_NORMAL).fault);
+}
+
+/* ZONE-005: a normally closed contact with its end-of-line resistor - the door opening is the
+ * zone's fault, a short across the loop its tamper, each after the response time; only a terminal
+ * that measures takes one, and its pin is analog without the pull-up. */
+static void test_eol_normally_closed_loop(void)
+{
+    eol_setup();
+    zone_hub_binding_t on_digital = eol_binding(2u, ZEOL_IN_NC);
+    TEST_ASSERT_NOT_EQUAL(ZONE_HUB_OK, zone_hub_bind(&H, 2, &on_digital, NOW));
+    zone_hub_binding_t door = eol_binding(49u, ZEOL_IN_NC);
+    TEST_ASSERT_EQUAL_INT(ZONE_HUB_OK, zone_hub_bind(&H, 1, &door, NOW));
+    TEST_ASSERT_TRUE(ANALOG[49]);
+    TEST_ASSERT_FALSE(PIN_SETUP[49]);
+    EXPECT_POSTED(1, ALARM_ZEV_FAULT, 0);
+    EXPECT_POSTED(1, ALARM_ZEV_TAMPER, 0);
+    MV[49] = loop_mv(UINT32_MAX); /* the door opens */
+    run_ms(340);
+    EXPECT_POSTED(1, ALARM_ZEV_FAULT, 0);
+    run_ms(20);
+    EXPECT_POSTED(1, ALARM_ZEV_FAULT, 1);
+    MV[49] = loop_mv(ZEOL_OHM); /* shut */
+    run_ms(400);
+    EXPECT_POSTED(1, ALARM_ZEV_RESTORE, 2); /* the first at its binding */
+    MV[49] = loop_mv(50u); /* someone bridges the loop */
+    run_ms(400);
+    EXPECT_POSTED(1, ALARM_ZEV_TAMPER, 1);
+    EXPECT_POSTED(1, ALARM_ZEV_FAULT, 1);
+    MV[49] = loop_mv(ZEOL_OHM);
+    run_ms(400);
+    EXPECT_POSTED(1, ALARM_ZEV_TAMPER_RESTORE, 2);
+    zone_hub_info_t info;
+    TEST_ASSERT_TRUE(zone_hub_info(&H, 1, &info));
+    TEST_ASSERT_EQUAL_STRING("GPIO 49 on the J7 header, end-of-line, normally closed", info.address);
+    /* unbound: the pin is given back; learning sets up the plain terminals only */
+    zone_hub_unbind(&H, 1, NOW);
+    TEST_ASSERT_FALSE(ANALOG[49]);
+    zsrc_candidate_t c[4];
+    const size_t n = zone_hub_candidates(&H, ZSRC_WIRED, "", 0, c, 4);
+    TEST_ASSERT_EQUAL_UINT(2, n);
+    TEST_ASSERT_TRUE(c[0].eol);
+    TEST_ASSERT_FALSE(c[1].eol);
+}
+
+/* ZONE-005: a fire loop (normally open detectors across the resistor) - a detector shorting the
+ * loop is the fault, a cut wire the zone's trouble, never its fault. */
+static void test_eol_fire_loop(void)
+{
+    eol_setup();
+    zone_hub_binding_t smoke = eol_binding(49u, ZEOL_IN_NO);
+    TEST_ASSERT_EQUAL_INT(ZONE_HUB_OK, zone_hub_bind(&H, 6, &smoke, NOW));
+    MV[49] = loop_mv(UINT32_MAX); /* a cut wire */
+    run_ms(400);
+    EXPECT_POSTED(6, ALARM_ZEV_TROUBLE, 1);
+    EXPECT_POSTED(6, ALARM_ZEV_FAULT, 0);
+    MV[49] = loop_mv(ZEOL_OHM);
+    run_ms(400);
+    EXPECT_POSTED(6, ALARM_ZEV_TROUBLE_RESTORE, 2);
+    MV[49] = loop_mv(0u); /* a detector goes off */
+    run_ms(400);
+    EXPECT_POSTED(6, ALARM_ZEV_FAULT, 1);
+}
+
+/* ZONE-005: double end-of-line - two resistors are the fault, an open or shorted loop its tamper;
+ * a value that changes again while it is being timed starts the timing over. */
+static void test_eol_double_loop(void)
+{
+    eol_setup();
+    zone_hub_binding_t pir = eol_binding(49u, ZEOL_IN_DEOL);
+    TEST_ASSERT_EQUAL_INT(ZONE_HUB_OK, zone_hub_bind(&H, 5, &pir, NOW));
+    MV[49] = loop_mv(2u * ZEOL_OHM); /* motion: the contact opens, both resistors count */
+    run_ms(200);
+    MV[49] = loop_mv(UINT32_MAX); /* ... and the wire is cut while that is being timed */
+    run_ms(200);
+    EXPECT_POSTED(5, ALARM_ZEV_FAULT, 0);
+    EXPECT_POSTED(5, ALARM_ZEV_TAMPER, 0);
+    run_ms(200);
+    EXPECT_POSTED(5, ALARM_ZEV_TAMPER, 1);
+    MV[49] = loop_mv(2u * ZEOL_OHM);
+    run_ms(400);
+    EXPECT_POSTED(5, ALARM_ZEV_FAULT, 1);
+    EXPECT_POSTED(5, ALARM_ZEV_TAMPER_RESTORE, 2);
 }
 
 /* ---- the Home Assistant source (ZSRC-005, ZSRC-008, HAI-009) ------------------------------- */
@@ -2241,6 +2440,11 @@ int main(void)
     RUN_TEST(test_wired_terminals);
     RUN_TEST(test_terminal_no_longer_offered_is_check);
     RUN_TEST(test_wired_learning);
+    RUN_TEST(test_wired_terminal_reserved_for_an_output);
+    RUN_TEST(test_eol_readings);
+    RUN_TEST(test_eol_normally_closed_loop);
+    RUN_TEST(test_eol_fire_loop);
+    RUN_TEST(test_eol_double_loop);
     RUN_TEST(test_ha_catalog_and_candidates);
     RUN_TEST(test_ha_watch_list);
     RUN_TEST(test_ha_state_pushes);

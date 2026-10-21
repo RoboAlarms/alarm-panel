@@ -784,6 +784,9 @@ static ui_zb_req_result_t req_siren(demo_dev_t *d, const ui_zb_siren_t *in)
         }
     }
     sn->partitions = in->partitions;
+    if (in->also != UI_ZB_ALSO_KEEP) { /* OUT-015, never one of its own */
+        sn->also = (uint8_t)(in->also & (uint8_t)~in->partitions);
+    }
     sn->burglary = in->burglary;
     sn->fire = in->fire;
     sn->strobe = in->strobe;

@@ -104,6 +104,7 @@ typedef struct {
     bool unusable;        /* the source advises against it for the input being picked; detail
                            * says why (RF-021: a sensor's closed code as its tamper code) */
     uint16_t zone;        /* the zone it already feeds, 0 = free (filled in by the hub) */
+    bool eol;             /* a wired terminal that can be an end-of-line loop (ZONE-005) */
 } zsrc_candidate_t;
 
 /* How a source reports. The platform's sink adds locking and passes the calls to the hub

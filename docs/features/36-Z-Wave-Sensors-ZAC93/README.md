@@ -105,7 +105,7 @@ system trouble; tamper and low battery are zone troubles.
 | ZW-022 | New event types appended, their sentences in `notify` (network.md §15) | host tests |
 | ZW-023 | Every parser bounds-checked; random input never crashes (fuzz tests under the sanitizers in CI) | `test_zw_fuzz` |
 | ZW-024 | Phase 2: SmartStart with QR/DSK (network.md §4.2), identify, route repair, remove/replace failed, jamming detection (§9), Time answers, Central Scene and Alarm Sensor, the quirks' Configuration parameters | host tests, HIL; SmartStart: `test_zw_qr`, `test_zw_smartstart`, `test_zwz_panel`, `-ZWave` preview 182-186; replace `test_zw_replace`, routes `test_zw_routes`, jamming `test_zw_jam`, answers owed now `test_zw_s2`, identify/Time/jamming/routes/replace in `test_zwz_panel`, preview 187-193; Central Scene `test_zsrc_zwave`; a device's jamming report `test_zwz_panel`, preview 190; the Panel Manager's add/remove and Radio page `panel_pages.test.cjs` |
-| ZW-025 | Phase 3: Long Range (§13), S0 behind an installer switch (security.md §10), radio firmware update with the arming interlock and NVM backup (§14), power settings | host tests, HIL; power: `test_zw_power`, `test_zw_api` (`test_setup_power`), `test_zwz_panel` (`test_power_cap`, the stored formats); the radio's firmware: `test_zw_gbl`, `test_zw_otw`, `test_zwz_panel` (`test_radio_update`), `test_arming` (`test_platform_holds_arming`, CORE-ARM-013), `-ZWave` preview 194-196, `panel_pages.test.cjs` |
+| ZW-025 | Phase 3: Long Range (§13), S0 behind an installer switch (security.md §10), radio firmware update with the arming interlock and NVM backup (§14), power settings | host tests, HIL; power: `test_zw_power`, `test_zw_api` (`test_setup_power`), `test_zwz_panel` (`test_power_cap`, the stored formats); the radio's firmware: `test_zw_gbl`, `test_zw_otw`, `test_zwz_panel` (`test_radio_update`), `test_zw_fwjob` (`test_region_asked`, `test_radio_builtin`), `test_arming` (`test_platform_holds_arming`, CORE-ARM-013), `-ZWave` preview 194-196, `panel_pages.test.cjs` |
 | ZW-026 | Entry Control v1 codecs bound payloads and capability masks, validate cache limits, pad outgoing ASCII to 16-byte blocks, and match only valid Get/Report pairs; never log or retain credential data | `test_zw_entry`, `test_zw_fuzz` |
 | ZW-027 | A keypad controls only its explicitly assigned partition, from its current network/generation/node/endpoint at its assigned authenticated S2 class. PIN commands use the existing engine authority; emergency buttons require opt-in. Suppress recent duplicate commands including refused PINs, allow retry when nothing executed, retain no PINs | `test_zw_keypad` (portable adapter; wired into the firmware by ZW-031, `zw_keyctl`; physical acceptance pending) |
 | ZW-028 | Existing engine events/state drive device-owned Indicator feedback independently of panel audio/voice generation. Persist explicit output destinations, enforce secure current node identity and partition scope, coalesce stale state, bound retries, preserve silent alarms, and avoid routine repeat announcements. The installer sets a keypad's output on its page ("Sounds and lights": off or a partition) through the same persisted assignment and checks, sees why it can't be set, and is told its buttons don't control the panel | `test_zw_feedback`, secure-radio and device-page scenarios in `test_zwz_panel`, preview 160-162; physical sound acceptance pending |
@@ -368,9 +368,10 @@ legacy devices), phase 3 is **Z11** (Long Range, S0, radio updates, backup).
   `T + 10 min`), pull the module (one `sensor_radio` trouble, no zone CHECKs), put it back
   (recovery), remove it (zone CHECK), exclude a device from another network; a listening
   device's pings; range through walls; Wi-Fi and Home Assistant off; `display watch 60` during
-  an inclusion and during traffic. The radio's own update and power change and the device
-  software updates have not been tried on real hardware (the bench ZAC93 runs 1.10 / SDK 7.18.3;
-  its update waits for an explicit go-ahead).
+  an inclusion and during traffic. The radio's own update from the internet was tried on the
+  bench ZAC93 on 2026-10-20: 1.10 to 2.30 (network.md §14). The power change and a device's
+  software update have not been tried on real hardware (the bench's one device, a Ring contact
+  sensor, has no files in the Z-Wave JS database: its check says so).
 
 ## Open questions
 1. **Default place**: the wireless-module socket's UART (while no ESP32-H2) or J7 IO27/IO28
@@ -398,6 +399,10 @@ legacy devices), phase 3 is **Z11** (Long Range, S0, radio updates, backup).
    Decided 2026-09-28: phase 3, off by default (BL-042).
 8. **Z-Wave sirens and locks** (Zooz ZSE19/ZSE50 sirens, door locks): the stack can send
    commands; the outputs (docs/features/16) and Devices screen (docs/features/24) are separate work.
+   Sirens: built in the core and the service ([sirens.md](sirens.md); docs/features/16
+   OUT-016..OUT-019) - the engine's bell drives them, confirmed, supervised, stored; host-tested
+   and in the preview, their rows on the device page approved 2026-10-20; not yet on a panel.
+   Locks: still open.
 9. **Life safety on Z-Wave**: S2 + checking in counts as life-safety capable, like Zigbee. Keep?
    Leaning: yes, with the installer override of ZSRC-008 when it exists. Decided 2026-09-28:
    yes (the override, BL-062).

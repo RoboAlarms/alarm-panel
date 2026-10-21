@@ -10,6 +10,7 @@ set(ZONE_HUB_SRCS
     src/bind_codec.c
     src/policy.c
     src/debounce.c
+    src/eol.c
     src/zsrc_sim.c
     src/zsrc_wired.c
     src/zsrc_ha.c

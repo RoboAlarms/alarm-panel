@@ -2052,6 +2052,13 @@ static void build_page(void)
         }
         break;
 #endif
+    case PAGE_SIRENS:
+    case PAGE_OUT_WIRED:
+    case PAGE_OUT_RF:
+    case PAGE_OUT_RF_PAIR:
+    case PAGE_RF:
+        ui_sirens_build(pg->id, pg->arg, body, title, sizeof(title), note, sizeof(note));
+        break;
 #if ALARM_UI_ZIGBEE
     case PAGE_ZIGBEE:
     case PAGE_ZIGBEE_ADD:

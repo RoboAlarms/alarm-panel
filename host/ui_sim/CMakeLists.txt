@@ -72,7 +72,7 @@ target_link_libraries(shot_png PUBLIC lvgl)
 set(ZB_HOST ${PREVIEW}/host_zigbee_demo.c ${PREVIEW}/host_zigbee_real.c ${PREVIEW}/host_link_demo.c)
 add_executable(ui_sim sim_main.c sim_audio.c ${PREVIEW}/host_panel.c ${ZB_HOST})
 target_include_directories(ui_sim PRIVATE ${CMAKE_CURRENT_LIST_DIR} ${PREVIEW})
-target_link_libraries(ui_sim PRIVATE alarm_ui alarm_proto automation sounder shot_png winmm zigbee_zones_fake)
+target_link_libraries(ui_sim PRIVATE alarm_ui alarm_proto automation sirens sounder shot_png winmm zigbee_zones_fake)
 # The real voice, packed at build time, as the preview has it (host/ui_preview/voice_pack.cmake).
 include(${PREVIEW}/voice_pack.cmake)
 alarm_host_voice_pack(ui_sim)

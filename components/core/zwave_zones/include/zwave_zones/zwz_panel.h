@@ -40,6 +40,7 @@
  *   chk   format 1 | count | count x (node u16, generation u16, seconds u32): devices' own
  *         check-ins (network.md §7 "per device on its page")
  *   prov  the SmartStart provisioning list (zw_prov.h's blob, `PV`)
+ *   siren the sirens driven by the engine's bell (zw_siren.h's blob, `ZS`; OUT-019)
  *
  * SmartStart (network.md §4.2, ZW-024): the provisioning list lives here. While an entry waits and
  * the owner says every partition is disarmed (port.disarmed), the radio listens for SmartStart
@@ -78,6 +79,7 @@
 #include "zwave_zones/zw_feedback.h"
 #include "zwave_zones/zw_keyctl.h"
 #include "zwave_zones/zw_outputs.h"
+#include "zwave_zones/zw_siren.h"
 #include "zwave_zones/zwave_zones.h"
 
 #ifdef __cplusplus
@@ -114,6 +116,7 @@ extern "C" {
 #define ZWZ_DIRTY_CHECKINS 0x08u /* chk */
 #define ZWZ_DIRTY_GARAGE   0x10u /* garage (zw_outputs.h's blob) */
 #define ZWZ_DIRTY_PROV     0x20u /* prov (zw_prov.h's blob) */
+#define ZWZ_DIRTY_SIREN    0x40u /* siren (zw_siren.h's blob) */
 
 /* Devices whose own jamming reports are kept (network.md §9); the oldest makes room. */
 #define ZWZ_PANEL_JAM_REPORTS 8u
@@ -145,13 +148,14 @@ extern "C" {
 /* What one more node adds to the node cache when it is rewritten: its record, a chunk header
  * and the rounding (27 entries). */
 #define ZWZ_NVS_NODE_GROWTH ZWZ_NVS_ENTRIES(ZWZ_NODE_RECORD_MAX)
-/* NVS "zwave" at its largest (1,753 entries, pinned by test_zwz_panel.c): the namespace, keys,
- * gen (a u16: one entry), nodes, cfg, chk, garage, prov, keypad_fb, keypad_ctl, place (a string
- * of at most 15 characters: two entries) and rstpin (a u8: one). */
+/* NVS "zwave" at its largest (1,758 entries, pinned by test_zwz_panel.c): the namespace, keys,
+ * gen (a u16: one entry), nodes, cfg, chk, garage, prov, siren, keypad_fb, keypad_ctl, place (a
+ * string of at most 15 characters: two entries) and rstpin (a u8: one). */
 #define ZWZ_NVS_WORST                                                                           \
     (1u + ZWZ_NVS_ENTRIES(ZWZ_KEYS_BLOB) + 1u + ZWZ_NVS_ENTRIES(ZWZ_NODES_BLOB_MAX) +            \
      ZWZ_NVS_ENTRIES(ZWZ_CFG_BLOB) + ZWZ_NVS_ENTRIES(ZWZ_CHECKINS_BLOB) +                       \
      ZWZ_NVS_ENTRIES(ZWO_GARAGE_BLOB) + ZWZ_NVS_ENTRIES(ZW_PROV_BLOB_MAX) +                     \
+     ZWZ_NVS_ENTRIES(ZWS_BLOB_MAX) +                                                            \
      ZWZ_NVS_ENTRIES(ZWF_BLOB_SIZE) + ZWZ_NVS_ENTRIES(ZWKC_BLOB_SIZE) + 2u + 1u)
 /* What Z-Wave never takes: the alarm configuration rewritten whole at its largest (NVS writes the
  * new value before it erases the old one) and the node cache's growth by one more record. */
@@ -229,6 +233,10 @@ typedef struct {
      * said; a slot turned off or a keypad removed while it was unreachable says true. Under the
      * owner's lock: queue it, never wait on the engine. NULL: keypads aren't supervised. */
     void (*keypad_reachable)(void *ctx, uint8_t device, bool reachable);
+    /* Optional (OUT-017, OUT-018): ALARM_TRBL_BELL for the Z-Wave sirens (zw_siren.h) - any of
+     * them not confirming its command or unheard past its limit. Only changes are said. Under
+     * the owner's lock: queue it, never wait on the engine. NULL: not told. */
+    void (*bell_trouble)(void *ctx, bool active);
 } zwz_panel_port_t;
 
 /* What the panel starts with: what is stored, and the build's choices. */
@@ -302,6 +310,10 @@ typedef struct {
     uint16_t out_seq;
     bool out_refresh;                 /* the network was found ours: ask the outputs */
     zwz_out_wait_t out_wait[ZWZ_OUT_WAITS]; /* posted commands' callers (PL02) */
+    /* sirens driven by the engine's bell (OUT-016..OUT-019) */
+    zws_t sirens;
+    uint8_t siren_armed_known;        /* partitions whose armed state was told (bit p-1) */
+    bool siren_radio;                 /* the link as the sirens were last told */
     /* SmartStart (network.md §4.2) */
     zw_prov_t prov;
     zw_prov_entry_t prov_kept;        /* the entry the last removal forgot (UI_ZW_PROV_KEEP) */
@@ -451,6 +463,33 @@ bool zwz_panel_ha_command(zwz_panel_t *p, uint64_t now, const char *key, int lev
  * the cache first. False: damaged (none kept). */
 bool zwz_panel_load_garage(zwz_panel_t *p, const uint8_t *blob, size_t len);
 size_t zwz_panel_take_garage(zwz_panel_t *p, uint8_t *buf, size_t cap);
+
+/* ---- sirens driven by the engine's bell (docs/features/16 OUT-016..OUT-019) ---------------------- */
+
+/* The engine's output (the alarm task's on_output, posted to the owner's task): the sirens
+ * follow the bell. */
+void zwz_panel_engine_output(zwz_panel_t *p, uint64_t now, uint8_t partition, alarm_output_t out,
+                             alarm_pattern_t pattern);
+/* A partition is armed (any state but disarmed) or not, from the engine's snapshots: the first
+ * word of each partition only sets it, a change after that squawks (OUT-019). */
+void zwz_panel_siren_armed(zwz_panel_t *p, uint64_t now, uint8_t partition, bool armed);
+/* Assign (or change) a siren: `c`'s node and generation must be a device of this network whose
+ * setup is done, and the end point must list Sound Switch (79) or Binary Switch (25); kind 0
+ * picks Sound Switch when it lists it, else Binary Switch (a kind it doesn't list: ZWS_ERR_ARG).
+ * Its own slot, else the first free one (ZWS_ERR_FULL). Stored (ZWZ_DIRTY_SIREN). */
+zws_result_t zwz_panel_siren_set(zwz_panel_t *p, uint64_t now, const zws_config_t *c);
+/* No longer a siren (a stop goes out first if it sounds). */
+zws_result_t zwz_panel_siren_clear(zwz_panel_t *p, uint64_t now, uint16_t node, uint8_t endpoint);
+/* "Test it" (zws_test's refusals). */
+zws_result_t zwz_panel_siren_test(zwz_panel_t *p, uint64_t now, uint16_t node, uint8_t endpoint);
+/* A siren's assignment and state (slot 0..ZWS_SIRENS-1), NULL when the slot is free. Read under
+ * the owner's lock. */
+const zws_siren_t *zwz_panel_siren(const zwz_panel_t *p, size_t slot);
+/* The stored sirens (NVS zwave/siren), after zwz_panel_load_nodes: an assignment whose device is
+ * no longer in the cache (or under another generation) is dropped, and the rest stored again.
+ * False: damaged (none kept). */
+bool zwz_panel_load_siren(zwz_panel_t *p, const uint8_t *blob, size_t len);
+size_t zwz_panel_take_siren(zwz_panel_t *p, uint8_t *buf, size_t cap);
 
 /* `zwave jam <dBm>` (network.md §9): the jamming threshold, -100..-20 dBm, stored (cfg). */
 bool zwz_panel_set_jam(zwz_panel_t *p, uint64_t now, int8_t dbm);

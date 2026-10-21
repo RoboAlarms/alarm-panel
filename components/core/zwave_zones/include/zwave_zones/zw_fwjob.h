@@ -41,6 +41,7 @@ typedef struct {
     zwfc_device_t dev;
     zwfc_update_t update; /* UI_ZW_FW_AVAILABLE / DOWNLOADING: the one offered */
     char words[96];
+    bool radio;           /* the radio's own check (zwfj_check_radio) */
 } zwfj_t;
 
 void zwfj_init(zwfj_t *j);
@@ -60,9 +61,15 @@ void zwfj_check_answer(zwfj_t *j, int http_status, const char *body, size_t len,
 /* The Z-Wave radio itself (network.md §14), asked about as Z-Wave JS asks about a controller: its
  * own manufacturer, product type and product ID (GetSerialApiCapabilities), its firmware version
  * and SDK. The job then names node 0, generation 0 - "the radio" - for the calls below. 0 when the
- * radio's facts aren't known (it hasn't started). */
+ * radio's facts aren't known (it hasn't started). When the service answers but offers nothing,
+ * the panel's own list of the ZAC93's files may (zwfc_radio_builtin). */
 size_t zwfj_check_radio(zwfj_t *j, const zw_module_facts_t *f, const char *region, char *body,
                         size_t cap);
+
+/* The region the service is asked for: the installer's choice when made, else the one the radio
+ * reports (the service lists most files per region and offers none of those to a request without
+ * one). NULL when neither is known. */
+const char *zwfj_region(bool chosen_set, uint8_t chosen, const zw_module_facts_t *f);
 
 /* "Install it" for (node, generation): the file's URL, NULL when nothing is on offer for it. */
 const char *zwfj_download_begin(zwfj_t *j, uint16_t node, uint16_t generation);

@@ -250,7 +250,9 @@ known bindings still load, and the panel leaves the stored blob alone until a bi
   debounced with the zone's response time. J7's GPIO 53/54 (the wireless-module socket on V1.1)
   and GPIO 25 (the P4's USB D+) are left out on purpose, because picking a terminal configures
   the pin; add them in `board_pins.h` if nothing else uses them. With no wired zone the task
-  sleeps.
+  sleeps. A terminal a wired output takes (docs/features/16 OUT-021, `zsrc_wired_reserve`) is no
+  zone's: never offered, set up while learning or bound until the output gives it back; a
+  terminal a zone uses can't become an output.
 
 ### Console (service UART)
 - `zones`: every zone with its sensor ("simulator", "Wired input, GPIO 4 on the J7 header
@@ -422,7 +424,10 @@ flowchart TD
 - [ ] Installer override for life-safety zones on untrusted sources: the zone page already warns
       (`ui_sources.c`, `zsrc_trusted_for`), but untrusted sources exist now (Home Assistant,
       433 MHz) and the installer still can't override (ZSRC-008) (BL-062)
-- [ ] EOL supervision on wired inputs (docs/features/02 ZONE-005) (BL-063)
+- [ ] EOL supervision on wired inputs (docs/features/02 ZONE-005): built and host-tested
+  (`zone_eol.h`, the wired source's loops, the zone editor's Contact choices, the ADC on the
+  panel's terminals that measure, `zone <n> bind wired <gpio> eol-nc|eol-no|deol`; its screens
+  approved 2026-10-20); left: resistors on a panel's J7 (BL-063)
 - [x] `zsrc_ha`, the Home Assistant source (M13, docs/features/23): catalog, watched entities,
       grace and CHECK, the picker's search, fed by `ha_link` (`zsrc_ha.c`, `test_ha_*`)
 - [ ] Home Assistant entities as zones on a panel with a paired Home Assistant: following,

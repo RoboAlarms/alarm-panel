@@ -189,7 +189,7 @@ static bool worker_start(void)
 
 static const char *region_word(const zwz_panel_t *p)
 {
-    return p->setup.cfg.region_set ? zwfc_region(p->setup.cfg.region) : NULL;
+    return zwfj_region(p->setup.cfg.region_set, p->setup.cfg.region, zw_host_facts(&p->net.host));
 }
 
 ui_zw_req_result_t zwsvc_fw_request(const zwsvc_req_t *req, bool need_installer)

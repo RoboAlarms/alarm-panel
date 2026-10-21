@@ -1350,7 +1350,7 @@ static void tell_bell(void)
 {
     const int want = atomic_load(&s_bell_want);
     if (want >= 0 && want != s_bell_told) {
-        alarm_service_system_trouble(ALARM_TRBL_BELL, want != 0);
+        alarm_service_bell_trouble(ALARM_BELL_OWNER_ZIGBEE, want != 0);
         s_bell_told = want;
     }
 }

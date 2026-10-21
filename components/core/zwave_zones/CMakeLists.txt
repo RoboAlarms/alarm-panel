@@ -15,16 +15,17 @@ set(ZWAVE_ZONES_SRCS
     src/zw_fwcat.c
     src/zw_fwjob.c
     src/zw_outputs.c
+    src/zw_siren.c
 )
 
 if(ESP_PLATFORM)
     idf_component_register(SRCS ${ZWAVE_ZONES_SRCS}
                            INCLUDE_DIRS include
-                           REQUIRES zwave_host zwave_proto zone_hub ui_backend alarm_core alarm_proto)
+                           REQUIRES zwave_host zwave_proto zone_hub ui_backend alarm_core alarm_proto sirens)
 else()
     add_library(zwave_zones STATIC ${ZWAVE_ZONES_SRCS})
     target_include_directories(zwave_zones PUBLIC include)
-    target_link_libraries(zwave_zones PUBLIC zwave_host zwave_proto zone_hub ui_backend alarm_core alarm_proto)
+    target_link_libraries(zwave_zones PUBLIC zwave_host zwave_proto zone_hub ui_backend alarm_core alarm_proto sirens)
     target_compile_features(zwave_zones PUBLIC c_std_11)
     set_target_properties(zwave_zones PROPERTIES C_EXTENSIONS OFF)
 endif()

@@ -39,6 +39,7 @@
 
 #include "unity.h"
 #include "wd_fixture_v1.h"
+#include "wd_fixture_v2.h"
 #include "zigbee_zones/zbz_models.h"
 #include "zigbee_zones/zbz_wd.h"
 
@@ -1241,7 +1242,8 @@ static void fill_fixture_content(void)
     TEST_ASSERT_EQUAL_INT(ZBW_OK, zbw_assign(&wd, &a));
 }
 
-/* ZB-023: the frozen v1 blob reads, and the same assignments encode to its bytes. */
+/* ZB-023: the frozen v1 blob reads (no `also`: 0); the same assignments, with siren 3 also for
+ * partition 3's alarms (OUT-015), encode to the frozen v2 blob's bytes, which reads back. */
 static void test_wd_frozen_fixture(void)
 {
     TEST_ASSERT_TRUE(zbw_decode(&wd, WD_FIXTURE_V1, sizeof(WD_FIXTURE_V1)));
@@ -1263,13 +1265,46 @@ static void test_wd_frozen_fixture(void)
     TEST_ASSERT_TRUE(!s->a.burglary && s->a.fire && !s->a.strobe && s->a.squawk);
     TEST_ASSERT_EQUAL_UINT8(ZBW_LEVEL_VERY_HIGH, s->a.volume);
     TEST_ASSERT_EQUAL_UINT16(120, s->a.supervision_min);
+    TEST_ASSERT_EQUAL_HEX8(0x00, zbw_find(&wd, 3)->a.also);
 
     setUp();
     fill_fixture_content();
+    zbw_assign_t a = zbw_find(&wd, 3)->a;
+    a.also = 0x05; /* partition 1 is its own: only 3 is kept */
+    TEST_ASSERT_EQUAL_INT(ZBW_OK, zbw_assign(&wd, &a));
+    TEST_ASSERT_EQUAL_HEX8(0x04, zbw_find(&wd, 3)->a.also);
     uint8_t buf[ZBW_BLOB_MAX];
     size_t n = zbw_encode(&wd, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_size_t(sizeof(WD_FIXTURE_V1), n);
-    TEST_ASSERT_EQUAL_HEX8_ARRAY(WD_FIXTURE_V1, buf, n);
+    TEST_ASSERT_EQUAL_size_t(sizeof(WD_FIXTURE_V2), n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(WD_FIXTURE_V2, buf, n);
+    setUp();
+    TEST_ASSERT_TRUE(zbw_decode(&wd, WD_FIXTURE_V2, sizeof(WD_FIXTURE_V2)));
+    TEST_ASSERT_EQUAL_HEX8(0x04, zbw_find(&wd, 3)->a.also);
+    TEST_ASSERT_EQUAL_HEX8(0x00, zbw_find(&wd, 7)->a.also);
+}
+
+/* OUT-015: a Zigbee siren also sounds for another partition's alarm and strobe, never for its
+ * bell test or its arming (no squawk). */
+static void test_wd_also_sounds_for(void)
+{
+    zbw_assign_t a = siren(3, IEEE_1, 0x01, true, true);
+    a.also = 0x02;
+    a.squawk = true;
+    TEST_ASSERT_EQUAL_INT(ZBW_OK, zbw_assign(&wd, &a));
+    zbw_radio(&wd, 0, true);
+    const unsigned sent = fake.count;
+    zbw_armed(&wd, 0, 2, true); /* the other partition arms: no squawk */
+    TEST_ASSERT_EQUAL_UINT(sent, fake.count);
+    zbw_armed(&wd, 0, 2, false);
+    TEST_ASSERT_EQUAL_UINT(sent, fake.count);
+    zbw_armed(&wd, 0, 1, true); /* its own: one squawk */
+    TEST_ASSERT_EQUAL_UINT(sent + 1u, fake.count);
+    zbw_output(&wd, 0, 2, ALARM_OUT_BELL, ALARM_PAT_STEADY);
+    zbw_warning_t want;
+    TEST_ASSERT_TRUE(zbw_wanted(&wd, zbw_find(&wd, 3), &want));
+    TEST_ASSERT_EQUAL_UINT8(ZBW_MODE_BURGLAR, want.mode);
+    zbw_output(&wd, 0, 2, ALARM_OUT_BELL, ALARM_PAT_OFF);
+    TEST_ASSERT_FALSE(zbw_wanted(&wd, zbw_find(&wd, 3), &want));
 }
 
 /* ZB-023: four sirens fill ZBW_BLOB_MAX exactly and read back; too small a buffer writes nothing;
@@ -1403,12 +1438,12 @@ static void test_wd_entry_lengths(void)
     longer[at + 12] |= 0xF0u;
     longer[at + 14] = 0x05; /* the device byte: ignored */
     at += 17;
-    longer[at++] = 0xEE;
-    longer[at++] = 0xEE;
+    longer[at++] = 0x00; /* also (OUT-015) */
+    longer[at++] = 0xEE; /* a later field */
     longer[at++] = 0x13;
     memcpy(&longer[at], &WD_FIXTURE_V1[21], 17);
     at += 17;
-    longer[at++] = 0xEE;
+    longer[at++] = 0x00;
     longer[at++] = 0xEE;
     TEST_ASSERT_EQUAL_size_t(sizeof(longer), at);
     TEST_ASSERT_TRUE(zbw_decode(&wd, longer, sizeof(longer)));
@@ -1419,7 +1454,10 @@ static void test_wd_entry_lengths(void)
     TEST_ASSERT_EQUAL_UINT16(120, zbw_find(&wd, 7)->a.supervision_min);
     uint8_t buf[ZBW_BLOB_MAX];
     size_t n = zbw_encode(&wd, buf, sizeof(buf));
-    TEST_ASSERT_EQUAL_HEX8_ARRAY(WD_FIXTURE_V1, buf, n); /* written back in v1 */
+    /* written back in today's entries: v1's fields, then `also` (0) */
+    TEST_ASSERT_EQUAL_size_t(sizeof(WD_FIXTURE_V1) + 2u, n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(&WD_FIXTURE_V1[3], &buf[3], 17);
+    TEST_ASSERT_EQUAL_HEX8(0x00, buf[20]);
 }
 
 int main(void)
@@ -1427,6 +1465,7 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_warning_info_every_byte);
     RUN_TEST(test_squawk_every_byte);
+    RUN_TEST(test_wd_also_sounds_for);
     RUN_TEST(test_golden_start_warning);
     RUN_TEST(test_golden_squawk);
     RUN_TEST(test_project_bytes);

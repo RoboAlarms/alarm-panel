@@ -23,6 +23,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "alarm/alarm_types.h"
 #include "esp_err.h"
 #include "ui_backend/ui_backend.h"
 
@@ -176,6 +177,13 @@ bool zwave_service_output_post(const char *key, int level, uint64_t issued_ms,
                                uint32_t request_id, zwave_service_output_done_fn done, void *ctx);
 /* The radio's link is up (the network runs). Safe from any task. */
 bool zwave_service_link_up(void);
+
+/* The engine's bell for the Z-Wave sirens (docs/features/16 OUT-016, docs/features/36 sirens.md),
+ * handed on by the start-up's own listener (panel_app.c on_output) as Zigbee's is: from the alarm
+ * task, never blocking, never taking a lock - the latest per partition is kept and posted to the
+ * zwave task (replayed whole if its mailbox was full). Only ALARM_OUT_BELL is taken. Built
+ * without CONFIG_ALARM_ZSRC_ZWAVE too (it does nothing), so the caller needs no guard. */
+void zwave_service_engine_output(alarm_output_t output, uint8_t partition, alarm_pattern_t pattern);
 
 /* The developer link (docs/features/30 "Z-Wave"): JSON for an enrolled workstation, through
  * dev_remote's adapter (the firmware's dev_adapter.c). Each writes one JSON document into out,

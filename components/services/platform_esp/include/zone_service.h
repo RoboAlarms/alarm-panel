@@ -94,6 +94,10 @@ bool zone_service_learn(uint8_t kind, bool on);
 /* Whether something already has this source listening (the zone editor's picker), so the
  * console's "terminals" doesn't switch it off underneath. */
 bool zone_service_learning(uint8_t kind);
+/* OUT-021: a wired terminal taken by an output (docs/features/16) or given back: no zone may bind
+ * it, learning leaves it alone. false while a zone uses it (or for a pin that is no terminal). */
+bool zone_service_reserve_terminal(uint8_t gpio, bool reserved);
+bool zone_service_terminal_in_use(uint8_t gpio);
 size_t zone_service_candidates(uint8_t kind, const char *query, uint32_t filter,
                                zsrc_candidate_t *out, size_t max);
 const char *zone_service_result_name(zone_hub_result_t r);

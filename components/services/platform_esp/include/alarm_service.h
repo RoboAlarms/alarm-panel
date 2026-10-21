@@ -88,6 +88,17 @@ void alarm_service_system_trouble(alarm_sys_trouble_t trouble, bool active);
 /* CORE-TRBL-001, P4-013, ZW-039: owner raises or clears its hold on ALARM_TRBL_STORAGE
  * (alarm_engine_storage_trouble on the alarm task): it stands while any owner holds it. */
 void alarm_service_storage_trouble(alarm_storage_owner_t owner, bool active);
+/* OUT-020: the bell trouble (ALARM_TRBL_BELL) held per kind of siren; it stands while any owner
+ * holds it, and is posted only when that changes. Every siren driver uses this, never
+ * alarm_service_system_trouble(ALARM_TRBL_BELL, ...) itself. */
+typedef enum {
+    ALARM_BELL_OWNER_ZIGBEE = 0,
+    ALARM_BELL_OWNER_ZWAVE,
+    ALARM_BELL_OWNER_WIRED,
+    ALARM_BELL_OWNER_RF,
+    ALARM_BELL_OWNER_COUNT
+} alarm_bell_owner_t;
+void alarm_service_bell_trouble(alarm_bell_owner_t owner, bool active);
 void alarm_service_device_checkin(uint8_t device);
 /* CORE-TRBL-008, ZW-038: a device the platform can't reach (false) or hears again (true):
  * alarm_engine_device_reachable on the alarm task. */

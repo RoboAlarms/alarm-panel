@@ -13,6 +13,7 @@
 
 #include "i18n/i18n_date.h"
 #include "ui_internal.h"
+#include "zone_hub/zone_eol.h"
 #include "zone_hub/zsrc_rf.h"
 #include "zone_hub/zsrc_wired.h"
 #if ALARM_UI_ZWAVE
@@ -956,23 +957,99 @@ static void set_invert(zsrc_mapping_t *m, int32_t v)
     m->invert = v != 0;
 }
 
+/* The Contact choices: a plain contact either way, or an end-of-line loop (ZONE-005, BL-063) on a
+ * terminal that measures. index = the choice; its wiring and sense: */
+static const struct {
+    uint8_t input;  /* ZEOL_IN_* */
+    bool invert;
+} CONTACTS[] = {
+    {ZEOL_IN_NONE, false}, {ZEOL_IN_NONE, true}, {ZEOL_IN_NC, false}, {ZEOL_IN_NO, false},
+    {ZEOL_IN_DEOL, false},
+};
+
+/* The zone's terminal can be an end-of-line loop (its candidate says so). */
+static bool terminal_measures(void)
+{
+    if (S.be.zone_candidates == NULL) {
+        return false;
+    }
+    static zsrc_candidate_t c[ZSRC_WIRED_MAX];
+    const size_t n = S.be.zone_candidates(S.be.ctx, ZSRC_WIRED, "", c, ZSRC_WIRED_MAX);
+    for (size_t i = 0; i < n; i++) {
+        if (c[i].addr.id == s_info.binding.in[ZSRC_ROLE_MAIN].addr.id) {
+            return c[i].eol;
+        }
+    }
+    return false;
+}
+
+static int32_t contact_index(const zsrc_input_t *in)
+{
+    for (size_t i = 0; i < sizeof(CONTACTS) / sizeof(CONTACTS[0]); i++) {
+        if (CONTACTS[i].input == in->addr.input &&
+            (in->addr.input != ZEOL_IN_NONE || CONTACTS[i].invert == in->map.invert)) {
+            return (int32_t)i;
+        }
+    }
+    return 0;
+}
+
+static const char *contact_words(const zsrc_input_t *in)
+{
+    switch (contact_index(in)) {
+    case 1: return TR("Normally open");
+    /* TR: a wired zone's Contact: a normally closed contact with an end-of-line resistor. At
+     * most 40 bytes */
+    case 2: return TR("Closed, end-of-line resistor");
+    /* TR: a wired zone's Contact: normally open devices across an end-of-line resistor. At
+     * most 40 bytes */
+    case 3: return TR("Open, end-of-line resistor");
+    /* TR: a wired zone's Contact: two end-of-line resistors. At most 40 bytes */
+    case 4: return TR("Double end-of-line");
+    default: return TR("Normally closed");
+    }
+}
+
 static void contact_chosen(int32_t index)
 {
-    if (index >= 0) {
-        rebind_with(set_invert, index);
+    if (index < 0 || (size_t)index >= sizeof(CONTACTS) / sizeof(CONTACTS[0]) ||
+        !S.be.zone_info(S.be.ctx, s_zone, &s_info)) {
+        return;
     }
+    zone_hub_binding_t b = s_info.binding;
+    b.in[ZSRC_ROLE_MAIN].addr.input = CONTACTS[index].input;
+    b.in[ZSRC_ROLE_MAIN].map.invert = CONTACTS[index].invert; /* never on a loop: it reports states */
+    const zone_hub_result_t r = S.be.zone_bind(S.be.ctx, s_zone, &b);
+    if (r != ZONE_HUB_OK) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_toast(bind_error(r));
+    }
+    ui_page_rebuild();
 }
 
 static void pick_contact(void *ctx)
 {
     (void)ctx;
-    static ui_choice_t choices[2];
+    static ui_choice_t choices[5];
     choices[0] = (ui_choice_t){NULL, {0}, TR("Normally closed"),
                                TR("Closed while the door is shut: a cut wire shows as open")};
     choices[1] = (ui_choice_t){NULL, {0}, TR("Normally open"),
                                TR("Closes when it trips: a cut wire goes unnoticed")};
-    ui_pick_sheet(TR("Contact"), TR("How the sensor's contact works"), choices, 2u,
-                  s_info.binding.in[ZSRC_ROLE_MAIN].map.invert ? 1 : 0, contact_chosen);
+    /* TR: a choice of a wired zone's Contact (ZONE-005) */
+    choices[2] = (ui_choice_t){NULL, {0}, TR("Closed, end-of-line resistor"),
+                               /* TR: under the choice; 2 kOhm and 4.7 kOhm are the resistors */
+                               TR("Doors, windows, motion: 2 kOhm at the sensor, 4.7 kOhm pull-up. A short is a tamper")};
+    /* TR: a choice of a wired zone's Contact (ZONE-005) */
+    choices[3] = (ui_choice_t){NULL, {0}, TR("Open, end-of-line resistor"),
+                               /* TR: under the choice */
+                               TR("Smoke detectors, panic buttons: a cut wire is a trouble")};
+    /* TR: a choice of a wired zone's Contact (ZONE-005) */
+    choices[4] = (ui_choice_t){NULL, {0}, TR("Double end-of-line"),
+                               /* TR: under the choice */
+                               TR("Two 2 kOhm resistors: a cut or shorted wire is a tamper")};
+    const size_t n = terminal_measures() ? 5u : 2u;
+    ui_pick_sheet(TR("Contact"), TR("How the sensor's contact works"), choices, n,
+                  contact_index(&s_info.binding.in[ZSRC_ROLE_MAIN]), contact_chosen);
 }
 
 static const uint16_t RESPONSE_MS[] = {10u, 350u, 700u, 1200u};
@@ -1495,9 +1572,10 @@ void ui_sources_build_settings(lv_obj_t *body, int32_t arg, char *title, size_t 
                     edit_states, NULL);
     }
     if (s_info.binding.in[ZSRC_ROLE_MAIN].addr.kind == ZSRC_WIRED) {
-        /* a wired contact in the words the zone page used: normally closed or open */
+        /* a wired contact in the words the zone page used: normally closed or open, or an
+         * end-of-line loop (ZONE-005) */
         ui_row_link(body, UI_ICON_ARROW_LEFT_RIGHT, ui_tone_blue(), TR("Contact"), NULL,
-                    m->invert ? TR("Normally open") : TR("Normally closed"), UI_ICON_CHEVRON_RIGHT,
+                    contact_words(&s_info.binding.in[ZSRC_ROLE_MAIN]), UI_ICON_CHEVRON_RIGHT,
                     pick_contact, NULL);
     } else {
         ui_row_toggle_icon(

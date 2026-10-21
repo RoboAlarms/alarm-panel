@@ -114,7 +114,15 @@ typedef enum {
     ZWSVC_REQ_HA,       /* Home Assistant's command for an output: ha_key, ha_level (ZW-036) */
     ZWSVC_REQ_POWER,    /* the radio's power (network.md §12, ZW-025): read, or power_set */
     ZWSVC_REQ_RADIO_FILE, /* the radio's own firmware from the installer's .gbl (§14) */
+    ZWSVC_REQ_SIREN,    /* a siren driven by the engine's bell (OUT-016..OUT-019): siren_op */
 } zwsvc_req_kind_t;
+
+/* ZWSVC_REQ_SIREN's operations. */
+typedef enum {
+    ZWSVC_SIREN_SET = 1, /* assign or change: siren (its node, generation, end point, scope...) */
+    ZWSVC_SIREN_CLEAR,   /* siren.node, siren.endpoint */
+    ZWSVC_SIREN_TEST,    /* siren.node, siren.endpoint */
+} zwsvc_siren_op_t;
 
 typedef struct {
     uint8_t kind;      /* zwsvc_req_kind_t */
@@ -132,6 +140,8 @@ typedef struct {
     bool power_set;        /* POWER: change it (else read it) */
     bool power_lr;         /* POWER: the Long Range maximum */
     int16_t power_dbm10;   /* POWER: the new power, tenths of a dBm */
+    uint8_t siren_op;      /* SIREN: zwsvc_siren_op_t */
+    zws_config_t siren;    /* SIREN */
 } zwsvc_req_t;
 
 /* ZWSVC_REQ_FEEDBACK from the device page: the node's own slot, else the first free one. */

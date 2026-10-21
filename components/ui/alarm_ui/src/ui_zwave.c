@@ -2192,6 +2192,347 @@ static void device_feedback_rows(lv_obj_t *body, const ui_zw_device_page_t *page
                  ui_tone_gray());
 }
 
+/* ---- a siren the panel sounds with the alarm (OUT-016..OUT-019; the BL-037 proposal) ---- */
+
+typedef enum {
+    ZS_PICK_PARTS = 0,
+    ZS_PICK_ALSO,
+    ZS_PICK_VOLUME,
+    ZS_PICK_SUPERVISION,
+} zs_pick_t;
+
+static struct {
+    uint8_t what;  /* zs_pick_t */
+    size_t n;
+    ui_choice_t choices[12];
+    uint16_t value[12];
+    char words[12][48];
+} s_zs;
+
+static uint8_t zs_parts_enabled(void)
+{
+    return S.snap.partitions != 0u ? S.snap.partitions : 1u;
+}
+
+/* "All", "Partition 2", "None" (the Z-Wave pages name partitions by number, as its keypads do). */
+static void zs_parts_words(uint8_t parts, bool all_word, char *out, size_t len)
+{
+    const uint8_t all = zs_parts_enabled();
+    parts &= all;
+    out[0] = '\0';
+    if (parts == 0u) {
+        i18n_utf8_copy(out, len, TR_C("partitions", "None"));
+        return;
+    }
+    if (all_word && parts == all) {
+        i18n_utf8_copy(out, len, TR_C("partitions", "All"));
+        return;
+    }
+    for (uint8_t i = 0; i < ALARM_MAX_PARTITIONS && i < 8u; i++) {
+        if ((parts & (1u << i)) == 0u) {
+            continue;
+        }
+        char one[24];
+        I18N_FORMAT(one, sizeof(one), TR("Partition {0}"), (unsigned)(i + 1u));
+        if (out[0] == '\0') {
+            i18n_utf8_copy(out, len, one);
+        } else {
+            char joined[96];
+            I18N_FORMAT(joined, sizeof(joined), TR_C("list of names", "{0}, {1}"), out, one);
+            i18n_utf8_copy(out, len, joined);
+        }
+    }
+}
+
+static void zs_add(const char *glyph, lv_color_t tone, const char *title, const char *detail,
+                   uint16_t value)
+{
+    if (s_zs.n >= sizeof(s_zs.value) / sizeof(s_zs.value[0])) {
+        return;
+    }
+    i18n_utf8_copy(s_zs.words[s_zs.n], sizeof(s_zs.words[0]), title);
+    s_zs.choices[s_zs.n] = (ui_choice_t){glyph, tone, s_zs.words[s_zs.n], detail};
+    s_zs.value[s_zs.n] = value;
+    s_zs.n++;
+}
+
+static int32_t zs_index(uint16_t value)
+{
+    for (size_t i = 0; i < s_zs.n; i++) {
+        if (s_zs.value[i] == value) {
+            return (int32_t)i;
+        }
+    }
+    return -1;
+}
+
+/* Its settings as the page shows them, changed, sent. */
+static void zs_send(const ui_zw_device_page_t *page, uint8_t parts, uint8_t also, bool burglary,
+                    bool fire, bool squawk, uint8_t volume, uint16_t minutes)
+{
+    ui_zw_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.kind = UI_ZW_REQ_SIREN;
+    req.user = S.auth_user;
+    req.node = s_dev.node;
+    req.generation = s_dev.generation;
+    req.endpoint = page->siren.endpoint;
+    req.parts = (burglary || fire) ? parts : 0u;
+    req.also = (uint8_t)(also & (uint8_t)~parts);
+    req.siren_flags = (uint8_t)((burglary ? UI_ZW_SIREN_BURGLARY : 0u) |
+                                (fire ? UI_ZW_SIREN_FIRE : 0u) | (squawk ? UI_ZW_SIREN_SQUAWK : 0u));
+    req.volume = volume;
+    req.minutes = minutes;
+    if (request(&req)) {
+        ui_page_rebuild();
+    }
+}
+
+static bool zs_page(ui_zw_device_page_t *page)
+{
+    return installer() && s_dev.open &&
+           S.be.zw_device(S.be.ctx, s_dev.node, s_dev.generation, page) &&
+           page->siren.fit == UI_ZW_FB_AVAILABLE;
+}
+
+typedef enum { ZS_BURGLARY = 0, ZS_FIRE, ZS_SQUAWK } zs_flag_t;
+
+static void zs_flag(bool on, void *ctx)
+{
+    ui_zw_device_page_t page;
+    if (!zs_page(&page)) {
+        return;
+    }
+    const ui_zw_device_page_t *pg = &page;
+    uint8_t parts = pg->siren.partitions;
+    bool burglary = parts != 0u && pg->siren.burglary;
+    bool fire = parts != 0u && pg->siren.fire;
+    bool squawk = parts != 0u && pg->siren.squawk;
+    if (parts == 0u && on) {
+        parts = (zs_parts_enabled() & 0x01u) != 0u ? 0x01u : zs_parts_enabled(); /* a new one: 1 */
+    }
+    switch ((zs_flag_t)(uintptr_t)ctx) {
+    case ZS_BURGLARY: burglary = on; break;
+    case ZS_FIRE: fire = on; break;
+    default: squawk = on; break;
+    }
+    zs_send(pg, parts, pg->siren.also, burglary, fire, squawk, pg->siren.volume,
+            pg->siren.supervision_min);
+}
+
+static void zs_chosen(int32_t index)
+{
+    ui_zw_device_page_t page;
+    if (index < 0 || (size_t)index >= s_zs.n || !zs_page(&page)) {
+        return;
+    }
+    const uint16_t v = s_zs.value[index];
+    uint8_t parts = page.siren.partitions;
+    uint8_t also = page.siren.also;
+    uint8_t volume = page.siren.volume;
+    uint16_t minutes = page.siren.supervision_min;
+    bool burglary = page.siren.burglary;
+    bool fire = page.siren.fire;
+    switch ((zs_pick_t)s_zs.what) {
+    case ZS_PICK_PARTS:
+        parts = (uint8_t)v;
+        if (parts != 0u && page.siren.partitions == 0u) {
+            burglary = true; /* a siren used for the first time sounds for both */
+            fire = true;
+        }
+        break;
+    case ZS_PICK_ALSO: also = (uint8_t)v; break;
+    case ZS_PICK_VOLUME: volume = (uint8_t)v; break;
+    default: minutes = v; break;
+    }
+    zs_send(&page, parts, also, burglary, fire, page.siren.squawk, volume, minutes);
+}
+
+static void zs_pick(void *ctx)
+{
+    ui_zw_device_page_t page;
+    if (!zs_page(&page)) {
+        return;
+    }
+    s_zs.what = (uint8_t)(uintptr_t)ctx;
+    s_zs.n = 0;
+    const uint8_t all = zs_parts_enabled();
+    char words[48];
+    switch ((zs_pick_t)s_zs.what) {
+    case ZS_PICK_PARTS:
+    case ZS_PICK_ALSO: {
+        const uint8_t exclude = s_zs.what == ZS_PICK_ALSO ? page.siren.partitions : 0u;
+        const uint8_t offer = (uint8_t)(all & (uint8_t)~exclude);
+        zs_add(UI_ICON_BELL_OFF, ui_tone_gray(), TR_C("partitions", "None"),
+               s_zs.what == ZS_PICK_ALSO ? TR("Only its own partitions")
+                                         /* TR: under "None" for a Z-Wave siren's partitions */
+                                         : TR("The panel doesn't sound it"),
+               0u);
+        if ((offer & (uint8_t)(offer - 1u)) != 0u) {
+            zs_add(UI_ICON_WAREHOUSE, ui_tone_violet(),
+                   exclude != 0u ? TR("All the others") : TR("All partitions"), NULL, offer);
+        }
+        for (uint8_t i = 0; i < ALARM_MAX_PARTITIONS && i < 8u; i++) {
+            if ((offer & (1u << i)) != 0u) {
+                I18N_FORMAT(words, sizeof(words), TR("Partition {0}"), (unsigned)(i + 1u));
+                zs_add(UI_ICON_WAREHOUSE, ui_tone_violet(), words, NULL, (uint16_t)(1u << i));
+            }
+        }
+        if (s_zs.what == ZS_PICK_ALSO) {
+            ui_pick_sheet(TR("Also sounds for"), TR("Other partitions' alarms, never their chirps"),
+                          s_zs.choices, s_zs.n, zs_index(page.siren.also), zs_chosen);
+        } else {
+            ui_pick_sheet(TR_C("siren", "Partitions"), TR("Their alarms and its chirps"),
+                          s_zs.choices, s_zs.n, zs_index(page.siren.partitions), zs_chosen);
+        }
+        break;
+    }
+    case ZS_PICK_VOLUME: {
+        /* TR: a choice: a Z-Wave siren's volume is its own setting */
+        zs_add(NULL, ui_tone_blue(), TR("Its own"), TR("As the siren is set"), 0u);
+        static const uint8_t VOL[] = {25u, 50u, 75u, 100u};
+        for (size_t i = 0; i < sizeof(VOL); i++) {
+            /* TR: a Z-Wave siren's volume; {0} a percentage */
+            I18N_FORMAT(words, sizeof(words), TR("{0} %"), (unsigned)VOL[i]);
+            zs_add(NULL, ui_tone_blue(), words, NULL, VOL[i]);
+        }
+        ui_pick_sheet(TR("Volume"), TR("For its alarms, chirps and tests"), s_zs.choices, s_zs.n,
+                      zs_index(page.siren.volume), zs_chosen);
+        break;
+    }
+    default: {
+        static const uint16_t MIN[] = {60u, 120u, 360u, 720u, 1440u};
+        /* TR: the default choice of a Z-Wave siren's Supervision */
+        zs_add(NULL, ui_tone_blue(), TR("After 4 h"), TR("The default for a Z-Wave siren"), 0u);
+        for (size_t i = 0; i < sizeof(MIN) / sizeof(MIN[0]); i++) {
+            /* TR: a Z-Wave siren's Supervision choice; {0} hours */
+            I18N_FORMAT(words, sizeof(words), TR("After {0} h"), (unsigned)(MIN[i] / 60u));
+            zs_add(NULL, ui_tone_blue(), words, NULL, MIN[i]);
+        }
+        ui_pick_sheet(TR("Supervision"),
+                      TR("Not heard this long, it is a siren trouble. It can't be turned off."),
+                      s_zs.choices, s_zs.n, zs_index(page.siren.supervision_min), zs_chosen);
+        break;
+    }
+    }
+}
+
+static void zs_test(void *ctx)
+{
+    ui_zw_device_page_t page;
+    if (!zs_page(&page)) {
+        return;
+    }
+    (void)ctx;
+    ui_zw_request_t req;
+    memset(&req, 0, sizeof(req));
+    req.kind = UI_ZW_REQ_SIREN_TEST;
+    req.user = S.auth_user;
+    req.node = s_dev.node;
+    req.generation = s_dev.generation;
+    req.endpoint = page.siren.endpoint;
+    if (request(&req)) {
+        ui_toast(TR("Sounding for 2 seconds"));
+    }
+}
+
+static void device_siren_rows(lv_obj_t *body, const ui_zw_device_page_t *page)
+{
+    /* TR: a section on a Z-Wave siren's page (BL-037) */
+    ui_section(body, TR_C("Z-Wave siren section", "Siren"));
+    if (page->siren.fit != UI_ZW_FB_AVAILABLE) {
+        ui_paragraph(body,
+                     page->siren.fit == UI_ZW_FB_NOT_READY
+                         /* TR: a Z-Wave siren whose setup isn't done */
+                         ? TR("Finish its setup first: then the panel can sound it with the alarm.")
+                         /* TR: a Z-Wave siren the panel can't drive */
+                         : TR("Its setup found no way to sound it."),
+                     ui_tone_gray());
+        return;
+    }
+    const bool used = page->siren.partitions != 0u;
+    const bool can = installer();
+    char value[96];
+    if (!used) {
+        /* TR: a paragraph on a Z-Wave siren's page the panel doesn't sound yet */
+        ui_paragraph(body, TR("The panel doesn't sound it yet: turn on what it sounds for."),
+                     ui_tone_amber());
+    } else if (page->siren.trouble) {
+        /* TR: a paragraph on a Z-Wave siren's page in trouble */
+        ui_paragraph(body, TR("It isn't answering: a siren trouble. Check its power and signal."),
+                     ui_tone_amber());
+    }
+    lv_obj_t *row = ui_row_toggle_icon(body, UI_ICON_SIREN, ui_tone_red(),
+                                       TR_C("siren sounds for", "Burglary and panic"),
+                                       TR("A silent panic stays silent"), used && page->siren.burglary,
+                                       zs_flag, (void *)(uintptr_t)ZS_BURGLARY);
+    if (!can) {
+        ui_row_disable(row);
+    }
+    row = ui_row_toggle_icon(body, UI_ICON_FLAME, ui_tone_red(), TR_C("siren sounds for", "Fire and CO"),
+                             page->siren.tones
+                                 /* TR: under "Fire and CO" on a Z-Wave siren's page */
+                                 ? TR("Its fire tone for fire, its CO tone for CO")
+                                 : TR("Its one sound"),
+                             used && page->siren.fire, zs_flag, (void *)(uintptr_t)ZS_FIRE);
+    if (!can) {
+        ui_row_disable(row);
+    }
+    zs_parts_words(page->siren.partitions, true, value, sizeof(value));
+    row = ui_row_link(body, UI_ICON_WAREHOUSE, ui_tone_violet(), TR_C("siren", "Partitions"),
+                      TR("Their alarms and its chirps"), value, UI_ICON_CHEVRON_RIGHT, zs_pick,
+                      (void *)(uintptr_t)ZS_PICK_PARTS);
+    if (!can) {
+        ui_row_disable(row);
+    }
+    if (used) {
+        zs_parts_words(page->siren.also, false, value, sizeof(value));
+        row = ui_row_link(body, UI_ICON_LAYERS, ui_tone_violet(), TR("Also sounds for"),
+                          TR("Other partitions' alarms, never their chirps"), value,
+                          UI_ICON_CHEVRON_RIGHT, zs_pick, (void *)(uintptr_t)ZS_PICK_ALSO);
+        if (!can) {
+            ui_row_disable(row);
+        }
+        if (page->siren.tones) {
+            row = ui_row_toggle_icon(body, UI_ICON_BELL, ui_tone_blue(),
+                                     TR("Chirp when arming and disarming"),
+                                     /* TR: under the chirp switch on a Z-Wave siren's page */
+                                     TR("Its arm and disarm tones"), page->siren.squawk, zs_flag,
+                                     (void *)(uintptr_t)ZS_SQUAWK);
+            if (!can) {
+                ui_row_disable(row);
+            }
+            if (page->siren.volume == 0u) {
+                i18n_utf8_copy(value, sizeof(value), TR("Its own"));
+            } else {
+                I18N_FORMAT(value, sizeof(value), TR("{0} %"), (unsigned)page->siren.volume);
+            }
+            row = ui_row_link(body, UI_ICON_VOLUME, ui_tone_blue(), TR("Volume"), NULL, value,
+                              UI_ICON_CHEVRON_RIGHT, zs_pick, (void *)(uintptr_t)ZS_PICK_VOLUME);
+            if (!can) {
+                ui_row_disable(row);
+            }
+        }
+        row = ui_row_link(body, UI_ICON_BELL_RING, ui_tone_blue(), TR("Test it"),
+                          TR("Sounds it for 2 seconds"), NULL, UI_ICON_CHEVRON_RIGHT, zs_test, NULL);
+        if (!can) {
+            ui_row_disable(row);
+        }
+        if (page->siren.supervision_min == 0u) {
+            i18n_utf8_copy(value, sizeof(value), TR("After 4 h"));
+        } else {
+            I18N_FORMAT(value, sizeof(value), TR("After {0} h"),
+                        (unsigned)(page->siren.supervision_min / 60u));
+        }
+        row = ui_row_link(body, UI_ICON_CLOCK_ALERT, ui_tone_amber(), TR("Supervision"),
+                          TR("A siren trouble when it isn't heard"), value, UI_ICON_CHEVRON_RIGHT,
+                          zs_pick, (void *)(uintptr_t)ZS_PICK_SUPERVISION);
+        if (!can) {
+            ui_row_disable(row);
+        }
+    }
+}
+
 /* ---- what it switches (ZW-034, ZW-035): its outputs, and a relay that opens a garage door ---- */
 
 static uint32_t outputs_crc(const ui_zw_device_page_t *page)
@@ -3132,6 +3473,9 @@ static void build_device(int32_t arg, lv_obj_t *body, char *title, size_t tlen, 
         if (page.feedback.fit != UI_ZW_FB_NONE || page.control.fit != UI_ZW_FB_NONE) {
             device_feedback_rows(body, &page);
         }
+        if (page.siren.fit != UI_ZW_FB_NONE) {
+            device_siren_rows(body, &page); /* OUT-016 (BL-037) */
+        }
         device_software_rows(body, &page, devctx);
         if (d->listening && !s_dev.fw_running) {
             /* any device that answers at once (BL-152): its answer is the toast, as for one that
@@ -3943,6 +4287,92 @@ static void radio_fw_line(const ui_zw_progress_t *p, char *out, size_t len)
                 TR("Updating the radio: {0} %. Z-Wave sensors aren't heard until it's back."), pct);
 }
 
+/* ---- the radio's software from the SD card (network.md §14; the "Z-Wave updates" follow-up) ---- */
+
+static uint8_t s_sd_shown = UI_ZW_SD_IDLE; /* the state the page shows (its tick follows it) */
+
+static const char *sd_words(uint8_t st)
+{
+    switch ((ui_zw_sd_t)st) {
+    /* TR: a paragraph on the Z-Wave radio's page while its file is read from the SD card */
+    case UI_ZW_SD_READING: return TR("Reading the file from the SD card...");
+    /* TR: a paragraph on the Z-Wave radio's page */
+    case UI_ZW_SD_NO_CARD: return TR("No SD card can be read. Put the card in, then try again.");
+    /* TR: a paragraph on the Z-Wave radio's page. At most 159 bytes */
+    case UI_ZW_SD_NO_FILE: return TR("No .gbl file on the SD card. Copy the radio's file from its "
+                                     "maker to the card's top folder, or to a folder named zwave.");
+    /* TR: a paragraph on the Z-Wave radio's page */
+    case UI_ZW_SD_SEVERAL: return TR("More than one .gbl file on the SD card: leave only the one to install.");
+    /* TR: a paragraph on the Z-Wave radio's page */
+    case UI_ZW_SD_TOO_BIG: return TR("The .gbl file on the SD card isn't a radio's file.");
+    /* TR: a paragraph on the Z-Wave radio's page */
+    case UI_ZW_SD_REFUSED: return TR("The file isn't one for this radio. It keeps its software.");
+    /* TR: a paragraph on the Z-Wave radio's page */
+    case UI_ZW_SD_NOT_ALLOWED: return TR("Disarm every partition, in installer mode, then try again.");
+    /* TR: a paragraph on the Z-Wave radio's page */
+    case UI_ZW_SD_BUSY: return TR("The radio is busy: try again when it's done.");
+    default: return NULL;
+    }
+}
+
+static void radio_sd_go(void)
+{
+    if (!installer() || S.be.zw_radio_sd_install == NULL) {
+        return;
+    }
+    s_sd_shown = S.be.zw_radio_sd_install(S.be.ctx, S.auth_user);
+    ui_page_rebuild();
+}
+
+static void radio_sd_install(void *ctx)
+{
+    (void)ctx;
+    if (!installer()) {
+        return;
+    }
+    /* TR: a confirmation's title. At most 40 bytes */
+    const char *title = TR("Update the radio from the SD card?");
+    ui_confirm(title,
+               TR("Z-Wave sensors aren't heard for up to 15 minutes, and arming waits until the "
+                  "radio is back. Keep the panel powered."),
+               TR("Update"), radio_sd_go);
+}
+
+/* The page's words follow the card's reading, once a second (radio_tick). */
+static void radio_sd_tick(void)
+{
+    if (S.be.zw_radio_sd_state == NULL || s_sd_shown == UI_ZW_SD_IDLE) {
+        return;
+    }
+    const uint8_t now = S.be.zw_radio_sd_state(S.be.ctx);
+    if (now != s_sd_shown) {
+        s_sd_shown = now;
+        ui_page_rebuild();
+    }
+}
+
+static void radio_sd_rows(lv_obj_t *body, const ui_zw_status_t *st)
+{
+    if (S.be.zw_radio_sd_install == NULL || !installer()) {
+        return;
+    }
+    const char *w = sd_words(s_sd_shown);
+    if (w != NULL && s_sd_shown != UI_ZW_SD_STARTED) {
+        ui_paragraph(body, w, s_sd_shown == UI_ZW_SD_READING ? ui_tone_blue() : ui_tone_amber());
+    }
+    if (s_sd_shown == UI_ZW_SD_READING) {
+        return;
+    }
+    /* TR: a row on the Z-Wave radio's page */
+    ui_row_link(body, UI_ICON_HARD_DRIVE, ui_tone_blue(), TR("Install from an SD card"),
+                st->update_advised
+                    /* TR: under "Install from an SD card" when the radio's software is old */
+                    ? TR("Its maker's .gbl file for this radio, copied to the card")
+                    /* TR: under "Install from an SD card" */
+                    : TR("A .gbl file from the radio's maker, copied to the card"),
+                NULL, UI_ICON_CHEVRON_RIGHT, radio_sd_install, NULL);
+}
+
 static void radio_software_rows(lv_obj_t *body, const ui_zw_status_t *st)
 {
     ui_zw_progress_t p;
@@ -3953,6 +4383,13 @@ static void radio_software_rows(lv_obj_t *body, const ui_zw_status_t *st)
     s_radio.fw_running = p.op == UI_ZW_OP_RADIO_UPDATE && p.step != UI_ZW_STEP_DONE &&
                          p.step != UI_ZW_STEP_IDLE;
     ui_section(body, TR("Software"));
+    if (st->update_advised && !s_radio.fw_running) {
+        /* TR: a paragraph on the Z-Wave radio's page when its software is older than its maker
+         * advises (Zooz 2.20). At most 190 bytes */
+        ui_paragraph(body, TR("Its software is older than its maker advises. Tap Check for an "
+                              "update below to install the newer one."),
+                     ui_tone_amber());
+    }
     if (s_radio.fw_running) {
         char text[120];
         radio_fw_line(&p, text, sizeof(text));
@@ -3996,14 +4433,15 @@ static void radio_software_rows(lv_obj_t *body, const ui_zw_status_t *st)
     }
     case UI_ZW_FW_UP_TO_DATE: ui_row_value(body, TR("Updates"), TR("Up to date")); break;
     case UI_ZW_FW_UNKNOWN:
-        ui_paragraph(body, TR("The update service doesn't list this radio yet: its maker's own "
-                              "file can be installed from the Panel Manager."),
+        ui_paragraph(body, TR("No update was found for this radio. Its maker's own file can still "
+                              "be installed from an SD card or the Panel Manager."),
                      ui_tone_gray());
         break;
     case UI_ZW_FW_CHECK_FAILED:
     case UI_ZW_FW_FILE_FAILED: ui_paragraph(body, st->radio_fw_words, ui_tone_amber()); break;
     default: break;
     }
+    radio_sd_rows(body, st);
     ui_row_action(body, UI_ICON_REFRESH,
                   st->radio_fw_check == UI_ZW_FW_NONE ? TR("Check for an update")
                                                       : TR("Check again"),
@@ -4122,6 +4560,7 @@ static void radio_tick(void)
             lv_label_set_text(s_radio.fw_line, text);
         }
     } else {
+        radio_sd_tick(); /* the card's reading, its outcome in place */
         ui_zw_status_t st;
         if (read_status(&st) && (st.radio_fw_check == UI_ZW_FW_CHECKING ||
                                  st.radio_fw_check == UI_ZW_FW_DOWNLOADING) != s_radio.fw_asking) {

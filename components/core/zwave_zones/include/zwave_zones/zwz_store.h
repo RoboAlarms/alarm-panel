@@ -5,7 +5,7 @@
  * A pass takes every dirty value from zwz_panel (zwz_panel_take_*) under the owner's lock, then,
  * with the lock released, writes them in this order, each one set and then committed:
  *   keys; gen, then nodes (nodes only after gen stored: a cache never outlives its counter);
- *   cfg; chk; garage; prov.
+ *   cfg; chk; garage; prov; siren.
  * A value that was not stored - its set or commit refused, gen refused before nodes, or a value too
  * big for its buffer (it stayed dirty in zwz_panel) - is asked for again with zwz_panel_redo(), and
  * nothing is tried before ZWZ_STORE_RETRY_MS has passed. What was stored is told with
@@ -40,6 +40,7 @@ extern "C" {
 #define ZWZ_STORE_KEY_CHK    "chk"
 #define ZWZ_STORE_KEY_GARAGE "garage"
 #define ZWZ_STORE_KEY_PROV   "prov"
+#define ZWZ_STORE_KEY_SIREN  "siren" /* zw_siren.h ZWS_KEY */
 
 typedef struct {
     void *ctx;
@@ -74,7 +75,7 @@ uint8_t zwz_store_run(zwz_store_t *s, zwz_panel_t *p, uint64_t now, const zwz_st
 /* ---- reading a stored value back (zwave_service's load_blob; network.md §2, ZW-039) ----------
  * A value is read at its stored length, not today's size, so a longer one from newer firmware (an
  * OTA rollback) reaches its decoder, which takes what it knows. That holds for keys, gen, nodes,
- * cfg, chk, garage and prov, whose decoders accept longer input; keypad_fb and keypad_ctl
+ * cfg, chk, garage, prov and siren, whose decoders accept longer input; keypad_fb and keypad_ctl
  * (zw_feedback.c, zw_keyctl.c) still need their exact length, so a longer one is refused there. */
 
 /* The most a value whose encoder writes at most `today` bytes is read at: twice that and some,

@@ -3,7 +3,8 @@
  *
  * The chip is used in asynchronous serial mode: it demodulates whatever is on the air at the
  * tuned frequency and puts the raw bit line on GDO0, where the RMT peripheral captures it
- * (rf_capture.h). The panel never transmits. This file is the SPI half; what is written and how
+ * (rf_capture.h). It transmits only to the 433 MHz sirens (OUT-022): cc1101_tx_ook() then the pulses
+ * on GDO0 (rf_tx.h), then cc1101_rx_ook() again. This file is the SPI half; what is written and how
  * answers are judged (the receive table, the frequency word, RSSI, genuine / clone / absent,
  * read-back, reset detection) is the host-tested components/core/cc1101_regs.
  *
@@ -64,6 +65,12 @@ esp_err_t cc1101_probe(cc1101_t *c);
  * written (c->bad_reg). freq_khz within the chip's bands (433920 for the cheap sensors, 315000
  * and 345000 for the American ones). */
 esp_err_t cc1101_rx_ook(cc1101_t *c, uint32_t freq_khz);
+
+/* OUT-022: from RX (the table cc1101_rx_ook wrote) into OOK transmit at the same frequency: the
+ * PA table set, then TX - the line on GDO0 is now what goes on the air (high = carrier). The
+ * caller drives GDO0, then calls cc1101_tx_end() and cc1101_rx_ook() to receive again. */
+esp_err_t cc1101_tx_ook(cc1101_t *c);
+esp_err_t cc1101_tx_end(cc1101_t *c);
 
 /* Is the chip still configured? *lost true when it has reset (IOCFG0 is not what the table set);
  * ESP_OK unless the bus failed. */

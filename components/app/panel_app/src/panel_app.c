@@ -63,6 +63,7 @@
 #include "panel_voice.h"
 #include "panel_storage.h"
 #include "power_monitor.h"
+#include "outputs_service.h"
 #include "rf_service.h"
 #include "sounder.h"
 #include "zigbee_service.h"
@@ -161,12 +162,15 @@ static void on_snapshot(void *ctx, const alarm_snapshot_t *snap)
     /* The engine's listeners are full (alarm_service.c MAX_LISTENERS): the Zigbee sirens and
      * keypads take theirs from this one (copies only; nothing until the service started). */
     zigbee_service_engine_snapshot(snap);
+    outputs_service_engine_snapshot(snap); /* the sirens' squawks (OUT-007) */
 }
 
 static void on_output(void *ctx, alarm_output_t output, uint8_t partition, alarm_pattern_t pattern)
 {
     (void)ctx;
     zigbee_service_engine_output(output, partition, pattern);
+    outputs_service_engine_output(output, partition, pattern); /* wired and 433 MHz sirens */
+    zwave_service_engine_output(output, partition, pattern);   /* Z-Wave sirens (OUT-016) */
     panel_voice_engine_output(output, partition, pattern);
 }
 
@@ -1374,9 +1378,20 @@ static bool start_zone_sources(void)
     rf_service_pin_rules(&rules);
 #endif
     static zsrc_wired_terminal_t terminals[16];
+    static uint8_t output_terminals[16];
     size_t count = 0;
+#if CONFIG_ALARM_ZSRC_RF
+    /* OUT-022: a 433 MHz transmitter module's DATA (`rf txpin`) is no terminal of the zones' */
+    const int16_t tx_pin = rf_service_stored_tx_pin();
+#else
+    const int16_t tx_pin = -1;
+#endif
     for (size_t i = 0; i < wiring->terminal_count && count < sizeof(terminals) / sizeof(terminals[0]);
          i++) {
+        if (wiring->terminals[i].gpio == tx_pin) {
+            continue;
+        }
+        output_terminals[count] = (uint8_t)wiring->terminals[i].gpio;
         terminals[count].gpio = (uint8_t)wiring->terminals[i].gpio;
         terminals[count].where = wiring->terminals_where;
         count++;
@@ -1397,6 +1412,19 @@ static bool start_zone_sources(void)
                  esp_err_to_name(err));
         return false;
     }
+#if CONFIG_ALARM_OUTPUTS
+    /* The wired outputs and 433 MHz sirens (docs/features/16): right after the zones, so a
+     * terminal an output holds is taken from them before anyone can bind it, and the outputs'
+     * pins are at their inactive level before the engine's first word (OUT-006). */
+    const outputs_service_config_t out_cfg = {.terminals = output_terminals,
+                                              .terminal_count = count,
+                                              .where = wiring->terminals_where};
+    const esp_err_t out_err = outputs_service_start(&out_cfg);
+    if (out_err != ESP_OK) {
+        ESP_LOGE(TAG, "the outputs did not start (%s): no wired siren, no 433 MHz siren",
+                 esp_err_to_name(out_err));
+    }
+#endif
 #if CONFIG_ALARM_ZSRC_ZIGBEE
     /* The sensor radio joins the hub as one more source (docs/features/20). An empty wireless socket
      * is not a reason to fail the start: the panel's wired and simulator zones are untouched by
@@ -2169,6 +2197,7 @@ void panel_app_run(const panel_app_config_t *cfg)
     START_OR_LOG(automation_service_console_register());
 #endif
     START_OR_LOG(rf_service_console_register());
+    START_OR_LOG(outputs_service_console_register());
     START_OR_LOG(zigbee_service_console_register());
 #if CONFIG_ALARM_ZSRC_ZWAVE
     START_OR_LOG(zwave_service_console_register());

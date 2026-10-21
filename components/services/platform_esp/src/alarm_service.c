@@ -811,6 +811,36 @@ void alarm_service_system_trouble(alarm_sys_trouble_t trouble, bool active)
     post(&m);
 }
 
+/* OUT-020: the bell trouble stands while any kind of siren holds it (Zigbee, Z-Wave, wired,
+ * 433 MHz): one owner clearing its own must not clear another's. The roll-up and its post are
+ * one step under a mutex, so two owners can't post out of order. */
+static portMUX_TYPE s_bell_mux = portMUX_INITIALIZER_UNLOCKED;
+static StaticSemaphore_t s_bell_lock_buf;
+static SemaphoreHandle_t s_bell_lock;
+static uint32_t s_bell_owners; /* bit n: owner n holds the bell trouble */
+static int s_bell_told = -1;   /* the bell trouble as last posted, -1 never */
+
+void alarm_service_bell_trouble(alarm_bell_owner_t owner, bool active)
+{
+    if ((unsigned)owner >= (unsigned)ALARM_BELL_OWNER_COUNT) {
+        return;
+    }
+    portENTER_CRITICAL(&s_bell_mux);
+    if (s_bell_lock == NULL) {
+        s_bell_lock = xSemaphoreCreateMutexStatic(&s_bell_lock_buf);
+    }
+    portEXIT_CRITICAL(&s_bell_mux);
+    xSemaphoreTake(s_bell_lock, portMAX_DELAY);
+    const uint32_t bit = 1u << (unsigned)owner;
+    s_bell_owners = active ? (s_bell_owners | bit) : (s_bell_owners & ~bit);
+    const int any = (s_bell_owners != 0u) ? 1 : 0;
+    if (any != s_bell_told) {
+        s_bell_told = any;
+        alarm_service_system_trouble(ALARM_TRBL_BELL, any != 0);
+    }
+    xSemaphoreGive(s_bell_lock);
+}
+
 void alarm_service_storage_trouble(alarm_storage_owner_t owner, bool active)
 {
     /* a trouble: waits for room rather than being dropped (ZW-039) */

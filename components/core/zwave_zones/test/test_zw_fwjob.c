@@ -199,11 +199,102 @@ static void test_file(void)
     TEST_ASSERT_NOT_NULL(strstr(J.words, "(404)"));
 }
 
+/* The radio as start-up found it: Zooz's ZAC93 identity on `major`.`minor`, in the US. */
+static zw_module_facts_t radio_facts(uint8_t major, uint8_t minor)
+{
+    zw_module_facts_t f;
+    memset(&f, 0, sizeof f);
+    f.manufacturer = 0x027Au;
+    f.product_type = 0x0004u;
+    f.product_id = 0x0611u;
+    f.firmware_major = major;
+    f.firmware_minor = minor;
+    f.protocol_major = 7u;
+    f.protocol_minor = 18u;
+    f.protocol_patch = 3u;
+    f.region_known = true;
+    f.region = 0x09u; /* US Long Range */
+    return f;
+}
+
+/* ZW-025 (network.md §14): the service is asked in the installer's region, else the radio's own -
+ * without one it offers none of the ZAC93's files; NULL when neither is known. */
+static void test_region_asked(void)
+{
+    zw_module_facts_t f = radio_facts(2u, 10u);
+    TEST_ASSERT_EQUAL_STRING("usa", zwfj_region(false, 0u, &f));
+    TEST_ASSERT_EQUAL_STRING("europe", zwfj_region(true, 0x0Bu, &f)); /* the installer's wins */
+    f.region_known = false;
+    TEST_ASSERT_NULL(zwfj_region(false, 0u, &f));
+    TEST_ASSERT_NULL(zwfj_region(false, 0u, NULL));
+    zwfj_init(&J);
+    f = radio_facts(2u, 10u);
+    TEST_ASSERT_TRUE(zwfj_check_radio(&J, &f, zwfj_region(false, 0u, &f), BODY, sizeof BODY) > 0u);
+    TEST_ASSERT_NOT_NULL(strstr(BODY, "\"region\":\"usa\""));
+}
+
+/* ZW-025: a ZAC93 the service offers nothing (a 1.x radio: its entry starts at 2.0) gets Zooz's
+ * newest file for its region from the panel's own list, then installs like the service's offer;
+ * an up-to-date radio, another radio, a device and an unknown region get nothing from it. */
+static void test_radio_builtin(void)
+{
+    zw_module_facts_t f = radio_facts(1u, 10u);
+    TEST_ASSERT_TRUE(zwfj_check_radio(&J, &f, "usa", BODY, sizeof BODY) > 0u);
+    zwfj_check_answer(&J, 200, "[]", 2u, "usa");
+    TEST_ASSERT_EQUAL_UINT8(UI_ZW_FW_AVAILABLE, J.state);
+    TEST_ASSERT_EQUAL_STRING("2.30", J.update.version);
+    TEST_ASSERT_NOT_NULL(strstr(J.words, "2.30"));
+    TEST_ASSERT_EQUAL_HEX8(0x63u, J.update.files[0].sha256[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x24u, J.update.files[0].sha256[31]);
+    const char *url = zwfj_download_begin(&J, 0u, 0u);
+    TEST_ASSERT_NOT_NULL(url);
+    TEST_ASSERT_EQUAL_STRING("https://www.getzooz.com/firmware/ZAC93_SDK_7.24.2_US-LR_V02R30.gbl",
+                             url);
+    /* a file that isn't Zooz's: refused by its digest before anything is sent */
+    static uint8_t out[16];
+    static const uint8_t NOT_IT[] = {0xEB, 0x17, 0xA6, 0x03, 9, 9, 9, 9};
+    TEST_ASSERT_EQUAL_UINT(0u, zwfj_file(&J, NOT_IT, sizeof NOT_IT, out, sizeof out));
+    TEST_ASSERT_EQUAL_UINT8(UI_ZW_FW_FILE_FAILED, J.state);
+
+    TEST_ASSERT_TRUE(zwfj_check_radio(&J, &f, "europe", BODY, sizeof BODY) > 0u);
+    zwfj_check_answer(&J, 200, "[]", 2u, "europe");
+    TEST_ASSERT_EQUAL_UINT8(UI_ZW_FW_AVAILABLE, J.state);
+    TEST_ASSERT_NOT_NULL(strstr(J.update.files[0].url, "EU-LR"));
+
+    f = radio_facts(2u, 30u); /* already the newest */
+    TEST_ASSERT_TRUE(zwfj_check_radio(&J, &f, "usa", BODY, sizeof BODY) > 0u);
+    zwfj_check_answer(&J, 200, "[]", 2u, "usa");
+    TEST_ASSERT_EQUAL_UINT8(UI_ZW_FW_UNKNOWN, J.state);
+    f = radio_facts(1u, 10u);
+    TEST_ASSERT_TRUE(zwfj_check_radio(&J, &f, "japan", BODY, sizeof BODY) > 0u);
+    zwfj_check_answer(&J, 200, "[]", 2u, "japan");
+    TEST_ASSERT_EQUAL_UINT8(UI_ZW_FW_UNKNOWN, J.state);
+    f.product_id = 0x0610u; /* not a ZAC93 (Zooz's USB stick) */
+    TEST_ASSERT_TRUE(zwfj_check_radio(&J, &f, "usa", BODY, sizeof BODY) > 0u);
+    zwfj_check_answer(&J, 200, "[]", 2u, "usa");
+    TEST_ASSERT_EQUAL_UINT8(UI_ZW_FW_UNKNOWN, J.state);
+    f = radio_facts(1u, 10u);
+    TEST_ASSERT_TRUE(zwfj_check_radio(&J, &f, "usa", BODY, sizeof BODY) > 0u);
+    zwfj_check_answer(&J, 0, NULL, 0u, "usa"); /* the service unreachable: no offer */
+    TEST_ASSERT_EQUAL_UINT8(UI_ZW_FW_CHECK_FAILED, J.state);
+
+    /* a device with the ZAC93's identity is still only offered what the service offers */
+    record();
+    REC.manufacturer_id = 0x027Au;
+    REC.product_type = 0x0004u;
+    REC.product_id = 0x0611u;
+    TEST_ASSERT_TRUE(zwfj_check_begin(&J, &REC, "usa", BODY, sizeof BODY) > 0u);
+    zwfj_check_answer(&J, 200, "[]", 2u, "usa");
+    TEST_ASSERT_EQUAL_UINT8(UI_ZW_FW_UNKNOWN, J.state);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_check_request);
     RUN_TEST(test_answers);
     RUN_TEST(test_file);
+    RUN_TEST(test_region_asked);
+    RUN_TEST(test_radio_builtin);
     return UNITY_END();
 }

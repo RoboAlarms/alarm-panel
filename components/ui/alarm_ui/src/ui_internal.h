@@ -263,6 +263,12 @@ typedef enum {
     PAGE_LINK_KEYPAD,     /* a keypad on Wi-Fi, arg = its number (1..8) */
     PAGE_LINK_STANDALONE, /* a keypad's About > Make it a stand-alone panel (a factory reset) */
     PAGE_SMART_HOME,      /* Settings > Smart Home: what asks for a master code (BL-220) */
+    /* Installer > Sirens and outputs, Installer > 433 MHz (docs/features/16, 25; ui_sirens.c) */
+    PAGE_SIRENS,          /* every siren the panel sounds */
+    PAGE_OUT_WIRED,       /* a wired output, arg = its slot (0..UI_OUT_WIRED_MAX-1) */
+    PAGE_OUT_RF,          /* a 433 MHz siren, arg = its slot */
+    PAGE_OUT_RF_PAIR,     /* pairing a 433 MHz siren, arg = its slot */
+    PAGE_RF,              /* the 433 MHz receiver, sensors and sirens */
 } page_id_t;
 
 typedef struct {
@@ -960,6 +966,16 @@ void ui_zwave_span_words(uint32_t seconds, char *out, size_t len);
 /* "Zooz ZSE41" of "Zooz ZSE41 open/close sensor": the zone page's Source row, the device list. */
 void ui_zwave_short_model(const char *model, char *out, size_t len);
 #endif
+
+/* ---- ui_sirens.c (Installer > Sirens and outputs, Installer > 433 MHz; docs/features/16, 25) --- *
+ * Shown only when the backend has the outputs (ui_backend_t out_status). */
+bool ui_sirens_available(void);
+void ui_sirens_menu_row(lv_obj_t *body);    /* the installer menu's row, after Keypads and devices */
+void ui_sirens_rf_menu_row(lv_obj_t *body); /* the installer menu's 433 MHz row, after Zigbee */
+void ui_sirens_build(page_id_t id, int32_t arg, lv_obj_t *body, char *title, size_t tlen, char *note,
+                     size_t nlen);
+void ui_sirens_tick(void); /* the pages' live words, read once a second */
+void ui_sirens_stop(void); /* its page is being dropped */
 
 /* ---- ui_zigbee.c (Installer > Zigbee, docs/features/20 devices.md §9, ZB-027) --------------- *
  * Declared only with the feature: every call from another module sits under #if ALARM_UI_ZIGBEE. */

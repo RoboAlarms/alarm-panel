@@ -105,6 +105,10 @@ static uint32_t s_feedback_dropped;
 /* SmartStart listens only while every partition is disarmed (network.md §4.2): kept from the
  * engine's snapshots, read by zwz_panel's port in the zwave task. */
 static bool s_disarmed;
+/* OUT-019: each partition armed (any state but disarmed), and which partitions the engine has
+ * (bit p-1), kept from the same snapshots for the sirens' squawks; the zwave task tells zwz_panel
+ * what changed (take_engine_news). */
+static uint8_t s_armed_mask, s_armed_seen;
 
 static bool port_disarmed(void *ctx)
 {
@@ -156,6 +160,15 @@ static void feedback_snapshot(void *ctx, const alarm_snapshot_t *snapshot)
         }
     }
     __atomic_store_n(&s_disarmed, disarmed, __ATOMIC_RELAXED);
+    uint8_t armed = 0u;
+    for (unsigned p = 0; p < ALARM_MAX_PARTITIONS; p++) {
+        if ((snapshot->partitions & (1u << p)) != 0u &&
+            snapshot->part[p].state != ALARM_STATE_DISARMED) {
+            armed = (uint8_t)(armed | (1u << p));
+        }
+    }
+    __atomic_store_n(&s_armed_mask, armed, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_armed_seen, (uint8_t)snapshot->partitions, __ATOMIC_RELAXED);
     zwf_view_t view;
     zwf_view(snapshot, &view);
     (void)xQueueOverwrite(s_feedback_view, &view);
@@ -278,6 +291,103 @@ static struct {
 static uint64_t now_ms(void)
 {
     return alarm_service_now();
+}
+
+/* ---- the engine's bell for the sirens (OUT-016..OUT-019) ---------------------------------------- */
+
+/* zwave_service_engine_output's mailbox: each bell change, and the latest of each partition (under
+ * s_mux) replayed whole when the mailbox was full or the task was not running yet. */
+typedef struct {
+    uint8_t partition, pattern;
+} bell_msg_t;
+#define BELL_POSTS 16u
+static QueueHandle_t s_bell_q;
+static uint8_t s_bell_latest[ALARM_MAX_PARTITIONS];
+static bool s_bell_resync = true; /* atomic: the first pass takes the latest */
+static uint8_t s_armed_told, s_armed_known; /* the zwave task's: what zwz_panel was told */
+/* The sirens' bell trouble (zwz_panel_port_t.bell_trouble): wanted under the zone lock, told after
+ * it (alarm_service_bell_trouble may wait for the alarm task's queue). */
+static int s_bell_want = -1;
+static int s_bell_told = -1;
+
+static void port_bell_trouble(void *ctx, bool active)
+{
+    (void)ctx;
+    __atomic_store_n(&s_bell_want, active ? 1 : 0, __ATOMIC_RELAXED);
+}
+
+void zwave_service_engine_output(alarm_output_t output, uint8_t partition, alarm_pattern_t pattern)
+{
+    if (output != ALARM_OUT_BELL || partition == 0u || partition > ALARM_MAX_PARTITIONS) {
+        return;
+    }
+    taskENTER_CRITICAL(&s_mux);
+    s_bell_latest[partition - 1u] = (uint8_t)pattern;
+    taskEXIT_CRITICAL(&s_mux);
+    const bell_msg_t m = {.partition = partition, .pattern = (uint8_t)pattern};
+    if (!S.running || s_bell_q == NULL || xQueueSend(s_bell_q, &m, 0) != pdTRUE) {
+        __atomic_store_n(&s_bell_resync, true, __ATOMIC_RELAXED); /* the latest of each instead */
+    }
+    if (S.running) {
+        xTaskNotifyGive(S.task);
+    }
+}
+
+/* The engine's news into the sirens (the zone lock held). */
+static void take_engine_news(uint64_t now)
+{
+    bell_msg_t m;
+    while (s_bell_q != NULL && xQueueReceive(s_bell_q, &m, 0) == pdTRUE) {
+        zwz_panel_engine_output(&s_panel, now, m.partition, ALARM_OUT_BELL,
+                                (alarm_pattern_t)m.pattern);
+    }
+    if (__atomic_exchange_n(&s_bell_resync, false, __ATOMIC_ACQ_REL)) {
+        uint8_t latest[ALARM_MAX_PARTITIONS];
+        taskENTER_CRITICAL(&s_mux);
+        memcpy(latest, s_bell_latest, sizeof latest);
+        taskEXIT_CRITICAL(&s_mux);
+        for (uint8_t p = 1u; p <= ALARM_MAX_PARTITIONS; p++) {
+            if (latest[p - 1u] != (uint8_t)ALARM_PAT_TEST) { /* a one-shot: never replayed */
+                zwz_panel_engine_output(&s_panel, now, p, ALARM_OUT_BELL,
+                                        (alarm_pattern_t)latest[p - 1u]);
+            }
+        }
+    }
+    const uint8_t seen = __atomic_load_n(&s_armed_seen, __ATOMIC_RELAXED);
+    const uint8_t armed = __atomic_load_n(&s_armed_mask, __ATOMIC_RELAXED);
+    for (uint8_t p = 1u; p <= ALARM_MAX_PARTITIONS; p++) {
+        const uint8_t bit = (uint8_t)(1u << (p - 1u));
+        if ((seen & bit) == 0u ||
+            ((s_armed_known & bit) != 0u && ((s_armed_told ^ armed) & bit) == 0u)) {
+            continue;
+        }
+        s_armed_known = (uint8_t)(s_armed_known | bit);
+        s_armed_told = (uint8_t)((s_armed_told & ~bit) | (armed & bit));
+        zwz_panel_siren_armed(&s_panel, now, p, (armed & bit) != 0u); /* the first: no squawk */
+    }
+}
+
+/* After unlocking: the sirens' bell trouble to the engine, when it changed. */
+static void tell_bell_trouble(void)
+{
+    const int want = __atomic_load_n(&s_bell_want, __ATOMIC_RELAXED);
+    if (want >= 0 && want != s_bell_told) {
+        s_bell_told = want;
+        alarm_service_bell_trouble(ALARM_BELL_OWNER_ZWAVE, want == 1);
+        ESP_LOGW(TAG, "Z-Wave siren trouble %s", want == 1 ? "raised" : "cleared");
+    }
+}
+
+static ui_zw_req_result_t siren_words(zws_result_t r)
+{
+    switch (r) {
+    case ZWS_OK: return UI_ZW_REQ_OK;
+    case ZWS_ERR_FULL: return UI_ZW_REQ_FULL;
+    case ZWS_ERR_ARMED: return UI_ZW_REQ_NOT_ALLOWED;
+    case ZWS_ERR_BUSY: return UI_ZW_REQ_BUSY;
+    case ZWS_ERR_OFFLINE: return UI_ZW_REQ_NO_RADIO;
+    default: return UI_ZW_REQ_INVALID;
+    }
 }
 
 /* ---- NVS "zwave" -------------------------------------------------------------------------------- */
@@ -807,6 +917,25 @@ static ui_zw_req_result_t run_request(const zwsvc_req_t *req)
         heap_caps_free(candidate);
         break;
     }
+    case ZWSVC_REQ_SIREN: {
+        /* assigning or clearing: installer mode (the UI) or the console, every partition
+         * disarmed; a test refuses by itself while its own partitions are armed */
+        if (req->siren_op != ZWSVC_SIREN_TEST && !req->allowed) {
+            return UI_ZW_REQ_NOT_ALLOWED;
+        }
+        zws_result_t sr = ZWS_ERR_ARG;
+        zone_service_lock();
+        if (req->siren_op == ZWSVC_SIREN_SET) {
+            sr = zwz_panel_siren_set(&s_panel, now_ms(), &req->siren);
+        } else if (req->siren_op == ZWSVC_SIREN_CLEAR) {
+            sr = zwz_panel_siren_clear(&s_panel, now_ms(), req->siren.node, req->siren.endpoint);
+        } else if (req->siren_op == ZWSVC_SIREN_TEST) {
+            sr = zwz_panel_siren_test(&s_panel, now_ms(), req->siren.node, req->siren.endpoint);
+        }
+        zone_service_unlock();
+        r = siren_words(sr);
+        break;
+    }
     case ZWSVC_REQ_FW: r = zwsvc_fw_request(req, !req->console); break;
     case ZWSVC_REQ_RADIO_FILE: {
         taskENTER_CRITICAL(&s_mux);
@@ -1219,6 +1348,7 @@ static void zwave_task(void *arg)
         moved = take_request() || moved;
         moved = take_output() || moved;
         zone_service_lock();
+        take_engine_news(now_ms()); /* the bell and the partitions, for the sirens */
         zwz_panel_poll(&s_panel, now_ms());
         feedback_poll();
         const uint64_t next = zwz_panel_next_deadline(&s_panel);
@@ -1226,6 +1356,7 @@ static void zwave_task(void *arg)
         const size_t ended = take_ended();
         zone_service_unlock();
         answer_ended(ended); /* PL02: posted commands' ends, outside the lock */
+        tell_bell_trouble();
         if (held != s_arming_held && alarm_service_hold_arming(held)) {
             s_arming_held = held; /* network.md §14, CORE-ARM-013: the radio's own update */
             ESP_LOGW(TAG, "arming %s", held ? "held: the Z-Wave radio is updating" : "no longer held");
@@ -1850,7 +1981,8 @@ esp_err_t zwave_service_start(const zwave_service_config_t *cfg)
                                    .zone_position = port_position,
                                    .disarmed = port_disarmed,
                                    .local_time = port_local_time,
-                                   .keypad_reachable = port_keypad_reachable};
+                                   .keypad_reachable = port_keypad_reachable,
+                                   .bell_trouble = port_bell_trouble};
     static const zwk_port_t keyctl_port = {.ctx = NULL, .command = keyctl_command};
     zwkc_init(&s_keyctl, &keyctl_port);
     size_t keyctl_len = 0u;
@@ -1869,6 +2001,8 @@ esp_err_t zwave_service_start(const zwave_service_config_t *cfg)
     uint8_t *garage = load_blob(ZWZ_STORE_KEY_GARAGE, LOAD_BLOB_MAX(ZWO_GARAGE_BLOB), &garage_len);
     size_t prov_len = 0u;
     uint8_t *prov = load_blob(ZWZ_STORE_KEY_PROV, LOAD_BLOB_MAX(ZW_PROV_BLOB_MAX), &prov_len);
+    size_t siren_len = 0u;
+    uint8_t *siren = load_blob(ZWZ_STORE_KEY_SIREN, LOAD_BLOB_MAX(ZWS_BLOB_MAX), &siren_len);
     zone_service_lock();
     zwz_panel_init(&s_panel, &port, setup, checkins, checkin_n, &s_src, &S.crypto);
     zwz_panel_set_feedback(&s_panel, &s_feedback); /* the device page's "Sounds and lights" */
@@ -1876,11 +2010,13 @@ esp_err_t zwave_service_start(const zwave_service_config_t *cfg)
     const bool loaded = nodes_blob == NULL || zwz_panel_load_nodes(&s_panel, nodes_blob, len);
     const bool garage_ok = garage == NULL || zwz_panel_load_garage(&s_panel, garage, garage_len);
     const bool prov_ok = prov == NULL || zwz_panel_load_prov(&s_panel, prov, prov_len);
+    const bool siren_ok = siren == NULL || zwz_panel_load_siren(&s_panel, siren, siren_len);
     const size_t nodes = zw_node_count(&s_panel.net.nodes);
     zone_service_unlock();
     release_blob(nodes_blob, len, s_blob);
     free_blob(garage, garage_len);
     free_blob(prov, prov_len);
+    free_blob(siren, siren_len);
     zw_wipe(setup, sizeof(*setup));
     heap_caps_free(setup);
     heap_caps_free(checkins);
@@ -1892,6 +2028,9 @@ esp_err_t zwave_service_start(const zwave_service_config_t *cfg)
     }
     if (!prov_ok) {
         ESP_LOGE(TAG, "the stored SmartStart list is damaged: register its devices again");
+    }
+    if (!siren_ok) {
+        ESP_LOGE(TAG, "the stored sirens are damaged: assign them again (`zwave siren`)");
     }
 
     zwf_init(&s_feedback);
@@ -1922,6 +2061,10 @@ esp_err_t zwave_service_start(const zwave_service_config_t *cfg)
         }
     }
     ESP_RETURN_ON_FALSE(s_out_q != NULL, ESP_ERR_NO_MEM, TAG, "device command queue");
+    if (s_bell_q == NULL) {
+        s_bell_q = xQueueCreate(BELL_POSTS, sizeof(bell_msg_t)); /* the alarm task posts to it */
+    }
+    ESP_RETURN_ON_FALSE(s_bell_q != NULL, ESP_ERR_NO_MEM, TAG, "siren bell mailbox");
     if (xTaskCreatePinnedToCore(zwave_task, "zwave", TASK_STACK, NULL, TASK_PRIORITY, &S.task,
                                 tskNO_AFFINITY) != pdPASS) {
         return ESP_ERR_NO_MEM;
@@ -1941,6 +2084,16 @@ esp_err_t zwave_service_start(const zwave_service_config_t *cfg)
              S.where, S.place, CONFIG_ALARM_ZWAVE_UART_NUM, (int)S.cfg.tx, (int)S.cfg.rx,
              S.cfg.reset >= 0 ? "GPIO " : "none ", (int)S.cfg.reset, (unsigned)nodes);
     return ESP_OK;
+}
+
+#else /* !CONFIG_ALARM_ZSRC_ZWAVE */
+
+/* Without Z-Wave the engine's bell goes nowhere (the start-up's listener calls this unguarded). */
+void zwave_service_engine_output(alarm_output_t output, uint8_t partition, alarm_pattern_t pattern)
+{
+    (void)output;
+    (void)partition;
+    (void)pattern;
 }
 
 #endif /* CONFIG_ALARM_ZSRC_ZWAVE */

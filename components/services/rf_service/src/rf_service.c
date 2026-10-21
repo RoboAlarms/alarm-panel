@@ -38,6 +38,8 @@
 #include "rf_decode/rf_decode.h"
 #include "rf_rx/cc1101.h"
 #include "rf_rx/rf_capture.h"
+#include "rf_rx/rf_tx.h"
+#include "esp_attr.h"
 #include "zone_service.h"
 
 _Static_assert(RF_CAPTURE_IDLE_US == RF_RECEPTION_IDLE_US,
@@ -71,6 +73,12 @@ static const char *TAG = "rf";
  * read out of a count (a burst of receptions asked for a retune: docs/bugs/B011). */
 #define NB_RETRY  0x01u
 #define NB_RETUNE 0x02u
+#define NB_TX     0x04u /* OUT-022: a transmission is queued */
+
+#define TX_QUEUE     4u    /* transmissions waiting (a siren's codes, a few at once) */
+#define TX_FRAMES_MAX 32u  /* frames one transmission may ask for */
+#define TX_PULSES_MAX (TX_FRAMES_MAX * 2u * 34u) /* the longest protocol's frame: 2 x 34 pulses */
+#define TX_WAIT_MS   3000u /* the longest transmission and its margin */
 
 typedef enum { RX_NONE = 0, RX_CC1101, RX_OOK } rx_kind_t;
 
@@ -113,7 +121,21 @@ static struct {
     uint32_t *dump;
     volatile uint32_t dump_n;
     rf_service_pins_t pins; /* `rf pin`: where the data line may go (RF-008) */
-} S;
+    /* OUT-022: transmissions for the 433 MHz sirens (rf_service_transmit), taken by the task */
+    portMUX_TYPE tx_mux;
+    struct {
+        rf_packet_t p;
+        uint16_t unit_us;
+        uint8_t frames;
+    } txq[TX_QUEUE];
+    uint8_t tx_head, tx_count;
+    int tx_pin;            /* a transmitter module's DATA, -1: the CC1101 transmits */
+    uint32_t tx_sent, tx_failed;
+} S = {.tx_mux = portMUX_INITIALIZER_UNLOCKED, .tx_pin = -1};
+
+/* One transmission's pulses (RF_TX_PULSE_HIGH | width): only the rf task touches them. */
+static EXT_RAM_BSS_ATTR uint32_t s_tx_pulses[TX_PULSES_MAX];
+static EXT_RAM_BSS_ATTR rf_pulse_t s_tx_raw[TX_PULSES_MAX];
 
 #define NO_PIN_STORED 0xFFFFu /* NVS "rf"/"pin" absent: the board's own place */
 
@@ -316,6 +338,81 @@ static bool close_window(int64_t now)
     return true;
 }
 
+/* OUT-022: what can transmit now: a transmitter module's pin, else a CC1101 that receives. */
+static bool can_transmit(void)
+{
+    return S.started && (S.tx_pin >= 0 || S.kind == RX_CC1101);
+}
+
+static bool tx_take(rf_packet_t *p, uint16_t *unit_us, uint8_t *frames)
+{
+    bool got = false;
+    portENTER_CRITICAL(&S.tx_mux);
+    if (S.tx_count != 0u) {
+        *p = S.txq[S.tx_head].p;
+        *unit_us = S.txq[S.tx_head].unit_us;
+        *frames = S.txq[S.tx_head].frames;
+        S.tx_head = (uint8_t)((S.tx_head + 1u) % TX_QUEUE);
+        S.tx_count--;
+        got = true;
+    }
+    portEXIT_CRITICAL(&S.tx_mux);
+    return got;
+}
+
+/* Every queued transmission, one after the other. The receiver is deaf meanwhile (its own
+ * carrier would only be heard as itself); a CC1101 goes to TX and is tuned back to RX after. */
+static void tx_drain(void)
+{
+    rf_packet_t p;
+    uint16_t unit = 0u;
+    uint8_t frames = 0u;
+    while (tx_take(&p, &unit, &frames)) {
+        const size_t n = rf_encode_burst(&p, unit, frames, s_tx_raw, TX_PULSES_MAX);
+        if (n == 0u || !can_transmit()) {
+            S.tx_failed++;
+            continue;
+        }
+        for (size_t i = 0; i < n; i++) {
+            s_tx_pulses[i] = (s_tx_raw[i].high ? RF_TX_PULSE_HIGH : 0u) |
+                             (s_tx_raw[i].width_us & ~RF_TX_PULSE_HIGH);
+        }
+        esp_err_t err;
+        if (S.tx_pin >= 0) {
+            if (S.capturing) {
+                (void)rf_capture_pause(&S.cap, true);
+            }
+            err = rf_tx_send(S.tx_pin, s_tx_pulses, n, TX_WAIT_MS);
+            if (S.capturing && S.storm_until == 0) {
+                (void)rf_capture_pause(&S.cap, false);
+            }
+        } else {
+            /* the CC1101: its line is the receiver's until the capture lets it go */
+            rf_capture_stop(&S.cap);
+            S.capturing = false;
+            err = cc1101_tx_ook(&S.chip);
+            if (err == ESP_OK) {
+                err = rf_tx_send(S.cfg.gdo0, s_tx_pulses, n, TX_WAIT_MS);
+                (void)cc1101_tx_end(&S.chip);
+            }
+            if (!retune("back to RX after a transmission") || !capture_on()) {
+                ESP_LOGW(TAG, "the receiver did not come back after a transmission");
+            }
+        }
+        if (err == ESP_OK) {
+            S.tx_sent++;
+            if (S.raw) {
+                char words[48];
+                zsrc_rf_code_words(p.proto, p.device, p.data, words, sizeof(words));
+                ESP_LOGI(TAG, "sent %s, %u frames", words, (unsigned)frames);
+            }
+        } else {
+            S.tx_failed++;
+            ESP_LOGW(TAG, "a transmission failed (%s)", esp_err_to_name(err));
+        }
+    }
+}
+
 static void rf_task(void *arg)
 {
     (void)arg;
@@ -336,8 +433,15 @@ static void rf_task(void *arg)
             rf_capture_pause(&S.cap, false);
         }
         drain();
+        if ((bits & NB_TX) != 0u || S.tx_count != 0u) {
+            tx_drain();
+            drain();
+        }
         const bool window_closed = close_window(now);
 
+        if (S.mode == RF_MODULE_OFF) {
+            continue; /* no receiver: the task runs only for a transmitter module (OUT-022) */
+        }
         if (S.kind == RX_NONE) {
             /* The bus first: a CC1101 wins over a line that merely toggles. */
             if (S.mode != RF_MODULE_OOK && ((bits & NB_RETRY) != 0u || now >= next_probe)) {
@@ -926,7 +1030,7 @@ esp_err_t rf_service_start(const rf_service_config_t *cfg)
         ESP_LOGI(TAG, "433 MHz receiver off (`rf module off`): no pin is touched");
         return ESP_OK;
     }
-    if (S.mode != RF_MODULE_OOK) {
+    if (S.mode != RF_MODULE_OOK && S.mode != RF_MODULE_OFF) {
         const cc1101_pins_t pins = {.host = cfg->host,
                                     .mosi = cfg->mosi,
                                     .miso = cfg->miso,
@@ -1075,6 +1179,112 @@ zsrc_rf_t *rf_service_source(void)
     return S.started ? &S.src : NULL;
 }
 
+bool rf_service_can_transmit(void)
+{
+    return can_transmit();
+}
+
+bool rf_service_transmit(const rf_packet_t *p, uint16_t unit_us, uint8_t frames)
+{
+    if (!can_transmit() || S.task == NULL || frames == 0u || frames > TX_FRAMES_MAX) {
+        return false;
+    }
+    bool queued = false;
+    portENTER_CRITICAL(&S.tx_mux);
+    if (S.tx_count < TX_QUEUE) {
+        const uint8_t at = (uint8_t)((S.tx_head + S.tx_count) % TX_QUEUE);
+        S.txq[at].p = *p;
+        S.txq[at].unit_us = unit_us;
+        S.txq[at].frames = frames;
+        S.tx_count++;
+        queued = true;
+    }
+    portEXIT_CRITICAL(&S.tx_mux);
+    if (queued) {
+        request(NB_TX);
+    }
+    return queued;
+}
+
+int16_t rf_service_stored_tx_pin(void)
+{
+    const uint32_t v = stored_u32("txpin", NO_PIN_STORED, 0u, 63u);
+    return v == NO_PIN_STORED ? (int16_t)-1 : (int16_t)v;
+}
+
+/* `rf txpin [<gpio>|off]` (OUT-022): a transmitter module's DATA for the 433 MHz sirens. */
+static int cmd_txpin(int argc, char **argv)
+{
+    const int16_t stored = rf_service_stored_tx_pin();
+    if (argc == 2) {
+        if (S.tx_pin >= 0) {
+            printf("transmitter module on GPIO %d\n", S.tx_pin);
+        } else {
+            printf("no transmitter module: %s\n", S.kind == RX_CC1101 ? "the CC1101 transmits"
+                                                                       : "nothing can transmit");
+        }
+        if (stored != S.tx_pin) {
+            printf("transmitter %s%d from the next restart\n", stored < 0 ? "none" : "on GPIO ",
+                   stored < 0 ? 0 : stored);
+        }
+        printf("`rf txpin <gpio>` for a transmitter module's DATA (WL102-341, FS1000A; 3V3), "
+               "`rf txpin off`\n");
+        return 0;
+    }
+    if (strcmp(argv[2], "off") == 0) {
+        const esp_err_t err = forget("txpin");
+        printf(err == ESP_OK ? "no transmitter module from the next restart (`restart`)\n"
+                             : "could not store it\n");
+        return err == ESP_OK ? 0 : 1;
+    }
+    char *end = NULL;
+    const long gpio = strtol(argv[2], &end, 10);
+    if (end == argv[2] || *end != '\0' || gpio < 0 || gpio > 63) {
+        printf("rf txpin <gpio>|off\n");
+        return 1;
+    }
+    char why[120] = "this firmware cannot use it";
+    if (S.pins.pin_ok == NULL || !S.pins.pin_ok((int16_t)gpio, why, sizeof(why)) ||
+        (int16_t)gpio == S.cfg.gdo0) {
+        printf("not GPIO %ld: %s\n", gpio, (int16_t)gpio == S.cfg.gdo0 ? "the receiver's data" : why);
+        return 1;
+    }
+    if (store_u32("txpin", (uint32_t)gpio) != ESP_OK) {
+        printf("could not store it\n");
+        return 1;
+    }
+    printf("transmitter module on GPIO %ld from the next restart (`restart`); it is no longer "
+           "offered as a wired terminal\n", gpio);
+    return 0;
+}
+
+/* `rf send <address hex> <code> [frames]` (OUT-022, BL-094): an EV1527 transmission, the bench's
+ * test remote. */
+static int cmd_send(int argc, char **argv)
+{
+    if (argc < 4) {
+        printf("rf send <address hex, 5 digits> <code 0-15> [frames 1-32]\n");
+        return 1;
+    }
+    const uint32_t addr = (uint32_t)strtoul(argv[2], NULL, 16);
+    const uint32_t code = (uint32_t)strtoul(argv[3], NULL, 0);
+    const uint32_t frames = argc >= 5 ? (uint32_t)strtoul(argv[4], NULL, 10) : 12u;
+    if (addr > 0xFFFFFu || code > 15u || frames == 0u || frames > TX_FRAMES_MAX) {
+        printf("rf send <address hex, 5 digits> <code 0-15> [frames 1-32]\n");
+        return 1;
+    }
+    const rf_packet_t p = rf_packet_make(RF_PROTO_EV1527, addr, (uint8_t)code, 0u, 0u);
+    if (!rf_service_transmit(&p, 350u, (uint8_t)frames)) {
+        printf("not sent: %s\n", can_transmit() ? "busy" : "nothing can transmit (no CC1101, no `rf txpin`)");
+        return 1;
+    }
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    printf("sent EV1527 %05lX code %lu, %lu frames (sent=%lu failed=%lu)\n", (unsigned long)addr,
+           (unsigned long)code, (unsigned long)frames, (unsigned long)S.tx_sent,
+           (unsigned long)S.tx_failed);
+    return 0;
+}
+
 /* ---- the console ---------------------------------------------------------------------------- */
 
 static int cmd_rf(int argc, char **argv)
@@ -1084,6 +1294,12 @@ static int cmd_rf(int argc, char **argv)
     }
     if (argc >= 2 && strcmp(argv[1], "place") == 0) {
         return cmd_place(argc, argv);
+    }
+    if (argc >= 2 && strcmp(argv[1], "txpin") == 0) {
+        return cmd_txpin(argc, argv);
+    }
+    if (argc >= 2 && strcmp(argv[1], "send") == 0) {
+        return cmd_send(argc, argv);
     }
     if (argc >= 2 && strcmp(argv[1], "retry") == 0) {
         rf_service_retry();
@@ -1159,7 +1375,8 @@ static int cmd_rf(int argc, char **argv)
         return 0;
     } else if (argc >= 2 && strcmp(argv[1], "status") != 0) {
         printf("rf [status|retry|freq <kHz>|module auto|cc1101|ook|off|pin <gpio>|default|"
-               "place <place>|default|custom <pins>|raw on|off|capture <ms>]\n");
+               "place <place>|default|custom <pins>|raw on|off|capture <ms>|txpin <gpio>|off|"
+               "send <addr> <code> [frames]]\n");
         return 1;
     }
     rf_service_status_t st;
@@ -1179,6 +1396,8 @@ static int cmd_rf(int argc, char **argv)
         /* RF-017, RF14: RSSI samples whose reads never agreed (no value; a line of its own, the
          * lines above are read by the Flasher) */
         printf("rssi unstable=%" PRIu32 "\n", S.chip.rssi_unstable);
+        printf("transmit pin=%d can=%u sent=%" PRIu32 " failed=%" PRIu32 "\n", S.tx_pin,
+               (unsigned)can_transmit(), S.tx_sent, S.tx_failed);
         printf("capture receptions=%" PRIu32 " symbols=%" PRIu32 " overruns=%" PRIu32 "\n",
                st.receptions, st.symbols, st.overruns);
         printf("decoder pulses=%" PRIu32 " frames=%" PRIu32 " rejected=%" PRIu32 " glitches=%" PRIu32
@@ -1203,7 +1422,7 @@ esp_err_t rf_service_console_register(void)
         .command = "rf",
         .help = "433 MHz receiver: status, retry, freq <kHz>, module auto|cc1101|ook|off, "
                 "pin <gpio>|default, place <place>|default|custom <key>=<gpio>..., raw on|off, "
-                "capture <ms>",
+                "capture <ms>, txpin <gpio>|off, send <addr> <code> [frames]",
         .hint = "[status|retry|freq|module|pin|place|raw|capture]",
         .func = cmd_rf};
     return esp_console_cmd_register(&cmd);
@@ -1245,6 +1464,24 @@ void rf_service_raw(bool on)
 zsrc_rf_t *rf_service_source(void)
 {
     return NULL;
+}
+
+bool rf_service_can_transmit(void)
+{
+    return false;
+}
+
+bool rf_service_transmit(const rf_packet_t *p, uint16_t unit_us, uint8_t frames)
+{
+    (void)p;
+    (void)unit_us;
+    (void)frames;
+    return false;
+}
+
+int16_t rf_service_stored_tx_pin(void)
+{
+    return -1;
 }
 
 esp_err_t rf_service_console_register(void)

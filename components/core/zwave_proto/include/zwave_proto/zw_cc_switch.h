@@ -30,6 +30,16 @@ extern "C" {
 #define ZW_SWITCH_UNKNOWN  0xFEu
 #define ZW_SWITCH_LEVEL_MAX 0x63u /* 99 % */
 
+/* Sound Switch (79, v1-v2; a siren's tones, docs/features/36 sirens.md): Tone Play Set carries a
+ * tone id (00 stop, FF the device's default tone) and, from v2, a volume (00 the configured
+ * volume, 01..64 %, FF the last one used); a v1 device ignores the extra byte. Its Report answers
+ * Tone Play Get with the tone playing (00 none) and, from v2, the volume. */
+#define ZW_CMD_SOUND_TONE_PLAY_SET    0x08u
+#define ZW_CMD_SOUND_TONE_PLAY_GET    0x09u
+#define ZW_CMD_SOUND_TONE_PLAY_REPORT 0x0Au
+#define ZW_SOUND_TONE_STOP            0x00u
+#define ZW_SOUND_TONE_DEFAULT         0xFFu
+
 typedef struct {
     uint8_t value;
     bool has_duration; /* v2: sent / present */

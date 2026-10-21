@@ -756,6 +756,9 @@ zwo_result_t zwz_panel_output_set(zwz_panel_t *p, uint64_t now, uint16_t node, u
     if (i < 0) {
         return ZWO_ERR_UNKNOWN;
     }
+    if (zws_find(&p->sirens, node, endpoint) >= 0) {
+        return ZWO_ERR_ARG; /* a siren: the engine's bell drives it, never a switch (OUT-016) */
+    }
     if (zw_host_link(&p->net.host) != ZW_LINK_UP) {
         return ZWO_ERR_OFFLINE;
     }
@@ -871,8 +874,8 @@ size_t zwz_panel_ha_devices(const zwz_panel_t *p, uint64_t now, proto_zw_device_
     const bool up = zw_host_link(&p->net.host) == ZW_LINK_UP;
     for (size_t i = 0; i < ZWO_OUTPUTS && n < max; i++) {
         const zwo_output_t *u = &p->outputs.out[i];
-        if (!u->used) {
-            continue;
+        if (!u->used || zws_find(&p->sirens, u->node, u->endpoint) >= 0) {
+            continue; /* a siren is the bell's, not Home Assistant's switch */
         }
         proto_zw_device_t *d = &out[n];
         memset(d, 0, sizeof(*d));
@@ -945,6 +948,132 @@ size_t zwz_panel_take_garage(zwz_panel_t *p, uint8_t *buf, size_t cap)
     const size_t n = zwo_garage_encode(&p->outputs, buf, cap);
     if (n > 0u) {
         p->dirty = (uint8_t)((unsigned)p->dirty & ~ZWZ_DIRTY_GARAGE);
+    }
+    return n;
+}
+
+/* ---- sirens driven by the engine's bell (OUT-016..OUT-019) -------------------------------------- */
+
+static void siren_trouble(void *ctx, bool active)
+{
+    zwz_panel_t *p = ctx;
+    if (p->port.bell_trouble != NULL) {
+        p->port.bell_trouble(p->port.ctx, active);
+    }
+}
+
+/* What zw_siren changed in its assignments is to be stored. */
+static void siren_sync(zwz_panel_t *p)
+{
+    if (p->sirens.dirty) {
+        p->sirens.dirty = false;
+        p->dirty |= ZWZ_DIRTY_SIREN;
+    }
+}
+
+void zwz_panel_engine_output(zwz_panel_t *p, uint64_t now, uint8_t partition, alarm_output_t out,
+                             alarm_pattern_t pattern)
+{
+    p->now = now;
+    zws_output(&p->sirens, now, partition, out, pattern);
+}
+
+void zwz_panel_siren_armed(zwz_panel_t *p, uint64_t now, uint8_t partition, bool armed)
+{
+    if (partition == 0u || partition > ALARM_MAX_PARTITIONS) {
+        return;
+    }
+    p->now = now;
+    const uint8_t bit = (uint8_t)(1u << (partition - 1u));
+    if ((p->siren_armed_known & bit) == 0u) {
+        p->siren_armed_known = (uint8_t)(p->siren_armed_known | bit);
+        zws_set_armed(&p->sirens, partition, armed); /* the first word: no squawk */
+    } else {
+        zws_armed(&p->sirens, now, partition, armed);
+    }
+}
+
+zws_result_t zwz_panel_siren_set(zwz_panel_t *p, uint64_t now, const zws_config_t *c)
+{
+    p->now = now;
+    if (c == NULL) {
+        return ZWS_ERR_ARG;
+    }
+    const zw_node_record_t *rec = record(p, c->node, c->generation);
+    if (rec == NULL || rec->interview_step < ZW_IV_STEP_DONE) {
+        return ZWS_ERR_UNKNOWN;
+    }
+    const bool sound = zw_iv_endpoint_has_cc(rec, c->endpoint, ZW_CC_SOUND_SWITCH);
+    const bool binary = zw_iv_endpoint_has_cc(rec, c->endpoint, ZW_CC_BINARY_SWITCH);
+    zws_config_t cfg = *c;
+    cfg.used = true;
+    if (cfg.kind == 0u) {
+        cfg.kind = (uint8_t)(sound ? ZWS_KIND_SOUND : ZWS_KIND_BINARY);
+    }
+    if ((cfg.kind == (uint8_t)ZWS_KIND_SOUND && !sound) ||
+        (cfg.kind == (uint8_t)ZWS_KIND_BINARY && !binary)) {
+        return ZWS_ERR_ARG;
+    }
+    const int slot = zws_slot_for(&p->sirens, cfg.node, cfg.endpoint);
+    if (slot < 0) {
+        return ZWS_ERR_FULL;
+    }
+    const zws_result_t r = zws_set(&p->sirens, now, (size_t)slot, &cfg);
+    siren_sync(p);
+    return r;
+}
+
+zws_result_t zwz_panel_siren_clear(zwz_panel_t *p, uint64_t now, uint16_t node, uint8_t endpoint)
+{
+    p->now = now;
+    const int slot = zws_find(&p->sirens, node, endpoint);
+    if (slot < 0) {
+        return ZWS_ERR_UNKNOWN;
+    }
+    const zws_result_t r = zws_clear(&p->sirens, now, (size_t)slot);
+    siren_sync(p);
+    return r;
+}
+
+zws_result_t zwz_panel_siren_test(zwz_panel_t *p, uint64_t now, uint16_t node, uint8_t endpoint)
+{
+    p->now = now;
+    const int slot = zws_find(&p->sirens, node, endpoint);
+    if (slot < 0) {
+        return ZWS_ERR_UNKNOWN;
+    }
+    return zws_test(&p->sirens, now, (size_t)slot);
+}
+
+const zws_siren_t *zwz_panel_siren(const zwz_panel_t *p, size_t slot)
+{
+    return slot < ZWS_SIRENS && p->sirens.s[slot].c.used ? &p->sirens.s[slot] : NULL;
+}
+
+bool zwz_panel_load_siren(zwz_panel_t *p, const uint8_t *blob, size_t len)
+{
+    zws_config_t cfg[ZWS_SIRENS];
+    if (!zws_decode(blob, len, cfg)) {
+        return false;
+    }
+    for (size_t i = 0; i < ZWS_SIRENS; i++) {
+        if (cfg[i].used && record(p, cfg[i].node, cfg[i].generation) == NULL) {
+            cfg[i].used = false; /* its device left while the panel was off: forgotten */
+            p->dirty |= ZWZ_DIRTY_SIREN;
+        }
+    }
+    zws_load(&p->sirens, cfg);
+    return true;
+}
+
+size_t zwz_panel_take_siren(zwz_panel_t *p, uint8_t *buf, size_t cap)
+{
+    if ((p->dirty & ZWZ_DIRTY_SIREN) == 0u) {
+        return 0u;
+    }
+    const size_t n = zws_encode(&p->sirens, buf, cap);
+    if (n > 0u) {
+        p->dirty = (uint8_t)((unsigned)p->dirty & ~ZWZ_DIRTY_SIREN);
     }
     return n;
 }
@@ -1258,6 +1387,7 @@ static void n_received(void *ctx, const zw_s2_rx_t *rx)
 {
     zwz_panel_t *p = ctx;
     jam_report(p, rx);
+    zws_heard(&p->sirens, p->now, rx->node); /* OUT-018: any frame of a siren's node */
     zwz_received(&p->bridge, rx, p->now);
 }
 
@@ -1267,6 +1397,9 @@ static void n_send_done(void *ctx, uint32_t tag, zw_s2_result_t result)
     if (zw_fwupd_send_done(&p->fw, p->now, tag, result == ZW_S2_OK)) {
         fw_settle(p);
         return;
+    }
+    if (zws_send_done(&p->sirens, p->now, tag, result == ZW_S2_OK)) {
+        return; /* OUT-017: a siren's command delivered or not */
     }
     if (zwo_send_done(&p->outputs, p->now, tag, result == ZW_S2_OK)) {
         return;
@@ -1540,6 +1673,9 @@ static void leaving(zwz_panel_t *p, const zw_net_event_t *ev)
         }
     }
     zwo_forget(&p->outputs, ev->node);
+    if (zws_forget(&p->sirens, ev->node)) {
+        siren_sync(p); /* its siren assignment goes with it */
+    }
     if (ev->kind == ZW_NET_EV_NODE_REMOVED) {
         /* the installer's removal; one zw_net does itself (after a reset locally) was logged when
          * the device left */
@@ -1766,6 +1902,8 @@ void zwz_panel_init(zwz_panel_t *p, const zwz_panel_port_t *port, const zwz_pane
     zw_fwupd_init(&p->fw, &fw_port);
     const zwo_port_t out_port = {p, out_send, out_position, out_result, NULL};
     zwo_init(&p->outputs, &out_port);
+    const zws_port_t siren_port = {.ctx = p, .send = out_send, .bell_trouble = siren_trouble};
+    zws_init(&p->sirens, &siren_port);
 }
 
 bool zwz_panel_load_nodes(zwz_panel_t *p, const uint8_t *blob, size_t len)
@@ -1794,6 +1932,11 @@ void zwz_panel_set_keyctl(zwz_panel_t *p, const zwkc_t *keyctl)
 static bool claim(void *ctx, const zw_s2_rx_t *rx)
 {
     zwz_panel_t *p = ctx;
+    if (zws_received(&p->sirens, p->now, rx->node,
+                     (uint8_t)(rx->multi_channel ? (unsigned)rx->source_endpoint : 0u),
+                     rx->command, rx->len)) {
+        return true; /* an assigned siren's Report (OUT-017): no longer a plain output's */
+    }
     if (zwo_received(&p->outputs, p->now, rx->node,
                      (uint8_t)(rx->multi_channel ? (unsigned)rx->source_endpoint : 0u),
                      rx->command, rx->len)) {
@@ -1865,6 +2008,13 @@ void zwz_panel_poll(zwz_panel_t *p, uint64_t now)
         }
     }
     zwo_poll(&p->outputs, now);
+    /* OUT-018: a siren's silence counts only while the radio works */
+    const bool radio = zw_host_link(&p->net.host) == ZW_LINK_UP;
+    if (radio != p->siren_radio) {
+        p->siren_radio = radio;
+        zws_radio(&p->sirens, now, radio);
+    }
+    zws_poll(&p->sirens, now);
     keypads_supervise(p); /* ZW-038: the owner's slots may have changed */
     if (p->fw_reinterview != 0u && now >= p->fw_reinterview_at) {
         /* its new software can change what it is: its setup reads it again now, a sleeper's too
@@ -1893,9 +2043,14 @@ uint64_t zwz_panel_next_deadline(const zwz_panel_t *p)
     const uint64_t b = zwz_next_deadline(&p->bridge);
     const uint64_t f = zw_fwupd_next_deadline(&p->fw);
     const uint64_t o = zwo_next_deadline(&p->outputs);
+    const uint64_t s = zws_next_deadline(&p->sirens, p->now);
     t = b < t ? b : t;
     t = f < t ? f : t;
     t = o < t ? o : t;
+    t = s < t ? s : t;
+    if ((zw_host_link(&p->net.host) == ZW_LINK_UP) != p->siren_radio) {
+        t = p->now; /* the sirens hear of the link at the next poll */
+    }
     if (p->out_refresh) {
         t = p->now;
     }
@@ -2368,6 +2523,51 @@ ui_zw_req_result_t zwz_panel_request(zwz_panel_t *p, uint64_t now, const ui_zw_r
                                                         : UI_ZW_REQ_INVALID;
         break;
     }
+    case UI_ZW_REQ_SIREN: {
+        /* OUT-016: installer mode with every partition disarmed, as every setting here */
+        if (!allowed) {
+            r = UI_ZW_REQ_NOT_ALLOWED;
+            break;
+        }
+        zws_result_t z;
+        if (req->parts == 0u) {
+            z = zwz_panel_siren_clear(p, now, req->node, req->endpoint);
+            if (z == ZWS_ERR_UNKNOWN) {
+                z = ZWS_OK; /* not used already */
+            }
+        } else {
+            zws_config_t c;
+            zws_defaults(&c, req->node, req->generation, req->endpoint, 0u);
+            c.partitions = req->parts;
+            c.also = (uint8_t)(req->also & (uint8_t)~req->parts);
+            c.burglary = (req->siren_flags & UI_ZW_SIREN_BURGLARY) != 0u;
+            c.fire = (req->siren_flags & UI_ZW_SIREN_FIRE) != 0u;
+            c.squawk = (req->siren_flags & UI_ZW_SIREN_SQUAWK) != 0u;
+            c.volume = req->volume;
+            c.supervision_min = req->minutes;
+            const int slot = zws_find(&p->sirens, req->node, req->endpoint);
+            if (slot >= 0) { /* its tones as they were set (the console's) */
+                const zws_config_t *was = &p->sirens.s[slot].c;
+                c.tone_burglary = was->tone_burglary;
+                c.tone_fire = was->tone_fire;
+                c.tone_co = was->tone_co;
+                c.tone_arm = was->tone_arm;
+                c.tone_disarm = was->tone_disarm;
+            }
+            z = zwz_panel_siren_set(p, now, &c);
+        }
+        r = z == ZWS_OK ? UI_ZW_REQ_OK : z == ZWS_ERR_FULL ? UI_ZW_REQ_FULL : UI_ZW_REQ_INVALID;
+        break;
+    }
+    case UI_ZW_REQ_SIREN_TEST: {
+        const zws_result_t z = zwz_panel_siren_test(p, now, req->node, req->endpoint);
+        r = z == ZWS_OK                                    ? UI_ZW_REQ_OK
+            : z == ZWS_ERR_ARMED                           ? UI_ZW_REQ_NOT_ALLOWED
+            : z == ZWS_ERR_BUSY                            ? UI_ZW_REQ_BUSY
+            : z == ZWS_ERR_OFFLINE                         ? UI_ZW_REQ_NO_RADIO
+                                                           : UI_ZW_REQ_INVALID;
+        break;
+    }
     case UI_ZW_REQ_GARAGE_MOVE: {
         if (req->level != 0 && !allowed) {
             r = UI_ZW_REQ_NOT_ALLOWED; /* opening takes a user's code (HCTL-005): installer mode */
@@ -2764,6 +2964,59 @@ size_t zwz_panel_devices(const zwz_panel_t *p, uint64_t now, ui_zw_device_t *out
     return n;
 }
 
+/* Where a siren device's siren is: the device itself when it has Sound Switch or Binary Switch,
+ * else its first end point that has Sound Switch (OUT-016). */
+static uint8_t siren_endpoint(const zw_node_record_t *rec)
+{
+    if (zw_iv_endpoint_has_cc(rec, 0u, ZW_CC_SOUND_SWITCH) ||
+        zw_iv_endpoint_has_cc(rec, 0u, ZW_CC_BINARY_SWITCH)) {
+        return 0u;
+    }
+    for (uint8_t ep = 1u; ep < 16u; ep++) {
+        if (zw_iv_endpoint_has_cc(rec, ep, ZW_CC_SOUND_SWITCH)) {
+            return ep;
+        }
+    }
+    return 0u;
+}
+
+/* The device page's siren rows (OUT-016): only for a device that is a siren. */
+static void siren_page(const zwz_panel_t *p, const zw_node_record_t *rec, ui_zw_device_page_t *out)
+{
+    if (device_kind(rec) != UI_ZW_KIND_SIREN) {
+        return;
+    }
+    if (rec->interview_step < ZW_IV_STEP_DONE) {
+        out->siren.fit = UI_ZW_FB_NOT_READY;
+        return;
+    }
+    const uint8_t ep = siren_endpoint(rec);
+    const bool tones = zw_iv_endpoint_has_cc(rec, ep, ZW_CC_SOUND_SWITCH);
+    if (!tones && !zw_iv_endpoint_has_cc(rec, ep, ZW_CC_BINARY_SWITCH)) {
+        out->siren.fit = UI_ZW_FB_UNSUPPORTED;
+        return;
+    }
+    out->siren.fit = UI_ZW_FB_AVAILABLE;
+    out->siren.endpoint = ep;
+    out->siren.tones = tones;
+    for (size_t i = 0; i < ZWS_SIRENS; i++) {
+        const zws_siren_t *s = zwz_panel_siren(p, i);
+        if (s == NULL || s->c.node != rec->node_id || s->c.generation != rec->generation ||
+            s->c.endpoint != ep) {
+            continue;
+        }
+        out->siren.partitions = s->c.partitions;
+        out->siren.also = s->c.also;
+        out->siren.burglary = s->c.burglary;
+        out->siren.fire = s->c.fire;
+        out->siren.squawk = s->c.squawk;
+        out->siren.volume = s->c.volume;
+        out->siren.supervision_min = s->c.supervision_min;
+        out->siren.trouble = s->unconfirmed || s->silent;
+        out->siren.sounding = s->sound != SIREN_QUIET;
+    }
+}
+
 bool zwz_panel_device(const zwz_panel_t *p, uint64_t now, uint16_t node, uint16_t generation,
                       ui_zw_device_page_t *out)
 {
@@ -2819,6 +3072,7 @@ bool zwz_panel_device(const zwz_panel_t *p, uint64_t now, uint16_t node, uint16_
             out->control.live = zwkc_live(p->keyctl, slot, &p->net);
         }
     }
+    siren_page(p, rec, out);
     for (size_t i = 0; i < ZWO_OUTPUTS && out->output_count < UI_ZW_OUTPUTS_MAX; i++) {
         const zwo_output_t *u = &p->outputs.out[i];
         if (!u->used || u->node != node || u->generation != generation) {

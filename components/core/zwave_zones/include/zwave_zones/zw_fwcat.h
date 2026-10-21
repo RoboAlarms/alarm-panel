@@ -77,6 +77,14 @@ zwfc_verdict_t zwfc_best(const char *json, size_t len, const zwfc_device_t *dev,
 /* The service's region word for a Z-Wave region code (serial-api.md §6.7), NULL when none. */
 const char *zwfc_region(uint8_t code);
 
+/* The ZAC93's own firmware, built in (docs/features/36 network.md §14): the files Zooz publishes,
+ * with the URLs and SHA-256 of Z-Wave JS's own entry (firmwares/zooz/ZAC93-V02.json, 2026-10-20).
+ * That entry matches only a radio already on 2.0-2.255, so a 1.x radio - Zooz says it takes 2.00
+ * and later - would be offered nothing. True with *out the newest file for `region` ("usa" or
+ * "europe") when `dev` is exactly Zooz's ZAC93 (027A:0004:0611) and older than it. From 2.20 the
+ * radio reports the SDK's default identity instead: never matched here, never guessed at. */
+bool zwfc_radio_builtin(const zwfc_device_t *dev, const char *region, zwfc_update_t *out);
+
 #ifdef __cplusplus
 }
 #endif

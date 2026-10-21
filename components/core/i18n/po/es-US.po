@@ -521,6 +521,7 @@ msgstr "h:mm a"
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_settings.c
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_walk.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 # review: draft
@@ -740,11 +741,13 @@ msgstr "A las {0}: {1}"
 #. The name of a zone nobody has named; {0} is its number.
 #. under an automation's trigger on its page; {0} the zone's number. At most 31 bytes
 #. the name of a zone nobody has named; {0} is its number
+#. a zone nobody has named; {0} its number
 #. a zone's default name. At most 23 bytes
 #: components/core/notify/src/notify_words.c
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_automations.c
 #: components/ui/alarm_ui/src/ui_installer.c
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
@@ -1599,8 +1602,11 @@ msgid "Wireless sensors may not be heard"
 msgstr "Puede que los sensores inalámbricos no reporten"
 
 #. A system trouble: its title (the Troubles list, the Activity list and a phone notification, where "restored" can follow it) and the line under it. The title is cut to 48 bytes; the line under it shares that limit to stay short. At most 48 bytes.
+#. the Sirens and outputs row's value: a siren is in trouble. At most 31 bytes
+#. a wired siren's state in a list: its supervision input is open. At most 23 bytes
 #: components/core/notify/src/notify_words.c
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_sirens.c
 # review: draft
 #, fuzzy
 msgid "Siren problem"
@@ -5578,11 +5584,14 @@ msgid "Standard user"
 msgstr "Usuario estándar"
 
 #. A list row's value, at its right end (keep it short).
+#. a choice: every partition (that is not already the siren's own)
 #. a choice: a Zigbee siren sounds for every partition
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_settings.c
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
 msgid "All partitions"
@@ -6265,7 +6274,9 @@ msgstr "+{0}"
 msgid "What happened"
 msgstr "Qué pasó"
 
+#. part of the 433 MHz row's value. At most 15 bytes
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_sirens.c
 # review: draft
 #, fuzzy
 msgid "{0} sensor"
@@ -7735,9 +7746,12 @@ msgid "Their code and browser sign-in stop working at once."
 msgstr "Su código y su inicio de sesión en el navegador dejan de funcionar de inmediato."
 
 #. A confirmation sheet. At most 127 bytes.
+#. a confirmation's title and text: removing a wired siren or output
+#. a confirmation's title and text: removing a 433 MHz siren
 #. Text from the layout XML, no context.
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_installer.c
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
 # review: draft
 #, fuzzy
@@ -9987,12 +10001,14 @@ msgstr[1] "{0} horas"
 msgstr[2] "{0} horas"
 
 #. a number of minutes in a number row; {0} is the number. At most 20 bytes
+#. how long ago a 433 MHz sensor was heard (minutes). At most 18 bytes
 #. a span of time, inserted into "Not heard for {0}", "{0} ago", "Reported {0} ago" and "Heard {0} ago" (so it must read well in all of them). At most 18 bytes
 #: components/services/panel_web/web/panel-pages.js
 #: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/src/ui_forms.c
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_link.c
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_sources.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
@@ -10077,7 +10093,6 @@ msgstr "Sus eventos van a los teléfonos y a las integraciones, no solo al regis
 msgid "Its events stay in the panel’s event log only"
 msgstr "Sus eventos quedan solo en el registro de eventos del panel"
 
-#. A list row's value, at its right end (keep it short).
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_sources.c
 # review: draft
@@ -10085,7 +10100,6 @@ msgstr "Sus eventos quedan solo en el registro de eventos del panel"
 msgid "Normally open"
 msgstr "Normalmente abierto"
 
-#. A list row's value, at its right end (keep it short).
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_sources.c
 # review: draft
@@ -10517,6 +10531,7 @@ msgstr "Cuando se queda en silencio"
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
 msgid "Supervision"
@@ -11317,7 +11332,10 @@ msgstr "Teclado"
 msgid "Expander"
 msgstr ""
 
+#. the 433 MHz page's receiver row; its state is the row's value
+#. A list row's title (one line; a long one ends in ...).
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_sirens.c
 msgid "Receiver"
 msgstr ""
 
@@ -12761,7 +12779,9 @@ msgstr ""
 msgid "Updating the Wi-Fi module"
 msgstr ""
 
+#. a Z-Wave siren's volume; {0} a percentage
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
 msgid "{0} %"
@@ -13612,9 +13632,11 @@ msgstr "Solo el instalador puede hacer eso."
 msgid "It is no longer registered."
 msgstr "Ya no está registrado."
 
+#. how long ago a 433 MHz sensor was heard (hours). At most 18 bytes
 #. how long a device has been silent (hours). At most 18 bytes
 #: components/services/panel_web/web/panel-pages.js
 #: components/services/panel_web/web/panel.js
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
@@ -13626,8 +13648,10 @@ msgstr[1] "{0} h"
 msgstr[2] "{0} h"
 
 #. About, Running for: days {0}. At most 31 bytes
+#. how long ago a 433 MHz sensor was heard (days). At most 18 bytes
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_settings.c
+#: components/ui/alarm_ui/src/ui_sirens.c
 # review: draft
 #, fuzzy
 msgid "{0} day"
@@ -14229,8 +14253,10 @@ msgstr "Falló la actualización de la radio"
 msgid "Try again."
 msgstr "Inténtelo de nuevo."
 
+#. a 433 MHz sensor not heard since the panel started
 #. a row's value on a device's page. At most 39 bytes
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_sources.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
@@ -14898,9 +14924,11 @@ msgstr "¿Eliminar {0} como dañado?"
 msgid "For a device that is broken, reset or gone: the radio checks it no longer answers first. Its zones then need another sensor."
 msgstr "Para un dispositivo dañado, restablecido o desaparecido: primero la radio verifica que ya no responda. Luego sus zonas necesitan otro sensor."
 
+#. a row on a wired output's page
 #. A confirmation sheet. At most 127 bytes.
 #. A button row's text (one line).
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
@@ -16759,17 +16787,23 @@ msgstr "Estroboscopio con ella"
 msgid "Its own light, while it sounds"
 msgstr "Su propia luz, mientras suena"
 
+#. a switch on a siren's page
 #. a switch on a Zigbee siren's page
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
 msgid "Chirp when arming and disarming"
 msgstr "Pitido al armar y desarmar"
 
+#. a switch on a siren's page
+#. under "Chirp when arming and disarming"
 #. a switch on a Zigbee siren's page
 #. under "Chirp when arming and disarming" on a Zigbee siren's page
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 # review: draft
 #, fuzzy
@@ -16778,8 +16812,10 @@ msgstr "Un pitido al armar, dos al desarmar"
 
 #. a pick sheet's title: a Zigbee siren's volume
 #. The sheet's title. At most 127 bytes.
+#. A list row's title (one line; a long one ends in ...).
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
 msgid "Volume"
@@ -17012,9 +17048,13 @@ msgstr "Termine primero su configuración."
 msgid "Every device number a Zigbee keypad may have is taken: free one in the device table first."
 msgstr "Todos los números de dispositivo que puede tener un teclado Zigbee están ocupados: libere uno antes en la tabla de dispositivos."
 
+#. a row on a siren's page: sound it briefly
 #. a row on a Zigbee siren's page: sound it briefly
+#. A list row's title (one line; a long one ends in ...).
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
 msgid "Test it"
@@ -17048,9 +17088,13 @@ msgstr "Fabricante y modelo como los reporta"
 msgid "{0} · {1}"
 msgstr "{0} · {1}"
 
+#. a pick sheet's title: what a wired output is
+#. The sheet's title. At most 127 bytes.
+#. a row on a wired output's page: what it is
 #. a row on a Zigbee device's page
 #. A list row's title (one line).
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 # review: draft
 #, fuzzy
@@ -28336,6 +28380,7 @@ msgstr "Su código deja de funcionar de inmediato. El registro de eventos conser
 #. two partition names in a list ({0} the ones so far, {1} the next one). At most 10 bytes
 #. a list of names or numbers: {0} what is listed so far, {1} the next one
 #: components/ui/alarm_ui/src/ui_settings.c
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
@@ -28664,6 +28709,790 @@ msgstr ""
 #. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
 msgid "A master or installer code changes what asks for one"
+msgstr ""
+
+#. a toast: a siren's change or test is refused. At most 63 bytes
+#. a toast: a Zigbee siren's test is refused while a partition is armed
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+# review: draft
+#, fuzzy
+msgid "Not while one of its partitions is armed"
+msgstr "No mientras una de sus particiones esté armada"
+
+#. a toast: a siren's test is refused while it sounds. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Not while it sounds"
+msgstr ""
+
+#. a toast: a terminal chosen for an output is a zone's or another output's
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "That terminal is in use: pick a free one"
+msgstr ""
+
+#. a toast: nothing can send to a 433 MHz siren
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Nothing can transmit on 433 MHz"
+msgstr ""
+
+#. a toast: every place for this kind of siren or output is taken
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "No room for another one"
+msgstr ""
+
+#. a toast: a siren's setting can't be taken (no partition, nothing to sound for)
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Not saved: it must sound for something, in a partition"
+msgstr ""
+
+#. a toast: a siren's or output's change couldn't be made
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Not saved: try again"
+msgstr ""
+
+#. a siren's partitions: none
+#. a choice: a siren sounds for no other partition
+#. a Zigbee siren's Partitions row: it sounds for none (not used by the panel)
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgctxt "partitions"
+msgid "None"
+msgstr "Ninguna"
+
+#. a siren's partitions: every partition
+#. a Zigbee siren's Partitions row: it sounds for every partition
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgctxt "partitions"
+msgid "All"
+msgstr "Todas"
+
+#. a siren's partitions in a list's line: {0} its own, {1} the ones it also sounds for
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "{0}, also {1}"
+msgstr ""
+
+#. what a wired output is: a row's value, a choice. At most 31 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "wired output"
+msgid "Siren"
+msgstr ""
+
+#. what a wired output is: a row's value, a choice. At most 31 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "wired output"
+msgid "Strobe"
+msgstr ""
+
+#. what a wired output is: a row's value, a choice. At most 31 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "wired output"
+msgid "Smoke detector power"
+msgstr ""
+
+#. what a wired output is: a row's value, a choice. At most 31 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "wired output"
+msgid "Armed light"
+msgstr ""
+
+#. under a choice of what a wired output is
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Sounds with the alarm"
+msgstr ""
+
+#. under a choice of what a wired output is
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "On from an audible alarm until disarmed"
+msgstr ""
+
+#. under a choice of what a wired output is
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Cut briefly to reset 4-wire smoke detectors"
+msgstr ""
+
+#. under a choice of what a wired output is
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "On while its partitions are armed"
+msgstr ""
+
+#. a wired terminal, by the pin printed beside it. At most 23 bytes
+#. a wired contact's pin ({0} a number) after "Wired · ". At most 27 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_sources.c
+# review: draft
+#, fuzzy
+msgid "GPIO {0}"
+msgstr "GPIO {0}"
+
+#. a 433 MHz siren's name; {0} its number, 1 to 4. At most 31 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "433 MHz siren {0}"
+msgstr ""
+
+#. a choice: every partition (that is not already the siren's own)
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "All the others"
+msgstr ""
+
+#. the Sirens and outputs row's value: none set up. At most 31 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "sirens"
+msgid "None"
+msgstr ""
+
+#. the Sirens and outputs row's value. At most 31 bytes
+#. part of the 433 MHz row's value. At most 15 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "{0} siren"
+msgid_plural "{0} sirens"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+#. the 433 MHz row's value: something drowns the band. At most 31 bytes
+#. the Zigbee row's value in the installer menu, and after "Radio · " on its page. At most 31 bytes
+#. the Z-Wave row's value in the installer menu, and after "Radio · " on its page. At most 31 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgctxt "radio state"
+msgid "Interference"
+msgstr "Interferencia"
+
+#. the 433 MHz row's value: no receiver answers. At most 31 bytes
+#. the state of the Zigbee radio, a row's value
+#. the state of the Z-Wave radio, a row's value
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgctxt "radio state"
+msgid "Not connected"
+msgstr "Sin conexión"
+
+#. the 433 MHz row's detail in the installer menu, and its page's note
+#. A list row's detail line, under its title (one line).
+#. A Settings page: the line under its title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Sensors and sirens on 433 MHz"
+msgstr ""
+
+#. a row in the installer menu (BL-037)
+#. A list row's title (one line; a long one ends in ...).
+#. A Settings page's title. At most 47 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Sirens and outputs"
+msgstr ""
+
+#. a row in the installer menu (BL-037)
+#. under "Sirens and outputs" in the installer menu, and its page's note
+#. A list row's detail line, under its title (one line).
+#. A Settings page: the line under its title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "What sounds and what switches when the alarm does"
+msgstr ""
+
+#. a siren's state in a list. At most 23 bytes
+#. A list row's value, at its right end (keep it short).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "siren state"
+msgid "Sounding"
+msgstr ""
+
+#. a siren's state in a list. At most 23 bytes
+#. A list row's value, at its right end (keep it short).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "siren state"
+msgid "Ready"
+msgstr ""
+
+#. a wired output's state in a list. At most 23 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "output state"
+msgid "On"
+msgstr ""
+
+#. a wired output's state in a list. At most 23 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "output state"
+msgid "Off"
+msgstr ""
+
+#. a wired output's line in a list: {0} "GPIO 49", {1} "J7 header"
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "{0} on the {1}"
+msgstr ""
+
+#. a wired output's line in a list: {0} "GPIO 49", {1} its partitions ("Home, also Shop")
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Terminal {0} · {1}"
+msgstr ""
+
+#. the first paragraph on Sirens and outputs
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "The panel's own speaker always sounds too. Sirens follow it: steady for burglary, the fire pattern for fire, the CO pattern for CO."
+msgstr ""
+
+#. a section on Sirens and outputs: outputs on the panel's own terminals
+#. A section heading above a group of rows (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "On the panel's terminals"
+msgstr ""
+
+#. a row on Sirens and outputs
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Add a wired siren or output"
+msgstr ""
+
+#. a row on Sirens and outputs
+#. under "Add a wired siren or output"
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "A relay or MOSFET module on a free terminal"
+msgstr ""
+
+#. a 433 MHz siren's line in a list: {0} its partitions. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "{0} · Not supervised"
+msgstr ""
+
+#. a row on Sirens and outputs and on the 433 MHz page
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Add a 433 MHz siren"
+msgstr ""
+
+#. a row on Sirens and outputs and on the 433 MHz page
+#. under "Add a 433 MHz siren"
+#. A list row's detail line, under its title (one line).
+#. a row on the 433 MHz page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "One that learns its panel like a key fob"
+msgstr ""
+
+#. the last paragraph on Sirens and outputs
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Zigbee and Z-Wave sirens are set on their device pages, under Zigbee and Z-Wave."
+msgstr ""
+
+#. a pick sheet's title: adding a wired output
+#. The sheet's title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Add a wired output"
+msgstr ""
+
+#. a pick sheet's title: adding a wired output
+#. The sheet's note. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "What it switches"
+msgstr ""
+
+#. a choice: a wired siren has no supervision input
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "supervision input"
+msgid "None"
+msgstr ""
+
+#. a choice: a wired siren has no supervision input
+#. under "None" in a wired siren's supervision input choices
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Its circuit isn't checked"
+msgstr ""
+
+#. a toast: no wired terminal is free for an output
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "No free terminal: every one is a zone's or an output's"
+msgstr ""
+
+#. a pick sheet's note: the free terminals; {0} where they are ("J7 header")
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Free terminals on the {0}"
+msgstr ""
+
+#. The sheet's title. At most 127 bytes.
+#. a row on a wired siren's page: the terminal that checks its circuit
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Supervision input"
+msgstr ""
+
+#. The sheet's title. At most 127 bytes.
+#. a row on a wired output's page: the terminal it drives
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Terminal"
+msgstr ""
+
+#. a toast: a siren's last alarm kind can't be turned off
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "A siren sounds for something: remove it instead"
+msgstr ""
+
+#. a choice: the relay board's input switches the relay on when high
+#. a row on a wired output's page: how its relay board switches
+#. under "Relay board"
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Switches on high"
+msgstr ""
+
+#. a choice: the relay board's input switches the relay on when high
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "The terminal goes high to switch it on"
+msgstr ""
+
+#. a choice: the relay board's input switches the relay on when low
+#. a row on a wired output's page: how its relay board switches
+#. under "Relay board"
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Switches on low"
+msgstr ""
+
+#. a choice: the relay board's input switches the relay on when low
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Most relay boards: the terminal goes low"
+msgstr ""
+
+#. a pick sheet's title: how a wired output's relay board switches
+#. The sheet's title. At most 127 bytes.
+#. a row on a wired output's page: how its relay board switches
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Relay board"
+msgstr ""
+
+#. a pick sheet's title: a siren's own partitions
+#. The sheet's title. At most 127 bytes.
+#. a row on a siren's page: its own partitions
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgctxt "siren"
+msgid "Partitions"
+msgstr ""
+
+#. a pick sheet's title: a siren's own partitions
+#. The sheet's note. At most 127 bytes.
+#. a row on a siren's page: its own partitions
+#. under a siren's Partitions
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Their alarms and its chirps"
+msgstr ""
+
+#. under "None" in a siren's Also sounds for
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Only its own partitions"
+msgstr ""
+
+#. a pick sheet's title: other partitions whose alarms a siren also sounds for
+#. The sheet's title. At most 127 bytes.
+#. a row on a siren's page: other partitions whose alarms it also sounds for (OUT-015)
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Also sounds for"
+msgstr ""
+
+#. a pick sheet's title: other partitions whose alarms a siren also sounds for
+#. The sheet's note. At most 127 bytes.
+#. a row on a siren's page: other partitions whose alarms it also sounds for (OUT-015)
+#. under a siren's Also sounds for
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Other partitions' alarms, never their chirps"
+msgstr ""
+
+#. a toast: a wired siren's test started
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Sounding for 2 seconds"
+msgstr ""
+
+#. a confirmation's title and text: removing a wired siren or output
+#. A confirmation sheet. At most 127 bytes.
+#. a confirmation's title and text: removing a 433 MHz siren
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Remove it?"
+msgstr ""
+
+#. a confirmation's title and text: removing a wired siren or output
+#. A confirmation sheet. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "It stops switching, and its terminal goes back to the zones."
+msgstr ""
+
+#. a page's title: a wired output that was removed meanwhile
+#. A Settings page's title. At most 47 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Wired output"
+msgstr ""
+
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "It was removed."
+msgstr ""
+
+#. a wired output page's note: {0} "GPIO 49", {1} "J7 header"
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "On terminal {0} · {1}"
+msgstr ""
+
+#. a section heading on a siren's page: which alarms sound it
+#. A section heading above a group of rows (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "siren section"
+msgid "It sounds for"
+msgstr ""
+
+#. a switch on a siren's page
+#. a switch on a Zigbee siren's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgctxt "siren sounds for"
+msgid "Burglary and panic"
+msgstr "Robo y pánico"
+
+#. a switch on a siren's page
+#. under "Burglary and panic" on a siren's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "A silent panic stays silent"
+msgstr ""
+
+#. a switch on a siren's page
+#. a switch on a Zigbee siren's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgctxt "siren sounds for"
+msgid "Fire and CO"
+msgstr "Incendio y CO"
+
+#. a switch on a siren's page
+#. under "Fire and CO" on a wired siren's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "The fire pattern for fire, the CO pattern for CO"
+msgstr ""
+
+#. a section heading on a wired output's page
+#. A section heading above a group of rows (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "output section"
+msgid "It follows"
+msgstr ""
+
+#. under an armed light's Partitions
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "On while any of them is armed"
+msgstr ""
+
+#. a section heading on a wired output's page
+#. A section heading above a group of rows (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "How it is wired"
+msgstr ""
+
+#. a row on a wired output's page: how its relay board switches
+#. under "Relay board"
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Most switch on low"
+msgstr ""
+
+#. a row on a wired siren's page: the terminal that checks its circuit
+#. under "Supervision input"
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Its fault contact: open is a siren trouble"
+msgstr ""
+
+#. a paragraph on a wired siren's page while its supervision input is open
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Its supervision input is open: check the siren and its wiring."
+msgstr ""
+
+#. a section heading on a siren's page
+#. A section heading above a group of rows (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "siren section"
+msgid "Check it"
+msgstr ""
+
+#. a row on a siren's page: sound it briefly
+#. under "Test it" on a Zigbee siren's page (ZBW_TEST_S, 2 s, at its volume)
+#. a row on a Zigbee siren's page: sound it briefly
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgid "Sounds it for 2 seconds"
+msgstr "La hace sonar 2 segundos"
+
+#. a row on a wired output's page
+#. under "Remove it" on a wired output's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Its terminal goes back to the zones"
+msgstr ""
+
+#. a toast: a 433 MHz siren's test was sent
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Sent: it should sound for 2 seconds"
+msgstr ""
+
+#. a toast: the pairing signal goes out to a 433 MHz siren
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Sending the pairing signal three times"
+msgstr ""
+
+#. a confirmation's title and text: removing a 433 MHz siren
+#. A confirmation sheet. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "It gets the stop signal, and the panel no longer sounds it."
+msgstr ""
+
+#. a 433 MHz siren page's note: {0} the panel's address for it ("9E3B5")
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Address {0} · Not supervised"
+msgstr ""
+
+#. a paragraph on a 433 MHz siren's page
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Not supervised: the panel can't hear this siren. Test it now and then."
+msgstr ""
+
+#. a paragraph on a 433 MHz siren's page while nothing can transmit
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Nothing can transmit on 433 MHz now: this siren won't sound. It is a siren trouble."
+msgstr ""
+
+#. under "Fire and CO" on a 433 MHz siren's page: it has one sound
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Its one sound"
+msgstr ""
+
+#. under "Chirp when arming and disarming" on a 433 MHz siren's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Its own arm and disarm sounds"
+msgstr ""
+
+#. a row on a 433 MHz siren's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Pair it again"
+msgstr ""
+
+#. a row on a 433 MHz siren's page
+#. under "Pair it again"
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Its learning mode first"
+msgstr ""
+
+#. under "Remove it" on a 433 MHz siren's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Sends it the stop signal first"
+msgstr ""
+
+#. the pairing page's title
+#. A Settings page's title. At most 47 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Pair a 433 MHz siren"
+msgstr ""
+
+#. the pairing page's first step
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "1. Put the siren in its learning mode: its manual says how, usually by holding its button until it beeps."
+msgstr ""
+
+#. the pairing page's second step
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "2. Send the pairing signal. Most sirens beep to say they learned it."
+msgstr ""
+
+#. a button on the pairing page
+#. A button row's text (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Send the pairing signal"
+msgstr ""
+
+#. the pairing page's third step
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "3. Test it. If it stays quiet, send the pairing signal again."
+msgstr ""
+
+#. a row on the pairing page: the siren's settings
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "What it sounds for"
+msgstr ""
+
+#. a row on the pairing page: the siren's settings
+#. under "What it sounds for" on the pairing page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Burglary and fire in its partitions, for now"
+msgstr ""
+
+#. the 433 MHz receiver's state, a row's value. At most 23 bytes
+#. the state of the Zigbee radio, a row's value; also after "Radio · " in the page's first row. At most 31 bytes
+#. the state of the Z-Wave radio, a row's value; also after "Radio · " in the page's first row. At most 31 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgctxt "radio state"
+msgid "Working"
+msgstr "Funcionando"
+
+#. under the receiver row: {0} "2 min"
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Heard a sensor {0} ago"
+msgstr ""
+
+#. under the receiver row
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Nothing heard since the panel started"
+msgstr ""
+
+#. under the receiver row
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Something nearby drowns 433 MHz: sensors may not be heard"
+msgstr ""
+
+#. the 433 MHz receiver's state, a row's value. At most 23 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "radio state"
+msgid "Off"
+msgstr ""
+
+#. under the receiver row
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "The panel was told none is fitted"
+msgstr ""
+
+#. under the receiver row
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "No 433 MHz receiver answers"
+msgstr ""
+
+#. the 433 MHz page's transmitter row; its state is the row's value
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Transmitter"
+msgstr ""
+
+#. under the transmitter row
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "433 MHz sirens can be sounded"
+msgstr ""
+
+#. under the transmitter row
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "433 MHz sirens can't be sounded"
+msgstr ""
+
+#. the transmitter's state, a row's value. At most 23 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "transmitter state"
+msgid "Ready"
+msgstr ""
+
+#. A list row's value, at its right end (keep it short).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "transmitter state"
+msgid "None"
+msgstr ""
+
+#. a row on the 433 MHz page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Add a sensor"
+msgstr ""
+
+#. a row on the 433 MHz page
+#. under "Add a sensor" on the 433 MHz page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "In Zones: add a zone, pick 433 MHz sensor, trigger it"
+msgstr ""
+
+#. a row on the 433 MHz page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Add a siren"
+msgstr ""
+
+#. a section on the 433 MHz page
+#. A section heading above a group of rows (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "433 MHz section"
+msgid "Sensors"
+msgstr ""
+
+#. the 433 MHz page without 433 MHz zones
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "No zone uses a 433 MHz sensor yet."
+msgstr ""
+
+#. when a 433 MHz sensor was last heard: {0} "2 min"
+#. a Z-Wave or Zigbee device's line on the zone page; {0} is how long, like "2 min". At most 24 bytes
+#. a Zigbee device's line on the zone page; {0} how long, like "2 min". At most 24 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/src/ui_sources.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+# review: draft
+#, fuzzy
+msgid "Heard {0} ago"
+msgstr "Se oyó hace {0}"
+
+#. a 433 MHz sensor's line: {0} its zone number, {1} its code ("433 MHz · A2B3C code 6"), {2} when it was heard
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Zone {0} · {1} · {2}"
+msgstr ""
+
+#. a section on the 433 MHz page
+#. A section heading above a group of rows (one line).
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "433 MHz section"
+msgid "Sirens"
 msgstr ""
 
 #: components/ui/alarm_ui/src/ui_sources.c
@@ -29202,6 +30031,42 @@ msgstr "Agregar un dispositivo Z-Wave nuevo"
 msgid "Pair it now, then pick its input"
 msgstr "Vincúlelo ahora y luego elija su entrada"
 
+#. a wired zone's Contact: a normally closed contact with an end-of-line resistor. At most 40 bytes
+#. a choice of a wired zone's Contact (ZONE-005)
+#: components/ui/alarm_ui/src/ui_sources.c
+msgid "Closed, end-of-line resistor"
+msgstr ""
+
+#. a wired zone's Contact: normally open devices across an end-of-line resistor. At most 40 bytes
+#. a choice of a wired zone's Contact (ZONE-005)
+#: components/ui/alarm_ui/src/ui_sources.c
+msgid "Open, end-of-line resistor"
+msgstr ""
+
+#. a wired zone's Contact: two end-of-line resistors. At most 40 bytes
+#. a choice of a wired zone's Contact (ZONE-005)
+#: components/ui/alarm_ui/src/ui_sources.c
+msgid "Double end-of-line"
+msgstr ""
+
+#. a choice of a wired zone's Contact (ZONE-005)
+#. under the choice; 2 kOhm and 4.7 kOhm are the resistors
+#: components/ui/alarm_ui/src/ui_sources.c
+msgid "Doors, windows, motion: 2 kOhm at the sensor, 4.7 kOhm pull-up. A short is a tamper"
+msgstr ""
+
+#. a choice of a wired zone's Contact (ZONE-005)
+#. under the choice
+#: components/ui/alarm_ui/src/ui_sources.c
+msgid "Smoke detectors, panic buttons: a cut wire is a trouble"
+msgstr ""
+
+#. a choice of a wired zone's Contact (ZONE-005)
+#. under the choice
+#: components/ui/alarm_ui/src/ui_sources.c
+msgid "Two 2 kOhm resistors: a cut or shorted wire is a tamper"
+msgstr ""
+
 #. The sheet's note. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_sources.c
 # review: draft
@@ -29395,13 +30260,6 @@ msgstr "Una entrada aparte que lo reporta"
 msgid "Remove the sensor?"
 msgstr "¿Quitar el sensor?"
 
-#. a wired contact's pin ({0} a number) after "Wired · ". At most 27 bytes
-#: components/ui/alarm_ui/src/ui_sources.c
-# review: draft
-#, fuzzy
-msgid "GPIO {0}"
-msgstr "GPIO {0}"
-
 #. a 433 MHz sensor's code (hexadecimal {0}) after "433 MHz · ". At most 28 bytes
 #: components/ui/alarm_ui/src/ui_sources.c
 # review: draft
@@ -29578,15 +30436,6 @@ msgstr "Seguro"
 #, fuzzy
 msgid "Security not confirmed"
 msgstr "Seguridad sin confirmar"
-
-#. a Z-Wave or Zigbee device's line on the zone page; {0} is how long, like "2 min". At most 24 bytes
-#. a Zigbee device's line on the zone page; {0} how long, like "2 min". At most 24 bytes
-#: components/ui/alarm_ui/src/ui_sources.c
-#: components/ui/alarm_ui/src/ui_zigbee.c
-# review: draft
-#, fuzzy
-msgid "Heard {0} ago"
-msgstr "Se oyó hace {0}"
 
 #. A list row's title (one line; a long one ends in ...).
 #. a page's title when its device has left the network
@@ -31681,26 +32530,6 @@ msgstr "Elija qué usar"
 msgid "Makes a new zone"
 msgstr "Crea una zona nueva"
 
-#. the Zigbee row's value in the installer menu, and after "Radio · " on its page. At most 31 bytes
-#. the Z-Wave row's value in the installer menu, and after "Radio · " on its page. At most 31 bytes
-#: components/ui/alarm_ui/src/ui_zigbee.c
-#: components/ui/alarm_ui/src/ui_zwave.c
-# review: draft
-#, fuzzy
-msgctxt "radio state"
-msgid "Interference"
-msgstr "Interferencia"
-
-#. the state of the Zigbee radio, a row's value
-#. the state of the Z-Wave radio, a row's value
-#: components/ui/alarm_ui/src/ui_zigbee.c
-#: components/ui/alarm_ui/src/ui_zwave.c
-# review: draft
-#, fuzzy
-msgctxt "radio state"
-msgid "Not connected"
-msgstr "Sin conexión"
-
 #. the state of the Zigbee radio, a row's value
 #. the state of the Z-Wave radio, a row's value
 #: components/ui/alarm_ui/src/ui_zigbee.c
@@ -31727,16 +32556,6 @@ msgstr "Sensores en la radio Zigbee del panel"
 msgctxt "Zigbee radio"
 msgid "Radio"
 msgstr "Radio"
-
-#. the state of the Zigbee radio, a row's value; also after "Radio · " in the page's first row. At most 31 bytes
-#. the state of the Z-Wave radio, a row's value; also after "Radio · " in the page's first row. At most 31 bytes
-#: components/ui/alarm_ui/src/ui_zigbee.c
-#: components/ui/alarm_ui/src/ui_zwave.c
-# review: draft
-#, fuzzy
-msgctxt "radio state"
-msgid "Working"
-msgstr "Funcionando"
 
 #. the state of the Z-Wave radio, a row's value
 #: components/ui/alarm_ui/src/ui_zigbee.c
@@ -32589,22 +33408,6 @@ msgctxt "siren volume"
 msgid "Very high"
 msgstr "Muy alto"
 
-#. a Zigbee siren's Partitions row: it sounds for none (not used by the panel)
-#: components/ui/alarm_ui/src/ui_zigbee.c
-# review: draft
-#, fuzzy
-msgctxt "partitions"
-msgid "None"
-msgstr "Ninguna"
-
-#. a Zigbee siren's Partitions row: it sounds for every partition
-#: components/ui/alarm_ui/src/ui_zigbee.c
-# review: draft
-#, fuzzy
-msgctxt "partitions"
-msgid "All"
-msgstr "Todas"
-
 #. a choice: the panel doesn't use this Zigbee siren
 #: components/ui/alarm_ui/src/ui_zigbee.c
 # review: draft
@@ -32639,6 +33442,7 @@ msgstr "Las alarmas de estas particiones"
 #. a pick sheet's title: a Zigbee siren's volume
 #. The sheet's note. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
 msgid "For its alarms, chirps and tests"
@@ -32655,18 +33459,11 @@ msgstr "El predeterminado de esta sirena"
 #. a pick sheet's note: a Zigbee siren's Supervision
 #. The sheet's note. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
 msgid "Not heard this long, it is a siren trouble. It can't be turned off."
 msgstr "Si no se oye durante este tiempo, es una falla de sirena. No se puede desactivar."
-
-#. a toast: a Zigbee siren's test is refused while a partition is armed
-#. A toast (one line over the screen). At most 127 bytes.
-#: components/ui/alarm_ui/src/ui_zigbee.c
-# review: draft
-#, fuzzy
-msgid "Not while one of its partitions is armed"
-msgstr "No mientras una de sus particiones esté armada"
 
 #. under "Test it" on a Zigbee siren's page while its test runs
 #: components/ui/alarm_ui/src/ui_zigbee.c
@@ -32696,14 +33493,6 @@ msgstr "Última prueba: sin respuesta. Revise su alimentación"
 msgid "Last test: it couldn't be sent"
 msgstr "Última prueba: no se pudo enviar"
 
-#. under "Test it" on a Zigbee siren's page (ZBW_TEST_S, 2 s, at its volume)
-#. a row on a Zigbee siren's page: sound it briefly
-#: components/ui/alarm_ui/src/ui_zigbee.c
-# review: draft
-#, fuzzy
-msgid "Sounds it for 2 seconds"
-msgstr "La hace sonar 2 segundos"
-
 #. a section heading on a Zigbee siren's page: which alarms sound it
 #. A section heading above a group of rows (one line).
 #: components/ui/alarm_ui/src/ui_zigbee.c
@@ -32715,19 +33504,13 @@ msgstr "Suena para"
 
 #. a paragraph on a Zigbee siren's page the panel doesn't use yet
 #. An explanation under a group of rows (wraps over several lines).
+#. a paragraph on a Z-Wave siren's page the panel doesn't sound yet
 #: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
 msgid "The panel doesn't sound it yet: turn on what it sounds for."
 msgstr "El panel aún no la hace sonar: active para qué suena."
-
-#. a switch on a Zigbee siren's page
-#: components/ui/alarm_ui/src/ui_zigbee.c
-# review: draft
-#, fuzzy
-msgctxt "siren sounds for"
-msgid "Burglary and panic"
-msgstr "Robo y pánico"
 
 #. a switch on a Zigbee siren's page
 #. under "Burglary and panic" on a Zigbee siren's page
@@ -32736,14 +33519,6 @@ msgstr "Robo y pánico"
 #, fuzzy
 msgid "Its partitions' alarms; a silent panic stays silent"
 msgstr "Las alarmas de sus particiones; un pánico silencioso sigue en silencio"
-
-#. a switch on a Zigbee siren's page
-#: components/ui/alarm_ui/src/ui_zigbee.c
-# review: draft
-#, fuzzy
-msgctxt "siren sounds for"
-msgid "Fire and CO"
-msgstr "Incendio y CO"
 
 #. a switch on a Zigbee siren's page
 #. under "Fire and CO" on a Zigbee siren's page
@@ -32772,7 +33547,9 @@ msgstr "Particiones"
 
 #. a row on a Zigbee siren's page: a trouble when it isn't heard
 #. under "Supervision" on a Zigbee siren's page
+#. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
 msgid "A siren trouble when it isn't heard"
@@ -32973,6 +33750,12 @@ msgstr "Qué puede hacer"
 #, fuzzy
 msgid "Off: it only arms, so a lost fob can't open the house"
 msgstr "Apagado: solo arma, así un llavero perdido no puede abrir la casa"
+
+#. a paragraph on a Zigbee smoke detector's page that has a sounder of its own (BL-215)
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_zigbee.c
+msgid "Its own sounder can also sound with the panel's alarms, like a siren."
+msgstr ""
 
 #. a toast after "Blink its light" on a Zigbee device's page
 #. A toast (one line over the screen). At most 127 bytes.
@@ -34718,6 +35501,71 @@ msgstr "Sus propios sonidos y luces muestran el estado del panel. Sus botones ar
 msgid "Its own sounds and lights show the panel's state. Its buttons don't arm or disarm the panel."
 msgstr "Sus propios sonidos y luces muestran el estado del panel. Sus botones no arman ni desarman el panel."
 
+#. under "None" for a Z-Wave siren's partitions
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "The panel doesn't sound it"
+msgstr ""
+
+#. a choice: a Z-Wave siren's volume is its own setting
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Its own"
+msgstr ""
+
+#. a choice: a Z-Wave siren's volume is its own setting
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "As the siren is set"
+msgstr ""
+
+#. the default choice of a Z-Wave siren's Supervision
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "After 4 h"
+msgstr ""
+
+#. the default choice of a Z-Wave siren's Supervision
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "The default for a Z-Wave siren"
+msgstr ""
+
+#. a Z-Wave siren's Supervision choice; {0} hours
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "After {0} h"
+msgstr ""
+
+#. a section on a Z-Wave siren's page (BL-037)
+#. A section heading above a group of rows (one line).
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgctxt "Z-Wave siren section"
+msgid "Siren"
+msgstr ""
+
+#. a Z-Wave siren whose setup isn't done
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Finish its setup first: then the panel can sound it with the alarm."
+msgstr ""
+
+#. a Z-Wave siren the panel can't drive
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Its setup found no way to sound it."
+msgstr ""
+
+#. a paragraph on a Z-Wave siren's page in trouble
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "It isn't answering: a siren trouble. Check its power and signal."
+msgstr ""
+
+#. under "Fire and CO" on a Z-Wave siren's page
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Its fire tone for fire, its CO tone for CO"
+msgstr ""
+
+#. under the chirp switch on a Z-Wave siren's page
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Its arm and disarm tones"
+msgstr ""
+
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
@@ -35735,6 +36583,76 @@ msgstr "El software nuevo no arrancó: la radio espera en su cargador de arranqu
 msgid "Updating the radio: {0} %. Z-Wave sensors aren't heard until it's back."
 msgstr "Actualizando la radio: {0} %. Los sensores Z-Wave no reportan hasta que vuelva."
 
+#. a paragraph on the Z-Wave radio's page while its file is read from the SD card
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Reading the file from the SD card..."
+msgstr ""
+
+#. a paragraph on the Z-Wave radio's page
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "No SD card can be read. Put the card in, then try again."
+msgstr ""
+
+#. a paragraph on the Z-Wave radio's page. At most 159 bytes
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "No .gbl file on the SD card. Copy the radio's file from its maker to the card's top folder, or to a folder named zwave."
+msgstr ""
+
+#. a paragraph on the Z-Wave radio's page
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "More than one .gbl file on the SD card: leave only the one to install."
+msgstr ""
+
+#. a paragraph on the Z-Wave radio's page
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "The .gbl file on the SD card isn't a radio's file."
+msgstr ""
+
+#. a paragraph on the Z-Wave radio's page
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "The file isn't one for this radio. It keeps its software."
+msgstr ""
+
+#. a paragraph on the Z-Wave radio's page
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Disarm every partition, in installer mode, then try again."
+msgstr ""
+
+#. a paragraph on the Z-Wave radio's page
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "The radio is busy: try again when it's done."
+msgstr ""
+
+#. a confirmation's title. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Update the radio from the SD card?"
+msgstr ""
+
+#. a row on the Z-Wave radio's page
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Install from an SD card"
+msgstr ""
+
+#. a row on the Z-Wave radio's page
+#. under "Install from an SD card" when the radio's software is old
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Its maker's .gbl file for this radio, copied to the card"
+msgstr ""
+
+#. a row on the Z-Wave radio's page
+#. under "Install from an SD card"
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "A .gbl file from the radio's maker, copied to the card"
+msgstr ""
+
+#. a paragraph on the Z-Wave radio's page when its software is older than its maker advises (Zooz 2.20). At most 190 bytes
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Its software is older than its maker advises. Tap Check for an update below to install the newer one."
+msgstr ""
+
 #. a paragraph on the Z-Wave radio's page; {0}.{1} is a version. At most 150 bytes
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
@@ -35744,10 +36662,8 @@ msgstr "Actualizada: ahora tiene la {0}.{1}."
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_zwave.c
-# review: draft
-#, fuzzy
-msgid "The update service doesn't list this radio yet: its maker's own file can be installed from the Panel Manager."
-msgstr "El servicio de actualizaciones aún no incluye esta radio: el archivo de su fabricante se puede instalar desde el Administrador del panel."
+msgid "No update was found for this radio. Its maker's own file can still be installed from an SD card or the Panel Manager."
+msgstr ""
 
 #. the line under a page's title
 #. A Settings page: the line under its title. At most 127 bytes.
@@ -39741,3 +40657,15 @@ msgstr "Salir"
 #: components/ui/alarm_ui/src/ui_wizard.c
 #~ msgid "{0}, from {1}"
 #~ msgstr ""
+
+#. a paragraph on the Z-Wave radio's page when its software is older than its maker advises (Zooz 2.20). At most 190 bytes
+#: components/ui/alarm_ui/src/ui_zwave.c
+#~ msgid "Its software is older than its maker advises. Install the newer file: from an SD card below, or from the Panel Manager."
+#~ msgstr ""
+
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: changed source
+#, fuzzy
+#~ msgid "The update service doesn't list this radio yet: install its maker's own file from an SD card or the Panel Manager."
+#~ msgstr "El servicio de actualizaciones aún no incluye esta radio: el archivo de su fabricante se puede instalar desde el Administrador del panel."

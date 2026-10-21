@@ -137,6 +137,14 @@ esp_err_t rf_service_set_module(rf_module_t module);
 void rf_service_raw(bool on);
 /* The portable source (NULL before start), for the PC simulator's counterpart and tests. */
 zsrc_rf_t *rf_service_source(void);
+/* OUT-022: the 433 MHz sirens' transmissions. A transmitter module's DATA pin set with `rf txpin`
+ * (NVS rf/txpin; read before the zone sources start, like the receiver's pin), else the CC1101
+ * itself between receptions. Can anything transmit now? */
+bool rf_service_can_transmit(void);
+/* Queue `frames` frames of `p` (rf_encode_burst) at unit_us; false: nothing can transmit, or the
+ * queue is full. Any task. */
+bool rf_service_transmit(const rf_packet_t *p, uint16_t unit_us, uint8_t frames);
+int16_t rf_service_stored_tx_pin(void);
 /* The `rf` console command (status, retry, freq, module, pin, place, raw, capture). */
 esp_err_t rf_service_console_register(void);
 

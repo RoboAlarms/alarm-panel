@@ -81,7 +81,7 @@ _Static_assert(ZBA_FOB_SOURCE_ID == 0u, "and feeds no zone");
 _Static_assert(ZBA_KEYPAD_ENTRY == 1u + 1u + 2u + 8u + 1u + 1u + 1u + 1u + 1u, "keypad entry");
 _Static_assert(ZBA_FOB_ENTRY == 1u + 1u + 2u + 8u + 1u + 1u + 1u + 1u, "fob entry");
 /* ZB-023: a siren entry as zbz_wd.h's store comment lists it. */
-_Static_assert(ZBW_ENTRY == 1u + 2u + 8u + 1u + 1u + 1u + 1u + 1u + 2u, "siren entry");
+_Static_assert(ZBW_ENTRY == 1u + 2u + 8u + 1u + 1u + 1u + 1u + 1u + 2u + 1u, "siren entry (also)");
 /* ZB-023: the installer's supervision time fits its stored u16 minutes and the page's field. */
 _Static_assert(sizeof(((ui_zb_siren_t *)0)->supervision_min) ==
                    sizeof(((zbw_assign_t *)0)->supervision_min),

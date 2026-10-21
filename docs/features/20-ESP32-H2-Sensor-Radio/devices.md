@@ -191,10 +191,10 @@ for each chunk of at most 4,000 bytes a header entry and its bytes in whole entr
 
 A typical house of 10-20 devices is about 110-250 entries. The same partition holds, at their largest:
 
-- the Z-Wave namespace at its largest (`ZWZ_NVS_WORST`, pinned by `test_zwz_panel.c`): 1,753
+- the Z-Wave namespace at its largest (`ZWZ_NVS_WORST`, pinned by `test_zwz_panel.c`): 1,758
   entries, 1,647 of them the node cache (64 devices of at most 800 bytes and 1 KB more, 52,224
-  bytes, rewritten whole), the rest keys, the provisioning list, the check-ins, the keypads'
-  assignments and the settings;
+  bytes, rewritten whole), the rest keys, the provisioning list, the check-ins, the keypads' and
+  sirens' assignments and the settings;
 - the stack's own namespace: not known until the bench names it (BL-036 step 5); estimated at
   16 KiB (about 520 entries) for 64 devices - for each its address, its link key and its
   neighbour entry, about 120 bytes, 8 KiB in all, twice over because a value is written anew
@@ -207,7 +207,7 @@ A typical house of 10-20 devices is about 110-250 entries. The same partition ho
 - the rest of the panel (the zones' bindings, Wi-Fi, MQTT, the panel's own settings), measured
   rather than estimated.
 
-So the worst case does not fit (686 + 1,753 + 520 + 2 x 1,029 = 5,017 > 3,906 before the rest), and
+So the worst case does not fit (686 + 1,758 + 520 + 2 x 1,029 = 5,022 > 3,906 before the rest), and
 a full NVS would stop the alarm's own configuration from being saved. **The rule:** Zigbee never
 takes the room the alarm needs. The service tells `zbz_panel` the free entries NVS reports
 (`zbz_panel_nvs_free`, from `nvs_get_stats`: at start, before the radio is up, after each

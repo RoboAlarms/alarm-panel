@@ -28,6 +28,11 @@ void zone_debounce_init(zone_debounce_t *d, uint16_t hold_ms);
  * (read d->stable). The first sample is stable at once: the state at start counts right away. */
 bool zone_debounce_sample(zone_debounce_t *d, uint8_t level, uint64_t now);
 
+/* The same for a reading of several values (an end-of-line loop's short, normal, tripped, open,
+ * ZONE-005): a new value counts once it has held for the response time; a different new value
+ * starts the timing again. */
+bool zone_debounce_sample_level(zone_debounce_t *d, uint8_t level, uint64_t now);
+
 #ifdef __cplusplus
 }
 #endif

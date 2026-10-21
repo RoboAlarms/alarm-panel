@@ -22,6 +22,7 @@ set(ALARM_UI_LOGIC_SRCS
     src/ui_link.c
     src/ui_net.c
     src/ui_settings.c
+    src/ui_sirens.c
     src/ui_sources.c
     src/ui_status.c
     src/ui_text.c

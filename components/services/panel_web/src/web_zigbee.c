@@ -223,6 +223,7 @@ static cJSON *device_page(ui_zb_device_page_t *p)
         ok &= cJSON_AddBoolToObject(o, "fire", s->fire) != NULL;
         ok &= cJSON_AddBoolToObject(o, "strobe", s->strobe) != NULL;
         ok &= cJSON_AddBoolToObject(o, "squawk", s->squawk) != NULL;
+        ok &= cJSON_AddNumberToObject(o, "also", s->also) != NULL; /* OUT-015 */
         ok &= cJSON_AddNumberToObject(o, "volume", s->volume) != NULL;
         ok &= cJSON_AddNumberToObject(o, "supervision_min", s->supervision_min) != NULL;
         ok &= cJSON_AddBoolToObject(o, "live", s->live) != NULL;
@@ -433,6 +434,12 @@ static bool read_siren(const cJSON *o, ui_zb_siren_t *s)
     s->partitions = (uint8_t)parts;
     s->volume = (uint8_t)volume;
     s->supervision_min = (uint16_t)minutes;
+    /* OUT-015: optional; a page that doesn't send it keeps what the siren has */
+    uint32_t also = UI_ZB_ALSO_KEEP;
+    if (cJSON_GetObjectItemCaseSensitive(o, "also") != NULL && !jnum(o, "also", 0u, 0xFFu, &also)) {
+        return false;
+    }
+    s->also = (uint8_t)also;
     return true;
 }
 

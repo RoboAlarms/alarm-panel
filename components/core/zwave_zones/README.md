@@ -112,6 +112,7 @@ arrive through real S2 and the simulated ZAC93/FLiRS transport. Physical accepta
 | Header | What it offers |
 |---|---|
 | `include/zwave_zones/zw_feedback.h` | `zwf_t`, event/snapshot reduction, assigned output destinations, coalesced secure sending/completion, versioned assignment codec; `zwf_fit()` (whether and why not a device can take feedback), `zwf_slot_of()`, `zwf_slot_for()` |
+| `include/zwave_zones/zw_siren.h` | `zws_t`: Z-Wave sirens driven by the engine's bell (docs/features/16 OUT-016..OUT-019, docs/features/36 [sirens.md](../../../docs/features/36-Z-Wave-Sensors-ZAC93/sirens.md)) - Sound Switch tones per alarm kind or a Binary Switch, confirmed and retried, kept up while sounding, supervised (the bell trouble), squawks, "Test it"; its stored blob (NVS `zwave`/`siren`, frozen fixture `test/zws_fixture_v1.h`). `zwz_panel` owns one (`zwz_panel_engine_output/siren_armed/siren_set/siren_clear/siren_test/siren()`, `zwz_panel_load/take_siren()`) |
 | `include/zwave_zones/zw_keypad.h` | caller-owned `zwk_t`, verified `zwk_binding_t`, synchronous command port; `zwk_init()` for assignment/revocation, `zwk_receive()` for authenticated notifications |
 | `include/zwave_zones/zwave_zones.h` | `zwz_t` (the outbox, the refreshes, the proof of life passed on, counters); `zwz_init()`; from the owner's port `zwz_link_up()`, `zwz_link_down()`, `zwz_event()`, `zwz_received()`, `zwz_send_done()`, `zwz_quirk()`; `zwz_poll()`, `zwz_next_deadline()`; `zwz_is_tag()`, `zwz_describe()` |
 | `include/zwave_zones/zwz_panel.h` | `zwz_panel_t`; `zwz_panel_init/load_nodes/start()`; the link's news `zwz_panel_on_control/on_frame/on_text()`, `zwz_panel_poll()`, `zwz_panel_next_deadline()`; `zwz_panel_request()` (also `UI_ZW_REQ_SETUP`: a stopped interview continues), `zwz_panel_interview()`, `zwz_panel_expect_restart()`, `zwz_panel_set_feedback()`; the pages' `zwz_panel_status/devices/device/progress()`, `zwz_panel_generation()`, `zwz_panel_zone_of()`; `zwz_panel_dirty()`, `zwz_panel_take_nodes/keys/cfg/checkins/log()`, `zwz_panel_redo()`; the stored formats `zwz_cfg/keys/checkins_encode/decode()` |
@@ -119,7 +120,8 @@ arrive through real S2 and the simulated ZAC93/FLiRS transport. Physical accepta
 ## Depends on
 - Project components: `zwave_host` (`zw_net`, the node cache, `zw_iv_inputs`, `zw_health`'s clocks),
   `zwave_proto` (the CC codecs, `zw_cc_panel_answer`), `zone_hub` (`zsrc_zwave`), `ui_backend` (the
-  pages' `ui_zw_*` types), `alarm_core` (the event types).
+  pages' `ui_zw_*` types), `alarm_core` (the event types), `sirens` (every siren's policy and
+  the blobs' CRC, for `zw_siren`).
 - ESP-IDF: none (portable).
 
 ## Options
@@ -129,7 +131,8 @@ per device (`ZSRC_ZW_DEV_MAX`).
 ## Rules
 - Plain C11: no malloc, no globals, no RTOS or ESP-IDF headers; time comes in as `uint64_t` ms;
   warning-free with the portable components' flags.
-- The bridge's tags have the top byte `FE`: the owner's own must not (`zw_net`'s are `FF`).
+- The bridge's tags have the top byte `FE`: the owner's own must not (`zw_net`'s are `FF`). The
+  outputs' are `4F` ('O'), the sirens' `53` ('S'), the panel's own `5B`, the keypad feedback's `5C`.
 - The owner's own commands to a sleeping device must not be of the bridge's kinds (state Gets,
   Supervision Reports): `zw_net`'s queue would keep only the newer one.
 

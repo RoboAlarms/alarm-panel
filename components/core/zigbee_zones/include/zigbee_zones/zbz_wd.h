@@ -109,7 +109,7 @@ extern "C" {
 #define ZBW_SUPERVISION_MIN_MIN 60u /* the shortest limit the installer may set (minutes) */
 /* The stored value at its longest (zbw_encode): compat, count, entries of 18 bytes with their
  * length byte - for the NVS budget (zbz_panel.h ZBZ_NVS_WORST). */
-#define ZBW_ENTRY        18u
+#define ZBW_ENTRY        19u /* 18 until the `also` byte (docs/features/16 OUT-015) */
 #define ZBW_BLOB_MAX     (2u + ZBW_SIRENS_MAX * ZBW_ENTRY)
 
 typedef struct {
@@ -157,6 +157,9 @@ typedef struct {
     uint64_t ieee;
     uint8_t endpoint;      /* its IAS WD endpoint */
     uint8_t partitions;    /* bit 0 = partition 1 */
+    uint8_t also;          /* added for OUT-015 (docs/features/16): other partitions whose alarms
+                            * (and strobe) it also sounds for - never their squawks or bell tests,
+                            * never one of its own partitions */
     bool burglary;         /* burglary and audible panic */
     bool fire;             /* fire and CO */
     bool strobe;
@@ -292,8 +295,8 @@ uint64_t zbw_silent_limit_ms(const zbw_assign_t *a);
 
 /* The store: compat (1) | count | count x (entry length u8 | id u16 | ieee u64 | endpoint |
  * partitions | flags (bit 0 burglary, 1 fire, 2 strobe, 3 squawk) | volume | device (written 0,
- * ignored when read) | supervision u16 minutes (0 the default)). A shorter entry reads its
- * missing fields as 0. zbw_decode is all or nothing: a damaged blob returns false and leaves the
+ * ignored when read) | supervision u16 minutes (0 the default) | also (added for OUT-015; older
+ * firmware skips it as a later field)). A shorter entry reads its missing fields as 0. zbw_decode is all or nothing: a damaged blob returns false and leaves the
  * sirens as they were; a good one replaces them without a Stop (a start-up call: at run time the
  * owner clears sounding sirens first). */
 size_t zbw_encode(const zbw_t *w, uint8_t *out, size_t cap);

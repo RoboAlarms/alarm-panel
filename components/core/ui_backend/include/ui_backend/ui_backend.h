@@ -687,6 +687,20 @@ typedef struct {
                               * change notes, cut ("" none) */
     } fw;
     bool identify;           /* ZW-024: it can blink its own light when asked (UI_ZW_REQ_IDENTIFY) */
+    /* A siren the panel sounds with the alarm (OUT-016..OUT-019, docs/features/36 sirens.md).
+     * fit UI_ZW_FB_NONE: not a siren; AVAILABLE: it can be one (partitions 0: not used yet). */
+    struct {
+        uint8_t fit;              /* ui_zw_feedback_fit_t's values */
+        uint8_t endpoint;         /* where its siren is (0: the device itself) */
+        bool tones;               /* Sound Switch: tones, volume and chirps (else on and off) */
+        uint8_t partitions;       /* its own partitions, 0: the panel doesn't sound it */
+        uint8_t also;             /* other partitions whose alarms it also sounds for */
+        bool burglary, fire, squawk;
+        uint8_t volume;           /* 0 its own, 1..100 % */
+        uint16_t supervision_min; /* 0: the default (4 h) */
+        bool trouble;             /* unconfirmed or silent: the siren trouble */
+        bool sounding;
+    } siren;
     uint32_t jam_report_s;   /* seconds since it last reported radio jamming (network.md §9);
                               * UI_ZW_NEVER: not since the panel started */
 } ui_zw_device_page_t;
@@ -759,6 +773,9 @@ typedef enum {
     UI_ZW_REQ_GARAGE,         /* `node`'s relay at `endpoint` opens a garage door whose tilt
                                * sensor is `zone` (0: no longer), travel `seconds` (0 default) */
     UI_ZW_REQ_GARAGE_MOVE,    /* that garage door: `level` 100 open, 0 closed */
+    UI_ZW_REQ_SIREN,          /* `node`'s siren at `endpoint`: `parts` (0: not used), `also`,
+                               * `siren_flags`, `volume`, `minutes` (OUT-016) */
+    UI_ZW_REQ_SIREN_TEST,     /* sound it for 2 s: `node`, `endpoint` */
 } ui_zw_req_kind_t;
 
 typedef struct {
@@ -775,7 +792,30 @@ typedef struct {
     uint8_t endpoint;      /* UI_ZW_REQ_OUTPUT, _GARAGE, _GARAGE_MOVE */
     int16_t level;         /* UI_ZW_REQ_OUTPUT, _GARAGE_MOVE */
     uint16_t zone;         /* UI_ZW_REQ_GARAGE */
+    uint8_t parts;         /* UI_ZW_REQ_SIREN: its own partitions (bit 0 = partition 1) */
+    uint8_t also;          /* UI_ZW_REQ_SIREN: others whose alarms it also sounds for */
+    uint8_t siren_flags;   /* UI_ZW_REQ_SIREN: UI_ZW_SIREN_* */
+    uint8_t volume;        /* UI_ZW_REQ_SIREN: 0 its own, 1..100 % */
+    uint16_t minutes;      /* UI_ZW_REQ_SIREN: supervision, 0 the default */
 } ui_zw_request_t;
+
+#define UI_ZW_SIREN_BURGLARY 0x01u
+#define UI_ZW_SIREN_FIRE     0x02u
+#define UI_ZW_SIREN_SQUAWK   0x04u
+
+/* The Z-Wave radio's own file from the SD card (network.md §14): how its install went. */
+typedef enum {
+    UI_ZW_SD_IDLE = 0,
+    UI_ZW_SD_READING,      /* the card is being read */
+    UI_ZW_SD_STARTED,      /* the file went to the radio: zw_progress follows the update */
+    UI_ZW_SD_NO_CARD,      /* no card, or it can't be read */
+    UI_ZW_SD_NO_FILE,      /* no .gbl at its top or in its "zwave" folder */
+    UI_ZW_SD_SEVERAL,      /* more than one .gbl: which one is meant isn't guessed */
+    UI_ZW_SD_TOO_BIG,      /* empty, or over 1 MB: not a radio's file */
+    UI_ZW_SD_REFUSED,      /* the file isn't one for this radio, or couldn't be read */
+    UI_ZW_SD_NOT_ALLOWED,  /* installer mode with every partition disarmed is needed */
+    UI_ZW_SD_BUSY,         /* another network operation runs */
+} ui_zw_sd_t;
 
 /* The PIN is the DSK's first group: a 16-bit number written as 5 digits (00000..65535). */
 #define UI_ZW_PIN_MAX 65535u
@@ -1141,7 +1181,12 @@ typedef struct {
     uint8_t last_test;          /* ui_zb_result_t of its last "Test it", NONE none */
     uint16_t supervision_min;   /* not heard this long (minutes): the bell trouble; 0 the default
                                  * (90 min mains, 3 h battery); 60 and up; never off (zbz_wd.h) */
+    uint8_t also;               /* other partitions whose alarms it also sounds for (docs/features/16
+                                 * OUT-015); in a request UI_ZB_ALSO_KEEP keeps what it has (the
+                                 * Panel Manager's older pages don't send it) */
 } ui_zb_siren_t;
+
+#define UI_ZB_ALSO_KEEP 0xFFu
 
 /* A keypad arming and disarming the panel (page 15, ZB-024): codes are always the panel's to
  * check, through the alarm task; five wrong ones lock it out like any keypad. */
@@ -1750,6 +1795,70 @@ typedef enum {
     UI_LINK_REQ_REFUSED,     /* not in this role, or a bad argument */
 } ui_link_result_t;
 
+/* ---- sirens and outputs, 433 MHz devices (docs/features/16, 25; ui_sirens.c) ---------------- */
+#define UI_OUT_WIRED_MAX 4u   /* sirens/out_wired.h OW_CHANNELS */
+#define UI_OUT_RF_MAX    4u   /* sirens/rf_siren.h RFS_SIRENS */
+#define UI_OUT_NO_PIN    0xFFu
+
+/* What a wired output does: the numbers of out_wired.h's ow_function_t. */
+typedef enum {
+    UI_OUT_FN_NONE = 0,
+    UI_OUT_FN_SIREN = 1,
+    UI_OUT_FN_STROBE = 2,
+    UI_OUT_FN_SMOKE_RESET = 3,
+    UI_OUT_FN_ARMED = 4,
+} ui_out_fn_t;
+
+typedef struct {
+    uint8_t function;   /* ui_out_fn_t; NONE: the channel is free */
+    uint8_t gpio;       /* its terminal */
+    uint8_t sense;      /* its supervision input's terminal, UI_OUT_NO_PIN none */
+    uint8_t partitions; /* its own (bit 0 = partition 1) */
+    uint8_t also;       /* other partitions whose alarms it also sounds for (OUT-015) */
+    bool burglary, fire, squawk;
+    bool active_low;    /* the relay board switches on low */
+    bool on;            /* driven on now */
+    bool trouble;       /* its supervision input says so */
+} ui_out_wired_t;
+
+typedef struct {
+    bool used;
+    uint32_t address;   /* the panel's address for it (20 bits) */
+    uint8_t partitions, also;
+    bool burglary, fire, squawk;
+    bool sounding;
+} ui_out_rf_t;
+
+/* The 433 MHz receiver as the screen words it (what the panel can do, never the hardware). */
+typedef enum {
+    UI_RF_RX_NONE = 0,     /* none answers ("Not connected") */
+    UI_RF_RX_WORKING,
+    UI_RF_RX_JAMMED,       /* a carrier on the band: the sensor radio trouble */
+    UI_RF_RX_OFF,          /* none fitted (the panel was told so) */
+} ui_rf_rx_t;
+
+typedef struct {
+    bool wired;            /* the board has terminals an output may use */
+    const char *where;     /* "J7 header" */
+    uint8_t rf_receiver;   /* ui_rf_rx_t */
+    bool rf_transmitter;   /* 433 MHz sirens can be sounded */
+    uint64_t rf_heard_ms;  /* the receiver's last confirmed transmission (alarm ms), 0 none */
+    uint64_t now_ms;       /* the same clock, now */
+    bool trouble;          /* a wired or 433 MHz siren holds the siren trouble */
+} ui_out_status_t;
+
+/* What every out_* change answers. */
+typedef enum {
+    UI_OUT_OK = 0,
+    UI_OUT_NOT_ALLOWED,    /* installer mode with its partitions disarmed needed (or armed: a test) */
+    UI_OUT_BUSY,           /* it sounds now */
+    UI_OUT_IN_USE,         /* the terminal is a zone's or another output's */
+    UI_OUT_INVALID,        /* no partition, nothing to sound for, a bad terminal */
+    UI_OUT_NO_TRANSMITTER, /* nothing can transmit on 433 MHz */
+    UI_OUT_FULL,           /* every place is taken */
+    UI_OUT_FAILED,         /* the pin couldn't be set up, or it couldn't be stored */
+} ui_out_result_t;
+
 /* What the UI needs from the platform. Commands block until the engine has answered (with
  * run_later, the UI calls them off its own task: LINK-054).
  * The M4 entries (settings, installer mode, users, event log, network) are optional: a NULL
@@ -1973,6 +2082,11 @@ typedef struct {
     ui_zw_prov_result_t (*zw_prov_register)(void *ctx, const char *code, const char *name);
     ui_zw_prov_result_t (*zw_prov_change)(void *ctx, const uint8_t dsk[16], uint8_t op,
                                           uint8_t arg);
+    /* The radio's own software from the SD card (optional as a pair: NULL hides the row): starts
+     * reading the one .gbl on the card and returns at once (a ui_zw_sd_t: READING, or why not);
+     * zw_radio_sd_state follows it. The radio update's progress is zw_progress's. */
+    uint8_t (*zw_radio_sd_install)(void *ctx, uint8_t user);
+    uint8_t (*zw_radio_sd_state)(void *ctx);
 
     /* ---- Smart Home (docs/features/24, BL-045; ui_devices.c). Optional as a set: a NULL dev_list
      * - or one that lists no device - hides the rail's Smart Home (HCTL-003) ---- */
@@ -2107,6 +2221,25 @@ typedef struct {
      * tones go on. The editor or Announcements page that played one calls it as it closes.
      * Optional (NULL: nothing to stop). */
     void (*voice_preview_stop)(void *ctx);
+
+    /* ---- sirens and outputs, 433 MHz devices (docs/features/16, 25; ui_sirens.c; the types
+     * above ui_backend_t). Optional as a set: a NULL out_status - or one that returns false -
+     * hides Installer > Sirens and outputs and Installer > 433 MHz. Every change answers a
+     * ui_out_result_t; the backend checks installer mode and the partitions itself ---- */
+    bool (*out_status)(void *ctx, ui_out_status_t *out);
+    void (*out_wired)(void *ctx, ui_out_wired_t out[UI_OUT_WIRED_MAX]);
+    /* Configure channel slot (function NONE frees it, its terminal back to the zones). */
+    uint8_t (*out_wired_set)(void *ctx, uint8_t slot, const ui_out_wired_t *c);
+    uint8_t (*out_wired_test)(void *ctx, uint8_t slot);
+    /* The terminals slot may use now (free, or its own): at most max GPIO numbers, the count. */
+    size_t (*out_terminals)(void *ctx, uint8_t slot, uint8_t *out, size_t max);
+    void (*out_rf)(void *ctx, ui_out_rf_t out[UI_OUT_RF_MAX]);
+    /* A new 433 MHz siren (defaults, a fresh address) in the first free slot: *slot. */
+    uint8_t (*out_rf_add)(void *ctx, uint8_t *slot);
+    uint8_t (*out_rf_set)(void *ctx, uint8_t slot, const ui_out_rf_t *c);
+    uint8_t (*out_rf_clear)(void *ctx, uint8_t slot);
+    uint8_t (*out_rf_pair)(void *ctx, uint8_t slot);
+    uint8_t (*out_rf_test)(void *ctx, uint8_t slot);
 
     /* ---- the panel link (docs/features/11; the types above ui_backend_t). NULL: no link in
      * this firmware - no Keypads section, no role step, every page as before. ---- */

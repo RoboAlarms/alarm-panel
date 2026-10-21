@@ -3351,6 +3351,9 @@ static void test_smoke_sounder_takes_a_siren(void)
     TEST_ASSERT_TRUE(zbz_panel_device(&FP, g_now, id, &page));
     const uint8_t inputs = page.input_count;
     TEST_ASSERT_TRUE(inputs > 0u);
+    /* BL-215: its page offers the siren's settings, not used yet */
+    TEST_ASSERT_EQUAL_UINT8(UI_ZB_FIT_AVAILABLE, page.siren.fit);
+    TEST_ASSERT_EQUAL_UINT8(0u, page.siren.partitions);
 
     siren_on(id);
     const zbw_siren_t *s = zbw_find(&FP.wd, id);

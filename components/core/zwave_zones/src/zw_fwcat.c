@@ -140,6 +140,22 @@ static bool sha256_of(const char *s, uint8_t out[32])
     return true;
 }
 
+/* zwfc_radio_builtin's files, newest first: Zooz's, as Z-Wave JS's ZAC93-V02.json lists them. */
+static const struct {
+    const char *version, *region, *changelog, *url, *integrity;
+} RADIO_FILES[] = {
+    {"2.30", "usa", "Zooz ZAC93 firmware 2.30 (Z-Wave SDK 7.24.2).",
+     "https://www.getzooz.com/firmware/ZAC93_SDK_7.24.2_US-LR_V02R30.gbl",
+     "sha256:6334f5036b93d72b6fd3b248b0b6cbb5a940515d40abf740233da16733324524"},
+    {"2.30", "europe", "Zooz ZAC93 firmware 2.30 (Z-Wave SDK 7.24.2).",
+     "https://www.getzooz.com/firmware/ZAC93_SDK_7.24.2_EU-LR_V02R30.gbl",
+     "sha256:2002e292e3ce06d2b1a72cdfc943ea431344281c794796d78abbdbe259a54330"},
+};
+
+#define ZAC93_MANUFACTURER 0x027Au
+#define ZAC93_PRODUCT_TYPE 0x0004u
+#define ZAC93_PRODUCT_ID   0x0611u
+
 /* One update object: into *u; false when it isn't one the panel would offer. */
 static bool read_update(pj_reader_t *r, const char *region, bool include_beta,
                         const uint16_t current[3], zwfc_update_t *u, uint16_t v[3])
@@ -290,4 +306,33 @@ zwfc_verdict_t zwfc_best(const char *json, size_t len, const zwfc_device_t *dev,
         return ZWFC_UNKNOWN_DEVICE;
     }
     return found ? ZWFC_UPDATE : ZWFC_UP_TO_DATE;
+}
+
+bool zwfc_radio_builtin(const zwfc_device_t *dev, const char *region, zwfc_update_t *out)
+{
+    if (dev == NULL || region == NULL || dev->manufacturer != ZAC93_MANUFACTURER ||
+        dev->product_type != ZAC93_PRODUCT_TYPE || dev->product_id != ZAC93_PRODUCT_ID) {
+        return false;
+    }
+    const uint16_t have[3] = {dev->fw_major, dev->fw_minor, 0u};
+    for (size_t i = 0; i < sizeof RADIO_FILES / sizeof RADIO_FILES[0]; i++) {
+        uint16_t v[3];
+        if (strcmp(RADIO_FILES[i].region, region) != 0 || !version3(RADIO_FILES[i].version, v)) {
+            continue;
+        }
+        if (compare(have, v) >= 0) {
+            return false; /* the newest for its region: nothing newer here */
+        }
+        memset(out, 0, sizeof(*out));
+        out->major = v[0];
+        out->minor = v[1];
+        out->patch = v[2];
+        snprintf(out->version, sizeof out->version, "%s", RADIO_FILES[i].version);
+        snprintf(out->changelog, sizeof out->changelog, "%s", RADIO_FILES[i].changelog);
+        out->file_count = 1u;
+        out->files[0].target = 0u;
+        snprintf(out->files[0].url, sizeof out->files[0].url, "%s", RADIO_FILES[i].url);
+        return sha256_of(RADIO_FILES[i].integrity, out->files[0].sha256);
+    }
+    return false;
 }

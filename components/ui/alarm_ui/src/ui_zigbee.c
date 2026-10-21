@@ -2533,6 +2533,7 @@ static void part_name(uint8_t p, char *out, size_t len)
 /* ---- the pick sheets of these sections ---- */
 
 typedef enum {
+    PICK_SIREN_ALSO = 100, /* OUT-015 (after the others: their values stay) */
     PICK_SIREN_PARTS = 0,
     PICK_VOLUME,
     PICK_SUPERVISION,
@@ -2704,7 +2705,11 @@ static void siren_chosen(int32_t index)
         return;
     }
     switch ((role_pick_t)s_pick.what) {
-    case PICK_SIREN_PARTS: req.siren.partitions = (uint8_t)v; break;
+    case PICK_SIREN_ALSO: req.siren.also = (uint8_t)v; break;
+    case PICK_SIREN_PARTS:
+        req.siren.partitions = (uint8_t)v;
+        req.siren.also = (uint8_t)(req.siren.also & (uint8_t)~req.siren.partitions);
+        break;
     case PICK_VOLUME: req.siren.volume = (uint8_t)v; break;
     default: req.siren.supervision_min = v; break;
     }
@@ -2738,6 +2743,32 @@ static void siren_parts_pick(void *ctx)
     /* TR: a pick sheet's title: which partitions' alarms a Zigbee siren sounds */
     ui_pick_sheet(TR("It sounds for"), TR("The alarms of these partitions"), s_pick.choices,
                   s_pick.n, pick_index(page.siren.partitions), siren_chosen);
+}
+
+/* OUT-015: other partitions whose alarms it also sounds for (never one of its own). */
+static void siren_also_pick(void *ctx)
+{
+    (void)ctx;
+    ui_zb_device_page_t page;
+    if (!read_device(s_dev.id, &page)) {
+        return;
+    }
+    const uint8_t offer = (uint8_t)(parts_enabled() & (uint8_t)~page.siren.partitions);
+    pick_start(PICK_SIREN_ALSO);
+    pick_add(UI_ICON_BELL_OFF, ui_tone_gray(), TR_C("partitions", "None"), TR("Only its own partitions"),
+             0u);
+    if ((offer & (uint8_t)(offer - 1u)) != 0u) {
+        pick_add(UI_ICON_WAREHOUSE, ui_tone_violet(), TR("All the others"), NULL, offer);
+    }
+    for (uint8_t i = 0; i < ALARM_MAX_PARTITIONS; i++) {
+        if ((offer & (1u << i)) != 0u) {
+            char name[ALARM_NAME_LEN];
+            part_name((uint8_t)(i + 1u), name, sizeof(name));
+            pick_add(UI_ICON_WAREHOUSE, ui_tone_violet(), name, NULL, (uint16_t)(1u << i));
+        }
+    }
+    ui_pick_sheet(TR("Also sounds for"), TR("Other partitions' alarms, never their chirps"),
+                  s_pick.choices, s_pick.n, pick_index(page.siren.also), siren_chosen);
 }
 
 static void volume_pick(void *ctx)
@@ -2895,6 +2926,18 @@ static void siren_rows(lv_obj_t *body, const ui_zb_device_page_t *pg)
     /* TR: a row on a Zigbee siren's page: whose alarms it sounds */
     role_link(body, UI_ICON_WAREHOUSE, ui_tone_violet(), TR_C("Zigbee siren", "Partitions"), NULL,
               value, why, can, siren_parts_pick, NULL);
+    if (used) {
+        /* OUT-015: the alarms of other partitions too (the house's siren for the shop's alarm) */
+        const uint8_t also = (uint8_t)(sn->also & parts_enabled() & (uint8_t)~sn->partitions);
+        if (also == 0u) {
+            i18n_utf8_copy(value, sizeof(value), TR_C("partitions", "None"));
+        } else {
+            siren_parts_words(also, value, sizeof(value));
+        }
+        role_link(body, UI_ICON_LAYERS, ui_tone_violet(), TR("Also sounds for"),
+                  TR("Other partitions' alarms, never their chirps"), value, why, can,
+                  siren_also_pick, NULL);
+    }
 
     /* TR: a section heading on a Zigbee device's page */
     ui_section(body, TR_C("Zigbee device section", "Check it"));
@@ -3255,6 +3298,20 @@ static bool role_rows(lv_obj_t *body, const ui_zb_device_page_t *pg)
     }
 }
 
+/* BL-215: a sensor with a sounder of its own (a smoke detector's) can also sound as a siren: the
+ * siren's rows under a paragraph saying so. Returns true when they opened "Check it". */
+static bool sounder_rows(lv_obj_t *body, const ui_zb_device_page_t *pg)
+{
+    if (pg->siren.fit == UI_ZB_FIT_NONE || pg->dev.kind == UI_ZB_KIND_SIREN) {
+        return false;
+    }
+    /* TR: a paragraph on a Zigbee smoke detector's page that has a sounder of its own (BL-215) */
+    ui_paragraph(body, TR("Its own sounder can also sound with the panel's alarms, like a siren."),
+                 ui_tone_gray());
+    siren_rows(body, pg);
+    return true;
+}
+
 /* The page's note for a role: "Heiman siren · Mains · Extends the network". */
 static void role_note(const ui_zb_device_t *d, char *note, size_t nlen)
 {
@@ -3324,13 +3381,15 @@ static void build_device(int32_t arg, lv_obj_t *body, char *title, size_t tlen, 
         check_rows(body, &page, d->kind != UI_ZB_KIND_SIREN);
     } else if (d->zone_count == 0u && !is_role(d)) {
         used_by_rows(body, &page); /* not in a zone yet: what to do first */
+        const bool sounder = sounder_rows(body, &page);
         fact_rows(body, &page, false);
-        check_rows(body, &page, true);
+        check_rows(body, &page, !sounder);
         remove_rows(body, false);
     } else {
         fact_rows(body, &page, false);
         used_by_rows(body, &page);
-        check_rows(body, &page, true);
+        const bool sounder = sounder_rows(body, &page);
+        check_rows(body, &page, !sounder);
         remove_rows(body, false);
     }
     s_dev.sig = dev_sig(&page);

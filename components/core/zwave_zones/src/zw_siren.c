@@ -21,9 +21,10 @@ static siren_scope_t scope_of(const zws_config_t *c)
 
 static uint8_t own_bit(uint8_t partition)
 {
-    return (partition == 0u || partition > ALARM_MAX_PARTITIONS)
-               ? 0u
-               : (uint8_t)(1u << (partition - 1u));
+    if (partition == 0u || partition > ALARM_MAX_PARTITIONS) {
+        return 0u;
+    }
+    return (uint8_t)(1u << (partition - 1u));
 }
 
 bool zws_in_trouble(const zws_siren_t *s)

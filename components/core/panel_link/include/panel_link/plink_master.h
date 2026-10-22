@@ -127,6 +127,11 @@ extern "C" {
 #define PLINK_FW_BURST              16384u  /* ... at most this at once */
 #define PLINK_FW_PAGES_PER_TICK     16u
 
+/* The remote backend (LINK-058, LINK-064). */
+#define PLINK_RB_KEEP_MS    30000u /* an answer is kept this long after its last copy */
+#define PLINK_RB_UP_IDLE_MS 5000u  /* an upload in parts nobody adds to is given up */
+#define PLINK_RB_GRANT_MAX  24u    /* RB_GRANT's payload */
+
 /* How plink_master_prefs_set went (local: never on the wire). */
 typedef enum {
     PLINK_PSET_OK = 0,      /* sent; or, in port.prefs_done, answered (perhaps with refusals) */
@@ -196,6 +201,12 @@ typedef struct {
      * this master serves no devices (UNAVAILABLE). */
     bool (*dev_run)(void *ctx, uint32_t ticket, uint8_t device, uint8_t home,
                     const plink_dev_act_t *act);
+    /* Runs a keypad's remote backend call off this task (ui_remote_serve as {KEYPAD, device});
+     * the answer comes back through plink_master_rb_answer(ticket). args (len bytes) are valid
+     * during the call only: the platform copies them and wipes its copy after use. false: no room
+     * now (the keypad's resend comes back). NULL: no remote backend (RB_CALL dropped). */
+    bool (*rb_run)(void *ctx, uint32_t ticket, uint8_t device, uint16_t call, const uint8_t *args,
+                   size_t len);
     /* A settings write ended (plink_master_prefs_set): the keypad's answer, or none in time, or
      * the keypad removed. Called from inside plink_master_input, _tick and _remove, once the
      * master's state is settled: it may start the next write (plink_master_prefs_set) and read
@@ -313,6 +324,34 @@ typedef struct {
     uint64_t tokens_at;
 } plink_fw_peer_t;
 
+/* One keypad's remote backend calls (private): one runs at a time, its answer kept for copies
+ * and the keypad's RB_MOREs. */
+typedef struct {
+    uint32_t req;               /* the call running or answered (0: none) */
+    uint16_t call;
+    bool running;
+    uint32_t ticket;
+    bool have;                  /* its answer is kept (in the caller's buffer, plink_master_rb_attach) */
+    uint8_t status;
+    size_t ans_len;
+    uint64_t kept_ms;           /* the last copy or RB_MORE */
+    bool send_due;              /* an RB_ANSWER part goes at the next turn: */
+    uint32_t send_from;
+    uint16_t send_max;
+    uint32_t quick_req;         /* a refusal to send (status only; 0: none) */
+    uint8_t quick_status;
+    uint32_t up_req;            /* the call whose arguments come in parts (m->rb_up) */
+    uint16_t up_call;
+    uint32_t up_total, up_got;
+    uint8_t tokens;             /* new calls (token bucket: 5 a second, a burst of 10) */
+    uint64_t tokens_at;
+    uint8_t more_tokens;        /* RB_MORE (its own bucket) */
+    uint64_t more_tokens_at;
+    uint8_t grant[PLINK_RB_GRANT_MAX]; /* the newest RB_GRANT's payload */
+    uint8_t grant_len;
+    bool grant_due;
+} plink_rb_peer_t;
+
 /* One keypad at run time (private). */
 typedef struct {
     bool used;
@@ -373,6 +412,7 @@ typedef struct {
     uint32_t auto_sid;          /* LINK-056: the session the newest AUTO_WARN went in (0: none) */
     uint32_t auto_crc;          /* ... the table it carried */
     uint64_t auto_at;           /* ... and when */
+    plink_rb_peer_t rb;         /* the remote backend (LINK-058) */
 } plink_peer_t;
 
 typedef struct {
@@ -425,6 +465,13 @@ typedef struct {
     uint32_t fw_next_order;         /* the next order's id (0: the random base not drawn yet) */
     uint32_t fw_mbytes;             /* FW_PAGE's byte bucket, in thousandths of a byte */
     uint64_t fw_bytes_at;
+    /* The remote backend: the caller's buffers (plink_master_rb_attach). */
+    uint8_t *rb_up;                 /* one upload in parts at a time, all keypads' */
+    size_t rb_up_cap;
+    uint8_t rb_up_owner;            /* the keypad whose upload it holds (0: none) */
+    uint64_t rb_up_at;              /* its last part */
+    uint8_t *rb_ans;                /* PLINK_KEYPADS_MAX answers of rb_ans_cap bytes */
+    size_t rb_ans_cap;
 } plink_master_t;
 
 /* rec: the stored record (NULL or a zero net_id: none yet; a net id is chosen at the first
@@ -464,6 +511,18 @@ void plink_master_name(plink_master_t *m, const char *name);
 /* The master can reach its keypads (its Wi-Fi up, or its ESP-NOW radio ready) or can't:
  * supervision pauses while it can't (LINK-007). */
 void plink_master_net(plink_master_t *m, uint64_t now_ms, bool up);
+/* The remote backend (LINK-058, LINK-064; docs/features/11 "The master's settings and installer
+ * menu on keypads"). up: one call's arguments in parts (ui_remote's UR_ARGS_MAX), ans:
+ * PLINK_KEYPADS_MAX x ans_each bytes for each keypad's answer; both the caller's (PSRAM is fine)
+ * and kept until the master goes. Without them, or without port.rb_run, RB_CALL is dropped. */
+void plink_master_rb_attach(plink_master_t *m, uint8_t *up, size_t up_cap, uint8_t *ans,
+                            size_t ans_each);
+/* A call's answer (port.rb_run's ticket): status and the answer's bytes (copied). */
+void plink_master_rb_answer(plink_master_t *m, uint64_t now_ms, uint32_t ticket, uint8_t status,
+                            const uint8_t *ans, size_t len);
+/* What the master holds for a keypad now: sent at the next turn and at each new session. */
+void plink_master_rb_grant(plink_master_t *m, uint8_t device, const plink_rb_grant_t *g);
+
 /* A command's answer from the platform (port.run's ticket). */
 void plink_master_result(plink_master_t *m, uint64_t now_ms, uint32_t ticket,
                          const plink_result_t *res);

@@ -238,6 +238,8 @@ const M = (() => {
     const nav = `<div class="settings_nav scroll">
       ${sections.map((s) => {
         if (s.divider) return '<div class="settings_divider"></div>';
+        // a group's name over its sections (settings_heading.xml), for a keypad's two groups (BL-223)
+        if (s.heading) return (s.changed ? changed : (x) => x)(`<div class="settings_heading">${text(s.heading, 'caption', 'text_3', 'dots')}</div>`);
         const item = settings_item({...s, tag: tags[s.key], active: s.key === section, goTo: s.goTo || `settings-${s.key}`});
         return s.changed ? changed(item) : item;
       }).join('')}</div>`;

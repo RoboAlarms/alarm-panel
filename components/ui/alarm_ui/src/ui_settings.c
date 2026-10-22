@@ -104,7 +104,8 @@ static void save_options_now(void)
 
 static void select_section(int32_t section)
 {
-    if (S.program && section != SECTION_ABOUT) { /* installer mode lives under About (BL-189) */
+    /* installer mode lives under About (BL-189); on a keypad, in its own section (BL-223) */
+    if (S.program && section != (ui_link_keypad() ? SECTION_INSTALLER : SECTION_ABOUT)) {
         ui_installer_leave();
     }
     save_options_now();
@@ -118,6 +119,7 @@ static void select_section(int32_t section)
     case SECTION_TIME: page_root(PAGE_TIME); break;
     case SECTION_INTEGRATIONS: page_root(PAGE_INTEGRATIONS); break;
     case SECTION_ABOUT: page_root(PAGE_ABOUT); break;
+    case SECTION_INSTALLER: page_root(PAGE_INSTALLER); break; /* a keypad's (BL-223) */
     case SECTION_WALK: page_root(PAGE_WALK); break;
 #if ALARM_UI_AUTOMATIONS
     case SECTION_AUTOMATIONS: page_root(PAGE_AUTOMATIONS); break;
@@ -135,15 +137,66 @@ void ui_settings_init(void)
 }
 
 /* The role gate (BL-048): a keypad holds no users, integrations, automations or walk test - they
- * are the alarm panel's - so its Settings list leaves them out (Installer, About's row, too). */
+ * are the alarm panel's. Its alarm panel's Users and Installer show under that panel's name once
+ * the alarm panel serves them (BL-223, LINK-057; the others not yet); on an alarm panel, Installer
+ * is About's row (BL-189). */
 static bool section_gated(int32_t section)
 {
-    return ui_link_keypad() && (section == SECTION_USERS || section == SECTION_INTEGRATIONS ||
-                                section == SECTION_WALK || section == SECTION_AUTOMATIONS ||
-                                section == SECTION_SMART_HOME || section == SECTION_INSTALLER);
+    if (!ui_link_keypad()) {
+        return false;
+    }
+    switch (section) {
+    case SECTION_USERS: return !ui_link_remote(UI_LINK_AREA_USERS);
+    case SECTION_INSTALLER: return !ui_link_remote(UI_LINK_AREA_SESSION | UI_LINK_AREA_CONFIG);
+    case SECTION_INTEGRATIONS:
+    case SECTION_WALK:
+    case SECTION_AUTOMATIONS:
+    case SECTION_SMART_HOME: return true;
+    default: return false;
+    }
 }
 
-static void role_gate(void)
+unsigned ui_installer_root(void)
+{
+    return ui_link_keypad() ? 0u : 1u;
+}
+
+/* A keypad's list (BL-223): its own four under "This keypad", then its alarm panel's under that
+ * panel's name; the lines are moved once, the headings shown with something under them. */
+static void keypad_lines(bool remote)
+{
+    static const char *const order[] = {
+        NOTR("set_head_local"), NOTR("set_display"),     NOTR("set_wifi"),
+        NOTR("set_time"),       NOTR("set_about"),       NOTR("set_head_master"),
+        NOTR("set_users"),      NOTR("set_installer"),   NOTR("set_integrations"),
+        NOTR("set_automations"), NOTR("set_smarthome"),  NOTR("set_walk"),
+    };
+    static bool ordered;
+    lv_obj_t *nav = ui_find(S.main, "settings_nav");
+    if (nav != NULL && !ordered) {
+        ordered = true;
+        for (size_t i = 0; i < sizeof(order) / sizeof(order[0]); i++) {
+            lv_obj_t *line = ui_find(nav, order[i]);
+            if (line != NULL) {
+                lv_obj_move_to_index(line, (int32_t)i);
+            }
+        }
+    }
+    lv_obj_t *local = ui_find(S.main, "set_head_local");
+    lv_obj_t *master = ui_find(S.main, "set_head_master");
+    if (local != NULL) {
+        lv_obj_set_flag(local, LV_OBJ_FLAG_HIDDEN, !remote);
+    }
+    if (master != NULL) {
+        lv_obj_set_flag(master, LV_OBJ_FLAG_HIDDEN, !remote);
+        const char *name = ui_link_master_name(); /* a value, never translated */
+        /* TR: a keypad's Settings list, the heading over its alarm panel's sections when the
+         * panel's name isn't known. At most 47 bytes */
+        lv_label_set_text(master, name[0] != '\0' ? name : TR("Alarm panel"));
+    }
+}
+
+void ui_settings_gate(void)
 {
     static const struct {
         const char *name;
@@ -152,18 +205,55 @@ static void role_gate(void)
         {NOTR("set_users"), SECTION_USERS},
         {NOTR("set_integrations"), SECTION_INTEGRATIONS},
         {NOTR("set_walk"), SECTION_WALK},
+        {NOTR("set_installer"), SECTION_INSTALLER},
     };
+    if (S.main == NULL) {
+        return;
+    }
+    bool remote = false;
     for (size_t i = 0; i < sizeof(lines) / sizeof(lines[0]); i++) {
         lv_obj_t *line = ui_find(S.main, lines[i].name);
         bool hide = section_gated(lines[i].section);
+        if (lines[i].section == SECTION_INSTALLER) {
+            hide = hide || !ui_link_keypad(); /* an alarm panel's is About's row (BL-189) */
+        }
 #if !ALARM_UI_INTEGRATIONS && !ALARM_UI_NOTIFY
         /* Nothing to integrate with in this firmware: no Integrations section (docs/features/33).
          */
         hide = hide || lines[i].section == SECTION_INTEGRATIONS;
 #endif
+        remote = remote || (ui_link_keypad() && !hide);
         if (line != NULL) {
             lv_obj_set_flag(line, LV_OBJ_FLAG_HIDDEN, hide);
         }
+    }
+    if (ui_link_keypad()) {
+        keypad_lines(remote);
+    }
+}
+
+/* A keypad's page of its alarm panel's: the open section is the alarm panel's. */
+static bool remote_page(void)
+{
+    if (!ui_link_keypad()) {
+        return false;
+    }
+    const int32_t section = lv_subject_get_int(&subject_settings_section);
+    return section == SECTION_USERS || section == SECTION_INSTALLER;
+}
+
+void ui_settings_remote_changed(void)
+{
+    if (lv_subject_get_int(&subject_view) != VIEW_SETTINGS || S.depth == 0u || !remote_page()) {
+        return;
+    }
+    if (section_gated(lv_subject_get_int(&subject_settings_section))) {
+        select_section(SECTION_DISPLAY); /* the alarm panel no longer serves it */
+        return;
+    }
+    if (lv_subject_get_int(&subject_sheet) == SHEET_NONE &&
+        lv_subject_get_int(&subject_settings_pad) == 0) {
+        ui_page_rebuild(); /* its answers changed, or the link went or came back (LINK-063) */
     }
 }
 
@@ -179,11 +269,15 @@ void ui_settings_open(void)
     /* Smart Home's line (BL-220): the alarm panel's, while it has a device; not on a keypad */
     ui_set_int(&subject_smarthome_avail, ui_devices_settings_available() && !ui_link_keypad() ? 1 : 0);
 #endif
-    role_gate();
+    ui_settings_gate();
     ui_set_int(&subject_view, VIEW_SETTINGS);
     int32_t section = lv_subject_get_int(&subject_settings_section);
     if (section_gated(section)) {
         section = SECTION_DISPLAY;
+    }
+    if (S.program && ui_link_keypad()) { /* a keypad's installer section (BL-223) */
+        select_section(SECTION_INSTALLER);
+        return;
     }
     if (S.program) { /* About, then the Installer menu on top of it */
         select_section(SECTION_ABOUT);
@@ -221,6 +315,10 @@ void ui_settings_section(const char *which)
     }
     if (section_gated(section)) {
         section = section == SECTION_INSTALLER ? SECTION_ABOUT : SECTION_DISPLAY; /* a keypad's */
+    }
+    if (section == SECTION_INSTALLER && ui_link_keypad()) { /* a section of a keypad's (BL-223) */
+        select_section(SECTION_INSTALLER);
+        return;
     }
     if (section == SECTION_INSTALLER) { /* the Installer page is About's (BL-189) */
         select_section(SECTION_ABOUT);
@@ -292,9 +390,11 @@ void ui_settings_refresh(void)
      * pages open - and not its menu either, which was built unlocked. The menu is rebuilt
      * once, at the transition; deeper pages whenever they are found. */
     static bool was_program;
+    const unsigned root = ui_installer_root();
     if (!S.program && S.depth > 0u && lv_subject_get_int(&subject_view) == VIEW_SETTINGS &&
-        S.depth >= 2u && S.pages[1].id == PAGE_INSTALLER && (S.depth > 2u || was_program)) {
-        S.depth = 1u; /* About; the locked Installer page on top of it */
+        S.depth >= root + 1u && S.pages[root].id == PAGE_INSTALLER &&
+        (S.depth > root + 1u || was_program)) {
+        S.depth = root; /* About (on a keypad: nothing); the locked Installer page on top */
         ui_page_open(PAGE_INSTALLER, 0);
     }
     was_program = S.program;
@@ -2075,6 +2175,19 @@ static void build_page(void)
     default:
         ui_installer_build(pg->id, pg->arg, body, title, sizeof(title), note, sizeof(note));
         break;
+    }
+    if (remote_page() && ui_link_remote_down()) {
+        /* its alarm panel can't be reached: the page stays, dimmed, nothing sent (LINK-063) */
+        /* TR: a keypad's page of its alarm panel's while the link is down, the line under the
+         * title; {0} is the alarm panel's name (up to 47 bytes). At most 127 bytes */
+        I18N_FORMAT(note, sizeof(note), TR("{0} can't be reached right now"), ui_link_master_name());
+        const uint32_t n = lv_obj_get_child_count(body);
+        for (uint32_t i = 0; i < n; i++) {
+            lv_obj_t *row = lv_obj_get_child(body, (int32_t)i);
+            if (lv_obj_has_flag(row, LV_OBJ_FLAG_CLICKABLE)) {
+                ui_row_disable(row);
+            }
+        }
     }
     ui_set_str(&subject_page_title, title);
     ui_page_note(note);

@@ -37,7 +37,7 @@ lv_obj_t * screen_saver_create(void)
         lv_obj_t * saver_shade = alarm_ui_run_0(lv_obj_0, lv_pct(100), lv_pct(100));
         lv_obj_set_style_bg_color(saver_shade, lv_color_hex(0x000000), 0);
         lv_obj_set_style_bg_opa(saver_shade, (255 * 100 / 100), 0);
-        alarm_ui_run_70(saver_shade, lv_color_hex(0x000000), LV_GRAD_DIR_HOR, (255 * 82 / 100), (255 * 0 / 100), 150);
+        alarm_ui_run_71(saver_shade, lv_color_hex(0x000000), LV_GRAD_DIR_HOR, (255 * 82 / 100), (255 * 0 / 100), 150);
 
         lv_obj_t * saver_clock = box_create(lv_obj_0);
         lv_obj_set_x(saver_clock, 56);
@@ -47,7 +47,7 @@ lv_obj_t * screen_saver_create(void)
         lv_obj_set_style_pad_row(saver_clock, 0, 0);
         lv_obj_t * box_0 = alarm_ui_run_0(saver_clock, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_0, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_66(box_0, LV_FLEX_ALIGN_END, SPACE_SM);
+        alarm_ui_run_67(box_0, LV_FLEX_ALIGN_END, SPACE_SM);
         lv_obj_t * saver_time = lv_label_create(box_0);
         alarm_ui_run_4(saver_time, font_digits, COLOR_TEXT);
         lv_label_bind_text(saver_time, &subject_time, NULL);
@@ -71,7 +71,7 @@ lv_obj_t * screen_saver_create(void)
         lv_obj_set_style_pad_all(saver_state, SPACE_XL, 0);
         lv_obj_set_style_pad_right(saver_state, SPACE_XXL, 0);
         alarm_ui_run_1(saver_state, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_66(saver_state, LV_FLEX_ALIGN_CENTER, SPACE_XL);
+        alarm_ui_run_67(saver_state, LV_FLEX_ALIGN_CENTER, SPACE_XL);
         lv_obj_t * saver_disk = alarm_ui_run_0(saver_state, 84, 84);
         lv_obj_set_style_radius(saver_disk, RADIUS_FULL, 0);
         lv_obj_set_style_bg_opa(saver_disk, (255 * 22 / 100), 0);
@@ -99,7 +99,7 @@ lv_obj_t * screen_saver_create(void)
         lv_obj_t * saver_trouble = alarm_ui_run_0(saver_words, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_margin_top(saver_trouble, SPACE_SM, 0);
         alarm_ui_run_1(saver_trouble, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_66(saver_trouble, LV_FLEX_ALIGN_CENTER, SPACE_SM);
+        alarm_ui_run_67(saver_trouble, LV_FLEX_ALIGN_CENTER, SPACE_SM);
         lv_obj_set_style_text_color(saver_trouble, COLOR_AMBER, 0);
         lv_obj_bind_flag_if_eq(saver_trouble, &subject_trouble_count, LV_OBJ_FLAG_HIDDEN, 0);
         lv_obj_t * lv_label_1 = alarm_ui_run_23(saver_trouble, "\xEE\x86\x93");

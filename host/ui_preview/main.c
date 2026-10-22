@@ -11547,10 +11547,84 @@ static void walk_partition_policy(const ui_options_t *start)
     printf("Partition policy walk passed\n");
 }
 
+/* BL-223 (proposal BL-223-keypad-master-settings.js, approved 2026-10-21): a keypad's Settings in
+ * two groups, its alarm panel's Users and Installer under that panel's name; the installer menu
+ * from the keypad without what stays on the alarm panel; installer mode held at another keypad;
+ * the alarm panel's pages dimmed while the link is down. The preview's alarm panel is the pretend
+ * panel's own backend (on a panel, proxies to it). */
+static void walk_link_keypad_master_pages(void)
+{
+    printf("A keypad: its alarm panel's pages (BL-223)\n");
+    link_state(HOST_LINK_KEYPAD_ONLINE);
+    host_link_demo_remote(UI_LINK_AREA_SESSION | UI_LINK_AREA_CONFIG | UI_LINK_AREA_USERS |
+                              UI_LINK_AREA_ZONES | UI_LINK_AREA_ZWAVE | UI_LINK_AREA_ZIGBEE |
+                              UI_LINK_AREA_OUTPUTS,
+                          false, UI_LINK_HOLDER_NONE);
+    run(1100);
+    tap_name("bar_settings");
+    run(300);
+    expect(find_visible(lv_screen_active(), "set_head_local") != NULL &&
+               find_visible(lv_screen_active(), "set_head_master") != NULL &&
+               find_visible(lv_screen_active(), "set_users") != NULL &&
+               find_visible(lv_screen_active(), "set_installer") != NULL,
+           "BL-223: a keypad's Settings has no Harbor House group (LINK-057)");
+    expect(find_visible(lv_screen_active(), "set_integrations") == NULL &&
+               find_visible(lv_screen_active(), "set_walk") == NULL,
+           "BL-223: a keypad's Settings lists pages its alarm panel doesn't serve yet");
+    expect(find_label(by_name("settings_nav"), "Harbor House") != NULL,
+           "BL-223: the alarm panel's group isn't under its name");
+    tap_name("set_display");
+    run(300);
+    shot("bl-223-kp-settings");
+    tap_name("set_installer");
+    run(300);
+    link_has("Changes how Harbor House works", "BL-223: the keypad's Installer doesn't name its alarm panel");
+    expect(find_label(by_name("page_body"), "Lost the installer code?") == NULL,
+           "BL-223: a keypad offers the alarm panel's lost-code page");
+    shot("bl-223-kp-installer-locked");
+    tap_text("Enter the installer code");
+    run(200);
+    type("69420k");
+    run(400);
+    host_link_demo_remote(UI_LINK_AREA_SESSION | UI_LINK_AREA_CONFIG | UI_LINK_AREA_USERS |
+                              UI_LINK_AREA_ZONES | UI_LINK_AREA_ZWAVE | UI_LINK_AREA_ZIGBEE |
+                              UI_LINK_AREA_OUTPUTS,
+                          true, (uint8_t)2);
+    run(1100);
+    link_has("Leave installer mode", "BL-223: the installer code didn't open the menu from a keypad");
+    expect(find_label(by_name("page_body"), "Factory reset") == NULL &&
+               find_label(by_name("page_body"), "Run the setup again") == NULL &&
+               find_label(by_name("page_body"), "Update server") == NULL,
+           "BL-223: a keypad's installer menu offers what stays on the alarm panel");
+    shot("bl-223-kp-installer-menu");
+    tap_link("Zones");
+    run(300);
+    shot("bl-223-kp-zones");
+    /* the link lost while there: the page stays, dimmed, and says so (LINK-063) */
+    link_state(HOST_LINK_KEYPAD_LOST);
+    run(1100);
+    link_has("Harbor House can't be reached right now",
+             "BL-223: a page of the alarm panel's doesn't say it can't be reached");
+    shot("bl-223-kp-lost");
+    link_state(HOST_LINK_KEYPAD_ONLINE);
+    host_link_demo_remote(UI_LINK_AREA_SESSION | UI_LINK_AREA_CONFIG | UI_LINK_AREA_USERS |
+                              UI_LINK_AREA_ZONES | UI_LINK_AREA_ZWAVE | UI_LINK_AREA_ZIGBEE |
+                              UI_LINK_AREA_OUTPUTS,
+                          true, (uint8_t)2);
+    run(1100);
+    tap_name("program_banner"); /* leaves installer mode */
+    run(400);
+    host_link_demo_remote(0, false, UI_LINK_HOLDER_NONE);
+    run(1100);
+    tap_name("nav_home");
+    run(300);
+}
+
 static void walk_panel_link(const ui_options_t *start)
 {
     walk_link_setup(start);
     walk_link_keypad();
+    walk_link_keypad_master_pages(); /* BL-223 */
     walk_link_keypad_kept(start);
     walk_link_master(start);
     walk_keypad_updates(start); /* proposal P2, appended: the shots before keep their numbers */

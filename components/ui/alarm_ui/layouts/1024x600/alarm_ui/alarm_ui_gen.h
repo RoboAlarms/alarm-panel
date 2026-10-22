@@ -610,6 +610,7 @@ extern const uint32_t alarm_ui_letters_fingerprint;
  * Subjects
  *----------------*/
 
+extern lv_subject_t subject_program_text;
 extern lv_subject_t subject_view;
 extern lv_subject_t subject_panel;
 extern lv_subject_t subject_alarm_active;

@@ -102,6 +102,7 @@
 
 	<!-- The view model. ui_app.c computes these from the alarm engine's status snapshot. -->
 	<subjects>
+		<string name="subject_program_text" value="Installer · Arming off · Tap to leave" help="The installer-mode banner's words: where installer mode is held when that is a keypad (BL-223)" />
 		<int name="subject_view" value="0" min_value="0" max_value="6" help="0 home, 1 zones, 2 activity, 3 troubles, 4 emergency, 5 settings, 6 smart home" />
 		<int name="subject_panel" value="0" help="Right side of Home: 0 arm, 1 disarm, 2 code pad, 3 alarm memory, 4 walk test, 5 a keypad that is not paired: Pair again (BL-048), 6 a keypad keeping a fire or CO tone through a lost link: Silence" />
 		<int name="subject_alarm_active" value="0" help="1 while an alarm sounds: red screen" />

@@ -378,6 +378,35 @@ typedef struct {
     uint8_t win[PLINK_FW_WINDOW]; /* the relay's window: image byte o at win[o % PLINK_FW_WINDOW] */
 } plink_kfw_t;
 
+/* The remote backend's call under way (LINK-058; private). */
+#define PLINK_RB_RETRY_MS        1000u  /* no word for this long: the arguments go again */
+#define PLINK_RB_GIVE_UP_MS      3000u  /* a call with no answer: given up (LINK-063) */
+#define PLINK_RB_GIVE_UP_LONG_MS 10000u /* ... one whose arguments go in parts */
+#define PLINK_RB_MORE_RETRY_MS   300u
+#define PLINK_RB_PARTS_PER_TICK  4u
+typedef struct {
+    uint8_t *args;          /* the caller's buffers (plink_keypad_rb_attach) */
+    size_t args_cap;
+    uint8_t *ans;
+    size_t ans_cap;
+    bool busy;              /* a call: */
+    bool done;
+    uint32_t req;
+    uint32_t next_req;      /* the next req (from a random base, never 0) */
+    uint16_t call;
+    size_t args_len;
+    size_t sent;            /* argument bytes sent in this round */
+    uint64_t started_ms;
+    uint64_t heard_ms;      /* this round began, or the last RB_ANSWER part came */
+    uint8_t status;
+    size_t ans_total, ans_got;
+    bool more_due;
+    uint64_t more_at;
+    bool have_grant;
+    plink_rb_grant_t grant;
+    uint32_t grant_sid, grant_seq;
+} plink_krb_t;
+
 typedef struct {
     /* private */
     const plink_crypto_t *c;
@@ -471,6 +500,7 @@ typedef struct {
     plink_kact_t acts[PLINK_DEV_ACTS_MAX];
     plink_kprefs_t prefs;        /* settings (LINK-050, LINK-051) */
     plink_kfw_t upd;             /* updates through the link (LINK-029..037) */
+    plink_krb_t rb;              /* the remote backend (LINK-058) */
     plink_auto_warn_t auto_warn; /* LINK-056: the master's newest arming warnings ... */
     uint64_t auto_heard_ms;      /* ... when they came (0: none) */
     uint32_t auto_sid, auto_seq; /* ... and the frame they came in: an older one never replaces it */
@@ -548,6 +578,9 @@ uint32_t plink_keypad_seq(const plink_keypad_t *k);
 uint32_t plink_keypad_config_seq(const plink_keypad_t *k);
 /* The installed configuration, NULL before the first. */
 const alarm_config_t *plink_keypad_config(const plink_keypad_t *k);
+/* The master's cfg_crc of the installed configuration (0: none yet): a save from this copy names
+ * it (LINK-061). */
+uint32_t plink_keypad_cfg_crc(const plink_keypad_t *k);
 /* The newest events, newest first; returns how many. */
 size_t plink_keypad_events(const plink_keypad_t *k, alarm_event_t *out, size_t max);
 /* A one-shot sound from the master to play now (false: none waiting). */
@@ -809,6 +842,27 @@ bool plink_keypad_io_ready(const plink_keypad_t *k);
  * arm_in_ms counted down to now. false (*out empty): none heard in this pairing, or the newest is
  * older than PLINK_AUTO_STALE_MS (the master stopped saying them). */
 bool plink_keypad_auto_warn(const plink_keypad_t *k, uint64_t now_ms, plink_auto_warn_t *out);
+
+/* The remote backend (LINK-058, LINK-063; docs/features/11 "The master's settings and installer
+ * menu on keypads"): one call of the master's ui_backend_t at a time. args and ans are the
+ * caller's (ui_remote's UR_ARGS_MAX and UR_ANSWER_MAX; PSRAM is fine), kept until the keypad goes.
+ * A keypad that offers PLINK_CAP_RB attaches them before it connects. */
+void plink_keypad_rb_attach(plink_keypad_t *k, uint8_t *args, size_t args_cap, uint8_t *ans,
+                            size_t ans_cap);
+/* Starts a call: its arguments (len bytes, copied unless they already are the attached buffer)
+ * go in parts at the next ticks, again from the start after 1 s without a word, until the answer
+ * is in or PLINK_RB_GIVE_UP_MS (PLINK_RB_GIVE_UP_LONG_MS for arguments in parts) has passed.
+ * *req names it for plink_keypad_rb_poll. false: one runs, nothing attached, or the session
+ * doesn't hold PLINK_CAP_RB on a transport of 250 B frames. */
+bool plink_keypad_rb_start(plink_keypad_t *k, uint64_t now_ms, uint16_t call, const uint8_t *args,
+                           size_t len, uint32_t *req);
+/* PLINK_RB_PENDING while it runs; then its status once (the answer, *len bytes, in the attached
+ * buffer until the next call; PLINK_RB_NO_ANSWER when none came), and the call is over: its
+ * arguments are wiped. Another req: PLINK_RB_GONE. */
+#define PLINK_RB_PENDING 0xFFu
+uint8_t plink_keypad_rb_poll(plink_keypad_t *k, uint32_t req, size_t *len);
+/* What the master holds for this keypad, as its newest RB_GRANT said; false: none yet. */
+bool plink_keypad_rb_grant(const plink_keypad_t *k, plink_rb_grant_t *out);
 
 #ifdef __cplusplus
 }

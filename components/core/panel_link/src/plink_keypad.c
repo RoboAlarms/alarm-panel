@@ -97,6 +97,8 @@ static size_t bounded_len(const char *s, size_t max)
 
 /* 32 random bits for jitter and the request base. A failed draw gives 0: nothing secret rides
  * on these (the firmware's start-up self-check keeps the link off when the generator fails). */
+static void rb_on_answer(plink_keypad_t *k, uint64_t now, const uint8_t *p, size_t n);
+
 static uint32_t rnd32(const plink_keypad_t *k)
 {
     uint8_t b[4] = {0u, 0u, 0u, 0u};
@@ -2838,6 +2840,24 @@ static void on_sealed(plink_keypad_t *k, uint64_t now, const plink_addr_t *from,
         }
         break;
     case PLINK_T_TIME: on_time(k, now, fs, k->pt, n); break;
+    case PLINK_T_RB_ANSWER:
+        if ((s->caps & PLINK_CAP_RB) != 0u) {
+            rb_on_answer(k, now, k->pt, n);
+        }
+        break;
+    case PLINK_T_RB_GRANT:
+        /* the newest frame wins (LINK-026) */
+        if ((s->caps & PLINK_CAP_RB) != 0u &&
+            (!k->rb.have_grant || s->sid != k->rb.grant_sid || fs > k->rb.grant_seq)) {
+            plink_rb_grant_t g;
+            if (plink_dec_rb_grant(k->pt, n, &g)) {
+                k->rb.grant = g;
+                k->rb.have_grant = true;
+                k->rb.grant_sid = s->sid;
+                k->rb.grant_seq = fs;
+            }
+        }
+        break;
     case PLINK_T_BYE: (void)drop_master(k, now, PLINK_UNPAIRED_REMOVED); break; /* LINK-014 */
     case PLINK_T_DEV_LIST_PAGE:
         if (home) {
@@ -2987,6 +3007,204 @@ void plink_keypad_input(plink_keypad_t *k, uint64_t now_ms, const plink_addr_t *
     fw_pump(k, now_ms); /* a STATUS may end a pause */
 }
 
+/* ---- the remote backend (LINK-058, LINK-063) ---- */
+
+static uint64_t rb_give_up(const plink_krb_t *r)
+{
+    return r->started_ms + (r->args_len > OWN_PAYLOAD_MAX - PLINK_RB_CALL_HDR
+                                ? PLINK_RB_GIVE_UP_LONG_MS
+                                : PLINK_RB_GIVE_UP_MS);
+}
+
+static void rb_end(plink_krb_t *r, uint8_t status)
+{
+    r->done = true;
+    r->status = status;
+    r->more_due = false;
+}
+
+static void rb_on_answer(plink_keypad_t *k, uint64_t now, const uint8_t *p, size_t n)
+{
+    plink_krb_t *r = &k->rb;
+    plink_rb_answer_t a;
+    if (!plink_dec_rb_answer(p, n, &a) || !r->busy || r->done || a.req != r->req) {
+        return;
+    }
+    r->heard_ms = now;
+    r->sent = r->args_len; /* it has them all */
+    if (a.status != PLINK_RB_OK) {
+        rb_end(r, a.status);
+        return;
+    }
+    if (a.offset == 0u && r->ans_got == 0u) {
+        if (a.total > r->ans_cap) {
+            rb_end(r, PLINK_RB_TOO_BIG);
+            return;
+        }
+        r->ans_total = a.total;
+    }
+    if (a.total != r->ans_total || a.offset != r->ans_got) {
+        return; /* a copy, or out of order: the RB_MORE asks again */
+    }
+    if (a.len > 0u) {
+        memcpy(r->ans + r->ans_got, a.data, a.len);
+        r->ans_got += a.len;
+    }
+    if (r->ans_got >= r->ans_total) {
+        rb_end(r, PLINK_RB_OK);
+    } else {
+        r->more_due = true;
+        r->more_at = now;
+    }
+}
+
+/* The call's frames due now: its arguments' parts, a round again after a silence, an RB_MORE;
+ * given up at its time. In the tick only: k->pt is free then. */
+static void rb_pump(plink_keypad_t *k, uint64_t now)
+{
+    plink_krb_t *r = &k->rb;
+    if (!r->busy || r->done) {
+        return;
+    }
+    if (now >= rb_give_up(r)) {
+        rb_end(r, PLINK_RB_NO_ANSWER);
+        return;
+    }
+    if (!cap_ok(k, PLINK_CAP_RB)) {
+        return; /* not on this transport now: its time runs on */
+    }
+    if (r->sent >= r->args_len && r->ans_got == 0u && now >= r->heard_ms + PLINK_RB_RETRY_MS) {
+        r->sent = 0u; /* no word: everything again, with the same req */
+        r->heard_ms = now;
+    }
+    const size_t cap = frame_cap(k) > PLINK_SEALED_OVERHEAD ? frame_cap(k) - PLINK_SEALED_OVERHEAD : 0u;
+    const size_t room = cap > PLINK_RB_CALL_HDR ? cap - PLINK_RB_CALL_HDR : 0u;
+    for (unsigned i = 0; i < PLINK_RB_PARTS_PER_TICK && room > 0u &&
+                         (r->sent < r->args_len || (r->sent == 0u && r->args_len == 0u));
+         i++) {
+        const size_t left = r->args_len - r->sent;
+        plink_rb_call_t c;
+        c.req = r->req;
+        c.call = r->call;
+        c.offset = (uint32_t)r->sent;
+        c.total = (uint32_t)r->args_len;
+        c.len = (uint16_t)(left < room ? left : room);
+        c.data = r->args + r->sent;
+        size_t n = 0u;
+        if (!plink_enc_rb_call(&c, k->pt, sizeof k->pt, &n)) {
+            break;
+        }
+        (void)seal_send(k, now, PLINK_T_RB_CALL, k->pt, n);
+        plink_wipe(k->pt, n);
+        r->sent += c.len;
+        if (r->args_len == 0u) {
+            r->sent = 1u; /* a call without arguments: its one frame went */
+            break;
+        }
+    }
+    if (r->more_due && now >= r->more_at) {
+        const plink_rb_more_t mo = {.req = r->req, .offset = (uint32_t)r->ans_got, .max = 0u};
+        size_t n = 0u;
+        if (plink_enc_rb_more(&mo, k->pt, sizeof k->pt, &n)) {
+            (void)seal_send(k, now, PLINK_T_RB_MORE, k->pt, n);
+        }
+        r->more_at = now + PLINK_RB_MORE_RETRY_MS;
+    }
+}
+
+static uint64_t rb_next(const plink_keypad_t *k)
+{
+    const plink_krb_t *r = &k->rb;
+    if (!r->busy || r->done) {
+        return NEVER;
+    }
+    uint64_t t = rb_give_up(r);
+    if (r->sent < r->args_len || (r->args_len == 0u && r->sent == 0u)) {
+        t = 0u;
+    } else if (r->ans_got == 0u) {
+        t = earliest(t, r->heard_ms + PLINK_RB_RETRY_MS);
+    }
+    if (r->more_due) {
+        t = earliest(t, r->more_at);
+    }
+    return t;
+}
+
+void plink_keypad_rb_attach(plink_keypad_t *k, uint8_t *args, size_t args_cap, uint8_t *ans,
+                            size_t ans_cap)
+{
+    if (k == NULL) {
+        return;
+    }
+    k->rb.args = args;
+    k->rb.args_cap = args != NULL ? args_cap : 0u;
+    k->rb.ans = ans;
+    k->rb.ans_cap = ans != NULL ? ans_cap : 0u;
+}
+
+bool plink_keypad_rb_start(plink_keypad_t *k, uint64_t now_ms, uint16_t call, const uint8_t *args,
+                           size_t len, uint32_t *req)
+{
+    if (k == NULL || k->rb.args == NULL || k->rb.ans == NULL || k->rb.busy ||
+        len > k->rb.args_cap || (len > 0u && args == NULL) || !cap_ok(k, PLINK_CAP_RB)) {
+        return false;
+    }
+    plink_krb_t *r = &k->rb;
+    if (r->next_req == 0u) {
+        r->next_req = rnd32(k); /* LINK-018's random base */
+    }
+    if (r->next_req == 0u) {
+        r->next_req = 1u;
+    }
+    if (len > 0u && args != r->args) {
+        memcpy(r->args, args, len);
+    }
+    r->busy = true;
+    r->done = false;
+    r->req = r->next_req++;
+    r->call = call;
+    r->args_len = len;
+    r->sent = 0u;
+    r->started_ms = now_ms;
+    r->heard_ms = now_ms;
+    r->status = PLINK_RB_PENDING;
+    r->ans_total = r->ans_got = 0u;
+    r->more_due = false;
+    if (req != NULL) {
+        *req = r->req;
+    }
+    return true;
+}
+
+uint8_t plink_keypad_rb_poll(plink_keypad_t *k, uint32_t req, size_t *len)
+{
+    if (len != NULL) {
+        *len = 0u;
+    }
+    if (k == NULL || !k->rb.busy || k->rb.req != req) {
+        return PLINK_RB_GONE;
+    }
+    plink_krb_t *r = &k->rb;
+    if (!r->done) {
+        return PLINK_RB_PENDING;
+    }
+    plink_wipe(r->args, r->args_len); /* a code or a password, perhaps */
+    r->busy = false;
+    if (len != NULL && r->status == PLINK_RB_OK) {
+        *len = r->ans_got;
+    }
+    return r->status;
+}
+
+bool plink_keypad_rb_grant(const plink_keypad_t *k, plink_rb_grant_t *out)
+{
+    if (k == NULL || out == NULL || !k->rb.have_grant) {
+        return false;
+    }
+    *out = k->rb.grant;
+    return true;
+}
+
 void plink_keypad_tick(plink_keypad_t *k, uint64_t now_ms)
 {
     if (k == NULL) {
@@ -3020,6 +3238,7 @@ void plink_keypad_tick(plink_keypad_t *k, uint64_t now_ms)
         dev_req_pump(k, now_ms);
     }
     prefs_pump(k, now_ms);
+    rb_pump(k, now_ms);
     update_state(k, now_ms);
     fw_pump(k, now_ms);
 }
@@ -3077,6 +3296,7 @@ uint64_t plink_keypad_next(const plink_keypad_t *k)
             }
         }
     }
+    t = earliest(t, rb_next(k));
     if (prefs_ready(k)) {
         t = earliest(t, k->prefs.next_ms);
     }
@@ -3218,6 +3438,11 @@ uint32_t plink_keypad_config_seq(const plink_keypad_t *k)
 const alarm_config_t *plink_keypad_config(const plink_keypad_t *k)
 {
     return k != NULL && k->have_cfg ? k->cfg : NULL;
+}
+
+uint32_t plink_keypad_cfg_crc(const plink_keypad_t *k)
+{
+    return k != NULL && k->have_cfg ? k->cfg_installed_crc : 0u;
 }
 
 size_t plink_keypad_events(const plink_keypad_t *k, alarm_event_t *out, size_t max)

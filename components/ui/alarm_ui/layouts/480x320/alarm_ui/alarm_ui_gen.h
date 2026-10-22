@@ -457,6 +457,7 @@ extern lv_font_t * icons_40;
  * Subjects
  *----------------*/
 
+extern lv_subject_t subject_program_text;
 extern lv_subject_t subject_view;
 extern lv_subject_t subject_panel;
 extern lv_subject_t subject_alarm_active;

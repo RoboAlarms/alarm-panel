@@ -36,7 +36,7 @@ lv_obj_t * clock_sheet_create(lv_obj_t * parent)
         alarm_ui_run_1(box_2, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(box_2, 2, 0);
         lv_obj_t * lv_label_0 = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_DOTS);
-        alarm_ui_run_74(lv_label_0, alarm_ui_tr("Set the date and time"));
+        alarm_ui_run_75(lv_label_0, alarm_ui_tr("Set the date and time"));
 
         lv_obj_t * lv_label_1 = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(lv_label_1, alarm_ui_tr("The internet corrects it once the panel is online"));

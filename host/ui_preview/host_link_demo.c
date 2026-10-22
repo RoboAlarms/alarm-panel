@@ -609,6 +609,14 @@ void host_link_demo_partition_policy(bool allowed, bool never, uint16_t seconds)
     D.info.selected = 0u;
 }
 
+void host_link_demo_remote(uint32_t areas, bool installer, uint8_t holder)
+{
+    D.info.remote_areas = areas;
+    D.info.remote_installer = installer;
+    D.info.remote_holder = holder;
+    D.info.remote_gen++;
+}
+
 void host_link_demo_backend(ui_backend_t *out)
 {
     out->link_info = be_info;

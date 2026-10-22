@@ -50,7 +50,7 @@ lv_obj_t * hero_create(lv_obj_t * parent)
         lv_style_set_arc_opa(&style_ring_track, (255 * 8 / 100));
         lv_style_set_arc_width(&style_ring_indicator, 12);
         lv_style_set_arc_rounded(&style_ring_indicator, true);
-        alarm_ui_run_63(&style_disk, RADIUS_FULL, (255 * 12 / 100));
+        alarm_ui_run_64(&style_disk, RADIUS_FULL, (255 * 12 / 100));
         lv_style_set_shadow_width(&style_disk, 72);
         lv_style_set_shadow_opa(&style_disk, (255 * 30 / 100));
         lv_style_set_bg_color(&style_hero_alarm, COLOR_ALARM_CARD);

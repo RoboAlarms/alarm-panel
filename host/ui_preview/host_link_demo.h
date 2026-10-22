@@ -39,6 +39,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 void host_link_demo_partition_policy(bool allowed, bool never, uint16_t seconds);
+/* A keypad's alarm panel's pages (BL-223): the groups it serves (UI_LINK_AREA_*; 0, an older
+ * alarm panel, as every keypad state starts), whether this keypad holds installer mode, and
+ * who does otherwise (UI_LINK_HOLDER_* or a keypad number). Each change moves remote_gen. */
+void host_link_demo_remote(uint32_t areas, bool installer, uint8_t holder);
 
 #include <stdbool.h>
 #include <stddef.h>

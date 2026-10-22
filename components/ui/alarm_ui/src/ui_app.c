@@ -2995,8 +2995,37 @@ void ui_refresh(bool force)
  * then the walk test (docs/features/40), then an automation's arming warning (docs/features/41
  * AUT-012; never while an alarm sounds: the alarm has the screen), then an update that runs
  * (BL-188; the same), then the factory-code reminder, else the date. */
+/* The installer banner's words: where installer mode is held when that isn't this screen
+ * (BL-223, LINK-060). */
+static void program_words(void)
+{
+    char text[96];
+    const uint8_t holder = ui_link_remote_holder();
+    if (ui_link_keypad() && !ui_link_remote_installer() && holder == UI_LINK_HOLDER_PANEL) {
+        /* TR: a keypad's status bar while its alarm panel's own screen or Panel Manager holds
+         * installer mode; {0} is the alarm panel's name. At most 95 bytes */
+        I18N_FORMAT(text, sizeof(text), TR("Installer on {0} · Arming off"), ui_link_master_name());
+    } else if (ui_link_keypad() && !ui_link_remote_installer() && holder != UI_LINK_HOLDER_NONE) {
+        /* TR: a keypad's status bar while another keypad holds installer mode; {0} is its
+         * number. At most 95 bytes */
+        I18N_FORMAT(text, sizeof(text), TR("Installer at Keypad {0} · Arming off"),
+                    (unsigned)holder);
+    } else if (ui_link_master() && !S.program && holder >= 1u && holder <= UI_LINK_KEYPADS_MAX) {
+        /* TR: the alarm panel's status bar while a keypad holds its installer mode; {0} is the
+         * keypad's number. At most 95 bytes */
+        I18N_FORMAT(text, sizeof(text), TR("Installer at Keypad {0} · Arming off · Tap to end"),
+                    (unsigned)holder);
+    } else {
+        i18n_utf8_copy(text, sizeof(text), TR("Installer · Arming off · Tap to leave"));
+    }
+    if (strcmp(lv_subject_get_string(&subject_program_text), text) != 0) {
+        ui_set_str(&subject_program_text, text);
+    }
+}
+
 static void bar_banner(bool locked)
 {
+    program_words();
     const bool walk = ui_walk_banner();
     const bool quiet = !alarm_mode(compute_mode(part())); /* an alarm has the screen */
     const bool arming = ui_auto_warn_banner() && quiet;
@@ -3461,9 +3490,32 @@ static void silence_answered(const ui_call_t *c)
     ui_refresh(true);
 }
 
+/* The alarm panel's screen ends the installer mode a keypad holds (BL-223, LINK-060): leaving
+ * installer mode never needs a code, here as at the keypad. */
+static void end_keypad_installer(void)
+{
+    if (S.be.program_exit != NULL) {
+        S.be.program_exit(S.be.ctx);
+    }
+    ui_refresh(true);
+}
+
 static void on_disarm_tile(void)
 {
     if (S.mode == MODE_PROGRAM) {
+        const uint8_t holder = ui_link_remote_holder();
+        if (!S.program && ui_link_master() && holder >= 1u && holder <= UI_LINK_KEYPADS_MAX) {
+            char title[64];
+            /* TR: the alarm panel's question when its installer banner is tapped while a keypad
+             * holds installer mode; {0} is the keypad's number. At most 63 bytes */
+            I18N_FORMAT(title, sizeof(title), TR("End installer mode at Keypad {0}?"),
+                        (unsigned)holder);
+            /* TR: under it. At most 95 bytes */
+            ui_confirm(title, TR("The installer there loses what they haven't saved."),
+                       /* TR: its button. At most 23 bytes */
+                       TR("End it"), end_keypad_installer);
+            return;
+        }
         if (S.program) {
             ui_installer_leave();
         } else {

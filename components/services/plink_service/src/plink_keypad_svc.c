@@ -1727,6 +1727,16 @@ static void publish(uint64_t now, const plink_keypad_info_t *info)
     li.switch_allowed = info->switch_allowed;
     li.return_never = info->return_never;
     li.return_s = info->return_s;
+    /* its master's pages (BL-223): what the master's newest RB_GRANT said */
+    plink_rb_grant_t g;
+    if (info->state == PLINK_LINK_ONLINE && plink_keypad_rb_grant(K.k, &g)) {
+        li.remote_areas = g.areas;
+        li.remote_installer = g.installer;
+        li.remote_holder = g.holder_kind == 0u   ? UI_LINK_HOLDER_NONE
+                           : g.holder_id == 0u   ? UI_LINK_HOLDER_PANEL
+                                                 : (uint8_t)g.holder_id;
+    }
+    li.remote_gen = krbsvc_gen();
 
     li.home_gen = K.home_gen;
     li.since_epoch_ms = (info->status_age_s != UINT32_MAX && epoch != 0)
@@ -1972,6 +1982,7 @@ void ksvc_poll(uint64_t now)
     if (!K.setup_only) {
         kio_poll(K.k, now);
         kasvc_poll(K.k, now, info.selected != 0u ? info.selected : info.home);
+        krbsvc_poll(K.k, now); /* the screen's calls of its master's pages (BL-223) */
     }
     if (K.wifi_setup == UI_LINK_WIFI_REQUESTING || K.wifi_setup == UI_LINK_WIFI_JOINING) {
         if (link_wifi_up()) {
@@ -2305,6 +2316,7 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
         home_prepare();
 #if CONFIG_ALARM_FEATURE_UI
         offer |= PLINK_CAP_PREFS;
+        offer |= krbsvc_prepare(); /* its master's pages on its screen (BL-223) */
 #endif
         offer |= s_home ? PLINK_CAP_HOME : 0u;
         offer |= kfw_caps();
@@ -2317,6 +2329,9 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     plink_wipe(&rec, sizeof rec);
     if ((offer & PLINK_CAP_HOME) != 0u) {
         plink_keypad_home_attach(k, s_mirror); /* before the first tick */
+    }
+    if ((offer & PLINK_CAP_RB) != 0u) {
+        krbsvc_attach(k); /* the remote backend's buffers (BL-223) */
     }
     if (!setup_only) {
         kfw_boot(k, now); /* its master's version and the cap, its facts, its trial (BL-048) */

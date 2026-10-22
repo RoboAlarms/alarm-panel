@@ -2196,6 +2196,158 @@ bool plink_dec_auto_warn(const uint8_t *p, size_t len, plink_auto_warn_t *m)
     return true;
 }
 
+/* LINK-058: the remote backend's four messages. Data is copied in by the encoders and pointed
+ * at by the decoders. */
+bool plink_enc_rb_call(const plink_rb_call_t *m, uint8_t *out, size_t cap, size_t *len)
+{
+    if (m == NULL || out == NULL || len == NULL || m->req == 0u || (m->len > 0u && m->data == NULL) ||
+        (uint64_t)m->offset + m->len > m->total) {
+        return false;
+    }
+    plink_w_t w;
+    plink_w_init(&w, out, cap);
+    plink_w_u32(&w, m->req);
+    plink_w_u16(&w, m->call);
+    plink_w_u32(&w, m->offset);
+    plink_w_u32(&w, m->total);
+    plink_w_u16(&w, m->len);
+    plink_w_bytes(&w, m->data, m->len);
+    return enc_done(&w, len);
+}
+
+bool plink_dec_rb_call(const uint8_t *p, size_t len, plink_rb_call_t *m)
+{
+    if (m == NULL) {
+        return false;
+    }
+    memset(m, 0, sizeof(*m));
+    plink_r_t r;
+    plink_r_init(&r, p, len);
+    m->req = plink_r_u32(&r);
+    m->call = plink_r_u16(&r);
+    m->offset = plink_r_u32(&r);
+    m->total = plink_r_u32(&r);
+    m->len = plink_r_u16(&r);
+    m->data = plink_r_take(&r, m->len);
+    if (!r.ok || m->req == 0u || (uint64_t)m->offset + m->len > m->total) {
+        memset(m, 0, sizeof(*m));
+        return false;
+    }
+    return true;
+}
+
+bool plink_enc_rb_answer(const plink_rb_answer_t *m, uint8_t *out, size_t cap, size_t *len)
+{
+    if (m == NULL || out == NULL || len == NULL || (m->len > 0u && m->data == NULL) ||
+        (uint64_t)m->offset + m->len > m->total) {
+        return false;
+    }
+    plink_w_t w;
+    plink_w_init(&w, out, cap);
+    plink_w_u32(&w, m->req);
+    plink_w_u8(&w, m->status);
+    plink_w_u32(&w, m->total);
+    plink_w_u32(&w, m->offset);
+    plink_w_u16(&w, m->len);
+    plink_w_bytes(&w, m->data, m->len);
+    return enc_done(&w, len);
+}
+
+bool plink_dec_rb_answer(const uint8_t *p, size_t len, plink_rb_answer_t *m)
+{
+    if (m == NULL) {
+        return false;
+    }
+    memset(m, 0, sizeof(*m));
+    plink_r_t r;
+    plink_r_init(&r, p, len);
+    m->req = plink_r_u32(&r);
+    m->status = plink_r_u8(&r);
+    m->total = plink_r_u32(&r);
+    m->offset = plink_r_u32(&r);
+    m->len = plink_r_u16(&r);
+    m->data = plink_r_take(&r, m->len);
+    if (!r.ok || (uint64_t)m->offset + m->len > m->total) {
+        memset(m, 0, sizeof(*m));
+        return false;
+    }
+    return true;
+}
+
+bool plink_enc_rb_more(const plink_rb_more_t *m, uint8_t *out, size_t cap, size_t *len)
+{
+    if (m == NULL || out == NULL || len == NULL) {
+        return false;
+    }
+    plink_w_t w;
+    plink_w_init(&w, out, cap);
+    plink_w_u32(&w, m->req);
+    plink_w_u32(&w, m->offset);
+    plink_w_u16(&w, m->max);
+    return enc_done(&w, len);
+}
+
+bool plink_dec_rb_more(const uint8_t *p, size_t len, plink_rb_more_t *m)
+{
+    if (m == NULL) {
+        return false;
+    }
+    memset(m, 0, sizeof(*m));
+    plink_r_t r;
+    plink_r_init(&r, p, len);
+    m->req = plink_r_u32(&r);
+    m->offset = plink_r_u32(&r);
+    m->max = plink_r_u16(&r);
+    return r.ok;
+}
+
+bool plink_enc_rb_grant(const plink_rb_grant_t *m, uint8_t *out, size_t cap, size_t *len)
+{
+    if (m == NULL || out == NULL || len == NULL) {
+        return false;
+    }
+    plink_w_t w;
+    plink_w_init(&w, out, cap);
+    size_t at = plink_w_section(&w);
+    plink_w_u8(&w, m->user);
+    plink_w_u8(&w, m->authority);
+    plink_w_u8(&w, m->partitions);
+    plink_w_u8(&w, m->installer ? 1u : 0u);
+    plink_w_u16(&w, m->idle_left_s);
+    plink_w_section_end(&w, at);
+    at = plink_w_section(&w);
+    plink_w_u8(&w, m->holder_kind);
+    plink_w_u16(&w, m->holder_id);
+    plink_w_section_end(&w, at);
+    plink_w_u32(&w, m->areas);
+    return enc_done(&w, len);
+}
+
+bool plink_dec_rb_grant(const uint8_t *p, size_t len, plink_rb_grant_t *m)
+{
+    if (m == NULL) {
+        return false;
+    }
+    memset(m, 0, sizeof(*m));
+    plink_r_t r;
+    plink_r_init(&r, p, len);
+    plink_r_t g = plink_r_section(&r);
+    m->user = plink_r_u8(&g);
+    m->authority = plink_r_u8(&g);
+    m->partitions = plink_r_u8(&g);
+    m->installer = plink_r_u8(&g) != 0u;
+    m->idle_left_s = plink_r_u16(&g);
+    plink_r_t h = plink_r_section(&r);
+    m->holder_kind = plink_r_u8(&h);
+    m->holder_id = plink_r_u16(&h);
+    m->areas = plink_r_u32(&r);
+    if (!r.ok || !g.ok || !h.ok) {
+        memset(m, 0, sizeof(*m));
+        return false;
+    }
+    return true;
+}
+
 /* LINK-053: bounded secrets, never accepted without the outstanding request. */
 #define WIFI_SSID_AT PLINK_WIFI_REQ_LEN                         /* 4 */
 #define WIFI_PASS_AT (PLINK_WIFI_REQ_LEN + PLINK_WIFI_SSID_LEN) /* 37 */

@@ -40,7 +40,7 @@ lv_obj_t * device_sheet_create(lv_obj_t * parent)
 
         alarm_ui_run_20(&style_dsheet_switch, 64, 36, RADIUS_FULL);
         alarm_ui_run_6(&style_dsheet_switch, COLOR_PRESSED, (255 * 100 / 100));
-        alarm_ui_run_63(&style_dsheet_switch_indicator, RADIUS_FULL, (255 * 0 / 100));
+        alarm_ui_run_64(&style_dsheet_switch_indicator, RADIUS_FULL, (255 * 0 / 100));
         alarm_ui_run_6(&style_dsheet_switch_on, COLOR_GREEN, (255 * 100 / 100));
         lv_style_set_radius(&style_dsheet_switch_knob, RADIUS_FULL);
         alarm_ui_run_6(&style_dsheet_switch_knob, COLOR_TEXT, (255 * 100 / 100));
@@ -107,7 +107,7 @@ lv_obj_t * device_sheet_create(lv_obj_t * parent)
         lv_obj_t * device_body = alarm_ui_run_0(device_card, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_13(device_body);
         alarm_ui_run_1(device_body, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_49(device_body, SPACE_MD, "device_body");
+        alarm_ui_run_46(device_body, SPACE_MD, "device_body");
 
         the_root = box_0;
     }

@@ -555,6 +555,9 @@ static void apply_ap(void)
     }
     if (s_ap_netif == NULL) {
         s_ap_netif = esp_netif_create_default_wifi_ap();
+#if CONFIG_LWIP_DHCPS
+        /* (a build without lwIP's DHCP server - the touchscreen panels, which are set up on their
+         * screen - has no setup Wi-Fi to offer addresses on) */
         if (s_ap_netif != NULL) {
             /* The phone's name server is the panel (its setup answers every name, as a router's
              * setup does): DHCP offers it. */
@@ -570,6 +573,7 @@ static void apply_ap(void)
             (void)esp_netif_dhcps_start(s_ap_netif);
 #endif
         }
+#endif
     }
     wifi_config_t ap = {0};
     memcpy(ap.ap.ssid, ssid, strlen(ssid));

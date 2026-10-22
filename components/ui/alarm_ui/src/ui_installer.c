@@ -50,10 +50,16 @@ static void enter_program(uint8_t user, bool recovery)
     }
 }
 
-static bool installer_code(const char *code)
+static bool installer_code(const char *code);
+
+/* The installer code's answer (on a keypad, from its alarm panel: LINK-054, LINK-060). */
+static void installer_checked(const ui_call_t *c)
 {
-    uint8_t user = 0;
-    const alarm_result_t r = S.be.program_enter(S.be.ctx, code, &user);
+    if (!ui_pad_asks(installer_code)) {
+        return; /* the pad closed while the code was checked */
+    }
+    const alarm_result_t r = c->r;
+    const uint8_t user = c->user;
     if (r != ALARM_OK) {
         ui_beep(UI_BEEP_ERROR);
         /* Only a real BAD_STATE means the alarm is busy; everything else keeps its own words.
@@ -63,12 +69,20 @@ static bool installer_code(const char *code)
                      : r == ALARM_ERR_NOT_AUTHORIZED ? TR("That isn't the installer code")
                      : r == ALARM_ERR_BAD_STATE      ? TR("Disarm first, and silence any alarm")
                                                      : ui_result_text(r));
-        return false;
+        return;
     }
     ui_pad_cancel();
-    ui_settings_remember(user, code); /* opens Wi-Fi, time, integrations and the log too */
+    ui_settings_remember(user, c->code); /* opens Wi-Fi, time, integrations and the log too */
     enter_program(user, false);
-    return true;
+}
+
+/* The pad stays open; the answer opens installer mode (installer_checked). */
+static bool installer_code(const char *code)
+{
+    if (!ui_call_program_enter(code, installer_checked, 0u)) {
+        ui_pad_error(ui_result_text(ALARM_ERR_UNAVAILABLE));
+    }
+    return false;
 }
 
 static void ask_code(void *ctx)
@@ -274,9 +288,10 @@ static void leave_mode(bool say)
     if (say) {
         ui_toast(TR("Installer mode ended · arming is on again"));
     }
+    const unsigned root = ui_installer_root();
     if (lv_subject_get_int(&subject_view) == VIEW_SETTINGS &&
-        S.depth >= 2u && S.pages[1].id == PAGE_INSTALLER) {
-        S.depth = 2; /* About, then the Installer page (BL-189) */
+        S.depth >= root + 1u && S.pages[root].id == PAGE_INSTALLER) {
+        S.depth = root + 1u; /* About, then the Installer page (BL-189); a keypad's own (BL-223) */
         ui_page_rebuild();
     }
 }
@@ -331,8 +346,54 @@ static void run_walk_test(void *ctx)
     ui_walk_from_installer(unsaved);
 }
 
+/* A keypad's Installer before the code (BL-223, LINK-060): its alarm panel's, the code checked
+ * there; installer mode open in one place at a time; no power-up recovery (it is for whoever is at
+ * the alarm panel) and no lost-code row (unplugging a keypad doesn't open it). */
+static void build_locked_keypad(lv_obj_t *body, char *note, size_t nlen)
+{
+    const char *master = ui_link_master_name();
+    /* TR: a keypad's Installer, the line under the title; {0} is its alarm panel's name (up to
+     * 47 bytes). At most 127 bytes */
+    I18N_FORMAT(note, nlen, TR("Changes how {0} works"), master);
+    const uint8_t holder = ui_link_remote_holder();
+    const bool elsewhere = S.snap.program && holder != UI_LINK_HOLDER_NONE;
+    if (elsewhere) {
+        char text[128];
+        if (holder == UI_LINK_HOLDER_PANEL) {
+            /* TR: a keypad's Installer while installer mode is held at the alarm panel itself or
+             * its Panel Manager; {0} is the alarm panel's name. At most 127 bytes */
+            I18N_FORMAT(text, sizeof(text),
+                        TR("Installer mode is open on {0}. It can be open in one place at a time."),
+                        master);
+        } else {
+            /* TR: a keypad's Installer while another keypad holds installer mode; {0} is that
+             * keypad's number. At most 127 bytes */
+            I18N_FORMAT(text, sizeof(text),
+                        TR("Installer mode is open at Keypad {0}. It can be open in one place at a time."),
+                        (unsigned)holder);
+        }
+        ui_paragraph(body, text, ui_tone_amber());
+    }
+    lv_obj_t *enter = ui_row_action(body, UI_ICON_KEY, TR("Enter the installer code"),
+                                    ui_tone_amber(), ask_code, NULL);
+    if (elsewhere) {
+        ui_row_disable(enter);
+    }
+    char line[160];
+    /* TR: a keypad's Installer, under the code; {0} is its alarm panel's name. At most 159 bytes */
+    I18N_FORMAT(line, sizeof(line),
+                TR("While you change settings nothing can be armed, here or on {0}. Fire, CO and "
+                   "panic buttons keep working."),
+                master);
+    ui_paragraph(body, line, ui_tone_gray());
+}
+
 static void build_locked(lv_obj_t *body, char *note, size_t nlen)
 {
+    if (ui_link_keypad()) {
+        build_locked_keypad(body, note, nlen);
+        return;
+    }
     /* TR: the line under the page title. At most 127 bytes */
     i18n_utf8_copy(note, nlen, TR("Installer settings change how the alarm works"));
     ui_row_action(body, UI_ICON_KEY, TR("Enter the installer code"), ui_tone_amber(), ask_code,
@@ -408,8 +469,6 @@ static void in_use_words(unsigned n, char *text, size_t len)
  * bar's banner already says installer mode is on and arming is off. */
 static void build_menu(lv_obj_t *body, char *note, size_t nlen)
 {
-    (void)note;
-    (void)nlen;
     char text[64];
     unsigned zones = 0, parts = 0, devices = 0;
     for (unsigned z = 0; z < ALARM_MAX_ZONES; z++) {
@@ -477,6 +536,27 @@ static void build_menu(lv_obj_t *body, char *note, size_t nlen)
         ui_row_toggle_icon(body, UI_ICON_CODE_XML, ui_tone_gray(), TR("Developer mode"),
                            TR("Enrolled development tools and signed network updates"), developer,
                            remote_toggle, (void *)(intptr_t)1);
+    }
+    if (ui_link_keypad()) {
+        /* its alarm panel's menu (BL-223): the alarm panel's name under the title; its updates,
+         * developer mode, setup and factory reset stay on it and its Panel Manager */
+        snprintf(note, nlen, "%s", ui_link_master_name());
+        ui_section(body, TR("Test and start over"));
+        /* TR: the Installer menu's walk test row and the line under it (docs/features/40) */
+        ui_row_link(body, UI_ICON_FOOTPRINTS, ui_tone_blue(), TR("Walk test"),
+                    TR("Leaves installer mode and starts one"), NULL, UI_ICON_CHEVRON_RIGHT,
+                    run_walk_test, NULL);
+        char line[160];
+        /* TR: a keypad's Installer menu, what it doesn't hold; {0} is its alarm panel's name (up
+         * to 47 bytes). At most 159 bytes */
+        I18N_FORMAT(line, sizeof(line),
+                    TR("Updates, developer mode, the setup and a factory reset of {0} are on its "
+                       "Panel Manager."),
+                    ui_link_master_name());
+        ui_paragraph(body, line, ui_tone_gray());
+        ui_row_action(body, UI_ICON_LOG_OUT, TR("Leave installer mode"), ui_tone_blue(),
+                      leave_clicked, NULL);
+        return;
     }
     ui_fwsrv_menu(body); /* Updates: the update server and the channel (BL-186) */
 

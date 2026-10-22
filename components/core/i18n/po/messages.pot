@@ -14715,6 +14715,7 @@ msgstr ""
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_settings.c
+#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
 #: components/ui/alarm_ui/layouts/480x320/alarm_ui/screens/screen_main.xml
 msgid "Installer"
 msgstr ""
@@ -15068,8 +15069,12 @@ msgid "Close menu"
 msgstr ""
 
 #. About on a keypad, the heading over the alarm panel it belongs to. At most 47 bytes
+#. a keypad's Settings list, the heading over its alarm panel's sections when the panel's name isn't known. At most 47 bytes
+#. Text from the layout XML, no context.
 #: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/src/ui_link.c
+#: components/ui/alarm_ui/src/ui_settings.c
+#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
 msgid "Alarm panel"
 msgstr ""
 
@@ -16112,6 +16117,28 @@ msgid_plural "{0} restored, waiting for acknowledgement"
 msgstr[0] ""
 msgstr[1] ""
 
+#. a keypad's status bar while its alarm panel's own screen or Panel Manager holds installer mode; {0} is the alarm panel's name. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_app.c
+msgid "Installer on {0} · Arming off"
+msgstr ""
+
+#. a keypad's status bar while another keypad holds installer mode; {0} is its number. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_app.c
+msgid "Installer at Keypad {0} · Arming off"
+msgstr ""
+
+#. the alarm panel's status bar while a keypad holds its installer mode; {0} is the keypad's number. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_app.c
+msgid "Installer at Keypad {0} · Arming off · Tap to end"
+msgstr ""
+
+#. Text from the layout XML, no context.
+#: components/ui/alarm_ui/src/ui_app.c
+#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/globals.xml
+#: components/ui/alarm_ui/layouts/480x320/alarm_ui/globals.xml
+msgid "Installer · Arming off · Tap to leave"
+msgstr ""
+
 #. the status bar while a remote keypad session is paused. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_app.c
 msgid "Remote keypad paused · Tap for choices"
@@ -16227,6 +16254,22 @@ msgstr ""
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_app.c
 msgid "Siren silenced. Enter your code to reset"
+msgstr ""
+
+#. the alarm panel's question when its installer banner is tapped while a keypad holds installer mode; {0} is the keypad's number. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_app.c
+msgid "End installer mode at Keypad {0}?"
+msgstr ""
+
+#. under it. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_app.c
+msgid "The installer there loses what they haven't saved."
+msgstr ""
+
+#. under it. At most 95 bytes
+#. its button. At most 23 bytes
+#: components/ui/alarm_ui/src/ui_app.c
+msgid "End it"
 msgstr ""
 
 #. a toast when the installer mode card is tapped at another keypad
@@ -18205,6 +18248,26 @@ msgstr ""
 msgid "Installer mode ended · arming is on again"
 msgstr ""
 
+#. a keypad's Installer, the line under the title; {0} is its alarm panel's name (up to 47 bytes). At most 127 bytes
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Changes how {0} works"
+msgstr ""
+
+#. a keypad's Installer while installer mode is held at the alarm panel itself or its Panel Manager; {0} is the alarm panel's name. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Installer mode is open on {0}. It can be open in one place at a time."
+msgstr ""
+
+#. a keypad's Installer while another keypad holds installer mode; {0} is that keypad's number. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Installer mode is open at Keypad {0}. It can be open in one place at a time."
+msgstr ""
+
+#. a keypad's Installer, under the code; {0} is its alarm panel's name. At most 159 bytes
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "While you change settings nothing can be armed, here or on {0}. Fire, CO and panic buttons keep working."
+msgstr ""
+
 #. the line under the page title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
 msgid "Installer settings change how the alarm works"
@@ -18345,6 +18408,16 @@ msgstr ""
 msgid "Leaves installer mode and starts one"
 msgstr ""
 
+#. a keypad's Installer menu, what it doesn't hold; {0} is its alarm panel's name (up to 47 bytes). At most 159 bytes
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Updates, developer mode, the setup and a factory reset of {0} are on its Panel Manager."
+msgstr ""
+
+#. A button row's text (one line).
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Leave installer mode"
+msgstr ""
+
 #. A list row's title (one line; a long one ends in ...).
 #: components/ui/alarm_ui/src/ui_installer.c
 msgid "Run the setup again"
@@ -18358,11 +18431,6 @@ msgstr ""
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
 msgid "Erase everything"
-msgstr ""
-
-#. A button row's text (one line).
-#: components/ui/alarm_ui/src/ui_installer.c
-msgid "Leave installer mode"
 msgstr ""
 
 #. the line under the page title. At most 127 bytes
@@ -21582,6 +21650,11 @@ msgstr ""
 msgid "A master or installer code changes what asks for one"
 msgstr ""
 
+#. a keypad's page of its alarm panel's while the link is down, the line under the title; {0} is the alarm panel's name (up to 47 bytes). At most 127 bytes
+#: components/ui/alarm_ui/src/ui_settings.c
+msgid "{0} can't be reached right now"
+msgstr ""
+
 #. a toast: a siren's change or test is refused. At most 63 bytes
 #. a toast: a Zigbee siren's test is refused while a partition is armed
 #. A toast (one line over the screen). At most 127 bytes.
@@ -24767,9 +24840,12 @@ msgctxt "radio state"
 msgid "Starting"
 msgstr ""
 
+#. a keypad's installer menu, the Zigbee row's detail and the Zigbee page's note; {0} is its alarm panel's name (up to 47 bytes). At most 95 bytes
+#: components/ui/alarm_ui/src/ui_zigbee.c
+msgid "Sensors on {0}'s Zigbee radio"
+msgstr ""
+
 #. the Zigbee row's detail in the installer menu, and the Zigbee page's note
-#. A list row's detail line, under its title (one line).
-#. A Settings page: the line under its title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_zigbee.c
 msgid "Sensors on the panel's Zigbee radio"
 msgstr ""
@@ -26481,6 +26557,11 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_zwave.c
 msgctxt "button on a row"
 msgid "Pick"
+msgstr ""
+
+#. a keypad's installer menu, the Z-Wave row's detail; {0} is its alarm panel's name (up to 47 bytes). At most 95 bytes
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Sensors on {0}'s Z-Wave radio"
 msgstr ""
 
 #. a row or paragraph on a Z-Wave page
@@ -28550,11 +28631,6 @@ msgstr ""
 
 #. Text from the layout XML, no context.
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
-msgid "Installer · Arming off · Tap to leave"
-msgstr ""
-
-#. Text from the layout XML, no context.
-#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
 msgid "Factory codes · Tap to change"
 msgstr ""
 
@@ -28699,6 +28775,11 @@ msgstr ""
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
 msgctxt "settings list, an update was undone"
 msgid "Rolled back"
+msgstr ""
+
+#. Text from the layout XML, no context.
+#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
+msgid "This keypad"
 msgstr ""
 
 #. Text from the layout XML, no context.

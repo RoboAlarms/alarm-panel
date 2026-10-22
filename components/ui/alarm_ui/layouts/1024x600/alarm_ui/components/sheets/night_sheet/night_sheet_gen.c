@@ -36,7 +36,7 @@ lv_obj_t * night_sheet_create(lv_obj_t * parent)
         alarm_ui_run_1(box_2, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(box_2, 2, 0);
         lv_obj_t * lv_label_0 = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_DOTS);
-        alarm_ui_run_74(lv_label_0, alarm_ui_tr("Night hours"));
+        alarm_ui_run_75(lv_label_0, alarm_ui_tr("Night hours"));
 
         lv_obj_t * lv_label_1 = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(lv_label_1, alarm_ui_tr("From when to when, every night"));
@@ -61,7 +61,7 @@ lv_obj_t * night_sheet_create(lv_obj_t * parent)
         lv_obj_t * lv_label_4 = alarm_ui_run_14(box_4, alarm_ui_tr_c("night hours", "Starts"));
         lv_obj_set_style_text_font(lv_label_4, font_label, 0);
 
-        alarm_ui_run_69(box_4, "night_start");
+        alarm_ui_run_70(box_4, "night_start");
 
         lv_obj_t * box_5 = alarm_ui_run_0(box_3, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_5, LV_FLEX_FLOW_COLUMN);
@@ -69,7 +69,7 @@ lv_obj_t * night_sheet_create(lv_obj_t * parent)
         lv_obj_t * lv_label_5 = alarm_ui_run_14(box_5, alarm_ui_tr_c("night hours", "Ends"));
         lv_obj_set_style_text_font(lv_label_5, font_label, 0);
 
-        alarm_ui_run_69(box_5, "night_end");
+        alarm_ui_run_70(box_5, "night_end");
 
         lv_obj_t * box_6 = alarm_ui_run_0(night_card, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_19(box_6);

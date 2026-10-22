@@ -101,6 +101,10 @@ static bool bucket_take(uint8_t *tokens, uint64_t *at, uint64_t now, uint8_t bur
     return true;
 }
 
+/* The remote backend's turn and upkeep (below), called from home_service. */
+static unsigned rb_turn(plink_master_t *m, plink_peer_t *p, uint64_t now, unsigned room);
+static void rb_upkeep(plink_master_t *m, plink_peer_t *p, uint64_t now);
+
 static uint8_t dev_of(const plink_master_t *m, const plink_peer_t *p)
 {
     return (uint8_t)((size_t)(p - m->peer) + PLINK_DEVICE_FIRST);
@@ -1627,10 +1631,12 @@ static void home_service(plink_master_t *m, uint64_t now)
             continue;
         }
         home_upkeep(m, p, now);
+        rb_upkeep(m, p, now);
         if (left == 0u) {
             continue;
         }
         left -= home_turn(m, p, now, left < PLINK_HOME_PER_KEYPAD ? left : PLINK_HOME_PER_KEYPAD);
+        left -= rb_turn(m, p, now, left < PLINK_HOME_PER_KEYPAD ? left : PLINK_HOME_PER_KEYPAD);
         if (left == 0u) {
             m->home_first = (uint8_t)((at + 1u) % PLINK_KEYPADS_MAX);
         }
@@ -1681,6 +1687,290 @@ static uint64_t home_next(const plink_master_t *m, const plink_peer_t *p)
         due = m->have_snap ? max64(due, status_next(p)) : UINT64_MAX;
     }
     return min64(t, due);
+}
+
+/* ---- the remote backend (LINK-058, LINK-064) ---------------------------------------------------- */
+
+#define RB_BURST         10u /* new calls: a burst of 10, then 5 a second */
+#define RB_EVERY_MS      200u
+#define RB_MORE_BURST    16u /* RB_MORE: a burst of 16, then 20 a second */
+#define RB_MORE_EVERY_MS 50u
+
+static uint8_t *rb_ans_buf(const plink_master_t *m, const plink_peer_t *p)
+{
+    return m->rb_ans + (size_t)(p - m->peer) * m->rb_ans_cap;
+}
+
+static void rb_forget(plink_master_t *m, plink_peer_t *p)
+{
+    plink_rb_peer_t *r = &p->rb;
+    if (r->have && r->ans_len > 0u) {
+        plink_wipe(rb_ans_buf(m, p), r->ans_len);
+    }
+    r->have = false;
+    r->ans_len = 0u;
+    r->send_due = false;
+}
+
+static void rb_quick(plink_rb_peer_t *r, uint32_t req, uint8_t status)
+{
+    r->quick_req = req;
+    r->quick_status = status;
+}
+
+/* A new call, handed to port.rb_run: one at a time per keypad, its answer at a later turn. */
+static void rb_run(plink_master_t *m, plink_peer_t *p, uint32_t req, uint16_t call,
+                   const uint8_t *args, size_t len)
+{
+    plink_rb_peer_t *r = &p->rb;
+    uint32_t ticket = ++m->next_ticket;
+    if (ticket == 0u) {
+        ticket = ++m->next_ticket;
+    }
+    rb_forget(m, p);
+    r->req = req;
+    r->call = call;
+    r->running = true;
+    r->ticket = ticket;
+    m->in_run = true;
+    const bool ok = m->port.rb_run(m->port.ctx, ticket, dev_of(m, p), call, args, len);
+    m->in_run = false;
+    if (!ok && r->running && r->ticket == ticket) {
+        r->running = false; /* no room now: forgotten, so the keypad's resend runs it */
+        r->ticket = 0u;
+        r->req = 0u;
+    }
+}
+
+/* An RB_CALL: a copy of the call running or answered gets its answer again; a new one runs once
+ * its arguments are all in (in order: a part out of order is dropped and the keypad sends them
+ * all again). Every copy of the arguments is wiped after use (they may hold a code). */
+static void on_rb_call(plink_master_t *m, plink_peer_t *p, uint64_t now, size_t n)
+{
+    plink_rb_peer_t *r = &p->rb;
+    const uint8_t dev = dev_of(m, p);
+    plink_rb_call_t c;
+    if (!plink_dec_rb_call(m->pt, n, &c)) {
+        plink_wipe(m->pt, n);
+        return;
+    }
+    bool take = false;
+    if (c.offset == 0u) {
+        if (r->req == c.req && (r->running || r->have)) {
+            if (r->have) { /* its answer again, from the start */
+                r->send_due = true;
+                r->send_from = 0u;
+                r->send_max = 0u;
+                r->kept_ms = now;
+            }
+        } else if (r->running) {
+            rb_quick(r, c.req, PLINK_RB_BUSY); /* one at a time */
+        } else if (!bucket_take(&r->tokens, &r->tokens_at, now, RB_BURST, RB_EVERY_MS)) {
+            /* over its limit: dropped here, the keypad's resend comes back (LINK-064) */
+        } else if (c.len == c.total) {
+            rb_run(m, p, c.req, c.call, c.data, c.len);
+        } else if (m->rb_up == NULL || c.total > m->rb_up_cap) {
+            rb_quick(r, c.req, PLINK_RB_TOO_BIG);
+        } else if (m->rb_up_owner != 0u && m->rb_up_owner != dev &&
+                   now < m->rb_up_at + PLINK_RB_UP_IDLE_MS) {
+            rb_quick(r, c.req, PLINK_RB_BUSY); /* another keypad's upload */
+        } else {
+            m->rb_up_owner = dev;
+            m->rb_up_at = now;
+            r->up_req = c.req;
+            r->up_call = c.call;
+            r->up_total = c.total;
+            r->up_got = 0u;
+            take = true;
+        }
+    } else {
+        take = true;
+    }
+    if (take && m->rb_up_owner == dev && r->up_req == c.req && c.offset == r->up_got &&
+        c.total == r->up_total && c.len > 0u) {
+        memcpy(m->rb_up + c.offset, c.data, c.len);
+        r->up_got += c.len;
+        m->rb_up_at = now;
+        if (r->up_got == r->up_total) {
+            rb_run(m, p, r->up_req, r->up_call, m->rb_up, r->up_total);
+            plink_wipe(m->rb_up, r->up_total);
+            m->rb_up_owner = 0u;
+            r->up_req = 0u;
+        }
+    }
+    plink_wipe(&c, sizeof c);
+    plink_wipe(m->pt, n);
+}
+
+static void on_rb_more(plink_master_t *m, plink_peer_t *p, uint64_t now, size_t n)
+{
+    plink_rb_peer_t *r = &p->rb;
+    plink_rb_more_t mo;
+    if (!plink_dec_rb_more(m->pt, n, &mo) ||
+        !bucket_take(&r->more_tokens, &r->more_tokens_at, now, RB_MORE_BURST, RB_MORE_EVERY_MS)) {
+        return;
+    }
+    if (r->have && r->req == mo.req && mo.offset <= r->ans_len) {
+        r->send_due = true;
+        r->send_from = mo.offset;
+        r->send_max = mo.max;
+        r->kept_ms = now;
+    } else if (!(r->running && r->req == mo.req)) {
+        rb_quick(r, mo.req, PLINK_RB_GONE);
+    }
+}
+
+/* One RB_ANSWER: status only, or the kept answer's bytes from `from` (as many as fit, at most max
+ * when it isn't 0). */
+static void send_rb_answer(plink_master_t *m, plink_peer_t *p, uint32_t req, uint8_t status,
+                           uint32_t from, uint16_t max)
+{
+    plink_rb_answer_t a;
+    memset(&a, 0, sizeof a);
+    a.req = req;
+    a.status = status;
+    if (status == PLINK_RB_OK) {
+        const size_t cap = pt_cap(m, p);
+        size_t room = cap > PLINK_RB_ANSWER_HDR ? cap - PLINK_RB_ANSWER_HDR : 0u;
+        if (max != 0u && room > max) {
+            room = max;
+        }
+        const size_t left = p->rb.ans_len - from;
+        a.total = (uint32_t)p->rb.ans_len;
+        a.offset = from;
+        a.len = (uint16_t)(left < room ? left : room);
+        a.data = rb_ans_buf(m, p) + from;
+    }
+    size_t len = 0u;
+    if (plink_enc_rb_answer(&a, m->pt, pt_cap(m, p), &len)) {
+        (void)send_sealed(m, p, PLINK_T_RB_ANSWER, len);
+    }
+    plink_wipe(m->pt, len);
+}
+
+/* p's RB_* frames this turn, at most room (behind its alarm traffic, as the Smart Home frames). */
+static unsigned rb_turn(plink_master_t *m, plink_peer_t *p, uint64_t now, unsigned room)
+{
+    plink_rb_peer_t *r = &p->rb;
+    (void)now;
+    if (p->change_ms != 0u || p->result_due != 0u) {
+        return 0u;
+    }
+    if (!home_ok(m, p, PLINK_CAP_RB)) {
+        r->send_due = false;
+        r->quick_req = 0u;
+        return 0u;
+    }
+    unsigned sent = 0u;
+    if (sent < room && r->quick_req != 0u) {
+        send_rb_answer(m, p, r->quick_req, r->quick_status, 0u, 0u);
+        r->quick_req = 0u;
+        sent++;
+    }
+    if (sent < room && r->send_due && r->have) {
+        send_rb_answer(m, p, r->req, r->status, r->send_from, r->send_max);
+        r->send_due = false;
+        sent++;
+    }
+    if (sent < room && r->grant_due && r->grant_len > 0u) {
+        memcpy(m->pt, r->grant, r->grant_len);
+        (void)send_sealed(m, p, PLINK_T_RB_GRANT, r->grant_len);
+        r->grant_due = false;
+        sent++;
+    }
+    return sent;
+}
+
+/* Answers kept past their time are dropped; an upload whose keypad stopped is given up. */
+static void rb_upkeep(plink_master_t *m, plink_peer_t *p, uint64_t now)
+{
+    plink_rb_peer_t *r = &p->rb;
+    if (r->have && now >= r->kept_ms + PLINK_RB_KEEP_MS) {
+        rb_forget(m, p);
+        r->req = 0u;
+    }
+    if (m->rb_up_owner == dev_of(m, p) && now >= m->rb_up_at + PLINK_RB_UP_IDLE_MS) {
+        plink_wipe(m->rb_up, m->rb_up_cap);
+        m->rb_up_owner = 0u;
+        r->up_req = 0u;
+    }
+}
+
+static uint64_t rb_next(const plink_master_t *m, const plink_peer_t *p)
+{
+    const plink_rb_peer_t *r = &p->rb;
+    uint64_t t = UINT64_MAX;
+    if (r->have) {
+        t = r->kept_ms + PLINK_RB_KEEP_MS;
+    }
+    if (m->rb_up_owner == dev_of(m, p)) {
+        t = min64(t, m->rb_up_at + PLINK_RB_UP_IDLE_MS);
+    }
+    if (r->quick_req != 0u || (r->send_due && r->have) || (r->grant_due && r->grant_len > 0u)) {
+        uint64_t due = 0u;
+        if (p->change_ms != 0u && is_live(p)) {
+            due = m->have_snap ? status_next(p) : UINT64_MAX; /* behind the STATUS it waits for */
+        }
+        t = min64(t, due);
+    }
+    return t;
+}
+
+void plink_master_rb_attach(plink_master_t *m, uint8_t *up, size_t up_cap, uint8_t *ans,
+                            size_t ans_each)
+{
+    if (m == NULL) {
+        return;
+    }
+    m->rb_up = up;
+    m->rb_up_cap = up != NULL ? up_cap : 0u;
+    m->rb_ans = ans;
+    m->rb_ans_cap = ans != NULL ? ans_each : 0u;
+}
+
+void plink_master_rb_answer(plink_master_t *m, uint64_t now_ms, uint32_t ticket, uint8_t status,
+                            const uint8_t *ans, size_t len)
+{
+    if (m == NULL || ticket == 0u) {
+        return;
+    }
+    for (size_t k = 0; k < PLINK_KEYPADS_MAX; k++) {
+        plink_peer_t *p = &m->peer[k];
+        plink_rb_peer_t *r = &p->rb;
+        if (!p->used || !r->running || r->ticket != ticket) {
+            continue;
+        }
+        r->running = false;
+        r->ticket = 0u;
+        if (status == PLINK_RB_OK && (len > m->rb_ans_cap || (len > 0u && ans == NULL))) {
+            status = PLINK_RB_TOO_BIG;
+        }
+        if (status != PLINK_RB_OK) {
+            len = 0u;
+        }
+        if (len > 0u) {
+            memcpy(rb_ans_buf(m, p), ans, len);
+        }
+        r->status = status;
+        r->ans_len = len;
+        r->have = true;
+        r->kept_ms = now_ms;
+        r->send_due = true; /* at the next turn */
+        r->send_from = 0u;
+        r->send_max = 0u;
+        return;
+    }
+}
+
+void plink_master_rb_grant(plink_master_t *m, uint8_t device, const plink_rb_grant_t *g)
+{
+    plink_peer_t *p = m != NULL ? peer_of(m, device) : NULL;
+    size_t len = 0u;
+    if (p == NULL || g == NULL || !plink_enc_rb_grant(g, p->rb.grant, sizeof p->rb.grant, &len)) {
+        return;
+    }
+    p->rb.grant_len = (uint8_t)len;
+    p->rb.grant_due = true;
 }
 
 /* ---- updates through the link (LINK-029..037) ------------------------------------------------ */
@@ -1922,6 +2212,9 @@ static void promote(plink_master_t *m, plink_peer_t *p, uint64_t now, const plin
     p->fw.sessions++; /* the planner tells a keypad's restart by it */
     p->fw.req = false;
     p->fw.hold_renew = true; /* (a restart's self-test holds anew) */
+    p->rb.grant_due = p->rb.grant_len > 0u; /* what it holds, to the new session (LINK-059) */
+    p->rb.send_due = false;
+    p->rb.quick_req = 0u;
     if (is_provisional(p)) {
         /* Its first handshake: supervised from now on, and kept across a restart. */
         p->rec.flags = (uint8_t)(p->rec.flags & ~PLINK_PEER_PROVISIONAL);
@@ -2155,6 +2448,19 @@ static void on_sealed(plink_master_t *m, uint64_t now, const plink_addr_t *from,
     case PLINK_T_FW_REQ:
         if (home_ok(m, p, PLINK_CAP_FW)) {
             on_fw_req(m, p, n);
+        }
+        break;
+    /* LINK-058, LINK-064: the remote backend, from buckets of its own. */
+    case PLINK_T_RB_CALL:
+        if (home_ok(m, p, PLINK_CAP_RB) && m->port.rb_run != NULL && m->rb_ans != NULL) {
+            on_rb_call(m, p, now, n);
+        } else {
+            plink_wipe(m->pt, n);
+        }
+        break;
+    case PLINK_T_RB_MORE:
+        if (home_ok(m, p, PLINK_CAP_RB)) {
+            on_rb_more(m, p, now, n);
         }
         break;
     default: break; /* LINK-017: nothing else is the master's to take */
@@ -2489,6 +2795,7 @@ uint64_t plink_master_next(const plink_master_t *m)
         }
         t = min64(t, supervise_next(m, p));
         t = min64(t, home_next(m, p));
+        t = min64(t, rb_next(m, p));
         t = min64(t, fw_next(m, p));
     }
     return t;

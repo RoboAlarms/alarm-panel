@@ -62,7 +62,8 @@
 				<bind_flag_if_not_eq subject="subject_bar_banner" flag="hidden" ref_value="2" />
 				<event_cb callback="ui_on_program_exit" trigger="clicked" />
 				<lv_label text="&#xE1B1;" style_text_font="icons_20" style_text_color="#color_blue" />
-				<lv_label text="Installer · Arming off · Tap to leave" long_mode="dots" style_max_height="26" style_text_font="font_label" style_text_color="#color_blue" />
+				<!-- its words name where installer mode is held when that is a keypad (BL-223) -->
+				<lv_label bind_text="subject_program_text" long_mode="dots" style_max_height="26" style_text_font="font_label" style_text_color="#color_blue" />
 			</box>
 			<box name="codes_banner" width="content" height="40" clickable="true" style_bg_color="#color_amber" style_bg_opa="16%" style_radius="#radius_full" style_pad_left="#space_lg" style_pad_right="#space_lg" style_layout="flex" style_flex_flow="row" style_flex_cross_place="center" style_flex_track_place="center" style_pad_column="#space_sm">
 				<bind_flag_if_not_eq subject="subject_bar_banner" flag="hidden" ref_value="1" />
@@ -563,6 +564,15 @@
 							<!-- tr-context: settings list, an update was undone -->
 							<lv_label align="center" text="Rolled back" style_text_font="font_caption" style_text_color="#color_amber" />
 						</box>
+					</settings_item>
+					<!-- A keypad (BL-223): its own sections under "This keypad", its alarm panel's under
+					     that panel's name, Installer among them. The code shows these three and puts
+					     every line in its place; elsewhere they stay hidden. -->
+					<lv_label name="set_head_local" hidden="true" width="100%" long_mode="dots" text="This keypad" style_pad_left="#space_md" style_pad_top="#space_sm" style_text_font="font_caption" style_text_color="#color_text_3" />
+					<lv_label name="set_head_master" hidden="true" width="100%" long_mode="dots" text="Alarm panel" style_pad_left="#space_md" style_pad_top="#space_sm" style_text_font="font_caption" style_text_color="#color_text_3" />
+					<settings_item name="set_installer" hidden="true" glyph="&#xE1B1;" title="Installer">
+						<bind_style name="style_nav_active" subject="subject_settings_section" ref_value="6" />
+						<event_cb callback="ui_on_settings_section" trigger="clicked" user_data="installer" />
 					</settings_item>
 				</box>
 				<box name="settings_page" flex_grow="1" height="100%" style_layout="flex" style_flex_flow="column" style_pad_row="#space_md">

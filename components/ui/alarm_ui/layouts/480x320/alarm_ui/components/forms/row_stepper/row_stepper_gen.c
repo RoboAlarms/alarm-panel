@@ -36,7 +36,7 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_25(&style_row_stepper, lv_pct(100), LV_SIZE_CONTENT);
+        alarm_ui_run_26(&style_row_stepper, lv_pct(100), LV_SIZE_CONTENT);
         lv_style_set_min_height(&style_row_stepper, 60);
         alarm_ui_run_21(&style_row_stepper, SPACE_MD, SPACE_MD, LV_FLEX_FLOW_ROW);
         lv_style_set_flex_cross_place(&style_row_stepper, LV_FLEX_ALIGN_CENTER);
@@ -70,7 +70,7 @@ lv_obj_t * row_stepper_create(lv_obj_t * parent, const char * title, const char 
         lv_obj_set_style_pad_row(box_1, 0, 0);
         lv_obj_t * title_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(title_label, title);
-        alarm_ui_run_28(title_label);
+        alarm_ui_run_29(title_label);
 
         lv_obj_t * detail_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(detail_label, detail);

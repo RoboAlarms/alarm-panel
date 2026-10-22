@@ -22,7 +22,7 @@ panels with Home Assistant connected, ESP-NOW range/channel-change and firmware-
 433 MHz, keypad inputs,
 and the keypad-update Panel Manager pages ·
 The master's settings and installer menu on keypads (BL-223) is designed and its
-screens approved (2026-10-21), being built ·
+screens approved (2026-10-21), built and tried on the bench from the keypads' consoles ·
 **Milestone:** M7 (keypad updates M8) · **Depends on:** 01, 04, 09, 12, 15
 
 The P4/C6 ESP-NOW transport is also built and verified on hardware: authenticated commands,
@@ -2141,9 +2141,23 @@ The master's settings and installer menu on keypads (BL-223):
   other saves of the alarm panel's pages through the call task (LINK-054; they wait at most 13 s
   on the screen's task today), "Not confirmed", and the mockup's screens made today's, still to do
   (LINK-057, -063) (BL-223)
-- [ ] On the panels: the S3 master with the 7" and 10.1" as its keypads - a zone added and a
-  device paired from a keypad, the link cut in installer mode, commands' timing while an
-  installer works (BL-223)
+- [x] On the panels (2026-10-21, both speakers off; the S3 the master, the 10.1" keypad 1, the 7"
+  keypad 2; from the keypads' consoles, `plink rb ...`, which calls the screen's own proxies): the
+  installer code checked on the S3 (a wrong one refused, the right one in 140-240 ms); the S3's
+  sources and both kinds of sensors listed, the 7"'s own terminals among them; a zone saved in the
+  S3's configuration (280-300 ms) and its sensor bound to the 7"'s IO3 (390 ms), then removed
+  again; the 10.1" refused installer mode while the 7" held it, and named it as the holder; the 7"
+  held in reset 85 s: the S3 ended its installer mode a minute later, its terminals' zones went to
+  CHECK at 75 s and back after; the 10.1" took installer mode then. Alarm commands from a keypad
+  during installer work: 128-190 ms. Z-Wave on the S3: no radio fitted, answered as such. The new
+  keypad with the old S3 first: online, no master pages offered, commands as before (LINK-065).
+  Found and fixed there: the calls ran on the commands' worker, whose 4 KB stack overflowed on a
+  bind (now `plink_rb`, 8 KB internal, 2.6 KB used); a keypad paired again under the same number
+  never got its grant (now resent every 30 s too); "gone" read "connected", which lasts the
+  supervision time (now the link's own clock); a read's old refusal outlived a new grant (copies
+  now dropped at a grant change). The screens themselves were not looked at on the panels (BL-223)
+- [ ] On the panels, by a person: the keypad's Settings and Installer pages on the 7" and 10.1"
+  screens, a zone added and a sensor learnt from the screen (BL-223)
 
 Covered by boxes in other documents (all BL-048):
 - Keypad-attached inputs as zones (LINK-011): docs/features/02.

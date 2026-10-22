@@ -77,6 +77,7 @@ static struct {
     int slot;      /* the read's */
 } s_cur;
 static uint64_t s_rd_at; /* the last background read started */
+static uint32_t s_grant_key; /* the grant the read copies were answered under (the link task's) */
 
 static uint64_t now_ms(void)
 {
@@ -259,6 +260,21 @@ void krbsvc_poll(plink_keypad_t *k, uint64_t now)
         return;
     }
     atomic_store(&s_cfg_crc, plink_keypad_cfg_crc(k));
+    /* a new grant (a code, installer mode entered or left, the master's groups): the copies were
+     * answered under the old one - a refusal then is no answer now - so every read asks again */
+    plink_rb_grant_t g;
+    memset(&g, 0, sizeof g);
+    (void)plink_keypad_rb_grant(k, &g);
+    const uint32_t key = (uint32_t)g.user | ((uint32_t)g.installer << 8) | (g.areas << 9);
+    if (key != s_grant_key) {
+        s_grant_key = key;
+        xSemaphoreTake(s_lock, portMAX_DELAY);
+        for (size_t i = 0; i < RD_SLOTS; i++) {
+            s_rd[i].have = false;
+        }
+        xSemaphoreGive(s_lock);
+        atomic_fetch_add(&s_gen, 1u);
+    }
     if (!s_cur.active) {
         start(k, now);
         return;
@@ -360,5 +376,185 @@ uint8_t krbsvc_last(void)
 {
     return s_ready ? (uint8_t)s_px->last : (uint8_t)UR_UNAVAILABLE;
 }
+
+#if CONFIG_ALARM_BUILD_DEV
+/* ---- the bench: `plink rb ...` calls the master's pages as the screen does (BL-223) ---------- */
+
+#include <inttypes.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "alarm/alarm_config.h"
+#include "alarm/alarm_strings.h"
+#include "esp_timer.h"
+
+static ui_backend_t s_cb; /* the console's own entries over the same proxies */
+static alarm_config_t *s_ccfg;
+
+static uint32_t ms_since(int64_t t0)
+{
+    return (uint32_t)((esp_timer_get_time() - t0) / 1000);
+}
+
+/* A read: asked again until an answer is copied (at most 3 s), as the screen's page does. */
+#define READ(expr)                                                                         \
+    do {                                                                                   \
+        for (int i_ = 0; i_ < 30; i_++) {                                                  \
+            expr;                                                                          \
+            if (s_px->last != UR_NO_ANSWER) {                                              \
+                break;                                                                     \
+            }                                                                              \
+            vTaskDelay(pdMS_TO_TICKS(100));                                                \
+        }                                                                                  \
+    } while (0)
+
+int krbsvc_console(int argc, char **argv)
+{
+    if (!s_ready) {
+        printf("no remote backend on this panel\n");
+        return 1;
+    }
+    if (s_cb.ctx == NULL) {
+        krbsvc_backend(&s_cb);
+    }
+    const int64_t t0 = esp_timer_get_time();
+    const char *w = argc >= 3 ? argv[2] : "";
+    if (argc == 2) {
+        link_pub_lock();
+        const ui_link_info_t li = g_pub.kinfo;
+        link_pub_unlock();
+        printf("areas %08" PRIx32 ", installer %s, holder %u, gen %" PRIu32 ", last %u\n",
+               li.remote_areas, li.remote_installer ? "this keypad" : "no", (unsigned)li.remote_holder,
+               li.remote_gen, (unsigned)s_px->last);
+        return 0;
+    }
+    if (strcmp(w, "enter") == 0 && argc == 4) {
+        uint8_t user = 0;
+        const alarm_result_t r = s_cb.program_enter(s_cb.ctx, argv[3], &user);
+        printf("enter: %s, user %u, status %u, %" PRIu32 " ms\n", alarm_result_name(r),
+               (unsigned)user, (unsigned)s_px->last, ms_since(t0));
+        return 0;
+    }
+    if (strcmp(w, "exit") == 0) {
+        s_cb.program_exit(s_cb.ctx);
+        printf("exit: status %u, %" PRIu32 " ms\n", (unsigned)s_px->last, ms_since(t0));
+        return 0;
+    }
+    if (strcmp(w, "sources") == 0) {
+        ui_zone_source_t src[8];
+        size_t n = 0;
+        READ(n = s_cb.zone_sources(s_cb.ctx, src, 8));
+        printf("%u sources (status %u):", (unsigned)n, (unsigned)s_px->last);
+        for (size_t i = 0; i < n; i++) {
+            printf(" kind %u%s", (unsigned)src[i].kind, src[i].usable ? "" : " (not usable)");
+        }
+        printf("\n");
+        return 0;
+    }
+    if (strcmp(w, "learn") == 0 && argc == 5) {
+        s_cb.zone_learn(s_cb.ctx, (uint8_t)atoi(argv[3]), strcmp(argv[4], "on") == 0);
+        printf("learn: status %u, %" PRIu32 " ms\n", (unsigned)s_px->last, ms_since(t0));
+        return 0;
+    }
+    if (strcmp(w, "cands") == 0 && argc == 4) {
+        static zsrc_candidate_t c[16];
+        size_t n = 0;
+        READ(n = s_cb.zone_candidates(s_cb.ctx, (uint8_t)atoi(argv[3]), "", c, 16));
+        printf("%u candidates (status %u):\n", (unsigned)n, (unsigned)s_px->last);
+        for (size_t i = 0; i < n; i++) {
+            printf("  %s id %" PRIu64 " input %u, %s%s%s, zone %u\n", c[i].name, c[i].addr.id,
+                   (unsigned)c[i].addr.input, c[i].state[0] ? c[i].state : "-",
+                   c[i].changed ? ", changed" : "", c[i].best ? ", best" : "", (unsigned)c[i].zone);
+        }
+        return 0;
+    }
+    if (strcmp(w, "bind") == 0 && argc >= 6) {
+        zone_hub_binding_t b;
+        memset(&b, 0, sizeof b);
+        b.in[ZSRC_ROLE_MAIN].addr.kind = (uint8_t)atoi(argv[4]);
+        b.in[ZSRC_ROLE_MAIN].addr.id = strtoull(argv[5], NULL, 0);
+        b.in[ZSRC_ROLE_MAIN].addr.input = argc >= 7 ? (uint8_t)atoi(argv[6]) : 0u;
+        const zone_hub_result_t r = s_cb.zone_bind(s_cb.ctx, (uint16_t)atoi(argv[3]), &b);
+        printf("bind: %u, status %u, %" PRIu32 " ms\n", (unsigned)r, (unsigned)s_px->last,
+               ms_since(t0));
+        return 0;
+    }
+    if (strcmp(w, "info") == 0 && argc == 4) {
+        static zone_hub_info_t info;
+        bool found = false;
+        READ(found = s_cb.zone_info(s_cb.ctx, (uint16_t)atoi(argv[3]), &info));
+        printf("zone %s: %s, kind %u id %" PRIu64 ", status %u\n", argv[3],
+               found ? info.address : "no sensor", (unsigned)info.binding.in[0].addr.kind,
+               info.binding.in[0].addr.id, (unsigned)s_px->last);
+        return 0;
+    }
+    if (strcmp(w, "zone") == 0 && argc >= 5) {
+        const unsigned z = (unsigned)atoi(argv[3]);
+        if (s_ccfg == NULL) {
+            s_ccfg = alarm_mem_slow_malloc(sizeof *s_ccfg);
+        }
+        if (s_ccfg == NULL || z == 0u || z > ALARM_MAX_ZONES || !ksvc_ui_config(s_ccfg)) {
+            printf("no configuration copy here yet\n");
+            return 1;
+        }
+        if (strcmp(argv[4], "off") == 0) {
+            s_ccfg->zones[z - 1u].type = ALARM_ZT_NOT_USED;
+        } else {
+            alarm_zone_config_defaults(&s_ccfg->zones[z - 1u], (uint16_t)z, ALARM_ZT_PERIMETER, 1u);
+            snprintf(s_ccfg->zones[z - 1u].name, sizeof s_ccfg->zones[z - 1u].name, "%s", argv[4]);
+        }
+        const alarm_result_t r = s_cb.set_config(s_cb.ctx, s_ccfg);
+        printf("save: %s, status %u, %" PRIu32 " ms\n", alarm_result_name(r), (unsigned)s_px->last,
+               ms_since(t0));
+        return 0;
+    }
+    if (strcmp(w, "zw") == 0) {
+        static ui_zw_status_t st;
+        bool ok = false;
+        READ(ok = s_cb.zw_status(s_cb.ctx, &st));
+        printf("Z-Wave: %s, %u devices, home %08" PRIx32 ", status %u\n", ok ? "radio" : "none",
+               (unsigned)st.devices, st.home_id, (unsigned)s_px->last);
+        return 0;
+    }
+    if (strcmp(w, "zwadd") == 0 || strcmp(w, "zwstop") == 0 || strcmp(w, "zwdismiss") == 0) {
+        ui_zw_request_t q;
+        memset(&q, 0, sizeof q);
+        q.kind = strcmp(w, "zwadd") == 0    ? UI_ZW_REQ_ADD
+                 : strcmp(w, "zwstop") == 0 ? UI_ZW_REQ_STOP
+                                            : UI_ZW_REQ_DISMISS;
+        const ui_zw_req_result_t r = s_cb.zw_request(s_cb.ctx, &q);
+        printf("%s: %u, status %u, %" PRIu32 " ms\n", w, (unsigned)r, (unsigned)s_px->last,
+               ms_since(t0));
+        return 0;
+    }
+    if (strcmp(w, "zwprog") == 0) {
+        static ui_zw_progress_t p;
+        READ(s_cb.zw_progress(s_cb.ctx, &p));
+        printf("Z-Wave progress: op %u step %u result %u, %u s left, node %u %s, status %u\n",
+               (unsigned)p.op, (unsigned)p.step, (unsigned)p.result, (unsigned)p.seconds_left,
+               (unsigned)p.node, p.model, (unsigned)s_px->last);
+        return 0;
+    }
+    if (strcmp(w, "zb") == 0) {
+        static ui_zb_status_t st;
+        bool ok = false;
+        READ(ok = s_cb.zb_status(s_cb.ctx, &st));
+        printf("Zigbee: %s, status %u\n", ok ? "radio" : "none", (unsigned)s_px->last);
+        return 0;
+    }
+    if (strcmp(w, "out") == 0) {
+        static ui_out_status_t st;
+        bool ok = false;
+        READ(ok = s_cb.out_status(s_cb.ctx, &st));
+        printf("outputs: %s, wired %u, where \"%s\", 433 receiver %u, status %u\n",
+               ok ? "yes" : "no", (unsigned)st.wired, st.where != NULL ? st.where : "",
+               (unsigned)st.rf_receiver, (unsigned)s_px->last);
+        return 0;
+    }
+    printf("plink rb [enter <code>|exit|sources|learn <kind> on|off|cands <kind>|bind <zone> <kind> "
+           "<id> [input]|info <zone>|zone <n> <name>|off|zw|zwadd|zwstop|zwdismiss|zwprog|zb|out]\n");
+    return 1;
+}
+#endif /* CONFIG_ALARM_BUILD_DEV */
 
 #endif /* CONFIG_ALARM_LINK */

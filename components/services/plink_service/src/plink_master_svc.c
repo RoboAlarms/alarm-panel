@@ -426,7 +426,6 @@ static void worker_task(void *arg)
         flush_edges();
         miosvc_apply(); /* keypads' wired inputs into the zone hub (LINK-055) */
         masvc_worker(); /* the automations' arming warnings, copied for the link (LINK-056) */
-        mrbsvc_worker(); /* keypads' calls of this panel's pages, and their grants (BL-223) */
         fsvc_worker(); /* the keypads' update stages for Activity (they wait for the alarm task) */
         if (atomic_exchange(&s_cfg_job, false)) {
             build_config();
@@ -868,6 +867,7 @@ static void publish(uint64_t now)
     g_pub.pairing_open = plink_master_pairing(s_m);
     g_pub.keypads = n;
     g_pub.keypads_down = 0;
+    g_pub.published_ms = now;
     for (size_t i = 0; i < n; i++) {
         const plink_peer_info_t *p = &peers[i];
         ui_link_keypad_t *k = &g_pub.keypad[i];
@@ -891,6 +891,7 @@ static void publish(uint64_t now)
         g_pub.kind[i] = p->kind;
         g_pub.rssi[i] = p->hb.rssi;
         g_pub.caps[i] = p->caps;
+        g_pub.heard_ago_s[i] = p->heard_ago_s;
         home_wanted = home_wanted || (p->caps & PLINK_CAP_HOME) != 0u;
         /* its Smart Home and settings side, the newest settings report with it (BL-216) */
         if (g_pub.home != NULL && plink_master_keypad_home(s_m, now, p->device, &g_pub.home[i]) &&

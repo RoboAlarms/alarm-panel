@@ -2,10 +2,12 @@
  * plink_mrb_svc.c - the remote backend on a master (BL-223; docs/features/11 "The master's settings
  * and installer menu on keypads", LINK-057..LINK-065): its keypads' calls of this panel's pages.
  *
- * The manager hands each call over on the link task (mrbsvc_run: copied, the worker kicked); the
- * worker runs it with ui_remote_serve on this panel's own backend - ui_port_esp's, as the Panel
- * Manager takes it - with installer mode, the users and the code calls acting as the keypad,
- * {ALARM_SRC_KEYPAD, n}; the grant each keypad holds lives here, on the worker. Its answer, and a
+ * The manager hands each call over on the link task (mrbsvc_run: copied, plink_rb kicked); the
+ * task plink_rb - its own, never the commands' worker (LINK-064) - runs it with ui_remote_serve on
+ * this panel's own backend - ui_port_esp's, as the Panel Manager takes it - with installer mode,
+ * the users and the code calls acting as the keypad, {ALARM_SRC_KEYPAD, n}; the grant each keypad
+ * holds lives on that task. Its stack is internal: a zone's binding writes NVS (found on the
+ * bench, 2026-10-21: 4 KB, the worker's, overflowed on a bind). Its answer, and a
  * grant that changed, go back to the link task through a queue of their own (mrbsvc_poll), never
  * the commands'. All buffers are PSRAM, allocated once by mrbsvc_prepare: without them the master
  * doesn't offer PLINK_CAP_RB.
@@ -31,6 +33,9 @@ static const char *TAG = "plink_rb";
 #define RB_SMALL       1024u /* a call's arguments kept in its slot; a longer one takes the big one */
 #define RB_RES_QUEUE   (PLINK_KEYPADS_MAX * 2u)
 #define RB_GRANT_EVERY 1000u /* ms between the grants' upkeep */
+#define RB_STACK       8192u /* internal: the calls write NVS (bindings, the configuration) */
+#define RB_PRIORITY    3     /* under the commands' worker (4) */
+#define RB_GRANT_AGAIN_MS 30000u /* every grant is sent again this often */
 
 _Static_assert(PLINK_RB_NO_ANSWER == (unsigned)UR_NO_ANSWER &&
                    PLINK_RB_BUSY == (unsigned)UR_BUSY && PLINK_RB_TOO_BIG == (unsigned)UR_TOO_BIG &&
@@ -71,6 +76,10 @@ static ui_remote_server_t *s_srv; /* the worker's */
 static ui_remote_grant_t s_grant[PLINK_KEYPADS_MAX];  /* the worker's */
 static plink_rb_grant_t s_sent[PLINK_KEYPADS_MAX];   /* the worker's: what the link was told */
 static TickType_t s_grant_at;
+static uint64_t s_resend_at; /* the grants' last resend to every keypad */
+static TaskHandle_t s_task;
+static atomic_uchar s_auth_user[PLINK_KEYPADS_MAX]; /* a code the worker saw accepted, for plink_rb */
+static atomic_uint s_stack_min = UINT32_MAX;     /* plink_rb's stack low-water mark, bytes */
 static ui_backend_t s_base; /* this panel's backend (ui_port_esp's) */
 static alarm_source_t s_src; /* the keypad the worker's call is for */
 
@@ -137,6 +146,8 @@ static void backend_for(uint8_t device, ui_backend_t *be)
 
 /* ---- the start ---- */
 
+static void rb_task(void *arg);
+
 uint16_t mrbsvc_prepare(void)
 {
     if (s_ready) {
@@ -157,6 +168,12 @@ uint16_t mrbsvc_prepare(void)
     memset(s_jobs, 0, sizeof(rb_job_t) * PLINK_KEYPADS_MAX);
     ui_port_esp_backend(&s_base);
     s_ready = true;
+    if (xTaskCreatePinnedToCore(rb_task, "plink_rb", RB_STACK, NULL, RB_PRIORITY, &s_task,
+                                tskNO_AFFINITY) != pdPASS) {
+        s_ready = false;
+        ESP_LOGW(TAG, "no task: keypads can't open this panel's settings");
+        return 0;
+    }
     return PLINK_CAP_RB;
 }
 
@@ -209,7 +226,7 @@ bool mrbsvc_run(void *ctx, uint32_t ticket, uint8_t device, uint16_t call, const
     j->big = big;
     j->used = true;
     portEXIT_CRITICAL(&s_mux);
-    msvc_kick();
+    xTaskNotifyGive(s_task);
     return true;
 }
 
@@ -237,15 +254,33 @@ uint8_t mrbsvc_holder(void)
     return atomic_load(&s_holder);
 }
 
+/* On the worker: handed to plink_rb, which owns the grants. */
 void mrbsvc_auth(uint8_t device, uint8_t user)
 {
     if (!s_ready || device == 0u || device > PLINK_KEYPADS_MAX || user == 0u ||
-        user > ALARM_MAX_USERS || alarm_service_get_config(&s_srv->mine) != ESP_OK) {
+        user > ALARM_MAX_USERS) {
         return;
     }
-    const uint8_t a = (uint8_t)s_srv->mine.users[user - 1u].authority;
-    plink_wipe(&s_srv->mine, sizeof s_srv->mine);
-    ui_remote_grant_user(&s_grant[device - 1u], user, a, link_now());
+    atomic_store(&s_auth_user[device - 1u], user);
+    xTaskNotifyGive(s_task);
+}
+
+static void take_auths(void)
+{
+    for (uint8_t d = 1; d <= PLINK_KEYPADS_MAX; d++) {
+        const uint8_t user = atomic_exchange(&s_auth_user[d - 1u], 0u);
+        if (user == 0u || alarm_service_get_config(&s_srv->mine) != ESP_OK) {
+            continue;
+        }
+        const uint8_t a = (uint8_t)s_srv->mine.users[user - 1u].authority;
+        plink_wipe(&s_srv->mine, sizeof s_srv->mine);
+        ui_remote_grant_user(&s_grant[d - 1u], user, a, link_now());
+    }
+}
+
+uint32_t mrbsvc_stack_free(void)
+{
+    return atomic_load(&s_stack_min);
 }
 
 static void run_jobs(void)
@@ -296,18 +331,21 @@ static void grants(void)
         bool known = false, gone = false;
         link_pub_lock();
         for (size_t i = 0; i < g_pub.keypads && i < PLINK_KEYPADS_MAX; i++) {
-            const ui_link_keypad_t *k = &g_pub.keypad[i];
-            if (k->device == d) {
+            if (g_pub.keypad[i].device == d) {
                 known = true;
-                const int64_t now_ms = link_epoch_ms();
-                gone = !k->connected &&
-                       (k->heard_epoch_ms == 0 || (now_ms != 0 && now_ms - k->heard_epoch_ms >= 60000));
+                /* a minute without a frame from it, on the link's own clock - never the wall
+                 * clock, nor "connected", which lasts its whole supervision time (found on the
+                 * bench, 2026-10-21) */
+                const uint32_t ago = g_pub.heard_ago_s[i];
+                const uint64_t since = link_now() - g_pub.published_ms;
+                gone = ago == UINT32_MAX || (uint64_t)ago * 1000u + since >= 60000u;
             }
         }
         link_pub_unlock();
         ui_remote_grant_t *g = &s_grant[d - 1u];
         if (!known) {
             memset(g, 0, sizeof *g);
+            memset(&s_sent[d - 1u], 0xFF, sizeof s_sent[d - 1u]); /* a keypad paired here next */
             continue;
         }
         ui_backend_t be;
@@ -340,7 +378,10 @@ static void grants(void)
         }
         atomic_store(&s_holder, holder);
         want.areas = ui_remote_areas(&be);
-        if (memcmp(&want, &s_sent[d - 1u], sizeof want) != 0) {
+        /* told when it changes, and again every 30 s: a keypad paired again under this number, or a
+         * frame lost, gets it all the same (found on the bench, 2026-10-21) */
+        const bool again = s_resend_at == 0u || link_now() - s_resend_at >= RB_GRANT_AGAIN_MS;
+        if (again || memcmp(&want, &s_sent[d - 1u], sizeof want) != 0) {
             s_sent[d - 1u] = want;
             rb_res_t r;
             memset(&r, 0, sizeof r);
@@ -352,17 +393,26 @@ static void grants(void)
             }
         }
     }
+    if (s_resend_at == 0u || link_now() - s_resend_at >= RB_GRANT_AGAIN_MS) {
+        s_resend_at = link_now() != 0u ? link_now() : 1u;
+    }
 }
 
-void mrbsvc_worker(void)
+static void rb_task(void *arg)
 {
-    if (!s_ready) {
-        return;
-    }
-    run_jobs();
-    if (xTaskGetTickCount() - s_grant_at >= pdMS_TO_TICKS(RB_GRANT_EVERY)) {
-        s_grant_at = xTaskGetTickCount();
-        grants();
+    (void)arg;
+    for (;;) {
+        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(RB_GRANT_EVERY));
+        take_auths();
+        run_jobs();
+        if (xTaskGetTickCount() - s_grant_at >= pdMS_TO_TICKS(RB_GRANT_EVERY)) {
+            s_grant_at = xTaskGetTickCount();
+            grants();
+        }
+        const uint32_t free_now = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+        if (free_now < atomic_load(&s_stack_min)) {
+            atomic_store(&s_stack_min, free_now);
+        }
     }
 }
 

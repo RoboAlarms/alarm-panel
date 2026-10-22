@@ -90,6 +90,9 @@ typedef struct {
     uint8_t kind[PLINK_KEYPADS_MAX];  /* plink_kind_t, for the console */
     int8_t rssi[PLINK_KEYPADS_MAX];   /* its last heartbeat's, dBm (0: none yet) */
     uint16_t caps[PLINK_KEYPADS_MAX]; /* its live session's common capabilities (0: none) */
+    uint32_t heard_ago_s[PLINK_KEYPADS_MAX]; /* seconds since its last frame at published_ms
+                                              * (UINT32_MAX never): the link's own clock */
+    uint64_t published_ms;                   /* link_now() of this copy (a master) */
     /* PLINK_KEYPADS_MAX, PSRAM (NULL before the start): each keypad's Smart Home and settings
      * side, its newest settings report with it (plink_master_keypad_home), index for index with
      * keypad[]. Read only under link_pub_lock: a copy of g_pub carries the pointer, not them. */
@@ -213,14 +216,15 @@ void msvc_kick(void);
 /* ---- plink_mrb_svc.c: the remote backend on a master (BL-223, LINK-057..LINK-065) ----------- */
 /* Its buffers (PSRAM): PLINK_CAP_RB, or 0 without them. Then the manager's buffers attached, its
  * port (the link task), each turn's answers and grants (the link task), a code accepted for a
- * keypad and the calls and grants' upkeep (the worker). */
+ * keypad (the worker). The calls and the grants run on a task of their own, plink_rb. */
 uint16_t mrbsvc_prepare(void);
 void mrbsvc_attach(plink_master_t *m);
 bool mrbsvc_run(void *ctx, uint32_t ticket, uint8_t device, uint16_t call, const uint8_t *args,
                 size_t len);
 void mrbsvc_poll(plink_master_t *m, uint64_t now);
 void mrbsvc_auth(uint8_t device, uint8_t user);
-void mrbsvc_worker(void);
+/* plink_rb's stack low-water mark, bytes (UINT32_MAX before its first turn). */
+uint32_t mrbsvc_stack_free(void);
 /* The keypad holding this panel's installer mode now, 0 none (any task). */
 uint8_t mrbsvc_holder(void);
 /* ---- plink_krb_svc.c: the remote backend on a keypad ---------------------------------------- */
@@ -233,6 +237,10 @@ void krbsvc_poll(plink_keypad_t *k, uint64_t now);
 void krbsvc_backend(ui_backend_t *be);
 uint32_t krbsvc_gen(void);
 uint8_t krbsvc_last(void);
+#if CONFIG_ALARM_BUILD_DEV
+/* `plink rb ...`: the bench's calls of the master's pages through the screen's proxies. */
+int krbsvc_console(int argc, char **argv);
+#endif
 
 uint16_t masvc_caps(void);
 void masvc_worker(void);

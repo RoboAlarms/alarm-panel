@@ -79,6 +79,14 @@ void notify_gate_set(notify_gate_t *g, uint8_t cats, bool silent_too)
     g->silent_too = silent_too;
 }
 
+bool notify_gate_wanted(uint8_t cats, const alarm_event_t *ev)
+{
+    if (ev->type == ALARM_EV_AUTOMATION_NOTICE) {
+        return true; /* NOTE-042: asked for by name; the limits below still apply */
+    }
+    return (cats & NOTIFY_CAT_BIT(notify_category(ev->type))) != 0u;
+}
+
 bool notify_gate_paused(const notify_gate_t *g)
 {
     return g->day_count >= NOTIFY_DAY_HARD;
@@ -206,7 +214,7 @@ notify_act_t notify_gate_admit(notify_gate_t *g, const alarm_event_t *ev, uint64
     roll_day(g, now);
 
     const notify_cat_t cat = notify_category(ev->type);
-    if ((g->cats & NOTIFY_CAT_BIT(cat)) == 0u) {
+    if (!notify_gate_wanted(g->cats, ev)) {
         return NOTIFY_ACT_DROP; /* NOTE-037: filtered before anything is spent */
     }
     if (ev->type == ALARM_EV_ARMING_PUT_OFF && ev->arg == (uint8_t)ALARM_PUT_OFF_HOUR) {

@@ -5,4 +5,5 @@
 idf_component_register(SRCS "src/automation_service.c" "src/auto_names.c"
                        INCLUDE_DIRS "include"
                        REQUIRES automation platform_esp
-                       PRIV_REQUIRES nvs_flash esp_hw_support device_service console notify)
+                       PRIV_REQUIRES nvs_flash esp_hw_support device_service console notify net_notify
+                                     outputs_service)

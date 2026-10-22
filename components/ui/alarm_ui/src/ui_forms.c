@@ -1063,6 +1063,16 @@ void ui_pick_sheet_on_cancel(ui_confirm_fn fn)
     }
 }
 
+void ui_pick_sheet_tail(const char *text)
+{
+    lv_obj_t *list = s_sheet_kind == SHEET_PICK ? on_screen("pick_list") : NULL;
+    if (list == NULL || text == NULL || text[0] == '\0') {
+        return;
+    }
+    ui_paragraph(list, text, ui_tone_gray()); /* after the choices: their indexes stay */
+    pick_fit(list);
+}
+
 _Static_assert(UI_SHEET_NOTE_LENGTH >= UI_SUBJECT_STRING_LENGTH,
                "the sheets' note holds at least what any string subject does");
 

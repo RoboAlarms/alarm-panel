@@ -77,6 +77,21 @@
  * - Loops (AUT-007): 10 s between two automation actions on one device (a later one waits); at
  *   most 12 actions sent per rolling 60 s panel-wide (the rest end held_back). A now_ms earlier
  *   than a time already recorded counts as no time passed: it never lifts a limit.
+ * - Without devices (BL-224, auto_panel.c):
+ *   - A wired output (the output port): on or off at once, "Turn it off after" as a device's
+ *     (its Off is never lost, a new run restarts the timer); 10 s between two actions on one
+ *     output (a later one waits), counted in the panel-wide cap. A refusal is UNREACHABLE.
+ *   - The door chime (the chime port, as its maker): DONE, ALREADY (it was so), ARM_REFUSED.
+ *   - A notification (the notify port): DONE, or NO_SERVICE when no phone service is set up; at
+ *     most one a minute from one automation (more are dropped, the status kept).
+ *   - Remind to arm, at its time: the partition disarmed (the part_armed port) shows the note
+ *     (the remind port, on) and, with its option, a notification; DONE, or ALREADY when armed.
+ *     The note ends (the remind port, off) when that partition is armed, at 6:00 AM local (the
+ *     next one for a reminder from 6:00 AM on), or when the automation is changed, turned off or
+ *     deleted; a restart forgets it.
+ *   - "Still armed", at its time: armed, a notification (DONE or NO_SERVICE); disarmed, ALREADY.
+ *   - Try it now runs an output, the chime and a notification (marked tried), never a reminder
+ *     or "still armed" (AUTO_TRY_ARM).
  */
 #ifndef AUTOMATION_AUTO_RUN_H
 #define AUTOMATION_AUTO_RUN_H
@@ -131,6 +146,7 @@ typedef enum {
     AUTO_RES_NO_WARNING,   /* not armed: its time came with no whole warning (AUT-012) */
     AUTO_RES_ARM_REFUSED,  /* the panel refused the arm or disarm (auto_status_t.alarm_res) */
     AUTO_RES_PUT_OFF,      /* put off by user (choice, until: AUT-013, D20) */
+    AUTO_RES_NO_SERVICE,   /* BL-224: a notification with no phone service set up: not sent */
 } auto_res_t;
 
 typedef struct {
@@ -160,7 +176,8 @@ typedef enum {
 typedef enum {
     AUTO_TRY_OK = 0,      /* its actions were started; the outcome comes in the status */
     AUTO_TRY_UNKNOWN,     /* no automation with that uid */
-    AUTO_TRY_ARM,         /* an arming or disarming automation: never tried (phase C's own path) */
+    AUTO_TRY_ARM,         /* an arming or disarming automation, a reminder or "still armed":
+                             never tried (they mean something only at their trigger) */
     AUTO_TRY_INVALID,     /* it didn't load, or it doesn't pass auto_rule_check */
 } auto_try_t;
 
@@ -190,6 +207,33 @@ typedef enum {
     AUTO_POFF_NO_CLOCK,    /* NIGHT while the clock isn't set: only the hour */
     AUTO_POFF_BAD_ARG,     /* no user, or an unknown choice */
 } auto_put_off_t;
+
+/* BL-224: what a notification is about (auto_notice_t.what); the platform makes its words. */
+typedef enum {
+    AUTO_NOTICE_EVENT = 0,       /* the trigger ("Front Door opened", "The power went off") */
+    AUTO_NOTICE_REMIND = 1,      /* "Home isn't armed yet" */
+    AUTO_NOTICE_STILL_ARMED = 2, /* "Home is still armed at 4:00 PM" */
+} auto_notice_kind_t;
+
+typedef struct {
+    uint16_t uid;
+    uint8_t what;       /* auto_notice_kind_t */
+    uint8_t trig;       /* EVENT: the trigger's auto_trig_t */
+    uint8_t partition;  /* ARMED, DISARMED, ALARM, FIRE; REMIND and STILL_ARMED: theirs */
+    uint8_t level;      /* ARMED: alarm_arm_level_t */
+    uint8_t cause;      /* ALARM, FIRE: alarm_cause_t; TROUBLE: auto_trouble_t */
+    uint8_t tried;      /* 1: from Try it now */
+    uint16_t zone;      /* zone triggers; a sensor's trouble; the zone that raised an alarm */
+    uint16_t minute;    /* TIME, REMIND, STILL_ARMED: the minute of the day */
+} auto_notice_t;
+
+/* BL-224: a reminder's steady note on Home and the Overview (the remind port's mailbox, RAM). */
+typedef struct {
+    uint16_t uid;
+    uint8_t partition;
+    uint8_t on;         /* 1: show it; 0: it goes */
+    uint16_t minute;    /* the reminder's minute of the day ("Reminder at 11:00 PM") */
+} auto_remind_t;
 
 /* Threads: like every auto_run_* call, auto_run_put_off, auto_run_warning and auto_run_status run
  * on the task that owns the runner (the platform's automation task); the UI posts to that task
@@ -268,6 +312,20 @@ typedef struct {
      * of the old version starts once the edit has answered. NULL: never revoked. */
     bool (*send_begin)(void *ctx, uint16_t uid);
     void (*send_end)(void *ctx);
+    /* BL-224 (each may be NULL: that action then ends UNREACHABLE, or CANT_RUN for a reminder):
+     * Wired output `output` (1..AUTO_OUTPUTS) on or off; false: it can't be now (it isn't "For
+     * automations" any more, or its pin failed). */
+    bool (*output)(void *ctx, uint8_t output, bool on);
+    /* Partition p's door chime on or off as the user maker, source {AUTOMATION, uid}: *already
+     * true when it was so (nothing done). */
+    alarm_result_t (*chime)(void *ctx, uint16_t uid, uint8_t p, bool on, uint8_t maker,
+                            bool *already);
+    /* Send a notification to the phone services; false: none is set up (nothing sent). */
+    bool (*notify)(void *ctx, const auto_notice_t *n);
+    /* Partition p now: 1 armed (exit time and alarms included), 0 disarmed, -1 can't tell. */
+    int (*part_armed)(void *ctx, uint8_t p);
+    /* A reminder's note began or ended (the mailbox; the platform chimes once when one begins). */
+    void (*remind)(void *ctx, const auto_remind_t *m);
 } auto_ports_t;
 
 /* PL04: the automations changed, turned off or deleted since the runner was last given the rules
@@ -326,6 +384,25 @@ typedef struct {
     int32_t arm_run;        /* a time trigger's arm minute: its run memory (auto_time_due) */
 } auto_arming_t;
 
+/* BL-224: an automation's outputs, notifications and reminder (auto_panel.c). */
+typedef struct {
+    uint64_t off_at[AUTO_ACTIONS];   /* an output's "Turn it off after" ends */
+    uint64_t wait_at[AUTO_ACTIONS];  /* an output action waiting for its gap: send at */
+    uint64_t notify_at;              /* the last notification sent */
+    uint64_t note_cap;               /* the note ends by this at the latest (no clock) */
+    int32_t remind_day;              /* the note ends at this local date ... */
+    uint16_t remind_minute;          /* ... and minute */
+    uint8_t off_running[AUTO_ACTIONS];
+    uint8_t off_output[AUTO_ACTIONS];/* which output the timer turns off */
+    uint8_t off_waiting[AUTO_ACTIONS];/* its Off is due, waiting for the gap */
+    uint8_t off_tried[AUTO_ACTIONS];
+    uint8_t waiting[AUTO_ACTIONS];   /* 1: the action's output send waits */
+    uint8_t wait_tried[AUTO_ACTIONS];
+    uint8_t notified;                /* notify_at is set */
+    uint8_t remind_on;               /* the note shows */
+    uint8_t remind_part;
+} auto_panel_t;
+
 typedef struct {
     auto_rule_t rule;
     auto_arming_t arm;
@@ -343,6 +420,7 @@ typedef struct {
     auto_job_t job[AUTO_ACTIONS];
     auto_offtimer_t off[AUTO_ACTIONS];
     auto_status_t st;
+    auto_panel_t pn;     /* BL-224 */
 } auto_entry_t;
 
 typedef struct {
@@ -381,6 +459,8 @@ typedef struct {
     uint32_t gen;           /* auto_clock_gen after the previous auto_run_time */
     int64_t epoch_base_ms;  /* epoch ms - now ms, while the clock is valid */
     auto_zone_t zones[ALARM_MAX_ZONES];
+    uint64_t out_at[AUTO_OUTPUTS];  /* BL-224: the last automation action on each wired output */
+    uint8_t out_used;               /* bit n-1: out_at[n-1] holds a time */
 } auto_run_t;
 
 void auto_run_init(auto_run_t *r, const auto_ports_t *p, uint64_t now_ms);

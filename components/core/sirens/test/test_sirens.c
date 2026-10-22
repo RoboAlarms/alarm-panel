@@ -2,11 +2,13 @@
  * test_sirens.c - the sirens' shared policy, the wired outputs and the 433 MHz sirens
  * (docs/features/16 OUT-002..OUT-014).
  */
+#include <stdio.h>
 #include <string.h>
 
 #include "sirens/out_wired.h"
 #include "sirens/rf_siren.h"
 #include "sirens/siren.h"
+#include "sirens_fixture_auto_v1.h"
 #include "sirens_fixture_v1.h"
 #include "unity.h"
 
@@ -415,6 +417,197 @@ static void test_wired_store(void)
     TEST_ASSERT_FALSE(ow_decode(OW_FIXTURE_V1, sizeof(OW_FIXTURE_V1) - 1u, got));
 }
 
+/* ---- outputs "For automations" (BL-224) -------------------------------------------------------- */
+
+static ow_config_t auto_cfg(uint8_t gpio, const char *name)
+{
+    ow_config_t c = {.function = OW_FN_AUTOMATION, .gpio = gpio, .active_low = true,
+                     .sense = OW_SENSE_NONE};
+    snprintf(c.name, sizeof(c.name), "%s", name);
+    return c;
+}
+
+/* OUT-024, OUT-006, OUT-005: an output for automations starts off (its relay board's inactive
+ * level), is on only while an automation sets it, and never follows the engine: no alarm, no
+ * strobe, no smoke reset, no armed state, no chirp (AUT-002: sirens stay outside automations). */
+static void test_automation_output_ignores_the_engine(void)
+{
+    wired_start();
+    const ow_config_t c = auto_cfg(47u, "Garden Lights");
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 0u, 2u, &c));
+    TEST_ASSERT_TRUE(F.out[47]);
+    TEST_ASSERT_TRUE(F.level[47]); /* active low: off is high */
+    TEST_ASSERT_EQUAL_HEX8(0x04u, ow_auto_mask(&O));
+    ow_output(&O, 10u, 1u, ALARM_OUT_BELL, ALARM_PAT_STEADY);
+    ow_output(&O, 11u, 1u, ALARM_OUT_STROBE, ALARM_PAT_ON);
+    ow_output(&O, 12u, 0u, ALARM_OUT_SMOKE_RESET, ALARM_PAT_ON);
+    ow_armed(&O, 13u, 1u, true);
+    run(13u, 5000u);
+    TEST_ASSERT_TRUE(F.level[47]);
+    TEST_ASSERT_FALSE(O.ch[2].on);
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_auto_set(&O, 6000u, 2u, true));
+    TEST_ASSERT_FALSE(F.level[47]); /* on: low */
+    TEST_ASSERT_TRUE(O.ch[2].on);
+    ow_output(&O, 6001u, 1u, ALARM_OUT_BELL, ALARM_PAT_OFF);
+    ow_armed(&O, 6002u, 1u, false);
+    run(6002u, 9000u);
+    TEST_ASSERT_FALSE(F.level[47]); /* the alarm's end changes nothing either */
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_auto_set(&O, 9000u, 2u, false));
+    TEST_ASSERT_TRUE(F.level[47]);
+    TEST_ASSERT_EQUAL_UINT64(UINT64_MAX, ow_next_deadline(&O, 9000u));
+}
+
+/* OUT-023, OUT-024: only an output for automations takes ow_auto_set; it keeps its pin, relay
+ * board and name (no partitions, no supervision); configured again it starts off; the mask
+ * names the channels for automations. */
+static void test_automation_output_configuration(void)
+{
+    wired_start();
+    const ow_config_t s = siren_cfg(4u);
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 0u, 0u, &s));
+    TEST_ASSERT_EQUAL_INT(OW_ERR_ARG, ow_auto_set(&O, 0u, 0u, true));
+    TEST_ASSERT_EQUAL_INT(OW_ERR_ARG, ow_auto_set(&O, 0u, 1u, true)); /* free */
+    TEST_ASSERT_EQUAL_INT(OW_ERR_ARG, ow_auto_set(&O, 0u, OW_CHANNELS, true));
+    TEST_ASSERT_FALSE(F.level[4]);
+    ow_config_t c = auto_cfg(47u, "Porch");
+    c.partitions = 0x03u;
+    c.burglary = true;
+    c.squawk = true;
+    c.sense = 48u;
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 0u, 1u, &c));
+    TEST_ASSERT_FALSE(F.in[48]); /* no supervision input */
+    TEST_ASSERT_EQUAL_UINT8(0u, O.ch[1].c.partitions);
+    TEST_ASSERT_FALSE(O.ch[1].c.burglary || O.ch[1].c.squawk);
+    TEST_ASSERT_EQUAL_UINT8(OW_SENSE_NONE, O.ch[1].c.sense);
+    TEST_ASSERT_EQUAL_STRING("Porch", O.ch[1].c.name);
+    TEST_ASSERT_EQUAL_HEX8(0x02u, ow_auto_mask(&O));
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_auto_set(&O, 1u, 1u, true));
+    TEST_ASSERT_FALSE(F.level[47]);
+    c = auto_cfg(47u, "Porch light");
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 2u, 1u, &c)); /* renamed: it starts off again */
+    TEST_ASSERT_TRUE(F.level[47]);
+    TEST_ASSERT_EQUAL_STRING("Porch light", O.ch[1].c.name);
+    /* a siren keeps no name */
+    ow_config_t named = siren_cfg(5u);
+    snprintf(named.name, sizeof(named.name), "%s", "Bell");
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 3u, 2u, &named));
+    TEST_ASSERT_EQUAL_STRING("", O.ch[2].c.name);
+    /* a name that fills its 23 bytes is never cut inside a character */
+    c = auto_cfg(6u, "");
+    memset(c.name, 'A', 22u);
+    c.name[22] = (char)0xC3; /* "e" with an acute accent, 2 bytes: only its first fits */
+    c.name[23] = (char)0xA9;
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 3u, 3u, &c));
+    TEST_ASSERT_EQUAL_size_t(22u, strlen(O.ch[3].c.name));
+    c = auto_cfg(6u, "Caf");
+    c.name[3] = (char)0xC3; /* a sequence cut before its NUL (a console's snprintf) */
+    c.name[4] = '\0';
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 3u, 3u, &c));
+    TEST_ASSERT_EQUAL_STRING("Caf", O.ch[3].c.name);
+    TEST_ASSERT_EQUAL_STRING("automation", ow_function_name(OW_FN_AUTOMATION));
+    /* free again: off, then given back */
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_clear(&O, 1u));
+    TEST_ASSERT_FALSE(F.out[47]);
+    TEST_ASSERT_EQUAL_HEX8(0x08u, ow_auto_mask(&O));
+}
+
+/* OUT-023: "Test it" switches an output for automations on for OW_TEST_MS, armed or not, then it
+ * goes back to what automations set. */
+static void test_automation_output_test(void)
+{
+    wired_start();
+    const ow_config_t c = auto_cfg(47u, "Garden Lights");
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 0u, 0u, &c));
+    ow_set_armed(&O, 50u, 1u, true);
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_test(&O, 100u, 0u));
+    TEST_ASSERT_FALSE(F.level[47]);
+    TEST_ASSERT_EQUAL_UINT64(100u + OW_TEST_MS, ow_next_deadline(&O, 100u));
+    run(100u, 100u + OW_TEST_MS);
+    TEST_ASSERT_TRUE(F.level[47]);
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_auto_set(&O, 3000u, 0u, true));
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_test(&O, 3000u, 0u));
+    run(3000u, 3000u + OW_TEST_MS + 10u);
+    TEST_ASSERT_FALSE(F.level[47]); /* still on: an automation set it */
+}
+
+/* OUT-023: an output for automations is stored in outputs/auto (the frozen blob), never in
+ * outputs/wired, which stays format 1 as before - so firmware from before BL-224 reads it whole
+ * and keeps its sirens; `wired` skips an entry of a function it doesn't keep there; a slot
+ * `wired` holds keeps its channel. */
+static void test_automation_output_store(void)
+{
+    wired_start();
+    ow_config_t s = siren_cfg(4u);
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 0u, 0u, &s));
+    const ow_config_t a = auto_cfg(47u, "Garden Lights");
+    TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 0u, 2u, &a));
+    uint8_t buf[OW_AUTO_BLOB_MAX];
+    size_t n = ow_encode(&O, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_size_t(sizeof(OW_FIXTURE_V1_BESIDE_AUTO), n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(OW_FIXTURE_V1_BESIDE_AUTO, buf, n);
+    n = ow_auto_encode(&O, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_size_t(sizeof(OW_AUTO_FIXTURE_V1), n);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(OW_AUTO_FIXTURE_V1, buf, n);
+    ow_config_t got[OW_CHANNELS];
+    TEST_ASSERT_TRUE(ow_decode(OW_FIXTURE_V1_BESIDE_AUTO, sizeof(OW_FIXTURE_V1_BESIDE_AUTO), got));
+    TEST_ASSERT_TRUE(ow_auto_decode(OW_AUTO_FIXTURE_V1, sizeof(OW_AUTO_FIXTURE_V1), got));
+    TEST_ASSERT_EQUAL_UINT8(OW_FN_SIREN, got[0].function);
+    TEST_ASSERT_EQUAL_UINT8(OW_FN_NONE, got[1].function);
+    TEST_ASSERT_EQUAL_UINT8(OW_FN_AUTOMATION, got[2].function);
+    TEST_ASSERT_EQUAL_UINT8(47u, got[2].gpio);
+    TEST_ASSERT_TRUE(got[2].active_low);
+    TEST_ASSERT_EQUAL_UINT8(OW_SENSE_NONE, got[2].sense);
+    TEST_ASSERT_EQUAL_STRING("Garden Lights", got[2].name);
+    /* a slot `wired` holds keeps its channel */
+    TEST_ASSERT_TRUE(ow_decode(OW_FIXTURE_V1, sizeof(OW_FIXTURE_V1), got)); /* channels 2 and 4 */
+    uint8_t moved[sizeof(OW_AUTO_FIXTURE_V1)];
+    memcpy(moved, OW_AUTO_FIXTURE_V1, sizeof(moved));
+    moved[5] = 0x01u;
+    uint16_t crc = siren_crc16(moved, sizeof(moved) - 2u);
+    moved[sizeof(moved) - 2u] = (uint8_t)(crc >> 8);
+    moved[sizeof(moved) - 1u] = (uint8_t)(crc & 0xFFu);
+    TEST_ASSERT_TRUE(ow_auto_decode(moved, sizeof(moved), got));
+    TEST_ASSERT_EQUAL_UINT8(OW_FN_SIREN, got[1].function);
+    /* every channel for automations, named at its longest, fits; `wired` is then empty */
+    wired_start();
+    for (uint8_t i = 0; i < OW_CHANNELS; i++) {
+        ow_config_t c = auto_cfg((uint8_t)(10u + i), "");
+        memset(c.name, 'N', OW_NAME_LEN - 1u);
+        TEST_ASSERT_EQUAL_INT(OW_OK, ow_set(&O, 0u, i, &c));
+    }
+    n = ow_auto_encode(&O, buf, sizeof(buf));
+    TEST_ASSERT_EQUAL_size_t(OW_AUTO_BLOB_MAX, n);
+    memset(got, 0, sizeof(got));
+    TEST_ASSERT_TRUE(ow_auto_decode(buf, n, got));
+    TEST_ASSERT_EQUAL_size_t(OW_NAME_LEN - 1u, strlen(got[3].name));
+    TEST_ASSERT_EQUAL_size_t(6u, ow_encode(&O, buf, sizeof(buf)));
+    /* damage changes nothing: a name longer than its entry, a bad CRC */
+    uint8_t bad[sizeof(OW_AUTO_FIXTURE_V1)];
+    memcpy(bad, OW_AUTO_FIXTURE_V1, sizeof(bad));
+    bad[8] = 0x0Eu;
+    crc = siren_crc16(bad, sizeof(bad) - 2u);
+    bad[sizeof(bad) - 2u] = (uint8_t)(crc >> 8);
+    bad[sizeof(bad) - 1u] = (uint8_t)(crc & 0xFFu);
+    memset(got, 0, sizeof(got));
+    TEST_ASSERT_FALSE(ow_auto_decode(bad, sizeof(bad), got));
+    memcpy(bad, OW_AUTO_FIXTURE_V1, sizeof(bad));
+    bad[6] ^= 0x01u;
+    TEST_ASSERT_FALSE(ow_auto_decode(bad, sizeof(bad), got));
+    TEST_ASSERT_EQUAL_UINT8(OW_FN_NONE, got[2].function);
+    /* in `wired`, an entry of a function it doesn't keep (5, or a newer one) leaves its slot free */
+    uint8_t newer[sizeof(OW_FIXTURE_V1)];
+    for (uint8_t fn = OW_FN_AUTOMATION; fn <= 9u; fn = (uint8_t)(fn + 4u)) {
+        memcpy(newer, OW_FIXTURE_V1, sizeof(newer));
+        newer[15] = fn; /* channel 4's function */
+        crc = siren_crc16(newer, sizeof(newer) - 2u);
+        newer[sizeof(newer) - 2u] = (uint8_t)(crc >> 8);
+        newer[sizeof(newer) - 1u] = (uint8_t)(crc & 0xFFu);
+        TEST_ASSERT_TRUE(ow_decode(newer, sizeof(newer), got));
+        TEST_ASSERT_EQUAL_UINT8(OW_FN_SIREN, got[1].function);
+        TEST_ASSERT_EQUAL_UINT8(OW_FN_NONE, got[3].function);
+    }
+}
+
 /* ---- 433 MHz sirens ---------------------------------------------------------------------------- */
 
 static struct {
@@ -701,6 +894,10 @@ int main(void)
     RUN_TEST(test_bell_supervision);
     RUN_TEST(test_wired_test);
     RUN_TEST(test_wired_store);
+    RUN_TEST(test_automation_output_ignores_the_engine);
+    RUN_TEST(test_automation_output_configuration);
+    RUN_TEST(test_automation_output_test);
+    RUN_TEST(test_automation_output_store);
     RUN_TEST(test_rf_alarm_repeats_and_stops);
     RUN_TEST(test_rf_squawk);
     RUN_TEST(test_rf_pairing);

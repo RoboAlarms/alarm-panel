@@ -118,6 +118,7 @@ const char *alarm_event_name(alarm_event_type_t type)
         [ALARM_EV_ZIGBEE_RADIO_RESTARTED] = "zigbee_radio_restarted",
         [ALARM_EV_AUTOMATION_FAILED] = "automation_failed",
         [ALARM_EV_ARMING_PUT_OFF] = "arming_put_off",
+        [ALARM_EV_AUTOMATION_NOTICE] = "automation_notice",
     };
     return pick(t, COUNT_OF(t), (unsigned)type);
 }
@@ -318,6 +319,23 @@ const char *alarm_put_off_name(alarm_put_off_t choice)
         [ALARM_PUT_OFF_DAY] = "day",
     };
     return pick(t, COUNT_OF(t), (unsigned)choice);
+}
+
+const char *alarm_auto_notice_name(alarm_auto_notice_t notice)
+{
+    static const char *const t[] = {
+        [ALARM_AUTO_NOTICE_OPENED] = "opened",
+        [ALARM_AUTO_NOTICE_CLOSED] = "closed",
+        [ALARM_AUTO_NOTICE_ARMED] = "armed",
+        [ALARM_AUTO_NOTICE_DISARMED] = "disarmed",
+        [ALARM_AUTO_NOTICE_ALARM] = "alarm",
+        [ALARM_AUTO_NOTICE_FIRE] = "fire",
+        [ALARM_AUTO_NOTICE_TIME] = "time",
+        [ALARM_AUTO_NOTICE_TROUBLE] = "trouble",
+        [ALARM_AUTO_NOTICE_REMIND] = "remind",
+        [ALARM_AUTO_NOTICE_STILL_ARMED] = "still_armed",
+    };
+    return pick(t, COUNT_OF(t), (unsigned)notice);
 }
 
 const char *alarm_auto_action_name(uint8_t action)

@@ -1498,6 +1498,54 @@ static auto_put_off_t auto_put_off(void *ctx, uint16_t uid, uint8_t choice, cons
     }
     return automation_service_put_off(uid, choice, res.user, res.may_disarm);
 }
+
+/* ---- automations without devices (docs/features/41 DESIGN.md section 15, BL-224) ---- */
+
+static size_t auto_reminders(void *ctx, auto_remind_t *out, size_t max)
+{
+    (void)ctx;
+    return automation_service_reminders(out, max);
+}
+
+#if CONFIG_ALARM_OUTPUTS
+static size_t auto_outputs(void *ctx, ui_auto_output_t *out, size_t max)
+{
+    (void)ctx;
+    outputs_auto_t got[OW_CHANNELS];
+    const size_t n = outputs_service_auto_list(got, max < OW_CHANNELS ? max : OW_CHANNELS);
+    for (size_t i = 0; i < n; i++) {
+        memset(&out[i], 0, sizeof(out[i]));
+        out[i].number = got[i].number;
+        out[i].gpio = got[i].gpio;
+        snprintf(out[i].name, sizeof(out[i].name), "%s", got[i].name);
+    }
+    return n;
+}
+#endif
+
+#if CONFIG_ALARM_FEATURE_NOTIFY
+/* Where an automation's notification goes: every phone service set up and on, whatever its
+ * categories say (BL-224, the owner's decision 2026-10-21). */
+static uint8_t auto_notify_services(void *ctx)
+{
+    (void)ctx;
+    if (!net_notify_any_service()) {
+        return 0u;
+    }
+    uint8_t mask = 0u;
+    net_notify_ntfy_t n;
+    net_notify_ntfy_get(&n);
+    if (n.enabled) {
+        mask = (uint8_t)(mask | (1u << UI_NOTIFY_NTFY));
+    }
+    net_notify_pushover_t p;
+    net_notify_pushover_get(&p);
+    if (p.enabled) {
+        mask = (uint8_t)(mask | (1u << UI_NOTIFY_PUSHOVER));
+    }
+    return mask != 0u ? mask : (uint8_t)UI_AUTO_NOTIFY_SOME;
+}
+#endif
 #endif
 
 /* ---- Z-Wave (zwave_service, docs/features/36 screens.md §12) ---- */
@@ -1666,6 +1714,7 @@ static void out_wired(void *ctx, ui_out_wired_t out[UI_OUT_WIRED_MAX])
                                   .partitions = c->partitions, .also = c->also,
                                   .burglary = c->burglary, .fire = c->fire, .squawk = c->squawk,
                                   .active_low = c->active_low, .on = w[i].on, .trouble = w[i].trouble};
+        snprintf(out[i].name, sizeof(out[i].name), "%s", c->name); /* BL-224 */
     }
 }
 
@@ -1675,10 +1724,11 @@ static uint8_t out_wired_set(void *ctx, uint8_t slot, const ui_out_wired_t *c)
     if (!out_installer()) {
         return UI_OUT_NOT_ALLOWED;
     }
-    const ow_config_t oc = {.function = c->function, .gpio = c->gpio, .partitions = c->partitions,
-                            .also = c->also, .burglary = c->burglary, .fire = c->fire,
-                            .squawk = c->squawk, .active_low = c->active_low,
-                            .sense = c->sense == UI_OUT_NO_PIN ? OW_SENSE_NONE : c->sense};
+    ow_config_t oc = {.function = c->function, .gpio = c->gpio, .partitions = c->partitions,
+                      .also = c->also, .burglary = c->burglary, .fire = c->fire,
+                      .squawk = c->squawk, .active_low = c->active_low,
+                      .sense = c->sense == UI_OUT_NO_PIN ? OW_SENSE_NONE : c->sense};
+    snprintf(oc.name, sizeof(oc.name), "%s", c->name); /* BL-224: kept for AUTOMATION only */
     return out_answer(c->function == OW_FN_NONE ? outputs_service_wired_clear(slot)
                                                 : outputs_service_wired_set(slot, &oc));
 }
@@ -2018,6 +2068,13 @@ void ui_port_esp_backend(ui_backend_t *out)
     out->auto_try = auto_try;
     out->auto_warnings = auto_warnings;
     out->auto_put_off = auto_put_off;
+    out->auto_reminders = auto_reminders;
+#if CONFIG_ALARM_OUTPUTS
+    out->auto_outputs = auto_outputs;
+#endif
+#if CONFIG_ALARM_FEATURE_NOTIFY
+    out->auto_notify_services = auto_notify_services;
+#endif
 #endif
 #if CONFIG_ALARM_ZSRC_ZWAVE
     out->zw_status = zw_status;

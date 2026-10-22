@@ -41,6 +41,7 @@ const char *ow_function_name(uint8_t function)
     case OW_FN_STROBE: return "strobe";
     case OW_FN_SMOKE_RESET: return "smoke reset";
     case OW_FN_ARMED: return "armed";
+    case OW_FN_AUTOMATION: return "automation";
     default: return "";
     }
 }
@@ -88,15 +89,56 @@ static void let_go(ow_t *o, ow_channel_t *ch)
     ch->sense_ok = false;
 }
 
-ow_result_t ow_set(ow_t *o, uint64_t now, size_t slot, const ow_config_t *c)
+/* At most `cap` - 1 bytes of `src` (stopping at a NUL), never ending inside a UTF-8 sequence
+ * (one a cut split is dropped). */
+static void name_copy(char *dst, size_t cap, const char *src, size_t len)
 {
-    if (slot >= OW_CHANNELS || c->function >= OW_FN_COUNT) {
+    size_t n = 0u;
+    while (n < len && n + 1u < cap && src[n] != '\0') {
+        n++;
+    }
+    size_t start = n; /* the last sequence's lead byte, if it isn't ASCII */
+    while (start > 0u && ((unsigned char)src[start - 1u] & 0xC0u) == 0x80u) {
+        start--;
+    }
+    if (start > 0u && ((unsigned char)src[start - 1u] & 0xC0u) == 0xC0u) {
+        const unsigned char lead = (unsigned char)src[start - 1u];
+        const size_t need = (lead & 0xE0u) == 0xC0u ? 2u : (lead & 0xF0u) == 0xE0u ? 3u : 4u;
+        if (n - (start - 1u) < need) {
+            n = start - 1u;
+        }
+    }
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
+/* What ow_set keeps of a configuration: an AUTOMATION channel only its pin, relay board and name. */
+static ow_config_t tidy(const ow_config_t *c)
+{
+    ow_config_t t = *c;
+    if (t.function == OW_FN_AUTOMATION) {
+        const ow_config_t a = {.function = OW_FN_AUTOMATION, .gpio = c->gpio,
+                               .active_low = c->active_low, .sense = OW_SENSE_NONE};
+        t = a;
+        name_copy(t.name, sizeof(t.name), c->name, sizeof(c->name));
+    } else {
+        memset(t.name, 0, sizeof(t.name));
+    }
+    return t;
+}
+
+ow_result_t ow_set(ow_t *o, uint64_t now, size_t slot, const ow_config_t *given)
+{
+    if (slot >= OW_CHANNELS || given->function >= OW_FN_COUNT) {
         return OW_ERR_ARG;
     }
-    if (c->function == OW_FN_NONE) {
+    if (given->function == OW_FN_NONE) {
         return ow_clear(o, slot);
     }
-    if (c->function != OW_FN_SMOKE_RESET && c->partitions == 0u) {
+    const ow_config_t tidied = tidy(given);
+    const ow_config_t *c = &tidied;
+    if (c->function != OW_FN_SMOKE_RESET && c->function != OW_FN_AUTOMATION &&
+        c->partitions == 0u) {
         return OW_ERR_ARG;
     }
     if (c->function == OW_FN_SIREN && !c->burglary && !c->fire) {
@@ -208,6 +250,14 @@ ow_result_t ow_test(ow_t *o, uint64_t now, size_t slot)
         return OW_ERR_ARG;
     }
     ow_channel_t *ch = &o->ch[slot];
+    if (ch->c.function == OW_FN_AUTOMATION) {
+        if (!ch->pin_ok) {
+            return OW_ERR_PIN;
+        }
+        ch->test_until = now + OW_TEST_MS; /* a light, not a siren: never refused (OUT-023) */
+        ow_poll(o, now);
+        return OW_OK;
+    }
     if (ch->c.function != OW_FN_SIREN && ch->c.function != OW_FN_STROBE) {
         return OW_ERR_ARG;
     }
@@ -222,6 +272,31 @@ ow_result_t ow_test(ow_t *o, uint64_t now, size_t slot)
     ch->test_until = now + OW_TEST_MS;
     ow_poll(o, now);
     return OW_OK;
+}
+
+ow_result_t ow_auto_set(ow_t *o, uint64_t now, size_t slot, bool on)
+{
+    if (slot >= OW_CHANNELS || o->ch[slot].c.function != OW_FN_AUTOMATION) {
+        return OW_ERR_ARG;
+    }
+    ow_channel_t *ch = &o->ch[slot];
+    if (!ch->pin_ok) {
+        return OW_ERR_PIN;
+    }
+    ch->auto_on = on;
+    ow_poll(o, now);
+    return OW_OK;
+}
+
+uint8_t ow_auto_mask(const ow_t *o)
+{
+    uint8_t mask = 0u;
+    for (size_t i = 0; i < OW_CHANNELS && i < 8u; i++) {
+        if (o->ch[i].c.function == OW_FN_AUTOMATION && o->ch[i].pin_ok) {
+            mask = (uint8_t)(mask | (1u << i));
+        }
+    }
+    return mask;
 }
 
 /* What the channel's line should be now, and its next edge (0 none). */
@@ -268,6 +343,7 @@ static bool want(ow_t *o, ow_channel_t *ch, uint64_t now, uint64_t *next)
     case OW_FN_STROBE: return siren_strobe(&s, &o->view);
     case OW_FN_SMOKE_RESET: return o->view.smoke_reset;
     case OW_FN_ARMED: return siren_armed(&s, &o->view);
+    case OW_FN_AUTOMATION: return ch->auto_on; /* never the engine's (AUT-002) */
     default: return false;
     }
 }
@@ -339,6 +415,20 @@ uint64_t ow_next_deadline(const ow_t *o, uint64_t now)
     return next;
 }
 
+static size_t put_crc(uint8_t *out, size_t n)
+{
+    const uint16_t crc = siren_crc16(out, n);
+    out[n++] = (uint8_t)(crc >> 8);
+    out[n++] = (uint8_t)(crc & 0xFFu);
+    return n;
+}
+
+static bool crc_ok(const uint8_t *buf, size_t len)
+{
+    const uint16_t crc = (uint16_t)(((unsigned)buf[len - 2u] << 8) | buf[len - 1u]);
+    return siren_crc16(buf, len - 2u) == crc;
+}
+
 size_t ow_encode(const ow_t *o, uint8_t *out, size_t cap)
 {
     if (cap < OW_BLOB_MAX) {
@@ -352,8 +442,8 @@ size_t ow_encode(const ow_t *o, uint8_t *out, size_t cap)
     uint8_t count = 0u;
     for (size_t i = 0; i < OW_CHANNELS; i++) {
         const ow_config_t *c = &o->ch[i].c;
-        if (c->function == OW_FN_NONE) {
-            continue;
+        if (c->function == OW_FN_NONE || c->function == OW_FN_AUTOMATION) {
+            continue; /* an output for automations is outputs/auto's */
         }
         out[n++] = OW_ENTRY;
         out[n++] = (uint8_t)i;
@@ -368,22 +458,17 @@ size_t ow_encode(const ow_t *o, uint8_t *out, size_t cap)
         count++;
     }
     out[count_at] = count;
-    const uint16_t crc = siren_crc16(out, n);
-    out[n++] = (uint8_t)(crc >> 8);
-    out[n++] = (uint8_t)(crc & 0xFFu);
-    return n;
+    return put_crc(out, n);
 }
 
 bool ow_decode(const uint8_t *buf, size_t len, ow_config_t out[OW_CHANNELS])
 {
-    if (len < 6u || buf[0] != 'O' || buf[1] != 'W' || buf[2] == 0u || buf[2] > OW_FORMAT) {
-        return false;
-    }
-    const uint16_t crc = (uint16_t)(((unsigned)buf[len - 2u] << 8) | buf[len - 1u]);
-    if (siren_crc16(buf, len - 2u) != crc) {
+    if (len < 6u || buf[0] != 'O' || buf[1] != 'W' || buf[2] == 0u || buf[2] > OW_FORMAT ||
+        !crc_ok(buf, len)) {
         return false;
     }
     ow_config_t got[OW_CHANNELS];
+    bool seen[OW_CHANNELS] = {false};
     memset(got, 0, sizeof(got));
     for (size_t i = 0; i < OW_CHANNELS; i++) {
         got[i].sense = OW_SENSE_NONE;
@@ -402,9 +487,12 @@ bool ow_decode(const uint8_t *buf, size_t len, ow_config_t out[OW_CHANNELS])
         memset(e, 0, sizeof(e));
         memcpy(e, &buf[p], elen < OW_ENTRY ? elen : OW_ENTRY);
         p += elen;
-        if (e[0] >= OW_CHANNELS || e[1] == OW_FN_NONE || e[1] >= OW_FN_COUNT ||
-            got[e[0]].function != OW_FN_NONE) {
+        if (e[0] >= OW_CHANNELS || e[1] == OW_FN_NONE || seen[e[0]]) {
             return false;
+        }
+        seen[e[0]] = true;
+        if (e[1] >= OW_FN_COUNT || e[1] == OW_FN_AUTOMATION) {
+            continue; /* not kept here (a newer firmware's function): that channel stays free */
         }
         ow_config_t *c = &got[e[0]];
         c->function = e[1];
@@ -421,5 +509,90 @@ bool ow_decode(const uint8_t *buf, size_t len, ow_config_t out[OW_CHANNELS])
         return false;
     }
     memcpy(out, got, sizeof(got));
+    return true;
+}
+
+size_t ow_auto_encode(const ow_t *o, uint8_t *out, size_t cap)
+{
+    if (cap < OW_AUTO_BLOB_MAX) {
+        return 0u;
+    }
+    size_t n = 0u;
+    out[n++] = 'O';
+    out[n++] = 'A';
+    out[n++] = OW_AUTO_FORMAT;
+    const size_t count_at = n++;
+    uint8_t count = 0u;
+    for (size_t i = 0; i < OW_CHANNELS; i++) {
+        const ow_config_t *c = &o->ch[i].c;
+        if (c->function != OW_FN_AUTOMATION) {
+            continue;
+        }
+        size_t name_len = 0u;
+        while (name_len + 1u < sizeof(c->name) && c->name[name_len] != '\0') {
+            name_len++;
+        }
+        out[n++] = (uint8_t)(OW_AUTO_ENTRY + 1u + name_len);
+        out[n++] = (uint8_t)i;
+        out[n++] = c->gpio;
+        out[n++] = c->active_low ? 0x01u : 0u;
+        out[n++] = (uint8_t)name_len;
+        memcpy(&out[n], c->name, name_len);
+        n += name_len;
+        count++;
+    }
+    out[count_at] = count;
+    return put_crc(out, n);
+}
+
+bool ow_auto_decode(const uint8_t *buf, size_t len, ow_config_t out[OW_CHANNELS])
+{
+    if (len < 6u || buf[0] != 'O' || buf[1] != 'A' || buf[2] == 0u || buf[2] > OW_AUTO_FORMAT ||
+        !crc_ok(buf, len)) {
+        return false;
+    }
+    ow_config_t got[OW_CHANNELS];
+    bool seen[OW_CHANNELS] = {false};
+    memset(got, 0, sizeof(got));
+    const size_t end = len - 2u;
+    size_t p = 4u;
+    for (unsigned k = 0; k < buf[3]; k++) {
+        if (p >= end) {
+            return false;
+        }
+        const size_t elen = buf[p++];
+        if (elen < 2u || p + elen > end) {
+            return false;
+        }
+        uint8_t e[OW_AUTO_ENTRY + 1u];
+        memset(e, 0, sizeof(e));
+        memcpy(e, &buf[p], elen < sizeof(e) ? elen : sizeof(e));
+        const size_t name_len = e[OW_AUTO_ENTRY];
+        if (name_len != 0u && OW_AUTO_ENTRY + 1u + name_len > elen) {
+            return false;
+        }
+        const char *name = (const char *)&buf[p + OW_AUTO_ENTRY + 1u];
+        p += elen;
+        if (e[0] >= OW_CHANNELS || seen[e[0]]) {
+            return false;
+        }
+        seen[e[0]] = true;
+        ow_config_t *c = &got[e[0]];
+        c->function = OW_FN_AUTOMATION;
+        c->gpio = e[1];
+        c->active_low = (e[2] & 0x01u) != 0u;
+        c->sense = OW_SENSE_NONE;
+        if (name_len != 0u) {
+            name_copy(c->name, sizeof(c->name), name, name_len);
+        }
+    }
+    if (p != end) {
+        return false;
+    }
+    for (size_t i = 0; i < OW_CHANNELS; i++) {
+        if (seen[i] && out[i].function == OW_FN_NONE) { /* `wired`'s channel wins its slot */
+            out[i] = got[i];
+        }
+    }
     return true;
 }

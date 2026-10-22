@@ -865,7 +865,8 @@ static void test_zigbee_event_golden(void)
     proto_ha_event(&W, &ID);
     const char *doc = done();
     TEST_ASSERT_TRUE(strlen(doc) < 2048u);
-    TEST_ASSERT_NOT_NULL(strstr(doc, "\"zigbee_radio_restarted\",\"automation_failed\",\"arming_put_off\"]"));
+    TEST_ASSERT_NOT_NULL(
+        strstr(doc, "\"zigbee_radio_restarted\",\"automation_failed\",\"arming_put_off\","));
 }
 
 /* MQTT-005, AUT-009 (docs/features/41 section 7): an automation that didn't lock, close or arm
@@ -926,6 +927,88 @@ static void test_automation_failed_event_golden(void)
     printf("event_types discovery document: %u bytes\n", (unsigned)strlen(doc));
     TEST_ASSERT_TRUE(strlen(doc) < 2048u);
     TEST_ASSERT_NOT_NULL(strstr(doc, "\"automation_failed\""));
+}
+
+/* MQTT-005 (docs/features/41 BL-224): an automation's notification goes out on ~/event with the
+ * automation's uid (source_id), its words (null here: no hook), what it says ("notice"), the
+ * level of an arming or the trouble, and whether it was a Try it now ("test"); listed in Home
+ * Assistant's event entity, last. */
+static void test_automation_notice_event_golden(void)
+{
+    alarm_event_t ev = event(ALARM_EV_AUTOMATION_NOTICE);
+    ev.partition = 0;
+    ev.zone = 3;
+    ev.user = 0;
+    ev.source.kind = ALARM_SRC_AUTOMATION;
+    ev.source.id = 12;
+    ev.arg = ALARM_AUTO_NOTICE_OPENED;
+    ev.arg2 = 0;
+    ev.flags = ALARM_EVF_REPORT | ALARM_EVF_SYSTEM;
+    proto_event(&W, &CFG, &ev, false);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"seq\":1523,\"ts\":\"2026-09-19T22:41:00Z\",\"event_type\":\"automation_notice\","
+        "\"partition\":null,\"zone\":3,\"zone_name\":\"Living Window\",\"user\":null,"
+        "\"user_name\":null,\"source\":\"automation\",\"source_id\":12,"
+        "\"notice\":\"opened\",\"test\":false,\"automation\":null,\"saved_by\":null,"
+        "\"silent\":false,\"replayed\":false}",
+        done());
+    TEST_ASSERT_TRUE(strlen(BUF) < PROTO_PAYLOAD_MAX);
+
+    /* an arming, tried: its level, and test */
+    ev.partition = 1;
+    ev.zone = 0;
+    ev.arg = ALARM_AUTO_NOTICE_ARMED;
+    ev.arg2 = (uint8_t)((unsigned)ALARM_LEVEL_AWAY | ALARM_AUTO_NOTICE_TRIED);
+    ev.flags = ALARM_EVF_REPORT;
+    pj_init(&W, BUF, sizeof(BUF));
+    proto_event(&W, &CFG, &ev, false);
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"seq\":1523,\"ts\":\"2026-09-19T22:41:00Z\",\"event_type\":\"automation_notice\","
+        "\"partition\":1,\"zone\":null,\"zone_name\":null,\"user\":null,"
+        "\"user_name\":null,\"source\":\"automation\",\"source_id\":12,"
+        "\"notice\":\"armed\",\"level\":\"away\",\"test\":true,\"automation\":null,"
+        "\"saved_by\":null,\"silent\":false,\"replayed\":false}",
+        done());
+
+    /* a trouble: which one */
+    ev.partition = 0;
+    ev.arg = ALARM_AUTO_NOTICE_TROUBLE;
+    ev.arg2 = AUTO_TROUBLE_AC;
+    pj_init(&W, BUF, sizeof(BUF));
+    proto_event(&W, &CFG, &ev, true);
+    TEST_ASSERT_NOT_NULL(
+        strstr(done(), "\"notice\":\"trouble\",\"trouble\":\"ac\",\"test\":false,"));
+    static const char *const TROUBLES[] = {"any", "ac", "battery", "sensor", "siren", "other",
+                                           "unknown"};
+    for (unsigned t = 0; t < sizeof(TROUBLES) / sizeof(TROUBLES[0]); t++) {
+        ev.arg2 = (uint8_t)t;
+        pj_init(&W, BUF, sizeof(BUF));
+        proto_event(&W, &CFG, &ev, false);
+        char want[48];
+        snprintf(want, sizeof(want), "\"trouble\":\"%s\"", TROUBLES[t]);
+        TEST_ASSERT_NOT_NULL_MESSAGE(strstr(done(), want), want);
+    }
+
+    /* every notice by name; an unknown one reads "unknown", never a gap */
+    static const char *const NOTICES[] = {"opened", "closed", "armed", "disarmed", "alarm",
+                                          "fire", "time", "trouble", "remind", "still_armed"};
+    for (unsigned n = 1; n < (unsigned)ALARM_AUTO_NOTICE_COUNT; n++) {
+        TEST_ASSERT_EQUAL_STRING(NOTICES[n - 1u], alarm_auto_notice_name((alarm_auto_notice_t)n));
+        ev.arg = (uint8_t)n;
+        ev.arg2 = 0;
+        pj_init(&W, BUF, sizeof(BUF));
+        proto_event(&W, &CFG, &ev, false);
+        TEST_ASSERT_TRUE(strlen(done()) < PROTO_PAYLOAD_MAX);
+    }
+    TEST_ASSERT_EQUAL_STRING("unknown", alarm_auto_notice_name((alarm_auto_notice_t)0));
+    TEST_ASSERT_EQUAL_STRING("unknown", alarm_auto_notice_name(ALARM_AUTO_NOTICE_COUNT));
+
+    /* Home Assistant's event entity lists it, still small enough to keep retained */
+    pj_init(&W, BUF, sizeof(BUF));
+    proto_ha_event(&W, &ID);
+    const char *doc = done();
+    TEST_ASSERT_TRUE(strlen(doc) < 2048u);
+    TEST_ASSERT_NOT_NULL(strstr(doc, "\"arming_put_off\",\"automation_notice\"]"));
 }
 
 /* MQTT-005, OTA-010, docs/features/11 "Updates through the link" (What people see, the event
@@ -1335,6 +1418,7 @@ int main(void)
     RUN_TEST(test_zone_diag_golden);
     RUN_TEST(test_zigbee_event_golden);
     RUN_TEST(test_automation_failed_event_golden);
+    RUN_TEST(test_automation_notice_event_golden);
     RUN_TEST(test_keypad_firmware_event_golden);
     RUN_TEST(test_armed_by_automation_golden);
     RUN_TEST(test_automation_source_event_golden);

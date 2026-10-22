@@ -1783,9 +1783,10 @@ static void test_ui_then_arm(void)
     lv_obj_t *head = label(list, "The alarm");
     lv_obj_t *arm = row("Arm the panel");
     check(head != NULL && lv_obj_get_parent(head) == lv_obj_get_child(list, 0) && arm == lv_obj_get_child(list, 1) &&
-              row("Disarm the panel") == lv_obj_get_child(list, 2) && label(list, "Devices") != NULL &&
-              lv_obj_get_parent(label(list, "Devices")) == lv_obj_get_child(list, 3),
-          "D23: \"The alarm\" first with Arm and Disarm, then \"Devices\"");
+              row("Disarm the panel") == lv_obj_get_child(list, 2) && row("Door chime") == lv_obj_get_child(list, 3) &&
+              label(list, "Tell someone") != NULL && row("Send a notification") == lv_obj_get_child(list, 5) &&
+              label(list, "Devices") != NULL && lv_obj_get_parent(label(list, "Devices")) == lv_obj_get_child(list, 6),
+          "D23, BL-224: \"The alarm\" first with Arm, Disarm and the chime, then \"Tell someone\", then \"Devices\"");
     check(arm != NULL && label(arm, "After a warning") != NULL, "AUT-012: Arm says it warns first");
     ui_sheet_cancel();
     ui_run(50);
@@ -1998,10 +1999,10 @@ static void test_ui_bedtime(void)
     const size_t before = stored(got);
     ui_auto_add_start();
     ui_run(50);
-    lv_obj_t *idea = row("Arm Night at bedtime");
+    lv_obj_t *idea = row("Arm at bedtime");
     check(idea != NULL && label(idea, "Every night at a time you choose, after a warning") != NULL,
           "D4: the bedtime idea is offered");
-    check(tap("Arm Night at bedtime") && sheet_kind() == SHEET_TIME, "AUT-011: it asks the time first");
+    check(tap("Arm at bedtime") && sheet_kind() == SHEET_TIME, "AUT-011: it asks the time first");
     ui_sheet_done();
     ui_run(50);
     check(sheet_kind() == SHEET_FORM && level_is("level_night") && result_is("Warns at 10:25 PM, arms Night at 10:30 PM."),
@@ -2596,6 +2597,124 @@ static void test_ui_armed_by_automation(void)
     }
 }
 
+/* ---- BL-224: automations without devices (docs/features/41 DESIGN.md section 15) ------------
+ * Driven as a finger would, on Harbor House with an output "For automations" (Garden Lights): an
+ * output's action and its "Turn it off after", a notification as the second action and its
+ * removal, a trouble trigger, and the installer's sheets (Arm, never Disarm). Everything it adds
+ * is deleted again. */
+
+/* The form sheet's row holding this label, tapped. */
+static void form_row_press(const char *text)
+{
+    lv_obj_t *o = label(form_body(), text);
+    while (o != NULL && !lv_obj_has_flag(o, LV_OBJ_FLAG_CLICKABLE)) {
+        o = lv_obj_get_parent(o);
+    }
+    if (o != NULL) {
+        lv_obj_send_event(o, LV_EVENT_CLICKED, NULL);
+        ui_run(50);
+    }
+}
+
+static void test_ui_bl224(void)
+{
+    auto_rule_t got[AUTO_MAX];
+    host_panel_auto_outputs(true);
+    list_again();
+    const size_t before = stored(got);
+
+    /* N3, N4: an output after a time, then its "Turn it off after" */
+    ui_auto_add_start();
+    ui_run(50);
+    check(row("Switch an output when an alarm sounds") != NULL && row("Remind me to arm") != NULL,
+          "BL-224 N2: the ideas that need no device, the output's too");
+    check(tap("Start from scratch") && tap("At a time of day") && sheet_kind() == SHEET_TIME, "the time sheet");
+    ui_sheet_done();
+    ui_run(50);
+    check(sheet_is("What should it do?", NULL) && row("Remind to arm") != NULL &&
+              row("Tell me if it's still armed") != NULL && row("Door chime") != NULL &&
+              row("Send a notification") != NULL && row("Garden Lights") != NULL,
+          "BL-224 N3: after a time, The alarm, Tell someone and Outputs");
+    check(tap("Garden Lights") && sheet_is("What should Garden Lights do?", NULL) && tap("Turn on") &&
+              sheet_kind() == SHEET_NONE,
+          "BL-224 N4: an output's Turn on, stored at the last pick");
+    const auto_rule_t *r = newest(got);
+    check(stored(got) == before + 1u && r != NULL && r->n == 1u && r->then[0].kind == AUTO_ACT_OUTPUT &&
+              r->then[0].output == 1u && r->then[0].dev_action == ACT_ON && r->then[0].off_after_min == 0u,
+          "BL-224: stored: Turn on output 1");
+    const uint8_t slot = r != NULL ? r->slot : 0u;
+    list_again();
+    ui_auto_edit_off_after(slot, 0);
+    ui_run(50);
+    check(sheet_is("Turn it off after", NULL) && tap("30 minutes"), "BL-224: an output's Turn it off after");
+    r = newest(got);
+    check(r != NULL && r->then[0].off_after_min == 30u, "BL-224: stored: off after 30 minutes");
+
+    /* a notification as its second action; the same output is never offered twice (AUT-007) */
+    list_again();
+    ui_auto_add_action(slot);
+    ui_run(50);
+    check(sheet_is("What should it do?", NULL) && row("Arm the panel") == NULL && row("Remind to arm") == NULL &&
+              row("Garden Lights") == NULL && row("Door chime") != NULL,
+          "BL-224: a second action: the chime and a notification, never Arm, a reminder or the same output");
+    check(tap("Send a notification") && sheet_kind() == SHEET_FORM && label(form_body(), "Goes to") != NULL,
+          "BL-224 N4: the notification's sheet");
+    form_done();
+    r = newest(got);
+    check(r != NULL && r->n == 2u && r->then[1].kind == AUTO_ACT_NOTIFY && r->then[1].partition == 0u,
+          "BL-224: stored: the notification beside the output");
+    list_again();
+    ui_auto_edit_action(slot, 1);
+    ui_run(50);
+    check(sheet_kind() == SHEET_FORM && label(form_body(), "Remove this action") != NULL,
+          "BL-224: one of two: the notification's sheet offers to remove it");
+    form_row_press("Remove this action");
+    r = newest(got);
+    check(r != NULL && r->n == 1u && r->then[0].kind == AUTO_ACT_OUTPUT, "BL-224: removed; the output stays");
+    list_again();
+    check(B.auto_delete_slot(B.ctx, slot, B.auto_gen(B.ctx)) == AUTO_SAVE_OK, "tidied away");
+    list_again();
+
+    /* N5: a trouble; no reminder and no Disarm after it */
+    ui_auto_add_start();
+    ui_run(50);
+    check(tap("Start from scratch") && tap("When there's a trouble") && sheet_is("Which trouble?", NULL) &&
+              tap("The power goes off"),
+          "BL-224 N5: which trouble");
+    check(sheet_is("What should it do?", NULL) && row("Remind to arm") == NULL && row("Disarm the panel") == NULL &&
+              tap("Send a notification"),
+          "BL-224: after a trouble, no reminder and no Disarm");
+    form_done();
+    r = newest(got);
+    check(r != NULL && r->when.kind == AUTO_TRIG_TROUBLE && r->when.trouble == AUTO_TROUBLE_AC &&
+              r->then[0].kind == AUTO_ACT_NOTIFY,
+          "BL-224: stored: when the power goes off, a notification");
+    if (r != NULL) {
+        check(B.auto_delete_slot(B.ctx, r->slot, B.auto_gen(B.ctx)) == AUTO_SAVE_OK, "tidied away");
+    }
+    list_again();
+
+    /* N1: the installer's code: the arming ideas and Arm, never Disarm (USR-001) */
+    const uint8_t was = S.auth_user;
+    S.auth_user = ALARM_USER_INSTALLER;
+    ui_auto_add_start();
+    ui_run(50);
+    check(row("Arm at bedtime") != NULL && row("Arm Away on weekday mornings") != NULL &&
+              row("Disarm at opening time") == NULL,
+          "BL-224 N1: the installer's ideas: arming, never disarming");
+    check(tap("Start from scratch") && tap("At a time of day"), "the time sheet");
+    ui_sheet_done();
+    ui_run(50);
+    check(row("Arm the panel") != NULL && row("Disarm the panel") == NULL,
+          "BL-224 N1: the installer may pick Arm, never Disarm");
+    ui_sheet_cancel();
+    ui_run(50);
+    S.auth_user = was;
+    host_panel_auto_outputs(false);
+    list_again();
+    check(stored(got) == before, "BL-224: nothing left behind");
+}
+
 int main(void)
 {
     /* The panel's fixed time zone, as the PC simulator sets it (sim_main.c). */
@@ -2620,6 +2739,7 @@ int main(void)
     test_ui();
     test_ui_editors();
     test_ui_bl170();
+    test_ui_bl224();
     test_arm_on_time();
     test_arm_in_installer_mode();
     test_put_off_hour();

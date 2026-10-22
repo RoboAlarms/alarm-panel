@@ -216,6 +216,14 @@ auto_save_t auto_store_save_at(auto_store_t *s, const auto_kv_port_t *kv, const 
      * it), never the request: an alarm action acts as this person, and a less secure one runs
      * only while this slot still holds a system master or installer. */
     c.made_by = user;
+    c.saved_by = 0u;
+    /* BL-224 (approved 2026-10-21): the installer may set up an arming automation; the
+     * installer code never arms (USR-001), so it acts as the system master, checked by the
+     * engine at each arming like any maker. saved_by keeps who set it up, for the words. */
+    if (env != NULL && env->by_installer && c.n == 1u && c.then[0].kind == (uint8_t)AUTO_ACT_ARM) {
+        c.made_by = (uint8_t)ALARM_USER_MASTER;
+        c.saved_by = user;
+    }
     if (add) {
         c.keep_len = 0u;
         memset(c.keep, 0, sizeof c.keep);

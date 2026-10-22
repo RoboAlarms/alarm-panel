@@ -283,6 +283,15 @@ esp_err_t alarm_service_platform_event(alarm_event_type_t type, uint16_t zone, u
 esp_err_t alarm_service_arming_put_off(uint16_t uid, uint8_t partition, uint8_t user,
                                        alarm_put_off_t choice, int64_t until_epoch_ms);
 
+/* An automation's notification to the phones (docs/features/41 BL-224): ALARM_EV_AUTOMATION_NOTICE,
+ * source {ALARM_SRC_AUTOMATION, uid}, partition (0 or an enabled one), zone (0..ALARM_MAX_ZONES),
+ * arg an alarm_auto_notice_t and arg2 its level or trouble (| ALARM_AUTO_NOTICE_TRIED for Try it
+ * now). Logged and reported at once (alarm_engine_automation_notice); the notify services send it
+ * past their category switches. ESP_ERR_INVALID_ARG for a field out of range. Waits for the alarm
+ * task: not from it. */
+esp_err_t alarm_service_automation_notice(uint16_t uid, uint8_t partition, uint16_t zone,
+                                          uint8_t arg, uint8_t arg2);
+
 #ifdef __cplusplus
 }
 #endif

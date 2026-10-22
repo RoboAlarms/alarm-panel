@@ -115,6 +115,64 @@ static bool sounding(alarm_sound_t s)
            s == ALARM_SOUND_AUX;
 }
 
+/* BL-224: a zone's sensor troubles (a trouble trigger's "a sensor stops reporting"). */
+#define SENSOR_FLAGS (ALARM_ZS_SUPERVISION | ALARM_ZS_LOW_BATTERY | ALARM_ZS_TROUBLE)
+
+static void trouble_occ(auto_watch_t *w, const alarm_snapshot_t *s, auto_occ_t *out, size_t max,
+                        size_t *n, uint8_t cause, uint16_t zone)
+{
+    auto_occ_t o;
+    memset(&o, 0, sizeof(o));
+    o.kind = AUTO_TRIG_TROUBLE;
+    o.cause = cause;
+    o.zone = zone;
+    o.at = s->taken_ms;
+    put(w, out, max, n, &o);
+}
+
+/* BL-224: the troubles that started since the last snapshot. */
+static void watch_troubles(auto_watch_t *w, const alarm_snapshot_t *s, auto_occ_t *out,
+                           size_t max, size_t *n)
+{
+    uint8_t zones[ALARM_ZONE_BITMAP_BYTES];
+    memset(zones, 0, sizeof(zones));
+    for (unsigned z = 0; z < ALARM_MAX_ZONES; z++) {
+        bit_put(zones, z, (s->zone[z].flags & SENSOR_FLAGS) != 0u);
+    }
+    const uint32_t sys = s->sys_troubles;
+    const uint32_t dev = s->dev_troubles;
+    if (w->trbl_based) {
+        const uint32_t started = sys & ~w->trbl_sys;
+        const uint32_t clock = 1u << ALARM_TRBL_CLOCK_NOT_SET;
+        const uint32_t named = (1u << ALARM_TRBL_AC_LOSS) | (1u << ALARM_TRBL_LOW_BATTERY) |
+                               (1u << ALARM_TRBL_BELL) | clock;
+        if ((started & (1u << ALARM_TRBL_AC_LOSS)) != 0u) {
+            trouble_occ(w, s, out, max, n, AUTO_TROUBLE_AC, 0u);
+        }
+        if ((started & (1u << ALARM_TRBL_LOW_BATTERY)) != 0u) {
+            trouble_occ(w, s, out, max, n, AUTO_TROUBLE_BATTERY, 0u);
+        }
+        if ((started & (1u << ALARM_TRBL_BELL)) != 0u) {
+            trouble_occ(w, s, out, max, n, AUTO_TROUBLE_SIREN, 0u);
+        }
+        if ((started & ~named) != 0u) {
+            trouble_occ(w, s, out, max, n, AUTO_TROUBLE_OTHER, 0u);
+        }
+        for (unsigned z = 0; z < ALARM_MAX_ZONES; z++) {
+            if (bit_get(zones, z) && !bit_get(w->trbl_zone, z)) {
+                trouble_occ(w, s, out, max, n, AUTO_TROUBLE_SENSOR, (uint16_t)(z + 1u));
+            }
+        }
+        if ((dev & ~w->trbl_dev) != 0u) {
+            trouble_occ(w, s, out, max, n, AUTO_TROUBLE_SENSOR, 0u);
+        }
+    }
+    w->trbl_sys = sys;
+    w->trbl_dev = dev;
+    memcpy(w->trbl_zone, zones, sizeof(zones));
+    w->trbl_based = 1u;
+}
+
 size_t auto_watch_snapshot(auto_watch_t *w, const alarm_snapshot_t *s, auto_occ_t *out,
                            size_t max)
 {
@@ -157,9 +215,10 @@ size_t auto_watch_snapshot(auto_watch_t *w, const alarm_snapshot_t *s, auto_occ_
         w->prev_state[i] = state;
     }
 
-    /* B3: a new configuration re-baselines every zone. */
+    /* B3: a new configuration re-baselines every zone, and the troubles. */
     if (first || s->config_seq != w->config_seq) {
         memset(w->known, 0, sizeof(w->known));
+        w->trbl_based = 0u;
         w->config_seq = s->config_seq;
     }
     w->based = 1;
@@ -169,8 +228,11 @@ size_t auto_watch_snapshot(auto_watch_t *w, const alarm_snapshot_t *s, auto_occ_
      * partition holds every zone (never a false occurrence; a door elsewhere waits for it). */
     if (s->taken_ms < w->settle_at || s->program || walking) {
         memset(w->known, 0, sizeof(w->known));
+        w->trbl_based = 0u;
         return n;
     }
+
+    watch_troubles(w, s, out, max, &n);
 
     for (unsigned z = 0; z < ALARM_MAX_ZONES; z++) {
         const uint16_t flags = s->zone[z].flags;

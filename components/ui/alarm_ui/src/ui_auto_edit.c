@@ -7,6 +7,13 @@
  * AUT-011 to AUT-014, D29), and "Disarm the panel" after any trigger but an alarm (D22), its
  * partition, and its confirm.
  *
+ * BL-224 (DESIGN.md section 15, drawings bl-224-*): ideas that need no device, for the installer
+ * too (whose Arm acts as the system master: auto_store makes the maker; the installer never
+ * disarms); "When there's a trouble" and "Which trouble?"; "What should it do?" in sections - The
+ * alarm (Arm, Disarm, Remind to arm and "Tell me if it's still armed" after a time only, Door
+ * chime), Tell someone (Send a notification), Outputs (the wired outputs "For automations"),
+ * Devices - with a quiet note while no device is connected; and those actions' sheets.
+ *
  * Every editor works on a draft (E.rule) and stores nothing before its last pick: the draft goes
  * to ui_auto_save once, and Cancel at any step leaves the store as it was (AUT-001). The pickers
  * offer only what hc_auto_offer gives for the device's live kind and source, with the installer
@@ -47,7 +54,15 @@ typedef enum {
     IDEA_ALARM_LIGHT, /* a light, when an alarm sounds */
     IDEA_LEAK_VALVE,  /* a water sensor, then a valve */
     IDEA_SCRATCH,
-    IDEA_BEDTIME,     /* Arm Night at bedtime: a time (10:30 PM every day), then the arm sheet */
+    IDEA_BEDTIME,     /* Arm at bedtime: a time (10:30 PM every day), then the arm sheet, Night */
+    /* BL-224: ideas that need no device (drawings bl-224-ideas, bl-224-ideas-installer) */
+    IDEA_MORNING,     /* Arm Away on weekday mornings: 8:30 AM on weekdays, the arm sheet, Away */
+    IDEA_REMIND,      /* Remind me to arm: 11:00 PM every day, then the reminder's sheet */
+    IDEA_STILL_ARMED, /* Tell me if it's still armed: 4:00 PM on weekdays, then its sheet */
+    IDEA_OPENING,     /* Disarm at opening time: 9:00 AM on weekdays, then the Disarm */
+    IDEA_DOOR_NOTIFY, /* a door or window, 10:00 PM to 6:00 AM, then Send a notification */
+    IDEA_CHIME_NIGHT, /* Quiet the door chime at night: 10:00 PM every day, the chime off */
+    IDEA_OUTPUT_ALARM, /* an alarm sounds: an output for automations on, for 30 minutes */
 } idea_t;
 
 /* Which zones the zone sheet lists. */
@@ -65,11 +80,24 @@ typedef enum {
 #define ROW_DISARM (-4)                  /* "Disarm the panel" (BL-170, D23) */
 #define ROW_ARM   (-5)                   /* "Arm the panel" (BL-170, D23) */
 #define ROW_HEADING (-6)                 /* a heading ("The alarm", "Devices"): never picked */
+/* BL-224's actions (drawing bl-224-then-time) */
+#define ROW_REMIND (-7)                  /* "Remind to arm" */
+#define ROW_CHECK  (-8)                  /* "Tell me if it's still armed" */
+#define ROW_CHIME  (-9)                  /* "Door chime" */
+#define ROW_NOTIFY (-10)                 /* "Send a notification" */
+#define ROW_OUTPUT(n) (-20 - (int32_t)(n)) /* wired output n "For automations" (1..AUTO_OUTPUTS) */
+#define ROW_IS_OUTPUT(m) ((m) <= ROW_OUTPUT(1) && (m) >= ROW_OUTPUT(AUTO_OUTPUTS))
+#define ROW_OUTPUT_OF(m) ((uint8_t)(-20 - (m)))
 
 #define MIN_6PM 1080
 #define MIN_6AM 360
 #define MIN_11PM 1380
 #define MIN_1030PM 1350
+#define MIN_10PM 1320
+#define MIN_830AM 510
+#define MIN_9AM 540
+#define MIN_4PM 960
+#define OUTPUT_IDEA_MIN 30u /* "Switch an output when an alarm sounds": for 30 minutes */
 #define WARN_MIN_DEFAULT 5u /* AUT-012: 1 to 15 minutes, 5 unless changed */
 #define WARN_MIN_MAX 15u
 #define DAYS_WEEKDAYS 0x1Fu /* Monday .. Friday */
@@ -111,6 +139,13 @@ static UI_SLOW_BSS struct {
     lv_obj_t *arm_result;
     char arm_part[ALARM_NAME_LEN + 16];
     char arm_text[192];
+    /* BL-224: the outputs for automations, and the sheets of the actions without devices (their
+     * draft is E.act too) */
+    ui_auto_output_t outs[AUTO_OUTPUTS];
+    size_t nout;
+    lv_obj_t *form_result;  /* the sheet's result line */
+    void (*form_reopen)(void); /* the sheet its partition row goes back to */
+    char form_text[192];
 } E;
 
 /* ---- reading ------------------------------------------------------------------------------- */
@@ -272,6 +307,12 @@ static bool any_zone(zone_filter_t f)
 static void read_devices(void)
 {
     E.ndev = S.be.dev_list != NULL ? S.be.dev_list(S.be.ctx, E.devs, UI_DEVL_MAX) : 0u;
+}
+
+/* The wired outputs "For automations" now (BL-224). */
+static void read_outputs(void)
+{
+    E.nout = ui_auto_outputs(E.outs, AUTO_OUTPUTS);
 }
 
 /* The rows an automation may use for this device now (AUT-002, AUT-015); none for a script. */
@@ -650,7 +691,16 @@ static void confirm_chain(void)
 
 static void then_sheet(void);
 static void trigger_done(void);
-static void arm_start(void);
+static void arm_start(uint8_t level);
+static void disarm_pick(void);
+/* BL-224's actions */
+static void remind_start(void);
+static void still_start(void);
+static void notify_start(void);
+static void chime_set(uint8_t on);
+static void chime_sheet(void);
+static void output_pick(void);
+static void output_do_sheet(uint8_t output, bool editing);
 
 static void choice_set(size_t i, const char *glyph, lv_color_t tone, const char *title,
                        const char *detail, int32_t map)
@@ -912,9 +962,17 @@ static void time_sheet(void)
     if (E.mode == ED_WHEN && E.rule.when.kind == AUTO_TRIG_TIME) {
         minute = E.rule.when.minute;
         days = E.rule.when.days == 0u ? (uint8_t)AUTO_DAYS_ALL : E.rule.when.days;
-    } else if (E.mode == ED_ADD && E.idea == IDEA_BEDTIME) {
-        minute = MIN_1030PM; /* the bedtime idea: 10:30 PM every day (drawing automation-add-arm) */
-        days = (uint8_t)AUTO_DAYS_ALL;
+    } else if (E.mode == ED_ADD) {
+        /* An idea's time to start from (drawings automation-add-arm, bl-224-ideas) */
+        switch (E.idea) {
+        case IDEA_BEDTIME: minute = MIN_1030PM; days = (uint8_t)AUTO_DAYS_ALL; break;
+        case IDEA_MORNING: minute = MIN_830AM; break;
+        case IDEA_REMIND: minute = MIN_11PM; days = (uint8_t)AUTO_DAYS_ALL; break;
+        case IDEA_STILL_ARMED: minute = MIN_4PM; break;
+        case IDEA_OPENING: minute = MIN_9AM; break;
+        case IDEA_CHIME_NIGHT: minute = MIN_10PM; days = (uint8_t)AUTO_DAYS_ALL; break;
+        default: break;
+        }
     }
     /* TR: Settings > Automations, the time sheet's note. At most 127 bytes */
     const char *note = TR("It runs once a day at most, and waits while the clock isn't set.");
@@ -927,8 +985,57 @@ static void time_sheet(void)
 /* The seven triggers, in the order "When should it run?" lists them. */
 static const uint8_t WHEN_KIND[] = {AUTO_TRIG_ARMED, AUTO_TRIG_DISARMED, AUTO_TRIG_ALARM,
                                     AUTO_TRIG_FIRE, AUTO_TRIG_ZONE_OPENED, AUTO_TRIG_ZONE_CLOSED,
-                                    AUTO_TRIG_TIME};
+                                    AUTO_TRIG_TIME, AUTO_TRIG_TROUBLE};
 #define WHEN_ROWS (sizeof(WHEN_KIND) / sizeof(WHEN_KIND[0]))
+#define WHEN_ROW_TIME 6
+#define WHEN_ROW_TROUBLE 7
+
+/* "Which trouble?" (BL-224, drawing bl-224-trouble-which), in the order it lists them. */
+static const uint8_t TROUBLE_KIND[] = {AUTO_TROUBLE_ANY, AUTO_TROUBLE_AC, AUTO_TROUBLE_BATTERY,
+                                       AUTO_TROUBLE_SENSOR, AUTO_TROUBLE_SIREN};
+#define TROUBLE_ROWS (sizeof(TROUBLE_KIND) / sizeof(TROUBLE_KIND[0]))
+
+static void on_trouble(int32_t index)
+{
+    if (!E.active || index < 0 || index >= (int32_t)TROUBLE_ROWS) {
+        return;
+    }
+    E.when.trouble = TROUBLE_KIND[index];
+    trigger_done();
+}
+
+static void trouble_sheet(void)
+{
+    /* TR: Settings > Automations, "Which trouble?" (BL-224): the troubles an automation may follow.
+     * At most 63 bytes each */
+    choice_set(0, UI_ICON_TRIANGLE_ALERT, ui_tone_amber(), TR("Any trouble"), NULL, 0);
+    /* TR: "Which trouble?": the power went off, and the row's detail. At most 63 bytes each */
+    choice_set(1, UI_AUTO_G_UNPLUG, ui_tone_amber(), TR("The power goes off"), TR("The panel runs on its battery"), 0);
+    choice_set(2, UI_AUTO_G_BATTERY_LOW, ui_tone_amber(), TR("The panel's battery is low"), NULL, 0);
+    /* TR: "Which trouble?": a sensor stopped reporting, and the row's detail. At most 63 bytes */
+    choice_set(3, UI_AUTO_G_RADIO, ui_tone_amber(), TR("A sensor stops reporting"), TR("Or its battery is low"), 0);
+    choice_set(4, UI_ICON_SIREN, ui_tone_amber(), TR("A siren problem"), NULL, 0);
+    int32_t selected = -1;
+    for (size_t i = 0; i < TROUBLE_ROWS && E.mode == ED_WHEN && E.rule.when.kind == AUTO_TRIG_TROUBLE; i++) {
+        if (TROUBLE_KIND[i] == E.rule.when.trouble) {
+            selected = (int32_t)i;
+        }
+    }
+    /* TR: Settings > Automations, the sheet after "When there's a trouble". At most 47 bytes */
+    ui_pick_sheet(TR("Which trouble?"), NULL, E.choice, TROUBLE_ROWS, selected, on_trouble);
+}
+
+/* Changing the trigger of an automation whose action means something only at a time (a reminder,
+ * "still armed"): only "At a time of day" can be picked (BL-224, AUTO_ERR_NEEDS_TIME). */
+static bool rule_time_only(void)
+{
+    for (uint8_t i = 0; E.mode == ED_WHEN && i < E.rule.n && i < AUTO_ACTIONS; i++) {
+        if (E.rule.then[i].kind == AUTO_ACT_REMIND || E.rule.then[i].kind == AUTO_ACT_CHECK_ARMED) {
+            return true;
+        }
+    }
+    return false;
+}
 
 static void on_when(int32_t index)
 {
@@ -942,6 +1049,7 @@ static void on_when(int32_t index)
     case AUTO_TRIG_ZONE_OPENED: zone_sheet(ZF_OPENS); break;
     case AUTO_TRIG_ZONE_CLOSED: zone_sheet(ZF_CLOSES); break;
     case AUTO_TRIG_TIME: time_sheet(); break;
+    case AUTO_TRIG_TROUBLE: trouble_sheet(); break; /* system-wide: no partition */
     default: partition_or_done(); break;
     }
 }
@@ -981,6 +1089,10 @@ static void when_sheet(void)
     choice_set(4, UI_ICON_DOOR_OPEN, ui_tone_amber(), opens, opens_detail, 0);
     choice_set(5, UI_ICON_DOOR_CLOSED, ui_tone_green(), closes, NULL, 0);
     choice_set(6, UI_ICON_CLOCK, ui_tone_blue(), at_time, at_time_detail, 0);
+    /* TR: Settings > Automations, "When should it run?": a trigger (BL-224), and its detail. At
+     * most 63 bytes each */
+    choice_set(7, UI_ICON_TRIANGLE_ALERT, ui_tone_amber(), TR("When there's a trouble"),
+               TR("Power lost, a low battery, a sensor gone quiet"), 0);
     int32_t selected = -1;
     for (size_t i = 0; i < WHEN_ROWS && E.mode == ED_WHEN; i++) {
         if (WHEN_KIND[i] == E.rule.when.kind) {
@@ -997,8 +1109,16 @@ static void when_sheet(void)
     if (disarm_of_rule() != 0u) {
         ui_pick_sheet_dim(2);
         ui_pick_sheet_dim(3);
+        ui_pick_sheet_dim(WHEN_ROW_TROUBLE); /* BL-224: a power cut never disarms */
         if (bit_count(partitions_enabled()) < 2u) {
             ui_pick_sheet_dim(0);
+        }
+    }
+    if (rule_time_only()) {
+        for (int32_t i = 0; i < (int32_t)WHEN_ROWS; i++) {
+            if (i != WHEN_ROW_TIME) {
+                ui_pick_sheet_dim(i);
+            }
         }
     }
 }
@@ -1009,10 +1129,16 @@ static void trigger_done(void)
 {
     if (E.mode == ED_ADD) {
         E.rule.when = E.when;
-        if (E.idea == IDEA_BEDTIME) {
-            arm_start(); /* the idea knows what it does: the arm sheet, Night chosen */
-        } else {
-            then_sheet();
+        switch (E.idea) { /* an idea knows what it does */
+        case IDEA_BEDTIME: arm_start(ALARM_LEVEL_NIGHT); break; /* the arm sheet, Night chosen */
+        case IDEA_MORNING: arm_start(ALARM_LEVEL_AWAY); break;
+        case IDEA_REMIND: remind_start(); break;
+        case IDEA_STILL_ARMED: still_start(); break;
+        case IDEA_OPENING: disarm_pick(); break;
+        case IDEA_DOOR_NOTIFY: notify_start(); break;
+        case IDEA_CHIME_NIGHT: chime_set(0u); break; /* off at bedtime */
+        case IDEA_OUTPUT_ALARM: output_pick(); break;
+        default: then_sheet(); break;
         }
         return;
     }
@@ -1047,8 +1173,9 @@ static void trigger_done(void)
  * alarm (D22: an automation never silences one), none while the installer option is off
  * (AUT-015), and never one an armed trigger watches (AUT-016: it could only undo the arming; an
  * armed trigger of any partition rules them all out). */
-/* The installer code never arms or disarms (USR-001) and an automation acts as its maker, so the
- * installer is offered neither the arming idea nor the Arm and Disarm actions (BL-187). */
+/* The installer code never disarms (USR-001, BL-187), so the installer is offered no Disarm and
+ * no "Disarm at opening time"; an Arm the installer saves acts as the system master (BL-224,
+ * decided 2026-10-21: auto_store makes them its maker). */
 static bool maker_is_installer(void)
 {
     const uint8_t u = S.auth_user;
@@ -1057,7 +1184,9 @@ static bool maker_is_installer(void)
 
 static uint8_t disarm_partitions(const auto_trigger_t *w, bool less_secure)
 {
-    if (!less_secure || w->kind == AUTO_TRIG_ALARM || w->kind == AUTO_TRIG_FIRE) {
+    /* never after an alarm (D22), nor after a trouble (BL-224: a power cut never disarms) */
+    if (!less_secure || maker_is_installer() || w->kind == AUTO_TRIG_ALARM || w->kind == AUTO_TRIG_FIRE ||
+        w->kind == AUTO_TRIG_TROUBLE) {
         return 0u;
     }
     uint8_t mask = partitions_enabled();
@@ -1169,14 +1298,15 @@ static uint8_t first_partition(uint8_t mask)
     return 1u;
 }
 
-/* "Arm the panel" picked (or the bedtime idea): a new Arm, Night, 5 minutes' warning, no bypass
- * (AUT-012, D29: off by default), of the first partition the person saving it holds. */
-static void arm_start(void)
+/* "Arm the panel" picked (or an arming idea): a new Arm at that level (Night, or Away for the
+ * mornings), 5 minutes' warning, no bypass (AUT-012, D29: off by default), of the first partition
+ * the person saving it holds. */
+static void arm_start(uint8_t level)
 {
     memset(&E.act, 0, sizeof(E.act));
     E.act.kind = AUTO_ACT_ARM;
     E.act.partition = first_partition(arm_partitions());
-    E.act.arm_level = ALARM_LEVEL_NIGHT;
+    E.act.arm_level = level;
     E.act.warn_min = WARN_MIN_DEFAULT;
     E.act.value = -1;
     arm_sheet();
@@ -1447,6 +1577,516 @@ static void arm_sheet(void)
     ui_form_sheet_fit();
 }
 
+/* ---- the sheets: without devices (BL-224; drawings bl-224-remind, -still-armed, -chime,
+ * -notify, -notify-none, -output-do) ---------------------------------------------------------- */
+
+/* The new or changed action into the draft where the editor puts it, then the confirms it needs,
+ * then the save; the same action again stores nothing. */
+static void put_action(const auto_action_t *a)
+{
+    uint8_t i = 0;
+    if (E.mode == ED_ADD) {
+        memset(E.rule.then, 0, sizeof(E.rule.then));
+        E.rule.n = 1;
+    } else if (E.mode == ED_SECOND) {
+        i = 1;
+        E.rule.n = 2;
+    } else if (E.mode == ED_ACTION && E.index < E.rule.n && E.index < AUTO_ACTIONS) {
+        i = E.index;
+        if (memcmp(&E.rule.then[i], a, sizeof(*a)) == 0) {
+            E.active = false;
+            return; /* nothing changed: nothing stored */
+        }
+    } else {
+        return;
+    }
+    E.rule.then[i] = *a;
+    E.ask_dev[i] = a->kind == AUTO_ACT_DEVICE && auto_action_needs_confirm(a->dev_kind, a->dev_action);
+    E.ask_trig[i] = trigger_asks(E.rule.when.kind, a);
+    confirm_chain();
+}
+
+/* "Remove this action", with two (as a device's): the other stays. */
+static void drop_action(void)
+{
+    if (E.rule.n == 2u && E.index < 2u) {
+        if (E.index == 0u) {
+            E.rule.then[0] = E.rule.then[1];
+        }
+        memset(&E.rule.then[1], 0, sizeof(E.rule.then[1]));
+        E.rule.n = 1;
+        save();
+    }
+}
+
+/* One of two being changed: "Remove this action" is offered. */
+static bool may_drop(void)
+{
+    return E.mode == ED_ACTION && E.rule.n == 2u;
+}
+
+/* A new action that needs no device, of the first partition the person saving it holds. */
+static void panel_act(uint8_t kind)
+{
+    memset(&E.act, 0, sizeof(E.act));
+    E.act.kind = kind;
+    E.act.value = -1;
+    if (kind == AUTO_ACT_REMIND || kind == AUTO_ACT_CHECK_ARMED || kind == AUTO_ACT_CHIME) {
+        E.act.partition = first_partition(arm_partitions());
+    }
+}
+
+static bool on_form_ok(void)
+{
+    if (E.active) {
+        put_action(&E.act);
+    }
+    return true;
+}
+
+/* A sheet's partition row (more than one partition): "Which partition?" in the sheet's place,
+ * then the sheet again from the draft, picked or cancelled (as the arm sheet's). */
+static void on_form_partition(int32_t index)
+{
+    if (E.active && index >= 0 && index < (int32_t)ED_ROWS && E.map[index] > 0 &&
+        E.map[index] <= (int32_t)ALARM_MAX_PARTITIONS) {
+        E.act.partition = (uint8_t)E.map[index];
+    }
+    if (E.active && E.form_reopen != NULL) {
+        E.form_reopen();
+    }
+}
+
+static void form_back(void)
+{
+    if (E.active && E.form_reopen != NULL) {
+        E.form_reopen();
+    }
+}
+
+/* The partitions the person saving it may pick, as "Which partition?" rows (the selected one
+ * checked): the count. */
+static size_t partition_rows(int32_t *selected)
+{
+    const uint8_t mask = arm_partitions();
+    size_t n = 0;
+    *selected = -1;
+    for (unsigned p = 1u; p <= ALARM_MAX_PARTITIONS && n < ED_ROWS; p++) {
+        if ((mask & (1u << (p - 1u))) == 0u) {
+            continue;
+        }
+        partition_name(p, E.title[n], sizeof(E.title[0]));
+        if (E.act.partition == p) {
+            *selected = (int32_t)n;
+        }
+        choice_set(n, UI_ICON_HOUSE, ui_tone_blue(), E.title[n], NULL, (int32_t)p);
+        n++;
+    }
+    return n;
+}
+
+static void on_form_partition_row(lv_event_t *e)
+{
+    (void)e;
+    if (!E.active) {
+        return;
+    }
+    int32_t selected = -1;
+    const size_t n = partition_rows(&selected);
+    ui_sheet_close();
+    /* TR: Settings > Automations, the sheet that picks the partition a trigger watches, or the
+     * one an automation disarms. At most 47 bytes */
+    ui_pick_sheet(TR("Which partition?"), NULL, E.choice, n, selected, on_form_partition);
+    ui_pick_sheet_on_cancel(form_back);
+}
+
+/* A row of a form sheet that shows a value and opens nothing. */
+static lv_obj_t *value_row(lv_obj_t *body, const char *glyph, lv_color_t tone, const char *title, const char *value)
+{
+    lv_obj_t *row = list_row_create(body, glyph, tone, title, "", value, "");
+    lv_obj_set_flag(ui_find(row, "detail_label"), LV_OBJ_FLAG_HIDDEN, true);
+    lv_obj_set_flag(ui_find(row, "level"), LV_OBJ_FLAG_HIDDEN, true);
+    lv_obj_set_flag(ui_find(row, "trail_label"), LV_OBJ_FLAG_HIDDEN, true);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    return row;
+}
+
+static void form_partition_row(lv_obj_t *body, void (*reopen)(void))
+{
+    E.form_reopen = reopen;
+    if (bit_count(partitions_enabled()) < 2u) {
+        return;
+    }
+    char name[ALARM_NAME_LEN + 16];
+    partition_name(E.act.partition, name, sizeof(name));
+    /* TR: Settings > Automations, the "Arm the panel" sheet's row of the partition it arms.
+     * At most 31 bytes */
+    lv_obj_t *row = list_row_create(body, UI_ICON_HOUSE, ui_tone_blue(), TR_C("arm sheet", "Partition"), "", name,
+                                    UI_ICON_CHEVRON_RIGHT);
+    lv_obj_set_flag(ui_find(row, "detail_label"), LV_OBJ_FLAG_HIDDEN, true);
+    lv_obj_set_flag(ui_find(row, "level"), LV_OBJ_FLAG_HIDDEN, true);
+    lv_obj_add_event_cb(row, on_form_partition_row, LV_EVENT_CLICKED, NULL);
+}
+
+/* "Goes to": the phone services set up in Integrations, or in amber "Nothing yet"
+ * (bl-224-notify-none). The mask. */
+static uint8_t goes_to_row(lv_obj_t *body)
+{
+    const uint8_t mask = ui_auto_notify_services();
+    char value[48];
+    if (mask == 0u) {
+        /* TR: Settings > Automations, "Goes to" while no phone service is set up (BL-224). At
+         * most 31 bytes */
+        i18n_utf8_copy(value, sizeof(value), TR("Nothing yet"));
+    } else {
+        ui_auto_services_text(mask, value, sizeof(value));
+    }
+    /* TR: Settings > Automations, the row of where a notification goes (BL-224). At most 31
+     * bytes */
+    lv_obj_t *row = value_row(body, UI_ICON_SEND, mask == 0u ? ui_tone_amber() : ui_tone_blue(), TR("Goes to"),
+                              value);
+    if (mask == 0u) {
+        lv_obj_set_style_text_color(ui_find(row, "value_label"), ui_tone_amber(), 0);
+    }
+    return mask;
+}
+
+static void no_service_note(lv_obj_t *body)
+{
+    /* TR: Settings > Automations, a notification's sheet while no phone service is set up
+     * (BL-224, drawing bl-224-notify-none). At most 127 bytes */
+    ui_paragraph(body, TR("No phone notifications are set up. Set them up in Integrations; until then it can't send."),
+                 ui_tone_amber());
+}
+
+static void form_result_set(const char *text)
+{
+    if (E.form_result != NULL) {
+        lv_label_set_text(ui_find(E.form_result, "result_label"), text);
+    }
+}
+
+/* ---- Remind to arm (bl-224-remind) ---- */
+
+/* TR: Settings > Automations, the "Remind to arm" sheet's line ({0} the time, {1} the partition):
+ * [the partition named][with a notification]. At most 191 bytes */
+static const char *const REMIND_LINE[2][2] = {
+    {TR_NOOP("At {0}, if the panel isn't armed: a chime and a note on Home."),
+     TR_NOOP("At {0}, if the panel isn't armed: a chime, a note on Home and a notification.")},
+    {TR_NOOP("At {0}, if {1} isn't armed: a chime and a note on Home."),
+     TR_NOOP("At {0}, if {1} isn't armed: a chime, a note on Home and a notification.")},
+};
+
+static void remind_refresh(void)
+{
+    char at[24];
+    ui_minute_text((int)(E.rule.when.minute % AUTO_MINUTES_PER_DAY), at, sizeof(at));
+    char part[ALARM_NAME_LEN + 16] = "";
+    const bool named = E.act.partition >= 1u && E.act.partition <= ALARM_MAX_PARTITIONS &&
+                       partition_named((uint8_t)(1u << (E.act.partition - 1u)), part, sizeof(part));
+    I18N_FORMAT(E.form_text, sizeof(E.form_text), TR(REMIND_LINE[named][E.act.option != 0u]), at, part);
+    form_result_set(E.form_text);
+}
+
+static void on_remind_option(lv_event_t *e)
+{
+    if (!E.active) {
+        return;
+    }
+    E.act.option = lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED) ? 1u : 0u;
+    remind_refresh();
+}
+
+static void remind_sheet(void)
+{
+    /* TR: Settings > Automations, the title of the reminder's sheet (BL-224). At most 47 bytes */
+    lv_obj_t *body = ui_form_sheet_open(TR("Remind to arm"), NULL, on_form_ok);
+    E.form_result = NULL;
+    if (body == NULL) {
+        return;
+    }
+    form_partition_row(body, remind_sheet);
+    /* TR: Settings > Automations, the reminder's switch and its detail (BL-224). At most 47 bytes
+     * each */
+    lv_obj_t *row = row_switch_icon_create(body, UI_ICON_SEND, ui_tone_blue(), TR("Also send a notification"),
+                                           TR("To the phones set up in Integrations"));
+    lv_obj_t *sw = ui_find(row, "toggle");
+    lv_obj_set_state(sw, LV_STATE_CHECKED, E.act.option != 0u);
+    lv_obj_add_event_cb(sw, on_remind_option, LV_EVENT_VALUE_CHANGED, NULL);
+    E.form_result = result_line_create(body, "");
+    /* TR: Settings > Automations, the reminder's sheet: what it never does, and when its note goes
+     * (BL-224). At most 191 bytes */
+    ui_paragraph(body, TR("It never arms by itself. The note goes once the panel is armed, or at 6:00 AM."),
+                 ui_tone_gray());
+    remind_refresh();
+    ui_form_sheet_fit();
+}
+
+/* "Remind to arm" picked (or the idea): with a notification while a phone service is set up. */
+static void remind_start(void)
+{
+    panel_act(AUTO_ACT_REMIND);
+    E.act.option = ui_auto_notify_services() != 0u ? 1u : 0u;
+    remind_sheet();
+}
+
+/* ---- Tell me if it's still armed (bl-224-still-armed) ---- */
+
+static void still_sheet(void)
+{
+    /* TR: Settings > Automations, the title of "still armed"'s sheet (BL-224). At most 47 bytes */
+    lv_obj_t *body = ui_form_sheet_open(TR("Tell me if it's still armed"), NULL, on_form_ok);
+    E.form_result = NULL;
+    if (body == NULL) {
+        return;
+    }
+    form_partition_row(body, still_sheet);
+    if (goes_to_row(body) == 0u) {
+        no_service_note(body);
+        ui_form_sheet_fit();
+        return;
+    }
+    char when[96], quote[64], part[ALARM_NAME_LEN + 16] = "";
+    ui_auto_when_text(&E.rule.when, when, sizeof(when));
+    if (ui_auto_notice_title(&E.rule.when, AUTO_NOTICE_STILL_ARMED, E.act.partition, quote, sizeof(quote))) {
+        const bool named = E.act.partition >= 1u && E.act.partition <= ALARM_MAX_PARTITIONS &&
+                           partition_named((uint8_t)(1u << (E.act.partition - 1u)), part, sizeof(part));
+        /* TR: Settings > Automations, "still armed"'s line ({0} when it runs, "At 4:00 PM on
+         * weekdays"; {1} the notification's words; {2} the partition). At most 191 bytes */
+        I18N_FORMAT(E.form_text, sizeof(E.form_text),
+                    named ? TR("{0}, if {2} is still armed: \"{1}\".") : TR("{0}, if the panel is still armed: \"{1}\"."),
+                    when, quote, part);
+        E.form_result = result_line_create(body, E.form_text);
+    }
+    /* TR: Settings > Automations, "still armed"'s sheet: it only tells (BL-224). At most 127
+     * bytes */
+    ui_paragraph(body, TR("Nothing changes at the panel."), ui_tone_gray());
+    ui_form_sheet_fit();
+}
+
+static void still_start(void)
+{
+    panel_act(AUTO_ACT_CHECK_ARMED);
+    still_sheet();
+}
+
+/* ---- Send a notification (bl-224-notify, -notify-none) ---- */
+
+static void on_form_drop(lv_event_t *e)
+{
+    (void)e;
+    if (!E.active) {
+        return;
+    }
+    ui_sheet_close();
+    drop_action();
+}
+
+static void notify_sheet(void)
+{
+    /* TR: Settings > Automations, the title of the notification's sheet (BL-224). At most 47
+     * bytes */
+    lv_obj_t *body = ui_form_sheet_open(TR("Send a notification"), NULL, on_form_ok);
+    E.form_result = NULL;
+    if (body == NULL) {
+        return;
+    }
+    E.form_reopen = NULL;
+    if (goes_to_row(body) == 0u) {
+        no_service_note(body);
+    } else {
+        char quote[64];
+        if (ui_auto_notice_title(&E.rule.when, AUTO_NOTICE_EVENT, 0u, quote, sizeof(quote))) {
+            /* TR: Settings > Automations, the notification's sheet: what it says ({0} its words,
+             * from the trigger: "Front Door opened"). At most 127 bytes */
+            I18N_FORMAT(E.form_text, sizeof(E.form_text), TR("Sends \"{0}\"."), quote);
+            E.form_result = result_line_create(body, E.form_text);
+        }
+        if (E.rule.when.kind != AUTO_TRIG_TIME && E.rule.when.win_from != 0u && E.rule.when.win_to != 0u) {
+            char from[24], to[24], line[128];
+            ui_minute_text((int)((E.rule.when.win_from - 1u) % AUTO_MINUTES_PER_DAY), from, sizeof(from));
+            ui_minute_text((int)((E.rule.when.win_to - 1u) % AUTO_MINUTES_PER_DAY), to, sizeof(to));
+            /* TR: Settings > Automations, the notification's sheet under an "Only between" ({0}
+             * from, {1} to). At most 127 bytes */
+            I18N_FORMAT(line, sizeof(line), TR("Only between {0} and {1}, as the automation says."), from, to);
+            ui_paragraph(body, line, ui_tone_gray());
+        }
+    }
+    if (may_drop()) {
+        /* TR: Settings > Automations, changing one of two actions: remove it. At most 47 bytes */
+        lv_obj_t *row = list_row_create(body, UI_ICON_TRASH, ui_tone_red(), TR("Remove this action"), "", "", "");
+        lv_obj_set_flag(ui_find(row, "detail_label"), LV_OBJ_FLAG_HIDDEN, true);
+        lv_obj_set_flag(ui_find(row, "level"), LV_OBJ_FLAG_HIDDEN, true);
+        lv_obj_set_flag(ui_find(row, "value_label"), LV_OBJ_FLAG_HIDDEN, true);
+        lv_obj_set_flag(ui_find(row, "trail_label"), LV_OBJ_FLAG_HIDDEN, true);
+        lv_obj_add_event_cb(row, on_form_drop, LV_EVENT_CLICKED, NULL);
+    }
+    ui_form_sheet_fit();
+}
+
+/* "Send a notification" picked (or the door idea): its words come from the trigger (AUT-001). */
+static void notify_start(void)
+{
+    panel_act(AUTO_ACT_NOTIFY);
+    notify_sheet();
+}
+
+/* ---- Door chime (bl-224-chime) ---- */
+
+static void on_chime_partition(int32_t index)
+{
+    if (!E.active || index < 0 || index >= (int32_t)ED_ROWS || E.map[index] <= 0 ||
+        E.map[index] > (int32_t)ALARM_MAX_PARTITIONS) {
+        return;
+    }
+    E.act.partition = (uint8_t)E.map[index];
+    put_action(&E.act);
+}
+
+/* The chime on (1) or off (0): with more than one partition, which one next. */
+static void chime_set(uint8_t on)
+{
+    if (E.mode == ED_ACTION && E.index < E.rule.n && E.rule.then[E.index].kind == AUTO_ACT_CHIME) {
+        E.act = E.rule.then[E.index]; /* its partition stays */
+    } else {
+        panel_act(AUTO_ACT_CHIME);
+    }
+    E.act.option = on;
+    if (bit_count(partitions_enabled()) < 2u) {
+        put_action(&E.act);
+        return;
+    }
+    int32_t selected = -1;
+    const size_t n = partition_rows(&selected);
+    /* TR: Settings > Automations, the sheet that picks the partition a trigger watches, or the
+     * one an automation disarms. At most 47 bytes */
+    ui_pick_sheet(TR("Which partition?"), NULL, E.choice, n, selected, on_chime_partition);
+}
+
+static void on_chime(int32_t index)
+{
+    if (!E.active || index < 0 || index >= (int32_t)ED_ROWS) {
+        return;
+    }
+    if (E.map[index] == ROW_DROP) {
+        drop_action();
+    } else if (E.map[index] == 0 || E.map[index] == 1) {
+        chime_set((uint8_t)E.map[index]);
+    }
+}
+
+static void chime_sheet(void)
+{
+    /* TR: Settings > Automations, the door chime's sheet (BL-224): its two rows. At most 47 bytes
+     * each */
+    choice_set(0, UI_ICON_BELL_RING, ui_tone_blue(), TR("Turn the door chime on"), NULL, 1);
+    choice_set(1, UI_ICON_BELL_OFF, ui_tone_gray(), TR("Turn the door chime off"), NULL, 0);
+    size_t n = 2;
+    int32_t selected = -1;
+    if (E.mode == ED_ACTION && E.index < E.rule.n && E.rule.then[E.index].kind == AUTO_ACT_CHIME) {
+        selected = E.rule.then[E.index].option != 0u ? 0 : 1;
+    }
+    if (may_drop()) {
+        /* TR: Settings > Automations, changing one of two actions: remove it. At most 47 bytes */
+        choice_set(n++, UI_ICON_TRASH, ui_tone_red(), TR("Remove this action"), NULL, ROW_DROP);
+    }
+    /* TR: Settings > Automations, the title of the door chime's sheet (BL-224). At most 47 bytes */
+    ui_pick_sheet(TR("Door chime"), NULL, E.choice, n, selected, on_chime);
+}
+
+/* ---- a wired output (bl-224-output-do) ---- */
+
+/* Output n on or off; a Turn on keeps the "Turn it off after" it had, and the idea's is 30
+ * minutes. */
+static void output_set(uint8_t output, uint8_t action)
+{
+    uint16_t off_after = 0u;
+    if (E.mode == ED_ACTION && E.index < E.rule.n) {
+        const auto_action_t *old = &E.rule.then[E.index];
+        if (old->kind == AUTO_ACT_OUTPUT && old->output == output && old->dev_action == ACT_ON) {
+            off_after = old->off_after_min;
+        }
+    } else if (E.mode == ED_ADD && E.idea == IDEA_OUTPUT_ALARM) {
+        off_after = OUTPUT_IDEA_MIN;
+    }
+    panel_act(AUTO_ACT_OUTPUT);
+    E.act.output = output;
+    E.act.dev_action = action;
+    E.act.off_after_min = action == ACT_ON ? off_after : 0u;
+    put_action(&E.act);
+}
+
+static void on_output_do(int32_t index)
+{
+    if (!E.active || index < 0 || index >= (int32_t)ED_ROWS) {
+        return;
+    }
+    const int32_t m = E.map[index];
+    if (m == ROW_DROP) {
+        drop_action();
+    } else if (m == ACT_ON || m == ACT_OFF) {
+        output_set(E.act.output, (uint8_t)m);
+    }
+}
+
+/* "What should Garden Lights do?": Turn on or Turn off; while changing one of two, "Remove this
+ * action". */
+static void output_do_sheet(uint8_t output, bool editing)
+{
+    if (!editing) {
+        panel_act(AUTO_ACT_OUTPUT);
+    }
+    E.act.output = output;
+    choice_set(0, UI_AUTO_G_TOGGLE_RIGHT, ui_tone_blue(), TR_C("automation action", "Turn on"), NULL, ACT_ON);
+    choice_set(1, UI_AUTO_G_TOGGLE_LEFT, ui_tone_gray(), TR_C("automation action", "Turn off"), NULL, ACT_OFF);
+    size_t n = 2;
+    int32_t selected = -1;
+    if (editing) {
+        selected = E.act.dev_action == ACT_ON ? 0 : E.act.dev_action == ACT_OFF ? 1 : -1;
+        if (may_drop()) {
+            /* TR: Settings > Automations, changing one of two actions: remove it. At most 47 bytes */
+            choice_set(n++, UI_ICON_TRASH, ui_tone_red(), TR("Remove this action"), NULL, ROW_DROP);
+        }
+    }
+    char name[48];
+    ui_auto_output_name(output, name, sizeof(name));
+    /* TR: Settings > Automations, the title of the sheet that picks what a device does ({0} its
+     * name). At most 127 bytes */
+    I18N_FORMAT(E.sheet_title, sizeof(E.sheet_title), TR("What should {0} do?"), name);
+    ui_pick_sheet(E.sheet_title, NULL, E.choice, n, selected, on_output_do);
+}
+
+static void on_output_idea(int32_t index)
+{
+    if (E.active && index >= 0 && index < (int32_t)ED_ROWS && ROW_IS_OUTPUT(E.map[index])) {
+        output_set(ROW_OUTPUT_OF(E.map[index]), ACT_ON);
+    }
+}
+
+/* The output idea: Turn on its output (the one, or "Which output?"), for 30 minutes. */
+static void output_pick(void)
+{
+    read_outputs();
+    if (E.nout == 0u) {
+        E.active = false;
+        return;
+    }
+    if (E.nout == 1u) {
+        output_set(E.outs[0].number, ACT_ON);
+        return;
+    }
+    size_t n = 0;
+    for (size_t i = 0; i < E.nout && n < ED_ROWS; i++) {
+        ui_auto_output_name(E.outs[i].number, E.title[n], sizeof(E.title[0]));
+        ui_auto_output_detail(E.outs[i].number, E.detail[n], sizeof(E.detail[0]));
+        choice_set(n, UI_AUTO_G_TOGGLE_RIGHT, ui_tone_blue(), E.title[n], E.detail[n], ROW_OUTPUT(E.outs[i].number));
+        n++;
+    }
+    /* TR: Settings > Automations, the sheet that picks which wired output an idea switches
+     * (BL-224). At most 47 bytes */
+    ui_pick_sheet(TR("Which output?"), NULL, E.choice, n, -1, on_output_idea);
+}
+
 /* ---- the sheets: then ---------------------------------------------------------------------- */
 
 static void device_do_sheet(const char *name, int32_t selected, bool editing);
@@ -1492,8 +2132,31 @@ static void on_device(int32_t index)
         return;
     }
     if (E.active && index >= 0 && index < (int32_t)ED_ROWS && E.map[index] == ROW_ARM) {
-        arm_start();
+        arm_start(ALARM_LEVEL_NIGHT);
         return;
+    }
+    if (E.active && index >= 0 && index < (int32_t)ED_ROWS) { /* BL-224's actions */
+        const int32_t m = E.map[index];
+        if (m == ROW_REMIND) {
+            remind_start();
+            return;
+        }
+        if (m == ROW_CHECK) {
+            still_start();
+            return;
+        }
+        if (m == ROW_NOTIFY) {
+            notify_start();
+            return;
+        }
+        if (m == ROW_CHIME) {
+            chime_sheet();
+            return;
+        }
+        if (ROW_IS_OUTPUT(m)) {
+            output_do_sheet(ROW_OUTPUT_OF(m), false);
+            return;
+        }
     }
     if (!E.active || index < 0 || index >= (int32_t)ED_ROWS || E.map[index] < 0 ||
         (size_t)E.map[index] >= E.ndev) {
@@ -1514,43 +2177,136 @@ static void on_device(int32_t index)
     device_do_sheet(d->name, -1, false);
 }
 
-/* "What should it do?": the devices by area (as "Add to Favorites"), each with its area or "Not
- * reachable now" (still pickable); never a script, nor one with nothing allowed (AUT-002). */
+/* The other action of a two-action automation, while the second is added or one of two changed;
+ * NULL otherwise. */
+static const auto_action_t *other_action(void)
+{
+    if (E.mode == ED_SECOND && E.rule.n >= 1u) {
+        return &E.rule.then[0];
+    }
+    if (E.mode == ED_ACTION && E.rule.n == 2u && E.index < 2u) {
+        return &E.rule.then[E.index == 0u ? 1u : 0u];
+    }
+    return NULL;
+}
+
+/* Beside this other action (or alone, NULL), may an action of this kind be picked? Arm, a
+ * reminder and "still armed" are always alone (AUT-011, BL-224); one chime, one notification and
+ * one use of an output at most (AUT-007). */
+static bool kind_beside(uint8_t kind, uint8_t output, const auto_action_t *other)
+{
+    if (other == NULL) {
+        return true;
+    }
+    if (kind == AUTO_ACT_ARM || kind == AUTO_ACT_REMIND || kind == AUTO_ACT_CHECK_ARMED) {
+        return false;
+    }
+    if (other->kind == kind && (kind == AUTO_ACT_CHIME || kind == AUTO_ACT_NOTIFY)) {
+        return false;
+    }
+    return kind != AUTO_ACT_OUTPUT || other->kind != AUTO_ACT_OUTPUT || other->output != output;
+}
+
+/* "What should it do?" (drawings automation-then, bl-224-then-time, bl-224-then-door), in
+ * sections:
+ * - The alarm, for a new automation's first action: Arm the panel after any trigger and whatever
+ *   the option (D4, D23; the installer's acts as the system master, BL-224), always after a
+ *   warning, as the automation's only action (AUT-011); Disarm at once as the person saving it
+ *   (D23), never after an alarm (D22) or a trouble, nor with the option off (AUT-015), nor for
+ *   the installer (BL-187); Remind to arm and "Tell me if it's still armed" after a time of day
+ *   only; then the Door chime, beside another action too.
+ * - Tell someone: Send a notification.
+ * - Outputs: the wired outputs "For automations" (none: no heading).
+ * - Devices by area (as "Add to Favorites"), each with its area or "Not reachable now" (still
+ *   pickable); never a script, nor one with nothing allowed (AUT-002). With none, a quiet note
+ *   at the end instead of a dead row.
+ * An idea that names a device kind lists only those devices. */
 static void then_sheet(void)
 {
     read_devices();
+    read_outputs();
     const bool less = less_secure_on();
+    const bool by_idea = E.dev_filter != DEV_NONE || E.idea_action != ACT_NONE;
+    const auto_action_t *other = other_action();
+    const bool first = E.mode == ED_ADD && !by_idea;
+    /* changing the only action, or one of two: the actions that need no device too */
+    const bool panel = !by_idea && (first || E.mode == ED_SECOND || E.mode == ED_ACTION);
     size_t n = 0;
-    /* "The alarm" first (BL-170, drawings automation-then-arm, -alarm, -option-off), for a new
-     * automation's first action only. Arm the panel after any trigger and whatever the option
-     * (D4, D23): always after a warning, as the automation's only action (AUT-011). Disarm acts
-     * at once as the person saving it (D23), never after an alarm (D22) nor with the option off
-     * (AUT-015), and may have one device action after it. */
-    const bool alarm = E.mode == ED_ADD && E.dev_filter == DEV_NONE && E.idea_action == ACT_NONE &&
-                       !maker_is_installer();
-    if (alarm) {
-        /* TR: Settings > Automations, "What should it do?": the heading over arming and
-         * disarming. At most 47 bytes */
-        choice_set(n++, UI_CHOICE_HEADING, ui_tone_gray(), TR("The alarm"), NULL, ROW_HEADING);
-        /* TR: Settings > Automations, "What should it do?": the action that arms the panel. At
-         * most 47 bytes */
-        const char *arm = TR("Arm the panel");
-        /* TR: Settings > Automations, that row's detail: it always warns first (AUT-012). At
-         * most 31 bytes */
-        const char *arm_detail = TR("After a warning");
-        choice_set(n++, UI_ICON_SHIELD, ui_tone_blue(), arm, arm_detail, ROW_ARM);
+    bool headed = false; /* a section other than Devices is listed: every section gets its heading */
+    if (panel) {
+        const size_t head = n++;
+        if (first) {
+            /* TR: Settings > Automations, "What should it do?": the action that arms the panel.
+             * At most 47 bytes */
+            const char *arm = TR("Arm the panel");
+            /* TR: Settings > Automations, that row's detail: it always warns first (AUT-012). At
+             * most 31 bytes */
+            const char *arm_detail = TR("After a warning");
+            choice_set(n++, UI_ICON_SHIELD, ui_tone_blue(), arm, arm_detail, ROW_ARM);
+            if (disarm_partitions(&E.rule.when, less) != 0u) {
+                /* TR: Settings > Automations, "What should it do?": the action that disarms the
+                 * panel. At most 47 bytes */
+                const char *title = TR("Disarm the panel");
+                /* TR: Settings > Automations, that row's detail: it disarms without a warning.
+                 * At most 31 bytes */
+                const char *detail = TR("Right away");
+                choice_set(n++, UI_ICON_SHIELD_OFF, ui_tone_amber(), title, detail, ROW_DISARM);
+            }
+            if (E.rule.when.kind == AUTO_TRIG_TIME) {
+                /* TR: Settings > Automations, "What should it do?" after a time of day (BL-224):
+                 * a reminder to arm, and its detail. At most 47 bytes each */
+                choice_set(n++, UI_ICON_BELL, ui_tone_amber(), TR("Remind to arm"), TR("If it's still disarmed then"),
+                           ROW_REMIND);
+                /* TR: the same: a notification if nobody has disarmed it, and its detail. At
+                 * most 47 bytes each */
+                choice_set(n++, UI_ICON_SEND, ui_tone_blue(), TR("Tell me if it's still armed"),
+                           TR("If nobody has disarmed it by then"), ROW_CHECK);
+            }
+        }
+        if (kind_beside(AUTO_ACT_CHIME, 0u, other)) {
+            /* TR: Settings > Automations, "What should it do?": the door chime (BL-224), and its
+             * detail. At most 47 bytes each */
+            choice_set(n++, UI_ICON_BELL_RING, ui_tone_blue(), TR("Door chime"), TR("Turn it on or off"), ROW_CHIME);
+        }
+        if (n > head + 1u) {
+            /* TR: Settings > Automations, "What should it do?": the heading over arming,
+             * disarming, the reminder and the chime. At most 47 bytes */
+            choice_set(head, UI_CHOICE_HEADING, ui_tone_gray(), TR("The alarm"), NULL, ROW_HEADING);
+            headed = true;
+        } else {
+            n = head;
+        }
+        if (kind_beside(AUTO_ACT_NOTIFY, 0u, other)) {
+            /* TR: Settings > Automations, "What should it do?": the heading over a notification
+             * (BL-224). At most 47 bytes */
+            choice_set(n++, UI_CHOICE_HEADING, ui_tone_gray(), TR("Tell someone"), NULL, ROW_HEADING);
+            /* TR: the same: a notification to the phones, and its detail. At most 47 bytes each */
+            choice_set(n++, UI_ICON_SEND, ui_tone_blue(), TR("Send a notification"),
+                       TR("To the phones set up in Integrations"), ROW_NOTIFY);
+            headed = true;
+        }
+        const size_t outs_at = n++;
+        for (size_t i = 0; i < E.nout && n + 1u < ED_ROWS; i++) {
+            const ui_auto_output_t *o = &E.outs[i];
+            if (o->number < 1u || o->number > AUTO_OUTPUTS || !kind_beside(AUTO_ACT_OUTPUT, o->number, other)) {
+                continue;
+            }
+            ui_auto_output_name(o->number, E.title[n], sizeof(E.title[0]));
+            ui_auto_output_detail(o->number, E.detail[n], sizeof(E.detail[0]));
+            choice_set(n, UI_AUTO_G_TOGGLE_RIGHT, ui_tone_blue(), E.title[n], E.detail[n], ROW_OUTPUT(o->number));
+            n++;
+        }
+        if (n > outs_at + 1u) {
+            /* TR: Settings > Automations, "What should it do?": the heading over the wired
+             * outputs for automations (BL-224). At most 47 bytes */
+            choice_set(outs_at, UI_CHOICE_HEADING, ui_tone_gray(), TR("Outputs"), NULL, ROW_HEADING);
+            headed = true;
+        } else {
+            n = outs_at;
+        }
     }
-    if (alarm && disarm_partitions(&E.rule.when, less) != 0u) {
-        /* TR: Settings > Automations, "What should it do?": the action that disarms the panel.
-         * At most 47 bytes */
-        const char *title = TR("Disarm the panel");
-        /* TR: Settings > Automations, that row's detail: it disarms without a warning. At most
-         * 31 bytes */
-        const char *detail = TR("Right away");
-        choice_set(n++, UI_ICON_SHIELD_OFF, ui_tone_amber(), title, detail, ROW_DISARM);
-    }
-    const size_t devices_at = n; /* "Devices" goes here, under "The alarm", once one is listed */
-    if (alarm) {
+    const size_t devices_at = n; /* "Devices" goes here, once one is listed */
+    if (headed) {
         n++;
     }
     for (size_t i = 0; i < E.ndev; i++) {
@@ -1572,16 +2328,17 @@ static void then_sheet(void)
             n++;
         }
     }
-    if (alarm && n == devices_at + 1u) {
+    const bool no_device = n == devices_at + (headed ? 1u : 0u);
+    if (headed && no_device) {
         n = devices_at; /* no device: no heading over nothing */
-    } else if (alarm) {
+    } else if (headed) {
         /* TR: Settings > Automations, "What should it do?": the heading over the devices. At
          * most 47 bytes */
         choice_set(devices_at, UI_CHOICE_HEADING, ui_tone_gray(), TR_C("automation section", "Devices"), NULL,
                    ROW_HEADING);
     }
     const bool none = n == 0u;
-    if (none) { /* only while "The alarm" offers nothing either */
+    if (none) { /* nothing at all to pick */
         /* TR: Settings > Automations, the dimmed row when no device can be picked. At most 47
          * bytes */
         const char *title = TR("No devices to choose");
@@ -1597,6 +2354,10 @@ static void then_sheet(void)
     ui_pick_sheet(TR("What should it do?"), note, E.choice, n, -1, on_device);
     if (none) {
         ui_pick_sheet_dim(0);
+    } else if (headed && no_device && E.ndev == 0u && S.be.dev_list != NULL) {
+        /* TR: Settings > Automations, the quiet note at the end of "What should it do?" while no
+         * device is connected (BL-224, drawing bl-224-then-time). At most 127 bytes */
+        ui_pick_sheet_tail(TR("Lights, locks and other devices show here once one is connected."));
     }
 }
 
@@ -1611,14 +2372,7 @@ static void on_do(int32_t index)
     if (m == ROW_OTHER) {
         then_sheet();
     } else if (m == ROW_DROP) {
-        if (E.rule.n == 2u && E.index < 2u) {
-            if (E.index == 0u) {
-                E.rule.then[0] = E.rule.then[1];
-            }
-            memset(&E.rule.then[1], 0, sizeof(E.rule.then[1]));
-            E.rule.n = 1;
-            save();
-        }
+        drop_action();
     } else if (m >= 0 && (size_t)m < E.noffer) {
         action_picked((size_t)m);
     }
@@ -1804,8 +2558,24 @@ static void on_idea(int32_t index)
         zone_sheet(ZF_WATER);
         break;
     case IDEA_BEDTIME:
+    case IDEA_MORNING:
+    case IDEA_REMIND:
+    case IDEA_STILL_ARMED:
+    case IDEA_OPENING:
+    case IDEA_CHIME_NIGHT:
         E.when.kind = AUTO_TRIG_TIME;
-        time_sheet(); /* 10:30 PM every day, then the arm sheet (trigger_done) */
+        time_sheet(); /* the idea's time, then what it does (trigger_done) */
+        break;
+    case IDEA_DOOR_NOTIFY:
+        /* At night: 10:00 PM to 6:00 AM (drawing bl-224-ideas) */
+        E.when.kind = AUTO_TRIG_ZONE_OPENED;
+        E.when.win_from = MIN_10PM + 1u;
+        E.when.win_to = MIN_6AM + 1u;
+        zone_sheet(ZF_DOOR);
+        break;
+    case IDEA_OUTPUT_ALARM:
+        E.when.kind = AUTO_TRIG_ALARM;
+        trigger_done();
         break;
     default:
         E.idea = IDEA_SCRATCH;
@@ -1820,9 +2590,50 @@ void ui_auto_add_start(void)
         return;
     }
     read_devices();
+    read_outputs();
     const bool less = less_secure_on();
     size_t n = 0;
-    /* Each idea only when the house has its parts (DESIGN.md section 9, screen 7) */
+    /* Each idea only when the house has its parts (DESIGN.md section 9 screen 7, section 15):
+     * first those that need only the panel (drawings bl-224-ideas, bl-224-ideas-installer), for
+     * the installer too, who never disarms (BL-187) */
+    /* TR: Settings > Automations, "Add an automation": an idea, and its detail. At most 63 bytes
+     * each */
+    choice_set(n++, UI_ICON_MOON, ui_tone_violet(), TR("Arm at bedtime"),
+               TR("Every night at a time you choose, after a warning"), IDEA_BEDTIME);
+    /* TR: the same, an idea and its detail. At most 63 bytes each */
+    choice_set(n++, UI_ICON_LOG_OUT, ui_tone_rose(), TR("Arm Away on weekday mornings"),
+               TR("After everyone has left, with a warning"), IDEA_MORNING);
+    /* TR: the same, an idea and its detail. At most 63 bytes each */
+    choice_set(n++, UI_ICON_BELL, ui_tone_amber(), TR("Remind me to arm"),
+               TR("A chime and a note if it's still disarmed at bedtime"), IDEA_REMIND);
+    /* TR: the same, an idea and its detail. At most 63 bytes each */
+    choice_set(n++, UI_ICON_SEND, ui_tone_blue(), TR("Tell me if it's still armed"),
+               TR("Like nobody home from school by 4:00 PM"), IDEA_STILL_ARMED);
+    if (!maker_is_installer() && less) {
+        const auto_trigger_t at_time = {.kind = AUTO_TRIG_TIME};
+        if (disarm_partitions(&at_time, less) != 0u) {
+            /* TR: the same, an idea and its detail: shown only while the installer allows
+             * disarming automations, to a code that may disarm. At most 63 bytes each */
+            choice_set(n++, UI_ICON_SHIELD_OFF, ui_tone_amber(), TR("Disarm at opening time"),
+                       TR("For a shop or an office, on weekdays"), IDEA_OPENING);
+        }
+    }
+    if (any_zone(ZF_DOOR)) {
+        /* TR: the same, an idea and its detail. At most 63 bytes each */
+        choice_set(n++, UI_ICON_DOOR_OPEN, ui_tone_amber(), TR("Tell me when a door opens at night"),
+                   TR("A notification to your phone, 10:00 PM to 6:00 AM"), IDEA_DOOR_NOTIFY);
+    }
+    if (any_zone(ZF_DOOR)) { /* the chime sounds for doors and windows */
+        /* TR: the same, an idea and its detail. At most 63 bytes each */
+        choice_set(n++, UI_ICON_BELL_OFF, ui_tone_gray(), TR("Quiet the door chime at night"),
+                   TR("Off at bedtime; another can turn it on in the morning"), IDEA_CHIME_NIGHT);
+    }
+    if (E.nout > 0u) {
+        /* TR: the same, an idea and its detail. At most 63 bytes each */
+        choice_set(n++, UI_AUTO_G_TOGGLE_RIGHT, ui_tone_blue(), TR("Switch an output when an alarm sounds"),
+                   TR("Like the garden lights, for 30 minutes"), IDEA_OUTPUT_ALARM);
+    }
+    /* then today's ideas, each with its device */
     if (any_zone(ZF_DOOR) && any_device(DEV_LIGHT, ACT_ON, less)) {
         /* TR: Settings > Automations, "Add an automation": an idea. At most 63 bytes */
         const char *title = TR("Turn on a light when a door opens");
@@ -1836,14 +2647,6 @@ void ui_auto_add_start(void)
         /* TR: Settings > Automations, "Add an automation": the idea's detail. At most 63 bytes */
         const char *detail = TR("Lock a door when everyone has left");
         choice_set(n++, UI_ICON_LOCK, ui_tone_green(), title, detail, IDEA_AWAY_LOCK);
-    }
-    if (!maker_is_installer()) {
-        /* Arming is a master's to decide (D4; not the installer's, who never arms: BL-187) */
-        /* TR: Settings > Automations, "Add an automation": an idea. At most 63 bytes */
-        const char *title = TR("Arm Night at bedtime");
-        /* TR: Settings > Automations, "Add an automation": the idea's detail. At most 63 bytes */
-        const char *detail = TR("Every night at a time you choose, after a warning");
-        choice_set(n++, UI_ICON_MOON, ui_tone_violet(), title, detail, IDEA_BEDTIME);
     }
     if (any_device(DEV_LIGHT, ACT_ON, less)) {
         /* TR: Settings > Automations, "Add an automation": an idea. At most 63 bytes */
@@ -1957,6 +2760,16 @@ void ui_auto_edit_action(uint8_t slot, uint8_t index)
         arm_sheet();
         return;
     }
+    /* BL-224: each action that needs no device opens its own sheet, from the draft */
+    E.act = *a;
+    switch (a->kind) {
+    case AUTO_ACT_REMIND: remind_sheet(); return;
+    case AUTO_ACT_CHECK_ARMED: still_sheet(); return;
+    case AUTO_ACT_NOTIFY: notify_sheet(); return;
+    case AUTO_ACT_CHIME: chime_sheet(); return;
+    case AUTO_ACT_OUTPUT: output_do_sheet(a->output, true); return;
+    default: break;
+    }
     if (a->kind != AUTO_ACT_DEVICE) {
         E.active = false;
         return;
@@ -1993,10 +2806,10 @@ void ui_auto_edit_action(uint8_t slot, uint8_t index)
 
 void ui_auto_add_action(uint8_t slot)
 {
-    /* A device action, or a Disarm (D23: one device action may follow it); never after an Arm,
-     * which is always the only action (AUT-011) */
-    if (!begin(ED_SECOND, slot) || E.rule.n != 1u ||
-        (E.rule.then[0].kind != AUTO_ACT_DEVICE && E.rule.then[0].kind != AUTO_ACT_DISARM)) {
+    /* After a device action, a Disarm (D23: one device action may follow it), an output, the
+     * chime or a notification (BL-224); never after an Arm, a reminder or "still armed", each
+     * always the only action (AUT-011) */
+    if (!begin(ED_SECOND, slot) || E.rule.n != 1u || !ui_auto_may_add_second(&E.rule.then[0])) {
         E.active = false;
         return;
     }
@@ -2024,8 +2837,9 @@ static void on_off_after(int32_t index)
 void ui_auto_edit_off_after(uint8_t slot, uint8_t index)
 {
     if (!begin(ED_OFF_AFTER, slot) || index >= E.rule.n || index >= AUTO_ACTIONS ||
-        E.rule.then[index].kind != AUTO_ACT_DEVICE || E.rule.then[index].dev_action != ACT_ON) {
-        E.active = false; /* only under a Turn on */
+        (E.rule.then[index].kind != AUTO_ACT_DEVICE && E.rule.then[index].kind != AUTO_ACT_OUTPUT) ||
+        E.rule.then[index].dev_action != ACT_ON) {
+        E.active = false; /* only under a Turn on, of a device or an output (BL-224) */
         return;
     }
     E.index = index;

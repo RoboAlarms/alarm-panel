@@ -287,6 +287,25 @@ alarm_result_t alarm_engine_arming_put_off(alarm_engine_t *e, uint8_t partition,
     return ALARM_OK;
 }
 
+alarm_result_t alarm_engine_automation_notice(alarm_engine_t *e, uint16_t uid, uint8_t partition,
+                                              uint16_t zone, uint8_t arg, uint8_t arg2,
+                                              alarm_ms_t now)
+{
+    if (e == NULL || !e->initialized || uid == 0u || zone > ALARM_MAX_ZONES ||
+        arg < (uint8_t)ALARM_AUTO_NOTICE_OPENED || arg >= (uint8_t)ALARM_AUTO_NOTICE_COUNT ||
+        (partition != 0u && !eng_partition_valid(e, partition))) {
+        return ALARM_ERR_BAD_ARG;
+    }
+    if (!eng_enter(e, now)) {
+        return ALARM_ERR_BAD_STATE;
+    }
+    const alarm_source_t src = {ALARM_SRC_AUTOMATION, uid};
+    eng_emit(e, ALARM_EV_AUTOMATION_NOTICE, partition, zone, 0u, &src, arg, arg2,
+             partition == 0u ? ALARM_EVF_SYSTEM : 0u, REPORT_NOW);
+    eng_leave(e);
+    return ALARM_OK;
+}
+
 alarm_result_t alarm_engine_platform_event(alarm_engine_t *e, alarm_event_type_t type,
                                            uint8_t arg, const alarm_source_t *src, uint8_t user,
                                            alarm_ms_t now)

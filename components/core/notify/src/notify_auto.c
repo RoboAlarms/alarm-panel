@@ -249,6 +249,24 @@ void notify_auto_when(const i18n_catalog_t *cat, const alarm_config_t *cfg,
         }
         break;
     }
+    case AUTO_TRIG_TROUBLE:
+        /* TR: the trigger of an automation (BL-224): a trouble starts. At most 63 bytes */
+        switch ((auto_trouble_t)w->trouble) {
+        case AUTO_TROUBLE_AC:
+            copy(out, len, i18n_text(cat, NULL, "When the power goes off"));
+            break;
+        case AUTO_TROUBLE_BATTERY:
+            copy(out, len, i18n_text(cat, NULL, "When the panel's battery is low"));
+            break;
+        case AUTO_TROUBLE_SENSOR:
+            copy(out, len, i18n_text(cat, NULL, "When a sensor stops reporting"));
+            break;
+        case AUTO_TROUBLE_SIREN:
+            copy(out, len, i18n_text(cat, NULL, "When there's a siren problem"));
+            break;
+        default: copy(out, len, i18n_text(cat, NULL, "When there's a trouble")); break;
+        }
+        break;
     default: copy(out, len, cant); break;
     }
 }

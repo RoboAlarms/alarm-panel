@@ -1,7 +1,9 @@
 /*
  * ui_sirens.c - Installer > Sirens and outputs, and Installer > 433 MHz (docs/features/16, 25;
  * the mockup's BL-037 proposal): every siren the panel sounds, a wired output's page, a 433 MHz
- * siren's page and its pairing, and the 433 MHz sensors and sirens.
+ * siren's page and its pairing, and the 433 MHz sensors and sirens. A wired output "For
+ * automations" (BL-224, docs/features/16 OUT-023) has a name, its terminal and relay board, and
+ * Test it; while no automation uses it, its value in the list reads "Not used yet".
  *
  * Everything goes through ui_backend_t's out_* entries (NULL out_status: none of it shows). The
  * backend checks installer mode and the partitions itself; these pages ask only in installer
@@ -170,6 +172,9 @@ static const char *fn_title(uint8_t fn)
     case UI_OUT_FN_SMOKE_RESET: return TR_C("wired output", "Smoke detector power");
     /* TR: what a wired output is: a row's value, a choice. At most 31 bytes */
     case UI_OUT_FN_ARMED: return TR_C("wired output", "Armed light");
+    /* TR: what a wired output is (BL-224): a relay that automations switch, the porch or garden
+     * lights. A choice, and the title of one with no name. At most 31 bytes */
+    case UI_OUT_FN_AUTOMATION: return TR_C("wired output", "For automations");
     default: return "";
     }
 }
@@ -185,6 +190,8 @@ static const char *fn_detail(uint8_t fn)
     case UI_OUT_FN_SMOKE_RESET: return TR("Cut briefly to reset 4-wire smoke detectors");
     /* TR: under a choice of what a wired output is */
     case UI_OUT_FN_ARMED: return TR("On while its partitions are armed");
+    /* TR: under the choice "For automations" of what a wired output is */
+    case UI_OUT_FN_AUTOMATION: return TR("Switched on and off by Settings > Automations");
     default: return "";
     }
 }
@@ -195,6 +202,7 @@ static const char *fn_glyph(uint8_t fn)
     case UI_OUT_FN_SIREN: return UI_ICON_SIREN;
     case UI_OUT_FN_STROBE: return UI_ICON_SUN;
     case UI_OUT_FN_SMOKE_RESET: return UI_ICON_ALARM_SMOKE;
+    case UI_OUT_FN_AUTOMATION: return UI_ICON_POWER;
     default: return UI_ICON_LIGHTBULB;
     }
 }
@@ -204,6 +212,40 @@ static lv_color_t fn_tone(uint8_t fn)
     return fn == UI_OUT_FN_SIREN || fn == UI_OUT_FN_SMOKE_RESET ? ui_tone_red()
            : fn == UI_OUT_FN_ARMED                              ? ui_tone_amber()
                                                                 : ui_tone_blue();
+}
+
+/* A wired output's title: an output for automations by its name (BL-224), the others by what
+ * they are. */
+static const char *wired_title(const ui_out_wired_t *w)
+{
+    return w->function == UI_OUT_FN_AUTOMATION && w->name[0] != '\0' ? w->name : fn_title(w->function);
+}
+
+/* The outputs for automations that no automation names yet (bit n: channel n). 0 when this
+ * firmware has no automations to ask (nothing is said then). */
+static uint8_t auto_unused(const ui_out_wired_t w[UI_OUT_WIRED_MAX])
+{
+    static auto_rule_t *rules;
+    uint8_t mask = 0u;
+    for (size_t i = 0; i < UI_OUT_WIRED_MAX && i < 8u; i++) {
+        if (w[i].function == UI_OUT_FN_AUTOMATION) {
+            mask = (uint8_t)(mask | (1u << i));
+        }
+    }
+    if (mask == 0u || S.be.auto_list == NULL ||
+        (rules == NULL && (rules = ui_slow_alloc(AUTO_MAX * sizeof(*rules))) == NULL)) {
+        return 0u;
+    }
+    const size_t n = S.be.auto_list(S.be.ctx, rules, AUTO_MAX);
+    for (size_t r = 0; r < n && r < AUTO_MAX; r++) {
+        for (size_t k = 0; k < rules[r].n && k < AUTO_ACTIONS; k++) {
+            const auto_action_t *a = &rules[r].then[k];
+            if (a->kind == AUTO_ACT_OUTPUT && a->output >= 1u && a->output <= UI_OUT_WIRED_MAX) {
+                mask = (uint8_t)(mask & (uint8_t)~(1u << (a->output - 1u)));
+            }
+        }
+    }
+    return mask;
 }
 
 /* "GPIO 49" */
@@ -472,6 +514,7 @@ static struct {
     bool open;
     lv_obj_t *wired[UI_OUT_WIRED_MAX];
     lv_obj_t *rf[UI_OUT_RF_MAX];
+    uint8_t unused; /* auto_unused() as the page was built */
     uint32_t polled;
 } s_list;
 
@@ -485,8 +528,13 @@ static void open_rf_siren(void *ctx)
     ui_page_open(PAGE_OUT_RF, (int32_t)(intptr_t)ctx);
 }
 
-static const char *wired_state(const ui_out_wired_t *w)
+static const char *wired_state(const ui_out_wired_t *w, bool unused)
 {
+    if (w->function == UI_OUT_FN_AUTOMATION && unused && !w->on) {
+        /* TR: an output for automations' state in a list while no automation uses it (BL-224).
+         * At most 23 bytes */
+        return TR_C("output state", "Not used yet");
+    }
     if (w->trouble) {
         /* TR: a wired siren's state in a list: its supervision input is open. At most 23 bytes */
         return TR("Siren problem");
@@ -504,7 +552,7 @@ static void wired_line(const ui_out_wired_t *w, const char *where, char *out, si
     char pin[24];
     char scope[96];
     pin_words(w->gpio, pin, sizeof(pin));
-    if (w->function == UI_OUT_FN_SMOKE_RESET) {
+    if (w->function == UI_OUT_FN_SMOKE_RESET || w->function == UI_OUT_FN_AUTOMATION) {
         /* TR: a wired output's line in a list: {0} "GPIO 49", {1} "J7 header" */
         I18N_FORMAT(out, len, TR("{0} on the {1}"), pin, where != NULL ? where : "");
         return;
@@ -529,6 +577,7 @@ static void list_build(lv_obj_t *body, char *note, size_t nlen)
     read_wired(w);
     read_rf(r);
     char line[128];
+    s_list.unused = auto_unused(w);
     ui_paragraph(body,
                  /* TR: the first paragraph on Sirens and outputs */
                  TR("The panel's own speaker always sounds too. Sirens follow it: steady for "
@@ -546,7 +595,8 @@ static void list_build(lv_obj_t *body, char *note, size_t nlen)
             used++;
             wired_line(&w[i], st.where, line, sizeof(line));
             s_list.wired[i] = ui_row_link(body, fn_glyph(w[i].function), fn_tone(w[i].function),
-                                          fn_title(w[i].function), line, wired_state(&w[i]),
+                                          wired_title(&w[i]), line,
+                                          wired_state(&w[i], (s_list.unused & (1u << i)) != 0u),
                                           UI_ICON_CHEVRON_RIGHT, open_wired, (void *)(intptr_t)i);
         }
         if (used < UI_OUT_WIRED_MAX) {
@@ -610,7 +660,7 @@ static void list_tick(void)
     for (size_t i = 0; i < UI_OUT_WIRED_MAX; i++) {
         lv_obj_t *l = s_list.wired[i] != NULL ? ui_find(s_list.wired[i], "value_label") : NULL;
         if (l != NULL && w[i].function != UI_OUT_FN_NONE) {
-            const char *t = wired_state(&w[i]);
+            const char *t = wired_state(&w[i], (s_list.unused & (1u << i)) != 0u);
             if (strcmp(lv_label_get_text(l), t) != 0) {
                 lv_label_set_text(l, t);
                 lv_obj_set_style_text_color(l, w[i].trouble ? ui_tone_amber() : ui_tone_gray(), 0);
@@ -656,7 +706,7 @@ static void add_wired(void *ctx)
     }
     pick_start(PICK_ADD_FN);
     s_pick.slot = (uint8_t)slot;
-    for (uint8_t fn = UI_OUT_FN_SIREN; fn <= UI_OUT_FN_ARMED; fn++) {
+    for (uint8_t fn = UI_OUT_FN_SIREN; fn <= UI_OUT_FN_AUTOMATION; fn++) { /* For automations last */
         pick_add(fn_glyph(fn), fn_tone(fn), fn_title(fn), fn_detail(fn), fn);
     }
     /* TR: a pick sheet's title: adding a wired output */
@@ -760,7 +810,7 @@ static void wired_open_pick(void *ctx)
     switch (what) {
     case PICK_FN:
         pick_start(PICK_FN);
-        for (uint8_t fn = UI_OUT_FN_SIREN; fn <= UI_OUT_FN_ARMED; fn++) {
+        for (uint8_t fn = UI_OUT_FN_SIREN; fn <= UI_OUT_FN_ARMED; fn++) { /* not For automations */
             pick_add(fn_glyph(fn), fn_tone(fn), fn_title(fn), fn_detail(fn), fn);
         }
         /* TR: a pick sheet's title: what a wired output is */
@@ -795,13 +845,68 @@ static void wired_open_pick(void *ctx)
     }
 }
 
+static void wired_remove(void *ctx);
+static lv_obj_t *link_row(lv_obj_t *body, const char *glyph, lv_color_t tone, const char *title,
+                          const char *detail, const char *value, ui_click_fn fn, void *ctx);
+
 static void wired_test(void *ctx)
 {
     (void)ctx;
+    ui_out_wired_t c;
+    const bool automation = wired_now(s_wired.slot, &c) && c.function == UI_OUT_FN_AUTOMATION;
     if (S.be.out_wired_test != NULL && answered(S.be.out_wired_test(S.be.ctx, s_wired.slot))) {
-        /* TR: a toast: a wired siren's test started */
-        ui_toast(TR("Sounding for 2 seconds"));
+        /* TR: a toast: an output for automations' test started (BL-224) */
+        ui_toast(automation ? TR("On for 2 seconds")
+                            /* TR: a toast: a wired siren's test started */
+                            : TR("Sounding for 2 seconds"));
     }
+}
+
+static void wired_renamed(const char *text)
+{
+    ui_out_wired_t c;
+    if (!wired_now(s_wired.slot, &c)) {
+        return;
+    }
+    memset(c.name, 0, sizeof(c.name));
+    i18n_utf8_copy(c.name, sizeof(c.name), text);
+    wired_send(&c);
+}
+
+static void wired_rename(void *ctx)
+{
+    (void)ctx;
+    ui_out_wired_t c;
+    if (!wired_now(s_wired.slot, &c)) {
+        return;
+    }
+    /* TR: a text sheet's title and note: naming an output for automations (BL-224) */
+    ui_text_sheet(TR("Output name"), TR("Say what it switches: Garden Lights, Porch Light"), c.name,
+                  false, UI_OUT_NAME_LEN - 1u, wired_renamed);
+}
+
+/* An output for automations' page (BL-224, the mockup's bl-224-output-add): its name, terminal and
+ * relay board, Test it, Remove it; no partitions, no chirps. */
+static void auto_build(const ui_out_wired_t *c, const char *pin, lv_obj_t *body)
+{
+    ui_section(body, TR("How it is wired"));
+    link_row(body, UI_ICON_TAG, ui_tone_blue(), TR("Name"), NULL,
+             c->name[0] != '\0' ? c->name
+                                /* TR: an output for automations' Name row with no name. At most 23 bytes */
+                                : TR_C("output name", "None"),
+             wired_rename, NULL);
+    link_row(body, UI_ICON_PLUG, ui_tone_blue(), TR("Terminal"), NULL, pin, wired_open_pick,
+             (void *)(intptr_t)PICK_PIN);
+    link_row(body, UI_ICON_ZAP, ui_tone_blue(), TR("Relay board"), TR("Most switch on low"),
+             c->active_low ? TR("Switches on low") : TR("Switches on high"), wired_open_pick,
+             (void *)(intptr_t)PICK_RELAY);
+    ui_section(body, TR_C("siren section", "Check it"));
+    /* TR: a row on an output for automations' page (BL-224): switch it on briefly */
+    s_wired.test = link_row(body, UI_ICON_POWER, ui_tone_blue(), TR("Test it"),
+                            TR("Switches it on for 2 seconds"), NULL, wired_test, NULL);
+    link_row(body, UI_ICON_TRASH, ui_tone_red(), TR("Remove it"), TR("Its terminal goes back to the zones"),
+             NULL, wired_remove, NULL);
+    s_wired.open = true;
 }
 
 static void wired_remove_ok(void)
@@ -869,11 +974,15 @@ static void wired_build(int32_t arg, lv_obj_t *body, char *title, size_t tlen, c
         ui_paragraph(body, TR("It was removed."), ui_tone_gray());
         return;
     }
-    i18n_utf8_copy(title, tlen, fn_title(c.function));
+    i18n_utf8_copy(title, tlen, wired_title(&c));
     char pin[24];
     pin_words(c.gpio, pin, sizeof(pin));
     /* TR: a wired output page's note: {0} "GPIO 49", {1} "J7 header" */
     I18N_FORMAT(note, nlen, TR("On terminal {0} · {1}"), pin, st.where != NULL ? st.where : "");
+    if (c.function == UI_OUT_FN_AUTOMATION) {
+        auto_build(&c, pin, body);
+        return;
+    }
     char value[64];
     if (c.function == UI_OUT_FN_SIREN) {
         /* TR: a section heading on a siren's page: which alarms sound it */
@@ -1388,7 +1497,12 @@ static void picked(int32_t index)
         return;
     }
     switch ((pick_t)s_pick.what) {
-    case PICK_FN: c.function = (uint8_t)v; break;
+    case PICK_FN:
+        c.function = (uint8_t)v;
+        if (c.partitions == 0u) { /* from For automations: its partitions as a new output's */
+            c.partitions = ((parts_enabled() & 0x01u) != 0u) ? 0x01u : parts_enabled();
+        }
+        break;
     case PICK_PIN: c.gpio = (uint8_t)v; break;
     case PICK_SENSE: c.sense = (uint8_t)v; break;
     case PICK_RELAY: c.active_low = v != 0u; break;

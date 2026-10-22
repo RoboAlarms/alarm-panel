@@ -174,6 +174,23 @@ static void test_icon_table(void)
                   "AUT-009: its line");
     }
     {
+        /* NOTE-042 (docs/features/41 BL-224): an automation's notification, in the Activity list */
+        alarm_event_t ev;
+        memset(&ev, 0, sizeof(ev));
+        ev.type = ALARM_EV_AUTOMATION_NOTICE;
+        ev.source.kind = ALARM_SRC_AUTOMATION;
+        ev.source.id = 3u;
+        ev.partition = 1u;
+        ev.arg = ALARM_AUTO_NOTICE_ARMED;
+        ev.arg2 = (uint8_t)((unsigned)ALARM_LEVEL_AWAY | ALARM_AUTO_NOTICE_TRIED);
+        ui_line_t line;
+        check(ui_event_line(&cfg, &ev, true, &line) && glyph_ok(line.glyph),
+              "NOTE-042: an automation's notification has a line and a glyph");
+        check_str(line.title, "Test: The panel was armed Away", "NOTE-042: its title");
+        check(strncmp(line.detail, "By automation", 13) == 0,
+              "NOTE-042: its line names the automation");
+    }
+    {
         /* docs/features/11 (What people see) and P2's Activity: a keypad's failed update on its
          * master, by the keypad's number, with its why in words */
         alarm_event_t ev;

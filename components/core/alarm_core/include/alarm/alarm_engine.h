@@ -457,6 +457,14 @@ alarm_result_t alarm_engine_arming_put_off(alarm_engine_t *e, uint8_t partition,
                                            uint8_t user, alarm_put_off_t choice,
                                            int64_t until_epoch_ms, alarm_ms_t now);
 
+/* An automation's notification to the phones (docs/features/41 BL-224; CORE-PROG-013):
+ * ALARM_EV_AUTOMATION_NOTICE with source {ALARM_SRC_AUTOMATION, uid} (uid not 0), partition (0,
+ * or an enabled one), zone (0..ALARM_MAX_ZONES), arg an alarm_auto_notice_t and arg2 its level or
+ * trouble (with ALARM_AUTO_NOTICE_TRIED). Logged and reported now; nothing else changes. */
+alarm_result_t alarm_engine_automation_notice(alarm_engine_t *e, uint16_t uid, uint8_t partition,
+                                              uint16_t zone, uint8_t arg, uint8_t arg2,
+                                              alarm_ms_t now);
+
 /* ALARM_EV_ARMING_PUT_OFF's arg2 for an until time: whole minutes from ev_epoch_ms, rounded,
  * 1..255 (a longer wait is cut to 255); 0 when either time is unknown or until isn't later. */
 uint8_t alarm_put_off_minutes(int64_t ev_epoch_ms, int64_t until_epoch_ms);

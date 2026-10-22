@@ -758,7 +758,8 @@ static bool catch_up(uint8_t p, alarm_ms_t now)
         for (size_t i = 0; i < n; i++) {
             const alarm_event_t *ev = &batch[i].ev;
             const notify_cat_t cat = notify_category(ev->type);
-            if ((cats_of(p) & NOTIFY_CAT_BIT(cat)) == 0u) {
+            /* an automation's notification goes past the categories (BL-224) */
+            if (!notify_gate_wanted(cats_of(p), ev)) {
                 continue;
             }
             if ((ev->flags & ALARM_EVF_SILENT) && !silent_of(p)) {
@@ -1244,6 +1245,27 @@ esp_err_t net_notify_ntfy_set(const net_notify_ntfy_t *in, bool change_token, ch
     return ESP_OK;
 }
 
+/* What the UI stored (s_ntfy, s_push), under the lock: a service is set up when it is on and has
+ * what it needs to send (the task's enabled_of, on the stored settings). */
+uint8_t net_notify_services(void)
+{
+    uint8_t mask = 0u;
+    lock();
+    if (s_ntfy.enabled && s_ntfy.topic[0] != '\0') {
+        mask |= (uint8_t)(1u << NET_NOTIFY_NTFY);
+    }
+    if (s_push.enabled && s_push.user_key[0] != '\0' && s_push.app_token[0] != '\0') {
+        mask |= (uint8_t)(1u << NET_NOTIFY_PUSHOVER);
+    }
+    unlock();
+    return mask;
+}
+
+bool net_notify_any_service(void)
+{
+    return net_notify_services() != 0u;
+}
+
 void net_notify_pushover_get(net_notify_pushover_t *out)
 {
     memset(out, 0, sizeof(*out));
@@ -1632,6 +1654,20 @@ esp_err_t net_notify_console_register(void)
         .func = cmd_notify,
     };
     return esp_console_cmd_register(&cmd);
+}
+
+#else /* !CONFIG_ALARM_FEATURE_NOTIFY: no phone services in this firmware */
+
+#include "net_notify.h"
+
+uint8_t net_notify_services(void)
+{
+    return 0u;
+}
+
+bool net_notify_any_service(void)
+{
+    return false;
 }
 
 #endif

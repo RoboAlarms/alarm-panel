@@ -7,6 +7,11 @@
  * the installer option, the confirms, the lock). Nothing here decides what is allowed: the
  * pickers come from hc_auto_offer and every refusal from the service, mapped to the page's words.
  *
+ * Without devices (BL-224, DESIGN.md section 15): the wired outputs set "For automations"
+ * (outputs_service), the phone services set up (net_notify) and the system master's name, whom
+ * an installer's Arm acts as; the trouble trigger and the output, reminder, "still armed", door
+ * chime and notification actions, read and written in the same strict way.
+ *
  * Memory: the configuration copy (it holds code hashes: zeroized before it is freed), the rules
  * and the device list sit in one web_alloc block (PSRAM), never on the HTTPS worker's stack. The
  * edits write NVS on that worker, whose stack is internal (HTTPD_SSL_CONFIG_DEFAULT's task_caps).
@@ -26,6 +31,8 @@
 #include "home_control/home_control.h"
 #include "i18n/i18n.h"
 #include "mbedtls/platform_util.h"
+#include "net_notify.h"
+#include "outputs_service.h"
 #include "web_mem.h"
 #include "web_rules.h"
 
@@ -37,8 +44,10 @@ typedef struct {
     hc_device_t devices[HC_MAX_DEVICES];
     auto_zone_t zones[ALARM_MAX_ZONES];
     auto_rule_t rule; /* a save's rule */
+    outputs_auto_t outputs[AUTO_OUTPUTS]; /* the wired outputs "For automations" (BL-224) */
     size_t n_rules;
     size_t n_devices;
+    size_t n_outputs;
 } ctx_t;
 
 static ctx_t *ctx_new(void)
@@ -57,7 +66,12 @@ static void ctx_free(ctx_t *c)
 /* ---- words (the page's contract: never renamed) ------------------------------------------- */
 
 static const char *const TRIG_WORDS[AUTO_TRIG_COUNT] = {
-    "none", "armed", "disarmed", "alarm", "fire", "zone_opened", "zone_closed", "time"};
+    "none", "armed", "disarmed", "alarm", "fire", "zone_opened", "zone_closed", "time", "trouble"};
+/* By auto_trouble_t, the ones a trigger may name (BL-224). */
+static const char *const TROUBLE_WORDS[AUTO_TROUBLE_LAST + 1u] = {"any", "ac", "battery", "sensor",
+                                                                  "siren"};
+/* By net_notify_provider_t: the phone services' names. */
+static const char *const NOTIFY_WORDS[NET_NOTIFY_PROVIDERS] = {"ntfy", "pushover"};
 static const char *const SOURCE_WORDS[] = {"none", "ha", "zigbee", "zwave"};
 static const char *const DAY_WORDS[7] = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"};
 static const char *const KIND_WORDS[DEV_KIND_COUNT] = {
@@ -66,7 +80,8 @@ static const char *const KIND_WORDS[DEV_KIND_COUNT] = {
 static const char *const REASON_WORDS[] = {
     NULL,          NULL,          "refused",  "no_answer", "unreachable",     "missing", "busy",
     "held_back",   "not_allowed", "cant_run", "no_clock",  "less_secure_off", "maker_gone",
-    NULL /* ALREADY */, "not_ready", "no_warning", "arm_refused", NULL /* PUT_OFF */};
+    NULL /* ALREADY */, "not_ready", "no_warning", "arm_refused", NULL /* PUT_OFF */,
+    "no_service" /* BL-224 */};
 /* By auto_warn_state_t. */
 static const char *const WARN_WORDS[] = {"none", "on", "hour", "night", "day"};
 
@@ -126,6 +141,28 @@ static const hc_device_t *find_device(const ctx_t *c, uint8_t source, const char
     return NULL;
 }
 
+/* BL-224: the wired outputs an automation may switch now. */
+static void read_outputs(ctx_t *c)
+{
+    c->n_outputs = outputs_service_auto_list(c->outputs, AUTO_OUTPUTS);
+    if (c->n_outputs > AUTO_OUTPUTS) {
+        c->n_outputs = AUTO_OUTPUTS;
+    }
+    for (size_t i = 0; i < c->n_outputs; i++) {
+        c->outputs[i].name[sizeof(c->outputs[i].name) - 1u] = '\0';
+    }
+}
+
+static const outputs_auto_t *find_output(const ctx_t *c, uint8_t number)
+{
+    for (size_t i = 0; i < c->n_outputs; i++) {
+        if (c->outputs[i].number == number) {
+            return &c->outputs[i];
+        }
+    }
+    return NULL;
+}
+
 static void read_devices(ctx_t *c)
 {
     c->n_devices = device_service_list(c->devices, HC_MAX_DEVICES);
@@ -137,11 +174,15 @@ static void read_devices(ctx_t *c)
     }
 }
 
-/* An arming or disarming action (phase C): never tried (Try it now is for device actions). */
-static bool has_alarm_action(const auto_rule_t *r)
+/* An arming or disarming action (phase C), a reminder or "still armed" (BL-224): never tried -
+ * they mean something only at their trigger (auto_run_try's AUTO_TRY_ARM). A device, an output,
+ * the door chime and a notification are. */
+static bool has_untried_action(const auto_rule_t *r)
 {
     for (unsigned i = 0; i < r->n && i < AUTO_ACTIONS; i++) {
-        if (r->then[i].kind != AUTO_ACT_DEVICE) {
+        const uint8_t k = r->then[i].kind;
+        if (k == AUTO_ACT_ARM || k == AUTO_ACT_DISARM || k == AUTO_ACT_REMIND ||
+            k == AUTO_ACT_CHECK_ARMED) {
             return true;
         }
     }
@@ -198,6 +239,10 @@ static bool add_when(cJSON *o, const ctx_t *c, const auto_rule_t *r)
     cJSON *j = cJSON_AddObjectToObject(o, "when");
     bool ok = j != NULL;
     ok &= cJSON_AddStringToObject(j, "kind", w->kind < AUTO_TRIG_COUNT ? TRIG_WORDS[w->kind] : "none") != NULL;
+    if (w->kind == AUTO_TRIG_TROUBLE) { /* BL-224: which trouble */
+        ok &= cJSON_AddStringToObject(j, "trouble", w->trouble <= AUTO_TROUBLE_LAST ? TROUBLE_WORDS[w->trouble]
+                                                                                   : "any") != NULL;
+    }
     ok &= add_mask_list(j, "partitions", w->partitions, 1u, ALARM_MAX_PARTITIONS);
     cJSON *lv = cJSON_AddArrayToObject(j, "levels");
     ok &= lv != NULL;
@@ -250,8 +295,46 @@ static bool add_then(cJSON *o, const ctx_t *c, const auto_rule_t *r)
             }
             /* who set it up (D30: never "arms as"): it acts as them, re-checked each time */
             ok &= cJSON_AddStringToObject(j, "made_by", user_name(&c->cfg, r->made_by)) != NULL;
+            /* BL-224: an installer's Arm acts as the system master; saved_by says who set it up
+             * ("Set up by Installer · uses Alex's permission") */
+            if (r->saved_by != 0u) {
+                ok &= cJSON_AddStringToObject(j, "saved_by", user_name(&c->cfg, r->saved_by)) != NULL;
+            } else {
+                ok &= cJSON_AddNullToObject(j, "saved_by") != NULL;
+            }
             ok &= web_attach(a, NULL, j);
             continue;
+        }
+        switch (x->kind) { /* BL-224: without a device */
+        case AUTO_ACT_OUTPUT:
+            ok &= cJSON_AddStringToObject(j, "kind", "output") != NULL;
+            ok &= cJSON_AddNumberToObject(j, "output", x->output) != NULL;
+            ok &= cJSON_AddStringToObject(j, "action", x->dev_action == ACT_ON ? "on" : "off") != NULL;
+            ok &= cJSON_AddNumberToObject(j, "off_after", x->off_after_min) != NULL;
+            ok &= web_attach(a, NULL, j);
+            continue;
+        case AUTO_ACT_REMIND:
+            ok &= cJSON_AddStringToObject(j, "kind", "remind") != NULL;
+            ok &= cJSON_AddNumberToObject(j, "partition", x->partition) != NULL;
+            ok &= cJSON_AddBoolToObject(j, "notify", x->option != 0u) != NULL;
+            ok &= web_attach(a, NULL, j);
+            continue;
+        case AUTO_ACT_CHECK_ARMED:
+            ok &= cJSON_AddStringToObject(j, "kind", "still_armed") != NULL;
+            ok &= cJSON_AddNumberToObject(j, "partition", x->partition) != NULL;
+            ok &= web_attach(a, NULL, j);
+            continue;
+        case AUTO_ACT_CHIME:
+            ok &= cJSON_AddStringToObject(j, "kind", "chime") != NULL;
+            ok &= cJSON_AddNumberToObject(j, "partition", x->partition) != NULL;
+            ok &= cJSON_AddBoolToObject(j, "on", x->option != 0u) != NULL;
+            ok &= web_attach(a, NULL, j);
+            continue;
+        case AUTO_ACT_NOTIFY:
+            ok &= cJSON_AddStringToObject(j, "kind", "notify") != NULL;
+            ok &= web_attach(a, NULL, j);
+            continue;
+        default: break;
         }
         const hc_device_t *d = find_device(c, x->source, x->ref);
         ok &= cJSON_AddStringToObject(j, "kind", "device") != NULL;
@@ -287,7 +370,8 @@ static cJSON *status_json(const ctx_t *c, const auto_rule_t *r)
     case AUTO_RES_LESS_SECURE_OFF:
     case AUTO_RES_MAKER_GONE:
     case AUTO_RES_NOT_READY:  /* phase C: not armed, a zone was open (AUT-014) */
-    case AUTO_RES_NO_WARNING: result = "skipped"; break; /* no whole warning (AUT-012) */
+    case AUTO_RES_NO_WARNING: /* no whole warning (AUT-012) */
+    case AUTO_RES_NO_SERVICE: result = "skipped"; break; /* BL-224: no phone service set up */
     case AUTO_RES_ALREADY: result = "already"; break;
     case AUTO_RES_PUT_OFF: result = "put_off"; break; /* D20: who, until when */
     default: result = "failed"; break; /* ARM_REFUSED among them: "refused" names the answer */
@@ -304,11 +388,19 @@ static cJSON *status_json(const ctx_t *c, const auto_rule_t *r)
     const bool has_action =
         st.result != AUTO_RES_NONE && st.action_index < r->n && st.action_index < AUTO_ACTIONS &&
         r->then[st.action_index].kind == AUTO_ACT_DEVICE;
+    const bool has_output =
+        st.result != AUTO_RES_NONE && st.action_index < r->n && st.action_index < AUTO_ACTIONS &&
+        r->then[st.action_index].kind == AUTO_ACT_OUTPUT;
     if (has_action) {
         const auto_action_t *x = &r->then[st.action_index];
         const hc_device_t *d = find_device(c, x->source, x->ref);
         ok &= cJSON_AddStringToObject(s, "action", action_word(x->dev_action, x->mode)) != NULL;
         ok &= cJSON_AddStringToObject(s, "device", d != NULL ? d->info.name : x->name) != NULL;
+    } else if (has_output) { /* BL-224: "Garden Lights wasn't reachable" */
+        const auto_action_t *x = &r->then[st.action_index];
+        const outputs_auto_t *out = find_output(c, x->output);
+        ok &= cJSON_AddStringToObject(s, "action", x->dev_action == ACT_ON ? "on" : "off") != NULL;
+        ok &= cJSON_AddStringToObject(s, "device", out != NULL ? out->name : "") != NULL;
     } else {
         ok &= cJSON_AddNullToObject(s, "action") != NULL;
         ok &= cJSON_AddNullToObject(s, "device") != NULL;
@@ -399,6 +491,31 @@ static bool add_partitions(cJSON *o, const ctx_t *c)
     return ok;
 }
 
+/* BL-224: the wired outputs "For automations", the phone services set up, and the system
+ * master's name (an installer's Arm uses their permission). */
+static bool add_panel_parts(cJSON *o, const ctx_t *c)
+{
+    cJSON *a = cJSON_AddArrayToObject(o, "outputs");
+    bool ok = a != NULL;
+    for (size_t i = 0; i < c->n_outputs; i++) {
+        cJSON *j = cJSON_CreateObject();
+        ok &= cJSON_AddNumberToObject(j, "number", c->outputs[i].number) != NULL;
+        ok &= cJSON_AddStringToObject(j, "name", c->outputs[i].name) != NULL;
+        ok &= cJSON_AddNumberToObject(j, "gpio", c->outputs[i].gpio) != NULL;
+        ok &= web_attach(a, NULL, j);
+    }
+    cJSON *n = cJSON_AddArrayToObject(o, "notify");
+    ok &= n != NULL;
+    const uint8_t services = net_notify_services();
+    for (unsigned p = 0; p < NET_NOTIFY_PROVIDERS; p++) {
+        if (services & (1u << p)) {
+            ok &= web_attach(n, NULL, cJSON_CreateString(NOTIFY_WORDS[p]));
+        }
+    }
+    ok &= cJSON_AddStringToObject(o, "master", user_name(&c->cfg, ALARM_USER_MASTER)) != NULL;
+    return ok;
+}
+
 static bool read_config(ctx_t *c)
 {
     if (alarm_service_get_config(&c->cfg) != ESP_OK) {
@@ -460,6 +577,30 @@ bool web_automations_add_warnings(cJSON *o, const char *key, const alarm_config_
     return ok;
 }
 
+bool web_automations_add_reminders(cJSON *o, const char *key, uint8_t partitions)
+{
+    cJSON *a = cJSON_AddArrayToObject(o, key);
+    if (a == NULL) {
+        return false;
+    }
+    auto_remind_t m[AUTO_MAX]; /* 96 bytes */
+    bool ok = true;
+    const size_t n = automation_service_reminders(m, AUTO_MAX);
+    for (size_t i = 0; i < n && i < AUTO_MAX; i++) {
+        const auto_remind_t *x = &m[i];
+        if (x->on == 0u || x->partition < 1u || x->partition > ALARM_MAX_PARTITIONS ||
+            (partitions & (1u << (x->partition - 1u))) == 0u) {
+            continue;
+        }
+        cJSON *j = cJSON_CreateObject();
+        ok &= cJSON_AddNumberToObject(j, "uid", x->uid) != NULL;
+        ok &= cJSON_AddNumberToObject(j, "partition", x->partition) != NULL;
+        ok &= cJSON_AddNumberToObject(j, "minute", x->minute) != NULL;
+        ok &= web_attach(a, NULL, j);
+    }
+    return ok;
+}
+
 cJSON *web_automations_get(void)
 {
     ctx_t *c = ctx_new();
@@ -469,6 +610,7 @@ cJSON *web_automations_get(void)
     }
     alarm_service_get_snapshot(&c->snap);
     read_devices(c);
+    read_outputs(c);
     const uint16_t gen = automation_service_gen(); /* before the list: a stale gen only refuses */
     c->n_rules = automation_service_list(c->rules, AUTO_MAX);
     cJSON *o = cJSON_CreateObject();
@@ -493,7 +635,9 @@ cJSON *web_automations_get(void)
     }
     ok &= add_zones(o, c);
     ok &= add_partitions(o, c);
+    ok &= add_panel_parts(o, c);
     ok &= web_automations_add_warnings(o, "warnings", &c->cfg, 0xFFu); /* the page's own: every one */
+    ok &= web_automations_add_reminders(o, "reminders", 0xFFu);
     ctx_free(c);
     return built(o, ok);
 }
@@ -686,6 +830,18 @@ static parse_t parse_when(const cJSON *w, auto_trigger_t *t)
     if (kind == AUTO_TRIG_ARMED && !levels_mask(w, &t->levels)) {
         return PARSE_BAD;
     }
+    if (kind == AUTO_TRIG_TROUBLE) { /* BL-224: which trouble; none named is any */
+        const cJSON *tv = cJSON_GetObjectItemCaseSensitive(w, "trouble");
+        int which = 0;
+        if (tv != NULL && !cJSON_IsNull(tv)) {
+            which = cJSON_IsString(tv) ? find_word(TROUBLE_WORDS, COUNT(TROUBLE_WORDS), tv->valuestring)
+                                       : -1;
+            if (which < 0) {
+                return PARSE_BAD;
+            }
+        }
+        t->trouble = (uint8_t)which;
+    }
     long n;
     if (zone_trig) {
         if (!get_number(w, "zone", 0, ALARM_MAX_ZONES, 0, &n)) {
@@ -753,6 +909,63 @@ static parse_t parse_alarm_action(const cJSON *j, bool arm, auto_action_t *a)
     return PARSE_OK;
 }
 
+/* A true or false field; absent or null gives dflt (or false when dflt < 0: required). */
+static bool get_bool(const cJSON *o, const char *key, int dflt, bool *out)
+{
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(o, key);
+    if (v == NULL || cJSON_IsNull(v)) {
+        *out = dflt > 0;
+        return dflt >= 0;
+    }
+    if (!cJSON_IsBool(v)) {
+        return false;
+    }
+    *out = cJSON_IsTrue(v);
+    return true;
+}
+
+/* BL-224: an action without a device -> *a, only its own fields in the ranges the model holds;
+ * what is allowed (an output "For automations", a reminder after a time, the partition in use)
+ * is the validator's. The page's words: output {output, action on|off, off_after}, remind
+ * {partition, notify}, still_armed {partition}, chime {partition, on}, notify {}. Returns
+ * PARSE_INCOMPLETE when the kind isn't one of them (the caller goes on). */
+static parse_t parse_panel_action(const cJSON *j, const char *kind, auto_action_t *a)
+{
+    long part = 0, out = 0, off_after = 0;
+    bool flag = false;
+    if (!strcmp(kind, "output")) {
+        const char *act = get_string(j, "action");
+        if (!get_number(j, "output", 1, AUTO_OUTPUTS, -1, &out) || act == NULL ||
+            (strcmp(act, "on") != 0 && strcmp(act, "off") != 0) ||
+            !get_number(j, "off_after", 0, AUTO_MINUTES_PER_DAY, 0, &off_after) ||
+            (off_after != 0 && strcmp(act, "on") != 0)) {
+            return PARSE_BAD; /* "Turn it off after" only with Turn on */
+        }
+        a->kind = AUTO_ACT_OUTPUT;
+        a->output = (uint8_t)out;
+        a->dev_action = !strcmp(act, "on") ? ACT_ON : ACT_OFF;
+        a->off_after_min = (uint16_t)off_after;
+        return PARSE_OK;
+    }
+    if (!strcmp(kind, "notify")) {
+        a->kind = AUTO_ACT_NOTIFY;
+        return PARSE_OK;
+    }
+    const bool remind = !strcmp(kind, "remind"), still = !strcmp(kind, "still_armed"),
+               chime = !strcmp(kind, "chime");
+    if (!remind && !still && !chime) {
+        return PARSE_INCOMPLETE;
+    }
+    if (!get_number(j, "partition", 1, ALARM_MAX_PARTITIONS, -1, &part) ||
+        (remind && !get_bool(j, "notify", 0, &flag)) || (chime && !get_bool(j, "on", -1, &flag))) {
+        return PARSE_BAD;
+    }
+    a->kind = remind ? AUTO_ACT_REMIND : still ? AUTO_ACT_CHECK_ARMED : AUTO_ACT_CHIME;
+    a->partition = (uint8_t)part;
+    a->option = flag ? 1u : 0u; /* a reminder's notification, the chime on or off */
+    return PARSE_OK;
+}
+
 /* One then[] item -> *a. *err: a 409 the page shows on that action (missing_device,
  * action_not_allowed); PARSE_BAD: 400. */
 static parse_t parse_action(const ctx_t *c, const cJSON *j, auto_action_t *a, const char **err)
@@ -765,6 +978,13 @@ static parse_t parse_action(const ctx_t *c, const cJSON *j, auto_action_t *a, co
     const char *kind = get_string(j, "kind");
     if (kind != NULL && (!strcmp(kind, "arm") || !strcmp(kind, "disarm"))) {
         return parse_alarm_action(j, !strcmp(kind, "arm"), a);
+    }
+    if (kind != NULL && strcmp(kind, "device") != 0) {
+        const parse_t pp = parse_panel_action(j, kind, a);
+        if (pp != PARSE_INCOMPLETE) {
+            return pp;
+        }
+        return PARSE_BAD; /* no such kind */
     }
     const char *src = get_string(j, "source");
     const char *ref = get_string(j, "ref");
@@ -840,9 +1060,18 @@ static int first_action(const auto_rule_t *r, auto_check_t why)
             break;
         case AUTO_ERR_UNDOES_ARMING: hit = a->kind == AUTO_ACT_DISARM; break;
         case AUTO_ERR_NOT_ALLOWED:
-            hit = !hc_auto_allowed((dev_kind_t)a->dev_kind, (dev_action_t)a->dev_action, a->value,
-                                   a->mode, true) ||
-                  (auto_action_needs_confirm(a->dev_kind, a->dev_action) && a->confirmed == 0u);
+            /* a device action no automation may do, or a Disarm (after an alarm, or the
+             * installer's: BL-187) */
+            hit = a->kind == AUTO_ACT_DEVICE
+                      ? !hc_auto_allowed((dev_kind_t)a->dev_kind, (dev_action_t)a->dev_action,
+                                         a->value, a->mode, true) ||
+                            (auto_action_needs_confirm(a->dev_kind, a->dev_action) &&
+                             a->confirmed == 0u)
+                      : a->kind == AUTO_ACT_DISARM;
+            break;
+        case AUTO_ERR_OUTPUT: hit = a->kind == AUTO_ACT_OUTPUT; break; /* BL-224 */
+        case AUTO_ERR_NEEDS_TIME:
+            hit = a->kind == AUTO_ACT_REMIND || a->kind == AUTO_ACT_CHECK_ARMED;
             break;
         default: break;
         }
@@ -868,6 +1097,10 @@ static cJSON *check_error(int *http, const auto_rule_t *r, auto_check_t why)
     case AUTO_ERR_UNDOES_ARMING: /* AUT-016, D31: a Disarm after its own partition's arming */
         return answer_error(http, 409, "undoes_arming", first_action(r, why));
     case AUTO_ERR_ARM_ALONE: return answer_error(http, 409, "arm_alone", -1); /* AUT-011 */
+    /* BL-224: a wired output that isn't "For automations" (now); Remind or "still armed" after
+     * a trigger other than a time of day */
+    case AUTO_ERR_OUTPUT: return answer_error(http, 409, "bad_output", first_action(r, why));
+    case AUTO_ERR_NEEDS_TIME: return answer_error(http, 409, "needs_time", first_action(r, why));
     case AUTO_ERR_UNSUPPORTED: return answer_error(http, 409, "newer", -1);
     case AUTO_ERR_MAKER: return answer_error(http, 503, "failed", -1);
     default: return answer_error(http, 409, "incomplete", -1); /* partition, time, window */
@@ -983,7 +1216,7 @@ static cJSON *post_try(ctx_t *c, const auto_rule_t *r, uint16_t gen, int *http)
     if (r->rec != AUTO_REC_OK) {
         return answer_error(http, 409, "newer", -1);
     }
-    if (has_alarm_action(r)) { /* nothing arms without its warning; the page offers no Try */
+    if (has_untried_action(r)) { /* nothing arms without its warning; the page offers no Try */
         return answer_error(http, 409, "action_not_allowed", 0);
     }
     /* M01: the answer exists before the action runs. Once it ran, "Memory busy" would invite a
@@ -1108,6 +1341,14 @@ bool web_automations_add_warnings(cJSON *o, const char *key, const alarm_config_
     (void)o;
     (void)key;
     (void)cfg;
+    (void)partitions;
+    return true;
+}
+
+bool web_automations_add_reminders(cJSON *o, const char *key, uint8_t partitions)
+{
+    (void)o;
+    (void)key;
     (void)partitions;
     return true;
 }

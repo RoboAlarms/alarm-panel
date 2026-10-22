@@ -463,6 +463,21 @@ static void trouble_fields(pj_writer_t *w, const alarm_config_t *cfg, const alar
     }
 }
 
+/* An automation's notification's trouble (ALARM_EV_AUTOMATION_NOTICE arg2, the automation's
+ * auto_trouble_t), as the Panel Manager names a trouble trigger: an external contract, add only. */
+static const char *auto_trouble_name(uint8_t trouble)
+{
+    switch ((auto_trouble_t)trouble) {
+    case AUTO_TROUBLE_ANY: return "any";
+    case AUTO_TROUBLE_AC: return "ac";
+    case AUTO_TROUBLE_BATTERY: return "battery";
+    case AUTO_TROUBLE_SENSOR: return "sensor";
+    case AUTO_TROUBLE_SIREN: return "siren";
+    case AUTO_TROUBLE_OTHER: return "other";
+    default: return "unknown";
+    }
+}
+
 /* The event's fields into an already-open object: the Home Assistant link merges its own
  * "t":"event" in front (proto_link_event); the MQTT payload below stays byte-identical. */
 void proto_event_fields(pj_writer_t *w, const alarm_config_t *cfg, const alarm_event_t *ev,
@@ -537,6 +552,17 @@ void proto_event_fields(pj_writer_t *w, const alarm_config_t *cfg, const alarm_e
         } else {
             pj_knull(w, "until");
         }
+        break;
+    }
+    case ALARM_EV_AUTOMATION_NOTICE: { /* docs/features/41 BL-224; `automation` below */
+        const uint8_t extra = (uint8_t)(ev->arg2 & (uint8_t)~ALARM_AUTO_NOTICE_TRIED);
+        pj_kstr(w, "notice", alarm_auto_notice_name((alarm_auto_notice_t)ev->arg));
+        if (ev->arg == (uint8_t)ALARM_AUTO_NOTICE_ARMED) {
+            pj_kstr(w, "level", extra != 0u ? alarm_level_name((alarm_arm_level_t)extra) : NULL);
+        } else if (ev->arg == (uint8_t)ALARM_AUTO_NOTICE_TROUBLE) {
+            pj_kstr(w, "trouble", auto_trouble_name(extra));
+        }
+        pj_kbool(w, "test", (ev->arg2 & ALARM_AUTO_NOTICE_TRIED) != 0u);
         break;
     }
     default:

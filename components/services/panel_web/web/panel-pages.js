@@ -720,14 +720,17 @@ function overviewBody() {
 }
 // A partition's card exactly as it is (D19: every arm and disarm button stays), with an arming automation's warning card
 // above it, or its put-off note (D20, D27), while that partition is disarmed and quiet - never while it is armed.
-// Steady words, no button, nothing counts down: the put-off is at the panel, with a code (AUT-013).
+// Steady words, no button, nothing counts down: the put-off is at the panel, with a code (AUT-013). A reminder to arm
+// (BL-224) adds its own steady line while it stands: "Not armed yet · reminder at 11:00 PM".
 function overviewPartition(p) {
   const card = commandCard(p), extra = overviewAutoHtml(p);
   return extra ? `<div class="au-stack">${extra}${card}</div>` : card;
 }
 function overviewAutoHtml(p) {
   if (p.state !== 'disarmed' || p.alarm || p.walk_test) return '';
-  return (state.automation_warnings || []).filter(w => w.partition === p.number).map(w => {
+  const reminders = (state.automation_reminders || []).filter(r => r.partition === p.number)
+    .map(r => `<p class="au-note">${icon('bell')}<span>${esc(t('Not armed yet · reminder at {0}', minuteText(r.minute)))}</span></p>`).join('');
+  return reminders + (state.automation_warnings || []).filter(w => w.partition === p.number).map(w => {
     const at = w.at ? timeOfDay(w.at * 1000) : '';
     if (w.state === 'on') {
       const title = at ? ({away: t('Arming Away at {0}', at), stay: t('Arming Stay at {0}', at), night: t('Arming Night at {0}', at)})[w.level]
@@ -5460,6 +5463,15 @@ const AU_ALARMS = ['alarm', 'fire']; // D22: an automation never silences an ala
 const AU_POLL_MS = 2000; // the state lines: read again every 2 s, written only when they changed (UI-020, UI-023)
 // Phase C (AUT-011): "Arm the panel" and "Disarm", the group "The alarm" in Then.
 const auIsAlarm = a => a?.kind === 'arm' || a?.kind === 'disarm';
+// Without devices (BL-224, DESIGN.md section 15): Remind to arm, "still armed" and the door chime in "The alarm", Send a
+// notification, and the wired outputs set to "For automations". Remind and "still armed" look at the panel at their time:
+// only after a time of day, and alone.
+const AU_PANEL = ['remind', 'still_armed', 'chime', 'notify', 'output'];
+const AU_TIME_ONLY = ['remind', 'still_armed'];
+const auOwn = a => AU_PANEL.includes(a?.kind);
+// The installer code never arms or disarms itself (USR-001): an Arm the installer sets up uses the system master's
+// permission (BL-224, approved 2026-10-21); a Disarm stays the master's.
+const auInstaller = () => state?.access?.arm === false;
 // The less secure actions (auto_action_less_secure): a disarm, or a device pair hc_auto_less_secure names - an
 // unlock, an open, a garage door's or a cover's stop (D25).
 const auLessSecure = (a, kind = auKindOf(a)) => a?.kind === 'disarm' ||
@@ -5495,7 +5507,15 @@ const auKinds = () => [
   ['zone_opened', t('When a door or window opens'), t('Or a motion or water sensor')],
   ['zone_closed', t('When a door or window closes'), ''],
   ['time', t('At a time of day'), t('On the days you pick')],
+  ['trouble', t('When there’s a trouble'), ''],
 ];
+// "When there's a trouble" (BL-224): which one starts it.
+const auTroubles = () => [['any', t('Any trouble')], ['ac', t('The power goes off')], ['battery', t('The panel’s battery is low')],
+  ['sensor', t('A sensor stops reporting')], ['siren', t('A siren problem')]];
+const auOutput = n => (au.data?.outputs || []).find(o => o.number === n);
+const auOutputName = n => auOutput(n)?.name || t('Output {0}', n);
+// Where a notification goes: every phone service set up in Integrations, even with that category off (BL-224).
+const auWhere = () => listWords((au.data?.notify || []).map(x => ({ntfy: nt('ntfy'), pushover: nt('Pushover')})[x] || x));
 const auTimes = () => Array.from({length: 288}, (_, i) => [i * 5, minuteText(i * 5)]); // 5-minute steps
 const auShortDay = d => new Date(2026, 0, 5 + AU_DAYS.indexOf(d)).toLocaleDateString(wordsLocale(), {weekday: 'short'});
 const auDayNames = days => listWords(AU_DAYS.filter(d => days.includes(d)).map(auShortDay));
@@ -5525,6 +5545,8 @@ function auWhenText(w) {
       if (['door', 'window', 'garage_door'].includes(cls)) return t('When {0} opens', zone);
       return t('When {0} is triggered', zone);
     case 'zone_closed': return t('When {0} closes', zone);
+    case 'trouble': return ({any: t('When there’s a trouble'), ac: t('When the power goes off'), battery: t('When the panel’s battery is low'),
+      sensor: t('When a sensor stops reporting'), siren: t('When there’s a siren problem')})[w.trouble || 'any'] || t('When there’s a trouble');
     case 'time': {
       const at = minuteText(w.minute), k = auDaysKind(w.days || []);
       if (k === 'all') return t('At {0} every day', at);
@@ -5544,6 +5566,22 @@ function auRunsText(w) {
   return t('Runs on {0} at {1}', auDayNames(w.days), at);
 }
 const auMinutes = n => n === 60 ? t('1 hour') : tn('{0} minute', '{0} minutes', n);
+// What the phone gets: from the trigger, never typed (AUT-001, BL-224).
+function auNotice(w) {
+  const zone = auZone(w)?.name || w?.zone_name || '';
+  switch (w?.kind) {
+    case 'zone_opened': return t('{0} opened', zone);
+    case 'zone_closed': return t('{0} closed', zone);
+    case 'armed': return t('The panel was armed');
+    case 'disarmed': return t('The panel was disarmed');
+    case 'alarm': return t('An alarm is sounding');
+    case 'fire': return t('A fire or CO alarm is sounding');
+    case 'trouble': return ({ac: t('The power went off'), battery: t('The panel’s battery is low'), sensor: t('A sensor stopped reporting'),
+      siren: t('A siren has a problem')})[w.trouble] || t('There’s a trouble');
+    case 'time': return t('It’s {0}', minuteText(w.minute));
+  }
+  return '';
+}
 function auActionText(a) {
   if (a.kind === 'arm') { // the touchscreen's arm_text: the partition's name only when there is more than one
     const p = auMany() ? auPartName(a.partition) : '';
@@ -5551,6 +5589,17 @@ function auActionText(a) {
     return ({away: t('Arm Away'), stay: t('Arm Stay'), night: t('Arm Night')})[a.level] || '';
   }
   if (a.kind === 'disarm') return auMany() ? t('Disarm {0}', auPartName(a.partition)) : t('Disarm');
+  switch (a.kind) { // BL-224: without a device
+    case 'remind': return t('Remind to arm');
+    case 'still_armed': return t('Tell me if it’s still armed');
+    case 'chime': return a.on ? t('Turn the door chime on') : t('Turn the door chime off');
+    case 'notify': return t('Send a notification');
+    case 'output': {
+      const name = auOutputName(a.output);
+      if (a.action === 'off') return t('Turn off {0}', name);
+      return a.off_after ? t('Turn on {0} for {1}', name, auMinutes(a.off_after)) : t('Turn on {0}', name);
+    }
+  }
   switch (a.action) {
     case 'on': return a.off_after ? t('Turn on {0} for {1}', a.device, auMinutes(a.off_after)) : t('Turn on {0}', a.device);
     case 'off': return t('Turn off {0}', a.device);
@@ -5570,6 +5619,8 @@ const auBlocked = a => au.data?.less_secure === false && auLessSecure(a);
 // Who set it up (D30: never "arms as" a person; it acts as them, checked each time).
 // Only a draft not yet saved falls back to the viewer: a stored one with no maker (deleted, never stored) says nothing, as the touchscreen does.
 const auMadeBy = a => a.made_by || (au.isNew ? state?.name || '' : '');
+// Whoever saves an Arm sets it up; the installer's uses the system master's permission (BL-224), as the panel stores it.
+const auArmMaker = () => auInstaller() ? {made_by: au.data?.master || '', saved_by: state?.name || ''} : {made_by: state?.name || '', saved_by: null};
 // The partitions a Disarm may name after this trigger (the touchscreen's disarm_partitions): the ones the person saving
 // it may disarm, and never one an armed trigger watches (it could only undo the arming).
 const auDisarmParts = when => {
@@ -5582,16 +5633,32 @@ function auActionDetail(a) {
   if (a.kind === 'arm') {
     const who = auMadeBy(a);
     if (!who) return '';
+    if (a.saved_by) // the installer's (BL-224): it uses the system master's permission
+      return tn('Set up by Installer · uses {1}’s permission · warns {0} minute before', 'Set up by Installer · uses {1}’s permission · warns {0} minutes before', a.warn_min, who);
     return a.bypass && au.data?.less_secure !== false
       ? tn('Set up by {1} · warns {0} minute before · bypasses open zones', 'Set up by {1} · warns {0} minutes before · bypasses open zones', a.warn_min, who)
       : tn('Set up by {1} · warns {0} minute before', 'Set up by {1} · warns {0} minutes before', a.warn_min, who);
   }
   if (a.kind === 'disarm') return ''; // its own row says who set it up, with what the panel checks
+  switch (a.kind) { // BL-224
+    case 'remind': return a.notify ? t('A chime and a note on the panel · also a notification') : t('A chime and a note on the panel');
+    case 'still_armed': case 'notify': {
+      const where = auWhere();
+      if (!where) return t('Can’t send: no phone notifications are set up');
+      const said = a.kind === 'notify' ? auNotice(au.now?.when) : t('{0} is still armed at {1}', auPartName(a.partition), minuteText(au.now?.when?.minute || 0));
+      return said ? t('“{0}” · {1}', said, where) : where;
+    }
+    case 'chime': return auMany() ? auPartName(a.partition) : '';
+    case 'output': return auOutput(a.output) ? t('Output on GPIO {0}', auOutput(a.output).gpio) : t('Not an output for automations now · pick another');
+  }
   if (a.found === false) return t('Missing: it was called {0} · pick another device', a.device);
   return [a.area, a.online === false ? t('Not reachable now') : ''].filter(Boolean).join(' · ');
 }
 // The chip's glyph, by the first action (section 9).
 function auActionIcon(a) {
+  if (a.kind === 'remind' || a.kind === 'chime') return icon('bell');
+  if (a.kind === 'notify' || a.kind === 'still_armed') return icon('send');
+  if (a.kind === 'output') return icon('toggle');
   if (a.kind === 'arm') return icon(({away: 'away', stay: 'house', night: 'moon'})[a.level] || 'shield');
   if (a.kind === 'disarm' || a.action === 'unlock') return icon('lockOpen');
   return icon(({on: 'bulb', off: 'bulb', toggle: 'toggle', lock: 'lock', close: 'garage', open: 'garage', stop: 'garage', run: 'sparkles'})[a.action] || 'zap');
@@ -5675,7 +5742,7 @@ function auStatus(a, list = false) {
   const gone = a.then.find(x => x.found === false);
   if (gone) return {text: t('{0} isn’t on the panel now', gone.device), tone: 'warn'};
   const st = a.status || {result: 'none'}, p = st.at ? auParts(st.at) : null;
-  const alarmText = auAlarmStatus(a, st, p);
+  const alarmText = auAlarmStatus(a, st, p) || auPanelStatus(a, st, p);
   if (alarmText) return alarmText;
   switch (st.result) {
     case 'ran': if (p) return {text: p.same ? t('Ran at {0}', p.tm) : t('Ran on {0}', p.dt), tone: ''}; break;
@@ -5724,6 +5791,23 @@ function auAlarmStatus(a, st, p) {
   }
   return null;
 }
+// BL-224: the statuses of a reminder, "still armed", the door chime and a notification, as {text, tone}; null: the
+// common words apply (ran, tried, didn't work).
+function auPanelStatus(a, st, p) {
+  const at = (same, on) => p ? (p.same ? same(p.tm) : on(p.dt)) : '';
+  if (st.result === 'skipped' && st.reason === 'no_service') return {text: t('Not sent: no phone notifications are set up'), tone: 'warn'};
+  const x = a.then.find(auOwn);
+  if (!x) return null;
+  if (st.result === 'already') {
+    if (x.kind === 'remind') return {text: at(tm => t('Already armed at {0}', tm), dt => t('Already armed on {0}', dt)) || t('Already armed'), tone: ''};
+    if (x.kind === 'still_armed') return {text: at(tm => t('Not armed at {0}: nothing sent', tm), dt => t('Not armed on {0}: nothing sent', dt)) || t('Not armed: nothing sent'), tone: ''};
+    if (p) return {text: p.same ? t('Ran at {0}', p.tm) : t('Ran on {0}', p.dt), tone: ''}; // the chime was so already
+  }
+  if (st.result === 'failed' && st.reason === 'arm_refused' && x.kind === 'chime')
+    return {text: at(tm => t('Didn’t change the door chime at {0}: the panel refused it', tm), dt => t('Didn’t change the door chime on {0}: the panel refused it', dt))
+      || t('Didn’t change the door chime: the panel refused it'), tone: 'warn'};
+  return null;
+}
 function auTags(a) {
   if (a.record === 'newer') return [[t('Made by newer software'), 'warn']];
   if (a.record !== 'ok') return [[t('Can’t run'), 'warn']];
@@ -5748,6 +5832,8 @@ function auMessage(error) {
     needs_confirm: t('It has to be confirmed first.'),
     undoes_arming: t('It would undo the arming at once.'),
     arm_alone: t('Arming has to be its only action.'),
+    bad_output: t('That output isn’t one for automations now.'),
+    needs_time: t('A reminder and “still armed” run only at a time of day.'),
     less_secure_off: auOffNote(),
     incomplete: t('Choose when it runs and what it does.'),
     bad_zone: t('That sensor can’t start an automation.'),
@@ -5799,7 +5885,7 @@ async function auListPage() {
   if (!data.clock_set) html += notice('warn', t('The clock isn’t set, so times wait until it is.'));
   if (full) html += notice('info', t('16 is the most. Delete one to add another.'));
   if (!data.automations.length)
-    return html + `<div class="card status-card"><p>${ht('The panel can do things by itself, like turning on the porch light when the front door opens.')}</p></div>`;
+    return html + `<div class="card status-card"><p>${ht('The panel can do things by itself, like arming at bedtime or telling your phone when a door opens at night.')}</p></div>`;
   return {
     html: html + `<div id="au-rows">${auRows(data)}</div>`,
     bind() {
@@ -5830,37 +5916,61 @@ function auRow(a) {
 // ---- Add an automation: the touchscreen's ideas; one shows only when its parts exist --------------------------------
 
 const auBlank = () => ({kind: 'device', source: '', ref: '', device: '', area: '', found: true, online: true, action: '', off_after: 0, confirmed: false});
-// A new arm or disarm: the person saving it sets it up (the panel makes them the maker); 5 minutes' warning (AUT-012).
-const auNewArm = (level = 'night') => ({kind: 'arm', partition: auPartNumbers()[0] || 1, level, warn_min: 5, bypass: false, made_by: state?.name || ''});
+// A new arm or disarm: the person saving it sets it up (the panel makes them the maker; the installer's Arm uses the system
+// master's permission, BL-224); 5 minutes' warning (AUT-012).
+const auNewArm = (level = 'night') => ({kind: 'arm', partition: auPartNumbers()[0] || 1, level, warn_min: 5, bypass: false, ...auArmMaker()});
 function auNewDisarm(when) { // a partition its trigger doesn't arm, if the trigger is an arming (D31)
   const free = auDisarmParts(when);
   return {kind: 'disarm', partition: free[0] || auPartNumbers()[0] || 1, confirmed: false, made_by: state?.name || ''};
 }
-const auPicked = a => auIsAlarm(a) || !!a.ref;
+// BL-224: the actions without a device, as the editor holds them.
+const auNewRemind = () => ({kind: 'remind', partition: auPartNumbers()[0] || 1, notify: (au.data?.notify || []).length > 0});
+const auNewStillArmed = () => ({kind: 'still_armed', partition: auPartNumbers()[0] || 1});
+const auNewChime = on => ({kind: 'chime', partition: auPartNumbers()[0] || 1, on});
+const auNewNotify = () => ({kind: 'notify'});
+const auNewOutput = (output, action = 'on', offAfter = 0) => ({kind: 'output', output, action, off_after: offAfter});
+const auPicked = a => auIsAlarm(a) || auOwn(a) || !!a.ref;
 function auThenOf(d, action, offAfter = 0, confirmed = false) {
   return {kind: 'device', source: d.source, ref: d.ref, device: d.name, area: d.area, found: true, online: d.online, action, off_after: offAfter, confirmed};
 }
 const auModel = (when, then) => ({on: true, when: {kind: '', partitions: [], levels: [], zone: 0, zone_name: '', minute: 1380, days: [...AU_DAYS], window: null, ...when},
   then: then || [auBlank()]});
+// The ideas a new panel can use first (BL-224), each only when its parts exist; then the device ideas, then Start from scratch.
+// The installer is offered the arming ones (it uses the system master's permission), never Disarm.
 function auIdeas(data, devs) {
   const door = data.zones.find(z => ['door', 'window'].includes(z.class) && z.usable_open);
   const water = data.zones.find(z => z.class === 'water' && z.usable_open);
   const light = devs.find(d => d.kind === 'light' && auActs(d).includes('on'));
   const lock = devs.find(d => d.kind === 'lock' && auActs(d).includes('lock'));
   const valve = devs.find(d => d.kind === 'valve' && auActs(d).includes('close'));
-  const out = [];
-  if (door && light) out.push({id: 'door-light', icon: 'bulb', title: t('Turn on a light when a door opens'), detail: t('Like the porch light, in the evening'),
+  const output = data.outputs?.[0], weekdays = AU_DAYS.slice(0, 5);
+  const out = [
+    {id: 'bedtime', glyph: icon('moon'), title: t('Arm at bedtime'), detail: t('Every night at a time you choose, after a warning'),
+      make: () => auModel({kind: 'time', minute: 1350}, [auNewArm('night')])},
+    {id: 'morning', glyph: icon('away'), title: t('Arm Away on weekday mornings'), detail: t('After everyone has left, with a warning'),
+      make: () => auModel({kind: 'time', minute: 510, days: weekdays}, [auNewArm('away')])},
+    {id: 'remind', glyph: icon('bell'), title: t('Remind me to arm'), detail: t('A chime and a note if it’s still disarmed at bedtime'),
+      make: () => auModel({kind: 'time', minute: 1380}, [auNewRemind()])},
+    {id: 'still-armed', glyph: icon('send'), title: t('Tell me if it’s still armed'), detail: t('Like nobody home from school by 4:00 PM'),
+      make: () => auModel({kind: 'time', minute: 960, days: weekdays}, [auNewStillArmed()])},
+  ];
+  if (!auInstaller() && data.less_secure !== false) out.push({id: 'open', glyph: icon('lockOpen'), title: t('Disarm at opening time'), detail: t('For a shop or an office, on weekdays'),
+    make: () => auModel({kind: 'time', minute: 480, days: weekdays}, [auNewDisarm({kind: 'time'})])});
+  if (door) out.push({id: 'door', glyph: icon('door'), title: t('Tell me when a door opens at night'), detail: t('A notification to your phone, 10:00 PM to 6:00 AM'),
+    make: () => auModel({kind: 'zone_opened', zone: door.number, zone_name: door.name, window: {from: 1320, to: 360}}, [auNewNotify()])});
+  out.push({id: 'chime', glyph: icon('bell'), title: t('Quiet the door chime at night'), detail: t('Off at bedtime; another can turn it on in the morning'),
+    make: () => auModel({kind: 'time', minute: 1320}, [auNewChime(false)])});
+  if (output) out.push({id: 'output', glyph: icon('toggle'), title: t('Switch an output when an alarm sounds'), detail: t('Like the garden lights, for 30 minutes'),
+    make: () => auModel({kind: 'alarm'}, [auNewOutput(output.number, 'on', 30)])});
+  if (door && light) out.push({id: 'door-light', glyph: icon('bulb'), title: t('Turn on a light when a door opens'), detail: t('Like the porch light, in the evening'),
     make: () => auModel({kind: 'zone_opened', zone: door.number, zone_name: door.name, window: {from: 1080, to: 360}}, [auThenOf(light, 'on', 10)])});
-  if (lock) out.push({id: 'lock-away', icon: 'lock', title: t('Lock up when you arm Away'), detail: t('Lock a door when everyone has left'),
+  if (lock) out.push({id: 'lock-away', glyph: icon('lock'), title: t('Lock up when you arm Away'), detail: t('Lock a door when everyone has left'),
     make: () => auModel({kind: 'armed', levels: ['away']}, [auThenOf(lock, 'lock')])});
-  if (light) out.push({id: 'alarm-lights', icon: 'siren', title: t('Turn on lights when an alarm sounds'), detail: t('So you can see, and be seen'),
+  if (light) out.push({id: 'alarm-lights', glyph: icon('siren'), title: t('Turn on lights when an alarm sounds'), detail: t('So you can see, and be seen'),
     make: () => auModel({kind: 'alarm'}, [auThenOf(light, 'on')])});
-  if (water && valve) out.push({id: 'leak-water', icon: 'drops', title: t('Close the water when a leak is found'), detail: t('Shut the water main'),
+  if (water && valve) out.push({id: 'leak-water', glyph: icon('drops'), title: t('Close the water when a leak is found'), detail: t('Shut the water main'),
     make: () => auModel({kind: 'zone_opened', zone: water.number, zone_name: water.name}, [auThenOf(valve, 'close')])});
-  // Phase C: arming at bedtime, after a warning (AUT-011, AUT-012); not the installer's, who never arms (USR-001)
-  if (state.access?.arm !== false) out.push({id: 'arm-night', icon: 'moon', title: t('Arm Night at bedtime'), detail: t('Every night at a time you choose, after a warning'),
-    make: () => auModel({kind: 'time', minute: 1350}, [auNewArm('night')])});
-  out.push({id: 'scratch', icon: 'zap', title: t('Start from scratch'), detail: t('Choose when it runs and what it does'), make: () => auModel({})});
+  out.push({id: 'scratch', glyph: icon('zap'), title: t('Start from scratch'), detail: t('Choose when it runs and what it does'), make: () => auModel({})});
   return out;
 }
 async function auNewPage() {
@@ -5871,7 +5981,7 @@ async function auNewPage() {
   if (data.used >= data.maximum) return pageHead(t('Add an automation'), t('16 is the most. Delete one to add another.'), '', auBack());
   return pageHead(t('Add an automation'), t('Pick an idea to start from. Nothing is saved until you press Save.'), '', auBack()) +
     `<div class="card"><ul class="list pc-list">${auIdeas(data, au.devices).map(i => `<li><a class="pc-person" href="#/automations/new/${i.id}">
-      <span class="pc-chip accent">${icon(i.icon)}</span><span class="main"><strong>${esc(i.title)}</strong><span class="au-detail">${esc(i.detail)}</span></span>${icon('chev', 'chev')}</a></li>`).join('')}</ul></div>`;
+      <span class="pc-chip accent">${i.glyph}</span><span class="main"><strong>${esc(i.title)}</strong><span class="au-detail">${esc(i.detail)}</span></span>${icon('chev', 'chev')}</a></li>`).join('')}</ul></div>`;
 }
 
 // ---- One automation -------------------------------------------------------------------------------------------
@@ -5978,6 +6088,9 @@ function auWhenCard() {
       zones.length ? `<select id="au-zone" data-f="zone" data-k="zone">${auOptions(zones.map(z => [z.number, z.name || tc('default zone name', 'Zone {0}', z.number)]), w.zone)}</select>`
         : `<select id="au-zone" disabled><option>${ht('No doors or windows to choose')}</option></select>`));
   }
+  if (w.kind === 'trouble')
+    rows.push(pcRowHtml('au-trouble', t('Which trouble?'), t('It runs once when the trouble starts.'),
+      `<select id="au-trouble" data-f="trouble" data-k="trouble">${auOptions(auTroubles(), w.trouble || 'any')}</select>`));
   if (w.kind === 'time') {
     rows.push(pcRowHtml('au-time', t('Run at'), '', `<select id="au-time" data-f="minute" data-k="minute">${auOptions(auTimes(), w.minute)}</select>`));
     rows.push(pcRowHtml('', t('On these days'), [auRunsText(w), t('It runs once a day at most, and waits while the clock isn’t set.')],
@@ -5994,8 +6107,7 @@ function auWindowCard() {
     `<select id="au-to" data-f="to" data-k="to">${auOptions(times, win.to)}</select>`));
   return pcCard(t('Only between'), `<div class="rows">${rows.join('')}</div>`);
 }
-// The device list, one group per area, scenes apart. A later unit puts "The alarm" first (BL-170): auThenGroups() is
-// where it goes.
+// The device list, one group per area, scenes apart, after "The alarm", "Tell someone" and "Outputs" (BL-224).
 function auThenGroups() {
   const groups = new Map();
   for (const d of au.devices) {
@@ -6005,38 +6117,55 @@ function auThenGroups() {
   }
   return groups;
 }
-// "The alarm", Then's first group (AUT-011): "Arm the panel" after any trigger while it is the only action; "Disarm" as
-// the first action, at most one device action after it, never after an alarm trigger (D22), with the option on (D25),
-// nor where it could only undo an arming (D31). A stored one is always listed, so it shows as it is.
+// "The alarm", Then's first group (AUT-011, BL-224): "Arm the panel" after any trigger while it is the only action, the
+// installer's too; "Disarm" as the first action, with at most one other action that is no arming, never after an alarm
+// trigger (D22), with the option on (D25), nor where it could only undo an arming (D31), never the installer's; Remind to
+// arm and "still armed" after a time, alone; the door chime on or off. A stored one is always listed, so it shows as it is.
 function auAlarmOptions(i) {
   const n = au.now, cur = n.then[i], w = n.when, out = [];
-  const arms = state.access?.arm !== false; // the installer never arms or disarms, so is offered neither (USR-001, BL-187)
-  if (cur?.kind === 'arm' || (arms && i === 0 && n.then.length === 1)) out.push(['alarm:arm', t('Arm the panel')]);
-  const room = n.then.every((x, k) => k === i || x.kind === 'device');
+  const alone = i === 0 && n.then.length === 1, other = n.then.find((x, k) => k !== i);
+  if (cur?.kind === 'arm' || alone) out.push(['alarm:arm', t('Arm the panel')]);
+  const room = !other || (!auIsAlarm(other) && !AU_TIME_ONLY.includes(other.kind));
   const free = auDisarmParts(w).length > 0;
-  if (cur?.kind === 'disarm' || (arms && i === 0 && room && au.data?.less_secure !== false && !AU_ALARMS.includes(w.kind) && free))
+  if (cur?.kind === 'disarm' || (!auInstaller() && i === 0 && room && au.data?.less_secure !== false && !AU_ALARMS.includes(w.kind) && free))
     out.push(['alarm:disarm', t('Disarm')]);
+  if (AU_TIME_ONLY.includes(cur?.kind) || (w.kind === 'time' && alone))
+    out.push(['panel:remind', t('Remind to arm')], ['panel:still_armed', t('Tell me if it’s still armed')]);
+  if (cur?.kind === 'chime' || other?.kind !== 'chime') out.push(['panel:chime-on', t('Turn the door chime on')], ['panel:chime-off', t('Turn the door chime off')]);
   return out;
 }
+// The select's value of an action: a device's source:ref, or what it is in "The alarm", "Tell someone" or "Outputs".
+const auPickValue = a => a.kind === 'chime' ? (a.on ? 'panel:chime-on' : 'panel:chime-off') : a.kind === 'output' ? 'panel:output:' + a.output
+  : auOwn(a) ? 'panel:' + a.kind : auIsAlarm(a) ? 'alarm:' + a.kind : '';
 function auDeviceSelect(a, i) {
-  const gone = a.ref && a.found === false, alarm = auAlarmOptions(i), mine = auIsAlarm(a) ? 'alarm:' + a.kind : '';
-  let html = `<option value=""${(!a.ref && !mine) || gone ? ' selected' : ''}>${gone ? ht('Pick another device') : ht('Choose a device')}</option>`;
+  const gone = a.kind === 'device' && a.ref && a.found === false, mine = auPickValue(a), other = au.now.then.find((x, k) => k !== i);
+  let html = `<option value=""${(!a.ref && !mine) || gone ? ' selected' : ''}>${gone ? ht('Pick another device') : ht('Choose what it does')}</option>`;
+  const alarm = auAlarmOptions(i);
   if (alarm.length) html += `<optgroup label="${esc(t('The alarm'))}">${auOptions(alarm, mine)}</optgroup>`;
+  if (a.kind === 'notify' || other?.kind !== 'notify')
+    html += `<optgroup label="${esc(t('Tell someone'))}">${auOptions([['panel:notify', t('Send a notification')]], mine)}</optgroup>`;
+  // The wired outputs "For automations"; a stored one that no longer is stays listed, so it shows as it is
+  const outs = (au.data?.outputs || []).filter(o => !(other?.kind === 'output' && other.output === o.number));
+  if (a.kind === 'output' && !auOutput(a.output)) outs.push({number: a.output, name: auOutputName(a.output)});
+  if (outs.length) html += `<optgroup label="${esc(t('Outputs'))}">${auOptions(outs.map(o => ['panel:output:' + o.number, o.name || t('Output {0}', o.number)]), mine)}</optgroup>`;
   for (const [group, list] of auThenGroups())
-    html += `<optgroup label="${esc(group)}">${list.map(d => `<option value="${esc(d.source + ':' + d.ref)}"${a.source === d.source && a.ref === d.ref && !gone ? ' selected' : ''}>${
+    html += `<optgroup label="${esc(group)}">${list.map(d => `<option value="${esc(d.source + ':' + d.ref)}"${a.kind === 'device' && a.source === d.source && a.ref === d.ref && !gone ? ' selected' : ''}>${
       esc(d.online ? d.name : t('{0} · not reachable now', d.name))}</option>`).join('')}</optgroup>`;
   return `<select id="au-dev-${i}" data-f="dev" data-i="${i}" data-k="dev-${i}">${html}</select>`;
 }
+// Try it now: devices, outputs, the door chime and a notification; never an arm, a disarm, a reminder or "still armed",
+// which mean something only at their trigger.
+const auTriable = a => (a.kind === 'device' && a.ref && a.found !== false && !auBlocked(a)) || ['output', 'chime', 'notify'].includes(a.kind);
 function auThenCard() {
   const then = au.now.then, rows = [];
   if (!au.now.when.kind) return pcCard(t('Then'), `<div class="rows">${pcRowHtml('', t('Choose when it runs'), t('Then pick what it does.'), '')}</div>`);
-  if (!au.devices.length) rows.push(pcRowHtml('', t('No devices to choose'), t('Devices appear here once one is connected.'), ''));
   then.forEach((a, i) => {
-    const dev = au.devices.find(d => d.source === a.source && d.ref === a.ref);
+    const dev = a.kind === 'device' ? au.devices.find(d => d.source === a.source && d.ref === a.ref) : null;
     const remove = then.length > 1 ? `<button type="button" class="small" data-au="rm" data-i="${i}" data-k="rm-${i}">${ht('Remove this action')}</button>` : '';
-    let block = pcRowHtml('', auPicked(a) ? auActionText(a) : t('Choose a device'), auPicked(a) ? auActionDetail(a) : '', remove);
-    block += pcRowHtml(`au-dev-${i}`, auIsAlarm(a) ? t('The alarm') : t('Device'), '', auDeviceSelect(a, i));
+    let block = pcRowHtml('', auPicked(a) ? auActionText(a) : t('Choose what it does'), auPicked(a) ? auActionDetail(a) : '', remove);
+    block += pcRowHtml(`au-dev-${i}`, t('What it does'), '', auDeviceSelect(a, i));
     if (auIsAlarm(a)) { rows.push(`<div class="au-then">${block}${auAlarmRows(a, i)}</div>`); return; }
+    if (auOwn(a)) { rows.push(`<div class="au-then">${block}${auPanelRows(a, i)}</div>`); return; }
     // A stored action the installer option now hides stays as it is, marked (AUT-015): never changed for the person.
     const acts = dev ? auActs(dev).map(x => [x, auVerb(x)]) : [];
     if (dev && a.action && !auActs(dev).includes(a.action)) acts.push([a.action, t('{0} · can’t run', auVerb(a.action))]);
@@ -6045,18 +6174,42 @@ function auThenCard() {
       [[0, t('Leave it on')], [5, auMinutes(5)], [10, auMinutes(10)], [15, auMinutes(15)], [30, auMinutes(30)], [60, auMinutes(60)]], a.off_after)}</select>`);
     rows.push(`<div class="au-then">${block}</div>`);
   });
-  // A second action: after a device action, or a Disarm's one device action; never with Arm (AUT-011)
-  if (then.length === 1 && (then[0].kind === 'disarm' ? au.devices.length > 0 : then[0].kind === 'device' && then[0].ref && au.devices.length > 1))
+  // A second action: beside a device, an output, the door chime, a notification or a Disarm; never with Arm, Remind to
+  // arm or "still armed" (AUT-011, BL-224)
+  const one = then[0];
+  if (then.length === 1 && (one.kind === 'disarm' || (one.kind === 'device' && one.ref) || ['output', 'chime', 'notify'].includes(one.kind)))
     rows.push(pcRowHtml('', t('Add a second action'), '', `<button type="button" class="small" data-au="add2" data-k="add2">${icon('plus')}${ht('Add a second action')}</button>`));
-  // Try it now: device actions only - nothing arms without its warning, nothing disarms on a click here
-  if (!au.isNew && !au.locked && then.every(a => a.kind === 'device' && a.ref && a.found !== false && !auBlocked(a))) {
+  if (!au.isNew && !au.locked && then.every(auTriable)) {
     const dirty = auChanges().length > 0;
     rows.push(pcRowHtml('', t('Try it now'), dirty ? t('Save your changes first.') : t('Runs the actions once, now.'),
       `<button type="button" class="small" data-au="try" data-k="try"${dirty ? ' disabled' : ''}>${icon('play')}${ht('Try it now')}</button>`));
   }
-  // The installer option is off (D25): Unlock, Open and Stop aren't offered, and the page says why.
+  // No device yet: a quiet line where they will be (BL-224). The installer option is off (D25): Unlock, Open and Stop
+  // aren't offered, and the page says why.
+  const none = au.devices.length ? '' : `<p class="help au-count">${ht('Lights, locks and other devices show here once one is connected.')}</p>`;
   const off = au.data?.less_secure === false ? `<p class="help au-count">${esc(auOffNote())}</p>` : '';
-  return pcCard(t('Then'), `<div class="rows">${rows.join('')}</div>`) + off;
+  return pcCard(t('Then'), `<div class="rows">${rows.join('')}</div>`) + none + off;
+}
+// The rows of a reminder, "still armed", the door chime, a notification or an output (BL-224).
+function auPanelRows(a, i) {
+  const rows = [], w = au.now.when;
+  if (auMany() && ['remind', 'still_armed', 'chime'].includes(a.kind))
+    rows.push(pcRowHtml(`au-pn-part-${i}`, t('Which partition?'), '',
+      `<select id="au-pn-part-${i}" data-f="pn-part" data-i="${i}" data-k="pn-part-${i}">${auOptions(auPartNumbers().map(n => [n, auPartName(n)]), a.partition)}</select>`));
+  if (a.kind === 'remind') {
+    rows.push(pcRowHtml(`au-rn-${i}`, t('Also send a notification'), auWhere() ? t('To {0}', auWhere()) : t('No phone notifications are set up yet.'),
+      `<input id="au-rn-${i}" type="checkbox" class="switch" data-f="remind-notify" data-i="${i}" data-k="rn-${i}"${a.notify ? ' checked' : ''}>`));
+    rows.push(pcRowHtml('', t('At {0}, if the panel isn’t armed: a chime and a note on the panel.', minuteText(w.minute)),
+      t('It never arms by itself. The note goes once the panel is armed, or at 6:00 AM.'), ''));
+  }
+  if (a.kind === 'chime' && !a.on && w.kind === 'time') rows.push(pcRowHtml('', t('Nothing turns it on again. Add one for the morning.'), '', ''));
+  if (a.kind === 'output') {
+    rows.push(pcRowHtml(`au-oa-${i}`, t('Action'), '', `<select id="au-oa-${i}" data-f="out-act" data-i="${i}" data-k="oa-${i}">${
+      auOptions([['on', t('Turn on')], ['off', t('Turn off')]], a.action)}</select>`));
+    if (a.action === 'on') rows.push(pcRowHtml(`au-of-${i}`, t('Turn it off after'), '', `<select id="au-of-${i}" data-f="out-off" data-i="${i}" data-k="of-${i}">${auOptions(
+      [[0, t('Leave it on')], [5, auMinutes(5)], [10, auMinutes(10)], [15, auMinutes(15)], [30, auMinutes(30)], [60, auMinutes(60)]], a.off_after)}</select>`));
+  }
+  return rows.join('');
 }
 
 // The rows of an arm or a disarm (AUT-011..AUT-014; the touchscreen mockup screens/automations.js, D29-D31).
@@ -6139,6 +6292,7 @@ function auRefused(error) {
 function auSetKind(kind) {
   const w = au.now.when;
   Object.assign(w, {kind, partitions: [], levels: [], zone: 0, zone_name: ''});
+  if (kind === 'trouble') w.trouble = 'any'; else delete w.trouble;
   if (kind === 'zone_opened' || kind === 'zone_closed') {
     const z = au.data.zones.find(x => kind === 'zone_opened' ? x.usable_open : x.usable_close);
     w.zone = z?.number || 0;
@@ -6173,9 +6327,11 @@ function auInput(event) {
   if (['kind', 'zone', 'part'].includes(f)) n.then.forEach(a => { if (auLessSecure(a)) a.confirmed = false; });
   if (f === 'kind') {
     auSetKind(el.value);
-    // An alarm trigger drops a Disarm (D22: an automation never silences an alarm)
-    if (AU_ALARMS.includes(el.value) && n.then.some(a => a.kind === 'disarm')) {
-      n.then = n.then.filter(a => a.kind !== 'disarm');
+    // An alarm trigger drops a Disarm (D22: an automation never silences an alarm); any but a time drops a reminder
+    // and "still armed", which look at the panel at their time (BL-224)
+    const drop = a => (AU_ALARMS.includes(el.value) && a.kind === 'disarm') || (el.value !== 'time' && AU_TIME_ONLY.includes(a.kind));
+    if (n.then.some(drop)) {
+      n.then = n.then.filter(a => !drop(a));
       if (!n.then.length) n.then.push(auBlank());
     }
     return auRedraw('kind');
@@ -6186,7 +6342,8 @@ function auInput(event) {
     else if (f === 'arm-warn') x.warn_min = Number(el.value);
     else if (f === 'arm-bypass') x.bypass = !!el.checked;
     else if (f === 'arm-part' || f === 'disarm-part') { x.partition = Number(el.value); x.confirmed = false; } // a new pairing (D24)
-    x.made_by = state?.name || x.made_by; // whoever saves it sets it up
+    if (x.kind === 'arm') Object.assign(x, auArmMaker()); // whoever saves it sets it up (the installer's: as the master)
+    else x.made_by = state?.name || x.made_by;
     return auRedraw(el.dataset.k);
   }
   if (f === 'part') w.partitions = el.value ? [Number(el.value)] : [];
@@ -6196,7 +6353,18 @@ function auInput(event) {
   else if (f === 'day') w.days = AU_DAYS.filter(d => d === el.dataset.d ? el.checked : w.days.includes(d));
   else if (f === 'from') w.window = Number(el.value) < 0 ? null : {from: Number(el.value), to: w.window ? w.window.to : (Number(el.value) + 720) % 1440};
   else if (f === 'to') w.window = {from: w.window.from, to: Number(el.value)};
-  else if (f === 'dev') {
+  else if (f === 'trouble') w.trouble = el.value;
+  else if (f === 'remind-notify') n.then[i].notify = !!el.checked;
+  else if (f === 'pn-part') n.then[i].partition = Number(el.value);
+  else if (f === 'out-act') { n.then[i].action = el.value; if (el.value !== 'on') n.then[i].off_after = 0; }
+  else if (f === 'out-off') n.then[i].off_after = Number(el.value);
+  else if (f === 'dev' && el.value.startsWith('panel:')) { // BL-224: the alarm's own, a notification, an output
+    const v = el.value.slice(6), old = n.then[i];
+    const next = v === 'remind' ? auNewRemind() : v === 'still_armed' ? auNewStillArmed() : v === 'chime-on' ? auNewChime(true)
+      : v === 'chime-off' ? auNewChime(false) : v === 'notify' ? auNewNotify() : auNewOutput(Number(v.split(':')[1]));
+    if (old?.kind === next.kind && 'partition' in old) next.partition = old.partition;
+    if (AU_TIME_ONLY.includes(next.kind)) n.then = [next]; else n.then[i] = next; // alone
+  } else if (f === 'dev') {
     const d = au.devices.find(x => x.source + ':' + x.ref === el.value), old = n.then[i];
     if (el.value === 'alarm:arm') { n.then = [old.kind === 'arm' ? old : auNewArm()]; return auRedraw(el.dataset.k); }
     if (el.value === 'alarm:disarm') { n.then[i] = old.kind === 'disarm' ? old : auNewDisarm(w); return auRedraw(el.dataset.k); }
@@ -6229,9 +6397,16 @@ async function auClick(event) {
 // automation arms without bypassing, which is what saving it then says.
 const auWireAction = a => a.kind === 'arm' ? {kind: 'arm', partition: a.partition, level: a.level, warn_min: a.warn_min, bypass: au.data?.less_secure !== false && !!a.bypass}
   : a.kind === 'disarm' ? {kind: 'disarm', partition: a.partition, confirmed: !!a.confirmed}
+  // BL-224: without a device
+  : a.kind === 'output' ? {kind: 'output', output: a.output, action: a.action, off_after: a.action === 'on' ? a.off_after || 0 : 0}
+  : a.kind === 'remind' ? {kind: 'remind', partition: a.partition, notify: !!a.notify}
+  : a.kind === 'still_armed' ? {kind: 'still_armed', partition: a.partition}
+  : a.kind === 'chime' ? {kind: 'chime', partition: a.partition, on: !!a.on}
+  : a.kind === 'notify' ? {kind: 'notify'}
   : {kind: 'device', source: a.source, ref: a.ref, action: a.action, off_after: a.action === 'on' ? a.off_after || 0 : 0, confirmed: !!a.confirmed};
 const auWire = n => ({on: n.on, when: {kind: n.when.kind, partitions: n.when.partitions, levels: n.when.levels, zone: n.when.zone,
-  minute: n.when.minute, days: n.when.kind === 'time' ? n.when.days : [], window: n.when.kind === 'time' ? null : n.when.window},
+  minute: n.when.minute, days: n.when.kind === 'time' ? n.when.days : [], window: n.when.kind === 'time' ? null : n.when.window,
+  ...(n.when.kind === 'trouble' ? {trouble: n.when.trouble || 'any'} : {})},
   then: n.then.map(auWireAction)});
 const auSend = wire => api('automations', {action: 'save', slot: au.slot, gen: au.data.gen, automation: wire});
 const auSaved = r => { if (au.isNew || r.slot === null) go('automations'); else go('automations', String(r.slot)); }; // no toast: the page shows it

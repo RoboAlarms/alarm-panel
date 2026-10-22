@@ -21,9 +21,11 @@ void tearDown(void) {}
 #define AUTO_META_LEN 5u /* compat u8 | gen u16 | next_uid u16 */
 #define ID_IGNORABLE_MIN 0x80u /* DESIGN.md section 6: ids from here are ignorable */
 
-/* Phase C's two known ignorable fields (bypass 3 bytes, changed_at 6) moved the pin from 509
+/* BL-224: the trouble (3 bytes), each action's output and option (6) and saved_by (3) moved it from
+ * 518 bytes, still 19 entries and 307 for the store. Phase C's two known ignorable fields (bypass
+ * 3 bytes, changed_at 6) had moved the pin from 509
  * bytes, 18 entries and 291 for the store. */
-_Static_assert(AUTO_RECORD_MAX == 518u, "the largest record: DESIGN.md section 6");
+_Static_assert(AUTO_RECORD_MAX == 536u, "the largest record: DESIGN.md section 6");
 _Static_assert(NVS_ENTRIES(AUTO_RECORD_MAX) == 19u, "a record at its largest: 1 + 1 + 17");
 _Static_assert(AUTO_MAX * NVS_ENTRIES(AUTO_RECORD_MAX) + NVS_ENTRIES(AUTO_META_LEN) == 307u,
                "the automations store at its largest, with meta");
@@ -52,7 +54,7 @@ static auto_env_t env_of(bool arm_supported)
 {
     memset(s_zones, 0, sizeof s_zones);
     s_zones[0] = (auto_zone_t){ALARM_ZT_ENTRY_EXIT_1, 1, ALARM_DEVCLASS_DOOR};
-    auto_env_t e = {0x01u, arm_supported, s_zones, true, false};
+    auto_env_t e = {0x01u, arm_supported, s_zones, true, false, 0u};
     return e;
 }
 
@@ -414,7 +416,7 @@ static void test_fixture_v2_m_stray_fields(void)
     TEST_ASSERT_EQUAL_UINT8(4u, r.keep_len);
     static const uint8_t kept[] = {0x83, 0x02, 0x34, 0x12};
     TEST_ASSERT_EQUAL_HEX8_ARRAY(kept, r.keep, sizeof kept);
-    auto_env_t env = {0x01u, true, NULL, true, false};
+    auto_env_t env = {0x01u, true, NULL, true, false, 0u};
     TEST_ASSERT_EQUAL_INT(AUTO_OK, auto_rule_check(&r, &env));
     /* written back without the meaningless bit, the odd field kept */
     uint8_t out[AUTO_RECORD_MAX];
@@ -434,7 +436,9 @@ static auto_rule_t worst_rule(void)
     r.off = true;
     r.made_by = ALARM_MAX_USERS;
     r.n = AUTO_ACTIONS;
-    r.when = (auto_trigger_t){AUTO_TRIG_ZONE_CLOSED, 0x0F, 0x0E, 0x7F, 128, 1439, 1440, 1};
+    r.when = (auto_trigger_t){AUTO_TRIG_ZONE_CLOSED, 0x0F, 0x0E, 0x7F, 128, 1439, 1440, 1, 0};
+    r.when.trouble = AUTO_TROUBLE_SIREN; /* BL-224: every field, whatever the trigger */
+    r.saved_by = 1u;
     for (unsigned i = 0; i < AUTO_ACTIONS; i++) {
         auto_action_t *a = &r.then[i];
         a->kind = AUTO_ACT_DEVICE;
@@ -450,6 +454,8 @@ static auto_rule_t worst_rule(void)
         memset(a->mode, 'm', DEV_MODE_LEN - 1u);
         memset(a->ref, (int)('a' + i), DEV_REF_LEN - 1u);
         memset(a->name, 'n', DEV_NAME_LEN - 1u);
+        a->output = AUTO_OUTPUTS;
+        a->option = 1u;
     }
     /* the known ignorable fields (phase C): "Bypass open zones" is an Arm action's */
     r.then[1].kind = AUTO_ACT_ARM;
@@ -580,15 +586,18 @@ static void test_bad_and_newer(void)
         {"one field twice", {0x01, 0x10, 0x01, 0x02, 0x10, 0x01, 0x02}, 7, AUTO_REC_BAD},
         {"a trigger kind from later", {0x01, 0x10, 0x01, AUTO_TRIG_COUNT}, 4, AUTO_REC_NEWER},
         {"action kind 0", {0x01, 0x20, 0x01, 0x00}, 4, AUTO_REC_NEWER},
-        {"action kind 3 (output)", {0x01, 0x30, 0x01, 0x03}, 4, AUTO_REC_NEWER},
+        {"action kind 3 (output, BL-224)", {0x01, 0x30, 0x01, 0x03}, 4, AUTO_REC_OK},
         {"action kind 4 (disarm)", {0x01, 0x30, 0x01, 0x04}, 4, AUTO_REC_OK},
-        {"action kind 5", {0x01, 0x30, 0x01, 0x05}, 4, AUTO_REC_NEWER},
+        {"action kind 5 (remind, BL-224)", {0x01, 0x30, 0x01, 0x05}, 4, AUTO_REC_OK},
+        {"action kind 8 (notify, BL-224)", {0x01, 0x30, 0x01, 0x08}, 4, AUTO_REC_OK},
+        {"action kind 9", {0x01, 0x30, 0x01, 0x09}, 4, AUTO_REC_NEWER},
+        {"a trouble from later", {0x01, 0x19, 0x01, AUTO_TROUBLE_LAST + 1u}, 4, AUTO_REC_NEWER},
         {"a device kind from later", {0x01, 0x22, 0x01, DEV_KIND_COUNT}, 4, AUTO_REC_NEWER},
         {"a device action from later", {0x01, 0x23, 0x01, ACT_COUNT}, 4, AUTO_REC_NEWER},
         {"a source from later", {0x01, 0x21, 0x01, AUTO_SOURCE_LAST + 1u}, 4, AUTO_REC_NEWER},
         {"a flag from later", {0x01, 0x02, 0x01, 0x02}, 4, AUTO_REC_NEWER},
         {"the reserved zone bitmap", {0x01, 0x18, 0x01, 0x01}, 4, AUTO_REC_NEWER},
-        {"an action sub-id from later", {0x01, 0x2D, 0x01, 0x01}, 4, AUTO_REC_NEWER},
+        {"an action sub-id from later", {0x01, 0x2F, 0x01, 0x01}, 4, AUTO_REC_NEWER},
         {"an id 0x40 from later", {0x01, 0x40, 0x00}, 3, AUTO_REC_NEWER},
         {"newer, then cut short", {0x01, 0x7E, 0x00, 0x10}, 4, AUTO_REC_BAD},
     };

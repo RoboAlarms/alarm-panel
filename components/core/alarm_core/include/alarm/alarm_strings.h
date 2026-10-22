@@ -33,6 +33,9 @@ const char *alarm_auto_fail_name(alarm_auto_fail_t reason);
 const char *alarm_auto_action_name(uint8_t action);
 /* ALARM_EV_ARMING_PUT_OFF's arg: "hour", "night", "day" (docs/features/41 AUT-013). */
 const char *alarm_put_off_name(alarm_put_off_t choice);
+/* ALARM_EV_AUTOMATION_NOTICE's arg: "opened", "closed", "armed", "disarmed", "alarm", "fire",
+ * "time", "trouble", "remind", "still_armed" (docs/features/41 BL-224; CORE-PROG-013). */
+const char *alarm_auto_notice_name(alarm_auto_notice_t notice);
 
 #ifdef __cplusplus
 }

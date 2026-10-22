@@ -106,7 +106,12 @@ Event (`ts` is when it happened, `null` while the clock wasn't set; type-specifi
 for installer mode and factory reset; for `automation_failed` (docs/features/41 AUT-009, with
 `"source":"automation"`, its uid in `source_id`), `automation` (its trigger clause, as on every
 event an automation causes), `action` (`lock`, `close` or `arm`) and `reason` (`unreachable`, `no_answer`, `refused`, `missing`, `busy`, `not_allowed` or
-`no_warning`), golden payloads in `test_proto.c: test_automation_failed_event_golden`):
+`no_warning`), golden payloads in `test_proto.c: test_automation_failed_event_golden`; for
+`automation_notice`, an automation's notification (docs/features/41 BL-224, source and
+`automation` as above), `notice` (`opened`, `closed`, `armed`, `disarmed`, `alarm`, `fire`,
+`time`, `trouble`, `remind` or `still_armed`), `level` for `armed`, `trouble` (`any`, `ac`,
+`battery`, `sensor`, `siren`, `other`) for `trouble`, and `test` (true when sent by Try it
+now), golden payloads in `test_automation_notice_event_golden`):
 ```json
 {"seq":1523,"ts":"2026-09-19T22:41:00Z","event_type":"alarm","partition":1,"zone":3,
  "zone_name":"Living Window","user":null,"user_name":null,"source":"zone","source_id":3,
@@ -170,7 +175,7 @@ attributes. Events: an MQTT `event` entity listing every `alarm_event_name()` in
 `zwave_device_software`, `zwave_garage`, `zwave_jamming_reported`; docs/features/20 adds nine
 more: `zigbee_added`, `zigbee_removed`, `zigbee_forgotten`, `zigbee_left`, `zigbee_replaced`,
 `zigbee_join_refused`, `zigbee_channel`, `zigbee_network_reset`, `zigbee_radio_restarted`;
-docs/features/41 adds `automation_failed`).
+docs/features/41 adds `automation_failed`, `arming_put_off` and `automation_notice`).
 Zigbee (MQTT-021): a `sensor` "Zigbee" at `homeassistant/sensor/<prefix>_<panel id>/zigbee/config`,
 `entity_category: diagnostic`, state `{{ value_json.radio }}` from `…/zigbee/state` and the same
 payload as attributes; a Zigbee device's battery and signal are attributes of its zone's

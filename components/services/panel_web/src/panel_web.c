@@ -1696,6 +1696,8 @@ static cJSON *status(session_t *s, alarm_authority_t authority)
          * Overview's card and note for everyone who sees them (docs/features/41 D19, D20, D27),
          * as Home shows them at the panel. */
         ok &= web_automations_add_warnings(o, "automation_warnings", cfg, snap->partitions & mine);
+        /* A reminder's steady note beside its partition while it stands (BL-224) */
+        ok &= web_automations_add_reminders(o, "automation_reminders", snap->partitions & mine);
     }
     free(snap);
     if (cfg) {

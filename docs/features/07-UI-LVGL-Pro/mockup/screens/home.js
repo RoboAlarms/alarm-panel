@@ -184,6 +184,12 @@ home({id: 'home-arm-skipped-home', title: 'Not tonight: Home with a quiet note',
   banner: null,
   card: {...HOLD, title: 'Won\'t arm tonight', detail: 'Put off by Pat'}});
 
+// ---- BL-224: the reminder to arm (docs/features/41 DESIGN.md section 15) ----
+home({id: 'home-remind', shot: 'home_remind', title: 'Home: the reminder to arm',
+  notes: 'At 11:00 PM with the panel disarmed, an automation\'s "Remind to arm": one chime (never over another sound) and this steady note above the arming tiles (kit arm_strip with no button), in place of nothing. It needs no answer. The tiles are unchanged and arming by hand ends it at once; it also goes by itself at 6:00 AM. No status-bar banner and nothing moves. A warning that needs an answer (Put off) comes before it; it comes before a hold\'s note. The Panel Manager\'s Overview shows the same line.',
+  banner: null, time: '11:01',
+  card: {glyph: 'bell', tone: 'amber', title: 'Not armed yet', detail: 'Reminder at 11:00 PM'}});
+
 // ---- D30: who did it ----
 home({id: 'home-armed-by-automation', title: 'Armed by an automation, one zone bypassed',
   notes: 'Home after the automation armed Night with the Kitchen Window bypassed. The state card\'s foot says "Since 10:30 PM · By automation" and "1 zone bypassed", never "By Alex". Armed Home shows no warning card or hold note. The disarm pad is as always.',

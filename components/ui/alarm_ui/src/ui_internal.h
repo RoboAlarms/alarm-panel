@@ -606,6 +606,9 @@ void ui_pick_sheet_dim(int32_t index);
 /* After ui_pick_sheet: what its close button (Cancel) does, once the sheet is gone; nothing after
  * a pick. A sheet that opened it from another (the arm sheet's partition) goes back to it. */
 void ui_pick_sheet_on_cancel(ui_confirm_fn fn);
+/* After ui_pick_sheet: a quiet grey paragraph after the choices, nothing to pick ("Lights, locks
+ * and other devices show here once one is connected.", docs/features/41 BL-224). */
+void ui_pick_sheet_tail(const char *text);
 /* The sheets' note (subject_sheet_note) holds more than the other string subjects' 127 bytes: a
  * confirmation may join two sentences of up to 95 bytes each, as a Zigbee device's Remove and
  * Forget do (I18N-023). ui_sheet_note_init gives it this buffer, before any screen binds it. */

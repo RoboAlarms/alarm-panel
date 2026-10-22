@@ -1696,3 +1696,28 @@ esp_err_t alarm_service_arming_put_off(uint16_t uid, uint8_t partition, uint8_t 
     ESP_RETURN_ON_ERROR(alarm_service_call(do_arming_put_off, &c), TAG, "put-off event");
     return c.result == ALARM_OK ? ESP_OK : ESP_ERR_INVALID_ARG;
 }
+
+typedef struct {
+    uint16_t uid;
+    uint8_t partition;
+    uint16_t zone;
+    uint8_t arg;
+    uint8_t arg2;
+    alarm_result_t result;
+} auto_notice_ctx_t;
+
+static void do_automation_notice(alarm_engine_t *e, alarm_ms_t now, void *ctx)
+{
+    auto_notice_ctx_t *c = ctx;
+    c->result = alarm_engine_automation_notice(e, c->uid, c->partition, c->zone, c->arg, c->arg2,
+                                               now);
+}
+
+esp_err_t alarm_service_automation_notice(uint16_t uid, uint8_t partition, uint16_t zone,
+                                          uint8_t arg, uint8_t arg2)
+{
+    auto_notice_ctx_t c = {.uid = uid, .partition = partition, .zone = zone, .arg = arg,
+                           .arg2 = arg2, .result = ALARM_ERR_BAD_ARG};
+    ESP_RETURN_ON_ERROR(alarm_service_call(do_automation_notice, &c), TAG, "automation notice");
+    return c.result == ALARM_OK ? ESP_OK : ESP_ERR_INVALID_ARG;
+}

@@ -381,6 +381,16 @@ typedef enum {
     UI_NOTIFY_PUSHOVER,
     UI_NOTIFY_PROVIDERS,
 } ui_notify_provider_t;
+/* auto_notify_services: a phone service is set up, but the backend can't say which. */
+#define UI_AUTO_NOTIFY_SOME 0x80u
+
+/* A wired output "For automations" (docs/features/41 BL-224; outputs_service_auto_list's
+ * outputs_auto_t): an automation's Outputs row ("Garden Lights", "Output on GPIO 47"). */
+typedef struct {
+    uint8_t number;  /* 1..AUTO_OUTPUTS: the action's output */
+    uint8_t gpio;    /* its terminal's GPIO */
+    char name[24];   /* typed like a zone's; "" = none given */
+} ui_auto_output_t;
 
 typedef enum {
     UI_NOTIFY_OFF = 0,    /* turned off */
@@ -1828,7 +1838,9 @@ typedef enum {
     UI_OUT_FN_STROBE = 2,
     UI_OUT_FN_SMOKE_RESET = 3,
     UI_OUT_FN_ARMED = 4,
+    UI_OUT_FN_AUTOMATION = 5, /* "For automations" (BL-224): switched by automations only */
 } ui_out_fn_t;
+#define UI_OUT_NAME_LEN 24u /* out_wired.h OW_NAME_LEN */
 
 typedef struct {
     uint8_t function;   /* ui_out_fn_t; NONE: the channel is free */
@@ -1840,6 +1852,7 @@ typedef struct {
     bool active_low;    /* the relay board switches on low */
     bool on;            /* driven on now */
     bool trouble;       /* its supervision input says so */
+    char name[UI_OUT_NAME_LEN]; /* AUTOMATION: its name as typed (may be empty); "" otherwise */
 } ui_out_wired_t;
 
 typedef struct {
@@ -2204,6 +2217,20 @@ typedef struct {
      * when the runner didn't take the request. */
     auto_put_off_t (*auto_put_off)(void *ctx, uint16_t uid, uint8_t choice, const char *code,
                                    alarm_result_t *code_result);
+
+    /* ---- Automations without devices (docs/features/41 DESIGN.md section 15, BL-224). Each
+     * NULL = none: no Outputs in "What should it do?", no reminder note on Home, notifications
+     * shown as not set up. Copies of RAM tables or settings, no engine call: fine from a tick.
+     * The panel's outputs_service, automation_service and net_notify; the simulator's own ---- */
+    /* The wired outputs set "For automations" (outputs_service_auto_list): at most max, the
+     * count, by number. */
+    size_t (*auto_outputs)(void *ctx, ui_auto_output_t *out, size_t max);
+    /* The reminders' notes showing now (automation_service_reminders; on = 1): at most max. */
+    size_t (*auto_reminders)(void *ctx, auto_remind_t *out, size_t max);
+    /* The phone services an automation's notification goes to now: bit UI_NOTIFY_NTFY,
+     * bit UI_NOTIFY_PUSHOVER (set up and on), UI_AUTO_NOTIFY_SOME when one is but which can't
+     * be told; 0 = none (net_notify_any_service false). */
+    uint8_t (*auto_notify_services)(void *ctx);
 
     /* ---- the voice (docs/features/08 voice-first-build.md D03, D06, D09). voice_info, the
      * lease and voice_preview NULL = no voice in this build: the UI hides Voice volume, the

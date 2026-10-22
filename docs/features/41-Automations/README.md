@@ -192,12 +192,12 @@ Phase B, the Z-Wave device source (BL-169):
 - [ ] B4 · Bench: a Z-Wave switch from Smart Home and from an automation, a garage door closed by one (BL-169)
 
 Automations without devices (BL-224; DESIGN.md section 15):
-- [x] N0 · Research of the makers' basic automations, the proposals for the touchscreen and the Panel Manager; approved 2026-10-21 (BL-224)
-- [x] N1 · Core: the trouble trigger, the output, remind, still-armed, chime and notify actions, the installer's Arm as the master, the stored fields and fixture v3, the runner's new ports (AUT-017..AUT-022) (BL-224)
-- [x] N2 · Engine and words: the automation's chime, `automation_notice` with its words, JSON and gate (BL-224)
-- [x] N3 · Wired outputs "For automations" with a name, their page on the touchscreen (docs/features/16) (BL-224)
-- [x] N4 · The service's ports, the web API, the Panel Manager's pages and the Overview's reminder line (BL-224)
-- [x] N5 · The touchscreen's ideas, pickers and sheets, Home's reminder note, the simulator and the preview walk (BL-224)
+- [x] N0 · Research of the makers' basic automations, the proposals for the touchscreen and the Panel Manager; approved 2026-10-21 (BL-224, a8a3c3b)
+- [x] N1 · Core: the trouble trigger, the output, remind, still-armed, chime and notify actions, the installer's Arm as the master, the stored fields and fixture v3, the runner's new ports (AUT-017..AUT-022) (BL-224, a8a3c3b)
+- [x] N2 · Engine and words: the automation's chime, `automation_notice` with its words, JSON and gate (BL-224, a8a3c3b)
+- [x] N3 · Wired outputs "For automations" with a name, their page on the touchscreen (docs/features/16) (BL-224, a8a3c3b)
+- [x] N4 · The service's ports, the web API, the Panel Manager's pages and the Overview's reminder line (BL-224, a8a3c3b)
+- [x] N5 · The touchscreen's ideas, pickers and sheets, Home's reminder note, the simulator and the preview walk (BL-224, a8a3c3b)
 - [ ] N6 · Bench: arm Away at 11 PM set up by the installer on the S3, a reminder, a notification, an output (BL-224)
 
 Phase C, arming by automation (BL-170):

@@ -654,6 +654,90 @@ static void test_automation_failed_event(void)
     TEST_ASSERT_EQUAL_UINT32(before, snapshot().last_event_seq);
 }
 
+/* CORE-PROG-013 (docs/features/41 BL-224): an automation's notification is
+ * ALARM_EV_AUTOMATION_NOTICE, logged and reported now with its source {automation, uid}, the
+ * partition and zone it names, arg the notice and arg2 its level or trouble (TRIED kept); with
+ * partition 0 it is a system event. A uid of 0, an unknown notice, a zone past the last or a
+ * partition not enabled is refused and records nothing; nothing else changes. */
+static void test_automation_notice_event(void)
+{
+    const alarm_event_t *ev;
+    TEST_ASSERT_EQUAL_INT(65, ALARM_EV_AUTOMATION_NOTICE); /* stored: pinned */
+    TEST_ASSERT_EQUAL_INT(1, ALARM_AUTO_NOTICE_OPENED);
+    TEST_ASSERT_EQUAL_INT(10, ALARM_AUTO_NOTICE_STILL_ARMED);
+    TEST_ASSERT_EQUAL_STRING("automation_notice", alarm_event_name(ALARM_EV_AUTOMATION_NOTICE));
+    static const char *const names[] = {"unknown", "opened", "closed", "armed",
+                                        "disarmed", "alarm", "fire", "time",
+                                        "trouble", "remind", "still_armed", "unknown"};
+    for (unsigned i = 0; i <= (unsigned)ALARM_AUTO_NOTICE_COUNT; i++) {
+        TEST_ASSERT_EQUAL_STRING(names[i], alarm_auto_notice_name((alarm_auto_notice_t)i));
+    }
+    const alarm_partition_status_t before = sim_status(&S, 1);
+    EXPECT_RESULT(ALARM_OK, alarm_engine_automation_notice(&S.eng, 12u, 0u, Z_FRONT,
+                                                           (uint8_t)ALARM_AUTO_NOTICE_OPENED,
+                                                           0u, S.now));
+    ev = sim_last_report(&S, ALARM_EV_AUTOMATION_NOTICE);
+    TEST_ASSERT_NOT_NULL(ev);
+    TEST_ASSERT_EQUAL_UINT8(0u, ev->partition);
+    TEST_ASSERT_EQUAL_UINT16(Z_FRONT, ev->zone);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_AUTO_NOTICE_OPENED, ev->arg);
+    TEST_ASSERT_EQUAL_UINT8(0u, ev->arg2);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SRC_AUTOMATION, ev->source.kind);
+    TEST_ASSERT_EQUAL_UINT16(12u, ev->source.id);
+    TEST_ASSERT_EQUAL_UINT8(0u, ev->user);
+    TEST_ASSERT_TRUE((ev->flags & ALARM_EVF_SYSTEM) != 0u);
+    TEST_ASSERT_TRUE((ev->flags & ALARM_EVF_REPORT) != 0u);
+    TEST_ASSERT_EQUAL_UINT8(0u, ev->flags & ALARM_EVF_SILENT);
+    /* a partition's notice, a tried one: not a system event, arg2 kept */
+    EXPECT_RESULT(ALARM_OK,
+                  alarm_engine_automation_notice(&S.eng, 12u, 1u, 0u,
+                                                 (uint8_t)ALARM_AUTO_NOTICE_ARMED,
+                                                 (uint8_t)((unsigned)ALARM_LEVEL_AWAY |
+                                                           ALARM_AUTO_NOTICE_TRIED),
+                                                 S.now));
+    ev = sim_last_report(&S, ALARM_EV_AUTOMATION_NOTICE);
+    TEST_ASSERT_EQUAL_UINT8(1u, ev->partition);
+    TEST_ASSERT_EQUAL_UINT16(0u, ev->zone);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_AUTO_NOTICE_ARMED, ev->arg);
+    TEST_ASSERT_EQUAL_UINT8((unsigned)ALARM_LEVEL_AWAY | ALARM_AUTO_NOTICE_TRIED, ev->arg2);
+    TEST_ASSERT_EQUAL_UINT8(0u, ev->flags & ALARM_EVF_SYSTEM);
+    /* every notice, the last zone */
+    for (unsigned n = ALARM_AUTO_NOTICE_OPENED; n < (unsigned)ALARM_AUTO_NOTICE_COUNT; n++) {
+        EXPECT_RESULT(ALARM_OK, alarm_engine_automation_notice(&S.eng, 1u, 1u,
+                                                               (uint16_t)ALARM_MAX_ZONES,
+                                                               (uint8_t)n, 0u, S.now));
+    }
+    const alarm_partition_status_t after = sim_status(&S, 1);
+    TEST_ASSERT_EQUAL(before.state, after.state);
+    TEST_ASSERT_EQUAL(before.chime, after.chime);
+    TEST_ASSERT_EQUAL_UINT16(before.memory, after.memory);
+    const uint32_t seq = snapshot().last_event_seq;
+    /* refused, nothing recorded */
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_automation_notice(&S.eng, 0u, 1u, 0u,
+                                                 (uint8_t)ALARM_AUTO_NOTICE_REMIND, 0u, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_automation_notice(&S.eng, 12u, 1u, 0u, 0u, 0u, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_automation_notice(&S.eng, 12u, 1u, 0u,
+                                                 (uint8_t)ALARM_AUTO_NOTICE_COUNT, 0u, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_automation_notice(&S.eng, 12u, 0u,
+                                                 (uint16_t)(ALARM_MAX_ZONES + 1u),
+                                                 (uint8_t)ALARM_AUTO_NOTICE_OPENED, 0u, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_automation_notice(&S.eng, 12u, 2u, 0u, /* not enabled */
+                                                 (uint8_t)ALARM_AUTO_NOTICE_REMIND, 0u, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_automation_notice(&S.eng, 12u,
+                                                 (uint8_t)(ALARM_MAX_PARTITIONS + 1u), 0u,
+                                                 (uint8_t)ALARM_AUTO_NOTICE_REMIND, 0u, S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_automation_notice(NULL, 12u, 1u, 0u,
+                                                 (uint8_t)ALARM_AUTO_NOTICE_REMIND, 0u, S.now));
+    TEST_ASSERT_EQUAL_UINT32(seq, snapshot().last_event_seq);
+}
+
 /* ZB-019, CORE-PROG-010 (docs/features/20 devices.md §11): the Zigbee network's events are
  * platform events, numbered, logged and reported like the others; each type takes only its own
  * fields. The numbers are stored in the event log: the ones before stay where they were and the
@@ -800,6 +884,7 @@ int main(void)
     RUN_TEST(test_zwave_restart_count);
     RUN_TEST(test_clock_set_event);
     RUN_TEST(test_automation_failed_event);
+    RUN_TEST(test_automation_notice_event);
     RUN_TEST(test_zigbee_platform_events);
     return UNITY_END();
 }

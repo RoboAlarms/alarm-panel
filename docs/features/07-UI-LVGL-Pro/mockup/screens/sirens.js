@@ -17,6 +17,7 @@ const SHOTS = {
   'bl-037-wired': 'bl-037-wired', 'bl-037-wired-end': 'bl-037-wired-end',
   'bl-037-wired-add': 'bl-037-wired-add', 'bl-037-rf-siren': 'bl-037-rf-siren',
   'bl-037-rf-siren-pair': 'bl-037-rf-siren-pair', 'bl-037-rf': 'bl-037-rf',
+  'bl-224-output': 'bl-224-output', 'bl-224-sirens': 'bl-224-sirens',
 };
 const prop = (id, title, replaces, why, notes, body, extra = {}) => M.screen({
   id, area: AREA, title, shot: SHOTS[id] || null,
@@ -86,7 +87,7 @@ prop('bl-037-wired-end', 'A wired siren\'s page, scrolled', null,
   ].join('')});
 prop('bl-037-wired-add', 'Adding a wired siren or output: what it is', null,
   'The first question when adding one.',
-  'A choice sheet over Sirens and outputs. Then the terminal (the free ones), then its page. A new siren sounds for burglary and fire in partition 1, no chirps, switching on high.',
+  'A choice sheet over Sirens and outputs. Then the terminal (the free ones), then its page. A new siren sounds for burglary and fire in partition 1, no chirps, switching on high. "For automations" (BL-224, docs/features/41 AUT-021) is last: a relay that automations switch, never with the alarm.',
   {title: 'Sirens and outputs', note: 'What sounds and what switches when the alarm does', back: 'bl-037-installer-menu', body: [
     M.section('On the panel\'s terminals'),
     M.row_link({glyph: 'siren', color: 'red', title: 'Outdoor siren', detail: 'Terminal GPIO 49 · Home, also Shop · Chirps', value: 'Ready'}),
@@ -96,7 +97,32 @@ prop('bl-037-wired-add', 'Adding a wired siren or output: what it is', null,
     M.row_link({glyph: 'sun', title: 'Strobe', detail: 'On from an audible alarm until disarmed', trail: ''}),
     M.row_link({glyph: 'flame', color: 'red', title: 'Smoke detector power', detail: 'Cut briefly to reset 4-wire smoke detectors', trail: ''}),
     M.row_link({glyph: 'lightbulb', color: 'amber', title: 'Armed light', detail: 'On while its partitions are armed', trail: ''}),
+    M.row_link({glyph: 'power', title: 'For automations', detail: 'Switched on and off by Settings > Automations', trail: ''}),
   ].join('')})});
+
+// ---- 3b: an output for automations (BL-224, approved 2026-10-21) ----
+prop('bl-224-output', 'A wired output for automations', null,
+  'A relay that automations switch: garden or porch lights, a buzzer.',
+  'Its name is typed like a zone\'s (at most 23 bytes); no partitions, no chirps, no supervision. Test it switches it on for 2 seconds, armed or not; afterwards it is back to what automations set. It starts off at every start-up and never follows the alarm (OUT-023, OUT-024). Older firmware doesn\'t know it: it is stored apart (outputs/auto), so a downgrade never costs the sirens.',
+  {title: 'Garden Lights', note: 'On terminal GPIO 2 · J7 header', back: 'bl-224-sirens', body: [
+    M.section('How it is wired'),
+    M.row_link({glyph: 'tag', title: 'Name', value: 'Garden Lights'}),
+    M.row_link({glyph: 'plug', title: 'Terminal', value: 'GPIO 2'}),
+    M.row_link({glyph: 'zap', title: 'Relay board', detail: 'Most switch on low', value: 'Switches on high'}),
+    M.section('Check it'),
+    M.row_link({glyph: 'power', title: 'Test it', detail: 'Switches it on for 2 seconds', trail: ''}),
+    M.row_link({glyph: 'trash-2', color: 'red', title: 'Remove it', detail: 'Its terminal goes back to the zones', trail: ''}),
+  ].join('')});
+prop('bl-224-sirens', 'Sirens and outputs with an output for automations', null,
+  'An output for automations in the list.',
+  'Its title is its name, its line the terminal; its value "Not used yet" while no automation switches it, then On or Off.',
+  {title: 'Sirens and outputs', note: 'What sounds and what switches when the alarm does', back: 'bl-037-installer-menu', body: [
+    M.section('On the panel\'s terminals'),
+    M.row_link({glyph: 'siren', color: 'red', title: 'Siren', detail: 'Terminal GPIO 49 · Home', value: 'Ready'}),
+    M.row_link({glyph: 'lightbulb', color: 'amber', title: 'Armed light', detail: 'Terminal GPIO 51 · Home', value: 'Off'}),
+    M.row_link({glyph: 'sun', title: 'Strobe', detail: 'Terminal GPIO 52 · Home', value: 'Ready'}),
+    M.row_link({glyph: 'power', title: 'Garden Lights', detail: 'GPIO 2 on the J7 header', value: 'Not used yet', goTo: 'bl-224-output'}),
+  ].join('')});
 
 // ---- 4: a 433 MHz siren ----
 prop('bl-037-rf-siren-pair', 'Adding a 433 MHz siren: pairing', null,

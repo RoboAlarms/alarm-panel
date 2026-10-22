@@ -197,14 +197,14 @@ static void start(void)
     F.settled = true;
     F.gated = true;
     const auto_ports_t p = {&F,       port_act, port_settled, port_kind,  port_arm, NULL,
-                            port_failed, port_maker, NULL,    NULL,       port_begin, port_end};
+                            port_failed, port_maker, NULL,    NULL,       port_begin, port_end, NULL, NULL, NULL, NULL, NULL};
     auto_run_init(&R, &p, T0);
     memset(Z, 0, sizeof(Z));
     Z[0] = (auto_zone_t){ALARM_ZT_ENTRY_EXIT_1, 1, ALARM_DEVCLASS_DOOR};
     Z[1] = (auto_zone_t){ALARM_ZT_PERIMETER, 2, ALARM_DEVCLASS_WINDOW};
     Z[2] = (auto_zone_t){ALARM_ZT_INTERIOR_FOLLOWER, 1, ALARM_DEVCLASS_MOTION};
     Z[5] = (auto_zone_t){ALARM_ZT_FIRE, 1, ALARM_DEVCLASS_SMOKE};
-    ENV = (auto_env_t){0x03u, false, Z, true, false};
+    ENV = (auto_env_t){0x03u, false, Z, true, false, 0u};
     NR = 0;
     memset(RULES, 0, sizeof(RULES));
 }
@@ -604,7 +604,7 @@ static void test_not_allowed_lock_reported(void)
 static void test_no_kind_port_cant_run(void)
 {
     const auto_ports_t p = {&F,   port_act,    port_settled, NULL,
-                            port_arm, NULL,   port_failed,  port_maker, NULL, NULL, NULL, NULL};
+                            port_arm, NULL,   port_failed,  port_maker, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
     F.gated = false;
     auto_run_init(&R, &p, T0);
     rule(AUTO_TRIG_DISARMED, DEV_LIGHT, ACT_ON, "light.porch");
@@ -1447,7 +1447,7 @@ static void test_maker_gone(void)
     /* no maker_ok port: never sent */
     start();
     const auto_ports_t p = {&F,          port_act, port_settled, port_kind, port_arm, NULL,
-                            port_failed, NULL,     NULL,         NULL,      NULL,     NULL};
+                            port_failed, NULL,     NULL,         NULL,      NULL,     NULL, NULL, NULL, NULL, NULL, NULL};
     F.gated = false;
     auto_run_init(&R, &p, T0);
     unlock_rule();

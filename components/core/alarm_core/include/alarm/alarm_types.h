@@ -523,6 +523,13 @@ typedef enum {
                                      * src = {ALARM_SRC_AUTOMATION, uid}; partition; zone 0;
                                      * arg = alarm_put_off_t; arg2 = minutes from epoch_ms to the
                                      * new arm time (ALARM_PUT_OFF_HOUR; 0 = not known or none) */
+    ALARM_EV_AUTOMATION_NOTICE,     /* an automation's notification to the phones (docs/features/41
+                                     * BL-224; CORE-PROG-013): src = {ALARM_SRC_AUTOMATION, uid};
+                                     * partition (0: none); zone (0: none); arg =
+                                     * alarm_auto_notice_t; arg2 = the level (ARMED) or the
+                                     * trouble (TROUBLE: automation's auto_trouble_t), with
+                                     * ALARM_AUTO_NOTICE_TRIED for Try it now. Reported; the words
+                                     * use the event's own time ("It's 11:00 PM") */
     ALARM_EV_COUNT
 } alarm_event_type_t;
 
@@ -628,6 +635,23 @@ typedef enum {
     ALARM_PUT_OFF_DAY = 3,   /* not today (no arming before midnight) */
     ALARM_PUT_OFF_COUNT
 } alarm_put_off_t;
+
+/* What an automation's notification says (ALARM_EV_AUTOMATION_NOTICE arg; docs/features/41
+ * BL-224). Stored in the event log and named in the JSON (alarm_auto_notice_name): append only. */
+typedef enum {
+    ALARM_AUTO_NOTICE_OPENED = 1,      /* "Front Door opened" (zone) */
+    ALARM_AUTO_NOTICE_CLOSED,          /* "Front Door closed" (zone) */
+    ALARM_AUTO_NOTICE_ARMED,           /* "Home was armed Away" (partition, arg2 the level) */
+    ALARM_AUTO_NOTICE_DISARMED,        /* "Home was disarmed" (partition) */
+    ALARM_AUTO_NOTICE_ALARM,           /* "An alarm is sounding" (partition, zone) */
+    ALARM_AUTO_NOTICE_FIRE,            /* "A fire or CO alarm is sounding" (partition, zone) */
+    ALARM_AUTO_NOTICE_TIME,            /* "It's 11:00 PM" (the event's time) */
+    ALARM_AUTO_NOTICE_TROUBLE,         /* "The power went off" (arg2 the trouble, zone a sensor) */
+    ALARM_AUTO_NOTICE_REMIND,          /* "Home isn't armed yet" (partition) */
+    ALARM_AUTO_NOTICE_STILL_ARMED,     /* "Home is still armed at 4:00 PM" (partition, its time) */
+    ALARM_AUTO_NOTICE_COUNT
+} alarm_auto_notice_t;
+#define ALARM_AUTO_NOTICE_TRIED 0x80u /* arg2: sent by Try it now */
 
 #define ALARM_ZB_CHANNEL_MIN 11u /* ALARM_EV_ZIGBEE_CHANNEL's arg2: an IEEE 802.15.4 channel */
 #define ALARM_ZB_CHANNEL_MAX 26u

@@ -43,11 +43,11 @@ written from a read-only map of the repository, three independent designs and th
 | Typed names | The generated sentence is always true and is the same on the panel, in the browser and in Activity. Field id 0x80 is reserved. |
 | Thermostat heat, cool or setpoint; brightness | The HA catalog carries no setpoint or mode attributes (ui_port_esp fills unknown temperatures). |
 | Scripts | Never: they are opaque code. |
-| Relays (OUT-005) | Blocked on BL-037 hardware. They arrive as `AUTO_ACT_OUTPUT = 3` in the same table. "Pulse" and "follow" stay output functions. |
+| Relays (OUT-005) | Built by BL-224 (section 15) as wired outputs "For automations". Before: blocked on BL-037 hardware. They arrive as `AUTO_ACT_OUTPUT = 3` in the same table. "Pulse" and "follow" stay output functions. |
 | Partition masters editing | Doors and lights cross partitions. Filtering adds states a homeowner must learn. |
 | Exception dates, scheduled users, auto-disarm | They stay in feature 18 (SCH-001/007/006). Since D23 an automation may disarm, so phase C can deliver auto-disarm too. |
-| Entry-delay, trouble and device-state triggers; notification actions | Each is an appended enum value in an unchanged format. Feature 26 already notifies every event. |
-| "Remind to arm" | The commonest commercial rule (an arming reminder, "late to close", "please close now"): the warning card and chime only, when the partition is still disarmed at that time, and no arming. An appended action using what C builds. |
+| Entry-delay and device-state triggers (trouble triggers and notification actions: BL-224, section 15) | Each is an appended enum value in an unchanged format. Feature 26 already notifies every event. |
+| "Remind to arm" (built by BL-224, section 15) | The commonest commercial rule (an arming reminder, "late to close", "please close now"): the warning card and chime only, when the partition is still disarmed at that time, and no arming. An appended action using what C builds. |
 | A zone's own "Never bypass" | A per-zone option on classic panels. Today every burglary zone can be bypassed (config.c:228-237); a zone option would keep a chosen door out of "Bypass open zones" too. |
 | Put off from Home Assistant or a phone | HA's actionable notifications already do it with a code and its own authentication; a phone button that acts without a code is the risk (section 14). |
 
@@ -822,3 +822,65 @@ keypad trigger ("unlocked by code, so disarm"); scripts, setpoints, brightness a
 **Sources.** Home Assistant's context data, automation modes, logbook processor, frontend strings
 and Companion actionable notifications; the Contact ID and SIA DC-03 code lists (secondary);
 summaries of SIA CP-01.
+
+## 15. Automations without devices (BL-224, approved 2026-10-21)
+
+**The gap.** A new panel with no Home Assistant, Z-Wave or Zigbee device offers only "Start from
+scratch", and after "At a time of day" nothing acts on the panel itself. Two causes:
+- The person setting up a new panel is usually the installer: the headless panel's phone setup
+  signs the browser in as the installer (docs/features/42), and the installer code opens Settings >
+  Automations on a screen. The installer is never offered Arm or Disarm (BL-187: an automation acts
+  as the person who saved it, and the installer code never arms or disarms, USR-001), so the
+  bedtime idea and "The alarm" are hidden from them.
+- The only actions that need no device are Arm and Disarm; every other idea needs a light, a lock
+  or a valve.
+
+**What the makers offer** (research 2026-10-21; secondary sources where the manuals weren't found):
+
+| Without devices | Honeywell/Resideo (Vista, ProSeries, Total Connect) | DSC PowerSeries Neo | Alarm.com (Qolsys IQ4 and most dealer panels) |
+|---|---|---|---|
+| Arm at a time | Yes, at the panel: up to 32 schedules (16 for the master code), weekday mask; app scenes too | Yes, at the panel: a time per weekday and partition | Smart Arming (Stay only) or the Arming Schedules add-on (Stay or Away) |
+| Warning before | Fixed 10 min, a keypad ding every 30 s | 1-255 min pre-alert, the siren may squawk | Not documented |
+| Put off | Not on the 20P; the 128BP has a delay | Any code, 1-255 min, again and again; 0 cancels; logged and reported | No |
+| A zone open | Forced bypass, always | Cancels it, unless "Auto-arming bypass" | Usually bypassed |
+| Disarm at a time | Yes | Yes, per weekday, with holidays | Only in a window, on inside motion; never disarm-only |
+| Reminder: not armed by a time | A keypad "Reminder"; an app "did not occur" alert | "Late to close" reported | Arming reminder (time or geofence) |
+| Not disarmed by a time | Latch-key report; "did not occur" | "Late to open" | "No-show" |
+| Outputs | On zone, arm, disarm, alarm, fault, trouble; on, off, pulse, timed; on a schedule | About 40 PGM types; 4 output schedules | No wired outputs on IQ4 |
+| Chime by schedule | Not found | No (a user toggle) | Not found |
+| Notifications | Alarm, arm or disarm by user, AC loss, faults | Through the central station | Alarm, arm or disarm by user, tamper, AC loss, low battery; each limited to days and times |
+| Who sets it up | Installer, or the master code | Installer, or the user's menu if the installer allows | The owner, in the app |
+
+What we take: arming and disarming at a time with a warning and a put-off (built, phase C), an
+installer who may set up arming as on Vista and Neo, the reminder and its "still armed" twin
+(late to close, late to open, no-show), outputs that follow an event or a time with "Turn it off
+after" as the timed output, and a notification limited to a window ("Only between"). Holidays stay
+in docs/features/18 (SCH-001). No maker schedules the chime; it is cheap here because the engine
+has the command, so it is offered (the owner kept it).
+
+**Approved** by the owner on 2026-10-21 as drawn (README D32; the drawings were the proposals
+`BL-224-no-device-automations.js` in both mockups, now today's screens and pages):
+- **The installer may set up an arming automation** (AUT-018). It acts as the system master
+  (user 2), re-checked at each arming as today; the page says "Set up by Installer · uses Alex's
+  permission". A disarm stays the master's: the installer never disarms.
+- **Ideas a new panel can use**, each shown when its parts exist: "Arm at bedtime", "Arm Away on
+  weekday mornings", "Remind me to arm", "Tell me if it's still armed" (a child not home by 4 PM),
+  "Disarm at opening time" (the master, with the installer option on), "Tell me when a door opens
+  at night" (a door zone), "Quiet the door chime at night", "Switch an output when an alarm
+  sounds" (an output for automations), then today's device ideas and "Start from scratch".
+- **"What should it do?" always has something**: The alarm (Arm the panel, Disarm the panel, Remind
+  to arm and Tell me if it's still armed after a time, Door chime), Tell someone (Send a
+  notification), Outputs (the wired outputs set to "For automations"), then the devices. The dead
+  "No devices to choose" row becomes a note.
+- **A new trigger**, "When there's a trouble" (any, power lost, panel battery low, a sensor stops
+  reporting, a siren problem), for an output or a notification.
+- **New actions**, appended to `auto_act_kind_t` (stored enums are append-only): `AUTO_ACT_OUTPUT =
+  3` (the reserved value: on, off, on for a time), `5` remind (if still disarmed: one chime and a
+  steady note on Home and the Overview until armed or 6:00 AM, with or without a notification),
+  `6` check armed (if still armed: a notification only), `7` door chime on or off, `8` notify.
+  An older firmware loads a record holding one as NEWER (read-only, never run), as section 6 says.
+- **A wired output "For automations"**, a new function after siren, strobe, smoke detector power and
+  armed light, with a name typed like a zone's. Sirens stay outside automations (AUT-002).
+- **The notification** goes to every phone service set up in Integrations, even with that
+  category off (the person asked for it), with the rate limits of docs/features/26. Its words come
+  from the trigger ("Front Door opened", "Home isn't armed yet", "Power lost"), never typed.

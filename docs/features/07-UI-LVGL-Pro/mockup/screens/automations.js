@@ -33,9 +33,9 @@ auto({id: 'automations', shot: 'automations', title: 'Automations: the list',
   page: {title: 'Automations', note: '5 of 16 automations', body: ADD() + rows(LIST)}});
 
 auto({id: 'automations-empty', shot: 'automations_empty', title: 'Automations: none yet',
-  notes: 'The Add row stays first; one paragraph says what an automation is, with an example from the house. No count in the note while there are none.',
+  notes: 'The Add row stays first; one paragraph says what an automation is, with examples any panel can do (BL-224: no device needed). No count in the note while there are none.',
   page: {title: 'Automations', body: [ADD(),
-    M.paragraph('The panel can do things by itself, like turning on the porch light when the front door opens.')].join('')}});
+    M.paragraph('The panel can do things by itself, like arming at bedtime or telling your phone when a door opens at night.')].join('')}});
 
 const FULL = [ROWS.porch, ROWS.away, ROWS.fire, ROWS.leak, ROWS.garage,
   {glyph: 'lightbulb', title: 'When the panel is disarmed', detail: 'Turn on Hallway Light'},
@@ -74,17 +74,37 @@ auto({id: 'automations-locked', shot: 'automations_locked', title: 'Automations:
 
 // ---- adding one: the ideas, then the pickers ----
 const LIST_PAGE = {title: 'Automations', note: '5 of 16 automations', body: ADD() + rows(LIST)};
-const IDEAS = [
-  {glyph: 'door-open', color: 'amber', title: 'Turn on a light when a door opens', detail: 'Like the porch light, in the evening'},
-  {glyph: 'lock', color: 'green', title: 'Lock up when you arm Away', detail: 'Lock a door when everyone has left'},
-  {glyph: 'siren', color: 'red', title: 'Turn on lights when an alarm sounds', detail: 'So you can see, and be seen'},
-  {glyph: 'droplets', color: 'blue', title: 'Close the water when a leak is found', detail: 'Shut the water main'},
-  {glyph: 'plus', color: 'blue', title: 'Start from scratch', detail: 'Choose when it runs and what it does', goTo: 'automation-when'},
-];
-auto({id: 'automation-add', title: 'Adding: ideas to start from',
-  notes: 'Add opens these ideas; each shows only when the house has its parts (a door and a light, a lock, a water sensor and a valve). An idea asks only for its devices ("Turn on a light when a door opens": a door, then a light; it comes with 6:00 PM to 6:00 AM and 10 minutes). Nothing is saved until the last pick, and Cancel at any step leaves nothing.',
-  page: LIST_PAGE,
-  over: M.pick_sheet({title: 'Add an automation', fit: true, rows: IDEAS.map((r) => M.row_link({trail: '', ...r})).join('')})});
+// BL-224 (docs/features/41 DESIGN.md section 15): first the ideas that need only the panel, each
+// shown when its parts exist, then the device ideas, then "Start from scratch".
+const idea = (glyph, color, title, detail, goTo) => M.row_link({glyph, color, title, detail, trail: '', goTo});
+const IDEA = {
+  bedtime: idea('moon', 'violet', 'Arm at bedtime', 'Every night at a time you choose, after a warning', 'automation-arm'),
+  morning: idea('log-out', 'rose', 'Arm Away on weekday mornings', 'After everyone has left, with a warning'),
+  remind: idea('bell', 'amber', 'Remind me to arm', 'A chime and a note if it\'s still disarmed at bedtime', 'automation-remind'),
+  armed: idea('send', 'blue', 'Tell me if it\'s still armed', 'Like nobody home from school by 4:00 PM', 'automation-still-armed'),
+  open: idea('shield-off', 'amber', 'Disarm at opening time', 'For a shop or an office, on weekdays'),
+  door: idea('door-open', 'amber', 'Tell me when a door opens at night', 'A notification to your phone, 10:00 PM to 6:00 AM', 'automation-notify'),
+  chime: idea('bell-off', 'gray', 'Quiet the door chime at night', 'Off at bedtime; another can turn it on in the morning'),
+  output: idea('toggle-right', 'blue', 'Switch an output when an alarm sounds', 'Like the garden lights, for 30 minutes'),
+  doorLight: idea('door-open', 'amber', 'Turn on a light when a door opens', 'Like the porch light, in the evening'),
+  lock: idea('lock', 'green', 'Lock up when you arm Away', 'Lock a door when everyone has left'),
+  alarmLight: idea('siren', 'red', 'Turn on lights when an alarm sounds', 'So you can see, and be seen'),
+  leak: idea('droplets', 'blue', 'Close the water when a leak is found', 'Shut the water main'),
+  scratch: idea('plus', 'blue', 'Start from scratch', 'Choose when it runs and what it does', 'automation-when'),
+};
+const EMPTY_PAGE = {title: 'Automations', body: [ADD(),
+  M.paragraph('The panel can do things by itself, like arming at bedtime or telling your phone when a door opens at night.')].join('')};
+auto({id: 'automation-add', shot: 'automation_ideas', title: 'Adding: ideas to start from, on a new panel',
+  notes: 'The master\'s code on a panel with zones but no device and no output yet (BL-224). Every idea here needs only the panel: the arming ones open the time sheet, then the Arm the panel sheet with their level chosen (Night, or Away for the mornings); Remind and "still armed" open the time sheet, then their own sheet; the door idea asks for the door (only doors and windows) and comes with 10:00 PM to 6:00 AM; the chime idea asks only the time (off at 10:00 PM). "Disarm at opening time" shows only while the installer option allows disarming and for a code that may disarm. Once a light, a lock, a valve or an output exists, today\'s device ideas join below these, before "Start from scratch" (automation-add-arm). Nothing is saved until the last pick, and Cancel at any step leaves nothing. The sheet scrolls.',
+  page: EMPTY_PAGE,
+  over: M.pick_sheet({title: 'Add an automation', fit: true, rows: [IDEA.bedtime, IDEA.morning, IDEA.remind, IDEA.armed,
+    IDEA.open, IDEA.door, IDEA.chime, IDEA.scratch].join('')})});
+
+auto({id: 'automation-add-installer', shot: 'automation_ideas_installer', title: 'Adding with the installer code: arming ideas too',
+  notes: 'The installer sets up most new panels (the headless panel\'s phone setup signs in as the installer). The installer gets the arming ideas and Arm the panel; each arming automation acts as the system master, checked by the panel at every arming, so it is never more than the master could do (BL-224 N1). No "Disarm at opening time" and no Disarm action: the installer code never disarms (USR-001). A panel with an output for automations adds "Switch an output when an alarm sounds".',
+  page: EMPTY_PAGE,
+  over: M.pick_sheet({title: 'Add an automation', fit: true, rows: [IDEA.bedtime, IDEA.morning, IDEA.remind, IDEA.armed,
+    IDEA.door, IDEA.chime, IDEA.output, IDEA.scratch].join('')})});
 
 const WHEN = [
   {glyph: 'shield', title: 'When the panel is armed', detail: 'Once exit time is over', goTo: 'automation-armed-how'},
@@ -94,12 +114,24 @@ const WHEN = [
   {glyph: 'door-open', color: 'amber', title: 'When a door or window opens', detail: 'Or a motion or water sensor', goTo: 'automation-zone'},
   {glyph: 'door-closed', color: 'green', title: 'When a door or window closes', goTo: 'automation-zone-empty'},
   {glyph: 'clock', title: 'At a time of day', detail: 'On the days you pick', goTo: 'automation-time'},
+  {glyph: 'triangle-alert', color: 'amber', title: 'When there\'s a trouble', detail: 'Power lost, a low battery, a sensor gone quiet', goTo: 'automation-trouble'},
 ];
 auto({id: 'automation-when', title: 'Adding: when should it run?',
-  notes: 'The seven triggers in words a person knows; the sheet scrolls for the last ones. "Armed" means once exit time is over, once per arming. Silent alarms and duress never start anything, so nothing seen on the wall can give a duress code away.',
+  notes: 'The eight triggers in words a person knows; the sheet scrolls for the last ones. "Armed" means once exit time is over, once per arming. Silent alarms and duress never start anything, so nothing seen on the wall can give a duress code away. "When there\'s a trouble" (BL-224) asks which one next. Changing the trigger of a reminder or "still armed" leaves only "At a time of day"; of a Disarm, never the alarm rows nor a trouble (a power cut never disarms).',
   page: LIST_PAGE,
   over: M.pick_sheet({title: 'When should it run?', note: 'Silent alarms and duress never start an automation.', fit: true,
     rows: WHEN.map((r) => M.row_link({trail: '', ...r})).join('')})});
+
+auto({id: 'automation-trouble', shot: 'automation_trouble_which', title: 'Adding: which trouble?',
+  notes: 'BL-224: the few troubles a person acts on, in their words. "Any trouble" is every trouble the panel shows on Troubles. It fires once when the trouble starts, never again while it lasts, and never for the troubles a start-up or a settings change shows for a moment (AUT-003). The sentences: "When there\'s a trouble", "When the power goes off", "When the panel\'s battery is low", "When a sensor stops reporting", "When there\'s a siren problem". It is system-wide: no partition is asked. After it, "What should it do?" has no reminder (a time only) and no Disarm.',
+  page: EMPTY_PAGE,
+  over: M.pick_sheet({title: 'Which trouble?', fit: true, rows: [
+    M.row_link({glyph: 'triangle-alert', color: 'amber', title: 'Any trouble', trail: ''}),
+    M.row_link({glyph: 'unplug', color: 'amber', title: 'The power goes off', detail: 'The panel runs on its battery', trail: ''}),
+    M.row_link({glyph: 'battery-low', color: 'amber', title: 'The panel\'s battery is low', trail: ''}),
+    M.row_link({glyph: 'radio', color: 'amber', title: 'A sensor stops reporting', detail: 'Or its battery is low', trail: ''}),
+    M.row_link({glyph: 'siren', color: 'amber', title: 'A siren problem', trail: ''}),
+  ].join('')})});
 
 auto({id: 'automation-armed-how', title: 'Adding: armed how?',
   notes: 'After "When the panel is armed": the level, or any of them. The trigger sentence follows ("When the panel is armed Away").',
@@ -165,18 +197,50 @@ const DEVICES = [
   {glyph: 'droplet', color: 'blue', title: 'Water Main', detail: 'Utility'},
 ];
 const OFF_NOTE = 'Your installer has turned off automations that unlock, open or disarm.';
-auto({id: 'automation-then', title: 'Adding: what should it do?',
-  notes: 'The devices by area, as "Add to Favorites", each with what it is or "Not reachable now" (still pickable). Only devices with an allowed action are listed, and never a script (AUT-002). No note any more: a lock may lock or unlock, a garage door or cover close, open or stop, a valve close or open (D23); the next sheet offers them. A scene goes straight to its confirm.',
+// A second action (after a device, an output, the chime or a notification): the chime and a
+// notification too, each once (BL-224), then the devices.
+const SECOND_PANEL = [M.section('The alarm'),
+  M.row_link({glyph: 'bell-ring', title: 'Door chime', detail: 'Turn it on or off', trail: '', goTo: 'automation-chime'}),
+  M.section('Tell someone'),
+  M.row_link({glyph: 'send', title: 'Send a notification', detail: 'To the phones set up in Integrations', trail: '', goTo: 'automation-notify'}),
+  M.section('Devices')].join('');
+auto({id: 'automation-then', title: 'Adding: what should it do? (a second action)',
+  notes: 'The devices by area, as "Add to Favorites", each with what it is or "Not reachable now" (still pickable). Only devices with an allowed action are listed, and never a script (AUT-002). A lock may lock or unlock, a garage door or cover close, open or stop, a valve close or open (D23); the next sheet offers them. A scene goes straight to its confirm. Drawn here as a second action: the door chime and a notification come first (BL-224, each once in an automation), then the outputs for automations, then the devices; Arm, Disarm, a reminder and "still armed" are a first action only (automation-then-arm, automation-then-time).',
   page: LIST_PAGE,
-  over: M.pick_sheet({title: 'What should it do?', fit: true, rows: DEVICES.map((r) => M.row_link({trail: '', ...r})).join('')})});
+  over: M.pick_sheet({title: 'What should it do?', fit: true, rows: SECOND_PANEL + DEVICES.map((r) => M.row_link({trail: '', ...r})).join('')})});
 
 auto({id: 'automation-then-option-off', title: 'Adding: what should it do, with the installer option off',
   notes: 'While the installer has turned "Allow less secure automations" off (AUT-015), this note is the only change here: the devices are the same, but the next sheet has no Unlock, Open or Stop, so a lock can only lock and a garage door or valve only close (one action: that sheet is skipped). It never says this while the option is on.',
   page: LIST_PAGE,
-  over: M.pick_sheet({title: 'What should it do?', note: OFF_NOTE, fit: true, rows: DEVICES.map((r) => M.row_link({trail: '', ...r, goTo: ''})).join('')})});
+  over: M.pick_sheet({title: 'What should it do?', note: OFF_NOTE, fit: true, rows: SECOND_PANEL + DEVICES.map((r) => M.row_link({trail: '', ...r, goTo: ''})).join('')})});
 
-auto({id: 'automation-then-empty', title: 'Adding: no device to choose',
-  notes: 'With no device connected yet, one dimmed row says where they come from. The note about unlocking is gone (D23).',
+// BL-224 N3: "What should it do?" always has something - The alarm, Tell someone, Outputs, then
+// Devices; with no device a quiet note in place of the dead row.
+const pick = (glyph, color, title, detail, goTo) => M.row_link({glyph, color, title, detail, trail: '', goTo});
+const P = {
+  arm: pick('shield', 'blue', 'Arm the panel', 'After a warning', 'automation-arm'),
+  disarm: pick('shield-off', 'amber', 'Disarm the panel', 'Right away', 'automation-disarm-partition'),
+  remind: pick('bell', 'amber', 'Remind to arm', 'If it\'s still disarmed then', 'automation-remind'),
+  armed: pick('send', 'blue', 'Tell me if it\'s still armed', 'If nobody has disarmed it by then', 'automation-still-armed'),
+  chime: pick('bell-ring', 'blue', 'Door chime', 'Turn it on or off', 'automation-chime'),
+  notify: pick('send', 'blue', 'Send a notification', 'To the phones set up in Integrations', 'automation-notify'),
+  garden: pick('toggle-right', 'blue', 'Garden Lights', 'Output on GPIO 47', 'automation-output-do'),
+};
+const NO_DEV = M.paragraph('Lights, locks and other devices show here once one is connected.');
+auto({id: 'automation-then-time', shot: 'automation_then_time', title: 'Adding: what should it do, at a time, with no device',
+  notes: 'The master\'s code, after "At 11:00 PM every day". The alarm first: Arm (the only action, after a warning), Disarm (master only, with the installer option on), Remind to arm and Tell me if it\'s still armed (after a time only: they check the state at that moment), Door chime. Then Tell someone, then Outputs (only the wired outputs set to "For automations"; none, no heading), then Devices (none here: the quiet note at the end, where "No devices to choose" used to be). With the installer\'s code there is no Disarm row. With two partitions, each alarm action asks which partition next. The sheet scrolls.',
+  page: EMPTY_PAGE,
+  over: M.pick_sheet({title: 'What should it do?', fit: true, rows: [M.section('The alarm'), P.arm, P.disarm, P.remind, P.armed, P.chime,
+    M.section('Tell someone'), P.notify, M.section('Outputs'), P.garden, NO_DEV].join('')})});
+
+auto({id: 'automation-then-door', shot: 'automation_then_door', title: 'Adding: what should it do, after a door opens, with no device',
+  notes: 'After "When Front Door opens": no Remind or "still armed" (they belong to a time). Disarm still asks its plain confirm (AUT-016). Send a notification may be a second action beside an output or the chime; Arm stays the only action. No output here yet, so no Outputs heading.',
+  page: EMPTY_PAGE,
+  over: M.pick_sheet({title: 'What should it do?', fit: true, rows: [M.section('The alarm'), P.arm, P.disarm, P.chime,
+    M.section('Tell someone'), P.notify, NO_DEV].join('')})});
+
+auto({id: 'automation-then-empty', title: 'Adding: nothing at all to choose',
+  notes: 'Only for an idea that names a device kind whose devices have all gone meanwhile: one dimmed row says where they come from. "What should it do?" from scratch always has The alarm and Tell someone (BL-224).',
   page: LIST_PAGE,
   over: M.pick_sheet({title: 'What should it do?', fit: true,
     rows: M.row_link({glyph: 'plug', color: 'gray', title: 'No devices to choose', detail: 'Devices appear here once one is connected.', trail: '', disabled: true})})});
@@ -343,20 +407,17 @@ auto({id: 'automations-arm', title: 'Automations: one that arms the panel',
   notes: 'An arming automation is a row like the others: the time as the title, "Arm Night" under it, a moon (a shield for Away and Stay) in the level\'s tone.',
   page: ARM_LIST_PAGE});
 
-auto({id: 'automation-add-arm', title: 'Adding: the bedtime idea',
-  notes: 'One more idea for the system master or installer: it asks for the time and days (the time sheet), then opens the Arm the panel sheet with Night chosen. The sheet now scrolls for "Start from scratch".',
+auto({id: 'automation-add-arm', title: 'Adding: the ideas in a house with devices',
+  notes: 'Harbor House, with its lights, locks and valve: the ideas that need only the panel first (BL-224), then today\'s device ideas, each shown when its parts exist, then "Start from scratch". "Arm at bedtime" asks for the time and days (the time sheet, 10:30 PM every day), then opens the Arm the panel sheet with Night chosen. The sheet scrolls.',
   page: ARM_LIST_PAGE,
-  over: M.pick_sheet({title: 'Add an automation', fit: true, rows: [
-    M.row_link({glyph: 'door-open', color: 'amber', title: 'Turn on a light when a door opens', detail: 'Like the porch light, in the evening', trail: ''}),
-    M.row_link({glyph: 'lock', color: 'green', title: 'Lock up when you arm Away', detail: 'Lock a door when everyone has left', trail: ''}),
-    M.row_link({glyph: 'moon', color: 'violet', title: 'Arm Night at bedtime', detail: 'Every night at a time you choose, after a warning', trail: '', goTo: 'automation-arm'}),
-    M.row_link({glyph: 'siren', color: 'red', title: 'Turn on lights when an alarm sounds', detail: 'So you can see, and be seen', trail: ''}),
-    M.row_link({glyph: 'droplets', color: 'blue', title: 'Close the water when a leak is found', detail: 'Shut the water main', trail: ''}),
-    M.row_link({glyph: 'plus', color: 'blue', title: 'Start from scratch', detail: 'Choose when it runs and what it does', trail: ''}),
-  ].join('')})});
+  over: M.pick_sheet({title: 'Add an automation', fit: true, rows: [IDEA.bedtime, IDEA.morning, IDEA.remind, IDEA.armed,
+    IDEA.open, IDEA.door, IDEA.chime, IDEA.doorLight, IDEA.lock, IDEA.alarmLight, IDEA.leak, IDEA.scratch].join('')})});
 
 const ARM_PICK = M.row_link({glyph: 'shield', title: 'Arm the panel', detail: 'After a warning', trail: '', goTo: 'automation-arm'});
 const DISARM_PICK = M.row_link({glyph: 'shield-off', color: 'amber', title: 'Disarm the panel', detail: 'Right away', trail: '', goTo: 'automation-disarm-partition'});
+const CHIME_PICK = M.row_link({glyph: 'bell-ring', title: 'Door chime', detail: 'Turn it on or off', trail: '', goTo: 'automation-chime'});
+const TELL = M.section('Tell someone') +
+  M.row_link({glyph: 'send', title: 'Send a notification', detail: 'To the phones set up in Integrations', trail: '', goTo: 'automation-notify'});
 const THEN_DEVICES = [
   M.section('Devices'),
   M.row_link({glyph: 'thermometer', color: 'orange', title: 'Hallway', detail: 'Downstairs', trail: ''}),
@@ -368,21 +429,21 @@ auto({id: 'automation-then-arm', shot: 'automation_then_disarm', title: 'Adding:
   notes: 'After any trigger (D23; first only a time of day) "The alarm" comes first: here after "When Front Door opens". "Arm the panel" makes it the only action and always warns first; after a trigger other than a time the sheet\'s line reads "Warns for 5 minutes, then arms Night." "Disarm the panel" acts at once as the person saving it and may have one device action with it ("Disarm Home, then Unlock Front Door Lock"). An automation\'s own arm or disarm never starts another arm or disarm (AUT-007). The old note ("It never unlocks, opens or disarms") is gone.',
   page: ARM_LIST_PAGE,
   over: M.pick_sheet({title: 'What should it do?', fit: true, rows: [
-    M.section('The alarm'), ARM_PICK, DISARM_PICK, THEN_DEVICES,
+    M.section('The alarm'), ARM_PICK, DISARM_PICK, CHIME_PICK, TELL, THEN_DEVICES,
   ].join('')})});
 
 auto({id: 'automation-then-arm-alarm', title: 'Adding: what should it do, after an alarm',
   notes: 'After "When an alarm sounds" or "When a fire or CO alarm sounds", "The alarm" offers Arm but never Disarm: an automation never silences an alarm (D22, AUT-011). The engine also refuses an automation\'s disarm while that partition\'s alarm sounds, whatever started it.',
   page: ARM_LIST_PAGE,
   over: M.pick_sheet({title: 'What should it do?', fit: true, rows: [
-    M.section('The alarm'), ARM_PICK, THEN_DEVICES,
+    M.section('The alarm'), ARM_PICK, CHIME_PICK, TELL, THEN_DEVICES,
   ].join('')})});
 
 auto({id: 'automation-then-arm-option-off', title: 'Adding: what should it do, with the installer option off',
   notes: 'While the installer has turned "Allow less secure automations" off, there is no Disarm row and the note says why (AUT-015). Arm stays: arming is the master\'s to decide (D4). A stored disarm shows "Can\'t run: your installer turned disarming off" and the engine refuses it.',
   page: ARM_LIST_PAGE,
   over: M.pick_sheet({title: 'What should it do?', note: OFF_NOTE, fit: true, rows: [
-    M.section('The alarm'), ARM_PICK, THEN_DEVICES,
+    M.section('The alarm'), ARM_PICK, CHIME_PICK, TELL, THEN_DEVICES,
   ].join('')})});
 
 // ---- the Arm the panel sheet ----
@@ -509,4 +570,109 @@ auto({id: 'automations-put-off', title: 'Put off: Automations says by whom and u
     M.row_link_alert({...ARM_ROW, sub: 'Put off by Pat until 11:30 PM', subColor: 'text_2', goTo: 'automation-arm-put-off'}),
     M.row_link_alert(ARM_LIST[2])].join('')}});
 
+}
+
+// ---- Automations without devices (BL-224, docs/features/41 DESIGN.md section 15) ----
+// The new actions' sheets, their pages and a new panel's list. Built by ui_auto_edit.c (the
+// sheets) and ui_automations.c (the words, the pages); walked in walk_automations_no_device.
+{
+const result = (t) => `<div class="result_line">${M.text(t, 'label')}</div>`;
+const GOES_TO = M.row_link({glyph: 'send', title: 'Goes to', value: 'ntfy, Pushover', trail: ''});
+const TIME = (t) => M.row_link({glyph: 'clock', title: t, goTo: 'automation-time'});
+
+auto({id: 'automation-remind', shot: 'automation_remind', title: 'Remind to arm',
+  notes: 'After a time (the idea "Remind me to arm" comes with 11:00 PM every day). At that time, only if the partition is still disarmed: one chime (never over an alarm sound, D22) and a steady note on Home and the Panel Manager\'s Overview, until it is armed or 6:00 AM. Nobody has to answer it. "Also send a notification" adds "Home isn\'t armed yet" to the phones; it starts on while a phone service is set up. With two partitions a partition row comes first and the line names it.',
+  page: EMPTY_PAGE,
+  over: M.sheet({title: 'Remind to arm', width: 760, body: [
+    M.row_toggle({glyph: 'send', title: 'Also send a notification', detail: 'To the phones set up in Integrations', on: true}),
+    result('At 11:00 PM, if the panel isn\'t armed: a chime, a note on Home and a notification.'),
+    M.paragraph('It never arms by itself. The note goes once the panel is armed, or at 6:00 AM.'),
+  ].join('')})});
+
+auto({id: 'automation-still-armed', shot: 'automation_still_armed', title: 'Tell me if it\'s still armed',
+  notes: '"Late to open" and "no-show": nobody disarmed by a time, so nobody came home. After a time; only a notification, and only if the partition is armed at that moment; nothing changes at the panel. The quoted words are the notification\'s own (notify_words.c: "The panel is still armed at 4:00 PM", or the partition\'s name with more than one). Without a phone service the sheet says so as the notification\'s does (automation-notify-none).',
+  page: EMPTY_PAGE,
+  over: M.sheet({title: 'Tell me if it\'s still armed', width: 760, body: [
+    GOES_TO,
+    result('At 4:00 PM on weekdays, if the panel is still armed: "The panel is still armed at 4:00 PM".'),
+    M.paragraph('Nothing changes at the panel.'),
+  ].join('')})});
+
+auto({id: 'automation-chime', shot: 'automation_chime', title: 'Door chime',
+  notes: 'The same chime as the status bar\'s Chime button, for that partition (with two, the partition next); the automation acts as the person who saved it, so no code is asked. While one of two actions is changed, "Remove this action" is the last row. The idea "Quiet the door chime at night" saves "Turn the door chime off" at 10:00 PM every day at once; its page then says "Nothing turns it on again. Add one for the morning." while no automation turns it the other way (automation-chime-page).',
+  page: EMPTY_PAGE,
+  over: M.pick_sheet({title: 'Door chime', fit: true, rows: [
+    M.row_link({glyph: 'bell-ring', title: 'Turn the door chime on', trail: ''}),
+    M.row_link({glyph: 'bell-off', color: 'gray', title: 'Turn the door chime off', trail: ''}),
+  ].join('')})});
+
+auto({id: 'automation-notify', shot: 'automation_notify', title: 'Send a notification',
+  notes: 'The words come from the trigger, never typed (AUT-001), and are the notification\'s own (notify_words.c): "Front Door opened", "Kitchen Window closed", "Home was armed Night", "An alarm is sounding", "The power went off", "It\'s 11:00 PM" for a time alone. It goes to every phone service set up in Integrations, even with that kind of notification switched off there (the person asked for it), and the usual limits apply (at most one a minute from one automation). It may be the second action with an output, a device or the chime; while one of two is changed, "Remove this action" is the last row. "Only between" is said only when the automation has one.',
+  page: EMPTY_PAGE,
+  over: M.sheet({title: 'Send a notification', width: 760, body: [
+    GOES_TO,
+    result('Sends "Front Door opened".'),
+    M.paragraph('Only between 10:00 PM and 6:00 AM, as the automation says.'),
+  ].join('')})});
+
+auto({id: 'automation-notify-none', shot: 'automation_notify_none', title: 'Send a notification, with no phone service yet',
+  notes: 'A new panel often has none set up. It can still be saved; until a service is set up its page and its row in the list say "Can\'t send: no phone notifications are set up" in amber, and nothing is held back to send later.',
+  page: EMPTY_PAGE,
+  over: M.sheet({title: 'Send a notification', width: 760, body: [
+    M.row_link({glyph: 'send', color: 'amber', title: 'Goes to', value: 'Nothing yet', valueColor: 'amber', trail: ''}),
+    M.paragraph('No phone notifications are set up. Set them up in Integrations; until then it can\'t send.', 'amber'),
+  ].join('')})});
+
+auto({id: 'automation-output-do', shot: 'automation_output_do', title: 'What should an output do?',
+  notes: 'A wired output set "For automations" in Installer > Sirens and outputs (AUTO_ACT_OUTPUT = 3), as a light\'s: Turn on or Turn off. "Turn on" gets the page\'s "Turn it off after" row (5 minutes to 1 hour, or Leave it on), so a timed output is one automation. At least 10 seconds between two automation actions on one output (AUT-007): it can never be made to flash. While one of two actions is changed, "Remove this action" is the last row.',
+  page: EMPTY_PAGE,
+  over: M.pick_sheet({title: 'What should Garden Lights do?', fit: true, rows: [
+    M.row_link({glyph: 'toggle-right', title: 'Turn on', trail: ''}),
+    M.row_link({glyph: 'toggle-left', color: 'gray', title: 'Turn off', trail: ''}),
+  ].join('')})});
+
+// ---- the pages ----
+auto({id: 'automation-installer-arm-page', shot: 'automation_installer_arm_page', title: 'An arming automation the installer set up',
+  notes: 'BL-224 N1: "arm Away every night", saved with the installer\'s code. The line says who set it up and whose permission it uses (the system master, checked at every arming); the log still says "By automation" (D30). If Alex can no longer arm this partition, the switch reads "Can\'t run: Alex can no longer arm this partition", as today. Saved with the master\'s code it reads "Set up by Alex · warns 5 minutes before" (automation-arm-page).',
+  page: pageOf([USE('On · hasn\'t run since the panel started'), M.section('When'), TIME('At 10:30 PM every day'), M.section('Then'),
+    M.row_link({glyph: 'log-out', color: 'rose', title: 'Arm Away', detail: 'Set up by Installer · uses Alex\'s permission · warns 5 minutes before', goTo: 'automation-arm'}),
+    DELETE])});
+
+auto({id: 'automation-remind-page', shot: 'automation_remind_page', title: 'An automation that reminds',
+  notes: 'Other switch lines: "On · reminded at 11:00 PM", "On · already armed at 11:00 PM" (not amber: nothing was needed). No "Try it now" and no second action: a reminder means something only at its time, alone. With "Also send a notification" the action\'s line reads "A chime and a note on Home · also a notification".',
+  page: pageOf([USE('On · already armed at 10:00 PM'), M.section('When'), TIME('At 11:00 PM every day'), M.section('Then'),
+    M.row_link({glyph: 'bell', color: 'amber', title: 'Remind to arm', detail: 'A chime and a note on Home', goTo: 'automation-remind'}), DELETE])});
+
+auto({id: 'automation-door-night-page', shot: 'automation_notify_page', title: 'A door, to the phones',
+  notes: '"Only between" is today\'s row (the door idea comes with 10:00 PM to 6:00 AM). "Try it now" sends the notification once, marked as a test, so the person sees it arrive; the switch then says "On · tried at 10:42 PM". The action\'s line is what it says and where it goes; with no phone service, in amber "Can\'t send: no phone notifications are set up".',
+  page: pageOf([USE('On · tried at 10:42 PM'), M.section('When'),
+    M.row_link({glyph: 'door-open', color: 'amber', title: 'When Front Door opens', detail: 'Zone 1', goTo: 'automation-when'}),
+    M.row_link({glyph: 'clock', title: 'Only between', value: 'Any time', goTo: 'automation-window'}), M.section('Then'),
+    M.row_link({glyph: 'send', title: 'Send a notification', detail: '"Front Door opened" · ntfy, Pushover', goTo: 'automation-notify'}),
+    ADD_SECOND, TRY, DELETE])});
+
+auto({id: 'automation-output-page', shot: 'automation_output_page', title: 'An output when an alarm sounds',
+  notes: 'The output idea\'s page ("Switch an output when an alarm sounds": on for 30 minutes). An output in an automation reads as a device does, its terminal under it. "Try it now" switches it on for its time. An output that is no longer "For automations" makes it "Can\'t run: open it to fix it".',
+  page: pageOf([USE('On · hasn\'t run since the panel started'), M.section('When'),
+    M.row_link({glyph: 'siren', color: 'red', title: 'When an alarm sounds', detail: 'Never for a silent alarm', goTo: 'automation-when'}),
+    M.row_link({glyph: 'clock', title: 'Only between', value: 'Any time', goTo: 'automation-window'}), M.section('Then'),
+    M.row_link({glyph: 'toggle-right', title: 'Turn on Garden Lights', detail: 'Output on GPIO 47', goTo: 'automation-output-do'}),
+    OFF_AFTER('30 minutes'), ADD_SECOND, TRY, DELETE])});
+
+auto({id: 'automation-chime-page', shot: 'automation_chime_page', title: 'The door chime off at night',
+  notes: 'The chime idea\'s page. Under a time-of-day "Turn the door chime off" with no automation that turns that partition\'s chime on again, a quiet line says so; it goes once one does. Other switch lines: "On · ran at 10:00 PM", "On · the door chime was already off at 10:00 PM".',
+  page: pageOf([USE('On · hasn\'t run since the panel started'), M.section('When'), TIME('At 10:00 PM every day'), M.section('Then'),
+    M.row_link({glyph: 'bell-off', color: 'gray', title: 'Turn the door chime off', goTo: 'automation-chime'}),
+    ADD_SECOND, TRY, M.paragraph('Nothing turns it on again. Add one for the morning.'), DELETE])});
+
+auto({id: 'automations-no-device', shot: 'automations_no_device', title: 'Automations on a panel with no device',
+  notes: 'A new panel\'s list with these: rows as today, the trigger sentence, what it does, the chip by the first action. A notification (or "still armed") while no phone service is set up carries the amber line "Can\'t send: no phone notifications are set up" and keeps its tone: it runs, it can\'t send.',
+  page: {title: 'Automations', note: '6 of 16 automations', body: ADD() + [
+    {glyph: 'send', title: 'When Front Door opens', detail: 'Send a notification', sub: 'Can\'t send: no phone notifications are set up', goTo: 'automation-door-night-page'},
+    {glyph: 'bell-off', color: 'gray', title: 'At 10:00 PM every day', detail: 'Turn the door chime off', goTo: 'automation-chime-page'},
+    {glyph: 'bell', color: 'amber', title: 'At 11:00 PM every day', detail: 'Remind to arm', goTo: 'automation-remind-page'},
+    {glyph: 'send', title: 'At 4:00 PM on weekdays', detail: 'Tell me if it\'s still armed', sub: 'Can\'t send: no phone notifications are set up'},
+    {glyph: 'log-out', color: 'rose', title: 'At 10:30 PM every day', detail: 'Arm Away', goTo: 'automation-installer-arm-page'},
+    {glyph: 'toggle-right', title: 'When an alarm sounds', detail: 'Turn on Garden Lights for 30 minutes', goTo: 'automation-output-page'},
+  ].map((r) => M.row_link_alert(r)).join('')}});
 }

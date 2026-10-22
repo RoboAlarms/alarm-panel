@@ -457,6 +457,13 @@ void host_panel_auto_store_fail(bool on);
 bool host_panel_auto_inject(const auto_rule_t *r);
 void host_panel_auto_force_status(uint16_t uid, const auto_status_t *st);
 void host_panel_auto_less_secure(bool on);
+/* BL-224: automations without devices. outputs: a wired output "For automations" exists (output
+ * 1, "Garden Lights" on GPIO 47; off at host_panel_init); output_on: what the runner's output
+ * port last set it to; notices: how many notifications the notify port raised (it raises them
+ * only while the simulator's ntfy or Pushover is on), and the last one. */
+void host_panel_auto_outputs(bool on);
+bool host_panel_auto_output_on(uint8_t output);
+unsigned host_panel_auto_notices(auto_notice_t *last);
 /* TEST-ONLY: the automation service answers "busy" (as while it saves) until set false again;
  * the runner stands still meanwhile. */
 void host_panel_auto_busy(bool on);

@@ -398,6 +398,223 @@ static void by_whom(const i18n_catalog_t *cat, const alarm_config_t *cfg, const 
     }
 }
 
+/* The partition an automation's notice names: with more than one enabled, its name ("Home");
+ * with one, NULL (the words say "The panel"). As the automation's own clause does. */
+static const char *notice_partition(const i18n_catalog_t *cat, const alarm_config_t *cfg,
+                                    uint8_t p, char *buf, size_t len)
+{
+    unsigned enabled = 0u;
+    for (unsigned i = 0; cfg != NULL && i < ALARM_MAX_PARTITIONS; i++) {
+        enabled += cfg->partitions[i].enabled ? 1u : 0u;
+    }
+    if (enabled < 2u || p < 1u || p > ALARM_MAX_PARTITIONS) {
+        return NULL;
+    }
+    if (cfg->partitions[p - 1u].name[0] != '\0') {
+        put(buf, len, cfg->partitions[p - 1u].name);
+    } else {
+        (void)I18N_FORMAT(buf, len, i18n_text(cat, "default partition name", "Partition {0}"),
+                          (unsigned)p);
+    }
+    return buf;
+}
+
+/* An automation's notification to the phones (ALARM_EV_AUTOMATION_NOTICE, docs/features/41
+ * BL-224, NOTE-042): the title from its trigger, never typed ("Front Door opened", "The panel
+ * isn't armed yet"), "Test: ..." for a Try it now; the line under it names the automation
+ * ("By automation · At 10:00 PM every day"). */
+static void auto_notice_words(const i18n_catalog_t *cat, const alarm_config_t *cfg,
+                              const alarm_event_t *ev, const char *zname, notify_words_t *out)
+{
+    char title[NOTIFY_TITLE_LEN];
+    char part[ALARM_NAME_LEN + 16];
+    char at[24];
+    const char *pname = notice_partition(cat, cfg, ev->partition, part, sizeof(part));
+    const uint8_t extra = (uint8_t)(ev->arg2 & (uint8_t)~ALARM_AUTO_NOTICE_TRIED);
+    const bool have_time = notify_time_of_day(cat, ev->epoch_ms, at, sizeof(at));
+    title[0] = '\0';
+    out->icon = NOTIFY_ICON_INFO;
+    out->accent = NOTIFY_ACCENT_BLUE;
+    /* TR: A notification an automation sends to the phones (and its line in Activity): what
+     * happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes. */
+    switch ((alarm_auto_notice_t)ev->arg) {
+    case ALARM_AUTO_NOTICE_OPENED: {
+        const uint8_t cls =
+            (cfg != NULL && ev->zone >= 1u && ev->zone <= ALARM_MAX_ZONES)
+                ? cfg->zones[ev->zone - 1u].device_class
+                : (uint8_t)ALARM_DEVCLASS_GENERIC;
+        out->icon = NOTIFY_ICON_DOOR_OPEN;
+        if (zname[0] == '\0') {
+            put(title, sizeof(title), i18n_text(cat, NULL, "A zone opened"));
+        } else if (cls == ALARM_DEVCLASS_MOTION) {
+            out->icon = NOTIFY_ICON_FOOTPRINTS;
+            (void)I18N_FORMAT(title, sizeof(title), i18n_text(cat, NULL, "{0} saw motion"), zname);
+        } else if (cls == ALARM_DEVCLASS_WATER) {
+            (void)I18N_FORMAT(title, sizeof(title), i18n_text(cat, NULL, "{0} detected water"),
+                              zname);
+        } else {
+            (void)I18N_FORMAT(title, sizeof(title), i18n_text(cat, NULL, "{0} opened"), zname);
+        }
+        break;
+    }
+    case ALARM_AUTO_NOTICE_CLOSED:
+        out->icon = NOTIFY_ICON_DOOR_OPEN;
+        out->accent = NOTIFY_ACCENT_GRAY;
+        if (zname[0] == '\0') {
+            put(title, sizeof(title), i18n_text(cat, NULL, "A zone closed"));
+        } else {
+            (void)I18N_FORMAT(title, sizeof(title), i18n_text(cat, NULL, "{0} closed"), zname);
+        }
+        break;
+    case ALARM_AUTO_NOTICE_ARMED: {
+        out->icon = NOTIFY_ICON_LOCK;
+        out->accent = (uint8_t)notify_accent_for_level((alarm_arm_level_t)extra);
+        /* TR: An automation's notification: the panel, or a partition ({0}, "Home"), was armed
+         * at a level. At most 56 bytes. */
+        const char *one;
+        const char *all;
+        switch ((alarm_arm_level_t)extra) {
+        case ALARM_LEVEL_AWAY:
+            one = i18n_text(cat, NULL, "{0} was armed Away");
+            all = i18n_text(cat, NULL, "The panel was armed Away");
+            break;
+        case ALARM_LEVEL_STAY:
+            one = i18n_text(cat, NULL, "{0} was armed Stay");
+            all = i18n_text(cat, NULL, "The panel was armed Stay");
+            break;
+        case ALARM_LEVEL_NIGHT:
+            one = i18n_text(cat, NULL, "{0} was armed Night");
+            all = i18n_text(cat, NULL, "The panel was armed Night");
+            break;
+        default:
+            one = i18n_text(cat, NULL, "{0} was armed");
+            all = i18n_text(cat, NULL, "The panel was armed");
+            break;
+        }
+        if (pname != NULL) {
+            (void)I18N_FORMAT(title, sizeof(title), one, pname);
+        } else {
+            put(title, sizeof(title), all);
+        }
+        break;
+    }
+    case ALARM_AUTO_NOTICE_DISARMED:
+        out->icon = NOTIFY_ICON_LOCK_OPEN;
+        out->accent = NOTIFY_ACCENT_GREEN;
+        /* TR: An automation's notification; {0} is a partition's name ("Home"). At most 56
+         * bytes. */
+        if (pname != NULL) {
+            (void)I18N_FORMAT(title, sizeof(title), i18n_text(cat, NULL, "{0} was disarmed"),
+                              pname);
+        } else {
+            put(title, sizeof(title), i18n_text(cat, NULL, "The panel was disarmed"));
+        }
+        break;
+    case ALARM_AUTO_NOTICE_ALARM:
+        out->icon = NOTIFY_ICON_SIREN;
+        out->accent = NOTIFY_ACCENT_RED;
+        /* TR: An automation's notification. At most 56 bytes. */
+        put(title, sizeof(title), i18n_text(cat, NULL, "An alarm is sounding"));
+        break;
+    case ALARM_AUTO_NOTICE_FIRE:
+        out->icon = NOTIFY_ICON_FLAME;
+        out->accent = NOTIFY_ACCENT_RED;
+        /* TR: An automation's notification. At most 56 bytes. */
+        put(title, sizeof(title), i18n_text(cat, NULL, "A fire or CO alarm is sounding"));
+        break;
+    case ALARM_AUTO_NOTICE_TIME:
+        out->icon = NOTIFY_ICON_CLOCK;
+        if (have_time) {
+            /* TR: An automation's notification at a time of day ({0}, "11:00 PM"). At most 56
+             * bytes. */
+            (void)I18N_FORMAT(title, sizeof(title), i18n_text(cat, NULL, "It's {0}"), at);
+        } else {
+            /* TR: An automation's notification at a time of day, when the panel can't say the
+             * time. At most 56 bytes. */
+            put(title, sizeof(title), i18n_text(cat, NULL, "It's the set time"));
+        }
+        break;
+    case ALARM_AUTO_NOTICE_TROUBLE:
+        out->accent = NOTIFY_ACCENT_AMBER;
+        /* TR: An automation's notification when a trouble starts; {0} is a sensor's zone name.
+         * At most 56 bytes. */
+        switch ((auto_trouble_t)extra) {
+        case AUTO_TROUBLE_AC:
+            out->icon = NOTIFY_ICON_ZAP;
+            put(title, sizeof(title), i18n_text(cat, NULL, "The power went off"));
+            break;
+        case AUTO_TROUBLE_BATTERY:
+            out->icon = NOTIFY_ICON_BATTERY_WARNING;
+            put(title, sizeof(title), i18n_text(cat, NULL, "The panel's battery is low"));
+            break;
+        case AUTO_TROUBLE_SENSOR:
+            out->icon = NOTIFY_ICON_RADIO_TOWER;
+            if (zname[0] != '\0') {
+                (void)I18N_FORMAT(title, sizeof(title),
+                                  i18n_text(cat, NULL, "{0} stopped reporting"), zname);
+            } else {
+                put(title, sizeof(title), i18n_text(cat, NULL, "A sensor stopped reporting"));
+            }
+            break;
+        case AUTO_TROUBLE_SIREN:
+            out->icon = NOTIFY_ICON_BELL_OFF;
+            put(title, sizeof(title), i18n_text(cat, NULL, "A siren has a problem"));
+            break;
+        default:
+            out->icon = NOTIFY_ICON_TRIANGLE_ALERT;
+            put(title, sizeof(title), i18n_text(cat, NULL, "There's a trouble"));
+            break;
+        }
+        break;
+    case ALARM_AUTO_NOTICE_REMIND:
+        out->icon = NOTIFY_ICON_BELL;
+        out->accent = NOTIFY_ACCENT_AMBER;
+        /* TR: An automation's reminder to arm; {0} is a partition's name ("Home"). At most 56
+         * bytes. */
+        if (pname != NULL) {
+            (void)I18N_FORMAT(title, sizeof(title), i18n_text(cat, NULL, "{0} isn't armed yet"),
+                              pname);
+        } else {
+            put(title, sizeof(title), i18n_text(cat, NULL, "The panel isn't armed yet"));
+        }
+        break;
+    case ALARM_AUTO_NOTICE_STILL_ARMED:
+        out->icon = NOTIFY_ICON_LOCK;
+        /* TR: An automation's notification: nobody disarmed by a time. {0} is a partition's
+         * name ("Home"), {1} a time of day ("4:00 PM"). At most 56 bytes. */
+        if (pname != NULL && have_time) {
+            (void)I18N_FORMAT(title, sizeof(title),
+                              i18n_text(cat, NULL, "{0} is still armed at {1}"), pname, at);
+        } else if (pname != NULL) {
+            (void)I18N_FORMAT(title, sizeof(title), i18n_text(cat, NULL, "{0} is still armed"),
+                              pname);
+        } else if (have_time) {
+            (void)I18N_FORMAT(title, sizeof(title),
+                              i18n_text(cat, NULL, "The panel is still armed at {0}"), at);
+        } else {
+            put(title, sizeof(title), i18n_text(cat, NULL, "The panel is still armed"));
+        }
+        break;
+    default:
+        out->icon = NOTIFY_ICON_INFO;
+        /* TR: An automation's notification this software has no words for. At most 56 bytes. */
+        put(title, sizeof(title), i18n_text(cat, NULL, "A notification from an automation"));
+        break;
+    }
+    if ((ev->arg2 & ALARM_AUTO_NOTICE_TRIED) != 0u) {
+        /* TR: A notification sent by an automation's "Try it now": {0} is what it says ("Test:
+         * Front Door opened"). At most 63 bytes with it. */
+        (void)I18N_FORMAT(out->title, sizeof(out->title), i18n_text(cat, NULL, "Test: {0}"), title);
+    } else {
+        put(out->title, sizeof(out->title), title);
+    }
+    if (ev->source.kind == (uint8_t)ALARM_SRC_AUTOMATION) {
+        auto_who(cat, cfg, ev, true, out->body, sizeof(out->body));
+    } else {
+        by_whom(cat, cfg, ev, out->body, sizeof(out->body));
+    }
+}
+
 void notify_sys_trouble_words(const i18n_catalog_t *cat, alarm_sys_trouble_t t, bool restored,
                               notify_words_t *out)
 {
@@ -1213,6 +1430,7 @@ bool notify_words(const i18n_catalog_t *cat, const alarm_config_t *cfg, const al
         }
         break;
     }
+    case ALARM_EV_AUTOMATION_NOTICE: auto_notice_words(cat, cfg, ev, zname, out); break;
     case ALARM_EV_ZIGBEE_RADIO_RESTARTED:
         out->icon = NOTIFY_ICON_REFRESH;
         out->accent = NOTIFY_ACCENT_AMBER;
@@ -1275,6 +1493,9 @@ notify_cat_t notify_category(alarm_event_type_t type)
     case ALARM_EV_ARMING_PUT_OFF: return NOTIFY_CAT_ARMING; /* AUT-013 */
     case ALARM_EV_BYPASS:
     case ALARM_EV_UNBYPASS: return NOTIFY_CAT_BYPASS;
+    /* An automation's notification (BL-224, NOTE-042) sits with the system events in Activity's
+     * filters; the gate sends it past every category switch (notify_gate_wanted). */
+    case ALARM_EV_AUTOMATION_NOTICE: return NOTIFY_CAT_SYSTEM;
     default: return NOTIFY_CAT_SYSTEM;
     }
 }

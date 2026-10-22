@@ -20,6 +20,12 @@
  *   installer mode and during a walk test (B4), dropped next to trouble, tamper or supervision
  *   flags (B5). A walk test in any partition holds every zone: the snapshot carries no zone
  *   partition.
+ * - TROUBLE (BL-224): a trouble that starts - the power (AC loss), the panel's battery, a siren
+ *   (the bell trouble), a sensor's supervision, low battery or loop trouble (one occurrence per
+ *   zone that gets one), a keypad or device not heard (one per device), any other system trouble
+ *   but the clock - cause an auto_trouble_t. Never while it lasts, never for what the first
+ *   snapshot shows, nor during the settle time, installer mode or a walk test (those take a new
+ *   baseline), nor at a configuration change (re-baselined).
  *
  * Each call returns how many occurrences it wrote into out (never more than max); any more that
  * were due are counted in missed (B6).
@@ -40,9 +46,9 @@ extern "C" {
 /* One occurrence. kind is an auto_trig_t; partition 1-based for ARMED, DISARMED, ALARM and FIRE
  * (an event without a valid partition makes none), 0 for zone occurrences: not known here, the
  * runner reads the zone's partition from the configuration; level an
- * alarm_arm_level_t (ARMED only); cause an alarm_cause_t (ALARM, FIRE); zone 1-based (zone
- * triggers, and the zone that raised an alarm); at the snapshot's taken_ms or the event's
- * mono_ms. */
+ * alarm_arm_level_t (ARMED only); cause an alarm_cause_t (ALARM, FIRE), an auto_trouble_t
+ * (TROUBLE); zone 1-based (zone triggers, the zone that raised an alarm, a sensor's trouble);
+ * at the snapshot's taken_ms or the event's mono_ms. */
 typedef struct {
     uint8_t kind;
     uint8_t partition;
@@ -67,6 +73,11 @@ typedef struct {
     uint8_t known[ALARM_ZONE_BITMAP_BYTES];    /* zone has a baseline */
     uint8_t fault[ALARM_ZONE_BITMAP_BYTES];    /* its FAULT bit in the last snapshot */
     uint8_t bad[ALARM_ZONE_BITMAP_BYTES];      /* trouble, tamper or supervision then (B5) */
+    /* BL-224: the troubles in the last snapshot (valid while trbl_based) */
+    uint8_t trbl_based;
+    uint32_t trbl_sys;                         /* sys_troubles */
+    uint32_t trbl_dev;                         /* dev_troubles */
+    uint8_t trbl_zone[ALARM_ZONE_BITMAP_BYTES]; /* a zone with a sensor trouble */
 } auto_watch_t;
 
 void auto_watch_init(auto_watch_t *w, alarm_ms_t now, uint32_t settle_ms);

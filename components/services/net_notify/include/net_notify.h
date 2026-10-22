@@ -123,6 +123,14 @@ esp_err_t net_notify_test_start(uint8_t provider, char *why, size_t why_len);
  * off (PUSH-006) - once there is one. false: still trying. */
 bool net_notify_test_result(bool *ok, char *why, size_t why_len);
 
+/* The phone services set up now (docs/features/41 BL-224): bit (1 << net_notify_provider_t) for
+ * each one that is on and has what it needs to send (ntfy a topic; Pushover both keys), whatever
+ * its categories say - an automation's notification goes past them. Any task; a short lock. 0
+ * without CONFIG_ALARM_FEATURE_NOTIFY. */
+uint8_t net_notify_services(void);
+/* net_notify_services() != 0: an automation's "Send a notification" has somewhere to go. */
+bool net_notify_any_service(void);
+
 /* PEM certificate authority for a self-hosted ntfy; NULL or "" removes it. */
 esp_err_t net_notify_set_ca(const char *pem);
 

@@ -7593,6 +7593,53 @@ static void walk_sirens(void)
     zb_has("It follows", "OUT-009: the new strobe's page didn't open");
     tap_name("page_back");
     run(300);
+
+    /* BL-224: an output for automations - the last choice, a name, Test it, "Not used yet" */
+    scroll_to_text("page_body", "Add a wired siren or output");
+    tap_link("Add a wired siren or output");
+    run(300);
+    expect(find_label(by_name("pick_list"), "For automations") != NULL,
+           "OUT-023: adding a wired output doesn't offer one for automations");
+    shot("bl-224-output-add");
+    tap_text("For automations");
+    run(300);
+    {
+        static const char *const FREE[] = {"GPIO 2", "GPIO 3", "GPIO 4", "GPIO 5"};
+        const char *pin = NULL;
+        for (size_t i = 0; i < sizeof(FREE) / sizeof(FREE[0]) && pin == NULL; i++) {
+            pin = find_label(by_name("pick_list"), FREE[i]) != NULL ? FREE[i] : NULL;
+        }
+        expect(pin != NULL, "OUT-023: no free terminal offered for the output for automations");
+        const uint8_t gpio = (uint8_t)(pin[5] - '0');
+        tap_text(pin);
+        run(400);
+        zb_has("Relay board", "OUT-023: the output for automations' page didn't open");
+        expect(find_label(by_name("page_body"), "Partitions") == NULL &&
+                   find_label(by_name("page_body"), "Chirp when arming and disarming") == NULL,
+               "OUT-023: an output for automations has partitions or chirps");
+        expect(strcmp(row_label("Name", "value_label"), "None") == 0,
+               "OUT-023: a new output for automations has a name");
+        tap_link("Name");
+        run(300);
+        sheet_text("Garden Lights");
+        tap_name("sheet_done");
+        run(300);
+        expect(strcmp(row_label("Name", "value_label"), "Garden Lights") == 0,
+               "OUT-023: the output for automations' name isn't kept");
+        expect(!host_panel_siren_pin(gpio), "OUT-024: a new output for automations isn't off");
+        shot("bl-224-output");
+        tap_link("Test it");
+        run(200);
+        zb_toast("On for 2 seconds", "OUT-023: the output's test doesn't say it is on");
+        expect(host_panel_siren_pin(gpio), "OUT-023: the output's test doesn't switch it on");
+        run(2500);
+        expect(!host_panel_siren_pin(gpio), "OUT-023: the output's test doesn't end");
+        tap_name("page_back");
+        run(300);
+        scroll_to_text("page_body", "Garden Lights");
+        zb_has("Not used yet", "OUT-023: an output no automation uses doesn't say so");
+        shot("bl-224-sirens");
+    }
     tap_name("page_back");
     run(300);
 
@@ -8641,6 +8688,377 @@ static void auto_back_to_list(void)
     run(1100);
 }
 
+/* BL-224: the simulator's ntfy and Pushover set up and on, as Integrations saves them: where an
+ * automation's notification goes. */
+static void auto_phones_on(void)
+{
+    ui_backend_t be;
+    host_panel_backend(&be);
+    char why[128] = "";
+    ui_ntfy_settings_t n;
+    be.ntfy_get(be.ctx, &n);
+    n.enabled = true;
+    if (n.topic[0] == '\0') {
+        be.ntfy_new_topic(be.ctx, n.topic, sizeof(n.topic));
+    }
+    expect(be.ntfy_set(be.ctx, &n, why, sizeof(why)), "BL-224: ntfy wasn't set up");
+    ui_pushover_settings_t p;
+    be.pushover_get(be.ctx, &p);
+    p.enabled = true;
+    snprintf(p.user_key, sizeof(p.user_key), "uQiRzpo4DXghDmr9QzzfQu27cmVRsG");
+    p.user_key_change = true;
+    snprintf(p.app_token, sizeof(p.app_token), "azGDORePK8gMaC0QOYAMyEEuzJnyUi");
+    p.app_token_change = true;
+    expect(be.pushover_set(be.ctx, &p, why, sizeof(why)), "BL-224: Pushover wasn't set up");
+}
+
+/* BL-224: Settings > Automations again with this code ("123456k" the master's, "69420k" the
+ * installer's): Settings is left first, so the code is asked again. */
+static void auto_section_as(const char *keys)
+{
+    tap_name("nav_home");
+    run(300);
+    tap_name("bar_settings");
+    run(300);
+    auto_open_section();
+    if (lv_subject_get_int(&subject_settings_pad) == 1) {
+        type(keys);
+        run(1100);
+    }
+}
+
+/* The automation saved last (the highest uid). */
+static auto_rule_t auto_newest(void)
+{
+    auto_rule_t r[AUTO_MAX];
+    const size_t n = host_panel_auto_rules(r, AUTO_MAX);
+    auto_rule_t last;
+    memset(&last, 0, sizeof(last));
+    for (size_t i = 0; i < n; i++) {
+        if (r[i].uid > last.uid) {
+            last = r[i];
+        }
+    }
+    return last;
+}
+
+/* BL-224 (docs/features/41 DESIGN.md section 15, drawings bl-224-*), a part of walk_automations: a
+ * new panel with zones and no device. */
+static void walk_automations_no_device(const ui_options_t *start)
+{
+    host_panel_init(AUTO_T0);
+    host_panel_automations(false);
+    host_panel_devices(false);
+    host_panel_auto_less_secure(true); /* "Disarm at opening time" is offered */
+    ui_app_apply_options(start);
+    run(500);
+    wake();
+    auto_section_as("123456k");
+    lv_obj_t *pick = NULL;
+    tap_text("Add an automation");
+    run(300);
+    pick = by_name("pick_list");
+    expect(find_label(pick, "Arm at bedtime") != NULL && find_label(pick, "Arm Away on weekday mornings") != NULL &&
+               find_label(pick, "Remind me to arm") != NULL && find_label(pick, "Tell me if it's still armed") != NULL &&
+               find_label(pick, "Disarm at opening time") != NULL &&
+               find_label(pick, "Tell me when a door opens at night") != NULL &&
+               find_label(pick, "Quiet the door chime at night") != NULL &&
+               find_label(pick, "Switch an output when an alarm sounds") == NULL &&
+               find_label(pick, "Start from scratch") != NULL,
+           "BL-224 N2: the master's ideas on a panel with no device aren't as drawn (bl-224-ideas)");
+    shot("automation_ideas");
+    /* N5: "When there's a trouble", and which */
+    tap_text("Start from scratch");
+    run(300);
+    scroll_to_text("pick_list", "When there's a trouble");
+    shot("automation_when_trouble");
+    tap_text("When there's a trouble");
+    run(300);
+    pick = by_name("pick_list");
+    expect(strcmp(lv_subject_get_string(&subject_sheet_title), "Which trouble?") == 0 &&
+               find_label(pick, "Any trouble") != NULL && find_label(pick, "The power goes off") != NULL &&
+               find_label(pick, "The panel's battery is low") != NULL &&
+               find_label(pick, "A sensor stops reporting") != NULL && find_label(pick, "A siren problem") != NULL,
+           "BL-224 N5: \"Which trouble?\" isn't as drawn (bl-224-trouble-which)");
+    shot("automation_trouble_which");
+    tap_text("The power goes off");
+    run(300);
+    expect(strcmp(lv_subject_get_string(&subject_sheet_title), "What should it do?") == 0 &&
+               find_label(by_name("pick_list"), "Remind to arm") == NULL &&
+               find_label(by_name("pick_list"), "Disarm the panel") == NULL,
+           "BL-224: after a trouble, no reminder and no Disarm");
+    tap_name("pick_close");
+    run(300);
+    /* N3: after a door, with no device: the quiet note instead of the dead row; then the
+     * notification with no phone service (bl-224-then-door, bl-224-notify-none) */
+    tap_text("Add an automation");
+    run(300);
+    tap_text("Start from scratch");
+    run(300);
+    tap_text("When a door or window opens");
+    run(300);
+    tap_text("Front Door");
+    run(300);
+    pick = by_name("pick_list");
+    expect(find_label(pick, "The alarm") != NULL && find_label(pick, "Arm the panel") != NULL &&
+               find_label(pick, "Disarm the panel") != NULL && find_label(pick, "Door chime") != NULL &&
+               find_label(pick, "Remind to arm") == NULL && find_label(pick, "Tell someone") != NULL &&
+               find_label(pick, "Send a notification") != NULL && find_label(pick, "No devices to choose") == NULL &&
+               find_label(pick, "Lights, locks and other devices show here once one is connected.") != NULL,
+           "BL-224 N3: \"What should it do?\" after a door with no device isn't as drawn (bl-224-then-door)");
+    shot("automation_then_door");
+    tap_text("Send a notification");
+    run(300);
+    lv_obj_t *form = by_name("form_body");
+    expect(find_label(form, "Goes to") != NULL && find_label(form, "Nothing yet") != NULL &&
+               find_label(form, "No phone notifications are set up. Set them up in Integrations; until then it can't "
+                                "send.") != NULL,
+           "BL-224: a notification with no phone service doesn't say so (bl-224-notify-none)");
+    shot("automation_notify_none");
+    tap_name("form_ok");
+    run(1100);
+    expect(auto_newest().n == 1u && auto_newest().then[0].kind == AUTO_ACT_NOTIFY,
+           "BL-224: the door's notification wasn't saved");
+    /* N6's output (ui_sirens.c's "For automations"), then "What should it do?" after a time
+     * (bl-224-then-time), an output's sheet (bl-224-output-do) and the chime's (bl-224-chime) */
+    host_panel_auto_outputs(true);
+    tap_text("Add an automation");
+    run(300);
+    tap_text("Start from scratch");
+    run(300);
+    tap_text("At a time of day");
+    run(300);
+    tap_name("time_ok");
+    run(300);
+    pick = by_name("pick_list");
+    expect(find_label(pick, "Arm the panel") != NULL && find_label(pick, "Disarm the panel") != NULL &&
+               find_label(pick, "Remind to arm") != NULL && find_label(pick, "Tell me if it's still armed") != NULL &&
+               find_label(pick, "Door chime") != NULL && find_label(pick, "Send a notification") != NULL &&
+               find_label(pick, "Outputs") != NULL && find_label(pick, "Garden Lights") != NULL &&
+               find_label(pick, "Output on GPIO 47") != NULL,
+           "BL-224 N3: \"What should it do?\" after a time isn't as drawn (bl-224-then-time)");
+    shot("automation_then_time");
+    scroll_to_text("pick_list", "Lights, locks and other devices show here once one is connected.");
+    shot("automation_then_time_end");
+    tap_text("Garden Lights");
+    run(300);
+    expect(strcmp(lv_subject_get_string(&subject_sheet_title), "What should Garden Lights do?") == 0 &&
+               find_label(by_name("pick_list"), "Turn on") != NULL && find_label(by_name("pick_list"), "Turn off") != NULL,
+           "BL-224 N4: an output's sheet isn't as drawn (bl-224-output-do)");
+    shot("automation_output_do");
+    tap_name("pick_close");
+    run(300);
+    tap_text("Add an automation");
+    run(300);
+    tap_text("Start from scratch");
+    run(300);
+    tap_text("At a time of day");
+    run(300);
+    tap_name("time_ok");
+    run(300);
+    tap_text("Door chime");
+    run(300);
+    expect(strcmp(lv_subject_get_string(&subject_sheet_title), "Door chime") == 0 &&
+               find_label(by_name("pick_list"), "Turn the door chime on") != NULL &&
+               find_label(by_name("pick_list"), "Turn the door chime off") != NULL,
+           "BL-224 N4: the door chime's sheet isn't as drawn (bl-224-chime)");
+    shot("automation_chime");
+    tap_name("pick_close");
+    run(300);
+    /* the chime idea: off at 10:00 PM; its page says nothing turns it on again */
+    tap_text("Add an automation");
+    run(300);
+    tap_text("Quiet the door chime at night");
+    run(300);
+    tap_name("time_ok");
+    run(1100);
+    expect(auto_newest().then[0].kind == AUTO_ACT_CHIME && auto_newest().then[0].option == 0u &&
+               auto_newest().when.minute == 22u * 60u,
+           "BL-224: the chime idea wasn't saved as off at 10:00 PM");
+    tap_text("Turn the door chime off");
+    run(1100);
+    expect(find_label(by_name("page_body"), "Nothing turns it on again. Add one for the morning.") != NULL,
+           "BL-224: a chime turned off at a time doesn't say nothing turns it on again");
+    shot("automation_chime_page");
+    auto_back_to_list();
+    /* the reminder and "still armed", saved with no phone service yet */
+    tap_text("Add an automation");
+    run(300);
+    tap_text("Remind me to arm");
+    run(300);
+    tap_name("time_ok");
+    run(300);
+    tap_name("form_ok");
+    run(1100);
+    expect(auto_newest().then[0].kind == AUTO_ACT_REMIND && auto_newest().when.minute == 23u * 60u,
+           "BL-224: the reminder idea wasn't saved at 11:00 PM");
+    const uint16_t remind_uid = auto_newest().uid;
+    tap_text("Add an automation");
+    run(300);
+    tap_text("Tell me if it's still armed");
+    run(300);
+    tap_name("time_ok");
+    run(300);
+    expect(find_label(by_name("form_body"), "Nothing yet") != NULL, "BL-224: \"still armed\" with no phone service");
+    tap_name("form_ok");
+    run(1100);
+    expect(auto_newest().then[0].kind == AUTO_ACT_CHECK_ARMED && auto_newest().when.minute == 16u * 60u,
+           "BL-224: \"still armed\" wasn't saved at 4:00 PM");
+
+    /* N1: the installer's ideas, with an output for automations (bl-224-ideas-installer), its
+     * arming page (bl-224-page-installer-arm) and the output's (bl-224-page-output) */
+    auto_section_as("69420k");
+    tap_text("Add an automation");
+    run(300);
+    pick = by_name("pick_list");
+    expect(find_label(pick, "Arm at bedtime") != NULL && find_label(pick, "Arm Away on weekday mornings") != NULL &&
+               find_label(pick, "Disarm at opening time") == NULL &&
+               find_label(pick, "Switch an output when an alarm sounds") != NULL,
+           "BL-224 N1: the installer's ideas aren't as drawn (bl-224-ideas-installer)");
+    shot("automation_ideas_installer");
+    tap_text("Arm at bedtime");
+    run(300);
+    tap_name("time_ok");
+    run(300);
+    tap_name("level_away");
+    run(300);
+    tap_name("form_ok");
+    run(1100);
+    const auto_rule_t arm = auto_newest();
+    expect(arm.then[0].kind == AUTO_ACT_ARM && arm.made_by == ALARM_USER_MASTER && arm.saved_by == ALARM_USER_INSTALLER,
+           "BL-224 N1: the installer's Arm wasn't saved as the system master's");
+    tap_text("At 10:30 PM every day");
+    run(1100);
+    expect(find_label(by_name("page_body"), "Arm Away") != NULL &&
+               find_label_with(by_name("page_body"), "\xC2\xB7 uses ") != NULL &&
+               find_label_with(by_name("page_body"), "'s permission \xC2\xB7 warns 5 minutes before") != NULL,
+           "BL-224 N1: the installer's arming page doesn't say whose permission it uses");
+    shot("automation_installer_arm_page");
+    auto_back_to_list();
+    tap_text("Add an automation");
+    run(300);
+    tap_text("Switch an output when an alarm sounds");
+    run(1100);
+    expect(auto_newest().then[0].kind == AUTO_ACT_OUTPUT && auto_newest().then[0].off_after_min == 30u &&
+               auto_newest().when.kind == AUTO_TRIG_ALARM,
+           "BL-224: the output idea wasn't saved as on for 30 minutes when an alarm sounds");
+    tap_text("Turn on Garden Lights for 30 minutes");
+    run(1100);
+    lv_obj_t *page = by_name("page_body");
+    expect(find_label(page, "Turn on Garden Lights") != NULL && find_label(page, "Output on GPIO 47") != NULL &&
+               find_label(page, "Turn it off after") != NULL && find_label(page, "30 minutes") != NULL &&
+               find_label(page, "Try it now") != NULL && find_label(page, "Add a second action") != NULL,
+           "BL-224: the output's page isn't as drawn (bl-224-page-output)");
+    shot("automation_output_page");
+    auto_back_to_list();
+    /* the list (bl-224-list): the door's and "still armed"'s amber line while nothing can send */
+    expect(find_label(by_name("page_body"), "Can't send: no phone notifications are set up") != NULL &&
+               find_label(by_name("page_body"), "Remind to arm") != NULL &&
+               find_label(by_name("page_body"), "Tell me if it's still armed") != NULL &&
+               find_label(by_name("page_body"), "Turn the door chime off") != NULL,
+           "BL-224: the list of automations without devices isn't as drawn (bl-224-list)");
+    shot("automations_no_device");
+
+    /* With ntfy and Pushover set up: the sheets as drawn (bl-224-remind, -still-armed, -notify) */
+    auto_phones_on();
+    run(1100);
+    tap_text("Add an automation");
+    run(300);
+    tap_text("Remind me to arm");
+    run(300);
+    tap_name("time_ok");
+    run(300);
+    form = by_name("form_body");
+    expect(find_label(form, "Also send a notification") != NULL &&
+               find_label(form, "At 11:00 PM, if the panel isn't armed: a chime, a note on Home and a notification.") != NULL,
+           "BL-224 N4: the reminder's sheet isn't as drawn (bl-224-remind)");
+    shot("automation_remind");
+    tap_name("form_cancel");
+    run(300);
+    tap_text("Add an automation");
+    run(300);
+    tap_text("Tell me if it's still armed");
+    run(300);
+    tap_name("time_ok");
+    run(300);
+    form = by_name("form_body");
+    expect(find_label(form, "ntfy, Pushover") != NULL && find_label(form, "Nothing changes at the panel.") != NULL,
+           "BL-224 N4: \"still armed\"'s sheet isn't as drawn (bl-224-still-armed)");
+    shot("automation_still_armed");
+    tap_name("form_cancel");
+    run(300);
+    tap_text("Add an automation");
+    run(300);
+    tap_text("Tell me when a door opens at night");
+    run(300);
+    tap_text("Front Door");
+    run(300);
+    form = by_name("form_body");
+    expect(find_label(form, "ntfy, Pushover") != NULL &&
+               find_label(form, "Only between 10:00 PM and 6:00 AM, as the automation says.") != NULL,
+           "BL-224 N4: the notification's sheet isn't as drawn (bl-224-notify)");
+    shot("automation_notify");
+    tap_name("form_cancel");
+    run(300);
+    /* the reminder's page: already armed (not amber, bl-224-page-remind); the door's: Try it now
+     * sends one (bl-224-page-door-night) */
+    auto_status_at(remind_uid, AUTO_RES_ALREADY, 0, AUTO_AT(22, 0));
+    tap_text("Remind to arm");
+    run(1100);
+    page = by_name("page_body");
+    expect(find_label(page, "On \xC2\xB7 already armed at 10:00 PM") != NULL &&
+               find_label(page, "A chime and a note on Home") != NULL && find_label(page, "Try it now") == NULL,
+           "BL-224: the reminder's page isn't as drawn (bl-224-page-remind)");
+    shot("automation_remind_page");
+    auto_back_to_list();
+    tap_text("When Front Door opens");
+    run(1100);
+    const unsigned sent = host_panel_auto_notices(NULL);
+    tap_text("Try it now");
+    run(1500);
+    auto_notice_t last;
+    expect(host_panel_auto_notices(&last) == sent + 1u && last.tried == 1u && last.zone == 1u,
+           "AUT-006, BL-224: Try it now didn't send the door's notification once");
+    page = by_name("page_body");
+    expect(find_label(page, "Send a notification") != NULL && find_label_with(page, "ntfy, Pushover") != NULL &&
+               find_label_with(page, "tried at") != NULL,
+           "BL-224: the door's notification page isn't as drawn (bl-224-page-door-night)");
+    lv_obj_scroll_to_y(page, 0, LV_ANIM_OFF); /* the switch, as drawn */
+    run(100);
+    shot("automation_notify_page");
+    auto_back_to_list();
+
+    /* Home: the reminder's steady note above the tiles, no button (bl-224-home-remind) */
+    host_panel_init(AUTO_AT(22, 58));
+    host_panel_automations(false);
+    host_panel_devices(false);
+    ui_app_apply_options(start);
+    auto_rule_t rm;
+    auto_rule(&rm, AUTO_TRIG_TIME, 0);
+    rm.when.minute = 23u * 60u;
+    rm.n = 1;
+    rm.then[0].kind = AUTO_ACT_REMIND;
+    rm.then[0].partition = 1;
+    rm.then[0].value = -1;
+    auto_save_as_master(&rm, "a reminder at 11:00 PM");
+    run(500);
+    wake();
+    tap_name("nav_home");
+    run(300);
+    host_panel_advance(3u * 60000u); /* 11:01 PM */
+    s_ms += 3u * 60000u;
+    lv_display_trigger_activity(NULL);
+    run(1100);
+    expect(lv_subject_get_int(&subject_arm_strip) == 2 &&
+               strcmp(lv_subject_get_string(&subject_arm_strip_title), "Not armed yet") == 0 &&
+               strcmp(lv_subject_get_string(&subject_arm_strip_detail), "Reminder at 11:00 PM") == 0 &&
+               find_visible(lv_screen_active(), "arm_strip_put_off") == NULL && lv_subject_get_int(&subject_bar_banner) != 5,
+           "BL-224: Home's reminder note isn't as drawn (bl-224-home-remind)");
+    shot("home_remind");
+    tap_name("nav_home");
+    run(4000);
+}
+
 static void walk_automations(const ui_options_t *start)
 {
     printf("Automations\n");
@@ -8778,7 +9196,8 @@ static void walk_automations(const ui_options_t *start)
     auto_open_section();
     expect(auto_note("") &&
                find_label(by_name("page_body"),
-                          "The panel can do things by itself, like turning on the porch light when the front door opens.") != NULL,
+                          "The panel can do things by itself, like arming at bedtime or telling your phone when a door "
+                          "opens at night.") != NULL,
            "AUT-001: the empty list doesn't say what an automation is");
     shot("automations_empty");
 
@@ -8888,6 +9307,13 @@ static void walk_automations(const ui_options_t *start)
     tap_name("nav_home");
     run(4000);
 
+    /* BL-224 (docs/features/41 DESIGN.md section 15, drawings bl-224-*): a new panel with zones and
+     * no device. The ideas as the master and as the installer, "When there's a trouble" and
+     * "Which trouble?", "What should it do?" after a time and after a door, the new actions'
+     * sheets with and without a phone service, their pages, the list, and Home's reminder note.
+     * Before C6's pictures, which build the house the walks after this one start from. */
+    walk_automations_no_device(start);
+
     /* BL-170 C6 (docs/features/41 phase C), appended so every earlier picture keeps its number:
      * an arming automation's page and a disarming one's (drawings automation-arm-page,
      * automation-disarm-page), "What should it do?" with Disarm (automation-then-arm, without the
@@ -8968,7 +9394,7 @@ static void walk_automations(const ui_options_t *start)
      * (automation-arm-away) */
     tap_text("Add an automation");
     run(300);
-    tap_text("Arm Night at bedtime");
+    tap_text("Arm at bedtime");
     run(300);
     tap_name("time_ok");
     run(300);
@@ -9005,7 +9431,7 @@ static void walk_automations(const ui_options_t *start)
     run(1100);
     tap_text("Add an automation");
     run(300);
-    tap_text("Arm Night at bedtime");
+    tap_text("Arm at bedtime");
     run(300);
     tap_name("time_ok");
     run(300);

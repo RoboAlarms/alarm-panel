@@ -33,7 +33,17 @@
  * s_warn (under s_auto_lock) for the readers; the task chimes once a minute while one is ON,
  * through sounder_play_background, which plays only while nothing else sounds and gives way to
  * every other sound (the mixer's rule, D22). A put-off is a request answered by the task, as
- * Try it now is. */
+ * Try it now is.
+ *
+ * Without devices (BL-224, DESIGN.md section 15): the output port switches a wired output "For
+ * automations" through outputs_service (its own lock, no wait); the chime port turns a partition's
+ * door chime on or off as the maker, read and toggled in one alarm_service_call so nothing else
+ * toggles it in between, and only while disarmed (refused BAD_STATE without the engine, so
+ * nothing beeps); the notify port raises ALARM_EV_AUTOMATION_NOTICE on the alarm task (it logs
+ * and reports it; net_notify sends it), or answers "no service" when no phone service is set up;
+ * part_armed reads the partition on the alarm task; the remind port keeps each reminder's note in
+ * s_remind (under s_auto_lock, as the warnings) and chimes once, in the background, when one
+ * begins. Every env (the saves', the runner's) carries the outputs set "For automations". */
 #include "automation_service.h"
 
 #include "sdkconfig.h"
@@ -56,7 +66,9 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "net_notify.h"
 #include "nvs.h"
+#include "outputs_service.h"
 #include "sounder.h"
 
 static const char *TAG = "automations";
@@ -105,6 +117,10 @@ static bool s_started;                 /* atomic: the store loaded, the view is 
  * s_auto_lock. Written only by the warning port (the task); readers copy out. */
 static EXT_RAM_BSS_ATTR auto_warning_t s_warn[AUTO_MAX];
 static size_t s_warn_n;
+/* The reminders' notes showing now (BL-224): one per automation, under s_auto_lock. Written only
+ * by the remind port (the task); readers copy out. */
+static EXT_RAM_BSS_ATTR auto_remind_t s_remind[AUTO_MAX];
+static size_t s_remind_n;
 
 /* ---- the listener's side (the alarm task's) ------------------------------------------------- */
 
@@ -640,6 +656,179 @@ static void port_put_off(void *ctx, uint16_t uid, uint8_t partition, uint8_t use
     }
 }
 
+/* ---- BL-224: without devices (DESIGN.md section 15) ---- */
+
+/* A wired output "For automations" on or off (outputs_service's own lock; no wait). False when
+ * it isn't one any more, or its pin failed: the runner says UNREACHABLE. */
+static bool port_output(void *ctx, uint8_t output, bool on)
+{
+    (void)ctx;
+    const bool ok = outputs_service_auto_set(output, on);
+    ESP_LOGI(TAG, "output %u %s: %s", (unsigned)output, on ? "on" : "off", ok ? "done" : "refused");
+    return ok;
+}
+
+typedef struct {
+    const alarm_cmd_t *cmd;
+    const alarm_source_t *src;
+    uint8_t user;
+    bool on;
+    bool already;
+    alarm_result_t r;
+} chime_ctx_t;
+
+/* Runs on the alarm task (alarm_service_call): the chime as it is and, when it isn't so, the
+ * toggle (ALARM_CMD_CHIME) as the maker, in one step. Only while the partition is disarmed and
+ * installer mode is closed (alarm_service_command_as's ALARM_SVC_WHEN_DISARMED): otherwise
+ * BAD_STATE without asking the engine, so no refusal sound plays. */
+static void do_chime(alarm_engine_t *e, alarm_ms_t now, void *ctx)
+{
+    chime_ctx_t *c = ctx;
+    alarm_partition_status_t ps;
+    alarm_engine_partition_status(e, c->cmd->partition, &ps);
+    if (ps.state != ALARM_STATE_DISARMED || alarm_engine_program_active(e)) {
+        c->r = ALARM_ERR_BAD_STATE;
+        return;
+    }
+    if (ps.chime == c->on) {
+        c->already = true;
+        c->r = ALARM_OK;
+        return;
+    }
+    c->r = alarm_engine_command_as(e, c->cmd, c->src, c->user, now, NULL);
+}
+
+static alarm_result_t port_chime(void *ctx, uint16_t uid, uint8_t p, bool on, uint8_t maker,
+                                 bool *already)
+{
+    (void)ctx;
+    alarm_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = ALARM_CMD_CHIME;
+    cmd.partition = p;
+    const alarm_source_t src = {.kind = ALARM_SRC_AUTOMATION, .id = uid};
+    chime_ctx_t c = {.cmd = &cmd, .src = &src, .user = maker, .on = on, .already = false,
+                     .r = ALARM_ERR_UNAVAILABLE};
+    if (alarm_service_call(do_chime, &c) != ESP_OK) {
+        c.r = ALARM_ERR_UNAVAILABLE;
+    }
+    *already = c.already;
+    ESP_LOGI(TAG, "automation %u turns partition %u's chime %s: %s", (unsigned)uid, (unsigned)p,
+             on ? "on" : "off", c.already ? "already so" : alarm_result_name(c.r));
+    return c.r;
+}
+
+/* auto_notice_t -> the event's arg (alarm_auto_notice_t), 0 for one this firmware can't say. */
+static uint8_t notice_arg(const auto_notice_t *n)
+{
+    if (n->what == (uint8_t)AUTO_NOTICE_REMIND) {
+        return (uint8_t)ALARM_AUTO_NOTICE_REMIND;
+    }
+    if (n->what == (uint8_t)AUTO_NOTICE_STILL_ARMED) {
+        return (uint8_t)ALARM_AUTO_NOTICE_STILL_ARMED;
+    }
+    switch (n->trig) {
+    case AUTO_TRIG_ZONE_OPENED: return (uint8_t)ALARM_AUTO_NOTICE_OPENED;
+    case AUTO_TRIG_ZONE_CLOSED: return (uint8_t)ALARM_AUTO_NOTICE_CLOSED;
+    case AUTO_TRIG_ARMED: return (uint8_t)ALARM_AUTO_NOTICE_ARMED;
+    case AUTO_TRIG_DISARMED: return (uint8_t)ALARM_AUTO_NOTICE_DISARMED;
+    case AUTO_TRIG_ALARM: return (uint8_t)ALARM_AUTO_NOTICE_ALARM;
+    case AUTO_TRIG_FIRE: return (uint8_t)ALARM_AUTO_NOTICE_FIRE;
+    case AUTO_TRIG_TIME: return (uint8_t)ALARM_AUTO_NOTICE_TIME;
+    case AUTO_TRIG_TROUBLE: return (uint8_t)ALARM_AUTO_NOTICE_TROUBLE;
+    default: return 0u;
+    }
+}
+
+/* A notification (the BL-224 contract's mapping): ALARM_EV_AUTOMATION_NOTICE, raised on the alarm
+ * task, which logs and reports it (this task never writes flash); arg2 the level of an arming or
+ * the trouble's cause, with ALARM_AUTO_NOTICE_TRIED for Try it now. False - nothing sent - when
+ * no phone service is set up (the runner says NO_SERVICE), or when it couldn't be raised. */
+static bool port_notify(void *ctx, const auto_notice_t *n)
+{
+    (void)ctx;
+    if (!net_notify_any_service()) {
+        return false;
+    }
+    const uint8_t arg = notice_arg(n);
+    if (arg == 0u) {
+        ESP_LOGW(TAG, "automation %u: no notification for trigger %u", (unsigned)n->uid,
+                 (unsigned)n->trig);
+        return false;
+    }
+    uint8_t arg2 = 0u;
+    if (arg == (uint8_t)ALARM_AUTO_NOTICE_ARMED) {
+        arg2 = n->level;
+    } else if (arg == (uint8_t)ALARM_AUTO_NOTICE_TROUBLE) {
+        arg2 = n->cause;
+    }
+    if (n->tried != 0u) {
+        arg2 |= (uint8_t)ALARM_AUTO_NOTICE_TRIED;
+    }
+    const uint8_t part = n->partition <= ALARM_MAX_PARTITIONS ? n->partition : 0u;
+    const uint16_t zone = n->zone <= ALARM_MAX_ZONES ? n->zone : 0u;
+    esp_err_t err = alarm_service_automation_notice(n->uid, part, zone, arg, arg2);
+    if (err == ESP_ERR_INVALID_ARG && part != 0u) {
+        /* the partition was turned off meanwhile: the words need it less than the phone does */
+        err = alarm_service_automation_notice(n->uid, 0u, zone, arg, arg2);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "automation %u's notification not raised (%s)", (unsigned)n->uid,
+                 esp_err_to_name(err));
+        return false;
+    }
+    return true;
+}
+
+/* Partition p now, on the alarm task: 1 armed (from exit time on, alarms included), 0 disarmed,
+ * -1 when the alarm can't be asked. */
+static int port_part_armed(void *ctx, uint8_t p)
+{
+    (void)ctx;
+    uint8_t disarmed = p;
+    if (p == 0u || p > ALARM_MAX_PARTITIONS || alarm_service_call(read_disarmed, &disarmed) != ESP_OK) {
+        return -1;
+    }
+    return disarmed != 0u ? 0 : 1;
+}
+
+/* A reminder's note began or ended: the mailbox the touchscreen and the Panel Manager read
+ * (automation_service_reminders), and one chime when it begins - in the background, so it plays
+ * only while nothing else sounds and gives way to every other sound (D22), as the arming
+ * warning's chime does. */
+static void port_remind(void *ctx, const auto_remind_t *m)
+{
+    (void)ctx;
+    bool lost = false;
+    view_lock();
+    size_t i = 0u;
+    while (i < s_remind_n && s_remind[i].uid != m->uid) {
+        i++;
+    }
+    if (m->on == 0u) {
+        if (i < s_remind_n) {
+            memmove(&s_remind[i], &s_remind[i + 1u], (s_remind_n - i - 1u) * sizeof(s_remind[0]));
+            s_remind_n--;
+        }
+    } else if (i < s_remind_n) {
+        s_remind[i] = *m;
+    } else if (s_remind_n < AUTO_MAX) {
+        s_remind[s_remind_n++] = *m;
+    } else {
+        lost = true; /* more than one per automation: can't happen */
+    }
+    view_unlock();
+    if (lost) {
+        ESP_LOGW(TAG, "automation %u's reminder not shown: the table is full", (unsigned)m->uid);
+        return;
+    }
+    ESP_LOGI(TAG, "automation %u: reminder %s, partition %u", (unsigned)m->uid,
+             m->on != 0u ? "shown" : "gone", (unsigned)m->partition);
+    if (m->on != 0u) {
+        sounder_play_background(ALARM_SOUND_CHIME);
+    }
+}
+
 /* HCTL-012: runs UNDER THE DEVICE LOCK on whichever task drove the registry: map and enqueue
  * only. */
 static void on_device_result(void *ctx, uint32_t request_id, const char *ref, bool ok,
@@ -733,6 +922,7 @@ bool automation_service_env(auto_env_t *env, auto_zone_t zones[ALARM_MAX_ZONES])
     env->arm_supported = true; /* phase C: arming and disarming (AUT-011..AUT-014) */
     env->zones = zones;
     env->less_secure = rd.less_secure; /* AUT-015 */
+    env->outputs = outputs_service_auto_mask(); /* BL-224: the wired outputs "For automations" */
     return true;
 }
 
@@ -753,7 +943,10 @@ static void reload(bool force, uint32_t *seen_seq)
     view_unlock();
     const uint32_t seq = __atomic_load_n(&s_config_seq, __ATOMIC_RELAXED);
     const bool config_changed = force || seq != *seen_seq;
-    if (!rules_changed && !config_changed) {
+    /* BL-224: an output set "For automations", or no longer, changes no alarm configuration */
+    const uint8_t outputs = outputs_service_auto_mask();
+    const bool outputs_changed = outputs != s_env.outputs;
+    if (!rules_changed && !config_changed && !outputs_changed) {
         return;
     }
     if (rules_changed) {
@@ -772,6 +965,7 @@ static void reload(bool force, uint32_t *seen_seq)
     }
     s_env.zones = s_zones;
     s_env.arm_supported = true; /* phase C */
+    s_env.outputs = outputs;
     auto_run_rules(&s_run, s_rules, n, &s_env);
     s_any_time_rule = false;
     for (size_t i = 0; i < n; i++) {
@@ -837,7 +1031,12 @@ static void auto_task(void *arg)
                                 .disarm = port_disarm,
                                 .put_off = port_put_off,
                                 .send_begin = port_send_begin,
-                                .send_end = port_send_end};
+                                .send_end = port_send_end,
+                                .output = port_output,
+                                .chime = port_chime,
+                                .notify = port_notify,
+                                .part_armed = port_part_armed,
+                                .remind = port_remind};
     auto_run_init(&s_run, &ports, (uint64_t)alarm_service_now());
     auto_clock_init(&s_clock);
     uint32_t seen_seq = 0u;
@@ -1336,13 +1535,26 @@ bool automation_service_warning(uint16_t uid, auto_warning_t *out)
     return found;
 }
 
+size_t automation_service_reminders(auto_remind_t *out, size_t max)
+{
+    if (!started() || out == NULL) {
+        return 0u;
+    }
+    view_lock();
+    const size_t n = s_remind_n < max ? s_remind_n : max;
+    memcpy(out, s_remind, n * sizeof(out[0]));
+    view_unlock();
+    return n;
+}
+
 /* ---- console: "automations" (read-only, AUT-010; English, like "devices") ---- */
 
 #if CONFIG_ALARM_SERVICE_CONSOLE
 #include "esp_console.h"
 
 static const char *const k_trig[AUTO_TRIG_COUNT] = {
-    "none", "armed", "disarmed", "alarm", "fire", "zone_opened", "zone_closed", "time"};
+    "none", "armed", "disarmed", "alarm", "fire", "zone_opened", "zone_closed", "time", "trouble"};
+static const char *const k_trouble[] = {"any", "ac", "battery", "sensor", "siren", "other"};
 static const char *const k_rec[] = {"ok", "newer", "broken", "bad"};
 static const char *const k_src[] = {"none", "ha", "zigbee", "zwave"};
 static const char *const k_act[ACT_COUNT] = {"none", "on",    "off",       "toggle",   "lock",
@@ -1352,7 +1564,7 @@ static const char *const k_res[] = {"none",     "done",     "refused",   "no_ans
                                     "unreachable", "missing", "busy",    "held_back",
                                     "not_allowed", "cant_run", "no_clock", "less_secure_off",
                                     "maker_gone", "already", "not_ready", "no_warning",
-                                    "arm_refused", "put_off"};
+                                    "arm_refused", "put_off", "no_service"};
 
 #define NAME_OF(table, i) \
     ((unsigned)(i) < sizeof(table) / sizeof((table)[0]) ? (table)[(unsigned)(i)] : "?")
@@ -1393,6 +1605,9 @@ static void print_rule(const auto_rule_t *r)
     if (w->kind == (uint8_t)AUTO_TRIG_ZONE_OPENED || w->kind == (uint8_t)AUTO_TRIG_ZONE_CLOSED) {
         printf(" zone %u", (unsigned)w->zone);
     }
+    if (w->kind == (uint8_t)AUTO_TRIG_TROUBLE) {
+        printf(" %s", NAME_OF(k_trouble, w->trouble));
+    }
     if (w->kind == (uint8_t)AUTO_TRIG_TIME) {
         static const char days[] = "MTWTFSS";
         printf(" at ");
@@ -1419,6 +1634,30 @@ static void print_rule(const auto_rule_t *r)
             printf(" | disarm p%u%s", (unsigned)a->partition, a->confirmed ? " confirmed" : "");
             continue;
         }
+        /* BL-224: the actions without a device */
+        if (a->kind == (uint8_t)AUTO_ACT_OUTPUT) {
+            printf(" | output %u %s", (unsigned)a->output, a->dev_action == ACT_ON ? "on" : "off");
+            if (a->off_after_min != 0u) {
+                printf(" off after %u min", (unsigned)a->off_after_min);
+            }
+            continue;
+        }
+        if (a->kind == (uint8_t)AUTO_ACT_REMIND) {
+            printf(" | remind p%u%s", (unsigned)a->partition, a->option ? " notify" : "");
+            continue;
+        }
+        if (a->kind == (uint8_t)AUTO_ACT_CHECK_ARMED) {
+            printf(" | still armed p%u", (unsigned)a->partition);
+            continue;
+        }
+        if (a->kind == (uint8_t)AUTO_ACT_CHIME) {
+            printf(" | chime p%u %s", (unsigned)a->partition, a->option ? "on" : "off");
+            continue;
+        }
+        if (a->kind == (uint8_t)AUTO_ACT_NOTIFY) {
+            printf(" | notify");
+            continue;
+        }
         printf(" | %s %s %s", NAME_OF(k_src, a->source), a->ref, NAME_OF(k_act, a->dev_action));
         if (a->value >= 0) {
             printf(" %d", (int)a->value);
@@ -1432,6 +1671,9 @@ static void print_rule(const auto_rule_t *r)
     }
     auto_status_t st;
     (void)automation_service_status(r->uid, &st);
+    if (r->saved_by != 0u) {
+        printf(" | set up by user %u as user %u", (unsigned)r->saved_by, (unsigned)r->made_by);
+    }
     printf(" | last %s", NAME_OF(k_res, st.result));
     if (st.result != (uint8_t)AUTO_RES_NONE) {
         printf(" #%u%s", (unsigned)st.action_index + 1u, st.tried ? " tried" : "");
@@ -1477,6 +1719,16 @@ static int cmd_automations(int argc, char **argv)
            t != NULL ? "running" : "not running");
     if (t != NULL) {
         printf(" (stack %u bytes free)", (unsigned)uxTaskGetStackHighWaterMark(t));
+    }
+    view_lock();
+    const size_t notes = s_remind_n;
+    auto_remind_t note[AUTO_MAX];
+    memcpy(note, s_remind, notes * sizeof(note[0]));
+    view_unlock();
+    for (size_t i = 0; i < notes; i++) {
+        printf("\nreminder: automation %u, partition %u, at ", (unsigned)note[i].uid,
+               (unsigned)note[i].partition);
+        print_minute(note[i].minute);
     }
     printf("\ndropped: %u occurrence(s), %u missed by the observer, %u device result(s)\n",
            (unsigned)__atomic_load_n(&s_occ_dropped, __ATOMIC_RELAXED),
@@ -1628,6 +1880,13 @@ bool automation_service_warning(uint16_t uid, auto_warning_t *out)
         memset(out, 0, sizeof(*out));
     }
     return false;
+}
+
+size_t automation_service_reminders(auto_remind_t *out, size_t max)
+{
+    (void)out;
+    (void)max;
+    return 0u;
 }
 
 esp_err_t automation_service_console_register(void)

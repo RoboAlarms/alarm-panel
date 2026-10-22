@@ -5,7 +5,7 @@
  * notification to a phone both read these sentences, so a reword shows up here as a visible
  * diff in the same change that makes it.
  * Requirements: NOTE-001..006 (the words), I18N-006 and I18N-030 (a catalog reaches them), NOTE-030..034 and NOTE-037..039 (the gate;
- * NOTE-035/036 are net_notify's; NOTE-040 a put-off), NOTE-041 (an automation's words), AUT-009/AUT-013 and D30 (an automation named, docs/features/41), NTFY-001/-009 and PUSH-001/-004/-005/-009 (the requests)
+ * NOTE-035/036 are net_notify's; NOTE-040 a put-off), NOTE-041 (an automation's words), NOTE-042 (an automation's notification), AUT-009/AUT-013 and D30 (an automation named, docs/features/41), NTFY-001/-009 and PUSH-001/-004/-005/-009 (the requests)
  * (docs/features/26-Notifications)
  */
 #include <stdio.h>
@@ -1575,6 +1575,176 @@ static void test_put_off_push_rule(void)
     TEST_ASSERT_EQUAL_INT(NOTIFY_ACT_DROP, notify_gate_offer(&g, &ev, 4000u));
 }
 
+/* An automation's notification (uid 7) at 11:00 PM UTC, after its last edit. */
+static alarm_event_t notice_ev(alarm_auto_notice_t what, uint8_t partition, uint16_t zone,
+                               uint8_t arg2)
+{
+    alarm_event_t ev = auto_ev(ALARM_EV_AUTOMATION_NOTICE, 7u);
+    ev.user = 0u;
+    ev.partition = partition;
+    ev.zone = zone;
+    ev.arg = (uint8_t)what;
+    ev.arg2 = arg2;
+    ev.epoch_ms = (1790035200LL /* a midnight UTC */ + 23 * 3600) * 1000;
+    return ev;
+}
+
+static const char *notice_title(alarm_auto_notice_t what, uint8_t partition, uint16_t zone,
+                                uint8_t arg2)
+{
+    static notify_words_t w;
+    const alarm_event_t ev = notice_ev(what, partition, zone, arg2);
+    words_of(&ev, &w);
+    return w.title;
+}
+
+/* NOTE-042 (docs/features/41 BL-224): an automation's notification says what happened, from its
+ * trigger, and names the automation under it; a Try it now says it is a test; one partition is
+ * "The panel", several are named. */
+static void test_automation_notice_words(void)
+{
+    notify_words_t w;
+    use_fake_hooks(true);
+    cfg.zones[0].device_class = ALARM_DEVCLASS_DOOR;
+    cfg.zones[4].device_class = ALARM_DEVCLASS_MOTION;
+    alarm_event_t ev = notice_ev(ALARM_AUTO_NOTICE_OPENED, 0u, 1u, 0u);
+    words_of(&ev, &w);
+    TEST_ASSERT_EQUAL_STRING("Front Door opened", w.title);
+    TEST_ASSERT_EQUAL_STRING("By automation \xC2\xB7 At 10:00 AM on weekdays", w.body);
+    TEST_ASSERT_EQUAL_UINT8(NOTIFY_CAT_SYSTEM, w.cat);
+    TEST_ASSERT_EQUAL_UINT8(NOTIFY_ICON_DOOR_OPEN, w.icon);
+    TEST_ASSERT_FALSE(w.silent);
+    TEST_ASSERT_EQUAL_STRING("Hallway Motion saw motion",
+                             notice_title(ALARM_AUTO_NOTICE_OPENED, 0u, 5u, 0u));
+    TEST_ASSERT_EQUAL_STRING("A zone opened", notice_title(ALARM_AUTO_NOTICE_OPENED, 0u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("Front Door closed",
+                             notice_title(ALARM_AUTO_NOTICE_CLOSED, 0u, 1u, 0u));
+    TEST_ASSERT_EQUAL_STRING("Zone 2 closed", notice_title(ALARM_AUTO_NOTICE_CLOSED, 0u, 2u, 0u));
+
+    TEST_ASSERT_EQUAL_STRING("The panel was armed Away",
+                             notice_title(ALARM_AUTO_NOTICE_ARMED, 1u, 0u, ALARM_LEVEL_AWAY));
+    TEST_ASSERT_EQUAL_STRING("The panel was armed Night",
+                             notice_title(ALARM_AUTO_NOTICE_ARMED, 1u, 0u, ALARM_LEVEL_NIGHT));
+    TEST_ASSERT_EQUAL_STRING("The panel was armed",
+                             notice_title(ALARM_AUTO_NOTICE_ARMED, 1u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("The panel was disarmed",
+                             notice_title(ALARM_AUTO_NOTICE_DISARMED, 1u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("An alarm is sounding",
+                             notice_title(ALARM_AUTO_NOTICE_ALARM, 1u, 1u, 0u));
+    TEST_ASSERT_EQUAL_STRING("A fire or CO alarm is sounding",
+                             notice_title(ALARM_AUTO_NOTICE_FIRE, 1u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("It's 11:00 PM", notice_title(ALARM_AUTO_NOTICE_TIME, 0u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("The panel isn't armed yet",
+                             notice_title(ALARM_AUTO_NOTICE_REMIND, 1u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("The panel is still armed at 11:00 PM",
+                             notice_title(ALARM_AUTO_NOTICE_STILL_ARMED, 1u, 0u, 0u));
+
+    /* the troubles, by the automation's cause (auto_trouble_t) */
+    TEST_ASSERT_EQUAL_STRING("The power went off",
+                             notice_title(ALARM_AUTO_NOTICE_TROUBLE, 0u, 0u, AUTO_TROUBLE_AC));
+    TEST_ASSERT_EQUAL_STRING("The panel's battery is low",
+                             notice_title(ALARM_AUTO_NOTICE_TROUBLE, 0u, 0u, AUTO_TROUBLE_BATTERY));
+    TEST_ASSERT_EQUAL_STRING("Front Door stopped reporting",
+                             notice_title(ALARM_AUTO_NOTICE_TROUBLE, 0u, 1u, AUTO_TROUBLE_SENSOR));
+    TEST_ASSERT_EQUAL_STRING("A sensor stopped reporting",
+                             notice_title(ALARM_AUTO_NOTICE_TROUBLE, 0u, 0u, AUTO_TROUBLE_SENSOR));
+    TEST_ASSERT_EQUAL_STRING("A siren has a problem",
+                             notice_title(ALARM_AUTO_NOTICE_TROUBLE, 0u, 0u, AUTO_TROUBLE_SIREN));
+    TEST_ASSERT_EQUAL_STRING("There's a trouble",
+                             notice_title(ALARM_AUTO_NOTICE_TROUBLE, 0u, 0u, AUTO_TROUBLE_OTHER));
+    ev = notice_ev(ALARM_AUTO_NOTICE_TROUBLE, 0u, 0u, AUTO_TROUBLE_AC);
+    words_of(&ev, &w);
+    TEST_ASSERT_EQUAL_UINT8(NOTIFY_ICON_ZAP, w.icon);
+    TEST_ASSERT_EQUAL_UINT8(NOTIFY_ACCENT_AMBER, w.accent);
+
+    /* Try it now: a test, with the same line under it */
+    ev = notice_ev(ALARM_AUTO_NOTICE_OPENED, 0u, 1u, ALARM_AUTO_NOTICE_TRIED);
+    words_of(&ev, &w);
+    TEST_ASSERT_EQUAL_STRING("Test: Front Door opened", w.title);
+    TEST_ASSERT_EQUAL_STRING("By automation \xC2\xB7 At 10:00 AM on weekdays", w.body);
+    TEST_ASSERT_EQUAL_STRING("Test: The panel was armed Stay",
+                             notice_title(ALARM_AUTO_NOTICE_ARMED, 1u, 0u,
+                                          (uint8_t)((unsigned)ALARM_LEVEL_STAY |
+                                                    ALARM_AUTO_NOTICE_TRIED)));
+    TEST_ASSERT_EQUAL_STRING("Test: The power went off",
+                             notice_title(ALARM_AUTO_NOTICE_TROUBLE, 0u, 0u,
+                                          (uint8_t)(AUTO_TROUBLE_AC | ALARM_AUTO_NOTICE_TRIED)));
+
+    /* two partitions: named ("Home", or "Partition 2" without a name) */
+    cfg.partitions[1].enabled = true;
+    snprintf(cfg.partitions[0].name, sizeof(cfg.partitions[0].name), "Home");
+    cfg.partitions[1].name[0] = '\0';
+    TEST_ASSERT_EQUAL_STRING("Home was armed Away",
+                             notice_title(ALARM_AUTO_NOTICE_ARMED, 1u, 0u, ALARM_LEVEL_AWAY));
+    TEST_ASSERT_EQUAL_STRING("Home was disarmed",
+                             notice_title(ALARM_AUTO_NOTICE_DISARMED, 1u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("Home isn't armed yet",
+                             notice_title(ALARM_AUTO_NOTICE_REMIND, 1u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("Home is still armed at 11:00 PM",
+                             notice_title(ALARM_AUTO_NOTICE_STILL_ARMED, 1u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("Partition 2 isn't armed yet",
+                             notice_title(ALARM_AUTO_NOTICE_REMIND, 2u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("The panel isn't armed yet", /* no partition: the panel */
+                             notice_title(ALARM_AUTO_NOTICE_REMIND, 0u, 0u, 0u));
+
+    /* no time hook: no time to say */
+    use_fake_hooks(false);
+    TEST_ASSERT_EQUAL_STRING("It's the set time", notice_title(ALARM_AUTO_NOTICE_TIME, 0u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("Home is still armed",
+                             notice_title(ALARM_AUTO_NOTICE_STILL_ARMED, 1u, 0u, 0u));
+    cfg.partitions[1].enabled = false;
+    TEST_ASSERT_EQUAL_STRING("The panel is still armed",
+                             notice_title(ALARM_AUTO_NOTICE_STILL_ARMED, 1u, 0u, 0u));
+    /* a deleted automation, no hook, a notice this software doesn't know */
+    ev = notice_ev(ALARM_AUTO_NOTICE_REMIND, 1u, 0u, 0u);
+    ev.source.id = 9u;
+    words_of(&ev, &w);
+    TEST_ASSERT_EQUAL_STRING("By a deleted automation", w.body);
+    notify_set_hooks(NULL);
+    words_of(&ev, &w);
+    TEST_ASSERT_EQUAL_STRING("By automation", w.body);
+    TEST_ASSERT_EQUAL_STRING("A notification from an automation",
+                             notice_title(ALARM_AUTO_NOTICE_COUNT, 0u, 0u, 0u));
+    TEST_ASSERT_EQUAL_STRING("A notification from an automation", notice_title(0, 0u, 0u, 0u));
+}
+
+/* NOTE-042: an automation's notification goes out with every category switched off (the person
+ * asked for it), still under the bucket (NOTE-030) and the day's caps (NOTE-031), and sounds as
+ * an arming does (an alarm's a step louder). */
+static void test_automation_notice_gate(void)
+{
+    notify_gate_t g;
+    notify_gate_init(&g, 0u /* every category off */, false, 0u);
+    alarm_event_t ev = notice_ev(ALARM_AUTO_NOTICE_OPENED, 0u, 1u, 0u);
+    TEST_ASSERT_TRUE(notify_gate_wanted(0u, &ev));
+    alarm_event_t armed = ev_of(ALARM_EV_ARMED);
+    TEST_ASSERT_FALSE(notify_gate_wanted(0u, &armed));
+    TEST_ASSERT_TRUE(notify_gate_wanted(NOTIFY_CAT_BIT(NOTIFY_CAT_ARMING), &armed));
+    TEST_ASSERT_EQUAL_INT(NOTIFY_ACT_DROP, notify_gate_offer(&g, &armed, 1000u));
+    for (unsigned i = 0; i < NOTIFY_BUCKET_MAX; i++) {
+        TEST_ASSERT_EQUAL_INT(NOTIFY_ACT_SEND, notify_gate_offer(&g, &ev, 1000u));
+    }
+    TEST_ASSERT_EQUAL_INT(NOTIFY_ACT_DROP, notify_gate_offer(&g, &ev, 1000u)); /* NOTE-030 */
+    TEST_ASSERT_EQUAL_INT(NOTIFY_ACT_SEND,
+                          notify_gate_offer(&g, &ev, 1000u + NOTIFY_BUCKET_REFILL_MS));
+    /* past the soft cap only alarms get out: an automation's notification is not one */
+    notify_gate_init(&g, NOTIFY_CATS_DEFAULT, false, 0u);
+    g.day_count = NOTIFY_DAY_SOFT;
+    TEST_ASSERT_EQUAL_INT(NOTIFY_ACT_DROP, notify_gate_offer(&g, &ev, 1000u));
+    /* a silent one never is (the engine never makes one), but the rule stands */
+    notify_gate_init(&g, NOTIFY_CATS_DEFAULT, false, 0u);
+    ev.flags = ALARM_EVF_SILENT;
+    TEST_ASSERT_EQUAL_INT(NOTIFY_ACT_DROP, notify_gate_offer(&g, &ev, 1000u));
+    ev.flags = 0u;
+
+    TEST_ASSERT_EQUAL_INT(NOTIFY_CAT_SYSTEM, notify_category(ALARM_EV_AUTOMATION_NOTICE));
+    TEST_ASSERT_EQUAL_INT(NOTIFY_PRIO_NORMAL, notify_priority(&ev));
+    ev.arg = ALARM_AUTO_NOTICE_FIRE;
+    TEST_ASSERT_EQUAL_INT(NOTIFY_PRIO_HIGH, notify_priority(&ev));
+    ev.arg = ALARM_AUTO_NOTICE_ALARM;
+    TEST_ASSERT_EQUAL_INT(NOTIFY_PRIO_HIGH, notify_priority(&ev));
+}
+
 /* AUT-009, D30: the trigger clause, as the automation's row says it (the portable copy). */
 static void test_automation_clause(void)
 {
@@ -1627,6 +1797,23 @@ static void test_automation_clause(void)
     w.zone = ALARM_MAX_ZONES + 1u; /* out of range: never read past the table */
     notify_auto_when(NULL, &cfg, NULL, false, &w, out, sizeof(out));
     TEST_ASSERT_EQUAL_STRING("Something this software can't show", out);
+    /* BL-224: a trouble */
+    memset(&w, 0, sizeof(w));
+    w.kind = AUTO_TRIG_TROUBLE;
+    notify_auto_when(NULL, &cfg, NULL, false, &w, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("When there's a trouble", out);
+    w.trouble = AUTO_TROUBLE_AC;
+    notify_auto_when(NULL, &cfg, NULL, false, &w, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("When the power goes off", out);
+    w.trouble = AUTO_TROUBLE_BATTERY;
+    notify_auto_when(NULL, &cfg, NULL, false, &w, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("When the panel's battery is low", out);
+    w.trouble = AUTO_TROUBLE_SENSOR;
+    notify_auto_when(NULL, &cfg, NULL, false, &w, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("When a sensor stops reporting", out);
+    w.trouble = AUTO_TROUBLE_SIREN;
+    notify_auto_when(NULL, &cfg, NULL, false, &w, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("When there's a siren problem", out);
     w.kind = AUTO_TRIG_COUNT; /* a newer kind */
     notify_auto_when(NULL, &cfg, NULL, false, &w, out, sizeof(out));
     TEST_ASSERT_EQUAL_STRING("Something this software can't show", out);
@@ -1648,6 +1835,8 @@ int main(void)
     RUN_TEST(test_put_off_words);
     RUN_TEST(test_put_off_push_rule);
     RUN_TEST(test_automation_clause);
+    RUN_TEST(test_automation_notice_words);
+    RUN_TEST(test_automation_notice_gate);
     RUN_TEST(test_automation_failed_words);
     RUN_TEST(test_keypad_update_words);
     RUN_TEST(test_silent_events);

@@ -34,7 +34,7 @@ Masters and the installer have access to every partition. Everyone else has a pa
 ## Requirements
 | ID | Requirement | Verified by |
 |---|---|---|
-| USR-001 | Authority rules as in the table above; the installer's code, sign-in, automations and buttons never arm or disarm, from any source (CORE-USR-003) | `CORE-USR-001..003, 009, 011, 012` |
+| USR-001 | Authority rules as in the table above; the installer's code, sign-in and buttons never arm or disarm, from any source (CORE-USR-003); an arming automation the installer sets up arms as the system master, never as the installer, and the installer never sets up a disarm (docs/features/41 AUT-018, decided 2026-10-21) | `CORE-USR-001..003, 009, 011, 012` |
 | USR-002 | Codes are unique and **4-10 digits, chosen per user** (iPhone-style). `code_min_len` (4-10, default 4) sets the minimum for new or changed codes; existing shorter codes keep working | `CORE-USR-008, 017, 018`, `CORE-CFG-002` |
 | USR-003 | Codes are stored only as hashes: PBKDF2-HMAC-SHA256 with a per-panel random salt (PSA API) | platform (M2) |
 | USR-010 | Hashing that fails never passes for hashing that worked: a broken PSA yields an unpredictable, never-all-zero value, so a check fails closed; the panel refuses to create or change a code while hashing is broken, and refuses to start at all rather than come up with codes nobody could enter (`platform_esp/src/code_hash.c`, [06](../06-CrowPanel-P4-Platform/README.md) P4-015) | platform; `test_users.c` (CORE-USR-024) and the console's `crypto_test` at the hash clone (06 P4-015); fault injection at the PSA calls other than the hash clone still to do (BL-032) |

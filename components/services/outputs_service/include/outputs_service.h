@@ -8,7 +8,8 @@
  * The engine's news comes from the alarm task (panel_app's listener hands on_output and
  * on_snapshot here): it is queued and never blocks. The service's own task (internal stack, high
  * priority) runs the patterns to the millisecond, the supervision inputs, the transmissions, and
- * stores the configuration (NVS "outputs": "wired", "rf").
+ * stores the configuration (NVS "outputs": "wired", "auto" - the outputs for automations, apart
+ * so firmware from before BL-224 still reads "wired" whole - and "rf").
  *
  * A wired output takes a terminal away from the wired zones (zone_service_reserve_terminal): a
  * terminal a zone uses can't be an output, and an output's terminal is never offered to a zone.
@@ -58,6 +59,24 @@ esp_err_t outputs_service_wired_clear(size_t slot);
 esp_err_t outputs_service_wired_test(size_t slot);
 /* The terminals an output may use now (not a zone's, not another output's; `slot`'s own count). */
 size_t outputs_service_free_terminals(size_t slot, uint8_t *out, size_t max);
+
+/* ---- outputs "For automations" (BL-224, docs/features/16 OUT-023, OUT-024) ------------------ */
+/* A wired output set to OW_FN_AUTOMATION: the automations' AUTO_ACT_OUTPUT switches it. Thread-safe
+ * like the calls above (they take the service's lock, which the task also holds while it stores
+ * the configuration: not for a task that may never wait). */
+typedef struct {
+    uint8_t number;  /* 1..OW_CHANNELS: the wired channel (an automation's action `output`) */
+    uint8_t gpio;    /* its terminal */
+    char name[24];   /* its name as typed (OW_NAME_LEN), may be empty */
+} outputs_auto_t;
+
+/* The wired outputs "For automations", by number: at most max, the count. */
+size_t outputs_service_auto_list(outputs_auto_t *out, size_t max);
+/* Bit n-1: output n is "For automations" now (automation.h env.outputs). */
+uint8_t outputs_service_auto_mask(void);
+/* Output `number` (1-based) on or off; false: it isn't one "For automations" now, or its pin
+ * isn't driven. It starts off at every boot (OUT-006). */
+bool outputs_service_auto_set(uint8_t number, bool on);
 
 /* ---- 433 MHz sirens ------------------------------------------------------------------------- */
 typedef struct {

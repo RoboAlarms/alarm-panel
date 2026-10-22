@@ -56,7 +56,7 @@ Keypads mirror the alarm on their own speakers ([08](../08-Audio-and-Annunciatio
 | OUT-002 | Wired outputs on the board's terminals driving relay/MOSFET modules; temporal-3 and temporal-4 on the line exact to the millisecond, from the outputs' own task at its deadlines, not the UI | `test_sirens.c` (`test_temporal_patterns`, `test_wired_fire_cadence`); HIL |
 | OUT-003 | Several partitions share one siren; the most urgent sound wins (fire, CO, burglary, then the bell test); a siren sounds for burglary and panic, for fire and CO, or both | `test_fire_wins_across_partitions`, `test_scope_by_alarm_kind` |
 | OUT-004 | Optional bell supervision input (the siren's fault contact or a loop, to ground): open 10 s is the bell trouble; closed clears it | `test_bell_supervision`; HIL |
-| OUT-005 | Programmable output rules: trigger (event type, partition, zone list, arm state, trouble) -> action (on, off, pulse N s, follow) with at least 8 rules | later (docs/features/41's automations, ADR-049) |
+| OUT-005 | Programmable output rules: trigger (event type, partition, zone list, arm state, trouble) -> action (on, off, pulse N s, follow) with at least 8 rules | On, off and on for a time: docs/features/41's automations (BL-224, `AUTO_ACT_OUTPUT` on an output "For automations", OUT-023, OUT-024; `test_automation_output_ignores_the_engine`); pulse and follow later |
 | OUT-006 | Outputs start in a safe state: a channel's pin is an output at its inactive level the moment it is configured (before the engine says anything); a relay board that switches on low is driven high | `test_safe_at_boot`; preview (`bl-037-wired-end`); HIL |
 | OUT-007 | Squawk: one chirp on arming, two on disarming, for sirens with `squawk` (off by default); never while it sounds (the alarm's end is the feedback) | `test_chirp_counts`, `test_wired_squawk`, `test_rf_squawk`, `test_zw_siren.c` |
 | OUT-008 | The bell test (walk test start) is a one-shot pulse of 1 s, never over a sounding alarm | `test_bell_test_is_a_pulse` |
@@ -74,6 +74,8 @@ Keypads mirror the alarm on their own speakers ([08](../08-Audio-and-Annunciatio
 | OUT-020 | The bell trouble stands while any kind of siren holds it (Zigbee, Z-Wave, wired, 433 MHz): one clearing its own never clears another's | `alarm_service_bell_trouble` (code review; HIL) |
 | OUT-021 | A terminal an output takes is no zone's: refused while a zone uses it; never offered, learned or bound while the output has it; given back when the output goes | `test_zone_hub.c` `test_wired_terminal_reserved_for_an_output`; preview (`bl-037-wired-add`) |
 | OUT-022 | The panel transmits on 433 MHz: the CC1101 between receptions, or a transmitter module's DATA pin (`rf txpin`); `rf send` is the bench's test remote | HIL (`rf send`) |
+| OUT-023 | A wired channel may be "For automations" (BL-224): a name typed like a zone's (up to 23 bytes), its terminal and relay board, no partitions, no supervision; "Test it" switches it on 2 s, armed or not; stored apart in NVS `outputs`/`auto` (its own format and CRC, the frozen `sirens_fixture_auto_v1.h`), never in `outputs`/`wired`, which stays as before so older firmware reads it whole; `wired` skips an entry of a function it doesn't keep there | `test_automation_output_configuration`, `test_automation_output_test`, `test_automation_output_store`; preview (`bl-224-output-add`) |
+| OUT-024 | An output for automations is on only while an automation sets it (honouring the relay board), off at boot and when configured again (OUT-006), and never follows the engine: no alarm, strobe, smoke reset, armed state or chirp (sirens stay outside automations, AUT-002) | `test_automation_output_ignores_the_engine`, `test_automation_output_configuration` |
 
 ## Design
 ```
@@ -106,10 +108,18 @@ each siren kind's trouble ------------------> alarm_service_bell_trouble(owner) 
   Installer > Sirens and outputs (every siren), a wired output's page, a 433 MHz siren's page and
   its pairing, Installer > 433 MHz (receiver, transmitter, sensors, sirens), and the siren rows of a
   Z-Wave siren's device page (`ui_zwave.c`).
-- **Console:** `out` (wired and 433 MHz), `rf send`, `rf txpin`, `zwave siren`.
-- Programmable rules (later): the panel's one rule table is docs/features/41's automations
-  (ADR-049); a relay becomes an automation action once outputs exist. Pulse and follow stay
-  output functions.
+- **Console:** `out` (wired and 433 MHz; `out wired <n> auto <gpio> [low] [name <words>]`, `out
+  wired <n> on|off` for an output for automations), `rf send`, `rf txpin`, `zwave siren`.
+- **Outputs for automations** (BL-224, OUT-023, OUT-024): the function `OW_FN_AUTOMATION` (5),
+  switched only by `ow_auto_set` - the automations' `AUTO_ACT_OUTPUT` through
+  `outputs_service_auto_set`; `outputs_service_auto_list` and `outputs_service_auto_mask` tell the
+  automations which outputs they may name (docs/features/41 DESIGN.md section 15). They are stored
+  in a key of their own, `outputs`/`auto`, so a downgrade never costs the sirens: firmware from
+  before BL-224 reads `outputs`/`wired` whole and ignores `auto`, so an output for automations is
+  simply gone there and its terminal shows as free (back after upgrading again, unless the terminal
+  was given to something else meanwhile).
+- Programmable rules: the panel's one rule table is docs/features/41's automations (ADR-049). On,
+  off and on for a time are built (BL-224); pulse and follow stay output functions (later).
 
 ## Wiring a wired siren (unverified on a panel)
 J7 terminal -> the IN pin of a 3.3 V-logic relay or MOSFET module (its VCC from the module's own

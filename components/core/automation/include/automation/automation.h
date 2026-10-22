@@ -25,14 +25,18 @@ extern "C" {
 /* The newest device source a record may name (dsrc_kind_t has no count): raise it with the enum, or
  * a record naming the new source loads as NEWER and a save of one is refused. */
 #define AUTO_SOURCE_LAST ((uint8_t)DSRC_ZWAVE)
+/* The wired outputs an automation may switch (BL-224): output n is the panel's wired channel n
+ * (out_wired.h OW_CHANNELS) while its function is "For automations". */
+#define AUTO_OUTPUTS 4u
 
 /* The largest record auto_encode writes (AUT-008, DESIGN.md "Stored format"): compat, every
  * trigger field (uid 4, flags, made_by, kind, partitions, levels 3 each; zone, minute 4; days 3;
- * window 4 + 4 = 38), two actions with every field (kind, source, dev_kind, dev_action 3 each;
- * value 4; mode 2+23, ref 2+95, name 2+47; off_after 4; confirmed, arm partition, level,
- * warning 3 each = 203 each), the ignorable fields this firmware knows (bypass 3, changed_at 6
- * = 9) and AUTO_KEEP_MAX ignorable bytes it doesn't. */
-#define AUTO_RECORD_MAX (1u + 38u + 2u * 203u + 9u + AUTO_KEEP_MAX)
+ * window 4 + 4; trouble 3 = 41), two actions with every field (kind, source, dev_kind,
+ * dev_action 3 each; value 4; mode 2+23, ref 2+95, name 2+47; off_after 4; confirmed, arm
+ * partition, level, warning, output, option 3 each = 209 each), the ignorable fields this
+ * firmware knows (bypass 3, changed_at 6, saved_by 3 = 12) and AUTO_KEEP_MAX ignorable bytes it
+ * doesn't. */
+#define AUTO_RECORD_MAX (1u + 41u + 2u * 209u + 12u + AUTO_KEEP_MAX)
 
 /* What starts an automation (AUT-004, AUT-005). Stored: append only. */
 typedef enum {
@@ -44,16 +48,39 @@ typedef enum {
     AUTO_TRIG_ZONE_OPENED = 5,  /* a usable zone faulted */
     AUTO_TRIG_ZONE_CLOSED = 6,  /* a door, window or garage door zone restored and stayed closed */
     AUTO_TRIG_TIME = 7,         /* a local time of day on chosen weekdays */
+    AUTO_TRIG_TROUBLE = 8,      /* a trouble started (BL-224): auto_trigger_t.trouble says which */
 } auto_trig_t;
-#define AUTO_TRIG_COUNT 8u
+#define AUTO_TRIG_COUNT 9u
 
-/* What an action does. Stored: append only. 3 is reserved for a relay output (docs/features/16). */
+/* Which trouble starts an AUTO_TRIG_TROUBLE automation (auto_trigger_t.trouble), and the cause
+ * of a TROUBLE occurrence (auto_occ_t.cause). Stored: append only. */
+typedef enum {
+    AUTO_TROUBLE_ANY = 0,      /* any of them (a trigger only) */
+    AUTO_TROUBLE_AC = 1,       /* the power went off (ALARM_TRBL_AC_LOSS) */
+    AUTO_TROUBLE_BATTERY = 2,  /* the panel's battery is low (ALARM_TRBL_LOW_BATTERY) */
+    AUTO_TROUBLE_SENSOR = 3,   /* a sensor stopped reporting, its battery is low or its loop is in
+                                  trouble; or a keypad or device stopped reporting */
+    AUTO_TROUBLE_SIREN = 4,    /* a siren problem (ALARM_TRBL_BELL) */
+    AUTO_TROUBLE_OTHER = 5,    /* any other system trouble but the clock (a cause only) */
+} auto_trouble_t;
+#define AUTO_TROUBLE_LAST AUTO_TROUBLE_SIREN /* the last one a trigger may name */
+
+/* What an action does. Stored: append only. */
 typedef enum {
     AUTO_ACT_NONE = 0,
     AUTO_ACT_DEVICE = 1,  /* a device action through the registry (hc_act_auto) */
     AUTO_ACT_ARM = 2,     /* arm a partition (phase C, AUT-011) */
-    /* 3: reserved for a relay output (docs/features/16) */
+    AUTO_ACT_OUTPUT = 3,  /* a wired output "For automations" on or off (BL-224, docs/features/16
+                             OUT-005): output, dev_action ACT_ON or ACT_OFF, off_after_min */
     AUTO_ACT_DISARM = 4,  /* disarm a partition (phase C, AUT-011, D23): less secure (AUT-015) */
+    AUTO_ACT_REMIND = 5,  /* BL-224, after a time and alone: if the partition is disarmed then, a
+                             chime and a steady note on Home until it is armed or 6:00 AM; option
+                             1 also sends a notification */
+    AUTO_ACT_CHECK_ARMED = 6, /* BL-224, after a time and alone: if the partition is still armed
+                                 then, a notification ("Home is still armed at 4:00 PM") */
+    AUTO_ACT_CHIME = 7,   /* BL-224: the partition's door chime on (option 1) or off (option 0),
+                             as the person who saved it */
+    AUTO_ACT_NOTIFY = 8,  /* BL-224: a notification to the phone services, words from the trigger */
 } auto_act_kind_t;
 
 /* How a stored record loaded (AUT-008). */
@@ -81,6 +108,7 @@ typedef struct {
     uint16_t minute;     /* AUTO_TRIG_TIME: minute of the local day, 0..1439 */
     uint16_t win_from;   /* "Only between" (not for TIME): from minute + 1; 0 = any time */
     uint16_t win_to;     /* to minute + 1; 0 = any time; wraps past midnight; from == to refused */
+    uint8_t trouble;     /* AUTO_TRIG_TROUBLE: auto_trouble_t ANY..AUTO_TROUBLE_LAST; 0 otherwise */
 } auto_trigger_t;
 
 /* An action. Strings are NUL-terminated; ref is the device's address in its source. */
@@ -102,7 +130,11 @@ typedef struct {
                                without bypassing. Stored as an ignorable field: an older firmware
                                arms without bypassing */
     int16_t value;          /* the action's value; -1 = none (a light's Turn on sends no brightness) */
-    uint16_t off_after_min; /* Turn on only: send Off this many minutes later; 0 = leave it on */
+    uint16_t off_after_min; /* Turn on only (a device or an output): Off this many minutes later;
+                               0 = leave it on */
+    uint8_t output;         /* AUTO_ACT_OUTPUT: the wired output, 1..AUTO_OUTPUTS; 0 otherwise */
+    uint8_t option;         /* AUTO_ACT_REMIND: 1 also a notification; AUTO_ACT_CHIME: 1 on, 0 off;
+                               0 for every other action */
     char mode[DEV_MODE_LEN];  /* a mode word (a thermostat's "off") */
     char ref[DEV_REF_LEN];    /* the device's ref, 1..DEV_REF_LEN-1 bytes */
     char name[DEV_NAME_LEN];  /* the device's name when picked, shown if it goes missing */
@@ -114,8 +146,12 @@ typedef struct {
     uint8_t slot;       /* 1..AUTO_MAX: its storage key */
     uint8_t made_by;    /* the user who saved it last (every save, D23): an alarm action acts as
                            this person (AUT-011), and a less secure one runs only while this
-                           slot still holds a system master or installer (AUT-015) */
-    uint8_t n;          /* actions in use, 1..AUTO_ACTIONS */
+                           slot still holds a system master or installer (AUT-015). An Arm the
+                           installer saves acts as the system master (BL-224) */
+    uint8_t saved_by;   /* who saved it when that isn't made_by: the installer, for an Arm set up
+                           as the system master ("Set up by Installer · uses Alex's permission");
+                           0 = made_by saved it. Ignorable */
+    uint8_t n;         /* actions in use, 1..AUTO_ACTIONS */
     uint8_t rec;        /* auto_rec_t: how it loaded */
     bool off;           /* turned off by a person */
     auto_trigger_t when;
@@ -139,9 +175,10 @@ typedef struct {
     bool arm_supported;          /* this firmware runs arming and disarming automations (phase C) */
     const auto_zone_t *zones;    /* [ALARM_MAX_ZONES], index zone - 1; NULL = none known */
     bool less_secure;            /* opt.auto_less_secure: "Allow less secure automations" (AUT-015) */
-    bool by_installer;           /* a save by the installer, who never arms or disarms (BL-187,
-                                    USR-001): set by the save paths only, from the saver's live
-                                    authority */
+    bool by_installer;           /* a save by the installer, who never disarms (BL-187, USR-001)
+                                    and whose Arm acts as the system master (BL-224): set by the
+                                    save paths only, from the saver's live authority */
+    uint8_t outputs;             /* bit n-1: wired output n is "For automations" (BL-224) */
 } auto_env_t;
 
 /* Why a rule can't be saved (or run). */
@@ -166,6 +203,9 @@ typedef enum {
     AUTO_ERR_UNDOES_ARMING,  /* a Disarm of a partition after an armed trigger of that partition
                                 (or of any partition): it would undo the arming at once (AUT-016,
                                 DESIGN.md "Disarming" 4) */
+    AUTO_ERR_OUTPUT,         /* a wired output that isn't "For automations" (BL-224) */
+    AUTO_ERR_NEEDS_TIME,     /* Remind or "still armed" after a trigger other than a time of day
+                                (BL-224) */
 } auto_check_t;
 
 /* May this zone start an automation? for_close: may it start a "closes" trigger (doors, windows

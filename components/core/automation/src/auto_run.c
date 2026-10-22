@@ -96,6 +96,12 @@ static void finish(auto_run_t *r, auto_entry_t *e, uint8_t idx, uint8_t dev_acti
     }
 }
 
+void auto_run_finish(auto_run_t *r, auto_entry_t *e, uint8_t idx, uint8_t res, uint8_t tried,
+                     uint64_t now)
+{
+    finish(r, e, idx, 0u, 0u, res, tried, now);
+}
+
 void auto_run_report_failed(auto_run_t *r, auto_entry_t *e, uint8_t reason, uint8_t dev_action,
                             uint16_t zone, uint64_t now)
 {
@@ -147,6 +153,16 @@ static void cap_note(auto_run_t *r, uint64_t now)
     if (r->cap_used < AUTO_CAP_ACTIONS) {
         r->cap_used++;
     }
+}
+
+bool auto_run_cap_full(const auto_run_t *r, uint64_t now)
+{
+    return cap_full(r, now);
+}
+
+void auto_run_cap_note(auto_run_t *r, uint64_t now)
+{
+    cap_note(r, now);
 }
 
 static auto_gap_t *gap_find(auto_run_t *r, uint8_t source, const char *ref)
@@ -508,7 +524,7 @@ static void attempt_all(auto_run_t *r, auto_entry_t *e, uint64_t now)
 /* Start the automation's device actions, in order; a newer one replaces an older held send (an
  * Off that fell due is a send of its own and stays). */
 static void run_rule(auto_run_t *r, auto_entry_t *e, uint8_t occ_kind, uint8_t occ_part,
-                     uint16_t zone, bool alarm_ok, uint64_t now)
+                     uint16_t zone, bool alarm_ok, const auto_occ_t *o, uint64_t now)
 {
     const uint8_t n = e->rule.n <= AUTO_ACTIONS ? e->rule.n : (uint8_t)AUTO_ACTIONS;
     for (uint8_t i = 0; i < n; i++) {
@@ -524,6 +540,11 @@ static void run_rule(auto_run_t *r, auto_entry_t *e, uint8_t occ_kind, uint8_t o
             } else {
                 auto_arm_disarm_start(r, e, i, now);
             }
+            continue;
+        }
+        if (auto_panel_kind(kind)) {
+            /* BL-224: an output, the chime, a notification (a reminder waits for its time) */
+            auto_panel_run(r, e, i, o, occ_kind == (uint8_t)AUTO_TRIG_NONE ? 1u : 0u, now);
             continue;
         }
         if (kind != (uint8_t)AUTO_ACT_DEVICE) {
@@ -578,6 +599,11 @@ static bool matches(const auto_run_t *r, const auto_rule_t *rule, const auto_occ
     }
     if (o->kind == (uint8_t)AUTO_TRIG_ARMED && w->levels != 0u &&
         (w->levels & ALARM_LEVEL_BIT(o->level)) == 0u) {
+        return false;
+    }
+    /* BL-224: a trouble trigger's own trouble, or any */
+    if (o->kind == (uint8_t)AUTO_TRIG_TROUBLE && w->trouble != (uint8_t)AUTO_TROUBLE_ANY &&
+        w->trouble != o->cause) {
         return false;
     }
     return true;
@@ -667,7 +693,8 @@ static bool action_changed(const auto_rule_t *was, const auto_rule_t *now, size_
     const auto_action_t *a = &was->then[i];
     const auto_action_t *b = &now->then[i];
     return a->kind != b->kind || a->source != b->source || a->dev_kind != b->dev_kind ||
-           a->dev_action != b->dev_action || a->value != b->value ||
+           a->dev_action != b->dev_action || a->value != b->value || a->output != b->output ||
+           a->option != b->option || a->partition != b->partition ||
            strncmp(a->ref, b->ref, DEV_REF_LEN) != 0 || strncmp(a->mode, b->mode, DEV_MODE_LEN) != 0;
 }
 
@@ -719,6 +746,7 @@ void auto_run_rules(auto_run_t *r, const auto_rule_t *rules, size_t n, const aut
                 }
             }
             auto_arm_end(r, e); /* deleted: its warning or hold ends at once */
+            auto_panel_end(r, e, false); /* and a reminder's note (BL-224) */
             memset(e, 0, sizeof(*e));
             e->last_run = AUTO_RUN_NONE;
             e->arm.arm_run = AUTO_RUN_NONE;
@@ -764,7 +792,15 @@ void auto_run_rules(auto_run_t *r, const auto_rule_t *rules, size_t n, const aut
                 e->closing = 0u;
                 e->cooling = 0u;
             }
-            const bool new_trigger = trigger_changed(&e->rule.when, &in->when);
+            const bool new_trigger = trigger_changed(&e->rule.when, &in->when) ||
+                                     e->rule.when.trouble != in->when.trouble;
+            bool new_action = false;
+            for (size_t a = 0; a < AUTO_ACTIONS; a++) {
+                new_action = new_action || action_changed(&e->rule, in, a);
+            }
+            if (new_trigger || new_action) {
+                auto_panel_end(r, e, true); /* BL-224: the note goes; an off timer finishes */
+            }
             for (size_t a = 0; a < AUTO_ACTIONS; a++) {
                 if (new_trigger || action_changed(&e->rule, in, a)) {
                     /* The old action's waiting send goes, and so does a run the old trigger
@@ -796,6 +832,7 @@ void auto_run_rules(auto_run_t *r, const auto_rule_t *rules, size_t n, const aut
             }
             e->closing = 0u;
             auto_arm_end(r, e);
+            auto_panel_end(r, e, true);
         }
     }
 }
@@ -808,12 +845,14 @@ void auto_run_occurrence(auto_run_t *r, const auto_occ_t *o, const auto_local_t 
     }
     note_clock(r, lt, now_ms);
     auto_arm_hold_check(r, lt);
+    auto_panel_hold_check(r, lt);
     const bool arming_state = o->kind == (uint8_t)AUTO_TRIG_ARMED ||
                               o->kind == (uint8_t)AUTO_TRIG_DISARMED;
     /* AUT-007: an ARMED or DISARMED an automation caused starts no arm or disarm */
     const bool alarm_ok = !(arming_state && auto_arm_own_occurrence(r, o));
     if (o->kind == (uint8_t)AUTO_TRIG_ARMED && o->partition != 0u) {
         auto_arm_partition_armed(r, o->partition, now_ms);
+        auto_panel_partition_armed(r, o->partition); /* BL-224: its reminders' notes go */
     }
     for (size_t i = 0; i < AUTO_MAX; i++) {
         auto_entry_t *e = &r->e[i];
@@ -863,7 +902,7 @@ void auto_run_occurrence(auto_run_t *r, const auto_occ_t *o, const auto_local_t 
             e->cool_until = now_ms + AUTO_ZONE_COOLDOWN_MS;
         }
         const uint8_t part = is_zone_trig(o->kind) ? 0u : o->partition;
-        run_rule(r, e, o->kind, part, is_zone_trig(o->kind) ? o->zone : 0u, alarm_ok, now_ms);
+        run_rule(r, e, o->kind, part, is_zone_trig(o->kind) ? o->zone : 0u, alarm_ok, o, now_ms);
     }
 }
 
@@ -872,6 +911,7 @@ void auto_run_time(auto_run_t *r, const auto_clock_t *c, const auto_local_t *lt,
 {
     note_clock(r, lt, now_ms);
     auto_arm_hold_check(r, lt);
+    auto_panel_hold_check(r, lt);
     if (c != NULL && auto_clock_gen(c) != r->gen) {
         /* The clock went back: runs from its wrong future are forgotten (auto_clock.h). */
         const int32_t floor = auto_clock_floor(c);
@@ -896,7 +936,12 @@ void auto_run_time(auto_run_t *r, const auto_clock_t *c, const auto_local_t *lt,
                 continue;
             }
             if (auto_time_due(&e->rule.when, &s[k], &e->last_run)) {
-                run_rule(r, e, (uint8_t)AUTO_TRIG_TIME, 0u, 0u, true, now_ms);
+                if (e->rule.n >= 1u && (e->rule.then[0].kind == (uint8_t)AUTO_ACT_REMIND ||
+                                        e->rule.then[0].kind == (uint8_t)AUTO_ACT_CHECK_ARMED)) {
+                    auto_panel_time(r, e, &s[k], now_ms); /* BL-224: looks at the panel now */
+                } else {
+                    run_rule(r, e, (uint8_t)AUTO_TRIG_TIME, 0u, 0u, true, NULL, now_ms);
+                }
             }
         }
     }
@@ -947,7 +992,7 @@ void auto_run_tick(auto_run_t *r, uint64_t now_ms)
                     e->cooling = 1u;
                     e->cool_until = now_ms + AUTO_ZONE_COOLDOWN_MS;
                     run_rule(r, e, (uint8_t)AUTO_TRIG_ZONE_CLOSED, 0u, e->rule.when.zone, true,
-                             now_ms);
+                             NULL, now_ms);
                 }
             }
         }
@@ -959,6 +1004,7 @@ void auto_run_tick(auto_run_t *r, uint64_t now_ms)
         }
         attempt_all(r, e, now_ms);
         auto_arm_tick(r, e, now_ms);
+        auto_panel_tick(r, e, now_ms);
     }
 }
 
@@ -990,6 +1036,7 @@ uint64_t auto_run_next_deadline(const auto_run_t *r, uint64_t now_ms)
             }
         }
         d = auto_arm_deadline(r, e, d);
+        d = auto_panel_deadline(e, d);
     }
     return d < now_ms ? now_ms : d;
 }
@@ -1002,14 +1049,16 @@ auto_try_t auto_run_try(auto_run_t *r, uint16_t uid, uint64_t now_ms)
     }
     for (size_t i = 0; i < AUTO_ACTIONS && i < e->rule.n; i++) {
         if (e->rule.then[i].kind == (uint8_t)AUTO_ACT_ARM ||
-            e->rule.then[i].kind == (uint8_t)AUTO_ACT_DISARM) {
+            e->rule.then[i].kind == (uint8_t)AUTO_ACT_DISARM ||
+            e->rule.then[i].kind == (uint8_t)AUTO_ACT_REMIND ||
+            e->rule.then[i].kind == (uint8_t)AUTO_ACT_CHECK_ARMED) {
             return AUTO_TRY_ARM;
         }
     }
     if (!e->valid) {
         return AUTO_TRY_INVALID;
     }
-    run_rule(r, e, (uint8_t)AUTO_TRIG_NONE, 0u, 0u, false, now_ms);
+    run_rule(r, e, (uint8_t)AUTO_TRIG_NONE, 0u, 0u, false, NULL, now_ms);
     return AUTO_TRY_OK;
 }
 

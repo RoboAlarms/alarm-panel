@@ -514,6 +514,7 @@ msgstr "h:mm a"
 #. a partition without a name, in an automation's sentence. At most 31 bytes
 #. the name of a partition nobody has named; {0} is its number
 #: components/core/notify/src/notify_auto.c
+#: components/core/notify/src/notify_words.c
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_auto_edit.c
 #: components/ui/alarm_ui/src/ui_auto_warn.c
@@ -599,6 +600,7 @@ msgid "When the panel is armed"
 msgstr "Cuando el panel se arma"
 
 #. between the short day names an automation runs on ("Mon, Wed, Fri"). At most 7 bytes
+#. between the phone services a notification goes to ("ntfy, Pushover"). At most 7 bytes
 #: components/core/notify/src/notify_auto.c
 #: components/ui/alarm_ui/src/ui_automations.c
 # review: draft
@@ -737,6 +739,45 @@ msgstr "A las {0} sábados y domingos"
 #, fuzzy
 msgid "At {0} on {1}"
 msgstr "A las {0}: {1}"
+
+#. the trigger of an automation (BL-224): a trouble starts. At most 63 bytes
+#. the trigger of an automation (BL-224): which trouble starts it. At most 63 bytes
+#: components/core/notify/src/notify_auto.c
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "When the power goes off"
+msgstr ""
+
+#. the trigger of an automation (BL-224): a trouble starts. At most 63 bytes
+#. the trigger of an automation (BL-224): which trouble starts it. At most 63 bytes
+#: components/core/notify/src/notify_auto.c
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "When the panel's battery is low"
+msgstr ""
+
+#. the trigger of an automation (BL-224): a trouble starts. At most 63 bytes
+#. the trigger of an automation (BL-224): which trouble starts it. At most 63 bytes
+#: components/core/notify/src/notify_auto.c
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "When a sensor stops reporting"
+msgstr ""
+
+#. the trigger of an automation (BL-224): a trouble starts. At most 63 bytes
+#. the trigger of an automation (BL-224): which trouble starts it. At most 63 bytes
+#: components/core/notify/src/notify_auto.c
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "When there's a siren problem"
+msgstr ""
+
+#. the trigger of an automation (BL-224): a trouble starts. At most 63 bytes
+#. Settings > Automations, "When should it run?": a trigger (BL-224), and its detail. At most 63 bytes each
+#. the trigger of an automation (BL-224): which trouble starts it. At most 63 bytes
+#: components/core/notify/src/notify_auto.c
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "When there's a trouble"
+msgstr ""
 
 #. The name of a zone nobody has named; {0} is its number.
 #. under an automation's trigger on its page; {0} the zone's number. At most 31 bytes
@@ -1483,6 +1524,189 @@ msgstr "A distancia"
 #, fuzzy
 msgid "By schedule"
 msgstr "Por horario"
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "A zone opened"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "{0} saw motion"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "{0} detected water"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
+# review: draft
+#, fuzzy
+msgid "{0} opened"
+msgstr "{0} abierta"
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "A zone closed"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
+msgid "{0} closed"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "{0} was armed Away"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The panel was armed Away"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "{0} was armed Stay"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The panel was armed Stay"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "{0} was armed Night"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The panel was armed Night"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "{0} was armed"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
+msgid "The panel was armed"
+msgstr ""
+
+#. An automation's notification; {0} is a partition's name ("Home"). At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "{0} was disarmed"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
+msgid "The panel was disarmed"
+msgstr ""
+
+#. An automation's notification. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
+msgid "An alarm is sounding"
+msgstr ""
+
+#. An automation's notification. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
+msgid "A fire or CO alarm is sounding"
+msgstr ""
+
+#. An automation's notification at a time of day ({0}, "11:00 PM"). At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It's {0}"
+msgstr ""
+
+#. An automation's notification at a time of day, when the panel can't say the time. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "It's the set time"
+msgstr ""
+
+#. An automation's notification when a trouble starts; {0} is a sensor's zone name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
+msgid "The power went off"
+msgstr ""
+
+#. An automation's notification when a trouble starts; {0} is a sensor's zone name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "The panel's battery is low"
+msgstr ""
+
+#. An automation's notification when a trouble starts; {0} is a sensor's zone name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "{0} stopped reporting"
+msgstr ""
+
+#. An automation's notification when a trouble starts; {0} is a sensor's zone name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
+msgid "A sensor stopped reporting"
+msgstr ""
+
+#. An automation's notification when a trouble starts; {0} is a sensor's zone name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
+msgid "A siren has a problem"
+msgstr ""
+
+#. An automation's notification when a trouble starts; {0} is a sensor's zone name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "There's a trouble"
+msgstr ""
+
+#. An automation's reminder to arm; {0} is a partition's name ("Home"). At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "{0} isn't armed yet"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The panel isn't armed yet"
+msgstr ""
+
+#. An automation's notification: nobody disarmed by a time. {0} is a partition's name ("Home"), {1} a time of day ("4:00 PM"). At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
+msgid "{0} is still armed at {1}"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "{0} is still armed"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The panel is still armed at {0}"
+msgstr ""
+
+#. A notification an automation sends to the phones (and its line in Activity): what happened, from the automation's trigger. {0} is a zone's name. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "The panel is still armed"
+msgstr ""
+
+#. An automation's notification this software has no words for. At most 56 bytes.
+#: components/core/notify/src/notify_words.c
+msgid "A notification from an automation"
+msgstr ""
+
+#. A notification sent by an automation's "Try it now": {0} is what it says ("Test: Front Door opened"). At most 63 bytes with it.
+#: components/core/notify/src/notify_words.c
+msgid "Test: {0}"
+msgstr ""
 
 #. A system trouble: its title (the Troubles list, the Activity list and a phone notification, where "restored" can follow it) and the line under it. The title is cut to 48 bytes; the line under it shares that limit to stay short. At most 48 bytes.
 #: components/core/notify/src/notify_words.c
@@ -4095,6 +4319,7 @@ msgstr "Reconectando…"
 #: components/services/panel_web/web/panel-keypad.js
 #: components/services/panel_web/web/panel-pages.js
 #: components/services/panel_web/web/panel.html
+#: components/services/panel_web/web/panel.js
 # review: draft
 #, fuzzy
 msgid "Connecting…"
@@ -6382,6 +6607,7 @@ msgstr[2] "{0} zonas"
 
 #. Text from the layout XML, no context.
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_wizard.xml
 # review: draft
 #, fuzzy
@@ -6558,12 +6784,6 @@ msgstr "Desarmar"
 #, fuzzy
 msgid "Disarm now"
 msgstr "Desarme ahora"
-
-#: components/services/panel_web/web/panel-pages.js
-# review: draft
-#, fuzzy
-msgid "{0} opened"
-msgstr "{0} abierta"
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -6841,6 +7061,10 @@ msgstr "Toda la actividad"
 #, fuzzy
 msgid "Nothing recorded yet."
 msgstr "Aún no hay nada registrado."
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Not armed yet · reminder at {0}"
+msgstr ""
 
 #. Home's card and the status bar while an automation will arm this partition; {0} is the time it arms, such as 10:30 PM. At most 54 bytes
 #: components/services/panel_web/web/panel-pages.js
@@ -7508,6 +7732,7 @@ msgstr "Se muestra en el registro de eventos"
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_settings.c
+#: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 # review: draft
 #, fuzzy
@@ -7778,6 +8003,7 @@ msgid "Changed, not shown"
 msgstr "Cambiado, no se muestra"
 
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 # review: draft
 #, fuzzy
 msgid "Browser password"
@@ -9296,6 +9522,7 @@ msgid "Changes are tried for two minutes first. If this browser cannot confirm t
 msgstr "Los cambios se prueban primero dos minutos. Si este navegador no puede confirmarlos, el panel vuelve solo a la configuración anterior."
 
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 # review: draft
 #, fuzzy
 msgid "Wi-Fi network"
@@ -9339,6 +9566,7 @@ msgstr "Buscar redes"
 
 #. The sheet's title. At most 127 bytes.
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/src/ui_net.c
 # review: draft
 #, fuzzy
@@ -9388,6 +9616,7 @@ msgid "Run the check"
 msgstr "Hacer la prueba"
 
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 # review: draft
 #, fuzzy
 msgid "Looking for networks…"
@@ -9412,6 +9641,7 @@ msgid "No networks found."
 msgstr "No se encontraron redes."
 
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 # review: draft
 #, fuzzy
 msgid "Enter the network name."
@@ -12515,10 +12745,6 @@ msgid "Disarm everything and the panel restarts to install it."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "An alarm is sounding"
-msgstr ""
-
-#: components/services/panel_web/web/panel-pages.js
 msgid "It installs once the alarm is silenced"
 msgstr ""
 
@@ -14393,6 +14619,7 @@ msgstr "PIN"
 #. A confirmation sheet. At most 127 bytes.
 #. A button row's text (one line).
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
@@ -17048,6 +17275,7 @@ msgstr "Termine primero su configuración."
 msgid "Every device number a Zigbee keypad may have is taken: free one in the device table first."
 msgstr "Todos los números de dispositivo que puede tener un teclado Zigbee están ocupados: libere uno antes en la tabla de dispositivos."
 
+#. a row on an output for automations' page (BL-224): switch it on briefly
 #. a row on a siren's page: sound it briefly
 #. a row on a Zigbee siren's page: sound it briefly
 #. A list row's title (one line; a long one ends in ...).
@@ -18159,6 +18387,43 @@ msgid "On the days you pick"
 msgstr "En los días que elija"
 
 #: components/services/panel_web/web/panel-pages.js
+msgid "When there’s a trouble"
+msgstr ""
+
+#. Settings > Automations, "Which trouble?" (BL-224): the troubles an automation may follow. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Any trouble"
+msgstr ""
+
+#. "Which trouble?": the power went off, and the row's detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "The power goes off"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "The panel’s battery is low"
+msgstr ""
+
+#. "Which trouble?": a sensor stopped reporting, and the row's detail. At most 63 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "A sensor stops reporting"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "A siren problem"
+msgstr ""
+
+#. a wired output for automations without a name ({0} its number). At most 31 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Output {0}"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
 msgid "New automation"
@@ -18175,6 +18440,14 @@ msgstr "Cuando {0} se arma ({1})"
 #, fuzzy
 msgid "When the panel is armed {0}"
 msgstr "Cuando el panel se arma ({0})"
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "When the panel’s battery is low"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "When there’s a siren problem"
+msgstr ""
 
 #. Settings > Automations, the time sheet's line while no day is picked (its OK is dimmed). At most 127 bytes
 #: components/services/panel_web/web/panel-pages.js
@@ -18241,6 +18514,14 @@ msgstr[0] "{0} minuto"
 msgstr[1] "{0} minutos"
 msgstr[2] "{0} minutos"
 
+#: components/services/panel_web/web/panel-pages.js
+msgid "There’s a trouble"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "It’s {0}"
+msgstr ""
+
 #. an arming automation's action (phase C); {0} is a partition's name. At most 47 bytes
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_automations.c
@@ -18273,6 +18554,50 @@ msgstr "Armar {0} de noche"
 msgid "Disarm {0}"
 msgstr "Desarmar {0}"
 
+#. Settings > Automations, the title of the reminder's sheet (BL-224). At most 47 bytes
+#. Settings > Automations, "What should it do?" after a time of day (BL-224): a reminder to arm, and its detail. At most 47 bytes each
+#. an automation's action (BL-224): a reminder to arm at its time; {0} the partition. At most 47 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Remind to arm"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Tell me if it’s still armed"
+msgstr ""
+
+#. Settings > Automations, the door chime's sheet (BL-224): its two rows. At most 47 bytes each
+#. an automation's action (BL-224): the door chime on or off; {0} the partition. At most 47 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Turn the door chime on"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Turn the door chime off"
+msgstr ""
+
+#. Settings > Automations, the title of the notification's sheet (BL-224). At most 47 bytes
+#. the same: a notification to the phones, and its detail. At most 47 bytes each
+#. an automation's action (BL-224): a notification to the phones. At most 47 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Send a notification"
+msgstr ""
+
+#. an automation's action; {0} is a device's name. At most 47 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_automations.c
+# review: draft
+#, fuzzy
+msgid "Turn off {0}"
+msgstr "Apagar {0}"
+
 #. an automation's action; {0} is a device's name, {1} how long ("10 minutes"). At most 47 bytes
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_automations.c
@@ -18288,14 +18613,6 @@ msgstr "Encender {0} por {1}"
 #, fuzzy
 msgid "Turn on {0}"
 msgstr "Encender {0}"
-
-#. an automation's action; {0} is a device's name. At most 47 bytes
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_automations.c
-# review: draft
-#, fuzzy
-msgid "Turn off {0}"
-msgstr "Apagar {0}"
 
 #. an automation's action; {0} is a device's name. At most 47 bytes
 #: components/services/panel_web/web/panel-pages.js
@@ -18362,6 +18679,13 @@ msgid "It would undo the arming at once."
 msgstr "Anularía el armado de inmediato."
 
 #: components/services/panel_web/web/panel-pages.js
+msgid "Set up by Installer · uses {1}’s permission · warns {0} minute before"
+msgid_plural "Set up by Installer · uses {1}’s permission · warns {0} minutes before"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+#: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
 msgid "Set up by {1} · warns {0} minute before · bypasses open zones"
@@ -18378,6 +18702,32 @@ msgid_plural "Set up by {1} · warns {0} minutes before"
 msgstr[0] "Configurado por {1} · avisa {0} minuto antes"
 msgstr[1] "Configurado por {1} · avisa {0} minutos antes"
 msgstr[2] "Configurado por {1} · avisa {0} minutos antes"
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "A chime and a note on the panel · also a notification"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "A chime and a note on the panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Can’t send: no phone notifications are set up"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "“{0}” · {1}"
+msgstr ""
+
+#. under a wired output in "What should it do?" and on an automation's page ({0} its terminal's GPIO number). At most 31 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Output on GPIO {0}"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Not an output for automations now · pick another"
+msgstr ""
 
 #. an automation's action whose device left the panel; {0} the name it had. At most 79 bytes
 #: components/services/panel_web/web/panel-pages.js
@@ -19159,6 +19509,34 @@ msgstr "No desarmó a las {0}: el panel lo rechazó"
 msgid "Didn’t disarm on {0}: the panel refused it"
 msgstr "No desarmó el {0}: el panel lo rechazó"
 
+#: components/services/panel_web/web/panel-pages.js
+msgid "Not sent: no phone notifications are set up"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Not armed at {0}: nothing sent"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Not armed on {0}: nothing sent"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Not armed: nothing sent"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Didn’t change the door chime at {0}: the panel refused it"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Didn’t change the door chime on {0}: the panel refused it"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Didn’t change the door chime: the panel refused it"
+msgstr ""
+
 #. the amber line of an automation's row in the list. At most 95 bytes
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_automations.c
@@ -19217,6 +19595,14 @@ msgstr "Primero hay que confirmarla."
 #, fuzzy
 msgid "Arming has to be its only action."
 msgstr "Armar debe ser su única acción."
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "That output isn’t one for automations now."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "A reminder and “still armed” run only at a time of day."
+msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -19340,10 +19726,8 @@ msgstr "El reloj no está ajustado; las horas esperan a que lo esté."
 #. Settings > Automations with none yet: what an automation is. At most 127 bytes
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_automations.c
-# review: draft
-#, fuzzy
-msgid "The panel can do things by itself, like turning on the porch light when the front door opens."
-msgstr "El panel puede hacer cosas por sí solo, como encender la luz del porche cuando se abre la puerta principal."
+msgid "The panel can do things by itself, like arming at bedtime or telling your phone when a door opens at night."
+msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -19356,6 +19740,98 @@ msgstr "{0} de 16 automatizaciones"
 #, fuzzy
 msgid "Automation {0}"
 msgstr "Automatización {0}"
+
+#. Settings > Automations, "Add an automation": an idea, and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+# review: changed source
+#, fuzzy
+msgid "Arm at bedtime"
+msgstr "Armar de noche al acostarse"
+
+#. Settings > Automations, "Add an automation": an idea, and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+# review: draft
+#, fuzzy
+msgid "Every night at a time you choose, after a warning"
+msgstr "Cada noche a la hora que elija, tras un aviso"
+
+#. the same, an idea and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Arm Away on weekday mornings"
+msgstr ""
+
+#. the same, an idea and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "After everyone has left, with a warning"
+msgstr ""
+
+#. the same, an idea and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Remind me to arm"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "A chime and a note if it’s still disarmed at bedtime"
+msgstr ""
+
+#. the same, an idea and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Like nobody home from school by 4:00 PM"
+msgstr ""
+
+#. the same, an idea and its detail: shown only while the installer allows disarming automations, to a code that may disarm. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Disarm at opening time"
+msgstr ""
+
+#. the same, an idea and its detail: shown only while the installer allows disarming automations, to a code that may disarm. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "For a shop or an office, on weekdays"
+msgstr ""
+
+#. the same, an idea and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Tell me when a door opens at night"
+msgstr ""
+
+#. the same, an idea and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "A notification to your phone, 10:00 PM to 6:00 AM"
+msgstr ""
+
+#. the same, an idea and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Quiet the door chime at night"
+msgstr ""
+
+#. the same, an idea and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Off at bedtime; another can turn it on in the morning"
+msgstr ""
+
+#. the same, an idea and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Switch an output when an alarm sounds"
+msgstr ""
+
+#. the same, an idea and its detail. At most 63 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Like the garden lights, for 30 minutes"
+msgstr ""
 
 #. Settings > Automations, "Add an automation": an idea. At most 63 bytes
 #: components/services/panel_web/web/panel-pages.js
@@ -19420,22 +19896,6 @@ msgstr "Cerrar el agua si hay una fuga"
 #, fuzzy
 msgid "Shut the water main"
 msgstr "Cierra la llave de paso del agua"
-
-#. Settings > Automations, "Add an automation": an idea. At most 63 bytes
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_auto_edit.c
-# review: draft
-#, fuzzy
-msgid "Arm Night at bedtime"
-msgstr "Armar de noche al acostarse"
-
-#. Settings > Automations, "Add an automation": the idea's detail. At most 63 bytes
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_auto_edit.c
-# review: draft
-#, fuzzy
-msgid "Every night at a time you choose, after a warning"
-msgstr "Cada noche a la hora que elija, tras un aviso"
 
 #. Settings > Automations, "Add an automation": the last row. At most 63 bytes
 #: components/services/panel_web/web/panel-pages.js
@@ -19596,6 +20056,16 @@ msgstr "Las zonas silenciosas, de incendio y de botón no aparecen."
 msgid "No doors or windows to choose"
 msgstr "No hay puertas ni ventanas para elegir"
 
+#. Settings > Automations, the sheet after "When there's a trouble". At most 47 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Which trouble?"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "It runs once when the trouble starts."
+msgstr ""
+
 #. Settings > Automations, the title of the sheet that sets a time-of-day trigger. At most 47 bytes
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_auto_edit.c
@@ -19690,13 +20160,29 @@ msgstr "Armar el panel"
 msgid "Pick another device"
 msgstr "Elegir otro dispositivo"
 
-#. Settings > Automations, "What should it do?": the heading over arming and disarming. At most 47 bytes
+#: components/services/panel_web/web/panel-pages.js
+msgid "Choose what it does"
+msgstr ""
+
+#. Settings > Automations, "What should it do?": the heading over arming, disarming, the reminder and the chime. At most 47 bytes
 #: components/services/panel_web/web/panel-pages.js
 #: components/ui/alarm_ui/src/ui_auto_edit.c
 # review: draft
 #, fuzzy
 msgid "The alarm"
 msgstr "La alarma"
+
+#. Settings > Automations, "What should it do?": the heading over a notification (BL-224). At most 47 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Tell someone"
+msgstr ""
+
+#. Settings > Automations, "What should it do?": the heading over the wired outputs for automations (BL-224). At most 47 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Outputs"
+msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -19715,22 +20201,6 @@ msgstr "Entonces"
 #, fuzzy
 msgid "Then pick what it does."
 msgstr "Luego elija qué hace."
-
-#. Settings > Automations, the dimmed row when no device can be picked. At most 47 bytes
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_auto_edit.c
-# review: draft
-#, fuzzy
-msgid "No devices to choose"
-msgstr "No hay dispositivos para elegir"
-
-#. Settings > Automations, that row's detail. At most 63 bytes
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_auto_edit.c
-# review: draft
-#, fuzzy
-msgid "Devices appear here once one is connected."
-msgstr "Los dispositivos aparecen aquí cuando se conecta uno."
 
 #. Settings > Automations, changing one of two actions: remove it. At most 47 bytes
 #: components/services/panel_web/web/panel-pages.js
@@ -19802,6 +20272,46 @@ msgstr "Primero guarde sus cambios."
 #, fuzzy
 msgid "Runs the actions once, now."
 msgstr "Ejecuta las acciones una vez, ahora."
+
+#. Settings > Automations, the quiet note at the end of "What should it do?" while no device is connected (BL-224, drawing bl-224-then-time). At most 127 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Lights, locks and other devices show here once one is connected."
+msgstr ""
+
+#. Settings > Automations, the reminder's switch and its detail (BL-224). At most 47 bytes each
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Also send a notification"
+msgstr ""
+
+#. Home on a keypad while it connects, under the headline; {0} is the alarm panel's name. At most 80 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_link.c
+# review: draft
+#, fuzzy
+msgid "To {0}"
+msgstr "A {0}"
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "No phone notifications are set up yet."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "At {0}, if the panel isn’t armed: a chime and a note on the panel."
+msgstr ""
+
+#. Settings > Automations, the reminder's sheet: what it never does, and when its note goes (BL-224). At most 191 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "It never arms by itself. The note goes once the panel is armed, or at 6:00 AM."
+msgstr ""
+
+#. an automation's page, under a time-of-day "Turn the door chime off" when no automation turns it on again (BL-224, drawing bl-224-chime): a nudge. At most 127 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Nothing turns it on again. Add one for the morning."
+msgstr ""
 
 #. under a disarming automation's action on its page; {0} who saved it. At most 79 bytes
 #: components/services/panel_web/web/panel-pages.js
@@ -20159,6 +20669,60 @@ msgid "The restore stopped part way. The panel restarts; restore the same file a
 msgstr "La restauración se detuvo a la mitad. El panel se reinicia; restaure el mismo archivo de nuevo."
 
 #: components/services/panel_web/web/panel.js
+msgid "This panel isn’t set up yet. Join its setup Wi-Fi and open this page there."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Set up a new panel from its setup Wi-Fi: join it, then open this page again."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Choose two different user names, without spaces at the start or end."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Choose two different passwords."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Passwords are 12 to 64 characters."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Someone else is setting up this panel. Try again in a few minutes."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "That step ran out or was done already. The page shows where setup is now."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Setup is at another step now. The page shows where setup is now."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Confirm from your home network, at the panel’s new address."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "That recovery key or user name isn’t right."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Open recovery at the panel first: hold its BOOT button for five seconds, then let go."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The panel could not save that just now. Try again in a moment."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+# review: draft
+#, fuzzy
+msgid "Too many tries. Wait a moment before trying again."
+msgstr "Demasiados intentos. Espere un momento antes de intentarlo de nuevo."
+
+#: components/services/panel_web/web/panel.js
 # review: draft
 #, fuzzy
 msgid "The panel is busy or not in the right state for this."
@@ -20470,16 +21034,312 @@ msgid "Keypad codes don’t sign in here. No password yet? Whoever looks after t
 msgstr "Los códigos del teclado no inician sesión aquí. ¿Aún sin contraseña? Quien administra los usuarios del panel (el instalador o un maestro) activa su inicio de sesión en el navegador, en el panel en Configuración > Usuarios > su nombre, o aquí. Tras cinco intentos incorrectos, el inicio de sesión espera un minuto."
 
 #: components/services/panel_web/web/panel.js
-# review: draft
-#, fuzzy
-msgid "Too many tries. Wait a moment before trying again."
-msgstr "Demasiados intentos. Espere un momento antes de intentarlo de nuevo."
+msgid "Lost your password? Use the recovery key"
+msgstr ""
 
 #: components/services/panel_web/web/panel.js
 # review: draft
 #, fuzzy
 msgid "That user name and password don’t match a sign-in set on this panel. Keypad codes don’t work here: use your browser password."
 msgstr "Ese nombre de usuario y esa contraseña no coinciden con ningún inicio de sesión de este panel. Los códigos del teclado no sirven aquí: use su contraseña del navegador."
+
+#: components/services/panel_web/web/panel.js
+msgid "Setup"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Set up your alarm panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "This panel has no screen: you set it up here, from this phone or computer."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Create the installer’s access. The household’s can come now or later, from a computer."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Choose your home Wi-Fi and confirm it from there."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Verify the connection"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The panel’s HTTPS certificate fingerprint. The browser warned about it because the panel makes its own."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Recover an existing panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Start setup"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "1 of 3 · Access"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Create your access"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Installer access programs the system. Household access can arm and disarm."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Installer username"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Installer password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Household access (optional)"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Leave these empty to add the household’s access later: sign in as the installer on a computer and open People."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Household username"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Your name"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Household password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Passwords are 12 to 64 characters, and the two must differ. Keypad codes stay as they are; change them later under People and codes."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Keep a recovery key"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The panel will generate a private recovery key after saving these accounts. Keep it somewhere safe, separate from the panel."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Save access"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Type the installer’s user name."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Passwords are at least 12 characters."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Type the household’s user name, or leave both household fields empty."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Keep your recovery key"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "With this key, a lost browser password can be replaced at the panel. Write it down or save it, away from the panel. It is shown only now."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Making the key…"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "I have saved the recovery key"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Save the recovery key before continuing."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "2 of 3 · Network"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Could not join Wi-Fi"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Connect to your network"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Check the network and password, then try again. Your accounts are saved."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Choose the Wi-Fi this panel will use. Nearby keypads can receive these settings after enrollment."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Wi-Fi password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The setup connection stays available until you confirm the new connection."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Test connection"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Other network…"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "A Wi-Fi password is at least 8 characters."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Joining your Wi-Fi"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The panel is joining {0}. This takes up to a minute. Keep this page open."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Choose another network"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Still connecting… If this takes much longer, check the Wi-Fi password."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Connected. Finishing setup…"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Confirm the connection"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "This panel reached you over {0}. Keep it, and setup is finished: the setup network closes."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "About {0} s left before it goes back."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Keep this network"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "3 of 3 · Ready"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Your panel is set up"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "It is on {0} now. Its setup Wi-Fi closes in a minute, and this phone goes back to your own Wi-Fi."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "From now on, open the Panel Manager at this address on your home network:"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Your browser warns the first time: the panel makes its own certificate. Continue to the site."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Sign in as the installer there to add the household’s access, keypads and sensors."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Open the Panel Manager"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Reconnect to your panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Your users, zones and paired keypads stay saved."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Sign in with the household or installer access to go on with setup."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Username"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Forgot password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Recover browser access"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Use your saved recovery key while local recovery is active at the panel."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Recovery key"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+# review: draft
+#, fuzzy
+msgid "New browser password"
+msgstr "Contraseña nueva del navegador"
+
+#: components/services/panel_web/web/panel.js
+msgid "This replaces browser access for the selected account and signs out its sessions. Alarm codes and system configuration stay unchanged."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "No recovery key?"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Ask another administrator of this panel to restore your access. A factory reset is a separate, destructive last resort."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Replace password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Browser password replaced. Sign in with it; a new recovery key follows."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Recovery is waiting"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The system is armed. Disarm it from an account that may disarm, or from a paired keypad, before changing access or network settings."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Opening recovery does not disarm the system or turn off its alarms."
+msgstr ""
 
 #: components/services/panel_web/web/panel.js
 # review: draft
@@ -21967,6 +22827,21 @@ msgstr "{0} y {1}"
 msgid "It runs once a day at most, and waits while the clock isn't set."
 msgstr "Se ejecuta una vez al día como máximo y espera mientras el reloj no esté ajustado."
 
+#. "Which trouble?": the power went off, and the row's detail. At most 63 bytes each
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "The panel runs on its battery"
+msgstr ""
+
+#. "Which trouble?": a sensor stopped reporting, and the row's detail. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Or its battery is low"
+msgstr ""
+
+#. Settings > Automations, "When should it run?": a trigger (BL-224), and its detail. At most 63 bytes each
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Power lost, a low battery, a sensor gone quiet"
+msgstr ""
+
 #. Settings > Automations, the title of the trigger picker. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_auto_edit.c
 # review: draft
@@ -22164,6 +23039,119 @@ msgstr "Partición"
 msgid "1 to 15 minutes"
 msgstr "De 1 a 15 minutos"
 
+#. Settings > Automations, "Goes to" while no phone service is set up (BL-224). At most 31 bytes
+#. A list row's value, at its right end (keep it short).
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+# review: draft
+#, fuzzy
+msgid "Nothing yet"
+msgstr "Aún nada"
+
+#. Settings > Automations, the row of where a notification goes (BL-224). At most 31 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Goes to"
+msgstr ""
+
+#. Settings > Automations, a notification's sheet while no phone service is set up (BL-224, drawing bl-224-notify-none). At most 127 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "No phone notifications are set up. Set them up in Integrations; until then it can't send."
+msgstr ""
+
+#. Settings > Automations, the "Remind to arm" sheet's line ({0} the time, {1} the partition): [the partition named][with a notification]. At most 191 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "At {0}, if the panel isn't armed: a chime and a note on Home."
+msgstr ""
+
+#. Settings > Automations, the "Remind to arm" sheet's line ({0} the time, {1} the partition): [the partition named][with a notification]. At most 191 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "At {0}, if the panel isn't armed: a chime, a note on Home and a notification."
+msgstr ""
+
+#. Settings > Automations, the "Remind to arm" sheet's line ({0} the time, {1} the partition): [the partition named][with a notification]. At most 191 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "At {0}, if {1} isn't armed: a chime and a note on Home."
+msgstr ""
+
+#. Settings > Automations, the "Remind to arm" sheet's line ({0} the time, {1} the partition): [the partition named][with a notification]. At most 191 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "At {0}, if {1} isn't armed: a chime, a note on Home and a notification."
+msgstr ""
+
+#. Settings > Automations, the reminder's switch and its detail (BL-224). At most 47 bytes each
+#. the same: a notification to the phones, and its detail. At most 47 bytes each
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "To the phones set up in Integrations"
+msgstr ""
+
+#. Settings > Automations, the title of "still armed"'s sheet (BL-224). At most 47 bytes
+#. the same: a notification if nobody has disarmed it, and its detail. At most 47 bytes each
+#. the same, an idea and its detail. At most 63 bytes each
+#. an automation's action (BL-224): a notification if it is still armed at its time; {0} the partition. At most 47 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Tell me if it's still armed"
+msgstr ""
+
+#. Settings > Automations, "still armed"'s line ({0} when it runs, "At 4:00 PM on weekdays"; {1} the notification's words; {2} the partition). At most 191 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "{0}, if {2} is still armed: \"{1}\"."
+msgstr ""
+
+#. Settings > Automations, "still armed"'s line ({0} when it runs, "At 4:00 PM on weekdays"; {1} the notification's words; {2} the partition). At most 191 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "{0}, if the panel is still armed: \"{1}\"."
+msgstr ""
+
+#. Settings > Automations, "still armed"'s sheet: it only tells (BL-224). At most 127 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Nothing changes at the panel."
+msgstr ""
+
+#. Settings > Automations, the notification's sheet: what it says ({0} its words, from the trigger: "Front Door opened"). At most 127 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Sends \"{0}\"."
+msgstr ""
+
+#. Settings > Automations, the notification's sheet under an "Only between" ({0} from, {1} to). At most 127 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Only between {0} and {1}, as the automation says."
+msgstr ""
+
+#. Settings > Automations, the title of the door chime's sheet (BL-224). At most 47 bytes
+#. Settings > Automations, "What should it do?": the door chime (BL-224), and its detail. At most 47 bytes each
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Door chime"
+msgstr ""
+
+#. Settings > Automations, "What should {0} do?": what an automation may do with a device. At most 47 bytes each
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+# review: draft
+#, fuzzy
+msgctxt "automation action"
+msgid "Turn on"
+msgstr "Encender"
+
+#. Settings > Automations, "What should {0} do?": what an automation may do with a device. At most 47 bytes each
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+# review: draft
+#, fuzzy
+msgctxt "automation action"
+msgid "Turn off"
+msgstr "Apagar"
+
+#. Settings > Automations, the title of the sheet that picks what a device does ({0} its name). At most 127 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+# review: draft
+#, fuzzy
+msgid "What should {0} do?"
+msgstr "¿Qué debe hacer {0}?"
+
+#. Settings > Automations, the sheet that picks which wired output an idea switches (BL-224). At most 47 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Which output?"
+msgstr ""
+
 #. Settings > Automations, that row's detail: it always warns first (AUT-012). At most 31 bytes
 #: components/ui/alarm_ui/src/ui_auto_edit.c
 # review: draft
@@ -22187,6 +23175,21 @@ msgstr "Desarmar el panel"
 msgid "Right away"
 msgstr "De inmediato"
 
+#. Settings > Automations, "What should it do?" after a time of day (BL-224): a reminder to arm, and its detail. At most 47 bytes each
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "If it's still disarmed then"
+msgstr ""
+
+#. the same: a notification if nobody has disarmed it, and its detail. At most 47 bytes each
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "If nobody has disarmed it by then"
+msgstr ""
+
+#. Settings > Automations, "What should it do?": the door chime (BL-224), and its detail. At most 47 bytes each
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+msgid "Turn it on or off"
+msgstr ""
+
 #. Settings > Automations, "What should it do?": the heading over the devices. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_auto_edit.c
 # review: draft
@@ -22195,28 +23198,26 @@ msgctxt "automation section"
 msgid "Devices"
 msgstr "Dispositivos"
 
+#. Settings > Automations, the dimmed row when no device can be picked. At most 47 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+# review: draft
+#, fuzzy
+msgid "No devices to choose"
+msgstr "No hay dispositivos para elegir"
+
+#. Settings > Automations, that row's detail. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_auto_edit.c
+# review: draft
+#, fuzzy
+msgid "Devices appear here once one is connected."
+msgstr "Los dispositivos aparecen aquí cuando se conecta uno."
+
 #. Settings > Automations, the title of the action picker. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_auto_edit.c
 # review: draft
 #, fuzzy
 msgid "What should it do?"
 msgstr "¿Qué debe hacer?"
-
-#. Settings > Automations, "What should {0} do?": what an automation may do with a device. At most 47 bytes each
-#: components/ui/alarm_ui/src/ui_auto_edit.c
-# review: draft
-#, fuzzy
-msgctxt "automation action"
-msgid "Turn on"
-msgstr "Encender"
-
-#. Settings > Automations, "What should {0} do?": what an automation may do with a device. At most 47 bytes each
-#: components/ui/alarm_ui/src/ui_auto_edit.c
-# review: draft
-#, fuzzy
-msgctxt "automation action"
-msgid "Turn off"
-msgstr "Apagar"
 
 #. Settings > Automations, "What should {0} do?": what an automation may do with a device. At most 47 bytes each
 #: components/ui/alarm_ui/src/ui_auto_edit.c
@@ -22288,12 +23289,10 @@ msgstr "Ejecutar"
 msgid "Choose another device"
 msgstr "Elegir otro dispositivo"
 
-#. Settings > Automations, the title of the sheet that picks what a device does ({0} its name). At most 127 bytes
+#. the same, an idea and its detail. At most 63 bytes each
 #: components/ui/alarm_ui/src/ui_auto_edit.c
-# review: draft
-#, fuzzy
-msgid "What should {0} do?"
-msgstr "¿Qué debe hacer {0}?"
+msgid "A chime and a note if it's still disarmed at bedtime"
+msgstr ""
 
 #. Settings > Automations, the delete question's title, note and red button. At most 127 bytes each
 #: components/ui/alarm_ui/src/ui_auto_edit.c
@@ -22340,6 +23339,16 @@ msgstr "Arma de noche a las {0}"
 #, fuzzy
 msgid "Arms Away at {0}"
 msgstr "Arma ausente a las {0}"
+
+#. Home's quiet note while an automation's reminder to arm stands (BL-224): the title. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_auto_warn.c
+msgid "Not armed yet"
+msgstr ""
+
+#. Home's quiet reminder note, its line; {0} is the reminder's time, such as 11:00 PM. At most 79 bytes
+#: components/ui/alarm_ui/src/ui_auto_warn.c
+msgid "Reminder at {0}"
+msgstr ""
 
 #. Home's card while an automation will arm, the line under "Arming Night at 10:30 PM"
 #. At most 127 bytes.
@@ -22505,6 +23514,25 @@ msgstr "No se puede ejecutar: su instalador desactivó la apertura con llave"
 #, fuzzy
 msgid "{0} to {1}"
 msgstr "{0} a {1}"
+
+#. an automation's action (BL-224): a reminder to arm at its time; {0} the partition. At most 47 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Remind to arm {0}"
+msgstr ""
+
+#. an automation's action (BL-224): a notification if it is still armed at its time; {0} the partition. At most 47 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Tell me if {0} is still armed"
+msgstr ""
+
+#. an automation's action (BL-224): the door chime on or off; {0} the partition. At most 47 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Turn the door chime on in {0}"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Turn the door chime off in {0}"
+msgstr ""
 
 #. why an automation's last run didn't work, after "didn't work at 8:02 AM: "; {0} is a device's name. At most 47 bytes
 #. under the rebuild result: {0} devices didn't answer
@@ -22762,6 +23790,60 @@ msgstr "Activada · no desarmó a las {0}: {1}"
 msgid "On · didn't disarm on {0}: {1}"
 msgstr "Activada · no desarmó el {0}: {1}"
 
+#. a reminder's state on its page: it reminded (a chime and Home's note); {0} a time of day or a day. At most 79 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "On · reminded"
+msgstr ""
+
+#. a reminder's state on its page: it reminded (a chime and Home's note); {0} a time of day or a day. At most 79 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "On · reminded at {0}"
+msgstr ""
+
+#. a reminder's state on its page: it reminded (a chime and Home's note); {0} a time of day or a day. At most 79 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "On · reminded on {0}"
+msgstr ""
+
+#. a door chime automation's state on its page: the chime was so already; {0} a time of day or a day. At most 79 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "On · the door chime was already on at {0}"
+msgstr ""
+
+#. a door chime automation's state on its page: the chime was so already; {0} a time of day or a day. At most 79 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "On · the door chime was already on"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "On · the door chime was already off at {0}"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "On · the door chime was already off"
+msgstr ""
+
+#. an automation's state on its page; {0} is a time of day ("8:02 AM") or a day ("Sep 19"), {1} why ("Front Door didn't answer"). At most 79 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+# review: draft
+#, fuzzy
+msgid "On · didn't work: {0}"
+msgstr "Activada · no funcionó: {0}"
+
+#. an automation's state; {0} a time or a day, {1} why. At most 79 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+# review: draft
+#, fuzzy
+msgid "On · didn't work at {0}: {1}"
+msgstr "Activada · no funcionó a las {0}: {1}"
+
+#. an automation's state; {0} a time or a day, {1} why. At most 79 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+# review: draft
+#, fuzzy
+msgid "On · didn't work on {0}: {1}"
+msgstr "Activada · no funcionó el {0}: {1}"
+
 #. an arming automation's line in the list, put off an hour (D20); {0} who, {1} the new arm time. At most 95 bytes
 #: components/ui/alarm_ui/src/ui_automations.c
 # review: draft
@@ -22819,33 +23901,17 @@ msgstr "No se puede ejecutar: ábrala y elija de nuevo el dispositivo"
 msgid "Can't run: open it to fix it"
 msgstr "No se puede ejecutar: ábrala para corregirla"
 
+#. an automation's state, on its page and in the list (BL-224): it sends a notification and no phone service is set up in Integrations. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Can't send: no phone notifications are set up"
+msgstr ""
+
 #. an automation's state on its page: it runs at a time or in a window, and the clock isn't set. At most 95 bytes
 #: components/ui/alarm_ui/src/ui_automations.c
 # review: draft
 #, fuzzy
 msgid "On · waits until the clock is set"
 msgstr "Activada · espera a que se ajuste el reloj"
-
-#. an automation's state on its page; {0} is a time of day ("8:02 AM") or a day ("Sep 19"), {1} why ("Front Door didn't answer"). At most 79 bytes
-#: components/ui/alarm_ui/src/ui_automations.c
-# review: draft
-#, fuzzy
-msgid "On · didn't work: {0}"
-msgstr "Activada · no funcionó: {0}"
-
-#. an automation's state; {0} a time or a day, {1} why. At most 79 bytes
-#: components/ui/alarm_ui/src/ui_automations.c
-# review: draft
-#, fuzzy
-msgid "On · didn't work at {0}: {1}"
-msgstr "Activada · no funcionó a las {0}: {1}"
-
-#. an automation's state; {0} a time or a day, {1} why. At most 79 bytes
-#: components/ui/alarm_ui/src/ui_automations.c
-# review: draft
-#, fuzzy
-msgid "On · didn't work on {0}: {1}"
-msgstr "Activada · no funcionó el {0}: {1}"
 
 #. an automation's state on its page; {0} is a time of day ("7:42 PM") or a day ("Sep 19"). At most 79 bytes
 #: components/ui/alarm_ui/src/ui_automations.c
@@ -23008,6 +24074,16 @@ msgstr "Su instalador desactivó las automatizaciones que abren con llave, abren
 msgid "It can't disarm what its own trigger just armed"
 msgstr "No puede desarmar lo que su propio disparador acaba de armar"
 
+#. a toast when an automation can't be saved. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "That output isn't one for automations now"
+msgstr ""
+
+#. a toast when an automation can't be saved. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "A reminder runs only at a time of day"
+msgstr ""
+
 #. a toast when a change to the automations is refused. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_automations.c
 # review: draft
@@ -23081,6 +24157,22 @@ msgctxt "automation state"
 msgid "Off"
 msgstr "Apagada"
 
+#. under an arming automation the installer set up (BL-224): it uses the system master's permission; {0} who set it up, {1} the master, {2} the minutes it warns first. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Set up by {0} · uses {1}'s permission · warns {2} minute before · bypasses open zones"
+msgid_plural "Set up by {0} · uses {1}'s permission · warns {2} minutes before · bypasses open zones"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
+#. under an arming automation the installer set up (BL-224, drawing bl-224-page-installer-arm); {0} who set it up, {1} the master, {2} the minutes it warns first. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "Set up by {0} · uses {1}'s permission · warns {2} minute before"
+msgid_plural "Set up by {0} · uses {1}'s permission · warns {2} minutes before"
+msgstr[0] ""
+msgstr[1] ""
+msgstr[2] ""
+
 #. under an arming automation's action on its page; {0} who saved it, {1} the minutes it warns first. At most 95 bytes
 #: components/ui/alarm_ui/src/ui_automations.c
 # review: draft
@@ -23100,6 +24192,26 @@ msgid_plural "Set up by {0} · warns {1} minutes before"
 msgstr[0] "Configurado por {0} · avisa {1} minuto antes"
 msgstr[1] "Configurado por {0} · avisa {1} minutos antes"
 msgstr[2] "Configurado por {0} · avisa {1} minutos antes"
+
+#. under "Remind to arm" on an automation's page (BL-224). At most 95 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "A chime and a note on Home · also a notification"
+msgstr ""
+
+#. under "Remind to arm" on an automation's page (BL-224). At most 95 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "A chime and a note on Home"
+msgstr ""
+
+#. under "Send a notification" on an automation's page (BL-224): what it says and where it goes ({0} its words, "Front Door opened"; {1} the services, "ntfy, Pushover"). At most 127 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "\"{0}\" · {1}"
+msgstr ""
+
+#. the same without the services' names ({0} its words). At most 95 bytes
+#: components/ui/alarm_ui/src/ui_automations.c
+msgid "\"{0}\""
+msgstr ""
 
 #. an automation's page, the heading over its trigger
 #. A section heading above a group of rows (one line).
@@ -26158,13 +27270,6 @@ msgctxt "keypad state"
 msgid "Connecting"
 msgstr ""
 
-#. Home on a keypad while it connects, under the headline; {0} is the alarm panel's name. At most 80 bytes
-#: components/ui/alarm_ui/src/ui_link.c
-# review: draft
-#, fuzzy
-msgid "To {0}"
-msgstr "A {0}"
-
 #. Home on a keypad while it connects, the foot of the state card. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Arming waits until it answers"
@@ -28808,6 +29913,12 @@ msgctxt "wired output"
 msgid "Armed light"
 msgstr ""
 
+#. what a wired output is (BL-224): a relay that automations switch, the porch or garden lights. A choice, and the title of one with no name. At most 31 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "wired output"
+msgid "For automations"
+msgstr ""
+
 #. under a choice of what a wired output is
 #: components/ui/alarm_ui/src/ui_sirens.c
 msgid "Sounds with the alarm"
@@ -28826,6 +29937,11 @@ msgstr ""
 #. under a choice of what a wired output is
 #: components/ui/alarm_ui/src/ui_sirens.c
 msgid "On while its partitions are armed"
+msgstr ""
+
+#. under the choice "For automations" of what a wired output is
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Switched on and off by Settings > Automations"
 msgstr ""
 
 #. a wired terminal, by the pin printed beside it. At most 23 bytes
@@ -28908,6 +30024,12 @@ msgstr ""
 #. A Settings page: the line under its title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_sirens.c
 msgid "What sounds and what switches when the alarm does"
+msgstr ""
+
+#. an output for automations' state in a list while no automation uses it (BL-224). At most 23 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "output state"
+msgid "Not used yet"
 msgstr ""
 
 #. a siren's state in a list. At most 23 bytes
@@ -29128,11 +30250,66 @@ msgstr ""
 msgid "Other partitions' alarms, never their chirps"
 msgstr ""
 
+#. a toast: an output for automations' test started (BL-224)
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "On for 2 seconds"
+msgstr ""
+
+#. a toast: an output for automations' test started (BL-224)
 #. a toast: a wired siren's test started
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_sirens.c
 #: components/ui/alarm_ui/src/ui_zwave.c
 msgid "Sounding for 2 seconds"
+msgstr ""
+
+#. a text sheet's title and note: naming an output for automations (BL-224)
+#. The sheet's title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Output name"
+msgstr ""
+
+#. a text sheet's title and note: naming an output for automations (BL-224)
+#. The sheet's note. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Say what it switches: Garden Lights, Porch Light"
+msgstr ""
+
+#. A section heading above a group of rows (one line).
+#. a section heading on a wired output's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "How it is wired"
+msgstr ""
+
+#. an output for automations' Name row with no name. At most 23 bytes
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "output name"
+msgid "None"
+msgstr ""
+
+#. a row on a wired output's page: how its relay board switches
+#. under "Relay board"
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Most switch on low"
+msgstr ""
+
+#. A section heading above a group of rows (one line).
+#. a section heading on a siren's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgctxt "siren section"
+msgid "Check it"
+msgstr ""
+
+#. a row on an output for automations' page (BL-224): switch it on briefly
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Switches it on for 2 seconds"
+msgstr ""
+
+#. a row on a wired output's page
+#. under "Remove it" on a wired output's page
+#: components/ui/alarm_ui/src/ui_sirens.c
+msgid "Its terminal goes back to the zones"
 msgstr ""
 
 #. a confirmation's title and text: removing a wired siren or output
@@ -29218,18 +30395,6 @@ msgstr ""
 msgid "On while any of them is armed"
 msgstr ""
 
-#. a section heading on a wired output's page
-#. A section heading above a group of rows (one line).
-#: components/ui/alarm_ui/src/ui_sirens.c
-msgid "How it is wired"
-msgstr ""
-
-#. a row on a wired output's page: how its relay board switches
-#. under "Relay board"
-#: components/ui/alarm_ui/src/ui_sirens.c
-msgid "Most switch on low"
-msgstr ""
-
 #. a row on a wired siren's page: the terminal that checks its circuit
 #. under "Supervision input"
 #: components/ui/alarm_ui/src/ui_sirens.c
@@ -29240,13 +30405,6 @@ msgstr ""
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_sirens.c
 msgid "Its supervision input is open: check the siren and its wiring."
-msgstr ""
-
-#. a section heading on a siren's page
-#. A section heading above a group of rows (one line).
-#: components/ui/alarm_ui/src/ui_sirens.c
-msgctxt "siren section"
-msgid "Check it"
 msgstr ""
 
 #. a row on a siren's page: sound it briefly
@@ -29260,12 +30418,6 @@ msgstr ""
 #, fuzzy
 msgid "Sounds it for 2 seconds"
 msgstr "La hace sonar 2 segundos"
-
-#. a row on a wired output's page
-#. under "Remove it" on a wired output's page
-#: components/ui/alarm_ui/src/ui_sirens.c
-msgid "Its terminal goes back to the zones"
-msgstr ""
 
 #. a toast: a 433 MHz siren's test was sent
 #. A toast (one line over the screen). At most 127 bytes.
@@ -36263,13 +37415,6 @@ msgstr "No hace falta: responde cuando se le llama"
 msgid "Not needed"
 msgstr "No hace falta"
 
-#. A list row's value, at its right end (keep it short).
-#: components/ui/alarm_ui/src/ui_zwave.c
-# review: draft
-#, fuzzy
-msgid "Nothing yet"
-msgstr "Aún nada"
-
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
@@ -39252,12 +40397,6 @@ msgstr "Salir"
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-#~ msgid "New browser password"
-#~ msgstr "Contraseña nueva del navegador"
-
-#: components/services/panel_web/web/panel-pages.js
-# review: draft
-#, fuzzy
 #~ msgid "Repeat the password"
 #~ msgstr "Repita la contraseña"
 
@@ -40669,3 +41808,11 @@ msgstr "Salir"
 #, fuzzy
 #~ msgid "The update service doesn't list this radio yet: install its maker's own file from an SD card or the Panel Manager."
 #~ msgstr "El servicio de actualizaciones aún no incluye esta radio: el archivo de su fabricante se puede instalar desde el Administrador del panel."
+
+#. Settings > Automations with none yet: what an automation is. At most 127 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_automations.c
+# review: draft
+#, fuzzy
+#~ msgid "The panel can do things by itself, like turning on the porch light when the front door opens."
+#~ msgstr "El panel puede hacer cosas por sí solo, como encender la luz del porche cuando se abre la puerta principal."

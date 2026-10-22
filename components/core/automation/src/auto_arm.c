@@ -467,6 +467,9 @@ void auto_run_warning(const auto_run_t *r, uint16_t uid, auto_warning_t *out)
 
 bool auto_run_wants_clock(const auto_run_t *r)
 {
+    if (auto_panel_wants_clock(r)) {
+        return true; /* BL-224: a reminder's note ends at 6:00 AM */
+    }
     for (size_t i = 0; r != NULL && i < AUTO_MAX; i++) {
         if (r->e[i].used && (r->e[i].arm.state == (uint8_t)AUTO_WARN_NIGHT ||
                              r->e[i].arm.state == (uint8_t)AUTO_WARN_DAY)) {

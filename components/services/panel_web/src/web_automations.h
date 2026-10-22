@@ -18,7 +18,9 @@
 bool web_automations_available(void);
 
 /* GET automations: {maximum, used, gen, clock_set, read_only, less_secure, automations[], zones[],
- * partitions[], warnings[]}. NULL: no memory, or the configuration couldn't be read (503). */
+ * partitions[], outputs[] ({number, name, gpio}: the wired outputs "For automations"), notify[]
+ * (the phone services set up: "ntfy", "pushover"), master (the system master's name), warnings[],
+ * reminders[]}. NULL: no memory, or the configuration couldn't be read (503). */
 cJSON *web_automations_get(void);
 
 /* The arming warnings and holds now (automation_service_warnings; RAM only), of the partitions in
@@ -28,6 +30,13 @@ cJSON *web_automations_get(void);
  * D27). Names from cfg. Without the feature it adds nothing. */
 bool web_automations_add_warnings(cJSON *o, const char *key, const alarm_config_t *cfg,
                                   uint8_t partitions); /* false: no memory for all of it */
+
+/* The reminders' notes now (automation_service_reminders; RAM only, BL-224), of the partitions in
+ * `partitions` (bit p-1), as o[key] = [{uid, partition, minute}]: GET automations's `reminders`
+ * and status's `automation_reminders`, the Overview's steady line "Not armed yet · reminder at
+ * 11:00 PM". Without the feature it adds nothing. */
+bool web_automations_add_reminders(cJSON *o, const char *key,
+                                   uint8_t partitions); /* false: no memory for all of it */
 
 /* GET automations/devices: {devices:[{source, ref, name, area, kind, online,
  * actions:[{action, confirm}]}]} - only what an automation may do (hc_auto_offer with the

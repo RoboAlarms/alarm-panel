@@ -98,6 +98,12 @@ typedef struct {
 
 void notify_gate_init(notify_gate_t *g, uint8_t cats, bool silent_too, uint64_t now);
 
+/* NOTE-037, NOTE-042: does the owner want this event, by its category (cats: NOTIFY_CAT_BIT of
+ * what is switched on)? An automation's notification (ALARM_EV_AUTOMATION_NOTICE) always is: the
+ * person asked for it when they made the automation (docs/features/41 BL-224). Every path that
+ * filters by category asks this (the gate, the digest after an outage). */
+bool notify_gate_wanted(uint8_t cats, const alarm_event_t *ev);
+
 /* The owner changed what they want to hear about. Counters and windows are kept. */
 void notify_gate_set(notify_gate_t *g, uint8_t cats, bool silent_too);
 

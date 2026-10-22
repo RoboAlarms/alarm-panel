@@ -205,7 +205,8 @@ static const struct {
     {0x34, true, 'M'},  {0x35, true, 'K'},  {0x36, true, 'K'},  {0x37, true, 'M'},
     {0x38, true, 'K'},  {0x39, true, 'M'},  {0x3A, true, 'M'},
     {0x3B, true, 'K'},  {0x3C, true, 'M'},  {0x3D, true, 'K'},
-    {0x3E, true, 'M'},
+    {0x3E, true, 'M'},  {0x3F, true, 'K'},  {0x40, true, 'M'},  {0x41, true, 'K'},
+    {0x42, true, 'M'},
 };
 #define TYPE_COUNT (sizeof TYPES / sizeof TYPES[0])
 
@@ -219,7 +220,7 @@ static int type_index(unsigned t)
     return -1;
 }
 
-/* LINK-017: the type table for all 256 values - known exactly for the document's 41 types,
+/* LINK-017: the type table for all 256 values - known exactly for the document's 45 types,
  * sealed from 0x20 up, sent by the master for the master's types and PAIR_FAIL (either way). */
 static void test_type_table(void)
 {
@@ -385,8 +386,8 @@ static void test_new_types_one_way(void)
     TEST_ASSERT_FALSE(reads(&set_k, len));
     const plink_hdr_t act_m = hdr(PLINK_T_DEV_ACT, sm, 0x1234u, PLINK_SENDER_MASTER, 7u, 1u);
     TEST_ASSERT_FALSE(reads(&act_m, len));
-    const plink_hdr_t next = hdr(0x3Fu, sm, 0x1234u, PLINK_SENDER_MASTER, 7u, 1u);
-    TEST_ASSERT_FALSE(plink_type_known(0x3Fu));
+    const plink_hdr_t next = hdr(0x43u, sm, 0x1234u, PLINK_SENDER_MASTER, 7u, 1u);
+    TEST_ASSERT_FALSE(plink_type_known(0x43u));
     TEST_ASSERT_FALSE(reads(&next, len));
 }
 
@@ -641,7 +642,7 @@ static void test_seal_refusals(void)
         hdr(PLINK_T_HEARTBEAT, 0x03u, 9u, 0u, 5u, 6u),             /* the master's heartbeat */
         hdr(PLINK_T_STATUS, PLINK_FLAG_SEALED, 9u, 2u, 5u, 6u),    /* a keypad's STATUS */
         hdr(PLINK_T_HEARTBEAT, PLINK_FLAG_SEALED | 0x80u, 9u, 2u, 5u, 6u), /* unknown flag */
-        hdr(0x3Fu, PLINK_FLAG_SEALED, 9u, 2u, 5u, 6u),                     /* unknown type */
+        hdr(0x43u, PLINK_FLAG_SEALED, 9u, 2u, 5u, 6u),                     /* unknown type */
     };
     for (size_t i = 0; i < sizeof bad / sizeof bad[0]; i++) {
         len = 99u;

@@ -3972,6 +3972,182 @@ static void test_arming_warnings_and_put_off_on_a_keypad(void)
     TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_UNAVAILABLE, res.result);
 }
 
+/* LINK-058, LINK-063, LINK-064: the remote backend. A keypad's call reaches port.rb_run once,
+ * whatever the network does; arguments the size of a configuration go in parts and a long answer
+ * comes back in parts; the master's grant reaches the keypad; a session without the bit has none
+ * of it. The fake runner answers each call with its arguments' bytes summed into a long answer. */
+#define RB_ARGS_BIG 20000u
+#define RB_ANS_BIG  6000u
+static uint8_t rb_m_up[RB_ARGS_BIG + 64u];
+static uint8_t rb_m_ans[PLINK_KEYPADS_MAX][RB_ANS_BIG];
+static uint8_t rb_k_args[RB_ARGS_BIG + 64u];
+static uint8_t rb_k_ans[RB_ANS_BIG];
+static unsigned rb_runs;
+static uint16_t rb_last_call;
+static size_t rb_last_len;
+static uint32_t rb_last_sum;
+static uint8_t rb_last_device;
+static bool rb_answer_now = true;
+static uint32_t rb_ticket;
+static uint8_t rb_out[RB_ANS_BIG];
+
+static bool rb_run_fake(void *ctx, uint32_t ticket, uint8_t device, uint16_t call,
+                        const uint8_t *args, size_t len)
+{
+    (void)ctx;
+    rb_runs++;
+    rb_last_call = call;
+    rb_last_len = len;
+    rb_last_device = device;
+    uint32_t sum = 0;
+    for (size_t i = 0; i < len; i++) {
+        sum += args[i];
+    }
+    rb_last_sum = sum;
+    /* call 1: a short answer (the sum); call 2: a long one (RB_ANS_BIG bytes of a pattern) */
+    size_t n = 4u;
+    rb_out[0] = (uint8_t)sum, rb_out[1] = (uint8_t)(sum >> 8), rb_out[2] = (uint8_t)(sum >> 16),
+    rb_out[3] = (uint8_t)(sum >> 24);
+    if (call == 2u) {
+        n = RB_ANS_BIG;
+        for (size_t i = 0; i < n; i++) {
+            rb_out[i] = (uint8_t)(i * 7u + 3u);
+        }
+    }
+    rb_ticket = ticket;
+    if (rb_answer_now) {
+        plink_master_rb_answer(&R.m, mnow(), ticket, PLINK_RB_OK, rb_out, n);
+    }
+    return true;
+}
+
+static uint8_t rb_wait(kp_t *a, uint32_t req, uint64_t ms, size_t *len)
+{
+    for (uint64_t t = 0; t < ms; t += 10u) {
+        const uint8_t st = plink_keypad_rb_poll(&a->k, req, len);
+        if (st != PLINK_RB_PENDING) {
+            return st;
+        }
+        run_ms(10);
+    }
+    return PLINK_RB_PENDING;
+}
+
+static kp_t *rb_rig(uint16_t m_caps)
+{
+    R.m_caps = m_caps;
+    R.port.rb_run = rb_run_fake;
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
+    plink_master_rb_attach(&R.m, rb_m_up, sizeof rb_m_up, &rb_m_ans[0][0], RB_ANS_BIG);
+    remake_blob();
+    plink_master_time(&R.m, mnow(), epoch_now(), "UTC0");
+    pump(mnow());
+    kp_t *a = kp_add();
+    a->caps = PLINK_CAP_RB;
+    kp_boot(a);
+    plink_keypad_rb_attach(&a->k, rb_k_args, sizeof rb_k_args, rb_k_ans, sizeof rb_k_ans);
+    pair_kp(a);
+    rb_runs = 0u;
+    rb_answer_now = true;
+    return a;
+}
+
+static void test_remote_backend_calls_over_the_link(void)
+{
+    kp_t *a = rb_rig(PLINK_CAP_RB);
+    TEST_ASSERT_EQUAL_HEX16(PLINK_CAP_RB, m_caps_of(a));
+
+    /* a short call, answered within a second on a working network */
+    const uint8_t args[5] = {1, 2, 3, 4, 5};
+    uint32_t req = 0;
+    TEST_ASSERT_TRUE(plink_keypad_rb_start(&a->k, know(a), 1u, args, sizeof args, &req));
+    TEST_ASSERT_FALSE(plink_keypad_rb_start(&a->k, know(a), 1u, args, sizeof args, NULL)); /* one at a time */
+    size_t len = 0;
+    TEST_ASSERT_EQUAL_UINT8(PLINK_RB_OK, rb_wait(a, req, 1000u, &len));
+    TEST_ASSERT_EQUAL_size_t(4u, len);
+    TEST_ASSERT_EQUAL_UINT8(15u, rb_k_ans[0]);
+    TEST_ASSERT_EQUAL_UINT(1u, rb_runs);
+    TEST_ASSERT_EQUAL_UINT16(1u, rb_last_call);
+    TEST_ASSERT_EQUAL_UINT8(a->k.rec.device, rb_last_device);
+    TEST_ASSERT_EACH_EQUAL_UINT8(0u, rb_k_args, sizeof args); /* its arguments wiped */
+    TEST_ASSERT_EQUAL_UINT8(PLINK_RB_GONE, plink_keypad_rb_poll(&a->k, req, &len)); /* once */
+
+    /* a configuration's size: its arguments in parts, a long answer pulled with RB_MORE */
+    static uint8_t big[RB_ARGS_BIG];
+    uint32_t sum = 0;
+    for (size_t i = 0; i < sizeof big; i++) {
+        big[i] = (uint8_t)(i * 13u + 1u);
+        sum += big[i];
+    }
+    TEST_ASSERT_TRUE(plink_keypad_rb_start(&a->k, know(a), 2u, big, sizeof big, &req));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_RB_OK, rb_wait(a, req, 5000u, &len));
+    TEST_ASSERT_EQUAL_UINT(2u, rb_runs);
+    TEST_ASSERT_EQUAL_size_t(RB_ARGS_BIG, rb_last_len);
+    TEST_ASSERT_EQUAL_UINT32(sum, rb_last_sum);
+    TEST_ASSERT_EQUAL_size_t(RB_ANS_BIG, len);
+    for (size_t i = 0; i < RB_ANS_BIG; i++) {
+        TEST_ASSERT_EQUAL_UINT8((uint8_t)(i * 7u + 3u), rb_k_ans[i]);
+    }
+
+    /* the grant the master holds reaches the keypad, and a new session gets it again */
+    plink_rb_grant_t g;
+    TEST_ASSERT_FALSE(plink_keypad_rb_grant(&a->k, &g));
+    const plink_rb_grant_t given = {.user = 2, .authority = 2, .partitions = 1, .installer = true,
+                                    .idle_left_s = 300, .holder_kind = 2, .holder_id = 1,
+                                    .areas = 0x0Fu};
+    plink_master_rb_grant(&R.m, a->k.rec.device, &given);
+    run_ms(200);
+    TEST_ASSERT_TRUE(plink_keypad_rb_grant(&a->k, &g));
+    TEST_ASSERT_TRUE(g.installer);
+    TEST_ASSERT_EQUAL_UINT8(2, g.user);
+    TEST_ASSERT_EQUAL_HEX32(0x0Fu, g.areas);
+    TEST_ASSERT_EQUAL_UINT16(1, g.holder_id);
+
+    /* no answer from the master's side within 3 s: given up, never a success */
+    rb_answer_now = false;
+    TEST_ASSERT_TRUE(plink_keypad_rb_start(&a->k, know(a), 1u, args, sizeof args, &req));
+    TEST_ASSERT_EQUAL_UINT8(PLINK_RB_NO_ANSWER, rb_wait(a, req, 4000u, &len));
+    TEST_ASSERT_EQUAL_UINT(3u, rb_runs); /* the copies of it waited, they didn't run again */
+    plink_master_rb_answer(&R.m, mnow(), rb_ticket, PLINK_RB_OK, rb_out, 4u); /* too late */
+    rb_answer_now = true;
+}
+
+/* LINK-058, LINK-064: on a lossy network every call still runs exactly once and is answered */
+static void test_remote_backend_on_a_lossy_network(void)
+{
+    kp_t *a = rb_rig(PLINK_CAP_RB);
+    R.net.loss_pm = 100u;
+    static uint8_t big[4000];
+    for (size_t i = 0; i < sizeof big; i++) {
+        big[i] = (uint8_t)i;
+    }
+    unsigned ok = 0;
+    for (unsigned i = 0; i < 20u; i++) {
+        uint32_t req = 0;
+        const size_t n = i % 2u ? sizeof big : 3u;
+        TEST_ASSERT_TRUE(plink_keypad_rb_start(&a->k, know(a), (uint16_t)(1u + i % 2u), big, n, &req));
+        size_t len = 0;
+        const uint8_t st = rb_wait(a, req, 12000u, &len);
+        TEST_ASSERT_NOT_EQUAL_UINT8(PLINK_RB_PENDING, st);
+        ok += st == PLINK_RB_OK ? 1u : 0u;
+        run_ms(100);
+    }
+    R.net.loss_pm = 0u;
+    TEST_ASSERT_TRUE(ok >= 18u);
+    TEST_ASSERT_TRUE(rb_runs <= 20u); /* never twice: a lost answer is resent from the cache */
+    TEST_ASSERT_TRUE(rb_runs >= ok);
+}
+
+/* LINK-065: a master without the bit: the keypad can't start a call, and RB frames are dropped */
+static void test_remote_backend_needs_the_capability(void)
+{
+    kp_t *a = rb_rig(0);
+    TEST_ASSERT_EQUAL_HEX16(0, m_caps_of(a) & PLINK_CAP_RB);
+    const uint8_t args[1] = {9};
+    TEST_ASSERT_FALSE(plink_keypad_rb_start(&a->k, know(a), 1u, args, sizeof args, NULL));
+    TEST_ASSERT_EQUAL_UINT(0u, rb_runs);
+}
+
 static void test_keypad_inputs_reach_the_master_only_with_the_io_capability(void)
 {
     io_calls = 0;
@@ -7384,6 +7560,9 @@ int main(void)
     RUN_TEST(test_master_restart_keypads_back_within_15_s);
     RUN_TEST(test_keypad_inputs_reach_the_master_only_with_the_io_capability);
     RUN_TEST(test_arming_warnings_and_put_off_on_a_keypad);
+    RUN_TEST(test_remote_backend_calls_over_the_link);
+    RUN_TEST(test_remote_backend_on_a_lossy_network);
+    RUN_TEST(test_remote_backend_needs_the_capability);
     RUN_TEST(test_wifi_enrollment_authenticated_requested_and_cancellable);
     RUN_TEST(test_wifi_enrollment_restart_rejects_old_reply);
     RUN_TEST(test_wifi_enrollment_older_master_restarts_and_upgrade);

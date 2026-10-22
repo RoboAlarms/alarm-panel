@@ -1547,7 +1547,7 @@ Manager use: installer mode, the partitions' state, codes and lockouts.
 ### Messages
 | Type | Name | Dir | Bit | Payload (v1) |
 |---|---|---|---|---|
-| 0x3F | `RB_CALL` | K->M | RB | req u32 (not 0); call u16; part section (offset u16, total u16); args (len u16 + bytes) |
+| 0x3F | `RB_CALL` | K->M | RB | req u32 (not 0); call u16; offset u32, total u32; len u16 + the arguments' bytes [offset, offset + len), sent in order from 0 |
 | 0x40 | `RB_ANSWER` | M->K | RB | req u32; status u8; total u32, offset u32; answer (len u16 + bytes) |
 | 0x41 | `RB_MORE` | K->M | RB | req u32, offset u32, max u16: the next part of a long answer |
 | 0x42 | `RB_GRANT` | M->K | RB | grant section (user u8, authority u8, partitions u8, installer u8, idle_left_s u16); holder section (installer mode's source: kind u8, id u16); areas u32 (the call groups this master serves) |

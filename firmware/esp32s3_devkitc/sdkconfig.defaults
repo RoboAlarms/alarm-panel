@@ -39,6 +39,10 @@ CONFIG_MQTT_TRANSPORT_WEBSOCKET=n
 # FreeRTOS
 CONFIG_FREERTOS_HZ=1000
 
+# lwIP's DHCP server gives a phone on the setup Wi-Fi its address (net_wifi_setup_ap; the P4 leaves
+# it out, docs/features/39 F16).
+CONFIG_LWIP_DHCPS=y
+
 # SNTP re-sync every 6 h (docs/features/09 NET-004)
 CONFIG_LWIP_SNTP_UPDATE_DELAY=21600000
 

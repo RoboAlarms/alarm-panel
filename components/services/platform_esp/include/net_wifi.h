@@ -146,7 +146,8 @@ esp_err_t net_wifi_trial_cancel(const char *token);
  * point beside the station, WPA2 with the password from the setup label, at most two devices at
  * a time, the panel at NET_WIFI_SETUP_AP_IP (lwIP's DHCP server gives the phone its address).
  * Its channel follows the station's. ssid NULL (or "") turns it off. RAM only: whoever opens it
- * opens it again after a restart. Any task; the net task applies it. */
+ * opens it again after a restart. Any task; the net task applies it. ESP_ERR_NOT_SUPPORTED where
+ * lwIP's DHCP server is left out (CONFIG_LWIP_DHCPS off: the panels with a screen). */
 #define NET_WIFI_SETUP_AP_IP "192.168.4.1"
 esp_err_t net_wifi_setup_ap(const char *ssid, const char *password);
 /* The setup Wi-Fi is up now, and how many devices are joined to it. */

@@ -43,7 +43,7 @@ CONFIG_COMPILER_OPTIMIZATION_CHECKS_SILENT=y
 
 # Left out because nothing in the panel uses them (docs/features/39 F15, F16): MQTT over WebSocket
 # (the panel's MQTT settings are mqtt and mqtts only, net_mqtt.c) and lwIP's DHCP server (the panel
-# never runs an access point).
+# never runs an access point: the setup Wi-Fi, net_wifi_setup_ap, is the headless panel's only).
 CONFIG_MQTT_TRANSPORT_WEBSOCKET=n
 CONFIG_LWIP_DHCPS=n
 

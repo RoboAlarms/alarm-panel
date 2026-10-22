@@ -561,12 +561,14 @@ static void apply_ap(void)
             esp_netif_dns_info_t dns = {0};
             dns.ip.type = ESP_IPADDR_TYPE_V4;
             dns.ip.u_addr.ip4.addr = esp_ip4addr_aton(NET_WIFI_SETUP_AP_IP);
+#if CONFIG_LWIP_DHCPS /* without it net_wifi_setup_ap never opens the setup Wi-Fi */
             uint8_t offer = 1; /* OFFER_DNS */
             (void)esp_netif_dhcps_stop(s_ap_netif);
             (void)esp_netif_set_dns_info(s_ap_netif, ESP_NETIF_DNS_MAIN, &dns);
             (void)esp_netif_dhcps_option(s_ap_netif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER,
                                          &offer, sizeof(offer));
             (void)esp_netif_dhcps_start(s_ap_netif);
+#endif
         }
     }
     wifi_config_t ap = {0};
@@ -598,6 +600,11 @@ esp_err_t net_wifi_setup_ap(const char *ssid, const char *password)
     if (!s_lock) {
         return ESP_ERR_INVALID_STATE;
     }
+#if !CONFIG_LWIP_DHCPS
+    if (on) {
+        return ESP_ERR_NOT_SUPPORTED; /* no DHCP server to give the phone its address */
+    }
+#endif
     if (on && (strlen(ssid) > 32 || password == NULL || strlen(password) < 8 ||
                strlen(password) > 63)) {
         return ESP_ERR_INVALID_ARG;

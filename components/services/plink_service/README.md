@@ -42,10 +42,12 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   0.5 s; a write's end publishes the keypad's report before its `done` runs. `panel_app` sets `ha_link`'s settings port onto these two.
 - **A keypad's calls of the master's pages** (docs/features/11 "The master's settings and
   installer menu on keypads", BL-223; `plink_mrb_svc.c`, `plink_krb_svc.c`). On a master, each
-  keypad's remote-backend call runs on the worker with `ui_remote_serve` over this panel's own
+  keypad's remote-backend call runs on `plink_rb`, a task of its own (8 KB internal stack:
+  a binding writes NVS; never the commands' worker), with `ui_remote_serve` over this panel's own
   backend (`ui_port_esp`'s, as the Panel Manager takes it), installer mode, users and codes acting
   as `{ALARM_SRC_KEYPAD, n}`; a code accepted at the keypad's code check is its grant; the grants
-  go to the keypads (RB_GRANT) every second when they change, and `link_info` names a keypad
+  go to the keypads (RB_GRANT) when they change and every 30 s, a keypad's installer mode ends
+  a minute after the link last heard it, and `link_info` names a keypad
   holding installer mode. On a keypad with a screen, the screen's entries for the master's pages
   are `ui_remote` proxies: a write is handed to the link task and waited for from the screen's call
   task; a read answers from a copy the link task keeps fresh while the screen reads it, and

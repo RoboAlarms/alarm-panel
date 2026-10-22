@@ -64,8 +64,8 @@ def run_gui(args):
         from .mock import MockWorld
         from .testkit import standard_bundle
         import tempfile
-        bundle = standard_bundle(app_size=640 * 1024)
-        world = MockWorld(bundle, no_driver=args.mock_driver, radio=args.mock_radio)
+        bundle = standard_bundle(app_size=640 * 1024, s3=args.mock_headless)
+        world = MockWorld(bundle, no_driver=args.mock_driver, radio=args.mock_radio, headless=args.mock_headless)
         tmp = tempfile.mkdtemp(prefix="roboflash-mock-")
         c = Controller(lister=world.lister, opener=world.opener, connect=world.connect,
                        driver_probe=world.driver_probe,
@@ -196,6 +196,9 @@ def main(argv=None):
     ap.add_argument("--mock-radio", choices=["factory", "older", "s3", "all"], default="factory",
                     help="with --mock: the chips on their own USB (FLS-030): the factory Zigbee module "
                          "(COM9), ours at 0.9.0 (COM10), an ESP32-S3 (COM11), or all three")
+    ap.add_argument("--mock-headless", action="store_true",
+                    help="with --mock: the ESP32-S3 board without a screen (FLS-035), new (COM13) and "
+                         "running RoboAlarms (COM14), on its own USB like the Zigbee module")
     ap.add_argument("--browser", action="store_true", help="use a browser tab instead of a window")
     ap.add_argument("--no-open", action="store_true", help="only print the address (tests)")
     ap.add_argument("--http-port", type=int, default=0, help=argparse.SUPPRESS)

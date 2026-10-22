@@ -13,8 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "flasher"))
 from roboflash import parts, testkit  # noqa: E402
 from roboflash.mock import MockWorld  # noqa: E402
 
-BOARD = json.loads((Path(__file__).resolve().parents[1] / "flasher" / "roboflash" / "boards.json")
-                   .read_text(encoding="utf-8"))["boards"]["crowpanel_p4"]
+BOARDS = json.loads((Path(__file__).resolve().parents[1] / "flasher" / "roboflash" / "boards.json")
+                    .read_text(encoding="utf-8"))["boards"]
+BOARD = BOARDS["crowpanel_p4"]
 
 
 class RuleTests(unittest.TestCase):
@@ -36,14 +37,23 @@ class RuleTests(unittest.TestCase):
 
     def test_the_flashers_own_places_fit_every_mix_of_parts(self):
         """BL-117: the guided setup asks what is connected, never where; parts.recommended() (and
-        the page's recommend()) must place any mix without a conflict."""
-        for rf in ("none", "module", "cc1101"):
-            for clock in (False, True):
-                for zwave in (False, True):
-                    for zigbee in (False, True):
-                        what = {"rf": rf, "clock": clock, "zwave": zwave, "zigbee": zigbee}
-                        placed = parts.recommended(what, BOARD)
-                        self.assertEqual(parts.problems(placed, BOARD), [], (what, placed))
+        the page's recommend()) must place any mix without a conflict, on every board offered
+        (FLS-035: the ESP32-S3 board's parts each have one place; it has no Zigbee socket)."""
+        for name, board in BOARDS.items():
+            if not board.get("offered", True):
+                continue
+            for rf in ("none", "module", "cc1101"):
+                for clock in (False, True) if board.get("rtc") else (False,):
+                    for zwave in (False, True) if board.get("zwave") else (False,):
+                        for zigbee in (False, True) if board.get("zigbee") else (False,):
+                            what = {"rf": rf, "clock": clock, "zwave": zwave, "zigbee": zigbee}
+                            placed = parts.recommended(what, board)
+                            self.assertEqual(parts.problems(placed, board), [], (name, what, placed))
+
+    def test_every_boards_suggested_layouts_are_fine(self):
+        for name, board in BOARDS.items():
+            for layout in board.get("layouts", []):
+                self.assertEqual(parts.problems(layout["parts"], board), [], (name, layout["title"]))
 
     def test_the_recommended_places(self):
         """J7 for the receiver module (IO3) and the clock; one radio in the socket while it is free."""

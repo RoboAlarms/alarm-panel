@@ -3104,6 +3104,7 @@ msgstr ""
 #: components/services/panel_web/web/panel-keypad.js
 #: components/services/panel_web/web/panel-pages.js
 #: components/services/panel_web/web/panel.html
+#: components/services/panel_web/web/panel.js
 msgid "Connecting…"
 msgstr ""
 
@@ -4769,6 +4770,7 @@ msgstr[1] ""
 
 #. Text from the layout XML, no context.
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_wizard.xml
 msgid "Back"
 msgstr ""
@@ -5763,6 +5765,7 @@ msgid "Changed, not shown"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 msgid "Browser password"
 msgstr ""
 
@@ -6883,6 +6886,7 @@ msgid "Changes are tried for two minutes first. If this browser cannot confirm t
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 msgid "Wi-Fi network"
 msgstr ""
 
@@ -6912,6 +6916,7 @@ msgstr ""
 
 #. The sheet's title. At most 127 bytes.
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/src/ui_net.c
 msgid "Network name"
 msgstr ""
@@ -6945,6 +6950,7 @@ msgid "Run the check"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 msgid "Looking for networks…"
 msgstr ""
 
@@ -6961,6 +6967,7 @@ msgid "No networks found."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 msgid "Enter the network name."
 msgstr ""
 
@@ -10724,6 +10731,7 @@ msgstr ""
 #. A confirmation sheet. At most 127 bytes.
 #. A button row's text (one line).
 #: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
 msgid "Continue"
@@ -14837,6 +14845,58 @@ msgid "The restore stopped part way. The panel restarts; restore the same file a
 msgstr ""
 
 #: components/services/panel_web/web/panel.js
+msgid "This panel isn’t set up yet. Join its setup Wi-Fi and open this page there."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Set up a new panel from its setup Wi-Fi: join it, then open this page again."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Choose two different user names, without spaces at the start or end."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Choose two different passwords."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Passwords are 12 to 64 characters."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Someone else is setting up this panel. Try again in a few minutes."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "That step ran out or was done already. The page shows where setup is now."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Setup is at another step now. The page shows where setup is now."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Confirm from your home network, at the panel’s new address."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "That recovery key or user name isn’t right."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Open recovery at the panel first: hold its BOOT button for five seconds, then let go."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The panel could not save that just now. Try again in a moment."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Too many tries. Wait a moment before trying again."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
 msgid "The panel is busy or not in the right state for this."
 msgstr ""
 
@@ -15052,11 +15112,307 @@ msgid "Keypad codes don’t sign in here. No password yet? Whoever looks after t
 msgstr ""
 
 #: components/services/panel_web/web/panel.js
-msgid "Too many tries. Wait a moment before trying again."
+msgid "Lost your password? Use the recovery key"
 msgstr ""
 
 #: components/services/panel_web/web/panel.js
 msgid "That user name and password don’t match a sign-in set on this panel. Keypad codes don’t work here: use your browser password."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Setup"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Set up your alarm panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "This panel has no screen: you set it up here, from this phone or computer."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Create the installer’s access. The household’s can come now or later, from a computer."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Choose your home Wi-Fi and confirm it from there."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Verify the connection"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The panel’s HTTPS certificate fingerprint. The browser warned about it because the panel makes its own."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Recover an existing panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Start setup"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "1 of 3 · Access"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Create your access"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Installer access programs the system. Household access can arm and disarm."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Installer username"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Installer password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Household access (optional)"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Leave these empty to add the household’s access later: sign in as the installer on a computer and open People."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Household username"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Your name"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Household password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Passwords are 12 to 64 characters, and the two must differ. Keypad codes stay as they are; change them later under People and codes."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Keep a recovery key"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The panel will generate a private recovery key after saving these accounts. Keep it somewhere safe, separate from the panel."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Save access"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Type the installer’s user name."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Passwords are at least 12 characters."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Type the household’s user name, or leave both household fields empty."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Keep your recovery key"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "With this key, a lost browser password can be replaced at the panel. Write it down or save it, away from the panel. It is shown only now."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Making the key…"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "I have saved the recovery key"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Save the recovery key before continuing."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "2 of 3 · Network"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Could not join Wi-Fi"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Connect to your network"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Check the network and password, then try again. Your accounts are saved."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Choose the Wi-Fi this panel will use. Nearby keypads can receive these settings after enrollment."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Wi-Fi password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The setup connection stays available until you confirm the new connection."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Test connection"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Other network…"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "A Wi-Fi password is at least 8 characters."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Joining your Wi-Fi"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The panel is joining {0}. This takes up to a minute. Keep this page open."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Choose another network"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Still connecting… If this takes much longer, check the Wi-Fi password."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Connected. Finishing setup…"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Confirm the connection"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "This panel reached you over {0}. Keep it, and setup is finished: the setup network closes."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "About {0} s left before it goes back."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Keep this network"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "3 of 3 · Ready"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Your panel is set up"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "It is on {0} now. Its setup Wi-Fi closes in a minute, and this phone goes back to your own Wi-Fi."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "From now on, open the Panel Manager at this address on your home network:"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Your browser warns the first time: the panel makes its own certificate. Continue to the site."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Sign in as the installer there to add the household’s access, keypads and sensors."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Open the Panel Manager"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Reconnect to your panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Your users, zones and paired keypads stay saved."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Sign in with the household or installer access to go on with setup."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Username"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Forgot password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Recover browser access"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Use your saved recovery key while local recovery is active at the panel."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Recovery key"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "New browser password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "This replaces browser access for the selected account and signs out its sessions. Alarm codes and system configuration stay unchanged."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "No recovery key?"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Ask another administrator of this panel to restore your access. A factory reset is a separate, destructive last resort."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Replace password"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Browser password replaced. Sign in with it; a new recovery key follows."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Recovery is waiting"
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "The system is armed. Disarm it from an account that may disarm, or from a paired keypad, before changing access or network settings."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Opening recovery does not disarm the system or turn off its alarms."
 msgstr ""
 
 #: components/services/panel_web/web/panel.js

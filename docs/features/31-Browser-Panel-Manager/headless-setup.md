@@ -1,10 +1,33 @@
 # Screen-free setup and recovery
 
-Status: design approved 2026-10-18 by the owner (BL-048). The code is a host-only draft: the
-portable setup/recovery controller and BOOT gesture (`web_setup_flow.c`) are compiled only into
-the host tests, never into a firmware. The setup AP, provisioning, durable account adapter and
-HTTP integration are not implemented yet. This does not change the already implemented keypad
-enrollment flow. [Approved proposal](mockup/proposals/BL-048-headless-setup.js).
+Status: design approved 2026-10-18 by the owner (BL-048); built for the ESP32-S3 panel without a
+screen (docs/features/42, BL-222, 2026-10-21): the setup Wi-Fi (`net_wifi_setup_ap`), the adapter
+(`web_setup.c`: the stored record, the label's secrets, accounts, the recovery key, the network
+trial, the BOOT button) and the pages in `panel.js`; host- and mock-tested, not yet walked from a
+phone on the board. The label is printed by nobody yet: `web setup` on the service console shows
+it. The setup Wi-Fi's password is fixed, Robo1234 on every board (the owner, 2026-10-21: a label
+nobody prints yet can't carry a random one; the setup code still proves the person holds the board).
+The proposal's screens are built, so its file is gone (WEB-026).
+
+## Changed by the owner, 2026-10-21 (BL-222)
+- The setup Wi-Fi's password is Robo1234 on every board, and there is no setup code: nothing is
+  printed on a board yet, so being on the setup Wi-Fi is what claims a new panel (a request from
+  the home network never does; a claim held by one phone can't be taken by another for 5 minutes).
+- Setup runs over plain HTTP on the setup Wi-Fi only (http://192.168.4.1; phone to board, the first
+  setup): no certificate warning. The setup Wi-Fi's name server answers every name with the panel
+  and port 80 sends any other address there, as a router's setup does - so a typed plain-HTTP
+  address, and the phones' own online checks (which then open the setup page by themselves), land
+  on it; an address a browser insists on HTTPS for can't be redirected. On the home network port 80
+  still only redirects to HTTPS, and confirming the new network happens there over HTTPS.
+- Setup ends in the phone's pop-up: once the board has joined the home Wi-Fi it confirms the
+  network itself (it has its address there), shows its new address with "Open the Panel Manager",
+  and closes the setup Wi-Fi 90 s later. Confirming from the home network still works.
+- Setup over USB from the Flasher (docs/features/34 FLS-036): `provision accounts|network|finish`,
+  the same steps, for an installer at a laptop; a release build reads them from its USB port while
+  setup isn't finished.
+- Only the installer's access is required at setup; the household's may come with it or later,
+  added by the installer from a computer (People). The flow below otherwise stands; the label's
+  setup code and certificate checks in it are what a printed label would bring back.
 
 ## Approved flow
 
@@ -81,8 +104,8 @@ These remain prerequisites, not working controls on the existing development pan
 
 ## Controller integration contract
 
-`web_setup_flow.c` is a portable policy controller and a host-only draft (built only by
-`components/services/panel_web/test`), not a running setup service. Its host tests
+`web_setup_flow.c` is a portable policy controller, host-tested by
+`components/services/panel_web/test` and driven on the panel by `web_setup.c`. Its host tests
 exercise competing claims, expiry, failed commits, resumption from committed state, physical
 input, armed refusal and the screen-panel listener restriction. Storage callbacks in those tests
 are fakes; they do not demonstrate power-fail-safe NVS writes or working network provisioning.
@@ -101,6 +124,6 @@ of browser requests; a rollback signal must be applied before accepting another 
 
 - [x] Owner approved setup mockups and BOOT hold/release policy; screen panels retain explicit enable (BL-048).
 - [x] Portable controller and BOOT gesture tests (BL-048); no live service or GPIO hookup yet.
-- [ ] Implement bootstrap trust and durable setup/recovery services shared by browser and future app (BL-048).
-- [ ] Verify no-screen first boot, duplicate claims, expired sessions, each interruption point,
+- [x] Setup and recovery services and pages for a headless master: setup Wi-Fi, claim, accounts, recovery key, network trial, BOOT recovery (BL-222, uncommitted); the label's printing and certificate trust stay open (docs/features/42).
+- [ ] Verify (BL-222) no-screen first boot, duplicate claims, expired sessions, each interruption point,
   trial rollback, wrong/lost credentials, armed refusal and restored access on hardware (BL-048).

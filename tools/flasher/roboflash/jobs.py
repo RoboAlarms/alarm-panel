@@ -496,6 +496,10 @@ class Runner:
         more = (board.get("connect") or {}).get("more_power") or "Give it more power, then restart it."
         if found["brownout"]:
             words = f"The firmware is written, but the panel ran short of power as it started ({why}). {more}"
+        elif board.get("headless"):
+            # FLS-035: a board without a screen shows nothing to look at.
+            words = (f"The firmware is written, but the board did not report starting ({why}). If it keeps "
+                     f"restarting, it may be short of power. {more} Advanced tools › Console shows its log.")
         elif found["crashed"]:
             words = (f"The firmware is written, but the panel did not report starting ({why}). Look at its "
                      "screen; Advanced tools › Console shows its log.")

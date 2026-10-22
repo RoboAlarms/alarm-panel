@@ -26,6 +26,14 @@ P4_PINS = {
     "crowpanel_10": {"j7": (53, 54), "socket": (27, 28), "reach": (2, 3, 4, 5, 49, 50, 51, 52, 53, 54),
                      "i2c": "I2C connector J13 (HY2.0, 4 pins)"},
 }
+# The ESP32-S3 board without a screen (FLS-035, its board_pins.h and board_desc.c): the receiver's
+# own pin, the wired terminals, the Z-Wave radio's one place, the clock's pins. No custom places in
+# this pretend one, no Zigbee.
+S3_BOARD = "esp32s3_devkitc"
+S3_PINS = {"own_rf": 14, "terminals": (4, 5, 6, 7, 15, 16, 17, 18), "j7": (0, 0), "socket": (0, 0), "reach": (),
+           "zwave": {"header": ("header J3, IO1 (TX) and IO2 (RX)", (1, 2))},
+           "i2c": "header J1, IO8 (SDA) and IO9 (SCL)"}
+PANELS = set(P4_PINS) | {S3_BOARD}
 CUSTOM_KEYS = {"rf": (("sck", "mosi", "miso", "cs", "gdo0"), ("data",)), "rtc": (("sda", "scl"),),
                "zwave": (("tx", "rx"), ("tx", "rx", "reset"))}
 PART_NAME = {"rf": "433 MHz receiver", "rtc": "clock module", "zwave": "Z-Wave radio"}
@@ -44,15 +52,16 @@ class MockSerialException(OSError):
 class MockDevice:
     def __init__(self, port, description, vid, pid, chip=None, board_id="", board_name="",
                  armed=False, flash=None, bluetooth=False, sensors=None, clock="ok", custom_pins=True,
-                 radio_module=False):
+                 radio_module=False, serial=""):
         self.port = port
         self.radio_module = radio_module   # a chip on its own USB Serial/JTAG, no RoboAlarms console (FLS-030)
         self.zigbee_version = ""           # what a panel's `zigbee status` reports: the bundle's radio
         self.raw = SimpleNamespace(device=port, description=description, vid=vid, pid=pid,
-                                   manufacturer="wch.cn" if vid == 0x1A86 else "", serial_number="",
+                                   manufacturer="wch.cn" if vid == 0x1A86 else "", serial_number=serial,
                                    location="1-5.2", hwid="")
         self.board_id = board_id
         self.board_name = board_name
+        self.setup_state = {"stage": "unclaimed", "ssid": "", "joined_at": 0.0}  # FLS-036
         self.armed = armed
         self.bluetooth = bluetooth
         self.sensors = sensors or []
@@ -120,7 +129,7 @@ class MockDevice:
         inst = self.installed()
         if self.board is None:
             return
-        own = 10 if inst and inst["board"] in P4_PINS else 35
+        own = 10 if inst and inst["board"] in P4_PINS else S3_PINS["own_rf"] if inst and inst["board"] == S3_BOARD else 35
         self.rf_place = self.rf_place_stored
         self.clock_place = self.clock_place_stored
         self.zwave_place = self.zwave_place_stored
@@ -198,7 +207,17 @@ class MockDevice:
     # -- custom places (FLS-029: the console contract) ------------------------------------------
     def _pins(self):
         inst = self.installed()
+        if inst and inst["board"] == S3_BOARD:
+            return S3_PINS
         return P4_PINS.get(inst["board"] if inst else "", P4_PINS["crowpanel_p4"])
+
+    def _zw_places(self):
+        """{place: (where, (tx, rx))}: the Z-Wave radio's places on this board."""
+        pins = self._pins()
+        if pins is S3_PINS:
+            return S3_PINS["zwave"]
+        return {"socket": ("wireless-module socket", pins["socket"]),
+                "j7": ("J7 header, IO{} (TX) and IO{} (RX)".format(*pins["j7"]), pins["j7"])}
 
     def _taken(self, part):
         """{gpio: what} for the pins the other parts' stored places take."""
@@ -288,7 +307,7 @@ class MockDevice:
         say = lambda text: self.emit(text + "\r\n")  # noqa: E731
         self.emit(cmd + "\r\n")                       # the console echoes
         if cmd == "dev describe":
-            if inst["board"] not in P4_PINS:
+            if inst["board"] not in PANELS:
                 say("Unrecognized command")
             else:
                 info = {"api": 1, "id": "e8f60a" + self.port[-2:].rjust(6, "0"), "board": inst["board"],
@@ -303,7 +322,8 @@ class MockDevice:
         elif cmd == "ota":
             say(f"Firmware: {inst['version']}")
         elif cmd.startswith("rf pin"):
-            own, offered = (10, [2, 3, 4, 5, 49, 50, 51, 52]) if inst["board"] in P4_PINS else (35, [39, 25, 32])
+            own, offered = ((10, [2, 3, 4, 5, 49, 50, 51, 52]) if inst["board"] in P4_PINS else
+                            (S3_PINS["own_rf"], list(S3_PINS["terminals"])) if inst["board"] == S3_BOARD else (35, [39, 25, 32]))
             arg = cmd.split()[2] if len(cmd.split()) > 2 else ""
             if arg == "default":
                 self.rf_pin_stored = None
@@ -455,12 +475,13 @@ class MockDevice:
                 if custom:
                     say("custom: your own pins on J7 (`rtc place custom sda= scl=`)")
                     self._custom_lines("rtc", say)
-        elif cmd.startswith("zwave place") and inst["board"] in P4_PINS:
+        elif cmd.startswith("zwave place") and inst["board"] in PANELS:
             arg = cmd.split()[2] if len(cmd.split()) > 2 else ""
             pins = self._pins()
             j7 = set(pins["j7"])
-            where = {"socket": "wireless-module socket", "j7": "J7 header, IO{} (TX) and IO{} (RX)".format(*pins["j7"])}
-            custom = self.custom_ok
+            places = self._zw_places()
+            where = {k: v[0] for k, v in places.items()}
+            custom = self.custom_ok and inst["board"] in P4_PINS
             if arg == "custom" and custom:
                 reply = self._custom_command("zwave", cmd.split()[3:])
                 if reply.startswith("place "):
@@ -470,9 +491,9 @@ class MockDevice:
                 self.zwave_place_stored = None
                 self.custom_stored.pop("zwave", None)
                 say("place off from the next restart (`restart`): no pin is touched")
-            elif arg == "j7" and self.clock_place_stored == "j7":
+            elif arg == "j7" and "j7" in places and self.clock_place_stored == "j7":
                 say(f"not j7: GPIO {pins['j7'][0]} (clock module SDA) is used twice")
-            elif arg == "j7" and (j7 & set(self._taken("zwave"))):
+            elif arg == "j7" and "j7" in places and (j7 & set(self._taken("zwave"))):
                 g = min(j7 & set(self._taken("zwave")))
                 say(f"not j7: GPIO {g} is the {self._taken('zwave')[g]}")
             elif arg in where:
@@ -485,13 +506,13 @@ class MockDevice:
             else:
                 say(f"place {self.zwave_place}: {dict(where, custom='your own pins')[self.zwave_place]}"
                     if self.zwave_place else "place off")
-                for k, v in where.items():
-                    say(f"{k}: {v} (TX GPIO {pins[k][0]}, RX {pins[k][1]})")
+                for k, (v, (tx, rx)) in places.items():
+                    say(f"{k}: {v} (TX GPIO {tx}, RX {rx})")
                 if custom:
                     say("custom: your own pins on J7 (`zwave place custom tx= rx= [reset=]`)")
                     self._custom_lines("zwave", say)
                 say("`zwave place <place>` wires it there, `zwave place off` takes it away")
-        elif cmd == "zwave status" and inst["board"] in P4_PINS:
+        elif cmd == "zwave status" and inst["board"] in PANELS:
             if self.zwave_place is None:
                 say("Z-Wave radio off: no place chosen")
                 say("crypto self-test: not run (no place chosen)")
@@ -500,7 +521,7 @@ class MockDevice:
                 self._custom_lines("zwave", say)
                 say("`zwave place` lists the places this board offers")
             else:
-                pins = self._pins()["socket" if self.zwave_place == "socket" else "j7"]
+                pins = self._zw_places().get(self.zwave_place, ("", (0, 0)))[1]
                 reset = "none"
                 if self.zwave_place == "custom":
                     own = self.custom["zwave"]
@@ -537,6 +558,65 @@ class MockDevice:
             say("      sensor: 433 MHz EV1527 A2B3C code 5")
             say("  3 p1 Back door                perimeter          door         normal")
             say("      sensor: GPIO 4 on the J7 header")
+        elif cmd == "terminals" and inst["board"] == S3_BOARD:
+            taken = set(self._taken(""))
+            for g in S3_PINS["terminals"]:
+                if g not in taken:
+                    say(f"GPIO {g:<3} header J1  {'open':<7}")
+            say("an open loop reads open; wire each contact between its GPIO and GND (3.3 V logic)")
+        elif (cmd.startswith("web provision ") or cmd.startswith("provision ")) and inst["board"] == S3_BOARD:
+            # Setup over USB (FLS-036, web_setup_usb.c), as a development build answers it.
+            import shlex
+            try:
+                words = shlex.split(cmd.split("provision", 1)[1])
+            except ValueError:
+                words = []
+            st = self.setup_state
+            step = words[0] if words else ""
+            if step == "status":
+                joined = st["ssid"] and time.monotonic() >= st["joined_at"]
+                say(f"PROVISION status {st['stage']} {'connected' if joined else ('connecting' if st['ssid'] else 'none')} "
+                    f"{'192.0.2.40' if joined else '-'}")
+            elif st["stage"] == "ready":
+                say("PROVISION error setup_stage")
+            elif step == "accounts" and len(words) == 3:
+                if st["stage"] != "unclaimed":
+                    say("PROVISION error setup_stage")
+                elif len(words[2]) < 12:
+                    say("PROVISION error weak_password")
+                else:
+                    st["stage"] = "key"
+                    say("PROVISION ok key KEYAB-CDEFG-HJKMN-PQRST-UVWXY")
+            elif step == "network" and len(words) == 3:
+                if st["stage"] not in ("key", "network"):
+                    say("PROVISION error setup_stage")
+                elif len(words[2]) and len(words[2]) < 8:
+                    say("PROVISION error bad_request")
+                else:
+                    st.update(stage="network", ssid=words[1], joined_at=time.monotonic() + 1.0)
+                    say("PROVISION ok")
+            elif step == "finish":
+                if not st["ssid"] or time.monotonic() < st["joined_at"]:
+                    say("PROVISION error setup_stale")
+                else:
+                    st["stage"] = "ready"
+                    say("PROVISION ok 192.0.2.40")
+            elif step == "cancel":
+                st.update(ssid="", joined_at=0.0)
+                say("PROVISION ok")
+            else:
+                say("PROVISION error bad_request")
+        elif cmd == "web setup":
+            # web_setup.c's label (FLS-035): made-up values, as a new board prints them.
+            if inst["board"] != S3_BOARD:
+                say("SETUP: this panel has a screen: no setup Wi-Fi")
+            else:
+                say(f"SETUP stage {self.setup_state['stage']}, setup Wi-Fi "
+                    f"{'closed' if self.setup_state['stage'] == 'ready' else 'open'}")
+                say('SETUP label: Wi-Fi "RoboAlarms-7F3A", password Robo1234; open http://192.168.4.1/')
+                say("SETUP label: panel e8f60a0000" + self.port[-2:])
+                say("SETUP label: certificate SHA-256 0123456789abcdef 0123456789abcdef 0123456789abcdef "
+                    "0123456789abcdef")
         elif cmd == "terminals" and inst["board"] in P4_PINS:
             taken = set(self._taken(""))   # the terminals a stored place takes are no longer offered
             for g in (2, 3, 4, 5, 49, 50, 51, 52):
@@ -647,11 +727,14 @@ class MockSerial:
 
 
 class MockWorld:
-    def __init__(self, bundle=None, no_driver=None, custom_pins=True, radio="factory"):
+    def __init__(self, bundle=None, no_driver=None, custom_pins=True, radio="factory", headless=False):
         """custom_pins=False: every panel runs a RoboAlarms from before custom places (FLS-029).
         radio (FLS-030), a chip on a 303A:1001 port: "factory" (COM9, the Zigbee module with
         Espressif's OpenThread CLI), "older" (COM10, ours at 0.9.0), "s3" (COM11, an ESP32-S3, not a
-        module), "all" (the three) or None."""
+        module), "all" (the three) or None.
+        headless (FLS-035): the ESP32-S3 board without a screen on its own USB (303A:1001, like the
+        Zigbee module's): new on COM13 (its maker's demo) and, when the bundle has its image, running
+        RoboAlarms on COM14."""
         self.devices = {}
         self.no_driver = no_driver      # "missing" / "failed": a CH340 Windows can't use, no ports at all
         if no_driver:
@@ -695,6 +778,18 @@ class MockWorld:
             self.add(MockDevice("COM11", jtag.format("COM11"), 0x303A, 0x1001, radio_module=True,
                                 chip=ChipInfo(chip="esp32s3", revision=2, flash_size=8 * MB, mac="f4:12:fa:00:00:0b",
                                               description="ESP32-S3 (QFN56) (revision v0.2)")))
+        if headless:
+            s3 = lambda n: ChipInfo(chip="esp32s3", revision=2, flash_size=16 * MB,  # noqa: E731
+                                    mac=f"f4:12:fa:00:01:{n:02x}", description="ESP32-S3 (QFN56) (revision v0.2)")
+            demo = bytearray(b"\xff" * (16 * MB))
+            demo[0x10000:0x10004] = b"\xe9\x03\x02\x20"
+            name = "ESP32-S3-DevKitC-1 (headless)"
+            self.add(MockDevice("COM13", jtag.format("COM13"), 0x303A, 0x1001, chip=s3(13), board_name=name,
+                                flash=demo, serial="F4:12:FA:00:01:0D", sensors=sensors))
+            if bundle is not None and any(i.board == S3_BOARD for i in bundle.images):
+                self.add(MockDevice("COM14", jtag.format("COM14"), 0x303A, 0x1001, chip=s3(14), board_name=name,
+                                    flash=self._flash_with(bundle, S3_BOARD, 2), serial="F4:12:FA:00:01:0E",
+                                    sensors=sensors))
         zigbee = bundle.radio("zigbee") if bundle is not None else None
         for dev in self.devices.values():
             dev.custom_ok = custom_pins

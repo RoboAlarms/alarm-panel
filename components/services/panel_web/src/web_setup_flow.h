@@ -91,6 +91,9 @@ web_setup_result_t web_setup_trial_begin(web_setup_flow_t *s, const web_setup_ac
                                          uint64_t now);
 web_setup_result_t web_setup_trial_confirm(web_setup_flow_t *s, const web_setup_actor_t *actor,
                                            uint64_t now);
+/* The trial's owner gives it up (a wrong Wi-Fi password, another network): the adapter rolls the
+ * network back at once and a new trial may begin. */
+web_setup_result_t web_setup_trial_cancel(web_setup_flow_t *s, const web_setup_actor_t *actor);
 /* true requires the network adapter to roll back; cannot be renewed by polling.
  * Boot must independently roll back any durable unconfirmed network trial. */
 bool web_setup_tick(web_setup_flow_t *s, uint64_t now);

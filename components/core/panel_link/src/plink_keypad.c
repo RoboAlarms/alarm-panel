@@ -2824,6 +2824,19 @@ static void on_sealed(plink_keypad_t *k, uint64_t now, const plink_addr_t *from,
     case PLINK_T_EVENTS: on_events(k, now, fs, k->pt, n); break;
     case PLINK_T_RESULT: on_result(k, k->pt, n); break;
     case PLINK_T_SOUND: on_sound(k, k->pt, n); break;
+    case PLINK_T_AUTO_WARN:
+        /* LINK-056: from a session holding the bit; the newest frame wins (LINK-026). */
+        if ((s->caps & PLINK_CAP_AUTO) != 0u &&
+            (s->sid != k->auto_sid || fs > k->auto_seq)) {
+            plink_auto_warn_t w;
+            if (plink_dec_auto_warn(k->pt, n, &w)) {
+                k->auto_warn = w;
+                k->auto_heard_ms = now;
+                k->auto_sid = s->sid;
+                k->auto_seq = fs;
+            }
+        }
+        break;
     case PLINK_T_TIME: on_time(k, now, fs, k->pt, n); break;
     case PLINK_T_BYE: (void)drop_master(k, now, PLINK_UNPAIRED_REMOVED); break; /* LINK-014 */
     case PLINK_T_DEV_LIST_PAGE:
@@ -3288,7 +3301,7 @@ uint32_t plink_keypad_command(plink_keypad_t *k, uint64_t now_ms, const plink_cm
     if (k == NULL || cmd == NULL || !k->paired ||
         (cmd->op != PLINK_OP_COMMAND && cmd->op != PLINK_OP_AUTH &&
          cmd->op != PLINK_OP_CHANGE_CODE && cmd->op != PLINK_OP_GOTO &&
-         cmd->op != PLINK_OP_ACTIVITY)) {
+         cmd->op != PLINK_OP_ACTIVITY && cmd->op != PLINK_OP_PUT_OFF)) {
         return 0u;
     }
     const bool panic = is_panic(cmd);
@@ -3996,4 +4009,40 @@ bool plink_keypad_wifi_request(plink_keypad_t *k, uint64_t now)
 void plink_keypad_wifi_cancel(plink_keypad_t *k)
 {
     if (k) k->wifi_req = 0;
+}
+
+bool plink_keypad_auto_warn(const plink_keypad_t *k, uint64_t now, plink_auto_warn_t *out)
+{
+    if (out == NULL) {
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    if (k == NULL || !k->paired || k->auto_heard_ms == 0u ||
+        now - k->auto_heard_ms >= PLINK_AUTO_STALE_MS) {
+        return false;
+    }
+    *out = k->auto_warn;
+    const uint64_t age = now - k->auto_heard_ms;
+    for (size_t i = 0; i < out->count; i++) {
+        uint32_t *in = &out->rec[i].arm_in_ms;
+        *in = *in > age ? (uint32_t)(*in - age) : 0u;
+    }
+    return true;
+}
+
+bool plink_keypad_io_ready(const plink_keypad_t *k)
+{
+    return k != NULL && k->paired && k->have_master && k->live.valid &&
+           (k->live.caps & PLINK_CAP_IO) != 0u;
+}
+
+bool plink_keypad_io_state(plink_keypad_t *k, uint64_t now, const plink_io_state_t *st)
+{
+    if (!plink_keypad_io_ready(k) || st == NULL) {
+        return false;
+    }
+    uint8_t buf[2u + PLINK_IO_MAX * PLINK_IO_REC_LEN];
+    size_t n = 0u;
+    return plink_enc_io_state(st, buf, sizeof buf, &n) &&
+           seal_send(k, now, PLINK_T_IO_STATE, buf, n);
 }

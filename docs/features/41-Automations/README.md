@@ -40,6 +40,9 @@ them off a site, and an automation's own arm or disarm never starts another. An 
 bypasses the zones it finds open only when told to (D29), as a keypad panel's auto-arm can; otherwise it
 doesn't arm and says which zone was open.
 
+On a panel without a screen (docs/features/42) automations are set up in the Panel Manager, and an
+arming warning shows on the panel link's keypads with its Put off (docs/features/11 LINK-056, BL-222).
+
 ## Requirements
 | ID | Requirement | Verified by |
 |---|---|---|

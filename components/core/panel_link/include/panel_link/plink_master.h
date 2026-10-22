@@ -212,6 +212,10 @@ typedef struct {
      * the last PLINK_WIFI_SHARE_MS (this run of the master; others get an empty answer). No
      * logging. Return false when sharing is unavailable; output is wiped by the caller. */
     bool (*wifi_credentials)(void *ctx, plink_wifi_t *out);
+    /* LINK-055: keypad device's wired terminals as its newest IO_STATE says (in a session with
+     * PLINK_CAP_IO, frames rate-limited); the platform hands them to the zone source ZSRC_KEYPAD.
+     * Valid during the call only. NULL: this master takes no keypad inputs. */
+    void (*io_state)(void *ctx, uint8_t device, const plink_io_state_t *st);
 } plink_master_port_t;
 
 typedef struct {
@@ -364,6 +368,11 @@ typedef struct {
     plink_home_peer_t home;     /* Smart Home and settings */
     plink_fw_peer_t fw;         /* updates through the link */
     uint64_t wifi_until_ms;     /* RAM only: home Wi-Fi shared before then (0 never, LINK-053) */
+    uint8_t io_tokens;          /* IO_STATE (token bucket, LINK-055) */
+    uint64_t io_tokens_at;
+    uint32_t auto_sid;          /* LINK-056: the session the newest AUTO_WARN went in (0: none) */
+    uint32_t auto_crc;          /* ... the table it carried */
+    uint64_t auto_at;           /* ... and when */
 } plink_peer_t;
 
 typedef struct {
@@ -540,6 +549,12 @@ typedef struct {
 /* Keypad device's (false: no such keypad). */
 bool plink_master_keypad_home(const plink_master_t *m, uint64_t now_ms, uint8_t device,
                               plink_keypad_home_t *out);
+
+/* ---- an automation's arming warnings on keypads (LINK-056) ---- */
+/* The master's warnings now (the whole table; arm_in_ms counted from now): sent to every live
+ * keypad holding PLINK_CAP_AUTO when it changed, to a new session, and every PLINK_AUTO_EVERY_MS
+ * while it isn't empty. Call it at least once a second (the service does). */
+void plink_master_auto_warn(plink_master_t *m, uint64_t now_ms, const plink_auto_warn_t *w);
 
 /* ---- updates through the link (LINK-029..037) ---- */
 /* The master's own update runs, or it is on its self-test: STATUS's UPDATING (LINK-030); a change

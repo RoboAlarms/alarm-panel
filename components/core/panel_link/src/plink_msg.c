@@ -2084,6 +2084,118 @@ bool plink_dec_prefs_set(const uint8_t *p, size_t len, plink_prefs_set_t *m)
     return dec_done(&r, m, sizeof(*m));
 }
 
+/* LINK-055: a keypad's wired terminals. */
+bool plink_enc_io_state(const plink_io_state_t *m, uint8_t *out, size_t cap, size_t *len)
+{
+    if (m == NULL || out == NULL || len == NULL || m->count > PLINK_IO_MAX) {
+        return false;
+    }
+    const size_t need = 2u + (size_t)m->count * PLINK_IO_REC_LEN;
+    if (cap < need) {
+        return false;
+    }
+    out[0] = m->count;
+    out[1] = (uint8_t)PLINK_IO_REC_LEN;
+    for (size_t i = 0; i < m->count; i++) {
+        uint8_t *r = out + 2u + i * PLINK_IO_REC_LEN;
+        r[0] = m->rec[i].gpio;
+        r[1] = m->rec[i].flags;
+        r[2] = (uint8_t)(m->rec[i].changes & 0xFFu);
+        r[3] = (uint8_t)(m->rec[i].changes >> 8);
+    }
+    *len = need;
+    return true;
+}
+
+bool plink_dec_io_state(const uint8_t *p, size_t len, plink_io_state_t *m)
+{
+    if (m == NULL) {
+        return false;
+    }
+    memset(m, 0, sizeof(*m));
+    if (p == NULL || len < 2u) {
+        return false;
+    }
+    const size_t count = p[0], rec_len = p[1];
+    if (count > PLINK_IO_MAX || rec_len < PLINK_IO_REC_LEN || len < 2u + count * rec_len) {
+        return false;
+    }
+    m->count = (uint8_t)count;
+    for (size_t i = 0; i < count; i++) {
+        const uint8_t *r = p + 2u + i * rec_len;
+        m->rec[i].gpio = r[0];
+        m->rec[i].flags = r[1];
+        m->rec[i].changes = (uint16_t)((unsigned)r[2] | ((unsigned)r[3] << 8));
+    }
+    return true;
+}
+
+/* LINK-056: an automation's arming warnings. */
+bool plink_enc_auto_warn(const plink_auto_warn_t *m, uint8_t *out, size_t cap, size_t *len)
+{
+    if (m == NULL || out == NULL || len == NULL || m->count > PLINK_AUTO_MAX) {
+        return false;
+    }
+    plink_w_t w;
+    plink_w_init(&w, out, cap);
+    plink_w_u8(&w, m->count);
+    plink_w_u8(&w, (uint8_t)PLINK_AUTO_REC_LEN);
+    for (size_t i = 0; i < m->count; i++) {
+        const plink_auto_rec_t *r = &m->rec[i];
+        plink_w_u16(&w, r->uid);
+        plink_w_u8(&w, r->partition);
+        plink_w_u8(&w, r->level);
+        plink_w_u8(&w, r->state);
+        plink_w_u8(&w, r->warn_min);
+        plink_w_u8(&w, r->bypass);
+        plink_w_u8(&w, r->put_off_by);
+        plink_w_u32(&w, (uint32_t)((uint64_t)r->arm_at_epoch_ms & 0xFFFFFFFFu));
+        plink_w_u32(&w, (uint32_t)((uint64_t)r->arm_at_epoch_ms >> 32));
+        plink_w_u32(&w, r->arm_in_ms);
+        plink_w_u32(&w, (uint32_t)r->until_day);
+        plink_w_u16(&w, r->until_minute);
+    }
+    return enc_done(&w, len);
+}
+
+bool plink_dec_auto_warn(const uint8_t *p, size_t len, plink_auto_warn_t *m)
+{
+    if (m == NULL) {
+        return false;
+    }
+    memset(m, 0, sizeof(*m));
+    if (p == NULL || len < 2u) {
+        return false;
+    }
+    const size_t count = p[0], rec_len = p[1];
+    if (count > PLINK_AUTO_MAX || rec_len < PLINK_AUTO_REC_LEN || len < 2u + count * rec_len) {
+        return false;
+    }
+    m->count = (uint8_t)count;
+    for (size_t i = 0; i < count; i++) {
+        plink_r_t r;
+        plink_r_init(&r, p + 2u + i * rec_len, PLINK_AUTO_REC_LEN);
+        plink_auto_rec_t *a = &m->rec[i];
+        a->uid = plink_r_u16(&r);
+        a->partition = plink_r_u8(&r);
+        a->level = plink_r_u8(&r);
+        a->state = plink_r_u8(&r);
+        a->warn_min = plink_r_u8(&r);
+        a->bypass = plink_r_u8(&r);
+        a->put_off_by = plink_r_u8(&r);
+        const uint32_t lo = plink_r_u32(&r), hi = plink_r_u32(&r);
+        a->arm_at_epoch_ms = (int64_t)(((uint64_t)hi << 32) | lo);
+        a->arm_in_ms = plink_r_u32(&r);
+        a->until_day = (int32_t)plink_r_u32(&r);
+        a->until_minute = plink_r_u16(&r);
+        if (!r.ok) {
+            memset(m, 0, sizeof(*m));
+            return false;
+        }
+    }
+    return true;
+}
+
 /* LINK-053: bounded secrets, never accepted without the outstanding request. */
 #define WIFI_SSID_AT PLINK_WIFI_REQ_LEN                         /* 4 */
 #define WIFI_PASS_AT (PLINK_WIFI_REQ_LEN + PLINK_WIFI_SSID_LEN) /* 37 */

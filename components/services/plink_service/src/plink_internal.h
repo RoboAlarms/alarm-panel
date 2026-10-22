@@ -201,6 +201,32 @@ void msvc_post_dev_ack(uint32_t ticket, uint8_t result, uint8_t why);
 /* The worker is woken at once (it looks every second anyway). Any task. */
 void msvc_kick(void);
 
+/* A keypad's own wired inputs (plink_io_svc.c, LINK-055). The keypad's side: its terminals read
+ * (kio_prepare returns PLINK_CAP_IO when it has any), sent by the link task (kio_poll), shown by
+ * the console (kio_print). The master's side: the zone source ZSRC_KEYPAD registered
+ * (miosvc_prepare returns PLINK_CAP_IO), the manager's port (miosvc_io_state, the link task),
+ * supervision edges and removals told, the worker hands it all to the zone hub (miosvc_apply). */
+/* An automation's arming warnings on keypads (plink_auto_svc.c, LINK-056). The master's side: the
+ * offer, the worker's copy of the warnings (masvc_worker), the link task's feed to the manager
+ * (masvc_poll), a keypad's put-off on the worker (masvc_put_off). The keypad's side: the offer,
+ * the link task's copy and the chime (kasvc_poll), the screen's read (kasvc_warnings). */
+uint16_t masvc_caps(void);
+void masvc_worker(void);
+void masvc_poll(plink_master_t *m, uint64_t now);
+alarm_result_t masvc_put_off(const plink_cmd_t *c, const alarm_source_t *src, plink_result_t *res);
+uint16_t kasvc_caps(void);
+void kasvc_poll(plink_keypad_t *k, uint64_t now, uint8_t partition);
+size_t kasvc_warnings(auto_warning_t *out, size_t max);
+
+uint16_t kio_prepare(void);
+void kio_poll(plink_keypad_t *k, uint64_t now);
+void kio_print(void);
+uint16_t miosvc_prepare(void);
+void miosvc_io_state(void *ctx, uint8_t device, const plink_io_state_t *st);
+void miosvc_reachable(uint8_t device, bool up);
+void miosvc_removed(uint8_t device);
+void miosvc_apply(void);
+
 /* ---- plink_fwm_svc.c: a master's keypad updates (docs/features/11 "Updates through the link",
  * BL-048). The link task unless said. ------------------------------------------------------------ */
 /* The start-up, before the manager: the planner's memory (PSRAM), the event queue, link/kup, the

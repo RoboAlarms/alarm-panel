@@ -12,3 +12,7 @@ void panel_web_ui_backend(ui_backend_t *backend);
 /* Only the already authenticated mTLS development adapter may issue this. One
  * use, 60 seconds, runtime developer mode required; no PIN is exposed or changed. */
 bool panel_web_issue_grant(char one_time_token[65]);
+/* A headless panel's BOOT button (true while held), from its firmware after panel_web_start():
+ * held five seconds and let go, it opens setup recovery for five minutes (docs/features/31
+ * headless-setup.md). A panel with a screen ignores it. */
+void panel_web_setup_button(bool (*down)(void));

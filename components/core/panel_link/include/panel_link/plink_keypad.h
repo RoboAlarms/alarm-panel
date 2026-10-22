@@ -471,6 +471,9 @@ typedef struct {
     plink_kact_t acts[PLINK_DEV_ACTS_MAX];
     plink_kprefs_t prefs;        /* settings (LINK-050, LINK-051) */
     plink_kfw_t upd;             /* updates through the link (LINK-029..037) */
+    plink_auto_warn_t auto_warn; /* LINK-056: the master's newest arming warnings ... */
+    uint64_t auto_heard_ms;      /* ... when they came (0: none) */
+    uint32_t auto_sid, auto_seq; /* ... and the frame they came in: an older one never replaces it */
     plink_out_t out;             /* frame scratch: pairing's answers and sealed frames */
     uint8_t pt[PLINK_FRAME_MAX]; /* an opened frame's payload */
     union {
@@ -794,6 +797,18 @@ bool plink_keypad_forget(plink_keypad_t *k, uint64_t now_ms);
  * before manual network selection so a late reply cannot overwrite it. */
 bool plink_keypad_wifi_request(plink_keypad_t *k, uint64_t now);
 void plink_keypad_wifi_cancel(plink_keypad_t *k);
+
+/* LINK-055: this keypad's wired terminals to its master (IO_STATE), in a live session holding
+ * PLINK_CAP_IO. false: no such session now (the platform sends again at its next change or
+ * period). */
+bool plink_keypad_io_state(plink_keypad_t *k, uint64_t now, const plink_io_state_t *st);
+/* A live session holding PLINK_CAP_IO is up (the platform sends its whole state when it comes). */
+bool plink_keypad_io_ready(const plink_keypad_t *k);
+
+/* LINK-056: the master's arming warnings as its newest AUTO_WARN said, with each record's
+ * arm_in_ms counted down to now. false (*out empty): none heard in this pairing, or the newest is
+ * older than PLINK_AUTO_STALE_MS (the master stopped saying them). */
+bool plink_keypad_auto_warn(const plink_keypad_t *k, uint64_t now_ms, plink_auto_warn_t *out);
 
 #ifdef __cplusplus
 }

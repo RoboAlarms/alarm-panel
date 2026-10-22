@@ -15,6 +15,7 @@ CHIP_ID = {v: k for k, v in CHIP_IDS.items()}
 LAYOUT = {  # role -> offset, as the builds' flasher_args.json have them
     "esp32p4": {"bootloader": 0x2000, "partition-table": 0xC000, "otadata": 0x2D000, "app": 0x30000},
     "esp32": {"bootloader": 0x1000, "partition-table": 0xC000, "otadata": 0x1D000, "app": 0x20000},
+    "esp32s3": {"bootloader": 0x0, "partition-table": 0xC000, "otadata": 0x2D000, "app": 0x30000},
 }
 TEST_KEY = bytes(range(256)) + bytes(range(132))   # 388 bytes: "n" and "e" of a made-up key
 # The partition tables of firmware/crowpanel_p4 and firmware/e32r40t as ESP-IDF lays them out:
@@ -28,9 +29,16 @@ P4_TABLE = [("nvs", 1, 0x02, 0xD000, 0x20000), ("otadata", 1, 0x00, 0x2D000, 0x2
 E32_TABLE = [("nvs", 1, 0x02, 0xD000, 0x10000), ("otadata", 1, 0x00, 0x1D000, 0x2000),
              ("phy_init", 1, 0x01, 0x1F000, 0x1000), ("ota_0", 0, 0x10, 0x20000, 0x1E0000),
              ("ota_1", 0, 0x11, 0x200000, 0x1E0000), ("eventlog", 1, 0x06, 0x3E0000, 0x20000)]
+# firmware/esp32s3_devkitc/partitions.csv (the ESP32-S3 board, FLS-035): the P4's slots, no cp_fw.
+S3_TABLE = [("nvs", 1, 0x02, 0xD000, 0x20000), ("otadata", 1, 0x00, 0x2D000, 0x2000),
+            ("phy_init", 1, 0x01, 0x2F000, 0x1000), ("ota_0", 0, 0x10, 0x30000, 0x480000),
+            ("ota_1", 0, 0x11, 0x4B0000, 0x480000), ("nvs_keys", 1, 0x04, 0x930000, 0x1000),
+            ("assets", 1, 0x83, 0x931000, 0x280000), ("fw_cache", 1, 0x06, 0xBB1000, 0x200000),
+            ("eventlog", 1, 0x06, 0xDB1000, 0x60000), ("coredump", 1, 0x03, 0xE11000, 0x10000)]
 # A synthetic image's table by default: the real one without `assets`, so that only the tests that
 # ask for one (table=P4_TABLE, or their own) install packs.
-DEFAULT_TABLES = {"esp32p4": [t for t in P4_TABLE if t[0] != "assets"], "esp32": E32_TABLE}
+DEFAULT_TABLES = {"esp32p4": [t for t in P4_TABLE if t[0] != "assets"], "esp32": E32_TABLE,
+                  "esp32s3": [t for t in S3_TABLE if t[0] != "assets"]}
 
 
 def synthetic_app(chip="esp32p4", min_rev=1, max_rev=199, project="alarm_crowpanel_p4-dev",
@@ -100,6 +108,12 @@ def standard_images(version="0.6.0", app_size=192 * 1024):
                             app_size=app_size)]
 
 
+def s3_image(version="0.6.0", app_size=192 * 1024, profile="dev"):
+    """The ESP32-S3 board's image (FLS-035): one build for every S3 silicon (v0.x), no variants."""
+    return synthetic_image(board="esp32s3_devkitc", board_name="ESP32-S3 board", chip="esp32s3", min_rev=0,
+                           max_rev=99, profile=profile, version=version, app_size=app_size)
+
+
 RADIO_PROJECT = "roboalarms_h2_rcp"
 RADIO_VERSION = "1.0.0"
 
@@ -153,10 +167,12 @@ def bundle_bytes(images, signing="test", radios=()):
         return path.read_bytes()
 
 
-def standard_bundle(version="0.6.0", app_size=192 * 1024, radio=True):
-    """The panels' images, and (radio=True) the Zigbee module's software, so --mock has one."""
+def standard_bundle(version="0.6.0", app_size=192 * 1024, radio=True, s3=False):
+    """The panels' images, and (radio=True) the Zigbee module's software, so --mock has one;
+    s3=True adds the ESP32-S3 board's image (FLS-035)."""
     radios = [synthetic_radio()] if radio else []
-    return bundle_mod.load(bundle_bytes(standard_images(version, app_size), radios=radios),
+    images = standard_images(version, app_size) + ([s3_image(version, app_size)] if s3 else [])
+    return bundle_mod.load(bundle_bytes(images, radios=radios),
                            name=f"test-{version}.roboflash")
 
 
@@ -334,7 +350,8 @@ def mock_server(delay=1.5, app_size=192 * 1024):
     dev (development builds) and 0.6.1 on beta; for the 10.1" only the development build (the
     Flasher offers it, FLS-033). Each with the saver picture, letters and certificates, English's
     voice and Spanish with its voice. Without the checkout's tools (an installed Flasher) the
-    releases carry no packs."""
+    releases carry no packs. The ESP32-S3 board without a screen (FLS-035): 0.6.0 on stable and dev,
+    one build for its silicon, no packs (it has no languages, voices or Zigbee module)."""
     srv = FakeServer(delay=delay)
     boards = {"crowpanel_p4": ('CrowPanel 7"', [(1, 199), (301, 399)]), "crowpanel_10": ('CrowPanel 10.1"', [(1, 199)])}
     for channel, version, profile in (("stable", "0.6.0", "release"), ("beta", "0.6.1", "release"),
@@ -355,4 +372,7 @@ def mock_server(delay=1.5, app_size=192 * 1024):
                                       version=version, app_size=app_size) for lo, hi in revs]
             srv.add(board, channel, version, bundle_bytes(images, radios=[synthetic_radio()]),
                     chip_revs=[f"v{hi // 100}" for _, hi in revs], **packs)
+        if channel != "beta":
+            srv.add("esp32s3_devkitc", channel, version,
+                    bundle_bytes([s3_image(version, app_size, profile=profile)]), chip_revs=["v0"])
     return srv

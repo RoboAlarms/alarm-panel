@@ -869,6 +869,8 @@ static void pump(uint64_t t)
 }
 
 /* A command on the engine as {ALARM_SRC_KEYPAD, device}, logged. */
+static uint16_t put_off_uid;  /* LINK-056: the newest put-off the platform ran */
+static uint8_t put_off_choice;
 static plink_result_t exec(uint8_t device, const plink_cmd_t *c)
 {
     plink_result_t r;
@@ -883,6 +885,17 @@ static plink_result_t exec(uint8_t device, const plink_cmd_t *c)
         r.user = cr.user;
         r.not_ready_zone = cr.not_ready_zone;
         r.may_disarm = cr.may_disarm ? 1u : 0u;
+    } else if (c->op == PLINK_OP_PUT_OFF) {
+        /* LINK-056: the code checked as the platform does it, then the put-off "taken" (0). */
+        alarm_cmd_t check = c->cmd;
+        check.type = ALARM_CMD_CODE_CHECK;
+        alarm_cmd_result_t cr;
+        memset(&cr, 0, sizeof cr);
+        r.result = (uint8_t)alarm_engine_command(&R.sim.eng, &check, &src, R.sim.now, &cr);
+        r.user = cr.user;
+        r.may_disarm = cr.may_disarm ? 1u : 0u;
+        put_off_uid = c->cmd.zone;
+        put_off_choice = c->cmd.walk_op;
     } else if (c->op == PLINK_OP_AUTH) {
         uint8_t user = 0u;
         r.result = (uint8_t)alarm_engine_authenticate(&R.sim.eng, &src, c->cmd.code,
@@ -3882,6 +3895,125 @@ static void wifi_received(void *ctx, const plink_wifi_t *wifi)
 }
 /* LINK-053: no credentials until pairing and a negotiated authenticated session;
  * loss retries, duplicates once, and cancellation before manual entry rejects late replies. */
+/* LINK-055: a keypad's wired terminals reach the master only in a session holding PLINK_CAP_IO;
+ * a replay changes nothing, and a master without the bit never hears them. */
+static unsigned io_calls;
+static plink_io_state_t io_last;
+static uint8_t io_device;
+static void io_seen(void *ctx, uint8_t device, const plink_io_state_t *st)
+{
+    (void)ctx;
+    ++io_calls;
+    io_device = device;
+    io_last = *st;
+}
+/* LINK-056: the master's arming warnings reach a keypad holding PLINK_CAP_AUTO, counted down
+ * there and forgotten once the master stops saying them; the keypad's put-off is the code
+ * checked on the master and the put-off by its user; a session without the bit gets neither. */
+static void test_arming_warnings_and_put_off_on_a_keypad(void)
+{
+    R.m_caps = PLINK_CAP_AUTO;
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
+    remake_blob();
+    plink_master_time(&R.m, mnow(), epoch_now(), "UTC0");
+    pump(mnow());
+    kp_t *a = kp_add();
+    a->caps = PLINK_CAP_AUTO;
+    kp_boot(a);
+    pair_kp(a);
+    plink_auto_warn_t w;
+    TEST_ASSERT_FALSE(plink_keypad_auto_warn(&a->k, know(a), &w)); /* nothing said yet */
+    plink_auto_warn_t table = {.count = 1,
+                               .rec = {{.uid = 5, .partition = 1, .level = 3, .state = 1,
+                                        .warn_min = 5, .arm_in_ms = 240000u}}};
+    plink_master_auto_warn(&R.m, mnow(), &table);
+    run_ms(200);
+    TEST_ASSERT_TRUE(plink_keypad_auto_warn(&a->k, know(a), &w));
+    TEST_ASSERT_EQUAL_UINT8(1, w.count);
+    TEST_ASSERT_EQUAL_UINT16(5, w.rec[0].uid);
+    TEST_ASSERT_TRUE(w.rec[0].arm_in_ms <= 240000u && w.rec[0].arm_in_ms > 239000u);
+    /* The same table again within 30 s goes nowhere; a change goes at once. */
+    R.net.log_count = 0u;
+    plink_master_auto_warn(&R.m, mnow(), &table);
+    run_ms(100);
+    TEST_ASSERT_EQUAL_UINT(0u, m_sent_to(a->node, PLINK_T_AUTO_WARN));
+    table.rec[0].state = 2; /* put off an hour */
+    plink_master_auto_warn(&R.m, mnow(), &table);
+    run_ms(100);
+    TEST_ASSERT_EQUAL_UINT(1u, m_sent_to(a->node, PLINK_T_AUTO_WARN));
+    /* The put-off: the code checked on the master as the keypad's, then the put-off by its user. */
+    plink_cmd_t c;
+    memset(&c, 0, sizeof c);
+    c.op = PLINK_OP_PUT_OFF;
+    c.cmd.type = ALARM_CMD_CODE_CHECK;
+    c.cmd.partition = 1;
+    c.cmd.zone = 5;
+    c.cmd.walk_op = 1;
+    snprintf(c.cmd.code, sizeof c.cmd.code, "%s", CODE_USER);
+    const uint32_t req = plink_keypad_command(&a->k, know(a), &c);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0u, req);
+    plink_result_t res;
+    TEST_ASSERT_EQUAL(PLINK_CMD_DONE, kwait(a, req, 3000u, &res));
+    TEST_ASSERT_EQUAL_UINT16(5, put_off_uid);
+    TEST_ASSERT_EQUAL_UINT8(1, put_off_choice);
+    /* Silence from the master: forgotten after 75 s. */
+    run_ms(PLINK_AUTO_STALE_MS + 1000u);
+    TEST_ASSERT_FALSE(plink_keypad_auto_warn(&a->k, know(a), &w));
+    /* A master without the bit: no table, and a put-off is unavailable. */
+    R.m_caps = 0;
+    master_restart();
+    TEST_ASSERT_TRUE(run_until(15000u, c_all_synced, NULL));
+    plink_master_auto_warn(&R.m, mnow(), &table);
+    run_ms(200);
+    TEST_ASSERT_FALSE(plink_keypad_auto_warn(&a->k, know(a), &w));
+    const uint32_t req2 = plink_keypad_command(&a->k, know(a), &c);
+    TEST_ASSERT_NOT_EQUAL_UINT32(0u, req2);
+    TEST_ASSERT_EQUAL(PLINK_CMD_DONE, kwait(a, req2, 3000u, &res));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_ERR_UNAVAILABLE, res.result);
+}
+
+static void test_keypad_inputs_reach_the_master_only_with_the_io_capability(void)
+{
+    io_calls = 0;
+    R.m_caps = PLINK_CAP_IO;
+    R.port.io_state = io_seen;
+    plink_master_init(&R.m, &R.cm, &R.port, NULL, "Harbor House", "a1b2c3", R.m_caps, mnow());
+    remake_blob();
+    plink_master_time(&R.m, mnow(), epoch_now(), "UTC0");
+    pump(mnow());
+    kp_t *a = kp_add();
+    a->caps = PLINK_CAP_IO;
+    kp_boot(a);
+    plink_io_state_t st = {.count = 2,
+                           .rec = {{.gpio = 4, .flags = PLINK_IO_KNOWN, .changes = 0},
+                                   {.gpio = 5, .flags = PLINK_IO_KNOWN | PLINK_IO_ACTIVE, .changes = 3}}};
+    TEST_ASSERT_FALSE(plink_keypad_io_ready(&a->k));
+    TEST_ASSERT_FALSE(plink_keypad_io_state(&a->k, know(a), &st)); /* not paired yet */
+    pair_kp(a);
+    TEST_ASSERT_TRUE(plink_keypad_io_ready(&a->k));
+    TEST_ASSERT_TRUE(plink_keypad_io_state(&a->k, know(a), &st));
+    run_ms(200);
+    TEST_ASSERT_EQUAL_UINT(1, io_calls);
+    TEST_ASSERT_EQUAL_UINT8(a->k.rec.device, io_device);
+    TEST_ASSERT_EQUAL_UINT8(2, io_last.count);
+    TEST_ASSERT_EQUAL_UINT8(5, io_last.rec[1].gpio);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_IO_KNOWN | PLINK_IO_ACTIVE, io_last.rec[1].flags);
+    TEST_ASSERT_EQUAL_UINT16(3, io_last.rec[1].changes);
+    uint8_t replay[PLINK_FRAME_MAX];
+    size_t replay_len = 0;
+    TEST_ASSERT_TRUE(plink_net_last(&R.net, a->node, PLINK_T_IO_STATE, replay, sizeof replay, &replay_len));
+    plink_master_input(&R.m, mnow(), &R.net.node[a->node].addr, replay, replay_len);
+    TEST_ASSERT_EQUAL_UINT(1, io_calls); /* LINK-003: a replay moves nothing */
+    /* A master that doesn't take keypad inputs: the session has no PLINK_CAP_IO. */
+    R.m_caps = 0;
+    master_restart();
+    TEST_ASSERT_TRUE(run_until(15000u, c_all_synced, NULL));
+    TEST_ASSERT_FALSE(plink_keypad_io_ready(&a->k));
+    TEST_ASSERT_FALSE(plink_keypad_io_state(&a->k, know(a), &st));
+    TEST_ASSERT_EQUAL_UINT(1, io_calls);
+    R.port.io_state = NULL;
+}
+
 static void test_wifi_enrollment_authenticated_requested_and_cancellable(void)
 {
     wifi_reads = wifi_receives = 0;
@@ -7250,6 +7382,8 @@ int main(void)
     RUN_TEST(test_a_new_keypad_gets_the_newest_50_events);
     RUN_TEST(test_a_change_shows_on_every_keypad_within_a_second);
     RUN_TEST(test_master_restart_keypads_back_within_15_s);
+    RUN_TEST(test_keypad_inputs_reach_the_master_only_with_the_io_capability);
+    RUN_TEST(test_arming_warnings_and_put_off_on_a_keypad);
     RUN_TEST(test_wifi_enrollment_authenticated_requested_and_cancellable);
     RUN_TEST(test_wifi_enrollment_restart_rejects_old_reply);
     RUN_TEST(test_wifi_enrollment_older_master_restarts_and_upgrade);

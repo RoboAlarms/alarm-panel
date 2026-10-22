@@ -185,6 +185,8 @@ def problems(choice, board):
             out.append("This board has no J7 place for a CC1101.")
         elif c["rf"] == "module" and c["rf_place"] == "j7" and c["rf_pin"] not in rf.get("pins", []):
             out.append("The receiver's DATA must be on one of the J7 pins the panel offers.")
+    if c["zigbee"] and board and board.get("zigbee") is None:
+        out.append("This board has no socket for the Zigbee module.")
     if c["rf"] == "auto" and c["zigbee"]:
         out.append("“Not sure” can't be used with the Zigbee module fitted: the search would probe "
                    "its pins. Choose the receiver.")
@@ -217,11 +219,23 @@ def recommended(choice, board):
     wiring); the radio socket for one radio while it is free, the CC1101 first (on J7 it takes five
     wired-zone terminals, the Z-Wave radio none), else J7; the clock on the I2C connector when the
     Z-Wave radio takes its J7 pins. The page's recommend() (web/app.js) is the same; every mix of
-    parts passes problems() (tests/test_flasher_parts.py)."""
+    parts passes problems() (tests/test_flasher_parts.py).
+
+    A board wired from tables ("wiring": "table", the ESP32-S3 board; FLS-035) has one place for
+    each part: the receiver on its own pins (the default place), the clock on its own (j13, the
+    default), the Z-Wave radio on its one place."""
     c = normalise(choice)
     rf = (board or {}).get("rf") or {}
     pins = rf.get("pins") or []
     zw_places = ((board or {}).get("zwave") or {}).get("places") or {}
+    if (board or {}).get("wiring") == "table":
+        if c["rf"] in ("module", "cc1101"):
+            c["rf_place"], c["rf_pin"] = "socket", None
+        if c["zwave"] and zw_places and c["zwave_place"] not in zw_places:
+            c["zwave_place"] = next(iter(zw_places))
+        if c["clock"]:
+            c["clock_place"] = "j13"
+        return c
     socket_free = not c["zigbee"]
     if c["rf"] == "module":
         if pins:
@@ -509,6 +523,8 @@ def differences(want, got, board):
                  "module": "a receiver module", "cc1101": "a CC1101"}.get(got.get("rf"), "unknown")
         if got.get("rf") == "module":
             words += f" with DATA on GPIO {got['rf_pin'] if got.get('rf_pin') else rf.get('default_gpio')}"
+        elif got.get("rf") == "cc1101" and (board or {}).get("wiring") == "table":
+            words += " on " + ((rf.get("cc1101") or {}).get("where") or "its own pins")
         elif got.get("rf") == "cc1101":
             words += " on J7" if got.get("rf_place") == "j7" else " on the radio socket"
         out.append(f"The panel reports its 433 MHz receiver as {words}.")

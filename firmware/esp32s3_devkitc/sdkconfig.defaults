@@ -1,0 +1,128 @@
+# ESP32-S3-DevKitC-1 N16R8 (ESP32-S3, 16 MB quad flash, 8 MB octal PSRAM) as a headless panel,
+# docs/features/42. No screen: it is set up and run from the Panel Manager (a phone joins its setup
+# Wi-Fi first, docs/features/31 headless-setup.md) and from keypads of the panel link.
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# Flash and PSRAM: the N16R8 module (quad flash, octal PSRAM at 80 MHz).
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# Firmware updates (docs/features/13), as on every board: signed images without eFuse Secure Boot
+# (RSA-3072, the key in secrets/, made by tools/idf.ps1), verified by esp_ota_end(); rollback when
+# a new image fails its self-test. Every image for these panels is signed with the same key.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=y
+CONFIG_SECURE_SIGNED_APPS_RSA_SCHEME=y
+CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_SECURE_BOOT_SIGNING_KEY="../../secrets/ota_signing_key.pem"
+# The update server names this board by its product (OTA-018).
+CONFIG_PANEL_OTA_DEVICE="esp32s3_devkitc"
+# No Wi-Fi co-processor on this board.
+# CONFIG_PANEL_OTA_CP_AUTO is not set
+
+# Partition table (partitions.csv), at 0xC000 as on the P4.
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0xC000
+
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
+CONFIG_COMPILER_OPTIMIZATION_CHECKS_SILENT=y
+CONFIG_MQTT_TRANSPORT_WEBSOCKET=n
+
+# FreeRTOS
+CONFIG_FREERTOS_HZ=1000
+
+# SNTP re-sync every 6 h (docs/features/09 NET-004)
+CONFIG_LWIP_SNTP_UPDATE_DELAY=21600000
+
+# The console is the USB port (USB-Serial/JTAG, GPIO19/20): the port people plug in. The
+# DevKitC-1's other port (USB-to-UART on UART0) carries the boot messages only.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# General malloc prefers PSRAM above this size; task stacks that write flash and DMA stay internal.
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=4096
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+# Internal RAM is the reserve (docs/bugs/B001): Wi-Fi and lwIP buffers may live in PSRAM.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# The S3 runs Wi-Fi itself (the P4 hands it to the C6), in 512 KB: an alarm panel needs little
+# throughput, so the radio keeps fewer internal receive buffers and its code in flash (its static
+# TX buffers already come from PSRAM with the option above).
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=8
+CONFIG_ESP_WIFI_RX_BA_WIN=6
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+
+# The Home Assistant link's own certificate is made on the panel (ha_link, docs/features/23).
+CONFIG_MBEDTLS_X509_CREATE_C=y
+CONFIG_MBEDTLS_X509_CRT_WRITE_C=y
+CONFIG_MBEDTLS_SSL_KEEP_PEER_CERTIFICATE=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN=y
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
+# MbedTLS and mDNS from PSRAM, as on the P4.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM=y
+CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
+
+# Alarm firmware
+CONFIG_ALARM_DEMO_ZONES=y
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_LOG_TIMESTAMP_SOURCE_SYSTEM=y
+
+CONFIG_LWIP_MAX_SOCKETS=24
+# The panel link's one UDP socket (docs/features/11 "Transports"): room for a burst from 8 keypads.
+CONFIG_LWIP_UDP_RECVMBOX_SIZE=32
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
+CONFIG_HTTPD_WS_SUPPORT=y
+CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT=y
+CONFIG_CJSON_NESTING_LIMIT=12
+
+# LVGL is linked (the board contract names its types) but never started: no display.
+CONFIG_LV_USE_CLIB_MALLOC=y
+CONFIG_LV_USE_CLIB_STRING=y
+CONFIG_LV_USE_CLIB_SPRINTF=y
+CONFIG_LV_OS_FREERTOS=y
+# CONFIG_LV_BUILD_EXAMPLES is not set
+# CONFIG_LV_BUILD_DEMOS is not set
+
+# ---- Board manifest (docs/features/33): what this board carries, every option stated. -----------
+# tools/check_boards.py checks the list is complete and consistent. Headless: no UI and no PC
+# preview profile; the Panel Manager is how people set it up and run it.
+CONFIG_ALARM_UI_LAYOUT=""
+CONFIG_ALARM_MAX_ZONES=128
+CONFIG_ALARM_MAX_USERS=64
+# CONFIG_ALARM_FEATURE_UI is not set
+CONFIG_ALARM_FEATURE_MQTT=y
+CONFIG_ALARM_FEATURE_NOTIFY=y
+CONFIG_ALARM_FEATURE_HA=y
+CONFIG_ALARM_PANEL_WEB=y
+CONFIG_ALARM_DEV_REMOTE=y
+CONFIG_ALARM_FEATURE_STORAGE=y
+# CONFIG_ALARM_FEATURE_LANG_PACKS is not set
+# CONFIG_ALARM_FEATURE_VOICE is not set
+CONFIG_ALARM_I18N_BUILTIN=y
+# CONFIG_ALARM_FEATURE_PHOTO_SAVER is not set
+# A DS3231 clock module on IO8/IO9 (docs/features/35).
+CONFIG_ALARM_FEATURE_RTC=y
+CONFIG_ALARM_HOME_CONTROL=y
+CONFIG_ALARM_FEATURE_AUTOMATIONS=y
+# The panel link (docs/features/11): a master with keypad panels (the 7" and 10.1"), over the LAN.
+CONFIG_ALARM_LINK=y
+CONFIG_ALARM_ZSRC_RF=y
+# No sensor-radio socket for an ESP32-H2.
+# CONFIG_ALARM_ZSRC_ZIGBEE is not set
+CONFIG_ALARM_ZSRC_ZWAVE=y
+# The S3 has UART0-2: the Z-Wave radio takes UART1 (header J3, IO1/IO2).
+CONFIG_ALARM_ZWAVE_UART_NUM=1
+# CONFIG_ALARM_ZWAVE_S0 is not set
+# CONFIG_ALARM_ZWAVE_LR is not set
+# CONFIG_PANEL_STORAGE_SDMMC is not set
+CONFIG_PANEL_STORAGE_SDSPI=y

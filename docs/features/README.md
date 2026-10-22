@@ -53,6 +53,7 @@ What is left to do, across every feature and in order, is the [backlog](../BACKL
 | 38 | [Wording and design](38-Wording-and-Design/README.md) | - | **Future, not well defined yet** (2026-09-29): two rounds of research, the draft rules and the Overview mockup written up; the Panel Manager's Overview built to them (BL-113); the rest BL-114 |
 | 40 | [Walk test](40-Walk-Test/README.md) | M24 | **Built** (2026-10-01): the list of tested zones at the panel (Settings > Walk test, Home) and on a phone in the Panel Manager, with beeps and spoken names on the phone; next: live updates (BL-129), signal per radio sensor, the panel's spoken names with voice, two phones on a panel (BL-128) |
 | 41 | [Automations](41-Automations/README.md) | M25 | **Building** (2026-10-06): one trigger and one or two actions, run by the panel; they may arm, disarm, unlock and open behind a plain confirm and an installer option; phases A (device automations, BL-168), B (the Z-Wave device source, BL-169) and C (arming and disarming, BL-170) built and host-tested; the Z-Wave outputs' Smart Home tiles to draw, the bench next |
+| 42 | [Headless panel (ESP32-S3)](42-Headless-Panel-ESP32-S3/README.md) | M7 | **In progress** (BL-222): the board, its firmware and phone setup built; on a development board as the master of the 7" and 10.1"; a keypad's own terminals as the master's zones host-tested |
 
 ## Roadmap
 

@@ -225,6 +225,10 @@ uint8_t plink_service_keypad_home(void);
  * polls the power monitor. Never waits. */
 void plink_service_keypad_power(bool mains_lost, bool battery_low, bool battery_present);
 
+/* A keypad's wired terminals (docs/features/11 LINK-055): read here and offered to the master as
+ * its zones' inputs. From the start-up of a keypad, before plink_service_start(); n at most 16. */
+void plink_service_set_terminals(const uint8_t *gpios, size_t n);
+
 /* The update gate (panel_ota_set_idle_gate): idle only while the link is up and the master's
  * newest status, under 15 s old, allows an update (proto_fw_install_allowed); the same for a
  * keypad that hears its master but can't read its configuration (it needs this update); a keypad

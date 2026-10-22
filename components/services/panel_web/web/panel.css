@@ -932,3 +932,27 @@ button.choice.fill small { color: inherit; opacity: 0.85; }
 .enroll-code strong { display:block; font-size:2.25rem; letter-spacing:.12em; margin:.65rem 0; }
 .enroll-foot { flex-wrap:wrap; gap:.5rem; }
 .enroll-foot #enroll-cancel { margin-right:auto; }
+
+/* Setting up a panel without a screen (panel.js, approved proposal BL-048): one card, no menu. */
+.hs { max-width: 720px; margin: 0 auto; }
+.hs .card { padding: 24px; }
+.hs h1 { margin-top: 0; }
+.hs p, .hs li { line-height: 1.55; }
+.hs ol { padding-left: 22px; }
+.hs label { display: block; margin: 16px 0 6px; }
+.hs label.check { display: flex; gap: 8px; align-items: center; }
+.hs input:not([type=checkbox]), .hs select { width: 100%; }
+.hs small { display: block; margin-top: 8px; color: var(--muted); }
+.hs details { margin: 16px 0; }
+.hs-actions { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 24px; }
+.hs-progress { font-size: .85rem; color: var(--muted); margin-bottom: 12px; }
+.hs-mono, .hs-key { font-family: ui-monospace, Consolas, monospace; word-break: break-all; }
+.hs-key { font-size: 1.25rem; letter-spacing: .04em; padding: 14px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); }
+.hs a.button { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 8px 16px; border-radius: 10px; font-weight: 600; text-decoration: none; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); }
+.hs a.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.hs-tick { display: flex !important; align-items: center; gap: 14px; margin: 18px 0 4px !important; padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: 10px; cursor: pointer; font-weight: 600; }
+.hs-tick input { width: 26px; height: 26px; flex: none; margin: 0; accent-color: var(--accent); }
+.hs button:disabled { opacity: .45; }
+/* A phone: no double-tap zoom on the setup's controls, and no zoom into a field it focuses (16 px). */
+.hs button, .hs a.button, .hs label, .hs input, .hs select { touch-action: manipulation; }
+.hs input:not([type=checkbox]), .hs select { font-size: 16px; }

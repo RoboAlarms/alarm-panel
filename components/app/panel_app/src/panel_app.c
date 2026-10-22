@@ -1789,7 +1789,7 @@ static void voice_prefs_apply(const panel_prefs_t *prefs)
     panel_voice_set_prefs(&vp);
 }
 
-#if CONFIG_ALARM_LINK && CONFIG_ALARM_FEATURE_UI
+#if CONFIG_ALARM_LINK
 /* ---- the keypad role (docs/features/11 "Roles on a P4 panel") ------------------------------ */
 
 /* A keypad's health: no engine keeps the battery's filter here, so this task does, and hands the
@@ -1837,9 +1837,11 @@ static bool kp_voice_locked(void *ctx)
 #endif
 
 /* A keypad for a master elsewhere: the board, the sounder, the languages and packs, its voice, the
- * screen with the link's backend, Wi-Fi, updates (gated by the link) and the console - and nothing
- * that runs the alarm: no engine, event log, zone sources, MQTT, notifications, Home Assistant,
- * devices, automations or Panel Manager (LINK-020). */
+ * screen with the link's backend (when it has one), its wired terminals for the master's zones
+ * (LINK-055), Wi-Fi, updates (gated by the link) and the console - and nothing that runs the
+ * alarm: no engine, event log, zone sources of its own, MQTT, notifications, Home Assistant,
+ * devices, automations or Panel Manager (LINK-020). A board without a screen (docs/features/42) is
+ * such a keypad too: what it adds to the master is its terminals. */
 static void run_keypad(const panel_app_config_t *cfg)
 {
     s_keypad = true;
@@ -1884,17 +1886,30 @@ static void run_keypad(const panel_app_config_t *cfg)
     }
 #endif
 
+    /* Its wired terminals (the board as wired: a receiver's or a clock's pins are none), read by
+     * the link's service and offered to the master as its zones' inputs (LINK-055). */
+    {
+        const board_info_t *wiring = wired_board();
+        uint8_t gpios[16];
+        size_t n = 0;
+        for (size_t i = 0; i < wiring->terminal_count && n < sizeof(gpios); i++) {
+            gpios[n++] = (uint8_t)wiring->terminals[i].gpio;
+        }
+        plink_service_set_terminals(gpios, n);
+    }
     /* The link before the screen, so the UI's first look at link_info finds a keypad (its setup's
      * pairing step, Home's Connecting), and before the network: a paired keypad runs no time
      * server of its own. */
     if (plink_service_start(board_name()) != ESP_OK) {
         ESP_LOGE(TAG, "panel link failed to start: this keypad shows nothing of its alarm panel");
     }
+#if CONFIG_ALARM_FEATURE_UI
     const display_state_t disp = start_display(true);
     if (!disp.display || !disp.touch) {
         ESP_LOGE(TAG, "start-up incomplete:%s%s - this keypad can't be used",
                  disp.display ? "" : " no picture", disp.touch ? "" : " no touch");
     }
+#endif
     if (alarm_mem_task_create(keypad_health_task, "health", 4096, NULL, 3, NULL) != pdPASS) {
         ESP_LOGE(TAG, "health task failed to start: an update could not confirm itself");
     }
@@ -1939,12 +1954,10 @@ void panel_app_run(const panel_app_config_t *cfg)
 #if CONFIG_ALARM_LINK
     /* The role, right after NVS: a keypad starts none of the alarm (docs/features/11). */
     if (plink_service_role() == PLINK_SERVICE_KEYPAD) {
-#if CONFIG_ALARM_FEATURE_UI
         if (cfg->keypad_health_mask != 0u) {
             run_keypad(cfg);
             return;
         }
-#endif
         ESP_LOGE(TAG, "stored as a keypad, but this board can't be one: running as the alarm "
                       "panel");
         plink_service_force_master(); /* the link and the UI follow the role this start runs */

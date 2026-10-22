@@ -42,7 +42,7 @@ def _actions(c):
             raise JobFailed("No port given.", "")
         return p
     return {
-        "probe": lambda b: c.probe(port(b)),
+        "probe": lambda b: c.probe(port(b), alone=b.get("alone") is True),
         "identify": lambda b: c.identify(port(b), alone=b.get("alone") is True),
         "select_image": lambda b: c.select_image(port(b), str(b.get("key", ""))),
         "select_board": lambda b: c.select_board(port(b), str(b.get("board", ""))),
@@ -71,6 +71,11 @@ def _actions(c):
         "radio_identify": lambda b: c.radio_identify(port(b), alone=b.get("alone") is True),
         "radio_read": lambda b: {"radio": c.radio_read(port(b), alone=b.get("alone") is True)},
         "zigbee_status": lambda b: {"zigbee": c.zigbee_status(port(b))},
+        # A board without a screen (FLS-035): its setup Wi-Fi's label, read from `web setup`.
+        "setup_label": lambda b: {"setup": c.setup_label(port(b))},
+        # ... and set up over USB instead of from a phone (FLS-036).
+        "setup_provision": lambda b: {"result": c.setup_provision(port(b), str(b.get("step", "")),
+                                                                  [str(a) for a in (b.get("args") or [])])},
         "open_folder": lambda b: c.open_folder(str(b.get("which", ""))),
         # The firmware server (FLS-032 to FLS-034): its channel, check again, download a board's
         # release now, back from a file to the server, and the newer Flasher's download page.

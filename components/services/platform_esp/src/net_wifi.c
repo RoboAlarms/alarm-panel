@@ -52,6 +52,11 @@ static wifi_ps_type_t s_saved_power_save;
 static bool s_have_creds;
 static bool s_connect_failed;   /* esp_wifi_connect() itself failed: the net task retries */
 static int64_t s_down_since_us; /* 0 = not down */
+/* The newest connection attempt began then (0: none running). One that neither connects nor fails
+ * in CONNECT_STALL_US is started again: seen with the setup Wi-Fi beside the station (2026-10-21),
+ * an attempt that never ended left the panel "connecting" for good. */
+static int64_t s_connect_since_us;
+#define CONNECT_STALL_US 15000000
 static bool s_net_trouble;
 static bool s_clock_trouble;
 static atomic_uint s_time_syncs;
@@ -92,6 +97,13 @@ static void trial_tick(void);
 #define NOTIFY_ADDR      0x40u
 #define NOTIFY_LATENCY   0x80u
 #define NOTIFY_RADIO     0x100u
+#define NOTIFY_AP        0x200u
+
+/* The setup Wi-Fi (net_wifi_setup_ap): wanted under s_lock, applied by the net task alone. */
+static char s_ap_ssid[33], s_ap_pass[65];
+static esp_netif_t *s_ap_netif;
+static bool s_ap_on;          /* net task: the access point runs */
+static atomic_uint s_ap_devices;
 
 void net_wifi_radio_window(void)
 {
@@ -395,6 +407,14 @@ static void on_wifi_event(void *arg, esp_event_base_t base, int32_t id, void *da
         xTaskNotify(s_task, NOTIFY_RECONNECT, eSetBits);
     } else if (id == WIFI_EVENT_STA_CONNECTED) {
         ESP_LOGI(TAG, "associated");
+    } else if (id == WIFI_EVENT_AP_STACONNECTED) {
+        atomic_fetch_add(&s_ap_devices, 1u);
+        ESP_LOGI(TAG, "a device joined the setup Wi-Fi");
+    } else if (id == WIFI_EVENT_AP_STADISCONNECTED) {
+        unsigned n = atomic_load(&s_ap_devices);
+        while (n > 0u && !atomic_compare_exchange_weak(&s_ap_devices, &n, n - 1u)) {
+        }
+        ESP_LOGI(TAG, "a device left the setup Wi-Fi");
     } else if (id == WIFI_EVENT_SCAN_DONE) {
         xTaskNotify(s_task, NOTIFY_SCAN_DONE, eSetBits);
     }
@@ -515,6 +535,94 @@ static bool wifi_bringup(void)
     return true;
 }
 
+/* ---- the setup Wi-Fi (net task) ----------------------------------------------------------- */
+
+static void apply_ap(void)
+{
+    char ssid[33], pass[65];
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    memcpy(ssid, s_ap_ssid, sizeof(ssid));
+    memcpy(pass, s_ap_pass, sizeof(pass));
+    xSemaphoreGive(s_lock);
+    if (ssid[0] == '\0') {
+        if (s_ap_on && esp_wifi_set_mode(WIFI_MODE_STA) == ESP_OK) {
+            s_ap_on = false;
+            atomic_store(&s_ap_devices, 0u);
+            ESP_LOGI(TAG, "setup Wi-Fi closed");
+        }
+        mbedtls_platform_zeroize(pass, sizeof(pass));
+        return;
+    }
+    if (s_ap_netif == NULL) {
+        s_ap_netif = esp_netif_create_default_wifi_ap();
+        if (s_ap_netif != NULL) {
+            /* The phone's name server is the panel (its setup answers every name, as a router's
+             * setup does): DHCP offers it. */
+            esp_netif_dns_info_t dns = {0};
+            dns.ip.type = ESP_IPADDR_TYPE_V4;
+            dns.ip.u_addr.ip4.addr = esp_ip4addr_aton(NET_WIFI_SETUP_AP_IP);
+            uint8_t offer = 1; /* OFFER_DNS */
+            (void)esp_netif_dhcps_stop(s_ap_netif);
+            (void)esp_netif_set_dns_info(s_ap_netif, ESP_NETIF_DNS_MAIN, &dns);
+            (void)esp_netif_dhcps_option(s_ap_netif, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER,
+                                         &offer, sizeof(offer));
+            (void)esp_netif_dhcps_start(s_ap_netif);
+        }
+    }
+    wifi_config_t ap = {0};
+    memcpy(ap.ap.ssid, ssid, strlen(ssid));
+    ap.ap.ssid_len = (uint8_t)strlen(ssid);
+    memcpy(ap.ap.password, pass, strlen(pass));
+    ap.ap.max_connection = 2;
+    ap.ap.authmode = WIFI_AUTH_WPA2_PSK;
+    ap.ap.pmf_cfg.capable = true;
+    esp_err_t e = s_ap_netif ? esp_wifi_set_mode(WIFI_MODE_APSTA) : ESP_ERR_NO_MEM;
+    if (e == ESP_OK) {
+        e = esp_wifi_set_config(WIFI_IF_AP, &ap);
+    }
+    mbedtls_platform_zeroize(&ap, sizeof(ap));
+    mbedtls_platform_zeroize(pass, sizeof(pass));
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "setup Wi-Fi: %s", esp_err_to_name(e));
+        return;
+    }
+    if (!s_ap_on) {
+        ESP_LOGI(TAG, "setup Wi-Fi \"%s\" open at " NET_WIFI_SETUP_AP_IP, ssid);
+    }
+    s_ap_on = true;
+}
+
+esp_err_t net_wifi_setup_ap(const char *ssid, const char *password)
+{
+    const bool on = ssid != NULL && ssid[0] != '\0';
+    if (!s_lock) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (on && (strlen(ssid) > 32 || password == NULL || strlen(password) < 8 ||
+               strlen(password) > 63)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const bool same = on ? strcmp(s_ap_ssid, ssid) == 0 && strcmp(s_ap_pass, password) == 0
+                         : s_ap_ssid[0] == '\0';
+    strlcpy(s_ap_ssid, on ? ssid : "", sizeof(s_ap_ssid));
+    strlcpy(s_ap_pass, on ? password : "", sizeof(s_ap_pass));
+    xSemaphoreGive(s_lock);
+    if (!same && s_task != NULL) {
+        xTaskNotify(s_task, NOTIFY_AP, eSetBits);
+    }
+    return ESP_OK;
+}
+
+bool net_wifi_setup_ap_on(uint8_t *devices)
+{
+    if (devices != NULL) {
+        const unsigned n = atomic_load(&s_ap_devices);
+        *devices = (uint8_t)(n > 255u ? 255u : n);
+    }
+    return s_ap_on;
+}
+
 /* ---- scanning (net task) ------------------------------------------------------------ */
 
 static void connect_now(void);
@@ -631,6 +739,7 @@ static void connect_now(void)
         s_down_since_us = esp_timer_get_time(); /* down until the first IP */
     }
     set_state(NET_WIFI_CONNECTING);
+    s_connect_since_us = esp_timer_get_time();
     const esp_err_t err = esp_wifi_connect();
     if (err != ESP_OK) {
         /* No DISCONNECTED event follows a call that failed (the co-processor was busy, or
@@ -659,6 +768,7 @@ static void net_task(void *arg)
     alarm_service_system_trouble(ALARM_TRBL_COPROCESSOR, false);
     read_coprocessor_version();
     s_wifi_ready = true;
+    apply_ap(); /* asked for before the radio was up */
     connect_now();
 
     TickType_t retry_at = 0;
@@ -677,6 +787,9 @@ static void net_task(void *arg)
             s_retry_ms = (s_retry_ms * 2u > RETRY_MAX_MS) ? RETRY_MAX_MS : s_retry_ms * 2u;
         }
         low_latency_tick();
+        if (bits & NOTIFY_AP) {
+            apply_ap();
+        }
         if (bits & NOTIFY_CONFIG) {
             esp_wifi_disconnect();
             apply_credentials();
@@ -742,6 +855,15 @@ static void net_task(void *arg)
         }
         net_wifi_status_t st;
         net_wifi_get_status(&st);
+        if (st.state != NET_WIFI_CONNECTING) {
+            s_connect_since_us = 0;
+        } else if (s_connect_since_us != 0 && !s_scanning &&
+                   now_us - s_connect_since_us > CONNECT_STALL_US) {
+            ESP_LOGW(TAG, "the connection attempt to \"%s\" stalled: trying again", st.ssid);
+            s_connect_since_us = 0;
+            (void)esp_wifi_disconnect();
+            retry_at = xTaskGetTickCount() + pdMS_TO_TICKS(1000); /* whether or not an event comes */
+        }
         if (st.state == NET_WIFI_CONNECTED) {
             wifi_ap_record_t ap;
             if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
@@ -1105,6 +1227,16 @@ bool net_wifi_trial_confirm(const char *token)
         ok = trial_clear() == ESP_OK;
     xSemaphoreGive(s_config_lock);
     return ok;
+}
+esp_err_t net_wifi_trial_cancel(const char *token)
+{
+    if (!s_config_lock || !token || strlen(token) != 32)
+        return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(s_config_lock, portMAX_DELAY);
+    esp_err_t e = s_trial_active && strcmp(token, s_trial.token) == 0 ? trial_restore()
+                                                                      : ESP_ERR_INVALID_STATE;
+    xSemaphoreGive(s_config_lock);
+    return e;
 }
 bool net_wifi_trial_pending(void)
 {

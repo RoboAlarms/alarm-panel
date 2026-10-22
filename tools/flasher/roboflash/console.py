@@ -97,6 +97,15 @@ class ConsoleSession:
     def _note(self, text):
         self._on_lines([self._add(text, "tool")])
 
+    def scrub(self, secrets):
+        """Hide every line holding one of secrets (a password typed, a recovery key shown) from the
+        history the console shows and saves (FLS-036)."""
+        secrets = [s for s in secrets if s]
+        with self._lock:
+            for line in self.history:
+                if any(s in line.text for s in secrets):
+                    line.text = "(hidden: setup over USB)"
+
     def send(self, text, quiet=False, quiet_match=None, quiet_for=1.5):
         """Type a command. quiet: hide the echo and the reply lines quiet_match(line) accepts."""
         if not self.is_open:

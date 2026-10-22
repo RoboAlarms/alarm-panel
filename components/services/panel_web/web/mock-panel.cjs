@@ -25,6 +25,11 @@
 //   MOCK_AUTO_WARN=on|hour|night|day: automation 5 (Arm Night) warns now, or was put off by Pat (an hour, not tonight,
 //   not today): the Overview's card or note (docs/features/41 D19, D20, D27). POST mock/automation-warning {state} sets it.
 //   MOCK_GRANT=1: the autologin session is a workstation's grant, not a password sign-in (WEB-024).
+//   MOCK_SETUP=unclaimed|key|network|check|confirm|recovery: a panel without a screen being set up from a phone
+//   (docs/features/31 headless-setup.md, web_setup.c): the setup pages instead of the sign-in. Whoever is on the setup
+//   Wi-Fi claims it (no setup code); check is the phone on the setup Wi-Fi while the home Wi-Fi is tried (it joins after 3 s),
+//   confirm the same seen from the home network, recovery a set-up panel whose BOOT button opened recovery
+//   (the recovery key is KEYAB-CDEFG-HJKMN-PQRST-UVWXY).
 'use strict';
 const http = require('node:http');
 const fs = require('node:fs');
@@ -1892,6 +1897,96 @@ async function apiPost(p, s, body, res) {
   return fail('Not included in this firmware', 404);
 }
 
+// ---- setting up a panel without a screen (web_setup.c's GET and POST /api/v1/setup) ----
+const SETUP_KEY = 'KEYABCDEFGHJKMNPQRSTUVWXY';
+const setupMode = process.env.MOCK_SETUP || '';
+const setupMock = setupMode ? {
+  stage: {unclaimed: 'unclaimed', key: 'key', network: 'network', check: 'network', confirm: 'network', recovery: 'ready'}[setupMode] || 'unclaimed',
+  recovery: setupMode === 'recovery', via: setupMode !== 'confirm', claim: '', fails: 0,
+  trialUntil: ['check', 'confirm'].includes(setupMode) ? Date.now() + 120000 : 0, joinedAt: setupMode === 'confirm' ? 0 : Date.now() + 3000,
+  ssid: ['check', 'confirm'].includes(setupMode) ? 'Harbor House' : '',
+} : null;
+function setupStatus(s) {
+  if (!setupMock) return {setup: false};
+  const m = setupMock, now = Date.now();
+  if (m.trialUntil && now >= m.trialUntil) { m.trialUntil = 0; m.ssid = ''; }
+  const out = {setup: m.stage !== 'ready' || m.recovery, stage: m.stage, key_pending: m.stage === 'key', recovery: m.recovery,
+    via_setup_wifi: m.via, panel_id: '02a0c4e1f9ab', setup_wifi: 'RoboAlarms-F9AB', setup_address: '192.168.4.1',
+    fingerprint: '4f1c9e0b7a2d3c5e6f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6', name: 'Harbor House'};
+  if (m.via || s) {
+    const joined = m.ssid && now >= m.joinedAt;
+    out.wifi = {state: !m.ssid ? 'none' : m.ssid === 'Wrong Password' ? 'password' : joined ? 'connected' : 'connecting', ssid: m.ssid, ip: joined ? '192.0.2.40' : ''};
+    out.trial_s = m.trialUntil ? Math.ceil((m.trialUntil - now) / 1000) : 0;
+  }
+  return out;
+}
+function setupAction(body, s) {
+  const m = setupMock, op = body.op, admin = s && ['installer', 'master'].includes(s.authority);
+  if (!m) return [404, {error: 'not_found'}];
+  if (op === 'claim') {
+    if (m.stage !== 'unclaimed') return [409, {error: 'setup_stage'}];
+    if (!m.via) return [403, {error: 'setup_from_setup_wifi'}]; // never from the home network
+    if (m.claim) return [409, {error: 'setup_busy'}];
+    m.claim = crypto.randomBytes(8).toString('hex');
+    return [200, {ok: true, claim: m.claim}];
+  }
+  if (op === 'accounts') {
+    if (m.stage !== 'unclaimed') return [409, {error: 'setup_stage'}];
+    if (!m.claim || body.claim !== m.claim) return [403, {error: 'not_allowed'}];
+    // The installer's access is required, the household's optional (added later under People).
+    const owner = String(body.owner || '').trim(), installer = String(body.installer || '').trim();
+    const household = !!(owner || body.owner_password);
+    if (!installer || (household && (!owner || owner.toLowerCase() === installer.toLowerCase()))) return [400, {error: 'bad_name'}];
+    if (household && body.owner_password === body.installer_password) return [400, {error: 'same_password'}];
+    if (String(body.installer_password || '').length < 12 || (household && String(body.owner_password || '').length < 12)) return [400, {error: 'weak_password'}];
+    for (const [k, v] of Object.entries(LOGINS)) if (v[1] === 1 || (household && v[1] === 2)) delete LOGINS[k];
+    LOGINS[installer.toLowerCase()] = [body.installer_password, 1];
+    webLogins.add(1);
+    if (household) { LOGINS[owner.toLowerCase()] = [body.owner_password, 2]; webLogins.add(2); } else webLogins.delete(2);
+    m.stage = 'key'; m.claim = '';
+    return [200, {ok: true}];
+  }
+  if (op === 'key') return !admin ? [403, {error: 'not_allowed'}] : m.stage !== 'key' && !m.keyPending ? [409, {error: 'setup_stage'}]
+    : [200, {ok: true, key: SETUP_KEY.match(/.{5}/g).join('-')}];
+  if (op === 'key-saved') {
+    if (!admin) return [403, {error: 'not_allowed'}];
+    if (m.stage !== 'key' && !m.keyPending) return [409, {error: 'setup_stage'}];
+    if (m.stage === 'key') m.stage = 'network';
+    m.keyPending = false;
+    return [200, {ok: true}];
+  }
+  if (op === 'network') {
+    if (!admin) return [403, {error: 'not_allowed'}];
+    if (m.stage !== 'network') return [409, {error: 'setup_stage'}];
+    if (m.trialUntil > Date.now()) return [409, {error: 'setup_busy'}];
+    m.ssid = String(body.ssid || ''); m.trialUntil = Date.now() + 120000; m.joinedAt = Date.now() + 3000;
+    return [200, {ok: true}];
+  }
+  if (op === 'cancel') {
+    if (!admin) return [403, {error: 'not_allowed'}];
+    if (!m.trialUntil) return [409, {error: 'setup_stale'}];
+    m.trialUntil = 0; m.ssid = '';
+    return [200, {ok: true}];
+  }
+  if (op === 'confirm') {
+    // From the setup Wi-Fi too: the board's own check (it joined) stands for the confirmation.
+    if (!admin) return [403, {error: 'not_allowed'}];
+    if (m.stage !== 'network' || !m.trialUntil || Date.now() < m.joinedAt) return [409, {error: 'setup_stale'}];
+    m.stage = 'ready'; m.trialUntil = 0;
+    return [200, {ok: true, ssid: m.ssid, ip: '192.0.2.40'}];
+  }
+  if (op === 'reset') {
+    if (!m.recovery) return [403, {error: 'setup_recovery'}];
+    const who = LOGINS[String(body.username || '').trim().toLowerCase()];
+    if (String(body.key || '').toUpperCase().replace(/[\s-]/g, '') !== SETUP_KEY || !who) return [403, {error: 'wrong_key'}];
+    if (String(body.password || '').length < 12) return [400, {error: 'weak_password'}];
+    who[0] = body.password;
+    m.keyPending = true;
+    return [200, {ok: true}];
+  }
+  return [404, {error: 'not_found'}];
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   if (req.method === 'GET' && FILES[url.pathname]) {
@@ -1916,6 +2011,12 @@ const server = http.createServer(async (req, res) => {
     if (req.socket) return req.socket.destroy();
     throw new TypeError('Failed to fetch');
   }
+  if (p === 'setup') { // before the sign-in check: setup answers anyone (web_setup.c decides)
+    if (req.method === 'GET') return send(res, 200, setupStatus(session(req)));
+    const [code, answer] = setupAction(await readBody(req), session(req));
+    return send(res, code, answer);
+  }
+  if (setupMock?.stage === 'unclaimed') return send(res, 403, {error: 'setup_first'});
   if (p === 'login' && req.method === 'POST') {
     const body = await readBody(req);
     await delay(300);

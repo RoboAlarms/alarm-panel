@@ -4822,3 +4822,105 @@ test('BL-048: keypad management is installer-only and locked while armed', async
     assert.equal((await a.post('keypads', {op: 'start', attempt: '0123456789abcdef0123456789abcdef'})).status, 409);
   });
 });
+
+// docs/features/31 headless-setup.md (web_setup.c): a panel without a screen is set up from a phone.
+// A cookie-keeping client, as a browser on the setup Wi-Fi: claim, accounts, sign-in, recovery key, network.
+function setupClient(base) {
+  let cookie = '', csrf = '';
+  const call = async (p, body) => {
+    const r = await fetch(base + '/api/v1/' + p, {method: body ? 'POST' : 'GET', headers: {'Content-Type': 'application/json',
+      'X-Panel-CSRF': csrf, ...(cookie ? {Cookie: cookie} : {})}, body: body ? JSON.stringify(body) : undefined});
+    const set = r.headers.get('set-cookie');
+    if (set) cookie = set.split(';')[0];
+    const json = await r.json();
+    if (p === 'login' && r.ok) csrf = json.csrf;
+    return {status: r.status, ...json};
+  };
+  return call;
+}
+test("headless setup: claimed from the setup Wi-Fi, the installer's access, recovery key, then the home Wi-Fi", async () => {
+  const {child, base} = await start('', {MOCK_SETUP: 'unclaimed', MOCK_FAST: '1'});
+  try {
+    const call = setupClient(base);
+    const first = await call('setup');
+    assert.equal(first.setup, true); assert.equal(first.stage, 'unclaimed'); assert.equal(first.setup_address, '192.168.4.1');
+    assert.equal((await call('status')).error, 'setup_first'); // nothing else answers an unclaimed panel
+    const {claim} = await call('setup', {op: 'claim'}); // no setup code: being on the setup Wi-Fi is enough
+    assert.match(claim, /^[0-9a-f]{16}$/);
+    assert.equal((await call('setup', {op: 'claim'})).error, 'setup_busy'); // a second phone can't take it over
+    assert.equal((await call('setup', {op: 'accounts', claim, owner: 'Alex', installer: 'Installer',
+      owner_password: 'same password here', installer_password: 'same password here'})).error, 'same_password');
+    assert.equal((await call('setup', {op: 'accounts', claim, owner: '', installer: 'Installer',
+      owner_password: '', installer_password: 'short'})).error, 'weak_password'); // the installer's is required
+    // The household's access may wait: the installer's alone is enough to go on.
+    assert.equal((await call('setup', {op: 'accounts', claim, owner: '', installer: 'Installer',
+      owner_password: '', installer_password: 'installer password 2'})).ok, true);
+    assert.equal((await call('login', {username: 'Alex', password: 'correct horse battery'})).status, 401);
+    assert.equal((await call('setup', {op: 'key'})).status, 403); // the key only to whoever signed in
+    assert.equal((await call('login', {username: 'Installer', password: 'installer password 2'})).status, 200);
+    assert.equal((await call('setup')).stage, 'key');
+    assert.match((await call('setup', {op: 'key'})).key, /^([A-Z2-9]{5}-){4}[A-Z2-9]{5}$/);
+    assert.equal((await call('setup', {op: 'key-saved'})).ok, true);
+    assert.equal((await call('setup')).stage, 'network');
+    assert.equal((await call('setup', {op: 'network', ssid: 'Harbor House', password: 'harbor house wifi'})).ok, true);
+    const trying = await call('setup');
+    assert.ok(trying.trial_s > 100); assert.equal(trying.wifi.ssid, 'Harbor House');
+    assert.equal((await call('setup', {op: 'cancel'})).ok, true); // another network after all
+    assert.equal((await call('setup')).trial_s, 0);
+    assert.equal((await call('setup', {op: 'network', ssid: 'Harbor House', password: 'harbor house wifi'})).ok, true);
+    // Setup ends on the setup Wi-Fi once the board has joined: before that it is too soon.
+    assert.equal((await call('setup', {op: 'confirm'})).error, 'setup_stale');
+    await new Promise(r => setTimeout(r, 3200));
+    const done = await call('setup', {op: 'confirm'});
+    assert.equal(done.ok, true); assert.equal(done.ssid, 'Harbor House'); assert.equal(done.ip, '192.0.2.40');
+    assert.equal((await call('setup')).stage, 'ready');
+  } finally {
+    child.kill();
+  }
+});
+test('headless setup: confirmed from the home network, setup is finished and the setup Wi-Fi closes', async () => {
+  const {child, base} = await start('', {MOCK_SETUP: 'confirm', MOCK_FAST: '1'});
+  try {
+    const call = setupClient(base);
+    const before = await call('setup');
+    assert.equal(before.via_setup_wifi, false); assert.equal(before.wifi, undefined); // nothing of the network to strangers
+    assert.equal((await call('setup', {op: 'claim'})).error, 'setup_stage');
+    assert.equal((await call('setup', {op: 'confirm'})).status, 403);
+    assert.equal((await call('login', {username: 'Installer', password: 'installer password'})).status, 200);
+    assert.equal((await call('setup')).wifi.state, 'connected');
+    assert.equal((await call('setup', {op: 'confirm'})).ok, true);
+    const done = await call('setup');
+    assert.equal(done.stage, 'ready'); assert.equal(done.setup, false);
+  } finally {
+    child.kill();
+  }
+});
+test('headless setup: recovery replaces a lost browser password with the recovery key', async () => {
+  const {child, base} = await start('', {MOCK_SETUP: 'recovery', MOCK_FAST: '1'});
+  try {
+    const call = setupClient(base);
+    assert.equal((await call('setup')).recovery, true);
+    assert.equal((await call('setup', {op: 'reset', key: 'KEYAB-CDEFG-HJKMN-PQRST-AAAAA', username: 'Alex', password: 'a new password!'})).error, 'wrong_key');
+    assert.equal((await call('setup', {op: 'reset', key: 'keyab cdefg hjkmn pqrst uvwxy', username: 'Alex', password: 'a new password!'})).ok, true);
+    assert.equal((await call('login', {username: 'Alex', password: 'a new password!'})).status, 200);
+  } finally {
+    child.kill();
+  }
+});
+test('headless setup: every setup page renders with its words', async () => {
+  const {child, base} = await start('', {MOCK_SETUP: 'unclaimed', MOCK_FAST: '1'});
+  try {
+    const page = browser(base);
+    vm.runInContext('setupInfo = null', page);
+    await vm.runInContext('setupGo()', page);
+    for (const view of ['start', 'accounts', 'network', 'failed', 'ready', 'signin', 'password', 'locked']) {
+      await vm.runInContext(`setupPage('${view}')`, page);
+      const html = page.document.querySelector('#main').innerHTML;
+      assert.ok(html.includes('<h1>'), view);
+      assert.doesNotMatch(html, /undefined|NaN|\[object Object\]/, view);
+    }
+    assert.match(page.document.querySelector('#main').innerHTML, /Recovery is waiting/);
+  } finally {
+    child.kill();
+  }
+});

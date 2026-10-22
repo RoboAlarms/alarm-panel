@@ -6,7 +6,9 @@
  * the real engine for installer mode, codes and the configuration (as {ALARM_SRC_KEYPAD, n}), and
  * a pretend sensor source in place of zone_hub - eight simulator inputs, "Input 1" to "Input 8",
  * of which link_mrb_heard marks one as the sensor just opened while the keypad listens, and a
- * binding kept for each of zones 1..LINK_RB_ZONES. Each call runs at once, inside port.rb_run; the
+ * binding kept for each of zones 1..LINK_RB_ZONES; a pretend Z-Wave radio that listens when asked
+ * to add and takes node 5, "Door sensor", once link_mrb_zw_join says one is in pairing mode.
+ * Each call runs at once, inside port.rb_run; the
  * grants are kept, ticked and sent to the keypads (RB_GRANT) by link_mrb_tick.
  *
  * The virtual keypad attaches its buffers and offers PLINK_CAP_RB; link_smoke drives a
@@ -202,6 +204,126 @@ static bool be_info(void *ctx, uint16_t zone, zone_hub_info_t *out)
     return true;
 }
 
+/* ---- the pretend Z-Wave radio ---- */
+
+static void zw_dev(ui_zw_device_t *d)
+{
+    memset(d, 0, sizeof(*d));
+    d->node = 5;
+    d->generation = 1;
+    snprintf(d->model, sizeof(d->model), "Door sensor");
+    d->listening = false;
+    d->battery_pct = 100;
+    d->zone_count = 0;
+}
+
+static bool be_zw_status(void *ctx, ui_zw_status_t *out)
+{
+    rb_ctx_t *c = ctx;
+    memset(out, 0, sizeof(*out));
+    out->radio = 1;
+    out->devices = c->v->rb.zw_joined ? 1u : 0u;
+    out->home_id = 0xC0FFEE01u;
+    return true;
+}
+
+static size_t be_zw_devices(void *ctx, ui_zw_device_t *out, size_t max)
+{
+    rb_ctx_t *c = ctx;
+    if (!c->v->rb.zw_joined || max == 0u) {
+        return 0;
+    }
+    zw_dev(&out[0]);
+    return 1;
+}
+
+static bool be_zw_device(void *ctx, uint16_t node, uint16_t gen, ui_zw_device_page_t *out)
+{
+    rb_ctx_t *c = ctx;
+    (void)gen;
+    if (!c->v->rb.zw_joined || node != 5u) {
+        return false;
+    }
+    memset(out, 0, sizeof(*out));
+    zw_dev(&out->dev);
+    return true;
+}
+
+static ui_zw_req_result_t be_zw_request(void *ctx, const ui_zw_request_t *req)
+{
+    rb_ctx_t *c = ctx;
+    link_mrb_t *r = &c->v->rb;
+    if (!c->v->eng.program) {
+        return UI_ZW_REQ_NOT_ALLOWED; /* as the panel's: installer mode, every partition idle */
+    }
+    switch (req->kind) {
+    case UI_ZW_REQ_ADD:
+        if (r->zw_step != UI_ZW_STEP_IDLE && r->zw_step != UI_ZW_STEP_DONE) {
+            return UI_ZW_REQ_BUSY;
+        }
+        r->zw_op = UI_ZW_OP_ADD;
+        r->zw_step = UI_ZW_STEP_LISTENING;
+        r->zw_result = UI_ZW_RES_NONE;
+        r->zw_listen_until = (uint32_t)(c->v->now + 60000u);
+        link_io_say(&c->v->io, "remote: Z-Wave listening for a device to add");
+        return UI_ZW_REQ_OK;
+    case UI_ZW_REQ_STOP:
+        if (r->zw_step == UI_ZW_STEP_LISTENING) {
+            r->zw_step = UI_ZW_STEP_DONE;
+            r->zw_result = UI_ZW_RES_STOPPED;
+        }
+        return UI_ZW_REQ_OK;
+    case UI_ZW_REQ_DISMISS:
+        r->zw_op = UI_ZW_OP_NONE;
+        r->zw_step = UI_ZW_STEP_IDLE;
+        r->zw_result = UI_ZW_RES_NONE;
+        return UI_ZW_REQ_OK;
+    default: return UI_ZW_REQ_UNSUPPORTED;
+    }
+}
+
+static void be_zw_progress(void *ctx, ui_zw_progress_t *out)
+{
+    rb_ctx_t *c = ctx;
+    const link_mrb_t *r = &c->v->rb;
+    memset(out, 0, sizeof(*out));
+    out->op = r->zw_op;
+    out->step = r->zw_step;
+    out->result = r->zw_result;
+    if (r->zw_step == UI_ZW_STEP_LISTENING && r->zw_listen_until > c->v->now) {
+        out->seconds_left = (uint32_t)((r->zw_listen_until - c->v->now) / 1000u);
+    }
+    if (r->zw_result == UI_ZW_RES_ADDED) {
+        out->node = 5;
+        out->generation = 1;
+        snprintf(out->model, sizeof(out->model), "Door sensor");
+    }
+}
+
+void link_mrb_zw_join(link_master_t *v)
+{
+    v->rb.zw_join = true;
+}
+
+/* the radio's time: a device in pairing mode joins while it listens; the window runs out */
+static void zw_tick(link_master_t *v, uint64_t now)
+{
+    link_mrb_t *r = &v->rb;
+    if (r->zw_step != UI_ZW_STEP_LISTENING) {
+        return;
+    }
+    if (r->zw_join) {
+        r->zw_join = false;
+        r->zw_joined = true;
+        r->zw_step = UI_ZW_STEP_DONE;
+        r->zw_result = UI_ZW_RES_ADDED;
+        link_io_say(&v->io, "remote: Z-Wave node 5, Door sensor, added");
+    } else if (now >= r->zw_listen_until) {
+        r->zw_step = UI_ZW_STEP_DONE;
+        r->zw_result = UI_ZW_RES_NOTHING_JOINED;
+    }
+}
+
 static void backend(rb_ctx_t *c, ui_backend_t *be)
 {
     memset(be, 0, sizeof(*be));
@@ -222,6 +344,11 @@ static void backend(rb_ctx_t *c, ui_backend_t *be)
     be->zone_bind = be_bind;
     be->zone_unbind = be_unbind;
     be->zone_info = be_info;
+    be->zw_status = be_zw_status;
+    be->zw_devices = be_zw_devices;
+    be->zw_device = be_zw_device;
+    be->zw_request = be_zw_request;
+    be->zw_progress = be_zw_progress;
 }
 
 /* ---- the master's side ---- */
@@ -276,6 +403,7 @@ void link_mrb_heard(link_master_t *v, uint16_t input)
 void link_mrb_tick(link_master_t *v, uint64_t now)
 {
     link_mrb_t *r = &v->rb;
+    zw_tick(v, now);
     plink_peer_info_t peers[PLINK_KEYPADS_MAX];
     const size_t n = plink_master_peers(&v->m, now, peers, PLINK_KEYPADS_MAX);
     for (size_t i = 0; i < n && i < PLINK_KEYPADS_MAX; i++) {

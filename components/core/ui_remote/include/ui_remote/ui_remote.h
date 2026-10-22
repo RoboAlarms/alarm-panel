@@ -55,6 +55,36 @@ typedef enum {
     UR_ZONE_BIND = 0x0033,
     UR_ZONE_UNBIND = 0x0034,
     UR_ZONE_INFO = 0x0035,
+    /* Z-Wave (0x0040-0x004F) */
+    UR_ZW_STATUS = 0x0040,
+    UR_ZW_DEVICES = 0x0041,
+    UR_ZW_DEVICE = 0x0042,
+    UR_ZW_REQUEST = 0x0043,
+    UR_ZW_PROGRESS = 0x0044,
+    UR_ZW_PROV = 0x0045,
+    UR_ZW_PROV_REGISTER = 0x0046,
+    UR_ZW_PROV_CHANGE = 0x0047,
+    UR_ZW_RADIO_SD_INSTALL = 0x0048,
+    UR_ZW_RADIO_SD_STATE = 0x0049,
+    /* Zigbee (0x0050-0x005F) */
+    UR_ZB_STATUS = 0x0050,
+    UR_ZB_DEVICES = 0x0051,
+    UR_ZB_DEVICE = 0x0052,
+    UR_ZB_REQUEST = 0x0053,
+    UR_ZB_PROGRESS = 0x0054,
+    UR_ZB_CODES = 0x0055,
+    /* Sirens, outputs and 433 MHz (0x0060-0x006F) */
+    UR_OUT_STATUS = 0x0060,
+    UR_OUT_WIRED = 0x0061,
+    UR_OUT_WIRED_SET = 0x0062,
+    UR_OUT_WIRED_TEST = 0x0063,
+    UR_OUT_TERMINALS = 0x0064,
+    UR_OUT_RF = 0x0065,
+    UR_OUT_RF_ADD = 0x0066,
+    UR_OUT_RF_SET = 0x0067,
+    UR_OUT_RF_CLEAR = 0x0068,
+    UR_OUT_RF_PAIR = 0x0069,
+    UR_OUT_RF_TEST = 0x006A,
 } ui_remote_call_t;
 
 /* What a call needs (the alarm panel checks it against its grant for the keypad; docs/features/14
@@ -73,6 +103,9 @@ typedef enum {
 #define UR_AREA_CONFIG  (1u << 1)
 #define UR_AREA_USERS   (1u << 2)
 #define UR_AREA_ZONES   (1u << 3)
+#define UR_AREA_ZWAVE   (1u << 4)
+#define UR_AREA_ZIGBEE  (1u << 5)
+#define UR_AREA_OUTPUTS (1u << 6)
 
 /* The answer's status (RB_ANSWER status, LINK-058). Never renumbered. */
 typedef enum {
@@ -102,7 +135,7 @@ const ui_remote_info_t *ui_remote_info(uint16_t call);
 
 /* Largest arguments and answer this firmware sends (the configuration blob is the largest). */
 #define UR_ARGS_MAX   (ALARM_CONFIG_BLOB_MAX + 16u)
-#define UR_ANSWER_MAX 8192u
+#define UR_ANSWER_MAX 12288u
 
 /* ---- the alarm panel's side ---- */
 
@@ -134,6 +167,20 @@ typedef struct {
         ui_zone_source_t sources[16];
         zsrc_candidate_t candidates[32];
         zone_hub_info_t info;
+        ui_zw_status_t zw_status;
+        ui_zw_device_t zw_devices[UI_ZW_DEVICES_MAX];
+        ui_zw_device_page_t zw_page;
+        ui_zw_progress_t zw_progress;
+        ui_zw_prov_t zw_prov[UI_ZW_PROV_MAX];
+        ui_zb_status_t zb_status;
+        ui_zb_device_t zb_devices[UI_ZB_DEVICES_MAX];
+        ui_zb_device_page_t zb_page;
+        ui_zb_progress_t zb_progress;
+        ui_zb_code_t zb_codes[UI_ZB_CODES_MAX];
+        ui_out_status_t out_status;
+        ui_out_wired_t out_wired[UI_OUT_WIRED_MAX];
+        ui_out_rf_t out_rf[UI_OUT_RF_MAX];
+        uint8_t terminals[64];
     } u;
 } ui_remote_server_t;
 
@@ -170,6 +217,7 @@ typedef struct {
     ui_remote_port_t port;
     void *inner;             /* be->ctx before ui_remote_proxy: the other entries' context */
     ui_remote_status_t last; /* the last call's status (the screen's "Not confirmed") */
+    char out_where[48];      /* out_status's where: valid until the next out_status */
     uint8_t args[UR_ARGS_MAX];
     uint8_t ans[UR_ANSWER_MAX];
 } ui_remote_proxy_t;

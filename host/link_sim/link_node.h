@@ -194,6 +194,11 @@ typedef struct {
     bool learning;
     uint16_t heard_input; /* the input opened while listening (0: none) */
     unsigned runs;        /* calls served */
+    /* a pretend Z-Wave radio: adding listens until link_mrb_zw_join, then node 5 joins */
+    uint8_t zw_op, zw_step, zw_result;
+    uint32_t zw_listen_until; /* the master's ms */
+    bool zw_join;             /* a device is put in pairing mode */
+    bool zw_joined;           /* node 5 is in the network */
 } link_mrb_t;
 
 typedef struct {
@@ -288,6 +293,8 @@ bool link_mrb_run(void *ctx, uint32_t ticket, uint8_t device, uint16_t call, con
                   size_t len);
 void link_mrb_auth(link_master_t *v, uint8_t device, uint8_t user, uint64_t now);
 void link_mrb_heard(link_master_t *v, uint16_t input);
+/* A Z-Wave device is put in pairing mode near the master: it joins if the radio listens. */
+void link_mrb_zw_join(link_master_t *v);
 void link_mrb_tick(link_master_t *v, uint64_t now);
 
 /* ---- the virtual keypad -------------------------------------------------------------------- */

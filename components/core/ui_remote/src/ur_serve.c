@@ -23,6 +23,31 @@
  *   ZONE_BIND            u16 zone, rec binding              -> u8 result
  *   ZONE_UNBIND          u16 zone                           -> u8 result
  *   ZONE_INFO            u16 zone                           -> u8 found, rec info
+ *   ZW_STATUS            -                                  -> u8 present, rec status
+ *   ZW_DEVICES           u16 max                            -> list of devices
+ *   ZW_DEVICE            u16 node, u16 generation           -> u8 found, rec page
+ *   ZW_REQUEST           rec request (its user: the grant's) -> u8 result
+ *   ZW_PROGRESS          -                                  -> rec progress
+ *   ZW_PROV              u16 max                            -> list of entries
+ *   ZW_PROV_REGISTER     str code, str name                 -> u8 result
+ *   ZW_PROV_CHANGE       16 bytes dsk, u8 op, u8 arg        -> u8 result
+ *   ZW_RADIO_SD_INSTALL  -                                  -> u8 result (the grant's user)
+ *   ZW_RADIO_SD_STATE    -                                  -> u8 state
+ *   ZB_STATUS            -                                  -> u8 present, rec status
+ *   ZB_DEVICES           u16 max                            -> list of devices
+ *   ZB_DEVICE            u16 id                             -> u8 found, rec page
+ *   ZB_REQUEST           rec request                        -> u8 result
+ *   ZB_PROGRESS          -                                  -> rec progress
+ *   ZB_CODES             u16 max                            -> list of codes
+ *   OUT_STATUS           -                                  -> u8 present, rec status, str where
+ *   OUT_WIRED            -                                  -> list of UI_OUT_WIRED_MAX channels
+ *   OUT_WIRED_SET        u8 slot, rec channel               -> u8 result
+ *   OUT_WIRED_TEST       u8 slot                            -> u8 result
+ *   OUT_TERMINALS        u8 slot, u16 max                   -> u16 count, count bytes
+ *   OUT_RF               -                                  -> list of UI_OUT_RF_MAX sirens
+ *   OUT_RF_ADD           -                                  -> u8 result, u8 slot
+ *   OUT_RF_SET           u8 slot, rec siren                 -> u8 result
+ *   OUT_RF_CLEAR, OUT_RF_PAIR, OUT_RF_TEST   u8 slot        -> u8 result
  */
 #include <string.h>
 
@@ -49,6 +74,33 @@ static const ui_remote_info_t CALLS[] = {
     {UR_ZONE_BIND, UR_ACCESS_INSTALLER, false, false},
     {UR_ZONE_UNBIND, UR_ACCESS_INSTALLER, false, false},
     {UR_ZONE_INFO, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZW_STATUS, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZW_DEVICES, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZW_DEVICE, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZW_REQUEST, UR_ACCESS_INSTALLER, false, true},
+    {UR_ZW_PROGRESS, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZW_PROV, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZW_PROV_REGISTER, UR_ACCESS_INSTALLER, false, true},
+    {UR_ZW_PROV_CHANGE, UR_ACCESS_INSTALLER, false, false},
+    {UR_ZW_RADIO_SD_INSTALL, UR_ACCESS_INSTALLER, false, false},
+    {UR_ZW_RADIO_SD_STATE, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZB_STATUS, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZB_DEVICES, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZB_DEVICE, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZB_REQUEST, UR_ACCESS_INSTALLER, false, true},
+    {UR_ZB_PROGRESS, UR_ACCESS_INSTALLER, true, false},
+    {UR_ZB_CODES, UR_ACCESS_INSTALLER, true, false},
+    {UR_OUT_STATUS, UR_ACCESS_INSTALLER, true, false},
+    {UR_OUT_WIRED, UR_ACCESS_INSTALLER, true, false},
+    {UR_OUT_WIRED_SET, UR_ACCESS_INSTALLER, false, false},
+    {UR_OUT_WIRED_TEST, UR_ACCESS_INSTALLER, false, false},
+    {UR_OUT_TERMINALS, UR_ACCESS_INSTALLER, true, false},
+    {UR_OUT_RF, UR_ACCESS_INSTALLER, true, false},
+    {UR_OUT_RF_ADD, UR_ACCESS_INSTALLER, false, false},
+    {UR_OUT_RF_SET, UR_ACCESS_INSTALLER, false, false},
+    {UR_OUT_RF_CLEAR, UR_ACCESS_INSTALLER, false, false},
+    {UR_OUT_RF_PAIR, UR_ACCESS_INSTALLER, false, false},
+    {UR_OUT_RF_TEST, UR_ACCESS_INSTALLER, false, false},
 };
 
 const ui_remote_info_t *ui_remote_info(uint16_t call)
@@ -75,6 +127,17 @@ uint32_t ui_remote_areas(const ui_backend_t *be)
     }
     if (be->zone_sources != NULL && be->zone_bind != NULL && be->zone_info != NULL) {
         a |= UR_AREA_ZONES;
+    }
+    if (be->zw_status != NULL && be->zw_devices != NULL && be->zw_device != NULL &&
+        be->zw_request != NULL && be->zw_progress != NULL) {
+        a |= UR_AREA_ZWAVE;
+    }
+    if (be->zb_status != NULL && be->zb_devices != NULL && be->zb_device != NULL &&
+        be->zb_request != NULL && be->zb_progress != NULL) {
+        a |= UR_AREA_ZIGBEE;
+    }
+    if (be->out_status != NULL && be->out_wired != NULL && be->out_rf != NULL) {
+        a |= UR_AREA_OUTPUTS;
     }
     return a;
 }
@@ -351,6 +414,249 @@ static ui_remote_status_t zones(ui_remote_server_t *s, const ui_backend_t *be,
     return UR_OK;
 }
 
+/* The radios (LINK-062): their pairing and learn modes run on this panel's radios; what follows
+ * them is their progress, read by the keypad. Entries an alarm panel lacks answer UNAVAILABLE. */
+#define NEED(fn)                                                                                \
+    do {                                                                                        \
+        if (be->fn == NULL) {                                                                   \
+            return UR_UNAVAILABLE;                                                              \
+        }                                                                                       \
+    } while (0)
+
+static size_t cap_max(plink_r_t *r, size_t room)
+{
+    const size_t max = plink_r_u16(r);
+    return max < room ? max : room;
+}
+
+static ui_remote_status_t zwave(ui_remote_server_t *s, const ui_backend_t *be,
+                                const ui_remote_grant_t *g, uint16_t call, plink_r_t *r,
+                                plink_w_t *w)
+{
+    switch (call) {
+    case UR_ZW_STATUS: {
+        memset(&s->u.zw_status, 0, sizeof(s->u.zw_status));
+        const bool ok = be->zw_status(be->ctx, &s->u.zw_status);
+        plink_w_u8(w, ok ? 1u : 0u);
+        ur_put(w, &ur_t_zw_status, &s->u.zw_status);
+        break;
+    }
+    case UR_ZW_DEVICES: {
+        const size_t max = cap_max(r, UI_ZW_DEVICES_MAX);
+        const size_t n = r->ok ? be->zw_devices(be->ctx, s->u.zw_devices, max) : 0u;
+        ur_put_list(w, &ur_t_zw_device, s->u.zw_devices, n);
+        break;
+    }
+    case UR_ZW_DEVICE: {
+        const uint16_t node = plink_r_u16(r), gen = plink_r_u16(r);
+        if (!r->ok) {
+            return UR_BAD;
+        }
+        memset(&s->u.zw_page, 0, sizeof(s->u.zw_page));
+        const bool found = be->zw_device(be->ctx, node, gen, &s->u.zw_page);
+        plink_w_u8(w, found ? 1u : 0u);
+        ur_put(w, &ur_t_zw_device_page, &s->u.zw_page);
+        break;
+    }
+    case UR_ZW_REQUEST: {
+        ui_zw_request_t q;
+        ur_get(r, &ur_t_zw_request, &q);
+        if (!r->ok) {
+            return UR_BAD;
+        }
+        q.user = g->user; /* who asks is the grant's, never what the keypad says */
+        plink_w_u8(w, (uint8_t)be->zw_request(be->ctx, &q));
+        plink_wipe(&q, sizeof(q));
+        break;
+    }
+    case UR_ZW_PROGRESS:
+        memset(&s->u.zw_progress, 0, sizeof(s->u.zw_progress));
+        be->zw_progress(be->ctx, &s->u.zw_progress);
+        ur_put(w, &ur_t_zw_progress, &s->u.zw_progress);
+        break;
+    case UR_ZW_PROV: {
+        NEED(zw_prov);
+        const size_t max = cap_max(r, UI_ZW_PROV_MAX);
+        const size_t n = r->ok ? be->zw_prov(be->ctx, s->u.zw_prov, max) : 0u;
+        ur_put_list(w, &ur_t_zw_prov, s->u.zw_prov, n);
+        break;
+    }
+    case UR_ZW_PROV_REGISTER: {
+        NEED(zw_prov_register);
+        char code[128], name[64];
+        ur_get_str(r, code, sizeof(code), false);
+        ur_get_str(r, name, sizeof(name), true);
+        ui_remote_status_t st = UR_BAD;
+        if (r->ok) {
+            plink_w_u8(w, (uint8_t)be->zw_prov_register(be->ctx, code, name));
+            st = UR_OK;
+        }
+        plink_wipe(code, sizeof(code));
+        return st;
+    }
+    case UR_ZW_PROV_CHANGE: {
+        NEED(zw_prov_change);
+        uint8_t dsk[16];
+        plink_r_bytes(r, dsk, sizeof(dsk));
+        const uint8_t op = plink_r_u8(r), arg = plink_r_u8(r);
+        if (!r->ok) {
+            return UR_BAD;
+        }
+        plink_w_u8(w, (uint8_t)be->zw_prov_change(be->ctx, dsk, op, arg));
+        break;
+    }
+    case UR_ZW_RADIO_SD_INSTALL:
+        NEED(zw_radio_sd_install);
+        plink_w_u8(w, be->zw_radio_sd_install(be->ctx, g->user));
+        break;
+    case UR_ZW_RADIO_SD_STATE:
+        NEED(zw_radio_sd_state);
+        plink_w_u8(w, be->zw_radio_sd_state(be->ctx));
+        break;
+    default: return UR_UNAVAILABLE;
+    }
+    return UR_OK;
+}
+
+static ui_remote_status_t zigbee(ui_remote_server_t *s, const ui_backend_t *be, uint16_t call,
+                                 plink_r_t *r, plink_w_t *w)
+{
+    switch (call) {
+    case UR_ZB_STATUS: {
+        memset(&s->u.zb_status, 0, sizeof(s->u.zb_status));
+        const bool ok = be->zb_status(be->ctx, &s->u.zb_status);
+        plink_w_u8(w, ok ? 1u : 0u);
+        ur_put(w, &ur_t_zb_status, &s->u.zb_status);
+        break;
+    }
+    case UR_ZB_DEVICES: {
+        const size_t max = cap_max(r, UI_ZB_DEVICES_MAX);
+        const size_t n = r->ok ? be->zb_devices(be->ctx, s->u.zb_devices, max) : 0u;
+        ur_put_list(w, &ur_t_zb_device, s->u.zb_devices, n);
+        break;
+    }
+    case UR_ZB_DEVICE: {
+        const uint16_t id = plink_r_u16(r);
+        if (!r->ok) {
+            return UR_BAD;
+        }
+        memset(&s->u.zb_page, 0, sizeof(s->u.zb_page));
+        const bool found = be->zb_device(be->ctx, id, &s->u.zb_page);
+        plink_w_u8(w, found ? 1u : 0u);
+        ur_put(w, &ur_t_zb_device_page, &s->u.zb_page);
+        break;
+    }
+    case UR_ZB_REQUEST: {
+        ui_zb_request_t q;
+        ur_get(r, &ur_t_zb_request, &q);
+        if (!r->ok) {
+            plink_wipe(&q, sizeof(q));
+            return UR_BAD;
+        }
+        plink_w_u8(w, (uint8_t)be->zb_request(be->ctx, &q));
+        plink_wipe(&q, sizeof(q)); /* its install code, its installer code */
+        break;
+    }
+    case UR_ZB_PROGRESS:
+        memset(&s->u.zb_progress, 0, sizeof(s->u.zb_progress));
+        be->zb_progress(be->ctx, &s->u.zb_progress);
+        ur_put(w, &ur_t_zb_progress, &s->u.zb_progress);
+        break;
+    case UR_ZB_CODES: {
+        NEED(zb_codes);
+        const size_t max = cap_max(r, UI_ZB_CODES_MAX);
+        const size_t n = r->ok ? be->zb_codes(be->ctx, s->u.zb_codes, max) : 0u;
+        ur_put_list(w, &ur_t_zb_code, s->u.zb_codes, n);
+        break;
+    }
+    default: return UR_UNAVAILABLE;
+    }
+    return UR_OK;
+}
+
+static ui_remote_status_t outputs(ui_remote_server_t *s, const ui_backend_t *be, uint16_t call,
+                                  plink_r_t *r, plink_w_t *w)
+{
+    switch (call) {
+    case UR_OUT_STATUS: {
+        memset(&s->u.out_status, 0, sizeof(s->u.out_status));
+        const bool ok = be->out_status(be->ctx, &s->u.out_status);
+        plink_w_u8(w, ok ? 1u : 0u);
+        ur_put(w, &ur_t_out_status, &s->u.out_status);
+        ur_put_str(w, s->u.out_status.where); /* a pointer: its words */
+        break;
+    }
+    case UR_OUT_WIRED:
+        memset(s->u.out_wired, 0, sizeof(s->u.out_wired));
+        be->out_wired(be->ctx, s->u.out_wired);
+        ur_put_list(w, &ur_t_out_wired, s->u.out_wired, UI_OUT_WIRED_MAX);
+        break;
+    case UR_OUT_WIRED_SET: {
+        NEED(out_wired_set);
+        const uint8_t slot = plink_r_u8(r);
+        ui_out_wired_t c;
+        ur_get(r, &ur_t_out_wired, &c);
+        if (!r->ok) {
+            return UR_BAD;
+        }
+        plink_w_u8(w, be->out_wired_set(be->ctx, slot, &c));
+        break;
+    }
+    case UR_OUT_TERMINALS: {
+        NEED(out_terminals);
+        const uint8_t slot = plink_r_u8(r);
+        const size_t max = cap_max(r, sizeof(s->u.terminals));
+        const size_t n = r->ok ? be->out_terminals(be->ctx, slot, s->u.terminals, max) : 0u;
+        plink_w_u16(w, (uint16_t)n);
+        plink_w_bytes(w, s->u.terminals, n);
+        break;
+    }
+    case UR_OUT_RF:
+        memset(s->u.out_rf, 0, sizeof(s->u.out_rf));
+        be->out_rf(be->ctx, s->u.out_rf);
+        ur_put_list(w, &ur_t_out_rf, s->u.out_rf, UI_OUT_RF_MAX);
+        break;
+    case UR_OUT_RF_ADD: {
+        NEED(out_rf_add);
+        uint8_t slot = 0;
+        plink_w_u8(w, be->out_rf_add(be->ctx, &slot));
+        plink_w_u8(w, slot);
+        break;
+    }
+    case UR_OUT_RF_SET: {
+        NEED(out_rf_set);
+        const uint8_t slot = plink_r_u8(r);
+        ui_out_rf_t c;
+        ur_get(r, &ur_t_out_rf, &c);
+        if (!r->ok) {
+            return UR_BAD;
+        }
+        plink_w_u8(w, be->out_rf_set(be->ctx, slot, &c));
+        break;
+    }
+    case UR_OUT_WIRED_TEST:
+    case UR_OUT_RF_CLEAR:
+    case UR_OUT_RF_PAIR:
+    case UR_OUT_RF_TEST: {
+        const uint8_t slot = plink_r_u8(r);
+        if (!r->ok) {
+            return UR_BAD;
+        }
+        uint8_t (*fn)(void *, uint8_t) = call == UR_OUT_WIRED_TEST ? be->out_wired_test
+                                         : call == UR_OUT_RF_CLEAR ? be->out_rf_clear
+                                         : call == UR_OUT_RF_PAIR  ? be->out_rf_pair
+                                                                   : be->out_rf_test;
+        if (fn == NULL) {
+            return UR_UNAVAILABLE;
+        }
+        plink_w_u8(w, fn(be->ctx, slot));
+        break;
+    }
+    default: return UR_UNAVAILABLE;
+    }
+    return UR_OK;
+}
+
 ui_remote_status_t ui_remote_serve(ui_remote_server_t *s, const ui_backend_t *be,
                                    ui_remote_grant_t *g, uint32_t cfg_crc, bool same_fw,
                                    uint16_t call, const uint8_t *args, size_t args_len,
@@ -411,7 +717,14 @@ ui_remote_status_t ui_remote_serve(ui_remote_server_t *s, const ui_backend_t *be
     case UR_WEB_LOGIN_GET:
     case UR_WEB_LOGIN_SET:
     case UR_WEB_LOGIN_CLEAR: st = web_login(be, call, &r, &w); break;
-    default: st = zones(s, be, g, call, &r, &w); break;
+    default:
+        switch (UR_GROUP(call)) {
+        case UR_GROUP(UR_ZW_STATUS): st = zwave(s, be, g, call, &r, &w); break;
+        case UR_GROUP(UR_ZB_STATUS): st = zigbee(s, be, call, &r, &w); break;
+        case UR_GROUP(UR_OUT_STATUS): st = outputs(s, be, call, &r, &w); break;
+        default: st = zones(s, be, g, call, &r, &w); break;
+        }
+        break;
     }
     if (st == UR_OK && !w.ok) {
         st = UR_TOO_BIG;

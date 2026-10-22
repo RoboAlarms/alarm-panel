@@ -210,6 +210,28 @@ void msvc_kick(void);
  * offer, the worker's copy of the warnings (masvc_worker), the link task's feed to the manager
  * (masvc_poll), a keypad's put-off on the worker (masvc_put_off). The keypad's side: the offer,
  * the link task's copy and the chime (kasvc_poll), the screen's read (kasvc_warnings). */
+/* ---- plink_mrb_svc.c: the remote backend on a master (BL-223, LINK-057..LINK-065) ----------- */
+/* Its buffers (PSRAM): PLINK_CAP_RB, or 0 without them. Then the manager's buffers attached, its
+ * port (the link task), each turn's answers and grants (the link task), a code accepted for a
+ * keypad and the calls and grants' upkeep (the worker). */
+uint16_t mrbsvc_prepare(void);
+void mrbsvc_attach(plink_master_t *m);
+bool mrbsvc_run(void *ctx, uint32_t ticket, uint8_t device, uint16_t call, const uint8_t *args,
+                size_t len);
+void mrbsvc_poll(plink_master_t *m, uint64_t now);
+void mrbsvc_auth(uint8_t device, uint8_t user);
+void mrbsvc_worker(void);
+/* ---- plink_krb_svc.c: the remote backend on a keypad ---------------------------------------- */
+/* Its buffers (PSRAM): PLINK_CAP_RB, or 0 without them; the manager's buffers attached; each turn
+ * of the link task; the proxies put into the screen's backend; the generation that moves when a
+ * read's answer changes; the last call's status (ui_remote_status_t). */
+uint16_t krbsvc_prepare(void);
+void krbsvc_attach(plink_keypad_t *k);
+void krbsvc_poll(plink_keypad_t *k, uint64_t now);
+void krbsvc_backend(ui_backend_t *be);
+uint32_t krbsvc_gen(void);
+uint8_t krbsvc_last(void);
+
 uint16_t masvc_caps(void);
 void masvc_worker(void);
 void masvc_poll(plink_master_t *m, uint64_t now);

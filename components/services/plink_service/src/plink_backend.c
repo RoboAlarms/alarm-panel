@@ -576,6 +576,9 @@ static void keypad_backend(ui_backend_t *be)
     be->storage_sd = NULL;
     be->storage_flash = NULL;
     be->storage_action = NULL;
+    /* its master's pages: proxies to the master (BL-223, LINK-058); the screen shows them only
+     * under the master's grant */
+    krbsvc_backend(be);
     call_start();
     be->run_later = s_call_q != NULL ? kp_run_later : NULL;
 }

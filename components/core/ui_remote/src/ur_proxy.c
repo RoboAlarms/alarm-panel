@@ -327,6 +327,343 @@ static bool px_zone_info(void *ctx, uint16_t zone, zone_hub_info_t *out)
     return found;
 }
 
+/* ---- Z-Wave ---- */
+
+/* An answer that is a presence flag and a record (the status calls, a device's page). */
+static bool flag_rec(ui_remote_proxy_t *p, uint16_t call, plink_w_t *w, const ur_table_t *t,
+                     void *out)
+{
+    plink_r_t r;
+    memset(out, 0, t->size);
+    if (send(p, call, w, &r) != UR_OK) {
+        return false;
+    }
+    const bool flag = plink_r_u8(&r) != 0u;
+    ur_get(&r, t, out);
+    if (!r.ok) {
+        memset(out, 0, t->size);
+        p->last = UR_BAD;
+        return false;
+    }
+    return flag;
+}
+
+static size_t list_of(ui_remote_proxy_t *p, uint16_t call, size_t max, const ur_table_t *t,
+                      void *out)
+{
+    plink_w_t w;
+    plink_r_t r;
+    begin(p, &w);
+    plink_w_u16(&w, (uint16_t)(max > 0xFFFFu ? 0xFFFFu : max));
+    if (send(p, call, &w, &r) != UR_OK) {
+        return 0;
+    }
+    return ur_get_list(&r, t, out, max);
+}
+
+/* An answer that is one result byte; dflt when none came. */
+static uint8_t byte_answer(ui_remote_proxy_t *p, uint16_t call, const plink_w_t *w, uint8_t refused,
+                           uint8_t dflt)
+{
+    plink_r_t r;
+    const ui_remote_status_t st = send(p, call, w, &r);
+    if (st != UR_OK) {
+        return st == UR_NOT_AUTHORIZED || st == UR_NEED_INSTALLER ? refused : dflt;
+    }
+    const uint8_t v = plink_r_u8(&r);
+    if (!r.ok) {
+        p->last = UR_BAD;
+        return dflt;
+    }
+    return v;
+}
+
+static bool px_zw_status(void *ctx, ui_zw_status_t *out)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    return flag_rec(p, UR_ZW_STATUS, &w, &ur_t_zw_status, out);
+}
+
+static size_t px_zw_devices(void *ctx, ui_zw_device_t *out, size_t max)
+{
+    return list_of(P(ctx), UR_ZW_DEVICES, max, &ur_t_zw_device, out);
+}
+
+static bool px_zw_device(void *ctx, uint16_t node, uint16_t generation, ui_zw_device_page_t *out)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    plink_w_u16(&w, node);
+    plink_w_u16(&w, generation);
+    return flag_rec(p, UR_ZW_DEVICE, &w, &ur_t_zw_device_page, out);
+}
+
+static ui_zw_req_result_t px_zw_request(void *ctx, const ui_zw_request_t *req)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    ur_put(&w, &ur_t_zw_request, req);
+    return (ui_zw_req_result_t)byte_answer(p, UR_ZW_REQUEST, &w, UI_ZW_REQ_NOT_ALLOWED,
+                                           UI_ZW_REQ_BUSY);
+}
+
+static void px_zw_progress(void *ctx, ui_zw_progress_t *out)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    plink_r_t r;
+    begin(p, &w);
+    memset(out, 0, sizeof(*out));
+    if (send(p, UR_ZW_PROGRESS, &w, &r) == UR_OK) {
+        ur_get(&r, &ur_t_zw_progress, out);
+        if (!r.ok) {
+            memset(out, 0, sizeof(*out));
+        }
+    }
+}
+
+static size_t px_zw_prov(void *ctx, ui_zw_prov_t *out, size_t max)
+{
+    return list_of(P(ctx), UR_ZW_PROV, max, &ur_t_zw_prov, out);
+}
+
+static ui_zw_prov_result_t px_zw_prov_register(void *ctx, const char *code, const char *name)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    ur_put_str(&w, code);
+    ur_put_str(&w, name != NULL ? name : "");
+    return (ui_zw_prov_result_t)byte_answer(p, UR_ZW_PROV_REGISTER, &w, UI_ZW_PROV_NOT_ALLOWED,
+                                            UI_ZW_PROV_NOT_ALLOWED);
+}
+
+static ui_zw_prov_result_t px_zw_prov_change(void *ctx, const uint8_t dsk[16], uint8_t op,
+                                             uint8_t arg)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    plink_w_bytes(&w, dsk, 16u);
+    plink_w_u8(&w, op);
+    plink_w_u8(&w, arg);
+    return (ui_zw_prov_result_t)byte_answer(p, UR_ZW_PROV_CHANGE, &w, UI_ZW_PROV_NOT_ALLOWED,
+                                            UI_ZW_PROV_NOT_ALLOWED);
+}
+
+static uint8_t px_zw_radio_sd_install(void *ctx, uint8_t user)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    (void)user; /* the master's grant says who */
+    plink_w_t w;
+    begin(p, &w);
+    return byte_answer(p, UR_ZW_RADIO_SD_INSTALL, &w, UI_ZW_SD_NOT_ALLOWED, UI_ZW_SD_BUSY);
+}
+
+static uint8_t px_zw_radio_sd_state(void *ctx)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    return byte_answer(p, UR_ZW_RADIO_SD_STATE, &w, UI_ZW_SD_IDLE, UI_ZW_SD_IDLE);
+}
+
+/* ---- Zigbee ---- */
+
+static bool px_zb_status(void *ctx, ui_zb_status_t *out)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    return flag_rec(p, UR_ZB_STATUS, &w, &ur_t_zb_status, out);
+}
+
+static size_t px_zb_devices(void *ctx, ui_zb_device_t *out, size_t max)
+{
+    return list_of(P(ctx), UR_ZB_DEVICES, max, &ur_t_zb_device, out);
+}
+
+static bool px_zb_device(void *ctx, uint16_t id, ui_zb_device_page_t *out)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    plink_w_u16(&w, id);
+    return flag_rec(p, UR_ZB_DEVICE, &w, &ur_t_zb_device_page, out);
+}
+
+static ui_zb_req_result_t px_zb_request(void *ctx, const ui_zb_request_t *req)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    ur_put(&w, &ur_t_zb_request, req);
+    return (ui_zb_req_result_t)byte_answer(p, UR_ZB_REQUEST, &w, UI_ZB_REQ_NOT_ALLOWED,
+                                           UI_ZB_REQ_BUSY);
+}
+
+static void px_zb_progress(void *ctx, ui_zb_progress_t *out)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    plink_r_t r;
+    begin(p, &w);
+    memset(out, 0, sizeof(*out));
+    if (send(p, UR_ZB_PROGRESS, &w, &r) == UR_OK) {
+        ur_get(&r, &ur_t_zb_progress, out);
+        if (!r.ok) {
+            memset(out, 0, sizeof(*out));
+        }
+    }
+}
+
+static size_t px_zb_codes(void *ctx, ui_zb_code_t *out, size_t max)
+{
+    return list_of(P(ctx), UR_ZB_CODES, max, &ur_t_zb_code, out);
+}
+
+/* ---- sirens, outputs and 433 MHz ---- */
+
+static bool px_out_status(void *ctx, ui_out_status_t *out)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    plink_r_t r;
+    begin(p, &w);
+    memset(out, 0, sizeof(*out));
+    p->out_where[0] = '\0';
+    out->where = p->out_where;
+    if (send(p, UR_OUT_STATUS, &w, &r) != UR_OK) {
+        return false;
+    }
+    const bool flag = plink_r_u8(&r) != 0u;
+    ur_get(&r, &ur_t_out_status, out);
+    ur_get_str(&r, p->out_where, sizeof(p->out_where), true);
+    out->where = p->out_where;
+    if (!r.ok) {
+        memset(out, 0, sizeof(*out));
+        out->where = p->out_where;
+        p->last = UR_BAD;
+        return false;
+    }
+    return flag;
+}
+
+static void fixed_list(ui_remote_proxy_t *p, uint16_t call, const ur_table_t *t, void *out,
+                       size_t n)
+{
+    plink_w_t w;
+    plink_r_t r;
+    begin(p, &w);
+    memset(out, 0, t->size * n);
+    if (send(p, call, &w, &r) == UR_OK) {
+        (void)ur_get_list(&r, t, out, n);
+    }
+}
+
+static void px_out_wired(void *ctx, ui_out_wired_t out[UI_OUT_WIRED_MAX])
+{
+    fixed_list(P(ctx), UR_OUT_WIRED, &ur_t_out_wired, out, UI_OUT_WIRED_MAX);
+}
+
+static void px_out_rf(void *ctx, ui_out_rf_t out[UI_OUT_RF_MAX])
+{
+    fixed_list(P(ctx), UR_OUT_RF, &ur_t_out_rf, out, UI_OUT_RF_MAX);
+}
+
+static uint8_t px_out_wired_set(void *ctx, uint8_t slot, const ui_out_wired_t *c)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    plink_w_u8(&w, slot);
+    ur_put(&w, &ur_t_out_wired, c);
+    return byte_answer(p, UR_OUT_WIRED_SET, &w, UI_OUT_NOT_ALLOWED, UI_OUT_BUSY);
+}
+
+static uint8_t px_out_rf_set(void *ctx, uint8_t slot, const ui_out_rf_t *c)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    plink_w_u8(&w, slot);
+    ur_put(&w, &ur_t_out_rf, c);
+    return byte_answer(p, UR_OUT_RF_SET, &w, UI_OUT_NOT_ALLOWED, UI_OUT_BUSY);
+}
+
+static uint8_t out_slot(void *ctx, uint16_t call, uint8_t slot)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    begin(p, &w);
+    plink_w_u8(&w, slot);
+    return byte_answer(p, call, &w, UI_OUT_NOT_ALLOWED, UI_OUT_BUSY);
+}
+
+static uint8_t px_out_wired_test(void *ctx, uint8_t slot)
+{
+    return out_slot(ctx, UR_OUT_WIRED_TEST, slot);
+}
+static uint8_t px_out_rf_clear(void *ctx, uint8_t slot)
+{
+    return out_slot(ctx, UR_OUT_RF_CLEAR, slot);
+}
+static uint8_t px_out_rf_pair(void *ctx, uint8_t slot)
+{
+    return out_slot(ctx, UR_OUT_RF_PAIR, slot);
+}
+static uint8_t px_out_rf_test(void *ctx, uint8_t slot)
+{
+    return out_slot(ctx, UR_OUT_RF_TEST, slot);
+}
+
+static size_t px_out_terminals(void *ctx, uint8_t slot, uint8_t *out, size_t max)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    plink_r_t r;
+    begin(p, &w);
+    plink_w_u8(&w, slot);
+    plink_w_u16(&w, (uint16_t)(max > 0xFFFFu ? 0xFFFFu : max));
+    if (send(p, UR_OUT_TERMINALS, &w, &r) != UR_OK) {
+        return 0;
+    }
+    const size_t n = plink_r_u16(&r);
+    const uint8_t *b = plink_r_take(&r, n);
+    if (b == NULL || n > max) {
+        return 0;
+    }
+    memcpy(out, b, n);
+    return n;
+}
+
+static uint8_t px_out_rf_add(void *ctx, uint8_t *slot)
+{
+    ui_remote_proxy_t *p = P(ctx);
+    plink_w_t w;
+    plink_r_t r;
+    begin(p, &w);
+    if (slot != NULL) {
+        *slot = 0;
+    }
+    const ui_remote_status_t st = send(p, UR_OUT_RF_ADD, &w, &r);
+    if (st != UR_OK) {
+        return st == UR_NOT_AUTHORIZED || st == UR_NEED_INSTALLER ? UI_OUT_NOT_ALLOWED : UI_OUT_BUSY;
+    }
+    const uint8_t res = plink_r_u8(&r), s = plink_r_u8(&r);
+    if (!r.ok) {
+        return UI_OUT_BUSY;
+    }
+    if (slot != NULL) {
+        *slot = s;
+    }
+    return res;
+}
+
 void ui_remote_proxy(ui_backend_t *be, ui_remote_proxy_t *p, uint32_t areas)
 {
     p->inner = be->ctx;
@@ -356,5 +693,38 @@ void ui_remote_proxy(ui_backend_t *be, ui_remote_proxy_t *p, uint32_t areas)
         be->zone_bind = px_zone_bind;
         be->zone_unbind = px_zone_unbind;
         be->zone_info = px_zone_info;
+    }
+    if (areas & UR_AREA_ZWAVE) {
+        be->zw_status = px_zw_status;
+        be->zw_devices = px_zw_devices;
+        be->zw_device = px_zw_device;
+        be->zw_request = px_zw_request;
+        be->zw_progress = px_zw_progress;
+        be->zw_prov = px_zw_prov;
+        be->zw_prov_register = px_zw_prov_register;
+        be->zw_prov_change = px_zw_prov_change;
+        be->zw_radio_sd_install = px_zw_radio_sd_install;
+        be->zw_radio_sd_state = px_zw_radio_sd_state;
+    }
+    if (areas & UR_AREA_ZIGBEE) {
+        be->zb_status = px_zb_status;
+        be->zb_devices = px_zb_devices;
+        be->zb_device = px_zb_device;
+        be->zb_request = px_zb_request;
+        be->zb_progress = px_zb_progress;
+        be->zb_codes = px_zb_codes;
+    }
+    if (areas & UR_AREA_OUTPUTS) {
+        be->out_status = px_out_status;
+        be->out_wired = px_out_wired;
+        be->out_wired_set = px_out_wired_set;
+        be->out_wired_test = px_out_wired_test;
+        be->out_terminals = px_out_terminals;
+        be->out_rf = px_out_rf;
+        be->out_rf_add = px_out_rf_add;
+        be->out_rf_set = px_out_rf_set;
+        be->out_rf_clear = px_out_rf_clear;
+        be->out_rf_pair = px_out_rf_pair;
+        be->out_rf_test = px_out_rf_test;
     }
 }

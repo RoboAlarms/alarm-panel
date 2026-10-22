@@ -736,6 +736,35 @@ int main(int argc, char **argv)
     if (M.rb.learning) {
         return fail("the master still listens after the keypad stopped");
     }
+    /* a Z-Wave device paired on the master's radio from the keypad (LINK-062) */
+    ui_zw_status_t zs;
+    if (!RBE.zw_status(RBE.ctx, &zs) || zs.home_id != 0xC0FFEE01u) {
+        return fail("the master's Z-Wave radio didn't reach the keypad");
+    }
+    ui_zw_request_t zq;
+    memset(&zq, 0, sizeof(zq));
+    zq.kind = UI_ZW_REQ_ADD;
+    if (RBE.zw_request(RBE.ctx, &zq) != UI_ZW_REQ_OK) {
+        return fail("adding a Z-Wave device from the keypad was refused");
+    }
+    ui_zw_progress_t zp;
+    RBE.zw_progress(RBE.ctx, &zp);
+    if (zp.step != UI_ZW_STEP_LISTENING || zp.seconds_left == 0u) {
+        return fail("the master's radio isn't listening (step %u)", (unsigned)zp.step);
+    }
+    link_mrb_zw_join(&M); /* the installer presses the sensor's button */
+    run_for(100u);
+    RBE.zw_progress(RBE.ctx, &zp);
+    if (zp.step != UI_ZW_STEP_DONE || zp.result != UI_ZW_RES_ADDED || zp.node != 5u) {
+        return fail("the device didn't join the master (step %u, result %u)", (unsigned)zp.step,
+                    (unsigned)zp.result);
+    }
+    ui_zw_device_t zd[4];
+    if (RBE.zw_devices(RBE.ctx, zd, 4) != 1u || strcmp(zd[0].model, "Door sensor") != 0) {
+        return fail("the keypad doesn't list the master's new Z-Wave device");
+    }
+    zq.kind = UI_ZW_REQ_DISMISS;
+    (void)RBE.zw_request(RBE.ctx, &zq);
     CFG_SEQ = cfg_seq;
     if (!run_until(keypad_has_new_config, 3000u) ||
         strcmp(plink_keypad_config(&K.k)->zones[4].name, "Back Door") != 0) {

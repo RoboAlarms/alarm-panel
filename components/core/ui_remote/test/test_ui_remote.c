@@ -165,6 +165,137 @@ static bool f_info(void *ctx, uint16_t zone, zone_hub_info_t *out)
     return true;
 }
 
+/* ---- the radios (fakes) ---- */
+static ui_zw_request_t ZW_REQ;
+static int ZW_REQS;
+static ui_zb_request_t ZB_REQ;
+static ui_out_wired_t OUT_SET;
+static uint8_t OUT_SLOT;
+
+static bool f_zw_status(void *ctx, ui_zw_status_t *out)
+{
+    (void)ctx;
+    out->devices = 3;
+    out->home_id = 0xC0FFEE01u;
+    snprintf(out->radio_fw_version, sizeof(out->radio_fw_version), "7.24.2");
+    out->noise_dbm = -97;
+    out->regions[2] = 9;
+    out->region_stop[1] = 1234;
+    return true;
+}
+static size_t f_zw_devices(void *ctx, ui_zw_device_t *out, size_t max)
+{
+    (void)ctx;
+    size_t n = 0;
+    for (; n < 3u && n < max; n++) {
+        memset(&out[n], 0, sizeof(out[n]));
+        out[n].node = (uint16_t)(5u + n);
+        snprintf(out[n].model, sizeof(out[n].model), "Door %u", (unsigned)n);
+    }
+    return n;
+}
+static bool f_zw_device(void *ctx, uint16_t node, uint16_t gen, ui_zw_device_page_t *out)
+{
+    (void)ctx, (void)gen;
+    if (node != 7u) {
+        return false;
+    }
+    out->dev.node = 7;
+    snprintf(out->dev.model, sizeof(out->dev.model), "Back door");
+    out->fw.major = 2;
+    snprintf(out->fw.version, sizeof(out->fw.version), "2.30");
+    out->siren.volume = 80;
+    out->siren.fire = true;
+    out->input_count = 1;
+    out->control.panic_mask = 6;
+    out->check_in_s = 14400;
+    return true;
+}
+static ui_zw_req_result_t f_zw_request(void *ctx, const ui_zw_request_t *req)
+{
+    (void)ctx;
+    ZW_REQ = *req;
+    ZW_REQS++;
+    return UI_ZW_REQ_OK;
+}
+static void f_zw_progress(void *ctx, ui_zw_progress_t *out)
+{
+    (void)ctx;
+    out->op = 1;
+    out->seconds_left = 41;
+    snprintf(out->dsk, sizeof(out->dsk), "12345-67890");
+    out->routes_list_n = 2;
+    out->routes_list[1].node = 9;
+    out->routes_list[1].what = 3;
+}
+static bool f_zb_status(void *ctx, ui_zb_status_t *out)
+{
+    (void)ctx;
+    memset(out, 0, sizeof(*out));
+    return true;
+}
+static size_t f_zb_devices(void *ctx, ui_zb_device_t *out, size_t max)
+{
+    (void)ctx, (void)out, (void)max;
+    return 0;
+}
+static bool f_zb_device(void *ctx, uint16_t id, ui_zb_device_page_t *out)
+{
+    (void)ctx, (void)id, (void)out;
+    return false;
+}
+static ui_zb_req_result_t f_zb_request(void *ctx, const ui_zb_request_t *req)
+{
+    (void)ctx;
+    ZB_REQ = *req;
+    return UI_ZB_REQ_OK;
+}
+static void f_zb_progress(void *ctx, ui_zb_progress_t *out)
+{
+    (void)ctx, (void)out;
+}
+static bool f_out_status(void *ctx, ui_out_status_t *out)
+{
+    (void)ctx;
+    out->wired = true;
+    out->where = "J7 header";
+    out->rf_heard_ms = 77;
+    return true;
+}
+static void f_out_wired(void *ctx, ui_out_wired_t out[UI_OUT_WIRED_MAX])
+{
+    (void)ctx;
+    memset(out, 0, sizeof(ui_out_wired_t) * UI_OUT_WIRED_MAX);
+    out[3].function = UI_OUT_FN_STROBE;
+    out[3].gpio = 46;
+}
+static uint8_t f_out_wired_set(void *ctx, uint8_t slot, const ui_out_wired_t *c)
+{
+    (void)ctx;
+    OUT_SLOT = slot;
+    OUT_SET = *c;
+    return UI_OUT_OK;
+}
+static void f_out_rf(void *ctx, ui_out_rf_t out[UI_OUT_RF_MAX])
+{
+    (void)ctx;
+    memset(out, 0, sizeof(ui_out_rf_t) * UI_OUT_RF_MAX);
+}
+static uint8_t f_out_rf_add(void *ctx, uint8_t *slot)
+{
+    (void)ctx;
+    *slot = 2;
+    return UI_OUT_OK;
+}
+static size_t f_out_terminals(void *ctx, uint8_t slot, uint8_t *out, size_t max)
+{
+    (void)ctx, (void)slot;
+    const uint8_t t[3] = {45, 46, 47};
+    const size_t n = max < 3u ? max : 3u;
+    memcpy(out, t, n);
+    return n;
+}
+
 static ui_backend_t MASTER;
 
 static void master_init(void)
@@ -194,6 +325,24 @@ static void master_init(void)
     MASTER.zone_bind = f_bind;
     MASTER.zone_unbind = f_unbind;
     MASTER.zone_info = f_info;
+    MASTER.zw_status = f_zw_status;
+    MASTER.zw_devices = f_zw_devices;
+    MASTER.zw_device = f_zw_device;
+    MASTER.zw_request = f_zw_request;
+    MASTER.zw_progress = f_zw_progress;
+    MASTER.zb_status = f_zb_status;
+    MASTER.zb_devices = f_zb_devices;
+    MASTER.zb_device = f_zb_device;
+    MASTER.zb_request = f_zb_request;
+    MASTER.zb_progress = f_zb_progress;
+    MASTER.out_status = f_out_status;
+    MASTER.out_wired = f_out_wired;
+    MASTER.out_wired_set = f_out_wired_set;
+    MASTER.out_rf = f_out_rf;
+    MASTER.out_rf_add = f_out_rf_add;
+    MASTER.out_terminals = f_out_terminals;
+    ZW_REQS = 0;
+    memset(&ZB_REQ, 0, sizeof(ZB_REQ));
 }
 
 /* ---- the channel: the keypad's call served at once ---- */
@@ -269,7 +418,7 @@ static void test_calls_and_proxy(void)
     TEST_ASSERT_EQUAL_PTR(&PX, KP.ctx);
     TEST_ASSERT_EQUAL_PTR(&KP_INNER, ui_remote_inner(KP.ctx));
     TEST_ASSERT_NOT_NULL(KP.zone_bind);
-    TEST_ASSERT_NULL(KP.zw_request); /* not in v1's groups: left as it was */
+    TEST_ASSERT_NULL(KP.voice_seen); /* never a call */
 
     /* an unknown call, and a group the alarm panel doesn't serve */
     size_t n = 0;
@@ -443,6 +592,80 @@ static void test_zone_added_from_a_keypad(void)
     TEST_ASSERT_EQUAL_UINT8(0, G.learning);
 }
 
+/* LINK-062: the radios run on the alarm panel, judged there; who asks is the grant's user */
+static void test_radios_from_a_keypad(void)
+{
+    ui_zw_request_t q;
+    memset(&q, 0, sizeof(q));
+    q.kind = 1;
+    q.user = 9; /* what the keypad says: never taken */
+    q.pin = 12345;
+    TEST_ASSERT_EQUAL(UI_ZW_REQ_NOT_ALLOWED, KP.zw_request(KP.ctx, &q));
+    TEST_ASSERT_EQUAL(0, ZW_REQS);
+    uint8_t user = 0;
+    TEST_ASSERT_EQUAL(ALARM_OK, KP.program_enter(KP.ctx, "69420", &user));
+    TEST_ASSERT_EQUAL(UI_ZW_REQ_OK, KP.zw_request(KP.ctx, &q));
+    TEST_ASSERT_EQUAL(1, ZW_REQS);
+    TEST_ASSERT_EQUAL_UINT8(1, ZW_REQ.user);
+    TEST_ASSERT_EQUAL_UINT32(12345u, ZW_REQ.pin);
+    TEST_ASSERT_EACH_EQUAL_UINT8(0, PX.args, ARGS_SEEN_LEN); /* its PIN wiped once sent */
+
+    ui_zw_status_t st;
+    TEST_ASSERT_TRUE(KP.zw_status(KP.ctx, &st));
+    TEST_ASSERT_EQUAL_HEX32(0xC0FFEE01u, st.home_id);
+    TEST_ASSERT_EQUAL_STRING("7.24.2", st.radio_fw_version);
+    TEST_ASSERT_EQUAL_INT8(-97, st.noise_dbm);
+    TEST_ASSERT_EQUAL_UINT8(9, st.regions[2]);
+    TEST_ASSERT_EQUAL_UINT16(1234, st.region_stop[1]);
+    ui_zw_device_t devs[UI_ZW_DEVICES_MAX];
+    TEST_ASSERT_EQUAL(3u, KP.zw_devices(KP.ctx, devs, UI_ZW_DEVICES_MAX));
+    TEST_ASSERT_EQUAL_STRING("Door 2", devs[2].model);
+    static ui_zw_device_page_t page;
+    TEST_ASSERT_TRUE(KP.zw_device(KP.ctx, 7, 1, &page));
+    TEST_ASSERT_EQUAL_STRING("Back door", page.dev.model);
+    TEST_ASSERT_EQUAL_STRING("2.30", page.fw.version);
+    TEST_ASSERT_EQUAL_UINT8(80, page.siren.volume);
+    TEST_ASSERT_TRUE(page.siren.fire);
+    TEST_ASSERT_EQUAL_UINT8(6, page.control.panic_mask);
+    TEST_ASSERT_EQUAL_UINT32(14400u, page.check_in_s);
+    TEST_ASSERT_FALSE(KP.zw_device(KP.ctx, 8, 1, &page));
+    ui_zw_progress_t pr;
+    KP.zw_progress(KP.ctx, &pr);
+    TEST_ASSERT_EQUAL_UINT32(41u, pr.seconds_left);
+    TEST_ASSERT_EQUAL_STRING("12345-67890", pr.dsk);
+    TEST_ASSERT_EQUAL_UINT16(9, pr.routes_list[1].node);
+    TEST_ASSERT_EQUAL_UINT8(3, pr.routes_list[1].what);
+
+    ui_zb_request_t zq;
+    memset(&zq, 0, sizeof(zq));
+    snprintf(zq.code, sizeof(zq.code), "83FE-D340-7A93");
+    TEST_ASSERT_EQUAL(UI_ZB_REQ_OK, KP.zb_request(KP.ctx, &zq));
+    TEST_ASSERT_EQUAL_STRING("83FE-D340-7A93", ZB_REQ.code); /* as typed: never cleaned */
+
+    ui_out_status_t os;
+    TEST_ASSERT_TRUE(KP.out_status(KP.ctx, &os));
+    TEST_ASSERT_EQUAL_STRING("J7 header", os.where);
+    TEST_ASSERT_TRUE(os.where != NULL && os.where == PX.out_where);
+    TEST_ASSERT_EQUAL_UINT64(77u, os.rf_heard_ms);
+    ui_out_wired_t ow[UI_OUT_WIRED_MAX];
+    KP.out_wired(KP.ctx, ow);
+    TEST_ASSERT_EQUAL_UINT8(UI_OUT_FN_STROBE, ow[3].function);
+    TEST_ASSERT_EQUAL_UINT8(46, ow[3].gpio);
+    ow[1].function = UI_OUT_FN_SIREN;
+    ow[1].fire = true;
+    TEST_ASSERT_EQUAL(UI_OUT_OK, KP.out_wired_set(KP.ctx, 1, &ow[1]));
+    TEST_ASSERT_EQUAL_UINT8(1, OUT_SLOT);
+    TEST_ASSERT_TRUE(OUT_SET.fire);
+    uint8_t slot = 0;
+    TEST_ASSERT_EQUAL(UI_OUT_OK, KP.out_rf_add(KP.ctx, &slot));
+    TEST_ASSERT_EQUAL_UINT8(2, slot);
+    uint8_t t[8];
+    TEST_ASSERT_EQUAL(3u, KP.out_terminals(KP.ctx, 1, t, sizeof(t)));
+    TEST_ASSERT_EQUAL_UINT8(47, t[2]);
+    TEST_ASSERT_EQUAL(UI_OUT_BUSY, KP.out_rf_pair(KP.ctx, 1)); /* the alarm panel has none */
+    TEST_ASSERT_EQUAL(UR_UNAVAILABLE, PX.last);
+}
+
 /* LINK-063: nothing came back - never a success */
 static void test_no_answer(void)
 {
@@ -555,7 +778,7 @@ static void fill(const ur_table_t *t, uint8_t *obj)
 
 static size_t not_covered(const ur_table_t *t)
 {
-    static uint8_t a[2048], b2[2048], wire[4096];
+    static uint8_t a[4096], b2[4096], wire[8192];
     TEST_ASSERT_TRUE(t->size <= sizeof(a));
     fill(t, a);
     plink_w_t w;
@@ -581,6 +804,28 @@ static void test_tables_cover_the_structs(void)
     TEST_ASSERT_EQUAL_size_t(UR_PAD_INFO, not_covered(&ur_t_info));
     TEST_ASSERT_EQUAL_size_t(UR_PAD_CANDIDATE, not_covered(&ur_t_candidate));
     TEST_ASSERT_EQUAL_size_t(UR_PAD_SOURCE, not_covered(&ur_t_source));
+    /* the radios' (padding as on the host build, found once and recorded here; out_status's
+     * includes its pointer, where, which crosses by hand) */
+    static const struct {
+        const ur_table_t *t;
+        size_t pad;
+        const char *name;
+    } RADIO[] = {
+        {&ur_t_zw_status, 11u, "zw_status"},     {&ur_t_zw_device, 3u, "zw_device"},
+        {&ur_t_zw_device_page, 89u, "zw_page"},  {&ur_t_zw_request, 3u, "zw_request"},
+        {&ur_t_zw_progress, 11u, "zw_progress"}, {&ur_t_zw_prov, 2u, "zw_prov"},
+        {&ur_t_zb_status, 7u, "zb_status"},     {&ur_t_zb_device, 1u, "zb_device"},
+        {&ur_t_zb_device_page, 100u, "zb_page"},  {&ur_t_zb_request, 6u, "zb_request"},
+        {&ur_t_zb_progress, 7u, "zb_progress"}, {&ur_t_zb_code, 4u, "zb_code"},
+        {&ur_t_out_status, 28u, "out_status"},   {&ur_t_out_wired, 0u, "out_wired"},
+        {&ur_t_out_rf, 5u, "out_rf"},
+    };
+    for (size_t i = 0; i < sizeof(RADIO) / sizeof(RADIO[0]); i++) {
+        char msg[48];
+        const size_t n = not_covered(RADIO[i].t);
+        snprintf(msg, sizeof(msg), "%s: %u", RADIO[i].name, (unsigned)n);
+        TEST_ASSERT_EQUAL_size_t_MESSAGE(RADIO[i].pad, n, msg);
+    }
 }
 
 int main(void)
@@ -592,6 +837,7 @@ int main(void)
     RUN_TEST(test_users_need_a_grant);
     RUN_TEST(test_set_config_keeps_codes);
     RUN_TEST(test_zone_added_from_a_keypad);
+    RUN_TEST(test_radios_from_a_keypad);
     RUN_TEST(test_no_answer);
     RUN_TEST(test_fixture_v1);
     RUN_TEST(test_records_grow);

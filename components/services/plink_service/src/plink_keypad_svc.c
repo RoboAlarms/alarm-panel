@@ -1972,6 +1972,7 @@ void ksvc_poll(uint64_t now)
     if (!K.setup_only) {
         kio_poll(K.k, now);
         kasvc_poll(K.k, now, info.selected != 0u ? info.selected : info.home);
+        krbsvc_poll(K.k, now); /* the screen's calls of its master's pages (BL-223) */
     }
     if (K.wifi_setup == UI_LINK_WIFI_REQUESTING || K.wifi_setup == UI_LINK_WIFI_JOINING) {
         if (link_wifi_up()) {
@@ -2305,6 +2306,7 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
         home_prepare();
 #if CONFIG_ALARM_FEATURE_UI
         offer |= PLINK_CAP_PREFS;
+        offer |= krbsvc_prepare(); /* its master's pages on its screen (BL-223) */
 #endif
         offer |= s_home ? PLINK_CAP_HOME : 0u;
         offer |= kfw_caps();
@@ -2317,6 +2319,9 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
     plink_wipe(&rec, sizeof rec);
     if ((offer & PLINK_CAP_HOME) != 0u) {
         plink_keypad_home_attach(k, s_mirror); /* before the first tick */
+    }
+    if ((offer & PLINK_CAP_RB) != 0u) {
+        krbsvc_attach(k); /* the remote backend's buffers (BL-223) */
     }
     if (!setup_only) {
         kfw_boot(k, now); /* its master's version and the cap, its facts, its trial (BL-048) */

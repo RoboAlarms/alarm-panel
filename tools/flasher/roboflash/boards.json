@@ -1,7 +1,7 @@
 {
   "format": 1,
-  "version": "2026.10.12",
-  "about": "One entry per firmware/<board> (tools/tests/test_flasher_safety.py checks). Hints for the Flasher: how to recognise the board and what to tell the person flashing it. The firmware images themselves come from a bundle. \"version\" (year.month.n) orders this file against the board descriptions the firmware server offers (FWS-032): raise it with every change, and the newer one wins. A board with \"offered\": false is known but not installed by the Flasher (not_offered says why): it is never chosen, its images are refused, and bundles are not made for it. The rf pins and the clock module's rtc pins, and their other places (rf.places, rtc.places: RF_PLACES and I2C_PLACES), and the Z-Wave radio's places (zwave.places: ZWAVE_PLACES) are the firmware's own (board_desc.c / board_pins.h; the tests compare them). Pad and pin names are as printed on the board. A board without an rtc entry has no connector for a clock module. \"connect\" is the maker's advice for plugging the board in: the port this computer uses, the power it needs while it is set up, what to try when it doesn't appear (the CrowPanel's: Elecrow's wiki and the V1.1 schematic, where each 5 V input has its own diode).",
+  "version": "2026.10.13",
+  "about": "One entry per firmware/<board> (tools/tests/test_flasher_safety.py checks). Hints for the Flasher: how to recognise the board and what to tell the person flashing it. The firmware images themselves come from a bundle. \"version\" (year.month.n) orders this file against the board descriptions the firmware server offers (FWS-032): raise it with every change, and the newer one wins. A board with \"offered\": false is known but not installed by the Flasher (not_offered says why): it is never chosen, its images are refused, and bundles are not made for it. The rf pins and the clock module's rtc pins, and their other places (rf.places, rtc.places: RF_PLACES and I2C_PLACES), and the Z-Wave radio's places (zwave.places: ZWAVE_PLACES) are the firmware's own (board_desc.c / board_pins.h; the tests compare them). Pad and pin names are as printed on the board. A board without an rtc entry has no connector for a clock module. \"connect\" is the maker's advice for plugging the board in: the port this computer uses, the power it needs while it is set up, what to try when it doesn't appear (the CrowPanel's: Elecrow's wiki and the V1.1 schematic, where each 5 V input has its own diode; the DevKitC-1's: Espressif's user guide). A board with \"headless\": true has no screen: it is set up from a phone over its own setup Wi-Fi, and the Flasher reads that Wi-Fi's label from its console (`web setup`). A board with \"wiring\": \"table\" has one place for each part, wired from the tables of its wires (\"to\": the header pin as printed), not from the drawings of J7 and the radio socket; its \"header\" is the one its own pins (\"custom\") are on. A board whose USB id is an ESP chip's own USB (303A:1001, like the Zigbee module's) is only taken for a panel once the person says so and its chip reads as the board's (FLS-030, FLS-035).",
   "boards": {
     "crowpanel_p4": {
       "name": "CrowPanel 7\"",
@@ -366,6 +366,125 @@
           {"gpio": 52, "label": "IO52", "connector": "J7"},
           {"gpio": 53, "label": "IO53", "connector": "J7"},
           {"gpio": 54, "label": "IO54", "connector": "J7"}
+        ]
+      }
+    },
+    "esp32s3_devkitc": {
+      "name": "DevKitC-1 board (ESP32-S3)",
+      "long_name": "Espressif ESP32-S3-DevKitC-1 N16R8, no screen (board v1.0)",
+      "revision": "v1.0",
+      "revision_note": "On v1.1 boards the RGB light is on pin 38 instead of 48: leave pin 38 free.",
+      "offered": true,
+      "headless": true,
+      "wiring": "table",
+      "headers_note": "Two rows of pins, one along each long edge of the board: J1 and J3, each pin's number printed beside it. 3V3 and 5V are on J1; G (ground) is on both.",
+      "chip": "esp32s3",
+      "flash_size": "16MB",
+      "usb": [
+        {"usb_id": "303A:1001", "bridge": "the chip's own USB (the port marked USB)"}
+      ],
+      "download_mode": "The Flasher restarts the board into its loader through the USB cable. If that fails: hold BOOT, press and release RST, then release BOOT, and try again.",
+      "connect": {
+        "port": "USB",
+        "steps": [
+          {"do": "Plug the cable from this computer into the port marked USB.", "why": "The board has two USB-C ports: RoboAlarms talks to this computer through the one marked USB."},
+          {"do": "Nothing else to plug in.", "why": "The computer powers the board through the same cable: it has no screen to feed."}
+        ],
+        "not_showing": [
+          {"do": "Is the cable in the port marked USB?", "why": "The port marked COM (or UART) only shows the board's start-up messages."},
+          {"do": "Is the board's red power light on?", "why": "If it isn't, the cable or this computer's USB port gives it no power: try another."}
+        ],
+        "before_install": "The cable from this computer in the port marked USB is all it needs: the computer powers it.",
+        "more_power": "Plug it straight into a USB port on this computer, not through a hub, then press its RST button."
+      },
+      "setup": {
+        "how": "It has no screen: you set it up from your phone, over its own setup Wi-Fi.",
+        "steps": [
+          "On your phone, join the setup Wi-Fi below with its password.",
+          "Open the address below in the phone's browser and enter the setup code.",
+          "Make the two browser accounts it asks for, and save its recovery key.",
+          "Give it your home Wi-Fi. Then add keypads and sensors in the Panel Manager."
+        ]
+      },
+      "rf": {
+        "default_gpio": 14,
+        "default_where": "header J1, pin 14",
+        "pins": [4, 5, 6, 7, 15, 16, 17, 18],
+        "pins_where": "header J1",
+        "module_wires": [
+          {"pin": "VCC", "to": "3V3", "note": "header J1, pin 1 or 2; never 5V: DATA would carry 5 V into the board"},
+          {"pin": "GND", "to": "G", "note": "header J1's last pin"},
+          {"pin": "DATA", "to": "J1 pin 14", "gpio": 14},
+          {"pin": "ANT", "to": "the receiver antenna, or 17.3 cm of wire"}
+        ],
+        "cc1101": {
+          "where": "header J1, SPI on pins 10 to 13, GDO0 on pin 14",
+          "spi": {"sck": 12, "mosi": 11, "miso": 13, "cs": 10},
+          "gdo0": 14,
+          "wires": [
+            {"pin": "VCC", "to": "3V3", "note": "the CC1101 is a 3.3 V part"},
+            {"pin": "GND", "to": "G"},
+            {"pin": "SI (MOSI)", "to": "J1 pin 11", "gpio": 11},
+            {"pin": "SO (MISO)", "to": "J1 pin 13", "gpio": 13},
+            {"pin": "SCLK", "to": "J1 pin 12", "gpio": 12},
+            {"pin": "CSn", "to": "J1 pin 10", "gpio": 10},
+            {"pin": "GDO0", "to": "J1 pin 14", "gpio": 14},
+            {"pin": "GDO2", "to": "not connected"},
+            {"pin": "ANT", "to": "a 433 MHz antenna, or 17.3 cm of wire"}
+          ]
+        }
+      },
+      "rtc": {
+        "chip": "DS3231",
+        "where": "header J1, pins 8 (SDA) and 9 (SCL)",
+        "sda": 8,
+        "scl": 9,
+        "wires": [
+          {"pin": "VCC", "to": "3V3", "note": "never 5V: the module's pull-ups would lift the lines above 3.3 V"},
+          {"pin": "GND", "to": "G"},
+          {"pin": "SDA", "to": "J1 pin 8", "gpio": 8},
+          {"pin": "SCL", "to": "J1 pin 9", "gpio": 9},
+          {"pin": "SQW, 32K", "to": "not connected"}
+        ],
+        "note": "Leads of 10 to 20 cm, away from siren and mains wires.",
+        "cell": "A CR2032 coin cell keeps the time through power cuts. Many DS3231 boards (the ZS-042) try to charge it: with a CR2032 remove the charging diode or its resistor, or fit a rechargeable LIR2032."
+      },
+      "zwave": {
+        "name": "Zooz ZAC93",
+        "note": "The ZAC93 is made for a Raspberry Pi's header: its positions are numbered as a Pi's, 1 to 10. Before wiring, check with a meter on the unpowered radio that positions 1 and 6 are its supply and ground. Its optional reset line (position 7, boards etched Version 2.0) is set on the console: `zwave reset-pin`.",
+        "places": {
+          "header": {
+            "where": "header J3, pins 1 (TX) and 2 (RX)",
+            "tx": 1,
+            "rx": 2,
+            "wires": [
+              {"pin": "VCC", "to": "3V3", "note": "its position 1; never 5V"},
+              {"pin": "GND", "to": "G", "note": "its position 6"},
+              {"pin": "RX", "to": "J3 pin 1, the board's TX", "note": "its position 8", "gpio": 1},
+              {"pin": "TX", "to": "J3 pin 2, the board's RX", "note": "its position 10", "gpio": 2}
+            ]
+          }
+        }
+      },
+      "layouts": [
+        {"title": "CC1101 and clock", "parts": {"rf": "cc1101", "rf_place": "socket", "clock": true, "clock_place": "j13", "zigbee": false}},
+        {"title": "Receiver module and clock", "parts": {"rf": "module", "rf_place": "socket", "clock": true, "clock_place": "j13", "zigbee": false}},
+        {"title": "Z-Wave, CC1101 and clock", "parts": {"rf": "cc1101", "rf_place": "socket", "clock": true, "clock_place": "j13", "zigbee": false, "zwave": true, "zwave_place": "header"}}
+      ],
+      "header": {
+        "name": "J3",
+        "rows": [
+          ["G", "TX", "RX", "1", "2", "42", "41", "40", "39", "38", "37", "36", "35", "0", "45", "48", "47", "21", "20", "19", "G", "G"]
+        ]
+      },
+      "custom": {
+        "pins": [
+          {"gpio": 38, "label": "38", "connector": "J3"},
+          {"gpio": 39, "label": "39", "connector": "J3"},
+          {"gpio": 40, "label": "40", "connector": "J3"},
+          {"gpio": 41, "label": "41", "connector": "J3"},
+          {"gpio": 42, "label": "42", "connector": "J3"},
+          {"gpio": 47, "label": "47", "connector": "J3"}
         ]
       }
     },

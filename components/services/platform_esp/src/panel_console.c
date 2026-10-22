@@ -355,6 +355,8 @@ static void zone_usage(void)
            "4.7k pull-up, on a terminal that measures)\n"
            "       zone <n> bind ha <entity_id>   a sensor Home Assistant shares with the "
            "panel\n"
+           "       zone <n> bind keypad <k> <gpio> [no]   a contact on link keypad k's own "
+           "terminal\n"
            "       zone <n> unbind    no sensor\n"
            "Binding needs every partition disarmed.\n");
 }
@@ -413,6 +415,15 @@ static int zone_bind(uint16_t z, int argc, char **argv)
                 m->response_ms = (uint16_t)ms;
             }
         }
+    } else if (argc >= 6 && strcmp(argv[3], "keypad") == 0) {
+        /* A keypad's own terminal (docs/features/11 LINK-055): keypad number, GPIO. */
+        const unsigned long kp = strtoul(argv[4], NULL, 10), gpio = strtoul(argv[5], NULL, 10);
+        if (kp < 1u || kp > 8u || gpio > 63u) {
+            printf("keypad 1..8, GPIO 0..63\n");
+            return 1;
+        }
+        b.in[ZSRC_ROLE_MAIN].addr = zsrc_address(ZSRC_KEYPAD, 0u, (kp << 8) | gpio);
+        b.in[ZSRC_ROLE_MAIN].map.invert = argc >= 7 && strcmp(argv[6], "no") == 0;
     } else if (argc >= 5 && strcmp(argv[3], "ha") == 0) {
         if (!ha_input(z, argv[4], &b)) {
             return 1;

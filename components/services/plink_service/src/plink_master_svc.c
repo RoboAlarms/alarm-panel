@@ -325,6 +325,9 @@ static void run_job(job_t *job)
         res.user = user;
         break;
     }
+    case PLINK_OP_PUT_OFF: /* LINK-056: an automation's arming put off from a keypad */
+        r = masvc_put_off(c, &src, &res);
+        break;
     case PLINK_OP_CHANGE_CODE: {
         /* As the panel's own screen does it (ui_port_esp change_code): the code first, then the
          * keypad's "code + CODE + user", which keeps the user's authority and name. */
@@ -418,6 +421,8 @@ static void worker_task(void *arg)
             refresh_others();
         }
         flush_edges();
+        miosvc_apply(); /* keypads' wired inputs into the zone hub (LINK-055) */
+        masvc_worker(); /* the automations' arming warnings, copied for the link (LINK-056) */
         fsvc_worker(); /* the keypads' update stages for Activity (they wait for the alarm task) */
         if (atomic_exchange(&s_cfg_job, false)) {
             build_config();
@@ -541,6 +546,7 @@ static void port_reachable(void *ctx, uint8_t device, bool reachable)
         atomic_fetch_and(&s_reach_state, ~bit);
     }
     atomic_fetch_or(&s_reach_dirty, bit);
+    miosvc_reachable(device, reachable);
     ESP_LOGW(TAG, "keypad %u %s", (unsigned)device, reachable ? "heard again" : "not responding");
     worker_kick();
 }
@@ -604,7 +610,10 @@ static void port_note(void *ctx, plink_note_t note, uint8_t device)
     case PLINK_NOTE_PAIR_OVERLAP:
         ESP_LOGW(TAG, "pairing ended: more than one keypad at once");
         break;
-    case PLINK_NOTE_REMOVED: ESP_LOGW(TAG, "keypad %u removed", (unsigned)device); break;
+    case PLINK_NOTE_REMOVED:
+        ESP_LOGW(TAG, "keypad %u removed", (unsigned)device);
+        miosvc_removed(device);
+        break;
     case PLINK_NOTE_CLONE:
         ESP_LOGE(TAG, "a second device is using keypad %u's keys", (unsigned)device);
         break;
@@ -925,6 +934,7 @@ static void publish(uint64_t now)
 
 void msvc_poll(uint64_t now)
 {
+    masvc_poll(s_m, now); /* the arming warnings to the keypads, once a second (LINK-056) */
     take_engine_news(now);
     take_results(now);
     ask_config(now);
@@ -1171,7 +1181,9 @@ esp_err_t msvc_prepare(uint64_t now)
     /* Each capability is offered with the code that uses it (LINK-043): HOME with a device side
      * (NULL dev_run otherwise: an action is answered UNAVAILABLE), PREFS with the UI, FW with the
      * planner's service (keypad updates go live in each session whose keypad offers it too). */
-    const uint16_t caps = (uint16_t)(hsvc_caps() | fsvc_caps() | PLINK_CAP_WIFI);
+    const uint16_t caps =
+        (uint16_t)(hsvc_caps() | fsvc_caps() | PLINK_CAP_WIFI | miosvc_prepare() | masvc_caps());
+    port.io_state = (caps & PLINK_CAP_IO) != 0u ? miosvc_io_state : NULL;
     port.dev_run = (caps & PLINK_CAP_HOME) != 0u ? hsvc_dev_run : NULL;
     port.fw_read = (caps & PLINK_CAP_FW) != 0u ? fsvc_fw_read : NULL;
     port.ctx = s_m; /* hsvc_prefs_done reads the keypad's report back (the others need no ctx) */
@@ -1197,11 +1209,13 @@ esp_err_t msvc_prepare(uint64_t now)
                                 &s_worker, tskNO_AFFINITY) != pdPASS) {
         return ESP_ERR_NO_MEM;
     }
-    ESP_LOGI(TAG, "master: %u keypad(s) paired; offers Smart Home %s, settings %s, updates %s",
+    ESP_LOGI(TAG, "master: %u keypad(s) paired; offers Smart Home %s, settings %s, updates %s, "
+                  "keypad inputs %s",
              (unsigned)__builtin_popcount(plink_master_held(s_m)),
              (caps & PLINK_CAP_HOME) != 0u ? "yes" : "no",
              (caps & PLINK_CAP_PREFS) != 0u ? "yes" : "no",
-             (caps & PLINK_CAP_FW) != 0u ? "yes" : "no");
+             (caps & PLINK_CAP_FW) != 0u ? "yes" : "no",
+             (caps & PLINK_CAP_IO) != 0u ? "yes" : "no");
     return ESP_OK;
 }
 

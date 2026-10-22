@@ -221,6 +221,7 @@ function defaultChoice() {
     zwave: false, zwave_place: 'socket' };
 }
 S.choice = defaultChoice();
+S.saidPanel = {};      // port -> the person said this 303A:1001 port is their board, not the Zigbee module (FLS-035)
 
 /* ---- the engine's state ------------------------------------------------------------------- */
 async function loadState() {
@@ -533,19 +534,25 @@ function syncProgram() {
   if (p) clear(btn).append(icon('download'), `Flasher ${p.version} is available`);
 }
 const busyReason = (port) => { const d = dev(port); return (d && d.probe && d.probe.busy_reason) || ''; };
-/* A port with Espressif's own USB id may be the Zigbee module: never the panel (FLS-030). */
-const isModulePort = (p) => { const d = dev(p.device); return !!(d && d.needs_alone) || p.usb_id === '303A:1001'; };
-const candidates = () => ports().filter((p) => (p.kind === 'esp' || p.kind === 'usb') && !isModulePort(p));
+/* A port with Espressif's own USB id may be the Zigbee module: never the panel (FLS-030), until the
+ * engine knows it is a panel on its own USB (needs_alone off: the ESP32-S3 board, FLS-035). */
+const isModulePort = (p) => { const d = dev(p.device); return d ? !!d.needs_alone : p.usb_id === '303A:1001'; };
+/* The catalogue id of the board planned in step 1, or ''. */
+const planId = () => { const cat = (S.state && S.state.catalogue) || {}; const b = planBoard(); return b ? Object.keys(cat).find((k) => cat[k] === b) || '' : ''; };
+/* FLS-035: a 303A:1001 port that may be the board planned in step 1 on its own USB (the ESP32-S3
+ * board): offered on Connect, and looked at only once the person says it is that board. */
+const maybePanel = (p) => { const d = dev(p.device); return !!(d && d.needs_alone && (d.maybe_panel || []).includes(planId())); };
+const candidates = () => ports().filter((p) => (p.kind === 'esp' || p.kind === 'usb') && (!isModulePort(p) || maybePanel(p)));
 
 function autoSelect() {
   const list = ports();
-  if (S.port && list.some((p) => p.device === S.port && !isModulePort(p))) return;
+  if (S.port && list.some((p) => p.device === S.port && (!isModulePort(p) || maybePanel(p)))) return;
   if (S.port && !(jobRunning() && job().port === S.port)) {
     S.unplugged = true;          // the panel went away: planning and wiring carry on without it
     if (S.mode === 'guided' && !S.finished && S.step >= 5) S.step = 4;
   }
   const esp = list.filter((p) => p.kind === 'esp' && !isModulePort(p));
-  const pick = esp[0] || list.find((p) => p.kind === 'usb' && !isModulePort(p));
+  const pick = esp[0] || list.find((p) => p.kind === 'usb' && !isModulePort(p)) || list.find(maybePanel);
   selectPort(pick ? pick.device : null);
 }
 
@@ -562,7 +569,7 @@ function selectPort(port) {
     S.unplugged = false;
     const p = portInfo(port);
     const d = dev(port);
-    if (p && p.kind === 'esp' && d && !d.probe && !d.busy && !jobRunning()) api('probe', { port }, true);
+    if (p && p.kind === 'esp' && d && !d.probe && !d.busy && !d.needs_alone && !jobRunning()) api('probe', { port }, true);
   }
 }
 
@@ -612,6 +619,13 @@ function problems(choice, board) {
  * test places every mix of parts without a conflict. */
 function recommend(choice, board) {
   const c = norm(choice);
+  if (board && board.wiring === 'table') {   // one place for each part (FLS-035)
+    if (c.rf === 'module' || c.rf === 'cc1101') { c.rf_place = 'socket'; c.rf_pin = null; }
+    const zp = Object.keys((board.zwave && board.zwave.places) || {});
+    if (c.zwave && zp.length && !zp.includes(c.zwave_place)) c.zwave_place = zp[0];
+    if (c.clock) c.clock_place = 'j13';
+    return c;
+  }
   const pins = ((board && board.rf) || {}).pins || [];
   let socketFree = !c.zigbee;
   if (c.rf === 'module') {
@@ -637,14 +651,21 @@ function zonesLeft(choice, board) {
   if (c.rf === 'cc1101' && c.rf_place === 'j7') ccJ7Pins(board).forEach((n) => used.add(n));
   return (((board && board.rf) || {}).pins || []).filter((n) => !used.has(n));
 }
+const headerName = (board) => ((board && board.header) || {}).name || 'J7';
+const tableBoard = (board) => !!(board && board.wiring === 'table');
 function choiceLong(c, board) {
   c = norm(c);
   const p = [];
   if (c.layout === 'custom') {
     const n = c.pins ? Object.keys(c.pins).length : 0;
-    p.push(`your own board on J7: ${n} part${n === 1 ? '' : 's'}${c.clock && c.clock_place === 'j13' ? ', the clock on the I2C connector' : ''}`);
+    p.push(`your own board on ${headerName(board)}: ${n} part${n === 1 ? '' : 's'}${c.clock && c.clock_place === 'j13' ? (tableBoard(board) ? `, the clock on ${board.rtc.where}` : ', the clock on the I2C connector') : ''}`);
     if (c.zigbee) p.push('Zigbee module in the socket');
     return p.join('; ');
+  }
+  if (tableBoard(board)) {
+    if (c.rf === 'auto') p.push('433 MHz receiver, found by the panel');
+    else if (c.rf === 'none') p.push('no 433 MHz receiver (switched off)');
+    return p.concat(tableGroups(c, board).map((g) => `${g.title[0].toLowerCase() + g.title.slice(1)} on ${g.place}`)).join('; ');
   }
   if (c.rf === 'module') p.push(c.rf_place === 'j7' ? `433 MHz receiver module, DATA on J7 IO${c.rf_pin}` : '433 MHz receiver module on the radio socket');
   else if (c.rf === 'cc1101') p.push(c.rf_place === 'j7' ? 'CC1101 on the J7 header' : 'CC1101 on the radio socket');
@@ -669,8 +690,10 @@ function planBoard() {
   const pick = offered.find(([id]) => id === S.planBoard) || (offered.length === 1 ? offered[0] : null);
   return pick ? pick[1] : null;
 }
-/* A panel drawn to its size: the screen's diagonal from its name (7", 10.1"). */
+/* A panel drawn to its size: the screen's diagonal from its name (7", 10.1"); a board without a
+ * screen as a bare board (FLS-035). */
 function boardArt(board) {
+  if (board && board.headless) return artBoard();
   const m = /([\d.]+)"/.exec((board && board.name) || '');
   const k = m ? Math.min(1, Math.max(0.5, Number(m[1]) / 10.1)) : 1;
   return artPanel(Math.round(188 * k), Math.round(120 * k));
@@ -698,6 +721,7 @@ function groups(choice, board) {
     if (c.zigbee) { const g = zbGroup(); g.sig = g.key + '@' + g.label; g.taken = {}; out.push(g); }
     return out;
   }
+  if (tableBoard(board)) return tableGroups(c, board);
   const rows = board.header ? board.header.rows : [];
   const rf = board.rf || {};
   const used = {};
@@ -796,8 +820,45 @@ function groups(choice, board) {
   }
   return out;
 }
+/* A board wired from tables (boards.json "wiring": "table", the ESP32-S3 board; FLS-035): each part
+ * has one place, and its wires are boards.json's own ("to": the header pin as printed), the same
+ * the firmware uses (test_flasher_safety.py compares them). */
+function tableGroups(choice, board) {
+  const c = norm(choice);
+  const out = [];
+  const rf = board.rf || {};
+  const wired = (list) => (list || []).filter((w) => w.pin === 'VCC' || w.pin === 'GND' || w.gpio !== undefined);
+  const row = (w) => {
+    const pin = SHORT[w.pin] || w.pin;
+    const at = position(w);
+    return { pin, colour: PIN_COLOUR[pin] || 'wire-sig', to: w.to, from: at || PIN_FROM[pin], where: String(w.note || '').replace(/^its position \d+;?\s*/, '') };
+  };
+  const add = (g, wires) => { g.conn = 'table'; g.wires = wired(wires).map(row); g.label = `${g.chip} on ${g.place}`; out.push(g); };
+  if (c.rf === 'module') {
+    add({ key: 'rf', title: '433 MHz receiver module', ic: 'radio', kind: 'receiver', short: 'receiver', chip: 'Receiver', place: rf.default_where || 'its own pin',
+      extras: [{ id: 'ant', text: 'Antenna: its spring, or 17.3 cm of straight wire, away from the board.' }],
+      notes: [['warn', 'triangle', 'VCC goes to 3V3, never 5V:', 'on 5V the receiver\'s DATA would put 5 V into the board\'s chip, which takes 3.3 V at most.']] }, rf.module_wires);
+  } else if (c.rf === 'cc1101') {
+    add({ key: 'rf', title: 'CC1101 receiver', ic: 'radio', kind: 'cc1101', short: 'CC1101', chip: 'CC1101', place: (rf.cc1101 || {}).where || 'its own pins',
+      extras: [{ id: 'gdo2', text: 'GDO2: leave it unconnected.' }, { id: 'ant', text: 'Antenna: 17.3 cm of wire, away from the board.' }],
+      notes: [['warn', 'triangle', 'The CC1101 is a 3.3 V part.', 'Pin order differs between CC1101 boards: match the labels printed on it, not the positions.']] }, (rf.cc1101 || {}).wires);
+  }
+  if (c.clock && board.rtc) {
+    add({ key: 'clock', title: 'Battery-backed clock', ic: 'clock', kind: 'clock', short: 'clock', chip: 'Clock', place: board.rtc.where,
+      extras: [{ id: 'cell', text: 'Coin cell: fit it now (a rechargeable LIR2032, or a CR2032 if the board\'s charging part has been removed).' }, { id: 'sqw', text: 'SQW and 32K: leave them unconnected.' }],
+      notes: board.rtc.note ? [['warn', 'triangle', 'Short leads, 3V3 only.', board.rtc.note]] : [] }, board.rtc.wires);
+  }
+  const zp = c.zwave ? zwPlace(board, c.zwave_place) : null;
+  if (zp) {
+    add({ key: 'zwave', title: 'Z-Wave radio', ic: 'radio', kind: 'zwave', short: 'Z-Wave radio', chip: 'Z-Wave', place: zp.where,
+      extras: [{ id: 'pos', text: 'Its pins are numbered 1 to 10, like a Raspberry Pi\'s. Positions 2 and 4 stay empty.' }],
+      notes: [['info', 'info', 'Crossed over:', 'the radio\'s RX goes to the board\'s TX, and its TX to the board\'s RX. The table already shows it that way.']] }, zp.wires);
+  }
+  for (const g of out) { g.sig = g.key + '@' + g.label; g.taken = {}; }
+  return out;
+}
 /* Assembly order: J7's parts, then the I2C connector's, then the radio socket's, numbered. */
-const CONN_RANK = { j7: 0, j13: 1, socket: 2, plug: 2 };
+const CONN_RANK = { j7: 0, table: 0, j13: 1, socket: 2, plug: 2 };
 function assembly(gs) {
   const out = gs.slice().sort((a, b) => CONN_RANK[a.conn] - CONN_RANK[b.conn]);
   out.forEach((g, i) => { g.num = i + 1; });
@@ -823,7 +884,8 @@ const keepParts = () => runsRoboAlarms() && !S.touched && !(S.action === 'reset'
 /* What to have ready, from the parts and places chosen. */
 function needs(gs) {
   const c = norm(S.choice);
-  const jumpers = gs.filter((g) => g.conn === 'j7' || g.conn === 'socket').reduce((n, g) => n + g.wires.length, 0);
+  const board = planBoard();
+  const jumpers = gs.filter((g) => g.conn === 'j7' || g.conn === 'socket' || g.conn === 'table').reduce((n, g) => n + g.wires.length, 0);
   const custom = c.layout === 'custom';
   const keys = (custom ? [c.rf !== 'none' && 'rf', c.clock && 'clock', c.zwave && 'zwave'].filter(Boolean) : []).concat(gs.map((g) => g.key));
   const out = keys.map((key) => ({ id: 'part-' + key, text: { rf: c.rf === 'cc1101' ? 'The CC1101 board' : 'The 433 MHz receiver module', clock: 'The clock board (DS3231, often sold as ZS-042)',
@@ -837,9 +899,15 @@ function needs(gs) {
   if (c.rf === 'module') out.push({ id: 'ant', text: 'An antenna for the receiver', sub: 'The spring that came with it, or 17.3 cm of plain wire.' });
   if (c.rf === 'cc1101') out.push({ id: 'ant', text: 'An antenna for the CC1101', sub: '17.3 cm of plain wire, if it didn\'t come with one.' });
   if (c.clock) out.push({ id: 'cell', text: 'A coin cell for the clock', sub: 'A rechargeable LIR2032. A plain CR2032 only if the board\'s charging part has been removed: most of these boards try to charge the cell.' });
-  if (gs.some((g) => g.conn === 'j7') || ownOnJ7(c)) out.push({ id: 'meter', text: 'Only if J7\'s labels are hard to read: a multimeter', sub: 'The box below shows how to find its 5V row with it.' });
+  if ((gs.some((g) => g.conn === 'j7') || ownOnJ7(c)) && !tableBoard(board)) out.push({ id: 'meter', text: 'Only if J7\'s labels are hard to read: a multimeter', sub: 'The box below shows how to find its 5V row with it.' });
   return out;
 }
+/* Getting ready and the checks, for the board planned (FLS-035: a board without a screen has no
+ * POWER switch, back to lay down or ribbon cable). */
+const prep = (board) => (board && board.headless ? PREP_BOARD : PREP);
+const checks = (board) => (board && board.headless ? CHECKS.map((x) => (x[0] === 'away' ? ['away', 'Antennas and loose wires lie away from the board\'s metal-covered module.'] : x)) : CHECKS);
+const PREP_BOARD = [['unplug', 'Unplug the board\'s USB cable.'],
+  ['static', 'Touch something metal, like a tap or a radiator, to get rid of static before you handle the boards.'], ['lay', 'Lay the board on a dry surface that isn\'t metal, with its pins where you can reach them.']];
 const PREP = [['off', 'Switch the panel\'s POWER switch off.'], ['unplug', 'Unplug every cable from the panel: both USB cables and any power supply.'],
   ['static', 'Touch something metal, like a tap or a radiator, to get rid of static before you handle the boards.'], ['lay', 'Lay the panel face down on a soft cloth, so the back of the board faces you.']];
 /* [id, words, why, danger]: nothing on 5V comes first and stands out, since anything wired to it can be
@@ -852,7 +920,7 @@ const CHECKS = [['no5v', 'No wire is on a pin printed 5V.', 'A wire on 5V can de
 /* ---- drawings --------------------------------------------------------------------------- */
 /* The computer's cable, and with a board's "connect" advice (conn) the phone charger's too, each
  * plug named as its port is printed. */
-function artConnect(found, conn) {
+function artConnect(found, conn, headless) {
   const end = found ? 332 : 292;
   const on = found ? ' on' : '';
   const two = !!(conn && conn.port && conn.power_port);
@@ -866,10 +934,10 @@ function artConnect(found, conn) {
     s('rect', { class: 'plug' + on, x: 210, y: 104, width: 10, height: 14, rx: 2 }),
     s('path', { class: 'cable' + on, d: `M220 111 C 262 111, ${end - 40} ${y}, ${end} ${y}` }),
     s('rect', { class: 'plug' + on, x: end, y: y - 7, width: 16, height: 14, rx: 3 }),
-    s('rect', { class: 'frame', x: 348, y: 20, width: 190, height: 130, rx: 14 }),
-    s('rect', { class: 'screen', x: 360, y: 32, width: 166, height: 106, rx: 6 }),
-    s('path', { class: 'mark', d: 'M443 60 l22 17 v28 h-44 v-28 z' }),
-    s('text', { class: 'caption', x: 443, y: 172, 'text-anchor': 'middle', text: 'The panel' }));
+    headless ? s('rect', { class: 'frame', x: 348, y: 50, width: 190, height: 80, rx: 6 }) : s('rect', { class: 'frame', x: 348, y: 20, width: 190, height: 130, rx: 14 }),
+    headless ? s('rect', { class: 'screen', x: 440, y: 62, width: 70, height: 56, rx: 3 }) : s('rect', { class: 'screen', x: 360, y: 32, width: 166, height: 106, rx: 6 }),
+    headless ? null : s('path', { class: 'mark', d: 'M443 60 l22 17 v28 h-44 v-28 z' }),
+    s('text', { class: 'caption', x: 443, y: 172, 'text-anchor': 'middle', text: headless ? 'The board' : 'The panel' }));
   if (two) {
     svg.append(
       s('rect', { class: 'plug', x: 236, y: 157, width: 10, height: 5, rx: 1 }),
@@ -882,6 +950,15 @@ function artConnect(found, conn) {
       s('text', { class: 'caption', x: 266, y: 196, 'text-anchor': 'middle', text: 'Phone charger' }));
   }
   return svg;
+}
+/* A board without a screen (FLS-035): its board, the metal-covered module and a row of pins along
+ * each long edge. */
+function artBoard() {
+  const pins = [];
+  for (let i = 0; i < 11; i++) pins.push(s('circle', { class: 'mark', cx: 44 + i * 11, cy: 40, r: 2.5 }), s('circle', { class: 'mark', cx: 44 + i * 11, cy: 100, r: 2.5 }));
+  return s('svg', { class: 'art', viewBox: '0 0 200 140', role: 'img', 'aria-label': 'The board' },
+    s('rect', { class: 'frame', x: 30, y: 30, width: 140, height: 80, rx: 6 }),
+    s('rect', { class: 'screen', x: 120, y: 48, width: 42, height: 44, rx: 3 }), pins);
 }
 function artPanel(w = 188, ht = 120, label = '') {
   return s('svg', { class: 'art', viewBox: '0 0 200 140', role: 'img', 'aria-label': 'The panel' },
@@ -1272,6 +1349,11 @@ function partDrawing(g, board, pick, artOnly) {
     h('p', { class: 'pin-caption', 'aria-live': 'polite', 'data-default': pick ? `DATA is on IO${norm(S.choice).rf_pin}. Click another dashed pin to move it.` : 'Point at a pin to see what it is.',
       text: pick ? `DATA is on IO${norm(S.choice).rf_pin}. Click another dashed pin to move it.` : 'Point at a pin to see what it is.' }));
   }
+  if (g.conn === 'table') {   // a board wired from tables (FLS-035): each wire to its header pin, as printed
+    return h('table', { class: 'wires' }, h('thead', {}, h('tr', {}, ['Its pin', 'Goes to'].map((t) => h('th', { text: t })))),
+      h('tbody', {}, g.wires.map((w) => h('tr', {}, h('td', {}, h('i', { class: 'sw s-' + w.colour }), h('b', { text: w.pin }), w.from ? h('small', { class: 'muted', text: ' (' + w.from + ')' }) : null),
+        h('td', {}, h('b', { text: w.to }), w.where ? h('small', { class: 'muted', text: ' · ' + w.where }) : null)))));
+  }
   if (g.conn === 'socket') {
     return h('table', { class: 'wires' }, h('thead', {}, h('tr', {}, ['Its pin', 'Goes to'].map((t) => h('th', { text: t })))),
       h('tbody', {}, g.wires.map((w) => h('tr', {}, h('td', {}, h('i', { class: 'sw s-' + w.colour }), h('b', { text: w.pin }), w.from ? h('small', { class: 'muted', text: ' (' + w.from + ')' }) : null),
@@ -1319,6 +1401,13 @@ function placesBlock(board, readOnly) {
   const rec = recommend(c, board);
   const issues = problems(c, board);
   const zones = zonesLeft(c, board);
+  if (tableBoard(board)) {   // one place for each part: its wires, nothing to choose (FLS-035)
+    return [gs.map((g) => h('section', { class: 'card part' },
+      h('div', { class: 'part-head' }, h('span', { class: 'icon-tile' }, icon(g.ic)), h('div', {}, h('h2', { text: g.title }), h('p', { class: 'muted small', text: 'Goes on ' + g.place })), h('span', {})),
+      h('div', { class: 'part-body' }, partDrawing(g, board, null), g.notes.filter((x) => x[0] === 'warn').map(([k, ic, b, t]) => note(k, ic, b, t))))),
+    board.rf ? h('section', { class: 'card pincheck' }, h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small plain' }, icon('door')),
+      h('div', {}, h('b', { text: `Pins left for wired door contacts: ${zones.length}` }), h('small', { text: (zones.length ? zones.join(', ') : 'None') + ` on ${board.rf.pins_where || headerName(board)}. A wired zone is a door or window contact wired between one of these and G (ground).` })))) : null];
+  }
   return [
     h('div', { class: 'wire-top' }, h('span', { class: 'spacer' }),
       readOnly ? null : h('button', { class: 'btn small', type: 'button', 'data-act': 'recommend', disabled: sameChoice(rec, c) }, 'Use the recommended places')),
@@ -1348,9 +1437,9 @@ function stepNote(i) {
   const gs = planned();
   switch (i) {
     case 0: return (planBoard() || {}).name ? `${planBoard().name} · ${isCustom() ? choiceLong(S.choice, planBoard()) : gs.length ? gs.map((g) => g.chip).join(', ') : 'nothing extra'}` : '';
-    case 1: { const t = needs(gs).length + PREP.length; const n = Object.values(S.ready).filter(Boolean).length; return `${n} of ${t} ticked`; }
+    case 1: { const t = needs(gs).length + prep(planBoard()).length; const n = Object.values(S.ready).filter(Boolean).length; return `${n} of ${t} ticked`; }
     case 2: { const t = gs.reduce((n, g) => n + items(g).length, 0); return `${gs.reduce((n, g) => n + doneOf(g), 0)} of ${t} ticked`; }
-    case 3: return CHECKS.every(([id]) => S.checks[id]) ? 'All checked' : '';
+    case 3: return checks(planBoard()).every(([id]) => S.checks[id]) ? 'All checked' : '';
     case 4: return S.port ? `Found on ${S.port}` : '';
     case 5: return runsRoboAlarms() ? `RoboAlarms ${d.probe.version || ''}` : (b ? b.name : '');
     case 6: {
@@ -1449,7 +1538,7 @@ function pParts() {
   const gs = planned();
   out.push(custom ? note('info', 'info', `${cap(choiceLong(S.choice, board))}.`, 'Its pins are set in Advanced tools › Hardware › Custom pins. The Flasher keeps them when it updates the panel; the wiring steps show the table.') : gs.length ? note('good', 'circleCheck', `${gs.length === 1 ? 'One part' : gs.length + ' parts'} to connect.`, 'The Flasher picks the best place for each one, and the next steps show you how to wire it.')
     : note('info', 'info', 'Nothing extra?', 'That\'s fine: go on to plugging the panel in. You can add parts any time later.'));
-  if (gs.length && !custom) {
+  if (gs.length && !custom && !tableBoard(board)) {   // a board wired from tables has one place for each part
     const own = !sameChoice(S.choice, recommend(S.choice, board));
     out.push(h('details', { class: 'more', 'data-key': 'adv', open: !!S.open.adv || own },
       h('summary', {}, icon('sliders'), 'Advanced: choose where each part goes'),
@@ -1487,12 +1576,13 @@ function connGuide(gs, board) {
   if (hd && uses('j7').length) cards.push(connCard(`${hd.name} header`, miniHeader(hd.rows), `A long double row of ${hd.rows.length * hd.rows[0].length} pins, with ${hd.name} printed beside it. One row is printed 5V, the other 3V3.`, 'j7'));
   if (uses('j13').length) cards.push(connCard(`I2C connector (${cn.name})`, miniHeader([cn.pins]), `A small ${cn.pins.length}-pin plug, printed ${cn.printed || cn.name}, next to ${cn.name}.`, 'j13'));
   if (uses('socket').length) cards.push(connCard('Radio socket', miniSocket(), 'Two short rows of seven holes, made for Elecrow\'s plug-in radio module, with their labels printed beside them.', 'socket'));
+  if (uses('table').length) cards.push(connCard('The board\'s pins', null, board.headers_note || 'The pins along the board\'s edges, each number printed beside it.', 'table'));
   return h('div', { class: 'grid2' }, cards);
 }
-function glossary() {
+function glossary(board) {
   return details('gloss', [icon('book'), 'New to wiring? The words you\'ll see'],
     h('dl', { class: 'gloss' },
-      [['Pin', 'A small metal post on a board. A wire\'s plug slides onto it.'], ['Header', 'A row of pins. J7 is a double row of 24.'],
+      [['Pin', 'A small metal post on a board. A wire\'s plug slides onto it.'], ['Header', tableBoard(board) ? 'A row of pins. This board has two, J1 and J3, one along each long edge.' : 'A row of pins. J7 is a double row of 24.'],
         ['Jumper wire', 'A wire with a small plug on each end. "Female" plugs have a hole and slide onto a pin.'],
         ['3V3', '3.3 volts: the low power these parts run on.'], ['5V', '5 volts. Never wire a part\'s VCC to 5V: it can damage the panel.'],
         ['GND', 'Ground: the return path. Every part needs one GND wire.'], ['VCC', 'A part\'s power input. It always goes to 3V3 here.'],
@@ -1510,19 +1600,20 @@ function pReady() {
     custom ? customWiring(board) : null,
     !custom || gs.length ? h('h2', { class: 'section', text: gs.length > 1 ? 'Find the places your parts go' : 'Find the place your part goes' }) : null,
     !custom || gs.length ? connGuide(gs, board) : null,
-    glossary(),
+    glossary(board),
     h('details', { class: 'more', 'data-key': 'fit', open: S.open.fit ?? true }, h('summary', {}, icon('book'), 'How to fit a jumper wire'),
       h('div', { class: 'howto' }, artFit(), h('ul', {},
         h('li', { text: 'Hold the plug, not the wire, and push it straight down onto the pin until it stops.' }),
         h('li', { text: 'One wire per pin. If a plug feels loose, use another wire.' }),
         h('li', { text: 'Don\'t bend the pins. If a plug won\'t go on, check you have the right pin.' }),
         h('li', { text: 'The colours in the drawings are only a guide. Red for VCC and black for GND help, if you have them.' })))),
-    j7 ? details('meter', [icon('info'), `Can't read the 5V and 3V3 labels beside ${board.header.name}?`],
+    j7 && !tableBoard(board) ? details('meter', [icon('info'), `Can't read the 5V and 3V3 labels beside ${board.header.name}?`],
       h('p', { class: 'muted', text: 'Find the 5V row with a multimeter before you get the panel ready:' }),
       h('ol', {}, h('li', { text: `Nothing wired to ${board.header.name} yet. Plug the panel in and switch it on.` }), h('li', { text: 'Set the meter to DC volts. Black probe on a pin printed GND.' }),
         h('li', { text: 'Red probe on the end pin of each row: one reads about 5 V, the other about 3.3 V.' }), h('li', { text: 'Switch the panel off and unplug it again.' }))) : null,
-    h('section', { class: 'card' }, h('h2', { text: 'Get the panel ready' }), tickList(PREP.map(([id, text]) => ({ id, text })), S.ready, 'ready')),
-    note('warn', 'power', 'Keep the panel switched off and unplugged', 'until the check in step 4. Wiring it while it is on can damage it.')];
+    h('section', { class: 'card' }, h('h2', { text: board.headless ? 'Get the board ready' : 'Get the panel ready' }), tickList(prep(board).map(([id, text]) => ({ id, text })), S.ready, 'ready')),
+    board.headless ? note('warn', 'power', 'Keep the board unplugged', 'until the check in step 4. Wiring it while it is powered can damage it.')
+      : note('warn', 'power', 'Keep the panel switched off and unplugged', 'until the check in step 4. Wiring it while it is on can damage it.')];
 }
 
 /* Step 3: the full wiring - connector by connector in assembly order, and the tick list. */
@@ -1549,6 +1640,12 @@ function fullDrawings(gs, board, focus, paper, clickable, loupe = clickable, act
   if (sock.length && want('socket')) {
     out.push(h('section', { class: 'card fullmap' }, h('div', { class: 'fm-head' }, h('h2', { text: 'Radio socket' }), h('span', { class: 'muted small', text: list(sock) })),
       sock.map((g) => h('div', { class: 'sock-part' }, h('b', {}, numbered(g)), partDrawing(g, board, null, true)))));
+  }
+  const tab = gs.filter((g) => g.conn === 'table' && (!fg || g.key === fg.key));
+  if (tab.length) {   // a board wired from tables (FLS-035)
+    out.push(h('section', { class: 'card fullmap' }, h('div', { class: 'fm-head' }, h('h2', { text: 'The board\'s pins' }), h('span', { class: 'muted small', text: list(tab) })),
+      board.headers_note ? h('p', { class: 'small muted', text: board.headers_note }) : null,
+      tab.map((g) => h('div', { class: 'sock-part' }, h('b', {}, numbered(g), `, on ${g.place}`), partDrawing(g, board, null, true)))));
   }
   return out;
 }
@@ -1603,7 +1700,7 @@ function pFull() {
 function pPower() {
   const board = planBoard();
   const gs = planned();
-  const all = CHECKS.every(([id]) => S.checks[id]);
+  const all = checks(board).every(([id]) => S.checks[id]);
   const j7 = gs.some((g) => g.conn === 'j7');
   const cf = gs.some((g) => g.key === S.checkFocus) ? S.checkFocus : '';
   return [...head(3, 'Check before you switch it on', 'A last look, with the panel still off. Compare your board with the pictures. The checks are there to tick if they help.'),
@@ -1612,7 +1709,7 @@ function pPower() {
     j7 ? h('p', { class: 'muted small', text: `On ${board.header.name}, the amber pins are 5V: nothing of yours goes there.` }) : null,
     gs.length > 1 ? h('div', { class: 'wire-top' }, partFilter(gs, cf, 'checkfocus')) : null,
     ...fullDrawings(gs, board, cf, false, true, true, 'checkfocus'),
-    h('section', { class: 'card' }, h('h2', { text: 'Checks' }), tickList(CHECKS.map(([id, text, sub, danger]) => ({ id, text, sub, danger })), S.checks, 'check')),
+    h('section', { class: 'card' }, h('h2', { text: 'Checks' }), tickList(checks(board).map(([id, text, sub, danger]) => ({ id, text, sub, danger })), S.checks, 'check')),
     all ? note('good', 'shield', 'All checked.', 'Now you can plug the panel in and switch it on.')
       : note('info', 'info', '', 'Found something? Fix it with the panel still off, before you plug it in.')];
 }
@@ -1626,10 +1723,10 @@ function pPrint() {
   const sheet = h('article', { class: 'sheet' },
     h('header', { class: 'sheet-head' }, h('div', {}, h('b', { text: 'Wiring sheet' }), h('span', { class: 'muted', text: board.long_name || board.name })),
       h('span', { class: 'muted', text: 'RoboAlarms Flasher · ' + new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) })),
-    h('div', { class: 'sheet-warn' }, h('b', { text: 'Before you start: ' }), 'POWER switch off and every cable out. Every VCC goes to 3V3, never 5V. Match the labels printed on the board and on each part, not the wire colours.'),
+    h('div', { class: 'sheet-warn' }, h('b', { text: 'Before you start: ' }), (board.headless ? 'Its USB cable out. ' : 'POWER switch off and every cable out. ') + 'Every VCC goes to 3V3, never 5V. Match the labels printed on the board and on each part, not the wire colours.'),
     gs.length || custom ? [
       h('section', { class: 'sheet-part' }, h('h2', { text: 'What you need' }), h('ul', {}, needs(gs).map((n) => h('li', {}, h('span', { class: 'box' }), n.text)))),
-      custom ? h('section', { class: 'sheet-part' }, h('h2', { text: 'Your own board on J7' }), customTable(board)) : null,
+      custom ? h('section', { class: 'sheet-part' }, h('h2', { text: `Your own board on ${headerName(board)}` }), customTable(board)) : null,
       gs.length ? h('section', { class: 'sheet-part' }, h('h2', { text: 'The full wiring' }), fullDrawings(gs, board, '', true, false)) : null,
       gs.length ? h('h2', { text: 'Part by part: tick each wire as you fit it' }) : null,
       gs.map((g) => h('section', { class: 'sheet-part' },
@@ -1639,7 +1736,7 @@ function pPrint() {
             it.kind === 'wire' ? [h('td', {}, h('i', { class: 'sw s-' + it.colour }), h('b', { text: it.pin }), it.from ? ' (' + it.from + ')' : ''), h('td', { text: it.to }), h('td', { class: 'muted', text: cap(it.where) })]
               : h('td', { colspan: 3, text: it.text }))))),
         g.notes.filter((x) => x[0] === 'warn').map(([, , b, t]) => h('p', {}, h('b', { text: b }), ' ' + t)))),
-      h('section', { class: 'sheet-part' }, h('h2', { text: 'Before you switch it on' }), h('ul', {}, CHECKS.map(([, t, why, danger]) => h('li', { class: danger ? 'danger' : null }, h('span', { class: 'box' }), danger ? h('b', { text: t }) : t, why ? ' ' + why : '')))),
+      h('section', { class: 'sheet-part' }, h('h2', { text: 'Before you switch it on' }), h('ul', {}, checks(board).map(([, t, why, danger]) => h('li', { class: danger ? 'danger' : null }, h('span', { class: 'box' }), danger ? h('b', { text: t }) : t, why ? ' ' + why : '')))),
     ] : h('p', { text: 'No extra parts chosen: nothing to wire.' }),
     h('footer', { class: 'sheet-foot', text: 'Then plug the panel in and carry on in the Flasher: it installs RoboAlarms, sets the panel up for these parts, and you test each one at the end.' }));
   return [h('div', { class: 'no-print sheet-intro' },
@@ -1678,6 +1775,8 @@ function connectAdvice() {
     if (same.length === 1) b = same[0];
   }
   if (b) return b.connect ? { board: b, sure: true } : null;
+  const pb = planBoard();   // the board planned in step 1, when this port could be it (FLS-035)
+  if (pb && pb.connect && (!p || !p.usb_id || (pb.usb || []).some((u) => u.usb_id === p.usb_id))) return { board: pb, sure: false };
   const withAdvice = all.filter((x) => x.connect);
   return withAdvice.length === 1 ? { board: withAdvice[0], sure: false } : null;
 }
@@ -1696,7 +1795,7 @@ function pConnect() {
   const advice = connectAdvice();
   const out = head(4, 'Plug the panel into this computer',
     'Use a USB-C cable that carries data, not a charge-only one. The Flasher finds the panel by itself and won\'t change anything on it yet.');
-  out.push(h('div', { class: 'hero' }, artConnect(found, advice && advice.board.connect)));
+  out.push(h('div', { class: 'hero' }, artConnect(found, advice && advice.board.connect, !!(advice && advice.board.headless))));
   if (S.unplugged && !found) out.push(note('warn', 'plug', 'The panel was unplugged.', 'Plug it in again to carry on.'));
   if (!list.length) {
     // Windows lists a USB bridge but has no COM port for it (FLS-001): say why.
@@ -1729,13 +1828,25 @@ function pConnect() {
         h('span', {}, h('b', { text: portSummary(p) }), h('small', { text: `${p.device} · ${p.description || 'USB serial device'}` })),
         h('span', { class: 'dot' })))));
   }
+  const sel = S.port && portInfo(S.port);
+  if (sel && maybePanel(sel) && !S.saidPanel[S.port]) out.push(saidPanelCard(sel));
   if (advice) out.push(powerCard(advice));
   if (wiresToDo() && !keepParts()) out.push(note('good', 'circleCheck', 'Wired and checked.', 'After installing, the Flasher sets the panel up for your parts, and you test each one at the end.'));
   return out;
 }
+/* FLS-035: the board's own USB looks like the Zigbee module's to this computer (303A:1001), so the
+ * Flasher looks at it only once the person says it is their board (FLS-030). */
+function saidPanelCard(p) {
+  const b = planBoard() || {};
+  return h('div', { class: 'card' }, h('div', { class: 'status-row' }, h('span', { class: 'icon-tile plain' }, icon('usb')),
+    h('div', { class: 'grow' }, h('b', { text: `Is this your ${b.name || 'board'}?` }),
+      h('p', { class: 'muted', text: `${p.device} is an ESP chip's own USB port. The Zigbee module's looks the same to this computer, so the Flasher waits for you before it looks at it. Looking changes nothing on it.` }),
+      h('div', { class: 'row-actions' }, h('button', { class: 'btn primary', type: 'button', 'data-act': 'say-panel', 'data-v': p.device }, `Yes, it is my ${b.name || 'board'}`)),
+      h('p', { class: 'small muted', text: 'Is it the Zigbee module? Don\'t go on here: use Advanced tools › Zigbee module.' }))));
+}
 
 function boardCard(b, chips, how) {
-  return h('div', { class: 'card board-card' }, h('div', {}, artPanel()),
+  return h('div', { class: 'card board-card' }, h('div', {}, boardArt(b)),
     h('div', {}, h('h2', { text: b ? b.long_name || b.name : 'Unknown board' }),
       h('div', { class: 'chips' }, chips.map(([c, t, ic]) => h('span', { class: 'chip ' + c }, ic ? icon(ic) : null, t))),
       how ? h('p', { class: 'small muted how', text: how }) : null));
@@ -2048,12 +2159,14 @@ function pTest() {
   const reset = j && /Reset/.test(j.title);
   const kind = j ? j.kind : 'install';
   const title = reset ? 'Reset: RoboAlarms is running fresh' : kind === 'update' ? `Updated: RoboAlarms ${(chosenImage() || {}).version || ''} is running` : 'RoboAlarms is running on your panel';
+  const headless = !!(boardOf() || {}).headless;
   const out = [h('p', { class: 'eyebrow', text: `Step ${STEPS().length} of ${STEPS().length} · Install` }),
     h('div', { class: 'success' }, h('span', { class: 'big-check' }, icon('check')),
       h('div', {}, h('h1', { id: 'page-title', tabindex: -1, text: title }),
-        h('p', { class: 'lead', text: kind === 'update' && !reset ? 'Its codes, zones and Wi-Fi came through unchanged.' : 'Finish on the touchscreen, then test your parts here.' }))),
+        h('p', { class: 'lead', text: kind === 'update' && !reset ? 'Its codes, zones and Wi-Fi came through unchanged.' : headless ? 'Finish setting it up from your phone, then test your parts here.' : 'Finish on the touchscreen, then test your parts here.' }))),
     errorNote()];
-  if (kind !== 'update' || reset) {
+  if ((kind !== 'update' || reset) && headless) out.push(setupCard(boardOf()), usbSetupCard());
+  else if (kind !== 'update' || reset) {
     out.push(h('div', { class: 'card' }, h('h2', { text: 'On the panel\'s touchscreen' }), h('ol', { class: 'todo' },
       h('li', { text: 'Join your Wi-Fi.' }), h('li', { text: 'Change the two factory codes when it asks (installer 69420, master 123456).' }))));
   }
@@ -2071,6 +2184,111 @@ function pTest() {
   return out;
 }
 
+/* A board without a screen (FLS-035): set up from a phone over its setup Wi-Fi, whose label the
+ * Flasher reads from its console (`web setup`: read-only, nothing restarts, no code is typed). */
+function setupCard(board) {
+  const st = (board && board.setup) || {};
+  const card = h('section', { class: 'card', id: 'setup-card' }, h('h2', { text: 'Set it up from your phone' }),
+    st.how ? h('p', { class: 'muted', text: st.how }) : null,
+    h('ol', { class: 'todo' }, (st.steps || []).map((t) => h('li', { text: t }))),
+    h('div', { id: 'setup-label' }, h('p', { class: 'muted', text: 'Asking the board for its setup Wi-Fi…' })));
+  if (S.setupFor !== S.port) { S.setupFor = S.port; setTimeout(readSetup, 0); } else setTimeout(fillSetup, 0);
+  return card;
+}
+async function readSetup() {
+  const port = S.port;
+  S.setup = null;
+  const r = await api('setup_label', { port }, true);
+  if (S.port !== port) return;
+  S.setup = r.ok ? r.setup : { failed: true, why: (r.error && (r.error.title || r.error.message)) || '' };
+  fillSetup();
+}
+function fillSetup() {
+  const box = $('setup-label');
+  if (!box) return;
+  const x = S.setup;
+  const again = h('div', { class: 'row-actions' }, h('button', { class: 'btn ghost small', type: 'button', 'data-act': 'setup-read' }, 'Ask again'));
+  clear(box);
+  if (!x) { box.append(h('p', { class: 'muted', text: 'Asking the board for its setup Wi-Fi…' })); return; }
+  if (x.failed || !x.known || x.unreadable) {
+    box.append(note('info', 'info', x.failed ? 'The board did not say.' : 'This RoboAlarms doesn\'t show its setup Wi-Fi here.',
+      'Look on your phone for a Wi-Fi network whose name starts with RoboAlarms.'), again);
+    return;
+  }
+  if (x.stage === 'ready') {
+    box.append(note('good', 'circleCheck', 'It is set up already.', 'Open the Panel Manager on your home network. To set it up again, hold its BOOT button for five seconds and let go.'), again);
+    return;
+  }
+  const rows = [['Setup Wi-Fi', x.ssid], ['Password', x.password], ['Then open', x.address]];
+  if (x.code) rows.push(['Setup code', x.code]); // only boards from the first builds have one
+  put(box, h('dl', { class: 'facts' }, rows.map(([k, v]) => [h('dt', { text: k }), h('dd', { class: 'mono', text: v || '' })])),
+    x.open ? null : note('info', 'info', 'Its setup Wi-Fi is closed now.', 'Hold its BOOT button for five seconds and let go to open it.'),
+    again);
+}
+
+/* Or set it up from this computer (FLS-036): the installer's access and the home Wi-Fi over USB,
+ * the steps a phone takes on the setup Wi-Fi. The passwords and the recovery key are sent and shown
+ * here only: never logged, and hidden from the Console. */
+function usbSetupCard() {
+  const field = (label, id, type, value) => h('label', { class: 'usb-field' }, h('span', { text: label }),
+    h('input', { id, type, value: value || '', autocomplete: 'off', spellcheck: 'false', maxlength: '64' }));
+  const out = h('div', { id: 'usb-setup-out', role: 'status' });
+  const button = h('button', { class: 'btn primary', type: 'button', id: 'usb-setup-go', onclick: usbSetupRun }, 'Set it up');
+  return h('section', { class: 'card', id: 'usb-setup' }, h('h2', { text: 'Or set it up from this computer' }),
+    h('p', { class: 'muted', text: 'No phone needed: the board takes these over the USB cable. Add the household\u2019s own access later, from the Panel Manager.' }),
+    h('div', { class: 'usb-grid' },
+      field('Installer user name', 'usb-installer', 'text', 'Installer'),
+      field('Installer password (12 or more characters)', 'usb-installer-pass', 'password'),
+      field('Your Wi-Fi network', 'usb-ssid', 'text'),
+      field('Wi-Fi password', 'usb-wifi-pass', 'password')),
+    h('div', { class: 'row-actions' }, button), out);
+}
+async function usbStep(step, args) {
+  const r = await api('setup_provision', { port: S.port, step, args: args || [] }, true);
+  if (!r.ok) throw new Error((r.error && (r.error.title || r.error.message)) || 'The board did not answer.');
+  return r.result;
+}
+async function usbSetupRun() {
+  const v = (id) => ($(id) ? $(id).value : '');
+  const out = $('usb-setup-out'), go = $('usb-setup-go');
+  const say = (kind, ic, bold, text, ...more) => { clear(out); put(out, note(kind, ic, bold, text), ...more); };
+  if (v('usb-installer-pass').length < 12) return say('warn', 'triangle', 'The installer\u2019s password is 12 or more characters.', '');
+  if (!v('usb-ssid').trim()) return say('warn', 'triangle', 'Type your Wi-Fi network\u2019s name.', '');
+  go.disabled = true;
+  try {
+    say('info', 'info', 'Creating the installer\u2019s access\u2026', '');
+    const acc = await usbStep('accounts', [v('usb-installer').trim() || 'Installer', v('usb-installer-pass')]);
+    $('usb-installer-pass').value = '';
+    // The recovery key, shown once: kept before the Wi-Fi step goes on.
+    await new Promise((resolve) => {
+      const kept = h('button', { class: 'btn primary', type: 'button', onclick: resolve }, 'I saved it, continue');
+      say('good', 'circleCheck', 'Save this recovery key.', 'It replaces a lost browser password later. Write it down or save it somewhere safe, away from the board.',
+        h('p', { class: 'mono big', text: acc.key || '' }), h('div', { class: 'row-actions' }, kept));
+    });
+    say('info', 'info', `Joining ${v('usb-ssid').trim()}\u2026`, 'This takes up to a minute.');
+    await usbStep('network', [v('usb-ssid').trim(), v('usb-wifi-pass')]);
+    $('usb-wifi-pass').value = '';
+    const deadline = Date.now() + 110000;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const st = await usbStep('status');
+      if (st.wifi === 'connected') break;
+      if (st.wifi === 'password' || st.wifi === 'not_found' || Date.now() > deadline) {
+        try { await usbStep('cancel'); } catch { /* it goes back by itself */ }
+        throw new Error(st.wifi === 'not_found' ? 'That Wi-Fi network wasn\u2019t found.' : 'It could not join that Wi-Fi: check the password.');
+      }
+    }
+    const done = await usbStep('finish');
+    const url = done.ip ? `https://${done.ip}/` : '';
+    say('good', 'circleCheck', 'It is set up.', url ? `Open the Panel Manager at ${url} on your home network and sign in as the installer (your browser warns the first time: the board makes its own certificate).` : 'Open the Panel Manager on your home network.');
+    S.setup = null; readSetup();
+  } catch (e) {
+    say('warn', 'triangle', e.message, 'Fix it and press Set it up again.');
+  } finally {
+    go.disabled = false;
+  }
+}
+
 /* The Z-Wave radio after "Set it up for your parts": whether it answered at the panel's start. */
 function cpOffRow(part, text, label) {
   return h('div', {}, h('p', { class: 'small', text }), h('div', { class: 'row-actions' }, h('button', { class: 'btn ghost small', type: 'button', 'data-act': 'cp-off', 'data-v': part }, label)));
@@ -2081,7 +2299,7 @@ function zwaveCard(pj) {
   return h('section', { class: 'card test' },
     h('div', { class: 'test-head' }, h('span', { class: 'icon-tile' }, icon('radio')),
       h('div', {}, h('h2', { text: 'Z-Wave radio' }),
-        h('p', { class: 'muted small', text: found ? 'It answers. Add sensors on the touchscreen: Installer › Z-Wave › Add a device.'
+        h('p', { class: 'muted small', text: found ? ((boardOf() || {}).headless ? 'It answers. Add sensors in the Panel Manager.' : 'It answers. Add sensors on the touchscreen: Installer › Z-Wave › Add a device.')
           : known ? 'It didn\'t answer after the restart.' : 'Its answer shows here once the panel is set up for it.' })),
       h('span', { class: 'chip' + (found ? ' good' : ''), text: found ? 'Answering' : known ? 'Not answering' : 'Waiting' })),
     known && !found ? note('warn', 'triangle', 'Check its wiring:', 'VCC to 3V3, GND to GND, the panel\'s TX to the radio\'s RX and its RX to the radio\'s TX; then restart the panel.') : null,
@@ -2122,7 +2340,7 @@ function fillRfLive() {
       h('tbody', {}, rf.heard.map((x) => h('tr', {}, h('td', {}, h('b', { text: x.device })), h('td', { text: x.protocol }),
         h('td', { class: 'mono', text: Object.entries(x.codes).map(([k, n]) => `${k} × ${n}`).join('  ') + (x.battery_low ? ' · battery low' : '') + (x.common ? ' · factory address' : '') }),
         h('td', { 'data-ago': x.last, text: ago(x.last) }))))) : null,
-    h('p', { class: 'small muted', text: 'To use one as a zone: on the panel, Zones › Add a zone › 433 MHz sensor.' }));
+    h('p', { class: 'small muted', text: (boardOf() || {}).headless ? 'To use one as a zone: in the Panel Manager, add a zone with a 433 MHz sensor.' : 'To use one as a zone: on the panel, Zones › Add a zone › 433 MHz sensor.' }));
 }
 function clockCard() {
   const card = h('section', { class: 'card test', id: 'clock-live' }, h('p', { class: 'muted', text: 'Asking the panel…' }));
@@ -2199,7 +2417,9 @@ function footer() {
   } else if (S.step === 3) {
     out.push(nextBtn('Next: plug the panel in'));
   } else if (S.step === 4) {
-    out.push(nextBtn('Next: check the panel', !S.port || !d || !!d.busy));
+    const ask = !!S.port && !!portInfo(S.port) && maybePanel(portInfo(S.port)) && !S.saidPanel[S.port];
+    if (ask) out.push(h('span', { class: 'why', text: 'Say whether this is your board first.' }));
+    out.push(nextBtn('Next: check the panel', !S.port || !d || !!d.busy || ask));
   } else if (S.step === 5) {
     const needCheck = d && !(d.probe && d.probe.answered) && !d.chip && d.busy !== 'identifying' && !(d.probe && d.probe.error);
     if (needCheck) {
@@ -2467,7 +2687,7 @@ function customRows(c, board) {
   if (c.zwave) add('zwave', pins.zwave);
   if (c.clock) {
     if (pins.clock) add('clock', pins.clock);
-    else rows.push(['Clock', 'Its four pins', `The I2C connector (${i2cName(board)})`]);
+    else rows.push(['Clock', 'Its four pins', tableBoard(board) ? board.rtc.where : `The I2C connector (${i2cName(board)})`]);
   }
   return rows;
 }
@@ -2477,7 +2697,7 @@ function customTable(board) {
     h('tbody', {}, rows.map((r) => h('tr', {}, h('td', { text: r[0] }), h('td', { class: 'mono', text: r[1] }), h('td', { class: 'mono', text: r[2] }))))));
 }
 function customWiring(board) {
-  return h('section', { class: 'card' }, h('h2', { text: 'Your own board on J7' }),
+  return h('section', { class: 'card' }, h('h2', { text: `Your own board on ${headerName(board)}` }),
     h('p', { class: 'muted small', text: 'These are the pins you chose, set in Advanced tools › Hardware › Custom pins. Each module pin goes to the board pin beside it; every module also needs 3V3 and GND, as that tab says. Nothing is chosen here.' }),
     customTable(board));
 }
@@ -2754,7 +2974,7 @@ function cpPcard(key, on, title, text, ic, sub, extra) {
       h('span', { class: 'tick' }, on ? icon('check') : null), h('span', { class: 'icon-tile' }, icon(ic)), h('span', {}, h('b', { text: title }), h('small', { text }))),
     on && sub ? h('div', { class: 'subpick' }, sub) : null);
 }
-function cpModules(c) {
+function cpModules(c, board) {
   const kinds = [['cc1101', 'CC1101 board', 'Eight pins: VCC, GND, SI, SO, SCLK, CSN, GDO0 and GDO2.'], ['module', 'Receiver module', 'Three pins: VCC, GND and DATA.']];
   const rfSub = [h('b', { class: 'small', text: 'Which one is on your board?' }),
     h('div', { class: 'choices', role: 'radiogroup', 'aria-label': '433 MHz radio' }, kinds.map(([k, t, d]) =>
@@ -2764,7 +2984,7 @@ function cpModules(c) {
     cpPcard('rf', c.rf !== 'none', '433 MHz radio', 'For 433 MHz door, window and motion sensors and key-fob remotes.', 'radio', rfSub, 'wide'),
     cpPcard('zwave', c.zwave, 'Z-Wave radio', 'A Zooz ZAC93, for Z-Wave door, window, motion, smoke and water sensors.', 'radio'),
     cpPcard('clock', c.clock, 'Battery-backed clock', 'Keeps the date and time through power cuts (DS3231, often sold as ZS-042).', 'clock'),
-    cpPcard('zigbee', c.zigbee, 'Zigbee module', 'Elecrow\'s ESP32-H2 module. It goes in its own radio socket, not on J7: nothing to choose.', 'tower'));
+    board && board.zigbee ? cpPcard('zigbee', c.zigbee, 'Zigbee module', 'Elecrow\'s ESP32-H2 module. It goes in its own radio socket, not on J7: nothing to choose.', 'tower') : null);
 }
 function cpJ7Map(c, board) {
   const rows = (board.header && board.header.rows) || [];
@@ -2774,15 +2994,15 @@ function cpJ7Map(c, board) {
   const cell = (lab) => {
     if (lab === '5V') return h('div', { class: 'j7cell p5' }, '5V', h('small', { text: 'never' }));
     if (lab === '3V3') return h('div', { class: 'j7cell p3' }, '3V3', h('small', { text: 'power' }));
-    if (lab === 'GND') return h('div', { class: 'j7cell gnd' }, 'GND', h('small', { text: 'ground' }));
+    if (lab === 'GND' || lab === 'G') return h('div', { class: 'j7cell gnd' }, lab, h('small', { text: 'ground' }));
     const g = Number(String(lab).replace(/^IO/, ''));
     if (!reach.has(g)) return h('div', { class: 'j7cell off' }, lab, h('small', { text: 'not offered' }));
     if (u[g]) { const x = u[g][0]; return h('div', { class: 'j7cell used' }, h('span', { class: 'num-badge', text: String(cpBadgeNo(c, x.mod)) }), lab, h('small', { text: x.sig.pin.replace(/ \(.*\)/, '') })); }
     return h('div', { class: 'j7cell' }, lab, h('small', { text: 'free' }));
   };
   return h('section', { class: 'card stack' }, h('h2', { text: `${board.header.name || 'J7'}, as printed on the board` }),
-    h('div', { class: 'tablewrap j7wrap' }, h('div', { class: 'j7map', role: 'img', 'aria-label': 'J7 with the pins your modules use' }, rows.flat().map(cell))),
-    h('p', { class: 'small muted', text: 'The numbers are your modules below. Power and ground aren\'t set here: wire them to any 3V3 and GND pins. Which row is 5V hasn\'t been confirmed on every board: find it with a meter before you wire power.' }));
+    h('div', { class: 'tablewrap j7wrap' }, h('div', { class: 'j7map', role: 'img', 'aria-label': `${headerName(board)} with the pins your modules use` }, rows.flat().map(cell))),
+    h('p', { class: 'small muted', text: 'The numbers are your modules below. Power and ground aren\'t set here: wire them to any 3V3 and GND pins.' + (tableBoard(board) ? '' : ' Which row is 5V hasn\'t been confirmed on every board: find it with a meter before you wire power.') }));
 }
 function cpPinTable(c, mod, board) {
   const def = CP_MODS[mod];
@@ -2813,8 +3033,8 @@ function cpModCard(c, mod, board) {
     const place = (v, t, d) => h('button', { class: 'place', type: 'button', role: 'radio', 'aria-checked': String(S.cp.clockPlace === v), 'data-act': 'cp-clockplace', 'data-v': v },
       h('span', { class: 'dot' }), h('span', {}, h('b', { text: t }), h('small', { text: d })), h('span'));
     kids.push(h('div', { class: 'part-pick' }, h('div', { class: 'places', role: 'radiogroup', 'aria-label': 'Where the clock is wired' },
-      place('j13', 'The I2C connector (J13)', 'A lead into J13, not your board. No pins to choose.'),
-      place('custom', 'Two pins on your board', 'On your board, with its own wiring away from the touch screen.'))));
+      tableBoard(board) ? place('j13', `Its own pins: ${board.rtc.where}`, 'Not on your board. No pins to choose.') : place('j13', 'The I2C connector (J13)', 'A lead into J13, not your board. No pins to choose.'),
+      place('custom', 'Two pins on your board', tableBoard(board) ? 'On your board, with its own wiring.' : 'On your board, with its own wiring away from the touch screen.'))));
     if (S.cp.clockPlace !== 'custom') return h('section', { class: 'card part' }, kids);
   }
   const body = [cpPinTable(c, mod, board)];
@@ -2838,18 +3058,18 @@ function cpCheckCard(c, board) {
     waiting ? h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small plain' }, icon('cpu')), h('div', {}, h('b', { text: 'Checking the pins…' })))
       : p.length ? h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small bad' }, icon('triangle')), h('div', {}, h('b', { text: 'Not ready to apply' }), p.map((t) => h('small', { text: t }))))
         : h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small' }, icon('circleCheck')), h('div', {}, h('b', { text: 'Everything fits' }), h('small', { text: 'No pin is used twice, and every pin is one the panel accepts.' }))),
-    h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small plain' }, icon('plug')), h('div', {}, h('b', { text: `Pins left for wired door contacts: ${left.length}` }),
+    tableBoard(board) ? null : h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small plain' }, icon('plug')), h('div', {}, h('b', { text: `Pins left for wired door contacts: ${left.length}` }),
       h('small', { text: left.length ? left.map((x) => x.label).join(', ') + '.' : 'None.' }))),
     h('div', { class: 'pc-row' }, h('span', { class: 'icon-tile small plain' }, icon('cpu')), h('div', {}, h('b', { text: 'The panel checks again' }), h('small', { text: 'It refuses a pin used twice or one it can\'t use, and stores nothing until every pin fits.' }))));
 }
 /* The board revision the pins are for, which the person confirms (boards.json "revision"). */
 const cpRevision = () => { const b = boardOf(); return b && b.revision ? b : null; };
 const cpTicked = () => (!cpRevision() || S.cp.ticks.rev) && S.cp.ticks.unplug;
-function cpReadyCard(mode) {
+function cpReadyCard(mode, board) {
   const box = (k, t, sm) => h('li', {}, h('label', {}, h('input', { type: 'checkbox', id: 'tick-' + k, 'data-act': 'cp-tick', 'data-v': k, checked: S.cp.ticks[k] }), h('span', {}, h('b', { text: t }), sm ? h('small', { text: sm }) : null), h('span')));
   return h('section', { class: 'card' }, h('h2', { text: mode === 'install' ? 'Before you install' : mode === 'update' ? 'Before you update' : 'Before you apply' }),
-    note('warn', 'triangle', 'Every module\'s VCC goes to a 3V3 pin, never to 5V; GND goes to a GND pin.', 'Modules may share the same 3V3 and GND pins. J7\'s pins take 3.3 V at most: 5 V on a signal pin damages the panel.'),
-    note('info', 'info', 'Which row of J7 is 5V:', 'it hasn\'t been confirmed on every board. Find it with a meter before you wire power.'),
+    note('warn', 'triangle', 'Every module\'s VCC goes to a 3V3 pin, never to 5V; GND goes to a GND pin.', `Modules may share the same 3V3 and GND pins. ${headerName(board)}'s pins take 3.3 V at most: 5 V on a signal pin damages the panel.`),
+    tableBoard(board) ? null : note('info', 'info', 'Which row of J7 is 5V:', 'it hasn\'t been confirmed on every board. Find it with a meter before you wire power.'),
     h('ul', { class: 'need' },
       cpRevision() ? box('rev', `This is a ${cpRevision().revision} board`, cpRevision().revision_note || '') : null,
       box('unplug', mode === 'apply' ? 'I\'ll apply first, then switch off and plug my board in' : `I'll ${mode} first, then switch off and plug my board in`, 'Until the panel restarts, it still drives the pins it used before.')));
@@ -2889,8 +3109,8 @@ function toolCustomPins(board, runs) {
   if (S.cp.notes.length) out.push(note('warn', 'triangle', 'The panel refused some of its stored pins:', S.cp.notes.join(' ')));
   if (mode === 'install') out.push(note('info', 'download', 'This panel doesn\'t run RoboAlarms yet.', 'Choose your pins anyway. The Flasher installs RoboAlarms, starts it, then sets these pins, all in one go.'));
   if (mode === 'update') out.push(note('info', 'download', 'This panel\'s RoboAlarms can\'t take custom pins.', 'Choose your pins anyway. The Flasher updates it, keeping its codes, zones and settings, then sets these pins, all in one go.'));
-  out.push(note('info', 'info', 'For your own board on J7.', 'Pick the modules on it, then the board pin each module pin is wired to. Power isn\'t asked for: every module\'s VCC goes to a 3V3 pin and its GND to a GND pin, and they may share.'));
-  out.push(h('h2', { class: 'section', text: 'Your modules' }), cpModules(c));
+  out.push(note('info', 'info', `For your own board on ${headerName(board)}.`, 'Pick the modules on it, then the board pin each module pin is wired to. Power isn\'t asked for: every module\'s VCC goes to a 3V3 pin and its GND to a GND pin, and they may share.'));
+  out.push(h('h2', { class: 'section', text: 'Your modules' }), cpModules(c, board));
   out.push(h('h2', { class: 'section', text: 'Which pin each one uses' }), cpJ7Map(c, board));
   if (c.rf === 'cc1101' || c.rf === 'module') out.push(cpModCard(c, c.rf, board));
   if (c.zwave) out.push(cpModCard(c, 'zwave', board));
@@ -2898,7 +3118,7 @@ function toolCustomPins(board, runs) {
   if (c.zigbee) out.push(h('section', { class: 'card part' }, h('div', { class: 'part-head' }, h('span', { class: 'icon-tile' }, icon('tower')),
     h('div', {}, h('h2', { text: 'Zigbee module' }), h('p', { class: 'muted small', text: 'In its socket - nothing to choose. It goes into the radio socket with the panel switched off and never shares a pin with J7.' })),
     h('span', { class: 'chip', text: 'Nothing to choose' }))));
-  out.push(cpCheckCard(c, board), cpReadyCard(mode));
+  out.push(cpCheckCard(c, board), cpReadyCard(mode, board));
   out.push(mode === 'apply'
     ? note('warn', 'triangle', 'Apply first, then plug your board in.', 'Apply with your board unplugged. When the panel has restarted, switch it off, plug your board in and switch it on. Until it restarts, the panel still drives the pins it used before.')
     : note('warn', 'triangle', `${mode === 'install' ? 'Install' : 'Update'} first, then plug your board in.`, `The pins are set after the ${mode === 'install' ? 'install' : 'update'}, once RoboAlarms has started. Keep your board unplugged until the Flasher has finished. Then switch the panel off, plug your board in and switch it on.`));
@@ -3198,8 +3418,9 @@ document.addEventListener('click', async (e) => {
     case 'fullfocus': S.fullFocus = t.tagName === 'g' && S.fullFocus === v ? '' : v; break;
     case 'checkfocus': S.checkFocus = t.tagName === 'g' && S.checkFocus === v ? '' : v; break;
     case 'port': selectPort(v); break;
-    case 'probe': api('probe', { port: v || port }); return;
-    case 'identify': S.error = null; api('identify', { port }); return;
+    case 'probe': api('probe', { port: v || port, alone: !!S.saidPanel[v || port] }); return;
+    case 'identify': S.error = null; api('identify', { port, alone: !!S.saidPanel[port] }); return;
+    case 'say-panel': S.saidPanel[v] = true; api('probe', { port: v, alone: true }); break;
     case 'pickboard': S.pickBoard = !S.pickBoard; break;
     case 'image': api('select_image', { port, key: v }); S.imageOk = false; return;
     case 'board': api('select_board', { port, board: v }); S.imageOk = false; return;
@@ -3282,6 +3503,7 @@ document.addEventListener('click', async (e) => {
       return;
     }
     case 'clock-refresh': refreshClock(); return;
+    case 'setup-read': S.setup = null; fillSetup(); readSetup(); return;
     case 'clock-set': {
       const ok = await ask({ title: 'Set the panel\'s clock from this computer?', body: ['The panel takes this computer\'s time, to the second, and writes it into the clock module.', 'Check this computer\'s own clock is right first.'], ok: 'Set the clock' });
       if (!ok) return;

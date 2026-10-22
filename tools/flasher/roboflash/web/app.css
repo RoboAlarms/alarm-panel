@@ -589,3 +589,9 @@ table.wires.pins select.select { min-width: 200px; }
   .part-head > :last-child { grid-column: 1 / -1; }
 }
 .radio-art { max-width: 460px; }
+
+/* Setup over USB (FLS-036) */
+.usb-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 12px 0; }
+.usb-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.usb-field input { font: inherit; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line-strong, #c3d0d6); background: var(--surface, #fff); color: inherit; }
+#usb-setup-out .mono.big { font-size: 18px; letter-spacing: .04em; margin: 10px 0; }

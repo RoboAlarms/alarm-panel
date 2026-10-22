@@ -1969,6 +1969,10 @@ void ksvc_poll(uint64_t now)
     }
     plink_keypad_info(K.k, now, &info);
     enrollment_lost(now, &info);
+    if (!K.setup_only) {
+        kio_poll(K.k, now);
+        kasvc_poll(K.k, now, info.selected != 0u ? info.selected : info.home);
+    }
     if (K.wifi_setup == UI_LINK_WIFI_REQUESTING || K.wifi_setup == UI_LINK_WIFI_JOINING) {
         if (link_wifi_up()) {
             K.wifi_setup = UI_LINK_WIFI_CONNECTED;
@@ -2304,6 +2308,8 @@ esp_err_t ksvc_prepare(uint64_t now, bool setup_only)
 #endif
         offer |= s_home ? PLINK_CAP_HOME : 0u;
         offer |= kfw_caps();
+        offer |= kio_prepare(); /* its wired terminals for the master's zones (LINK-055) */
+        offer |= kasvc_caps();  /* the master's arming warnings on its Home (LINK-056) */
     }
     plink_keypad_init(k, &g_link.crypto, &port, have ? &rec : NULL, K.cfg_buf,
                       ALARM_CONFIG_BLOB_MAX, K.cfg, PLINK_KIND_PANEL, &caps, offer, name, g_link.fw,

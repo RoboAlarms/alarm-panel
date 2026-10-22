@@ -1,0 +1,15 @@
+# ESP32-S3-DevKitC-1 N16R8 (16 MB flash), headless panel. See docs/features/42: decide before the
+# first flash, since changing it later wipes the panel (configuration, users and the event log).
+# The table sits at 0xC000 (CONFIG_PARTITION_TABLE_OFFSET), as on the P4. The same slots as the
+# P4's, so an image that grows has the room; no co-processor slot.
+# Name,     Type, SubType,   Offset,   Size
+nvs,        data, nvs,       0xD000,   0x20000
+otadata,    data, ota,       0x2D000,  0x2000
+phy_init,   data, phy,       0x2F000,  0x1000
+ota_0,      app,  ota_0,     0x30000,  4608K
+ota_1,      app,  ota_1,     ,         4608K
+nvs_keys,   data, nvs_keys,  ,         0x1000
+assets,     data, littlefs,  ,         2560K
+fw_cache,   data, undefined, ,         2M
+eventlog,   data, undefined, ,         384K
+coredump,   data, coredump,  ,         64K

@@ -253,6 +253,55 @@ static alarm_result_t kp_authenticate(void *ctx, const char *code, uint8_t *user
     return r;
 }
 
+/* An automation's arming warnings, as the master's newest AUTO_WARN said (LINK-056). */
+static size_t kp_auto_warnings(void *ctx, auto_warning_t *out, size_t max)
+{
+    (void)ctx;
+    return kasvc_warnings(out, max);
+}
+
+/* Put off from this keypad: the code checked on the master, then the put-off by its user. */
+static auto_put_off_t kp_auto_put_off(void *ctx, uint16_t uid, uint8_t choice, const char *code,
+                                      alarm_result_t *code_result)
+{
+    (void)ctx;
+    auto_warning_t w[PLINK_AUTO_MAX];
+    const size_t n = kasvc_warnings(w, PLINK_AUTO_MAX);
+    uint8_t partition = 0u;
+    for (size_t i = 0; i < n; i++) {
+        if (w[i].uid == uid) {
+            partition = w[i].partition;
+        }
+    }
+    if (code_result != NULL) {
+        *code_result = ALARM_OK;
+    }
+    if (partition == 0u) {
+        return AUTO_POFF_NO_WARNING; /* no code is checked */
+    }
+    plink_cmd_t c;
+    memset(&c, 0, sizeof c);
+    c.op = PLINK_OP_PUT_OFF;
+    c.cmd.type = ALARM_CMD_CODE_CHECK;
+    c.cmd.partition = partition;
+    c.cmd.zone = uid;
+    c.cmd.walk_op = choice;
+    put_code(c.cmd.code, sizeof c.cmd.code, code);
+    plink_result_t out;
+    const alarm_result_t r = ksvc_command(&c, &out);
+    plink_wipe(&c, sizeof c);
+    if (r == ALARM_ERR_UNAVAILABLE) {
+        return UI_AUTO_POFF_BUSY; /* no answer from the master: nothing was put off */
+    }
+    if (r != ALARM_OK) {
+        if (code_result != NULL) {
+            *code_result = r;
+        }
+        return UI_AUTO_POFF_CODE;
+    }
+    return (auto_put_off_t)out.not_ready_zone;
+}
+
 static alarm_result_t kp_change_code(void *ctx, const char *current, const char *new_code,
                                      uint8_t *user_out)
 {
@@ -488,8 +537,9 @@ static void keypad_backend(ui_backend_t *be)
     be->auto_set_off = NULL;
     be->auto_status = NULL;
     be->auto_try = NULL;
-    be->auto_warnings = NULL;
-    be->auto_put_off = NULL;
+    /* LINK-056: the master's arming warnings on Home, and put off from here. */
+    be->auto_warnings = kp_auto_warnings;
+    be->auto_put_off = kp_auto_put_off;
     be->zw_status = NULL;
     be->zw_devices = NULL;
     be->zw_device = NULL;

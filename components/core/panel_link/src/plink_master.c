@@ -29,6 +29,8 @@
 #define CMD_EVERY_MS       500u
 #define REQ_BURST          32u    /* CFG_REQ, ZONES_REQ, EV_REQ: room for a whole configuration */
 #define REQ_EVERY_MS       50u
+#define IO_BURST           20u    /* IO_STATE: a door opened and closed a few times at once */
+#define IO_EVERY_MS        100u
 #define BYE_COUNT          3u     /* LINK-014: three times over 2 s */
 #define BYE_GAP_MS         1000u
 #define BYE_REMOVED        1u
@@ -213,6 +215,45 @@ static bool send_sealed(plink_master_t *m, plink_peer_t *p, uint8_t type, size_t
     }
     send_frame(m, &p->addr, m->out, len);
     return true;
+}
+
+/* ---- an automation's arming warnings (LINK-056) ------------------------------------------------ */
+
+void plink_master_auto_warn(plink_master_t *m, uint64_t now, const plink_auto_warn_t *w)
+{
+    if (m == NULL || w == NULL) {
+        return;
+    }
+    size_t n = 0u;
+    if (!plink_enc_auto_warn(w, m->pt, sizeof m->pt, &n)) {
+        return;
+    }
+    /* What changed: the table without arm_in_ms, which moves at every call. */
+    plink_auto_warn_t still = *w;
+    for (size_t i = 0; i < still.count; i++) {
+        still.rec[i].arm_in_ms = 0u;
+    }
+    uint8_t buf[2u + PLINK_AUTO_MAX * PLINK_AUTO_REC_LEN];
+    size_t sn = 0u;
+    const uint32_t crc = plink_enc_auto_warn(&still, buf, sizeof buf, &sn) ? alarm_crc32(0u, buf, sn) : 0u;
+    for (size_t i = 0; i < PLINK_KEYPADS_MAX; i++) {
+        plink_peer_t *p = &m->peer[i];
+        if (!p->used || !is_live(p) || (p->live.caps & PLINK_CAP_AUTO) == 0u ||
+            frame_cap(m, &p->addr) < PLINK_FRAME_ESPNOW) {
+            continue;
+        }
+        const bool fresh = p->auto_sid != p->live.sid;
+        const bool changed = p->auto_crc != crc;
+        const bool due = w->count > 0u && now - p->auto_at >= PLINK_AUTO_EVERY_MS;
+        if (!fresh && !changed && !due) {
+            continue;
+        }
+        if (send_sealed(m, p, PLINK_T_AUTO_WARN, n)) {
+            p->auto_sid = p->live.sid;
+            p->auto_crc = crc;
+            p->auto_at = now;
+        }
+    }
 }
 
 /* ---- the stored record ----------------------------------------------------------------------- */
@@ -787,7 +828,11 @@ static alarm_result_t cmd_check(const plink_master_t *m, const plink_peer_t *p, 
     if (c->op == PLINK_OP_ACTIVITY) {
         return c->cmd.partition == selected_partition(p, now) ? ALARM_OK : ALARM_ERR_NOT_AUTHORIZED;
     }
-    if (c->op != PLINK_OP_COMMAND && c->op != PLINK_OP_AUTH && c->op != PLINK_OP_CHANGE_CODE) {
+    if (c->op == PLINK_OP_PUT_OFF && (p->live.caps & PLINK_CAP_AUTO) == 0u) {
+        return ALARM_ERR_UNAVAILABLE; /* LINK-056: only in a session holding the bit */
+    }
+    if (c->op != PLINK_OP_COMMAND && c->op != PLINK_OP_AUTH && c->op != PLINK_OP_CHANGE_CODE &&
+        c->op != PLINK_OP_PUT_OFF) {
         return ALARM_ERR_UNAVAILABLE;
     }
     if (c->op == PLINK_OP_COMMAND && (unsigned)c->cmd.type > (unsigned)ALARM_CMD_CODE_CHECK) {
@@ -2038,6 +2083,17 @@ static void on_sealed(plink_master_t *m, uint64_t now, const plink_addr_t *from,
                 (void)send_sealed(m, p, PLINK_T_WIFI, PLINK_WIFI_LEN);
             plink_wipe(&wifi, sizeof wifi);
             plink_wipe(m->pt, sizeof m->pt);
+        }
+        break;
+    case PLINK_T_IO_STATE:
+        /* LINK-055: a keypad's terminals, from a session holding PLINK_CAP_IO; a burst of
+         * changes is fine, a flood is dropped (the next frame carries the whole state again). */
+        if (is_live(p) && (p->live.caps & PLINK_CAP_IO) != 0u && m->port.io_state != NULL &&
+            bucket_take(&p->io_tokens, &p->io_tokens_at, now, IO_BURST, IO_EVERY_MS)) {
+            plink_io_state_t st;
+            if (plink_dec_io_state(m->pt, n, &st)) {
+                m->port.io_state(m->port.ctx, p->rec.device, &st);
+            }
         }
         break;
     case PLINK_T_HEARTBEAT: on_heartbeat(m, p, now, n); break;

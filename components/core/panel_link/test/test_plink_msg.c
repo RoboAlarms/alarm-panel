@@ -30,6 +30,8 @@
 #include "ui_backend/ui_backend.h"
 #include "unity.h"
 #include "plink_wifi_fixture_v1.h"
+#include "plink_io_fixture_v1.h"
+#include "plink_auto_fixture_v1.h"
 #include "status_goto_fixture_v1.h"
 #include "status_policy_fixture_v1.h"
 
@@ -4770,8 +4772,10 @@ static void test_wire_numbers_v1(void)
     }
     TEST_ASSERT_EQUAL_size_t(frozen, here);
     /* The masks built from them. */
-    TEST_ASSERT_EQUAL_HEX32(0x0007u, PLINK_CAPS_KNOWN & ~PLINK_CAP_WIFI);
+    TEST_ASSERT_EQUAL_HEX32(0x0007u, PLINK_CAPS_KNOWN & ~(PLINK_CAP_WIFI | PLINK_CAP_IO | PLINK_CAP_AUTO));
+    TEST_ASSERT_EQUAL_HEX32(0x0020u, PLINK_CAP_AUTO);
     TEST_ASSERT_EQUAL_HEX32(0x0008u, PLINK_CAP_WIFI);
+    TEST_ASSERT_EQUAL_HEX32(0x0010u, PLINK_CAP_IO);
 }
 
 /* The type of each codec row the frozen fixture names (its first word); NOT_PAIRED has no
@@ -4845,6 +4849,16 @@ static void test_wire_fixture_v1(void)
             TEST_ASSERT_TRUE(t == PLINK_WIFI_V1_TYPE_REQ || t == PLINK_WIFI_V1_TYPE);
             continue;
         }
+        if (t == PLINK_T_AUTO_WARN) {
+            /* added after v1: frozen in plink_auto_fixture_v1.h (test_auto_fixture_v1) */
+            TEST_ASSERT_EQUAL_HEX8(PLINK_AUTO_V1_TYPE, t);
+            continue;
+        }
+        if (t == PLINK_T_IO_STATE) {
+            /* added after v1: frozen in plink_io_fixture_v1.h (test_io_fixture_v1) */
+            TEST_ASSERT_EQUAL_HEX8(PLINK_IO_V1_TYPE, t);
+            continue;
+        }
         const char *name = NULL;
         for (size_t i = 0; i < sizeof(TYPE_NAMES) / sizeof(TYPE_NAMES[0]); i++) {
             if (TYPE_NAMES[i].type == t) {
@@ -4885,6 +4899,102 @@ static void test_wifi_fixture_v1(void)
 }
 
 /* LINK-053: maximum lengths, malformed and stale replies, unavailable/open network. */
+/* LINK-055, LINK-017: the frozen IO_STATE payload (plink_io_fixture_v1.h, built from the published
+ * layout) keeps its numbers, reads as the values frozen with it, and encodes again to its bytes. */
+static void test_io_fixture_v1(void)
+{
+    TEST_ASSERT_EQUAL_HEX8(PLINK_IO_V1_TYPE, PLINK_T_IO_STATE);
+    TEST_ASSERT_EQUAL_HEX16(PLINK_IO_V1_CAP, PLINK_CAP_IO);
+    plink_io_state_t st;
+    TEST_ASSERT_TRUE(plink_dec_io_state(PLINK_IO_V1, sizeof PLINK_IO_V1, &st));
+    TEST_ASSERT_EQUAL_UINT8(2, st.count);
+    TEST_ASSERT_EQUAL_UINT8(4, st.rec[0].gpio);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_IO_KNOWN, st.rec[0].flags);
+    TEST_ASSERT_EQUAL_UINT16(258, st.rec[0].changes);
+    TEST_ASSERT_EQUAL_UINT8(18, st.rec[1].gpio);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_IO_KNOWN | PLINK_IO_ACTIVE, st.rec[1].flags);
+    TEST_ASSERT_EQUAL_UINT16(7, st.rec[1].changes);
+    uint8_t again[sizeof PLINK_IO_V1];
+    size_t n = 0;
+    TEST_ASSERT_TRUE(plink_enc_io_state(&st, again, sizeof again, &n));
+    TEST_ASSERT_EQUAL_size_t(sizeof PLINK_IO_V1, n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(PLINK_IO_V1, again, n);
+}
+
+/* LINK-056, LINK-017: the frozen AUTO_WARN payload (plink_auto_fixture_v1.h, built from the
+ * published layout) keeps its numbers, reads as the values frozen with it, and encodes again to its
+ * bytes; a longer record from a newer master is read for the bytes known, a short one refused. */
+static void test_auto_fixture_v1(void)
+{
+    TEST_ASSERT_EQUAL_HEX8(PLINK_AUTO_V1_TYPE, PLINK_T_AUTO_WARN);
+    TEST_ASSERT_EQUAL_HEX16(PLINK_AUTO_V1_CAP, PLINK_CAP_AUTO);
+    TEST_ASSERT_EQUAL_UINT8(PLINK_AUTO_V1_OP, PLINK_OP_PUT_OFF);
+    plink_auto_warn_t w;
+    TEST_ASSERT_TRUE(plink_dec_auto_warn(PLINK_AUTO_V1, sizeof PLINK_AUTO_V1, &w));
+    TEST_ASSERT_EQUAL_UINT8(1, w.count);
+    const plink_auto_rec_t *r = &w.rec[0];
+    TEST_ASSERT_EQUAL_UINT16(5, r->uid);
+    TEST_ASSERT_EQUAL_UINT8(1, r->partition);
+    TEST_ASSERT_EQUAL_UINT8(3, r->level);
+    TEST_ASSERT_EQUAL_UINT8(1, r->state);
+    TEST_ASSERT_EQUAL_UINT8(5, r->warn_min);
+    TEST_ASSERT_EQUAL_UINT8(0, r->bypass);
+    TEST_ASSERT_EQUAL_UINT8(0, r->put_off_by);
+    TEST_ASSERT_TRUE(r->arm_at_epoch_ms == (int64_t)0x0000019A2B3C4D00LL);
+    TEST_ASSERT_EQUAL_UINT32(240000u, r->arm_in_ms);
+    TEST_ASSERT_EQUAL_INT32(-1, r->until_day);
+    TEST_ASSERT_EQUAL_UINT16(360, r->until_minute);
+    uint8_t again[sizeof PLINK_AUTO_V1];
+    size_t n = 0;
+    TEST_ASSERT_TRUE(plink_enc_auto_warn(&w, again, sizeof again, &n));
+    TEST_ASSERT_EQUAL_size_t(sizeof PLINK_AUTO_V1, n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(PLINK_AUTO_V1, again, n);
+    uint8_t longer[2u + 30u];
+    memset(longer, 0xEE, sizeof longer);
+    memcpy(longer, PLINK_AUTO_V1, sizeof PLINK_AUTO_V1);
+    longer[1] = 30u;
+    TEST_ASSERT_TRUE(plink_dec_auto_warn(longer, sizeof longer, &w));
+    TEST_ASSERT_EQUAL_UINT16(360, w.rec[0].until_minute);
+    uint8_t shorter[sizeof PLINK_AUTO_V1];
+    memcpy(shorter, PLINK_AUTO_V1, sizeof shorter);
+    shorter[1] = 25u;
+    TEST_ASSERT_FALSE(plink_dec_auto_warn(shorter, sizeof shorter, &w));
+    TEST_ASSERT_FALSE(plink_dec_auto_warn(PLINK_AUTO_V1, sizeof PLINK_AUTO_V1 - 1u, &w));
+    const plink_auto_warn_t too_many = {.count = PLINK_AUTO_MAX + 1u};
+    TEST_ASSERT_FALSE(plink_enc_auto_warn(&too_many, again, sizeof again, &n));
+    TEST_ASSERT_TRUE(plink_type_from_master(PLINK_T_AUTO_WARN));
+}
+
+/* LINK-055: IO_STATE's layout; a longer record from a newer keypad is read for the bytes known. */
+static void test_io_state_codec(void)
+{
+    plink_io_state_t st = {.count = 2,
+                           .rec = {{.gpio = 4, .flags = PLINK_IO_KNOWN, .changes = 0x0102u},
+                                   {.gpio = 18, .flags = PLINK_IO_KNOWN | PLINK_IO_ACTIVE, .changes = 7}}};
+    uint8_t wire[64];
+    size_t n = 0;
+    TEST_ASSERT_TRUE(plink_enc_io_state(&st, wire, sizeof wire, &n));
+    static const uint8_t expect[] = {2, 4, 4, 0x02, 0x02, 0x01, 18, 0x03, 7, 0};
+    TEST_ASSERT_EQUAL_UINT(sizeof expect, n);
+    TEST_ASSERT_EQUAL_MEMORY(expect, wire, n);
+    plink_io_state_t back;
+    TEST_ASSERT_TRUE(plink_dec_io_state(wire, n, &back));
+    TEST_ASSERT_EQUAL_MEMORY(&st, &back, sizeof st);
+    TEST_ASSERT_FALSE(plink_dec_io_state(wire, n - 1, &back)); /* cut short */
+    TEST_ASSERT_FALSE(plink_enc_io_state(&st, wire, n - 1, &n)); /* no room */
+    static const uint8_t newer[] = {1, 6, 9, 0x01, 5, 0, 0xEE, 0xEE};
+    TEST_ASSERT_TRUE(plink_dec_io_state(newer, sizeof newer, &back));
+    TEST_ASSERT_EQUAL_UINT8(9, back.rec[0].gpio);
+    TEST_ASSERT_EQUAL_UINT16(5, back.rec[0].changes);
+    static const uint8_t too_many[] = {17, 4};
+    TEST_ASSERT_FALSE(plink_dec_io_state(too_many, sizeof too_many, &back));
+    static const uint8_t short_rec[] = {1, 3, 9, 1, 5};
+    TEST_ASSERT_FALSE(plink_dec_io_state(short_rec, sizeof short_rec, &back));
+    TEST_ASSERT_TRUE(plink_type_known(PLINK_T_IO_STATE));
+    TEST_ASSERT_TRUE(plink_type_sealed(PLINK_T_IO_STATE));
+    TEST_ASSERT_FALSE(plink_type_from_master(PLINK_T_IO_STATE));
+}
+
 static void test_wifi_credentials_codec(void)
 {
     plink_wifi_t in = {0}, out;
@@ -4915,6 +5025,9 @@ static void test_wifi_credentials_codec(void)
 int main(void)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_io_state_codec);
+    RUN_TEST(test_io_fixture_v1);
+    RUN_TEST(test_auto_fixture_v1);
     RUN_TEST(test_wifi_credentials_codec);
     RUN_TEST(test_wifi_fixture_v1);
     RUN_TEST(test_wire_numbers);

@@ -140,6 +140,22 @@ static void test_trial_requires_new_interface_and_owner(void)
     TEST_ASSERT_EQUAL(WEB_SETUP_BUSY, web_setup_trial_begin(&flow, &actor, 20));
     TEST_ASSERT_EQUAL(WEB_SETUP_STALE, write_op(WEB_SETUP_FINISH, 20));
 }
+/* A wrong Wi-Fi password: the owner gives the trial up and tries again at once; nobody else can. */
+static void test_trial_cancel_is_the_owners_and_frees_a_new_trial(void)
+{
+    network();
+    TEST_ASSERT_EQUAL(WEB_SETUP_OK, web_setup_trial_begin(&flow, &actor, 10));
+    actor.session = 2;
+    TEST_ASSERT_EQUAL(WEB_SETUP_STALE, web_setup_trial_cancel(&flow, &actor));
+    actor.session = 1;
+    actor.authenticated = false;
+    TEST_ASSERT_EQUAL(WEB_SETUP_UNAUTHORIZED, web_setup_trial_cancel(&flow, &actor));
+    actor.authenticated = true;
+    TEST_ASSERT_EQUAL(WEB_SETUP_OK, web_setup_trial_cancel(&flow, &actor));
+    TEST_ASSERT_EQUAL(WEB_SETUP_STALE, web_setup_trial_cancel(&flow, &actor));
+    TEST_ASSERT_FALSE(web_setup_tick(&flow, 200000)); /* nothing left to roll back */
+    TEST_ASSERT_EQUAL(WEB_SETUP_OK, web_setup_trial_begin(&flow, &actor, 30));
+}
 static void test_trial_commit_failure_still_rolls_back_on_timeout(void)
 {
     network();
@@ -299,6 +315,7 @@ int main(void)
     RUN_TEST(test_account_creation_cannot_skip_key_acknowledgement);
     RUN_TEST(test_stale_revision_does_not_write);
     RUN_TEST(test_trial_requires_new_interface_and_owner);
+    RUN_TEST(test_trial_cancel_is_the_owners_and_frees_a_new_trial);
     RUN_TEST(test_trial_commit_failure_still_rolls_back_on_timeout);
     RUN_TEST(test_confirmed_network_survives_restart_before_finish);
     RUN_TEST(test_armed_state_blocks_each_mutation);

@@ -23,3 +23,6 @@ alarm_add_test(zone_voice_epoch SOURCES test_voice_epoch.c LIBS zone_hub unity S
 # arm cancels before the claim, and the hold from the claim until the change is made, with the
 # real engine, hub and 433 MHz source, arming tried at every step of the change.
 alarm_add_test(zone_bind_gate SOURCES test_bind_gate.c LIBS zone_hub alarm_sim unity STRICT)
+# A keypad's own wired inputs as the master's zones (docs/features/11 LINK-055): watched terminals
+# only, a lost frame's opening kept, supervision, learning.
+alarm_add_test(zsrc_keypad SOURCES test_zsrc_keypad.c LIBS zone_hub unity STRICT)

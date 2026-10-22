@@ -25,6 +25,9 @@
 #include "lang_packs.h"
 #include "web_voice.h"
 #include "lwip/sockets.h"
+#if CONFIG_ALARM_LINK
+#include "plink_service.h"
+#endif
 #include "lwip/tcp.h"
 #include "mbedtls/platform_util.h"
 #include "miniz.h" /* the ROM's inflate (esp_rom) */
@@ -45,6 +48,7 @@
 #include "web_mem.h"
 #include "web_rules.h"
 #include "web_screen.h"
+#include "web_setup.h"
 #include "web_zigbee.h"
 #include "web_zwave.h"
 #include "ui_backend/ui_why_words.h"
@@ -76,6 +80,12 @@ static atomic_uint generation;
 static SemaphoreHandle_t settings_lock;
 static httpd_handle_t server;
 static httpd_handle_t redirect_server; /* port 80, only while `server` runs (WEB-023) */
+/* A board without a screen is set up from a phone over plain HTTP on its setup Wi-Fi (the owner,
+ * 2026-10-21: the first setup, phone to board): port 80 then also serves the pages and the setup's
+ * API to a phone on the setup Wi-Fi while setup or recovery is open (plain_serve), and both
+ * servers' handlers run one at a time under s_serve_lock (the sessions are one table). */
+static bool s_setup_board;
+static SemaphoreHandle_t s_serve_lock;
 static char identity[13], boot[65];
 static uint8_t cert[1024] ALARM_SLOW_BSS; /* PEM for mbedTLS to parse: slow memory */
 static uint8_t key[256];
@@ -432,6 +442,10 @@ static void api_path(httpd_req_t *r, char *out, size_t cap)
     const char *p = r->uri + 8;
     snprintf(out, cap, "%.*s", (int)strcspn(p, "?"), p);
 }
+static bool plain_http(httpd_req_t *r)
+{
+    return redirect_server != NULL && r->handle == redirect_server;
+}
 static bool origin_ok(httpd_req_t *r)
 {
     char origin[160], host[128], expected[160], site[24];
@@ -444,8 +458,25 @@ static bool origin_ok(httpd_req_t *r)
         return false;
     if (httpd_req_get_hdr_value_str(r, "Origin", origin, sizeof(origin)) != ESP_OK)
         return r->method == HTTP_GET;
-    snprintf(expected, sizeof(expected), "https://%s", host);
+    snprintf(expected, sizeof(expected), "%s://%s", plain_http(r) ? "http" : "https", host);
     return !strcmp(origin, expected);
+}
+/* The request came over the setup Wi-Fi (the panel's own address there), not the home network. */
+static bool via_setup_wifi(httpd_req_t *r)
+{
+    struct sockaddr_storage local;
+    socklen_t len = sizeof(local);
+    if (getsockname(httpd_req_to_sockfd(r), (struct sockaddr *)&local, &len) != 0)
+        return false;
+    char text[48] = "";
+    if (local.ss_family == AF_INET)
+        inet_ntop(AF_INET, &((struct sockaddr_in *)&local)->sin_addr, text, sizeof(text));
+#if LWIP_IPV6
+    else if (local.ss_family == AF_INET6)
+        inet_ntop(AF_INET6, &((struct sockaddr_in6 *)&local)->sin6_addr, text, sizeof(text));
+#endif
+    const char *v4 = strrchr(text, ':'); /* "::ffff:192.168.4.1" */
+    return !strcmp(v4 ? v4 + 1 : text, NET_WIFI_SETUP_AP_IP);
 }
 static bool unique_members(const cJSON *o, unsigned *remaining)
 {
@@ -763,8 +794,9 @@ static esp_err_t login(httpd_req_t *r)
         s->confirmed = esp_timer_get_time(); /* signing in counts as typing the password */
     ESP_LOGI("panel_web", "user %u signed in to the Panel Manager", (unsigned)user);
     char cookie[160];
-    snprintf(cookie, sizeof(cookie), "panel_session=%s; Path=/; Secure; HttpOnly; SameSite=Strict",
-             s->token);
+    /* Secure only over HTTPS: the setup Wi-Fi's plain HTTP (plain_serve) keeps it too. */
+    snprintf(cookie, sizeof(cookie), "panel_session=%s; Path=/;%s HttpOnly; SameSite=Strict",
+             s->token, plain_http(r) ? "" : " Secure;");
     httpd_resp_set_hdr(r, "Set-Cookie", cookie);
     o = cJSON_CreateObject();
     cJSON_AddStringToObject(o, "csrf", s->csrf);
@@ -950,7 +982,9 @@ static esp_err_t catalog_words(httpd_req_t *r, size_t length)
 }
 static esp_err_t assets(httpd_req_t *r)
 {
-    if (!atomic_load(&web_on))
+    /* The pages are the setup's too: served while setup or recovery is open, the Panel Manager
+     * switched off or not (it is off until the installer's access exists). */
+    if (!atomic_load(&web_on) && !web_setup_listener())
         return error(r, "503 Service Unavailable", "Web server is disabled");
     size_t length = strcspn(r->uri, "?");
     if (length > 6 && !strncmp(r->uri, "/i18n/", 6))
@@ -2005,10 +2039,16 @@ static esp_err_t get(httpd_req_t *r)
 {
     alarm_authority_t authority;
     session_t *s = session(r, &authority);
-    if (!s)
-        return error(r, "401 Unauthorized", "Sign in to this panel");
     char path[96]; /* /api/v1/<path>, without any query string */
     api_path(r, path, sizeof(path));
+    /* The setup pages' status, for anyone who reaches the panel (nothing secret in it,
+     * web_setup.h); while nobody has claimed a headless panel, nothing else answers. */
+    if (!strcmp(path, "setup"))
+        return json(r, web_setup_status(via_setup_wifi(r), s ? s->user : 0));
+    if (web_setup_unclaimed())
+        return error(r, "403 Forbidden", "setup_first");
+    if (!s)
+        return error(r, "401 Unauthorized", "Sign in to this panel");
     if (!strcmp(path, "status"))
         return json(r, status(s, authority));
     if (must_change(s))
@@ -2400,7 +2440,9 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
             release_control();
         mbedtls_platform_zeroize(s, sizeof(*s));
         httpd_resp_set_hdr(r, "Set-Cookie",
-                           "panel_session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict");
+                           plain_http(r)
+                               ? "panel_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict"
+                               : "panel_session=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict");
         return okay(r);
     }
     if (!strcmp(path, "password")) {
@@ -2809,11 +2851,34 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
     }
     return error(r, "404 Not Found", "Not included in this firmware");
 }
+/* POST /api/v1/setup: setting up a headless panel, signed in or not (web_setup.c decides). */
+static esp_err_t setup_post(httpd_req_t *r, session_t *s, alarm_authority_t authority)
+{
+    if (!origin_ok(r))
+        return error(r, "403 Forbidden", "Same-origin HTTPS required");
+    cJSON *o = body(r);
+    if (!o)
+        return error(r, "400 Bad Request", "Expected bounded JSON body");
+    const char *status = "404 Not Found", *why = "not_found";
+    cJSON *out = web_setup_action(o, s ? s->user : 0, authority, via_setup_wifi(r), panel_locked(),
+                                  &status, &why);
+    erase_json(o);
+    cJSON_Delete(o);
+    if (!out)
+        return error(r, status, why);
+    return json(r, out);
+}
 static esp_err_t post(httpd_req_t *r)
 {
     s_body_unread = r->content_len > 0;
-    alarm_authority_t authority;
+    alarm_authority_t authority = ALARM_AUTH_NONE;
     session_t *s = session(r, &authority);
+    char setup_path[96];
+    api_path(r, setup_path, sizeof(setup_path));
+    if (!strcmp(setup_path, "setup"))
+        return setup_post(r, s, authority);
+    if (web_setup_unclaimed())
+        return error(r, "403 Forbidden", "setup_first");
     if (!s)
         return error(r, "401 Unauthorized", "Sign in again or reload the page");
     cJSON *o = body(r);
@@ -3234,9 +3299,19 @@ void panel_web_ui_backend(ui_backend_t *b)
 /* A route that can't be registered costs that page, never the panel (docs/bugs/B017: a table one
  * slot short aborted every start). tools/tests/test_panel_web_routes.py keeps the routes within
  * WEB_URI_HANDLERS. */
+/* Every handler of both servers runs under s_serve_lock (taken for the call, the route's function
+ * in user_ctx). */
+static esp_err_t serialized(httpd_req_t *r)
+{
+    esp_err_t (*fn)(httpd_req_t *) = (esp_err_t (*)(httpd_req_t *))r->user_ctx;
+    xSemaphoreTakeRecursive(s_serve_lock, portMAX_DELAY);
+    const esp_err_t e = fn(r);
+    xSemaphoreGiveRecursive(s_serve_lock);
+    return e;
+}
 static void route(const char *uri, httpd_method_t method, esp_err_t (*fn)(httpd_req_t *))
 {
-    httpd_uri_t u = {.uri = uri, .method = method, .handler = fn};
+    httpd_uri_t u = {.uri = uri, .method = method, .handler = serialized, .user_ctx = (void *)fn};
     const esp_err_t e = httpd_register_uri_handler(server, &u);
     if (e != ESP_OK)
         ESP_LOGE("panel_web", "route %s not registered: %s", uri, esp_err_to_name(e));
@@ -3282,6 +3357,31 @@ static esp_err_t redirect(httpd_req_t *r)
     httpd_resp_set_hdr(r, "X-Content-Type-Options", "nosniff");
     return httpd_resp_send(r, NULL, 0);
 }
+/* Port 80 on a board without a screen: a phone on the setup Wi-Fi gets the Panel Manager itself
+ * while setup or recovery is open; anyone else, and everyone once setup is done, the redirect. */
+static esp_err_t plain_serve(httpd_req_t *r)
+{
+    if (!via_setup_wifi(r) || !web_setup_listener())
+        return redirect(r);
+    /* Any other address the phone asked for (the setup Wi-Fi's name server answers every name
+     * with the panel, web_setup_dns.c) goes to the setup page, as a router's setup does; so do
+     * the phones' own "am I online?" checks, which then open the setup page by themselves. */
+    char host[HTTP_REDIRECT_HOST_MAX + 8] = "";
+    if (httpd_req_get_hdr_value_str(r, "Host", host, sizeof(host)) != ESP_OK ||
+        strcmp(host, NET_WIFI_SETUP_AP_IP) != 0) {
+        httpd_resp_set_status(r, "302 Found");
+        httpd_resp_set_hdr(r, "Location", "http://" NET_WIFI_SETUP_AP_IP "/");
+        httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+        return httpd_resp_send(r, NULL, 0);
+    }
+    return serialized(r);
+}
+static void plain_route(const char *uri, httpd_method_t method, esp_err_t (*fn)(httpd_req_t *))
+{
+    httpd_uri_t u = {.uri = uri, .method = method, .handler = plain_serve, .user_ctx = (void *)fn};
+    if (httpd_register_uri_handler(redirect_server, &u) != ESP_OK)
+        ESP_LOGE("panel_web", "HTTP 80 route %s not registered", uri);
+}
 static void redirect_start(void)
 {
     httpd_config_t c = HTTPD_DEFAULT_CONFIG();
@@ -3290,6 +3390,13 @@ static void redirect_start(void)
     c.max_open_sockets = 2; /* a redirect is one short request; LWIP's budget is 24 */
     c.max_uri_handlers = 2;
     c.stack_size = 4096;
+    if (s_setup_board) {
+        /* It serves setup's pages and API too (plain_serve): the HTTPS worker's stack, a page's
+         * few files at once. */
+        c.max_open_sockets = 4;
+        c.max_uri_handlers = 6;
+        c.stack_size = 16384;
+    }
     c.task_priority = 2;
     c.recv_wait_timeout = 3;
     c.send_wait_timeout = 3;
@@ -3302,7 +3409,15 @@ static void redirect_start(void)
                  esp_err_to_name(e));
         return;
     }
-    const httpd_uri_t get = {.uri = "/*", .method = HTTP_GET, .handler = redirect};
+    if (s_setup_board) {
+        /* First match wins, as on HTTPS: sign-in, the API, then files (setup's pages). */
+        plain_route("/api/v1/login", HTTP_POST, login);
+        plain_route("/api/v1/*", HTTP_GET, get);
+        plain_route("/api/v1/*", HTTP_POST, post);
+    }
+    const httpd_uri_t get = {.uri = "/*", .method = HTTP_GET,
+                             .handler = s_setup_board ? plain_serve : redirect,
+                             .user_ctx = (void *)assets};
     const httpd_uri_t head = {.uri = "/*", .method = HTTP_HEAD, .handler = redirect};
     if (httpd_register_uri_handler(redirect_server, &get) != ESP_OK ||
         httpd_register_uri_handler(redirect_server, &head) != ESP_OK) {
@@ -3326,7 +3441,14 @@ static void maintenance(void *arg)
     unsigned seen = 0;
     unsigned retry_ticks = 0;
     unsigned owed_ticks = 0;
+    bool wanted = false; /* the server should run: the Panel Manager is on, or setup needs it */
     for (;;) {
+        web_setup_poll();
+        const bool want = atomic_load(&web_on) || web_setup_listener();
+        if (want != wanted) {
+            wanted = want;
+            atomic_fetch_add(&generation, 1);
+        }
         unsigned gen = atomic_load(&generation);
         if (gen != seen) {
             if (redirect_server) {
@@ -3343,7 +3465,7 @@ static void maintenance(void *arg)
             }
             release_control();
             mbedtls_platform_zeroize(sessions, sizeof(sessions));
-            if (atomic_load(&web_on)) {
+            if (wanted) {
                 httpd_ssl_config_t c = HTTPD_SSL_CONFIG_DEFAULT();
                 c.port_secure = 443;
                 c.servercert = cert;
@@ -3385,7 +3507,7 @@ static void maintenance(void *arg)
             }
             seen = gen;
         }
-        if (!server && atomic_load(&web_on) && ++retry_ticks % 5 == 0)
+        if (!server && wanted && ++retry_ticks % 5 == 0)
             atomic_fetch_add(&generation, 1);
         /* A sign-in turned off that flash refused: retried every 5 s with nobody at the browser
          * (web_login_retry() itself waits its own 5 s between flash tries; code review S01). */
@@ -3407,6 +3529,12 @@ static int console(int argc, char **argv)
         return panel_web_set(false, false) == ESP_OK ? 0 : 1;
     if (argc == 3 && !strcmp(argv[1], "developer"))
         return panel_web_set(true, !strcmp(argv[2], "on")) == ESP_OK ? 0 : 1;
+    if (argc >= 3 && !strcmp(argv[1], "provision"))
+        return web_setup_provision(argc - 2, argv + 2); /* setup over USB (web_setup_usb.c) */
+    if (argc == 2 && !strcmp(argv[1], "setup")) {
+        web_setup_print_label(); /* the physical service console only */
+        return 0;
+    }
     if ((argc == 3 || argc == 4) && !strcmp(argv[1], "password")) {
         /* The owner's way in from away: a temporary password to be changed at first sign-in.
          * Physical service console only (not in release firmware). */
@@ -3445,6 +3573,28 @@ static int console(int argc, char **argv)
     return 0;
 }
 #endif
+/* The Panel Manager on, for good, without restarting the server that setup is using
+ * (web_setup.c, once its accounts exist). */
+static esp_err_t web_on_quietly(void)
+{
+    xSemaphoreTake(settings_lock, portMAX_DELAY);
+    nvs_handle_t h;
+    esp_err_t e = nvs_open("panelweb", NVS_READWRITE, &h);
+    if (e == ESP_OK) {
+        e = nvs_set_u8(h, "mode", (uint8_t)(1u | (atomic_load(&dev_on) ? 2u : 0u)));
+        if (e == ESP_OK)
+            e = nvs_commit(h);
+        nvs_close(h);
+    }
+    if (e == ESP_OK)
+        atomic_store(&web_on, true);
+    xSemaphoreGive(settings_lock);
+    return e;
+}
+void panel_web_setup_button(bool (*down)(void))
+{
+    web_setup_button(down);
+}
 static void *json_alloc(size_t size)
 {
     return alarm_mem_slow_malloc(size);
@@ -3466,7 +3616,8 @@ esp_err_t panel_web_start(const dev_remote_adapter_t *a)
     snprintf(asset_tag_plain, sizeof(asset_tag_plain), "%sp\"", asset_tag);
     strcat(asset_tag, "\"");
     settings_lock = xSemaphoreCreateMutex();
-    if (!settings_lock)
+    s_serve_lock = xSemaphoreCreateRecursiveMutex();
+    if (!settings_lock || !s_serve_lock)
         return ESP_ERR_NO_MEM;
     uint8_t mac[6];
     if (esp_efuse_mac_get_default(mac) != ESP_OK)
@@ -3504,6 +3655,23 @@ esp_err_t panel_web_start(const dev_remote_adapter_t *a)
     atomic_store(&dev_on, (mode & 3) == 3);
     dev_remote_set_allowed(atomic_load(&dev_on));
     atomic_store(&generation, 1);
+    /* A panel without a screen is set up from a phone (web_setup.c); a panel with one keeps the
+     * Panel Manager off until someone turns it on at the screen. */
+    uint8_t cert_hash[32];
+    char fingerprint[65] = "";
+    if (digest(cert, cert_len, cert_hash))
+        hex(cert_hash, 32, fingerprint);
+#if CONFIG_ALARM_FEATURE_UI
+    const bool headless_master = false;
+#elif CONFIG_ALARM_LINK
+    const bool headless_master = plink_service_role() == PLINK_SERVICE_MASTER;
+#else
+    const bool headless_master = true;
+#endif
+    s_setup_board = headless_master;
+    e = web_setup_init(headless_master, fingerprint, web_on_quietly);
+    if (e != ESP_OK)
+        ESP_LOGE("panel_web", "headless setup unavailable: %s", esp_err_to_name(e));
     /* Once at start, on this task (it writes flash above): the stored sign-ins in line with the
      * users - a deleted user's that flash wouldn't erase before the restart goes now. */
     web_login_retry();
@@ -3511,7 +3679,8 @@ esp_err_t panel_web_start(const dev_remote_adapter_t *a)
     const esp_console_cmd_t cmd = {
         .command = "web",
         .help = "Panel Manager status/on/off/developer on|off, password <user> [off] "
-                "(a temporary browser password; physical service console)",
+                "(a temporary browser password; physical service console), setup (a headless "
+                "panel's setup label)",
         .func = console};
     esp_console_cmd_register(&cmd);
 #endif

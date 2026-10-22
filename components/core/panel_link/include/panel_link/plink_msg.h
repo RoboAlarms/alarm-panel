@@ -55,9 +55,63 @@ bool plink_dec_wifi(const uint8_t *p, size_t n, uint32_t req, plink_wifi_t *out)
 #define PLINK_CAP_PREFS 0x0004u /* a keypad's settings: PREFS, PREFS_REQ, PREFS_SET, HEARTBEAT's
                                  * section */
 #define PLINK_CAP_WIFI  0x0008u /* authenticated, requested enrollment credentials: WIFI_REQ, WIFI */
+#define PLINK_CAP_IO    0x0010u /* a keypad's own wired inputs as the master's zones: IO_STATE */
+#define PLINK_CAP_AUTO  0x0020u /* an automation's arming warnings on keypads: AUTO_WARN, PUT_OFF */
 /* What this firmware's codecs know: an offer is masked with it, so a peer's unknown bit is never
  * common. */
-#define PLINK_CAPS_KNOWN (PLINK_CAP_FW | PLINK_CAP_HOME | PLINK_CAP_PREFS | PLINK_CAP_WIFI)
+#define PLINK_CAPS_KNOWN (PLINK_CAP_FW | PLINK_CAP_HOME | PLINK_CAP_PREFS | PLINK_CAP_WIFI | \
+                          PLINK_CAP_IO | PLINK_CAP_AUTO)
+
+/* IO_STATE (LINK-055, keypad -> master, PLINK_CAP_IO): the keypad's wired terminals as they read
+ * now, so the master can bind its zones to them (zone source ZSRC_KEYPAD). count u8, rec_len u8,
+ * then count records of rec_len bytes (PLINK_IO_REC_LEN in v1; a decoder takes the bytes it knows
+ * of each and skips the rest): gpio u8, flags u8 (PLINK_IO_*), changes u16 LE - every change of
+ * the terminal's debounced level counted, wrapping, so a master that missed a frame still sees a
+ * door that opened and closed again. Sent at each change, every PLINK_IO_EVERY_MS and once a new
+ * session is up: the newest frame is the whole truth (no acknowledgement). */
+#define PLINK_IO_MAX      16u
+#define PLINK_IO_REC_LEN  4u
+#define PLINK_IO_ACTIVE   0x01u /* the loop is open: the contact's "active" (the zone's fault) */
+#define PLINK_IO_KNOWN    0x02u /* read since the keypad started (else: not yet) */
+#define PLINK_IO_EVERY_MS 5000u
+typedef struct {
+    uint8_t gpio;
+    uint8_t flags;
+    uint16_t changes;
+} plink_io_rec_t;
+typedef struct {
+    uint8_t count;
+    plink_io_rec_t rec[PLINK_IO_MAX];
+} plink_io_state_t;
+bool plink_enc_io_state(const plink_io_state_t *m, uint8_t *out, size_t cap, size_t *len);
+bool plink_dec_io_state(const uint8_t *p, size_t len, plink_io_state_t *m);
+
+/* AUTO_WARN (LINK-056, master -> keypad, PLINK_CAP_AUTO): the master's automation arming warnings
+ * and holds (auto_warning_t, docs/features/41 AUT-012/AUT-013), the whole table each time: count u8,
+ * rec_len u8, then count records of rec_len bytes (PLINK_AUTO_REC_LEN in v1; a decoder takes the
+ * bytes it knows and skips the rest): uid u16, partition u8, level u8, state u8, warn_min u8,
+ * bypass u8, put_off_by u8, arm_at_epoch_ms i64, arm_in_ms u32 (the planned arm time from the
+ * frame's sending, monotonic times never cross panels; 0: none), until_day i32, until_minute u16;
+ * little endian. Sent at a change, every PLINK_AUTO_EVERY_MS while the table isn't empty, and
+ * once to a new session; a keypad forgets a table older than PLINK_AUTO_STALE_MS. */
+#define PLINK_AUTO_MAX      8u  /* records in one frame: it fits ESP-NOW's 250 B */
+#define PLINK_AUTO_REC_LEN  26u
+#define PLINK_AUTO_EVERY_MS 30000u
+#define PLINK_AUTO_STALE_MS 75000u
+typedef struct {
+    uint16_t uid;
+    uint8_t partition, level, state, warn_min, bypass, put_off_by;
+    int64_t arm_at_epoch_ms;
+    uint32_t arm_in_ms;
+    int32_t until_day;
+    uint16_t until_minute;
+} plink_auto_rec_t;
+typedef struct {
+    uint8_t count;
+    plink_auto_rec_t rec[PLINK_AUTO_MAX];
+} plink_auto_warn_t;
+bool plink_enc_auto_warn(const plink_auto_warn_t *m, uint8_t *out, size_t cap, size_t *len);
+bool plink_dec_auto_warn(const uint8_t *p, size_t len, plink_auto_warn_t *m);
 
 #define PLINK_NAME_MAX  47u /* names on the wire, bytes without the NUL */
 #define PLINK_FW_MAX    31u
@@ -264,6 +318,12 @@ typedef enum {
     PLINK_OP_CHANGE_CODE = 3, /* ui_backend_t.change_code: code = current, new_code */
     PLINK_OP_GOTO = 4,        /* select a view under installer policy, without a code */
     PLINK_OP_ACTIVITY = 5, /* real interaction on the selected partition; no alarm action */
+    /* LINK-056 (PLINK_CAP_AUTO): put off an automation's arming warning (AUT-013): the code
+     * checked as ALARM_CMD_CODE_CHECK on cmd.partition, then the put-off by its user. cmd.zone is
+     * the automation's uid, cmd.walk_op the choice (auto_put_off_choice_t). The RESULT's result
+     * is the code check's alarm_result_t; when ALARM_OK, not_ready_zone carries the put-off's
+     * answer (auto_put_off_t, or 100: the runner didn't take it). */
+    PLINK_OP_PUT_OFF = 6,
 } plink_op_t;
 
 typedef struct {

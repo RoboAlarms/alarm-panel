@@ -18,6 +18,7 @@ set(ZONE_HUB_SRCS
     src/zb_quirks.c
     src/zsrc_rf.c
     src/zsrc_zwave.c
+    src/zsrc_keypad.c
     src/zw_quirks.c
     src/voice_epoch.c
     src/bind_gate.c

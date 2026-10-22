@@ -250,6 +250,7 @@ static void print_status(void)
             printf("  master \"%s\" at %s: keypad %u, home partition %u\n", i->master_name, addr,
                    (unsigned)i->device, (unsigned)i->home);
             printf("  selected partition %u (temporary selection follows installer policy)\n", (unsigned)i->selected);
+            kio_print();
         } else if (i->unpaired_why == PLINK_UNPAIRED_REMOVED) {
             printf("  removed at the alarm panel: pair again\n");
         }

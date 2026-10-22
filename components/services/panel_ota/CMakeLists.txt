@@ -7,7 +7,7 @@ idf_component_register(SRCS "src/panel_ota.c" "src/cp_ota.c" "src/ota_console.c"
                        INCLUDE_DIRS "include"
                        REQUIRES alarm_core alarm_proto esp_common
                        PRIV_REQUIRES alarm_mem i18n ui_backend app_update bootloader_support console
-                                     esp_app_format esp_driver_uart esp_http_client esp_partition
+                                     esp_app_format esp_driver_uart esp_http_client esp_partition esp_timer
                                      esp-tls mbedtls nvs_flash platform_esp)
 
 # OTA-020: the key the installer accepted for the update server is tried behind ESP-IDF's own

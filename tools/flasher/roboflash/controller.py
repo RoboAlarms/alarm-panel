@@ -26,6 +26,7 @@ from . import fwserver
 from . import parts as parts_mod
 from . import paths
 from .boards import detect, image_options, load_catalogue, pick_image, verdict
+from .bundle import flash_size_bytes
 from .chip import FAST_BAUD
 from .console import ConsoleSession
 from .jobs import Runner, JobFailed, PROBE_MAX_AGE, refuse_unless_idle
@@ -80,6 +81,57 @@ def parse_zigbee_status(lines):
                     "update": int(m.group(2)), "version": m.group(3).strip(), "devices": int(m.group(4)),
                     "channel": int(m.group(5)), "pan": m.group(6).lower(), "jammed": m.group(7) != "0"}
     return {"known": True, "enabled": False, "words": lines[0]}
+
+
+SETUP_STAGE = re.compile(r"^SETUP stage (\S+)( \(recovery key owed\))?, setup Wi-Fi (open|closed)")
+SETUP_WIFI = re.compile(r'^SETUP label: Wi-Fi "(.*)", password (\S+); open (\S+)')
+# The first builds printed a setup code too ("setup code X; panel Y"); today's print the panel only.
+SETUP_CODE = re.compile(r"^SETUP label: (?:setup code (\S+); )?panel (\S*)")
+SETUP_CERT = re.compile(r"^SETUP label: certificate SHA-256 (.+)$")
+
+
+# The board's refusal words (the Panel Manager's, panel.js ERRORS) for setup over USB (FLS-036).
+PROVISION_WORDS = {
+    "bad_request": "Check the Wi-Fi name and password (8 to 64 characters).",
+    "bad_name": "Choose an installer name without spaces at the start or end.",
+    "weak_password": "The installer's password is 12 to 64 characters.",
+    "setup_stage": "This board is set up already, or not at that step.",
+    "setup_stale": "It hasn't joined the Wi-Fi yet.",
+    "setup_busy": "A phone is setting it up right now. Try again in a few minutes.",
+    "locked": "The panel is armed or an alarm sounds: disarm it first.",
+    "not_allowed": "Create the installer's access first.",
+    "setup_try_again": "The board could not save that just now. Try again.",
+}
+
+
+def parse_setup_label(lines):
+    """`web setup`'s reply (panel_web.c, web_setup.c; FLS-035): a board without a screen prints the
+    label of its setup Wi-Fi. {"known": False} from firmware without it; {"known": True,
+    "headless": False} from a panel with a screen; else the label's fields. None for no reply."""
+    lines = [str(t).strip() for t in lines if str(t).strip()]
+    if not lines:
+        return None
+    if any(t.startswith(("Unrecognized command", "WEB enabled=")) for t in lines):
+        return {"known": False}
+    if any(t.startswith("SETUP: this panel has a screen") for t in lines):
+        return {"known": True, "headless": False}
+    out = {"known": True, "headless": True}
+    for t in lines:
+        m = SETUP_STAGE.match(t)
+        if m:
+            out.update(stage=m.group(1), recovery_owed=bool(m.group(2)), open=m.group(3) == "open")
+        m = SETUP_WIFI.match(t)
+        if m:
+            out.update(ssid=m.group(1), password=m.group(2), address=m.group(3))
+        m = SETUP_CODE.match(t)
+        if m:
+            out.update(panel=m.group(2))
+            if m.group(1):
+                out.update(code=m.group(1))
+        m = SETUP_CERT.match(t)
+        if m:
+            out["fingerprint"] = m.group(1).strip()
+    return out if "ssid" in out else {"known": True, "headless": True, "unreadable": True}
 
 
 def _parts_page(choice):
@@ -224,6 +276,11 @@ class Controller:
         self.logs_dir = Path(logs_dir or paths.logs_dir())
         self.ports = []
         self.devices = {}
+        # Panels on an ESP chip's own USB (303A:1001, the ESP32-S3 board's port; FLS-035) known by
+        # their USB serial number (the chip's MAC) once their chip read as the board's or a
+        # RoboAlarms console answered on them: plugged in again, they are a panel, not maybe the
+        # Zigbee module. Kept for this run only.
+        self.native_panels = set()
         # The firmware in use: the firmware server's (source, FLS-032) unless a file was opened.
         self.source = source
         self.from_file = source is None
@@ -291,14 +348,53 @@ class Controller:
         info = next((p for p in self.ports if p.device == port), None)
         return info.usb_id if info is not None else ""
 
+    def _serial(self, port):
+        info = next((p for p in self.ports if p.device == port), None)
+        return info.serial_number if info is not None else ""
+
+    def native_boards(self, port):
+        """The catalogue boards that use this port's USB id as their own (an ESP chip's USB: the
+        ESP32-S3 board on 303A:1001, FLS-035), never the Zigbee module's chip."""
+        usb_id = self._usb_id(port)
+        if not usb_id:
+            return []
+        return [b for b, info in self.catalogue.items() if isinstance(info, dict)
+                and info.get("chip") != MODULE_CHIP
+                and any(isinstance(u, dict) and str(u.get("usb_id", "")).upper() == usb_id
+                        for u in info.get("usb", ()))]
+
+    def _known_panel(self, port):
+        """A 303A:1001 port that is a panel for sure (FLS-035): a RoboAlarms console answered on it,
+        or its chip read as a board that uses that USB (chip and flash size), or it was one of those
+        earlier in this run (its USB serial number, the chip's MAC). Never an ESP32-H2."""
+        d = self.devices.get(port) or Device(port)
+        if d.chip is not None and d.chip.chip == MODULE_CHIP:
+            return False
+        if d.probe is not None and d.probe.answered:
+            return True
+        if d.chip is not None:
+            return any(d.chip.chip == self.catalogue[b]["chip"]
+                       and (not d.chip.flash_size or flash_size_bytes(self.catalogue[b]["flash_size"]) == d.chip.flash_size)
+                       for b in self.native_boards(port))
+        serial = self._serial(port)
+        return bool(serial) and (self._usb_id(port), serial) in self.native_panels
+
+    def _remember_native(self, port):
+        """A 303A:1001 port found to be a panel: known again when it is plugged back in."""
+        serial = self._serial(port)
+        if serial and self._usb_id(port) == MODULE_USB_ID and self._known_panel(port):
+            self.native_panels.add((MODULE_USB_ID, serial))
+
     def is_module_port(self, port):
-        """A port of an ESP chip's own USB Serial/JTAG: maybe the Zigbee module, never opened unasked."""
-        return self._usb_id(port) == MODULE_USB_ID
+        """A port of an ESP chip's own USB Serial/JTAG: maybe the Zigbee module, never opened unasked
+        (FLS-030) - unless it is known to be a panel on its own USB (FLS-035)."""
+        return self._usb_id(port) == MODULE_USB_ID and not self._known_panel(port)
 
     def role(self, port):
         """(role, maybe): "panel" for a panel's USB bridge (boards.json) or a RoboAlarms console that
-        answered; "zigbee_module" for a 303A:1001 port once its chip reads as an ESP32-H2; else
-        "unknown", with maybe "zigbee_module" while a 303A:1001 port's chip is not known."""
+        answered, or a 303A:1001 port whose chip read as a board that uses that USB (the ESP32-S3
+        board, FLS-035); "zigbee_module" for a 303A:1001 port once its chip reads as an ESP32-H2;
+        else "unknown", with maybe "zigbee_module" while a 303A:1001 port's chip is not known."""
         d = self.devices.get(port) or Device(port)
         usb_id = self._usb_id(port)
         bridges = PANEL_BRIDGES | {u.get("usb_id", "").upper() for b in self.catalogue.values()
@@ -306,6 +402,8 @@ class Controller:
         if (usb_id and usb_id in bridges and usb_id != MODULE_USB_ID) or (d.probe is not None and d.probe.answered):
             return "panel", ""
         if usb_id == MODULE_USB_ID:
+            if self._known_panel(port):
+                return "panel", ""
             if d.chip is None:
                 return "unknown", "zigbee_module"
             if d.chip.chip == MODULE_CHIP:
@@ -335,8 +433,12 @@ class Controller:
         role, maybe = self.role(port)
         if d.image_key and self.bundle is not None and self.bundle.image(d.image_key):
             board = self.bundle.image(d.image_key).board     # the build the person chose: what it will be
+        module = self.is_module_port(port)
         return {"port": port, "busy": d.busy, "error": d.error, "role": role, "maybe": maybe,
-                "needs_alone": self.is_module_port(port),
+                "needs_alone": module,
+                # FLS-035: the boards that may be on this port too (the ESP32-S3 board on 303A:1001):
+                # the page asks the person before anything looks at it.
+                "maybe_panel": self.native_boards(port) if module and role != "zigbee_module" else [],
                 "probe": d.probe.to_dict() if d.probe else None,
                 "chip": d.chip.to_dict() if d.chip else None,
                 "detection": det.to_dict(), "image_key": chosen, "manual": bool(d.image_key or d.board),
@@ -640,8 +742,10 @@ class Controller:
             d.busy = ""
             self._device_changed(port)
 
-    def probe(self, port):
-        if self.is_module_port(port):
+    def probe(self, port, alone=False):
+        """Look at the panel without restarting it. A 303A:1001 port that may be the Zigbee module
+        only once the person said it is a panel of its own (alone: the ESP32-S3 board, FLS-035)."""
+        if self.is_module_port(port) and not alone:
             return      # FLS-030: never opened unasked (it may sit in a panel that is armed)
         d = self.devices.setdefault(port, Device(port))
         if self.runner.busy():
@@ -658,6 +762,7 @@ class Controller:
                 d.probe = result
                 d.roboalarms = d.roboalarms or result.answered
                 d.error = result.error
+                self._remember_native(port)
                 self.log(f"probe {port}: " + (f"{result.board or '?'} {result.version} {result.profile} "
                                               f"idle={result.idle}" if result.answered else
                                               f"no RoboAlarms console (heard={result.heard})"))
@@ -692,6 +797,7 @@ class Controller:
                 session = self.connect(port, lambda t: self.log(f"identify {port}: {t}"), None, FAST_BAUD)
                 try:
                     d.chip = session.info
+                    self._remember_native(port)
                 finally:
                     session.reset()
             try:
@@ -1415,6 +1521,93 @@ class Controller:
                     or time.monotonic() + every > deadline:
                 return got
             time.sleep(every)
+
+    def setup_label(self, port, timeout=4.0):
+        """The setup Wi-Fi's label of a board without a screen (FLS-035), from `web setup` on its
+        console: read-only, it restarts nothing and types no code. The label (the setup Wi-Fi's name,
+        its password - the same on every board - and the address) goes to the page, never to the
+        Flasher's log."""
+        c = self._console(port)
+        got = []
+        event = threading.Event()
+
+        def listen(line):
+            t = line.text.strip()
+            if event.is_set() or not t or t.startswith(("alarm>", "web setup")):
+                return
+            got.append(t)
+            if t.startswith(("SETUP label: certificate", "SETUP: ", "Unrecognized command", "WEB enabled=")):
+                event.set()
+        c.listeners.append(listen)
+        try:
+            c.send("web setup")
+            event.wait(timeout)
+        finally:
+            c.listeners.remove(listen)
+        label = parse_setup_label(got)
+        if label is None:
+            raise JobFailed("The panel did not answer.",
+                            "A release build has no service console: look for its setup Wi-Fi on your phone.")
+        self.log(f"setup label {port}: " + (f"stage {label.get('stage', '?')}, setup Wi-Fi "
+                                            f"{'open' if label.get('open') else 'closed'}" if label.get("ssid")
+                                            else json.dumps(label)))
+        return label
+
+    # Setup over USB (FLS-036, web_setup_usb.c): the installer's access and the home Wi-Fi, typed
+    # in the Flasher instead of on a phone. A development build takes `web provision ...` on its
+    # console, a release build `provision ...` on its USB port; each answers one PROVISION line.
+    PROVISION_STEPS = {"accounts": 2, "network": 2, "finish": 0, "cancel": 0, "status": 0}
+
+    @staticmethod
+    def _quote(arg):
+        return '"' + str(arg).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+    def setup_provision(self, port, step, args=(), timeout=20.0):
+        """One step of setup over USB: {"ok": True, ...} (key, ip, stage, wifi) or JobFailed with
+        the board's word. The passwords and the recovery key never reach the log or the console's
+        history."""
+        if step not in self.PROVISION_STEPS or len(args) != self.PROVISION_STEPS[step]:
+            raise JobFailed("That isn't a setup step.", "")
+        if any(len(str(a)) > 64 or any(ord(ch) < 32 for ch in str(a)) for a in args):
+            raise JobFailed("A name or password is too long or has control characters.", "")
+        c = self._console(port)
+        got = []
+        event = threading.Event()
+
+        def listen(line):
+            t = line.text.strip()
+            if not event.is_set() and t.startswith("PROVISION "):
+                got.append(t)
+                event.set()
+        command = " ".join(["provision", step] + [self._quote(a) for a in args])
+        secrets = [str(a) for a in args[1:2]] if step in ("accounts", "network") else []
+        c.listeners.append(listen)
+        try:
+            for text in ("web " + command, command):   # development build, then release build
+                c.send(text, quiet=True, quiet_match=lambda t: t.startswith("PROVISION "), quiet_for=timeout)
+                if event.wait(timeout if text == command else min(timeout, 4.0)):
+                    break
+        finally:
+            c.listeners.remove(listen)
+            answer = got[0] if got else ""
+            if answer.startswith("PROVISION ok key "):
+                secrets.append(answer[len("PROVISION ok key "):])
+            c.scrub(secrets + [command])
+        if not got:
+            raise JobFailed("The board did not answer.", "Check it is plugged in, then try again.")
+        words = got[0].split()
+        self.log(f"setup over USB {port}: {step} -> {words[1] if len(words) > 1 else '?'}")
+        if words[1] == "error":
+            raise JobFailed(PROVISION_WORDS.get(words[2] if len(words) > 2 else "", "The board refused it."),
+                            words[2] if len(words) > 2 else "")
+        if words[1] == "status":
+            return {"ok": True, "stage": words[2], "wifi": words[3], "ip": "" if words[4] == "-" else words[4]}
+        out = {"ok": True}
+        if step == "accounts" and len(words) >= 4 and words[2] == "key":
+            out["key"] = words[3]
+        if step == "finish" and len(words) >= 3:
+            out["ip"] = words[2]
+        return out
 
     def _zwave_settled(self, c, timeout=20.0):
         """Wait while the Z-Wave radio is still starting after a restart (a few seconds)."""

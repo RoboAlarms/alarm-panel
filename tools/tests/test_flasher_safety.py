@@ -121,14 +121,19 @@ class SafetyTests(unittest.TestCase):
         self.assertIn("crowpanel_p4", load_catalogue())
 
     def test_receiver_pins_match_the_firmware(self):
-        """The pins the Flasher offers for `rf pin` are the board's wired terminals (RF-008)."""
+        """The pins the Flasher offers for `rf pin` are the board's wired terminals (RF-008): its
+        BOARD_WIRED_TERMINALS list, or its BOARD_TERM_<n>_GPIO pins (the ESP32-S3 board's)."""
         import re
         boards = json.loads((PKG / "boards.json").read_text(encoding="utf-8"))["boards"]
+        checked = []
         for name, info in boards.items():
             m = re.search(r"#define BOARD_WIRED_TERMINALS\s+\{([^}]*)\}", board_pins_text(name))
-            if m:
-                terminals = [int(x) for x in m.group(1).split(",")]
+            terminals = ([int(x) for x in m.group(1).split(",")] if m else
+                         [v for k, v in board_defines(name).items() if re.fullmatch(r"BOARD_TERM_\d+_GPIO", k)])
+            if terminals:
                 self.assertEqual(sorted(info["rf"]["pins"]), sorted(terminals), name)
+                checked.append(name)
+        self.assertIn("esp32s3_devkitc", checked)
 
     def test_the_receiver_wiring_is_the_firmwares(self):
         """Every pin the Flasher draws for a CC1101 or a receiver module is the one the firmware
@@ -256,11 +261,40 @@ class SafetyTests(unittest.TestCase):
                 self.assertNotIn("custom", info, f"{name}: custom pins the firmware does not list")
                 continue
             fw = [{"gpio": int(g), "label": label, "connector": conn}
-                  for g, label, conn in re.findall(r'\{(\d+), "(IO\d+)", "(J7)"\}', block.group(1))]
+                  for g, label, conn in re.findall(r'\{(\d+), "([^"]+)", "([^"]+)"\}', block.group(1))]
             self.assertTrue(fw, f"{name}: no entries parsed from REACHABLE")
             self.assertEqual(info["custom"]["pins"], fw, name)
+            # Its own pins are drawn on the header they are printed on (boards.json "header").
+            labels = {lab for row in info["header"]["rows"] for lab in row}
+            for p in fw:
+                self.assertEqual(p["connector"], info["header"]["name"], f"{name}: {p}")
+                self.assertIn(p["label"], labels, f"{name}: {p}")
             checked.append(name)
-        self.assertEqual(sorted(checked), ["crowpanel_10", "crowpanel_p4"])
+        self.assertEqual(sorted(checked), ["crowpanel_10", "crowpanel_p4", "esp32s3_devkitc"])
+
+    def test_a_board_on_its_own_usb_is_never_the_zigbee_module(self):
+        """FLS-035: a board whose port is an ESP chip's own USB (303A:1001, the ESP32-S3 board's) has
+        another chip than the Zigbee module's, no socket for it, and is set up without a screen; its
+        connect advice is its own port, powered by the computer (Espressif's DevKitC-1 guide)."""
+        boards = json.loads((PKG / "boards.json").read_text(encoding="utf-8"))["boards"]
+        native = [n for n, b in boards.items() if any(u["usb_id"] == "303A:1001" for u in b["usb"])]
+        self.assertEqual(native, ["esp32s3_devkitc"])
+        for name in native:
+            b = boards[name]
+            self.assertNotEqual(b["chip"], "esp32h2", name)
+            self.assertNotIn("zigbee", b, name)
+            self.assertTrue(b.get("headless"), name)
+            self.assertTrue(b["setup"]["steps"], name)
+            self.assertEqual(b["connect"]["port"], "USB", name)
+            self.assertNotIn("power_port", b["connect"], name)
+        # The firmware's own description says the same: no screen, no touch, an ESP32-S3.
+        desc = (ROOT / "components" / "boards" / "board_esp32s3_devkitc" / "src" / "board_desc.c").read_text(encoding="utf-8")
+        for words in (".chip = BOARD_CHIP_ESP32S3", ".width = 0", ".touch = BOARD_TOUCH_NONE"):
+            self.assertIn(words, desc)
+        sdk = (ROOT / "firmware" / "esp32s3_devkitc" / "sdkconfig.defaults").read_text(encoding="utf-8")
+        self.assertIn('CONFIG_PANEL_OTA_DEVICE="esp32s3_devkitc"', sdk)
+        self.assertIn("CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y", sdk)
+        self.assertIn("CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y", sdk)     # the port marked USB
 
 
 def board_rf(name):

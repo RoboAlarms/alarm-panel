@@ -1,6 +1,6 @@
 /* Screen-free setup and recovery policy (BL-048, docs/features/31 headless-setup.md; design
- * approved 2026-10-18 by the owner). A host-only draft: compiled only into the host tests
- * (test_web_setup_flow.c), not into any firmware, until its adapter is built. */
+ * approved 2026-10-18 by the owner). Portable: the host tests (test_web_setup_flow.c) run it,
+ * and web_setup.c is its adapter in a headless firmware (docs/features/42). */
 #include "web_setup_flow.h"
 #include <stddef.h>
 #include <string.h>
@@ -210,6 +210,16 @@ web_setup_result_t web_setup_trial_confirm(web_setup_flow_t *s, const web_setup_
         return WEB_SETUP_STORAGE;
     s->record = next;
     s->trial_until = 0;
+    return WEB_SETUP_OK;
+}
+
+web_setup_result_t web_setup_trial_cancel(web_setup_flow_t *s, const web_setup_actor_t *a)
+{
+    if (!a || !a->authenticated || !a->session)
+        return WEB_SETUP_UNAUTHORIZED;
+    if (!s->trial_until || s->trial_owner != a->session)
+        return WEB_SETUP_STALE;
+    s->trial_until = s->trial_owner = 0;
     return WEB_SETUP_OK;
 }
 

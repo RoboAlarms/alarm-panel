@@ -2,7 +2,8 @@
 
 A desktop program that puts the panel's firmware on a board and then tests what is wired to it
 (docs/features/34). It lists the USB serial ports that are plugged in, works out which board is on
-the selected one, picks the image for it (including the P4's v1 or v3 silicon build), backs up
+the selected one (the CrowPanel 7" and 10.1", and the ESP32-S3-DevKitC-1 without a screen), picks
+the image for it (including the P4's v1 or v3 silicon build), backs up
 the factory flash, installs, updates or resets to factory defaults, sets the panel up for the
 parts wired to it (a 433 MHz receiver, a clock module, a Z-Wave radio, on the socket or the J7
 header), and then
@@ -45,6 +46,17 @@ The Flasher walks you through five steps; the list on the left shows where you a
    list (to use one as a zone: on the panel, Zones > Add a zone > 433 MHz sensor); the clock
    card compares the panel's clock with this computer and can set it.
 
+**The ESP32-S3 board without a screen** (Espressif's ESP32-S3-DevKitC-1 N16R8,
+`firmware/esp32s3_devkitc`, FLS-035) goes through the same steps, with these differences. Choose
+it in step 1. Plug the computer into the USB-C port marked **USB** (the other one, COM or UART,
+only shows its start-up messages); the computer powers it, nothing else is needed. Its port looks
+like the Zigbee module's to the computer, so the Flasher asks **Is this your board?** before it
+looks at it; say yes, then **Check this panel**. Each part has one place on its header pins
+(J1: the CC1101 or receiver module, the clock; J3: the Z-Wave radio), wired from a table instead of
+the CrowPanel's drawings. At the end the Flasher reads the board's setup Wi-Fi from its console
+(its name, password and address): join it from a phone and finish there. A release
+build has no console to read it from; the setup Wi-Fi is still there.
+
 **Advanced tools** (top right) hold everything else: every port, the console, the hardware of a
 running panel (change the parts, apply and restart), backups and restore, the software (the
 version - the steadiest release unless you pick another - each board's download, a firmware file
@@ -69,6 +81,7 @@ $py = "C:\Espressif\tools\python\v6.1\venv\Scripts\python.exe"
 & $py tools/flasher/run.py --server http://localhost:8092                # another server (a test one here)
 & $py tools/flasher/run.py --build firmware/crowpanel_p4/build_v1_dev   # images straight from a build
 & $py tools/flasher/run.py --mock                                        # pretend boards and server, no hardware
+& $py tools/flasher/run.py --mock --mock-headless                        # and the ESP32-S3 board (COM13 new, COM14 running)
 & $py tools/flasher/run.py ports                                         # the serial ports
 & $py tools/flasher/run.py probe COM4                                    # look without restarting
 ```
@@ -95,6 +108,7 @@ pwsh tools/idf.ps1 -Profile dev build
 pwsh tools/idf.ps1 -Profile dev -ChipRev v3 build
 pwsh tools/idf.ps1 -Project crowpanel_10 -Profile dev build
 & $py tools/flasher/run.py bundle --build firmware/crowpanel_p4/build_v1_dev --build firmware/crowpanel_p4/build_v3_dev --build firmware/crowpanel_10/build_v1_dev
+& $py tools/flasher/run.py bundle --build firmware/esp32s3_devkitc/build_dev   # the ESP32-S3 board: one build for every S3
 ```
 
 The asset packs come from the first build; every other build's must hold the same contents (the 7" and

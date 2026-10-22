@@ -60,6 +60,20 @@ const ERRORS = {
   backup_board: tx('That backup is from another kind of panel.'),
   backup_content: tx('The panel refused something in that backup (it may be from a newer firmware or damaged). Nothing was changed.'),
   backup_partial: tx('The restore stopped part way. The panel restarts; restore the same file again.'),
+  // Setting up a panel without a screen (docs/features/31 headless-setup.md)
+  setup_first: tx('This panel isn’t set up yet. Join its setup Wi-Fi and open this page there.'),
+  setup_from_setup_wifi: tx('Set up a new panel from its setup Wi-Fi: join it, then open this page again.'),
+  bad_name: tx('Choose two different user names, without spaces at the start or end.'),
+  same_password: tx('Choose two different passwords.'),
+  weak_password: tx('Passwords are 12 to 64 characters.'),
+  setup_busy: tx('Someone else is setting up this panel. Try again in a few minutes.'),
+  setup_stale: tx('That step ran out or was done already. The page shows where setup is now.'),
+  setup_stage: tx('Setup is at another step now. The page shows where setup is now.'),
+  setup_from_home: tx('Confirm from your home network, at the panel’s new address.'),
+  wrong_key: tx('That recovery key or user name isn’t right.'),
+  setup_recovery: tx('Open recovery at the panel first: hold its BOOT button for five seconds, then let go.'),
+  setup_try_again: tx('The panel could not save that just now. Try again in a moment.'),
+  wait: tx('Too many tries. Wait a moment before trying again.'),
   ESP_ERR_INVALID_STATE: tx('The panel is busy or not in the right state for this.'),
   ESP_ERR_INVALID_ARG: tx('The panel did not accept one of the values.'),
   ESP_ERR_NOT_SUPPORTED: tx('This panel does not support that.'),
@@ -83,6 +97,7 @@ const PASSWORD_MIN = 12;
 const notACode = () => t('Keypad codes don’t sign in here. Use your browser password (at least 12 characters). The installer or a master turns browser sign-in on for you: Settings > Users > your name.');
 
 async function api(path, data, options = {}) {
+  const {quiet, ...fetchOptions} = options; // quiet: a 401 is the caller's to handle (setup)
   const post = data !== undefined;
   let response;
   try {
@@ -95,7 +110,7 @@ async function api(path, data, options = {}) {
       credentials: 'same-origin',
       cache: 'no-store',
       signal: AbortSignal.timeout(20000),
-      ...options,
+      ...fetchOptions,
     });
   } catch (error) {
     throw unreachable(error);
@@ -103,7 +118,7 @@ async function api(path, data, options = {}) {
   if (!response.ok) {
     let detail;
     try { detail = await response.json(); } catch { /* not JSON */ }
-    if (response.status === 401 && path !== 'login') {
+    if (response.status === 401 && path !== 'login' && !quiet) {
       state = null;
       // The page lost the panel a moment ago: the restart forgot every sign-in, and it says so (BL-188, OTA-029).
       const restart = restartSaved();
@@ -119,8 +134,8 @@ async function api(path, data, options = {}) {
   return response.json();
 }
 
-async function refreshStatus() {
-  state = await api('status');
+async function refreshStatus(quiet = false) {
+  state = await api('status', undefined, {quiet});
   state.reauthUntil = Date.now() + (state.reauth_s || 0) * 1000;
   csrf = state.csrf;
   if (typeof trStale === 'function' && trStale()) await trLoad(); // the troubles list, when its fingerprint moved
@@ -870,6 +885,13 @@ function loginPage(message = '', note = false) {
     <button class="primary">${ht('Sign in')}</button><p class="error" id="login-error" role="alert">${esc(message)}</p></form>
     <p class="gap"><small>${ht('Keypad codes don’t sign in here. No password yet? Whoever looks after the panel’s users (the installer or a master) turns on your browser sign-in, at the panel in Settings > Users > your name, or here. After five wrong tries, sign-in waits a minute.')}</small></p></div></div>`;
   eyes($('#main'));
+  if (setupInfo?.recovery) { // a headless panel's recovery is open (its BOOT button)
+    const forgot = document.createElement('p');
+    forgot.className = 'gap';
+    forgot.innerHTML = `<button type="button" class="link" id="login-recover">${ht('Lost your password? Use the recovery key')}</button>`;
+    $('#login-form').after(forgot);
+    $('#login-recover').onclick = () => setupPage('password');
+  }
   if (note) { // said as a note, not in red: nothing went wrong with the sign-in
     $('#login-error').classList.add('note');
     $('#login-error').classList.remove('error');
@@ -906,14 +928,308 @@ function loginPage(message = '', note = false) {
 }
 
 async function connect() {
+  // A headless panel still being set up shows its setup pages instead (below).
+  setupInfo = await setupStatus();
+  const setup = !!setupInfo?.setup && setupInfo.stage !== 'ready';
   try {
-    await refreshStatus();
+    if (!(setup && setupInfo.stage === 'unclaimed')) await refreshStatus(setup);
+  } catch (error) {
+    if (!setup) {
+      if (!state) loginPage(); else toast(error.message, 'error');
+      return;
+    }
+    state = null;
+  }
+  if (setup) return setupPage(setupView(setupInfo));
+  try {
     await show();
     watchRestart();
   } catch (error) {
     if (!state) loginPage(); else toast(error.message, 'error');
   }
 }
+
+// ---------------------------------------------------------------------------------------
+// Setting up a panel without a screen (docs/features/31 headless-setup.md, approved 2026-10-18):
+// a phone on the panel's setup Wi-Fi claims it with the label's setup code, creates household and
+// installer access, keeps a recovery key, tries the home Wi-Fi and confirms it from there. The
+// panel keeps the state (GET /api/v1/setup); these pages only follow it, so a reload or a lost
+// connection picks up where the panel is.
+
+let setupInfo = null; // GET /api/v1/setup, while a headless panel's setup or recovery runs
+let setupClaim = '';  // the claim the setup code opened (RAM only)
+let setupKey = '';    // the recovery key on screen, until the person says it is kept
+let setupDone = null; // {ssid, ip}: where the panel went when setup ended
+
+async function setupStatus() {
+  try { return await api('setup', undefined, {quiet: true}); } catch { return null; }
+}
+// Which setup page the panel's state asks for (null: the ordinary Panel Manager).
+function setupView(info) {
+  if (!info?.setup) return null;
+  if (info.stage === 'unclaimed') return 'start';
+  if (info.stage === 'ready') return null; // recovery: the ordinary sign-in, with the recovery key
+  if (!state) return 'signin';
+  if (info.stage === 'key') return 'key';
+  if (info.trial_s > 0) return info.via_setup_wifi ? 'check' : 'confirm';
+  return 'network';
+}
+function setupChrome(title) {
+  stopFrame();
+  closeDialog();
+  ++renderId;
+  $('#nav').replaceChildren();
+  $('#menu').hidden = true;
+  $('#account').hidden = true;
+  $('#panel-name').textContent = setupInfo?.name || t('Your alarm panel');
+  $('#panel-address').textContent = location.host;
+  $('#crumb').textContent = title;
+  document.title = t('{0} · Panel Manager', title);
+  const connection = $('#connection');
+  connection.innerHTML = `<span>${ht('Setup')}</span>`;
+  connection.classList.remove('offline');
+}
+function setupCard({step = '', title, text = '', body = '', buttons = ''}) {
+  setupChrome(title);
+  $('#main').innerHTML = `<div class="hs"><section class="card">${step ? `<p class="hs-progress">${esc(step)}</p>` : ''}
+    <h1>${esc(title)}</h1>${text ? `<p>${esc(text)}</p>` : ''}<form id="hs-form" novalidate>${body}
+    <p id="hs-error" class="error" role="alert"></p><div class="hs-actions">${buttons}</div></form></section></div>`;
+  eyes($('#main'));
+  $('#hs-form').onsubmit = e => e.preventDefault();
+}
+const hsButton = (label, id, primary = false) => `<button type="button" id="${id}"${primary ? ' class="primary"' : ''}>${esc(label)}</button>`;
+function hsInput(label, id, type = 'text', extra = '') {
+  return `<label for="hs-${id}">${esc(label)}</label><input id="hs-${id}" type="${type}" autocomplete="off" autocapitalize="none" spellcheck="false" ${extra}>`;
+}
+function hsFail(error) {
+  if (error?.code === 'locked') return setupPage('locked');
+  $('#hs-error').textContent = error?.status === 429 ? t('Too many tries. Wait a moment before trying again.') : error.message;
+}
+async function hsBusy(id, work) {
+  const button = $('#' + id);
+  if (button) button.disabled = true;
+  $('#hs-error').textContent = '';
+  try { await work(); } catch (error) { hsFail(error); } finally { if (button?.isConnected) button.disabled = false; }
+}
+const groupsOf = (text, n) => (text.match(new RegExp(`.{1,${n}}`, 'g')) || []).join(' ');
+
+async function setupPage(view) {
+  const info = setupInfo || {};
+  if (view === 'start') {
+    setupCard({title: t('Set up your alarm panel'),
+      text: t('This panel has no screen: you set it up here, from this phone or computer.'),
+      body: `<ol><li>${ht('Create the installer’s access. The household’s can come now or later, from a computer.')}</li>
+        <li>${ht('Choose your home Wi-Fi and confirm it from there.')}</li></ol>
+        <p><strong>${esc(info.name || t('Alarm panel'))} · <span translate="no">${esc(info.panel_id || '')}</span></strong></p>
+        ${location.protocol === 'https:' ? `<details><summary>${ht('Verify the connection')}</summary><p>${ht('The panel’s HTTPS certificate fingerprint. The browser warned about it because the panel makes its own.')}</p>
+        <p class="hs-mono" translate="no">${esc(groupsOf(info.fingerprint || '', 16))}</p></details>` : ''}`,
+      buttons: hsButton(t('Recover an existing panel'), 'hs-recover') + hsButton(t('Start setup'), 'hs-next', true)});
+    $('#hs-recover').onclick = () => setupPage('signin');
+    $('#hs-next').onclick = () => hsBusy('hs-next', async () => {
+      // Whoever is on the setup Wi-Fi claims a new panel (no setup code); a reload keeps the claim.
+      if (!setupClaim) setupClaim = sessionStorage.getItem('panel-setup-claim') || '';
+      if (!setupClaim) {
+        setupClaim = (await api('setup', {op: 'claim'})).claim;
+        sessionStorage.setItem('panel-setup-claim', setupClaim);
+      }
+      setupPage('accounts');
+    });
+  } else if (view === 'accounts') {
+    setupCard({step: t('1 of 3 · Access'), title: t('Create your access'),
+      text: t('Installer access programs the system. Household access can arm and disarm.'),
+      body: hsInput(t('Installer username'), 'installer', 'text', `value="${esc(nt('Installer'))}" maxlength="47" required`) +
+        hsInput(t('Installer password'), 'installer-pass', 'password', 'maxlength="64" required') +
+        `<details><summary>${ht('Household access (optional)')}</summary>
+        <p>${ht('Leave these empty to add the household’s access later: sign in as the installer on a computer and open People.')}</p>` +
+        hsInput(t('Household username'), 'owner', 'text', `placeholder="${esc(t('Your name'))}" maxlength="47"`) +
+        hsInput(t('Household password'), 'owner-pass', 'password', 'maxlength="64"') + `</details>
+        <small>${ht('Passwords are 12 to 64 characters, and the two must differ. Keypad codes stay as they are; change them later under People and codes.')}</small>
+        <details><summary>${ht('Keep a recovery key')}</summary><p>${ht('The panel will generate a private recovery key after saving these accounts. Keep it somewhere safe, separate from the panel.')}</p></details>`,
+      buttons: hsButton(t('Back'), 'hs-back') + hsButton(t('Save access'), 'hs-next', true)});
+    $('#hs-back').onclick = () => setupPage('start');
+    $('#hs-installer-pass').focus();
+    $('#hs-next').onclick = () => hsBusy('hs-next', async () => {
+      const owner = $('#hs-owner').value.trim(), installer = $('#hs-installer').value.trim();
+      const ownerPassword = $('#hs-owner-pass').value, installerPassword = $('#hs-installer-pass').value;
+      if (!installer) throw new Error(t('Type the installer’s user name.'));
+      if (installerPassword.length < PASSWORD_MIN) throw new Error(t('Passwords are at least 12 characters.'));
+      const household = !!(owner || ownerPassword);
+      if (household && !owner) throw new Error(t('Type the household’s user name, or leave both household fields empty.'));
+      if (household && ownerPassword.length < PASSWORD_MIN) throw new Error(t('Passwords are at least 12 characters.'));
+      if (household && ownerPassword === installerPassword) throw new Error(t('Choose two different passwords.'));
+      await api('setup', {op: 'accounts', claim: setupClaim, owner: household ? owner : '',
+        owner_password: household ? ownerPassword : '', installer, installer_password: installerPassword});
+      setupClaim = '';
+      sessionStorage.removeItem('panel-setup-claim');
+      // Signed in as the installer: setup goes on as that person, here or after a reconnect.
+      csrf = (await api('login', {username: installer, password: installerPassword})).csrf;
+      $('#hs-owner-pass').value = $('#hs-installer-pass').value = '';
+      await refreshStatus();
+      await setupGo();
+    });
+  } else if (view === 'key') {
+    setupCard({step: t('1 of 3 · Access'), title: t('Keep your recovery key'),
+      text: t('With this key, a lost browser password can be replaced at the panel. Write it down or save it, away from the panel. It is shown only now.'),
+      body: `<p class="hs-key" id="hs-key" translate="no">${ht('Making the key…')}</p>
+        <label class="hs-tick"><input id="hs-kept" type="checkbox"><span>${ht('I have saved the recovery key')}</span></label>`,
+      buttons: hsButton(t('Continue'), 'hs-next', true)});
+    // Continue only once the key is ticked as kept: never a button that looks ready and isn't.
+    $('#hs-next').disabled = true;
+    $('#hs-kept').onchange = () => { $('#hs-next').disabled = !$('#hs-kept').checked; };
+    try {
+      if (!setupKey) setupKey = (await api('setup', {op: 'key'})).key;
+      $('#hs-key').textContent = setupKey;
+    } catch (error) { hsFail(error); }
+    $('#hs-next').onclick = () => hsBusy('hs-next', async () => {
+      if (!$('#hs-kept').checked) throw new Error(t('Save the recovery key before continuing.'));
+      await api('setup', {op: 'key-saved'});
+      setupKey = '';
+      await setupGo();
+    });
+  } else if (view === 'network' || view === 'failed') {
+    setupCard({step: t('2 of 3 · Network'), title: view === 'failed' ? t('Could not join Wi-Fi') : t('Connect to your network'),
+      text: view === 'failed' ? t('Check the network and password, then try again. Your accounts are saved.')
+        : t('Choose the Wi-Fi this panel will use. Nearby keypads can receive these settings after enrollment.'),
+      body: `<label for="hs-ssid">${ht('Wi-Fi network')}</label><select id="hs-ssid"><option value="">${ht('Looking for networks…')}</option></select>
+        <div id="hs-other-box" hidden>${hsInput(t('Network name'), 'other', 'text', 'maxlength="32"')}</div>
+        ${hsInput(t('Wi-Fi password'), 'wifi', 'password', 'maxlength="64"')}
+        <small>${ht('The setup connection stays available until you confirm the new connection.')}</small>`,
+      buttons: hsButton(t('Test connection'), 'hs-next', true)});
+    const select = $('#hs-ssid');
+    const other = () => { $('#hs-other-box').hidden = select.value !== '*'; };
+    select.onchange = other;
+    (async () => {
+      let networks = [];
+      try {
+        await api('wifi-scan', {});
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 1500));
+          const result = await api('wifi-scan');
+          if (result.done) { networks = result.networks || []; break; }
+        }
+      } catch { /* typed by hand below */ }
+      if (!select.isConnected) return;
+      const names = [...new Set(networks.filter(n => n.ssid).sort((a, b) => b.rssi - a.rssi).map(n => n.ssid))];
+      select.innerHTML = names.map(n => `<option>${esc(n)}</option>`).join('') + `<option value="*">${ht('Other network…')}</option>`;
+      if (info.wifi?.ssid && names.includes(info.wifi.ssid)) select.value = info.wifi.ssid;
+      other();
+    })();
+    $('#hs-next').onclick = () => hsBusy('hs-next', async () => {
+      const ssid = select.value === '*' ? $('#hs-other').value.trim() : select.value;
+      const password = $('#hs-wifi').value;
+      if (!ssid) throw new Error(t('Enter the network name.'));
+      if (password && password.length < 8) throw new Error(t('A Wi-Fi password is at least 8 characters.'));
+      await api('setup', {op: 'network', ssid, password});
+      $('#hs-wifi').value = '';
+      await setupGo();
+    });
+  } else if (view === 'check') {
+    // The board checks the home Wi-Fi itself and setup ends here, in this pop-up (the owner,
+    // 2026-10-21): no trip to the home network to confirm.
+    setupCard({step: t('2 of 3 · Network'), title: t('Joining your Wi-Fi'),
+      text: t('The panel is joining {0}. This takes up to a minute. Keep this page open.', info.wifi?.ssid || ''),
+      body: `<p id="hs-join" role="status">${ht('Connecting…')}</p>`,
+      buttons: hsButton(t('Choose another network'), 'hs-cancel')});
+    $('#hs-cancel').onclick = () => hsBusy('hs-cancel', async () => { await api('setup', {op: 'cancel'}); await setupGo(); });
+    const id = renderId;
+    while (id === renderId) {
+      await new Promise(r => setTimeout(r, 2000));
+      if (id !== renderId) return;
+      const now = await setupStatus();
+      if (!now) continue; // the setup Wi-Fi moves to the home network's channel: a short gap
+      setupInfo = now;
+      const w = now.wifi || {};
+      if (now.stage === 'ready') return setupPage('ready');
+      if (now.stage !== 'network' || !(now.trial_s > 0)) return setupPage('failed');
+      if (w.state === 'password' || w.state === 'not_found') {
+        try { await api('setup', {op: 'cancel'}); } catch { /* it goes back by itself */ }
+        return setupPage('failed');
+      }
+      if (w.state === 'connecting' && now.trial_s < 90)
+        $('#hs-join').textContent = t('Still connecting… If this takes much longer, check the Wi-Fi password.');
+      if (w.state === 'connected' && w.ip) {
+        $('#hs-join').textContent = t('Connected. Finishing setup…');
+        try {
+          const done = await api('setup', {op: 'confirm'});
+          setupDone = {ssid: done.ssid || w.ssid, ip: done.ip || w.ip};
+          return setupPage('ready');
+        } catch (error) {
+          if (error.code === 'setup_stale') continue; // a moment too soon: the next look
+          return hsFail(error);
+        }
+      }
+    }
+  } else if (view === 'confirm') {
+    setupCard({step: t('2 of 3 · Network'), title: t('Confirm the connection'),
+      text: t('This panel reached you over {0}. Keep it, and setup is finished: the setup network closes.', info.wifi?.ssid || ''),
+      body: `<p id="hs-left">${ht('About {0} s left before it goes back.', info.trial_s || 0)}</p>`,
+      buttons: hsButton(t('Keep this network'), 'hs-next', true)});
+    $('#hs-next').onclick = () => hsBusy('hs-next', async () => {
+      await api('setup', {op: 'confirm'});
+      setupInfo = await setupStatus();
+      setupPage('ready');
+    });
+  } else if (view === 'ready') {
+    const done = setupDone || {ssid: info.wifi?.ssid || '', ip: info.wifi?.ip || ''};
+    const url = done.ip ? `https://${done.ip}/` : '';
+    setupCard({step: t('3 of 3 · Ready'), title: t('Your panel is set up'),
+      text: t('It is on {0} now. Its setup Wi-Fi closes in a minute, and this phone goes back to your own Wi-Fi.', done.ssid),
+      body: (url ? `<p>${ht('From now on, open the Panel Manager at this address on your home network:')}</p>
+        <p class="hs-key" translate="no">${esc(url)}</p>
+        <p><small>${ht('Your browser warns the first time: the panel makes its own certificate. Continue to the site.')}</small></p>` : '') +
+        `<p>${ht('Sign in as the installer there to add the household’s access, keypads and sensors.')}</p>`,
+      buttons: url ? `<a class="button primary" href="${esc(url)}">${ht('Open the Panel Manager')}</a>` : ''});
+  } else if (view === 'signin') {
+    setupCard({title: t('Reconnect to your panel'), text: t('Your users, zones and paired keypads stay saved.'),
+      body: `<p>${ht('Sign in with the household or installer access to go on with setup.')}</p>` +
+        hsInput(t('Username'), 'user', 'text', 'autocomplete="username" maxlength="47"') +
+        hsInput(t('Browser password'), 'pass', 'password', 'autocomplete="current-password" maxlength="64"'),
+      buttons: (info.stage === 'unclaimed' ? hsButton(t('Cancel'), 'hs-back') : '') +
+        (info.recovery ? hsButton(t('Forgot password'), 'hs-forgot') : '') + hsButton(t('Sign in'), 'hs-next', true)});
+    $('#hs-back')?.addEventListener('click', () => setupPage('start'));
+    $('#hs-forgot')?.addEventListener('click', () => setupPage('password'));
+    $('#hs-next').onclick = () => hsBusy('hs-next', async () => {
+      const password = $('#hs-pass').value;
+      if (password.length < PASSWORD_MIN) throw new Error(notACode());
+      csrf = (await api('login', {username: $('#hs-user').value.trim(), password})).csrf;
+      $('#hs-pass').value = '';
+      await refreshStatus();
+      await setupGo();
+    });
+  } else if (view === 'password') {
+    setupCard({title: t('Recover browser access'), text: t('Use your saved recovery key while local recovery is active at the panel.'),
+      body: hsInput(t('Recovery key'), 'rkey', 'text', 'maxlength="40"') + hsInput(t('Username'), 'ruser', 'text', 'maxlength="47"') +
+        hsInput(t('New browser password'), 'rpass', 'password', 'maxlength="64"') +
+        `<p>${ht('This replaces browser access for the selected account and signs out its sessions. Alarm codes and system configuration stay unchanged.')}</p>
+        <details><summary>${ht('No recovery key?')}</summary><p>${ht('Ask another administrator of this panel to restore your access. A factory reset is a separate, destructive last resort.')}</p></details>`,
+      buttons: hsButton(t('Cancel'), 'hs-back') + hsButton(t('Replace password'), 'hs-next', true)});
+    $('#hs-back').onclick = () => setupGo();
+    $('#hs-next').onclick = () => hsBusy('hs-next', async () => {
+      const password = $('#hs-rpass').value;
+      if (password.length < PASSWORD_MIN) throw new Error(t('Passwords are at least 12 characters.'));
+      await api('setup', {op: 'reset', key: $('#hs-rkey').value, username: $('#hs-ruser').value.trim(), password});
+      $('#hs-rpass').value = '';
+      toast(t('Browser password replaced. Sign in with it; a new recovery key follows.'));
+      setupInfo = await setupStatus();
+      loginPage();
+    });
+  } else if (view === 'locked') {
+    setupCard({title: t('Recovery is waiting'),
+      text: t('The system is armed. Disarm it from an account that may disarm, or from a paired keypad, before changing access or network settings.'),
+      body: `<p>${ht('Opening recovery does not disarm the system or turn off its alarms.')}</p>`,
+      buttons: hsButton(t('Back'), 'hs-back')});
+    $('#hs-back').onclick = () => setupGo();
+  }
+}
+// Reads the panel's setup state again and shows the page it calls for; false: no setup page.
+async function setupGo() {
+  setupInfo = await setupStatus();
+  const view = setupView(setupInfo);
+  if (!view) return false;
+  await setupPage(view);
+  return true;
+}
+
 
 // ---------------------------------------------------------------------------------------
 // Changes that outlive the page: a network trial and a firmware update

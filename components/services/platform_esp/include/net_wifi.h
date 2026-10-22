@@ -139,6 +139,18 @@ esp_err_t net_wifi_trial_credentials(const char *ssid, const char *password, con
 esp_err_t net_wifi_trial_ip(const net_ip_config_t *in, const char *token);
 bool net_wifi_trial_confirm(const char *token);
 bool net_wifi_trial_pending(void);
+/* Ends the trial with this token now: the previous settings come back at once. */
+esp_err_t net_wifi_trial_cancel(const char *token);
+
+/* The setup Wi-Fi of a panel without a screen (docs/features/31 headless-setup.md): an access
+ * point beside the station, WPA2 with the password from the setup label, at most two devices at
+ * a time, the panel at NET_WIFI_SETUP_AP_IP (lwIP's DHCP server gives the phone its address).
+ * Its channel follows the station's. ssid NULL (or "") turns it off. RAM only: whoever opens it
+ * opens it again after a restart. Any task; the net task applies it. */
+#define NET_WIFI_SETUP_AP_IP "192.168.4.1"
+esp_err_t net_wifi_setup_ap(const char *ssid, const char *password);
+/* The setup Wi-Fi is up now, and how many devices are joined to it. */
+bool net_wifi_setup_ap_on(uint8_t *devices);
 
 /* POSIX TZ string, e.g. "EST5EDT,M3.2.0,M11.1.0". Saved and applied immediately. */
 esp_err_t net_wifi_set_timezone(const char *tz);

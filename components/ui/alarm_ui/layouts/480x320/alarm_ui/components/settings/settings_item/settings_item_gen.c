@@ -28,7 +28,7 @@ lv_obj_t * settings_item_create(lv_obj_t * parent, const char * glyph, const cha
         lv_style_init(&style_settings_item);
         lv_style_init(&style_settings_item_pressed);
 
-        alarm_ui_run_25(&style_settings_item, 42, 44);
+        alarm_ui_run_26(&style_settings_item, 42, 44);
         lv_style_set_radius(&style_settings_item, RADIUS_MD);
         alarm_ui_run_24(&style_settings_item_pressed, COLOR_PRESSED, (255 * 100 / 100));
 

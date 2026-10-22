@@ -339,7 +339,13 @@ void alarm_ui_run_45(lv_style_t * o, const lv_font_t * a0, lv_color_t a1)
     lv_style_set_text_color(o, a1);
 }
 
-lv_obj_t * alarm_ui_run_46(lv_obj_t * parent, const char * a0, const char * a1, const char * a2, lv_color_t a3)
+void alarm_ui_run_46(lv_obj_t * o, int32_t a0, const char * a1)
+{
+    lv_obj_set_style_pad_row(o, a0, 0);
+    lv_obj_set_name(o, a1);
+}
+
+lv_obj_t * alarm_ui_run_47(lv_obj_t * parent, const char * a0, const char * a1, const char * a2, lv_color_t a3)
 {
     lv_obj_t * o = arm_tile_create(parent, a0, a1, a2, a3);
     lv_obj_set_width(o, lv_pct(100));
@@ -349,21 +355,15 @@ lv_obj_t * alarm_ui_run_46(lv_obj_t * parent, const char * a0, const char * a1, 
     return o;
 }
 
-void alarm_ui_run_47(lv_obj_t * o, const char * a0)
+void alarm_ui_run_48(lv_obj_t * o, const char * a0)
 {
     lv_obj_set_style_text_color(o, COLOR_TEXT_2, 0);
     lv_obj_set_name(o, a0);
 }
 
-void alarm_ui_run_48(lv_obj_t * o, int32_t a0, const char * a1)
-{
-    lv_obj_set_style_pad_column(o, a0, 0);
-    lv_obj_set_name(o, a1);
-}
-
 void alarm_ui_run_49(lv_obj_t * o, int32_t a0, const char * a1)
 {
-    lv_obj_set_style_pad_row(o, a0, 0);
+    lv_obj_set_style_pad_column(o, a0, 0);
     lv_obj_set_name(o, a1);
 }
 
@@ -453,41 +453,47 @@ void alarm_ui_run_61(lv_obj_t * o)
     lv_obj_set_style_text_font(o, font_caption, 0);
 }
 
-lv_obj_t * alarm_ui_run_62(lv_obj_t * parent, lv_subject_t * a0)
+lv_obj_t * alarm_ui_run_62(lv_obj_t * parent, const char * a0)
+{
+    lv_obj_t * o = lv_label_create(parent);
+    lv_obj_set_flag(o, LV_OBJ_FLAG_HIDDEN, true);
+    lv_obj_set_width(o, lv_pct(100));
+    lv_label_set_long_mode(o, LV_LABEL_LONG_MODE_DOTS);
+    lv_label_set_text(o, a0);
+    lv_obj_set_style_pad_left(o, SPACE_MD, 0);
+    lv_obj_set_style_pad_top(o, SPACE_SM, 0);
+    return o;
+}
+
+lv_obj_t * alarm_ui_run_63(lv_obj_t * parent, lv_subject_t * a0)
 {
     lv_obj_t * o = lv_label_create(parent);
     lv_label_bind_text(o, a0, NULL);
     return o;
 }
 
-void alarm_ui_run_63(lv_style_t * o, int32_t a0, int32_t a1)
+void alarm_ui_run_64(lv_style_t * o, int32_t a0, int32_t a1)
 {
     lv_style_set_radius(o, a0);
     lv_style_set_bg_opa(o, a1);
 }
 
-void alarm_ui_run_64(lv_style_t * o, int32_t a0, int32_t a1)
+void alarm_ui_run_65(lv_style_t * o, int32_t a0, int32_t a1)
 {
     lv_style_set_height(o, a0);
     lv_style_set_radius(o, a1);
 }
 
-void alarm_ui_run_65(lv_style_t * o, int32_t a0, lv_color_t a1)
+void alarm_ui_run_66(lv_style_t * o, int32_t a0, lv_color_t a1)
 {
     lv_style_set_border_width(o, a0);
     lv_style_set_border_color(o, a1);
 }
 
-void alarm_ui_run_66(lv_obj_t * o, int32_t a0, int32_t a1)
+void alarm_ui_run_67(lv_obj_t * o, int32_t a0, int32_t a1)
 {
     lv_obj_set_style_flex_cross_place(o, a0, 0);
     lv_obj_set_style_pad_column(o, a1, 0);
-}
-
-void alarm_ui_run_67(lv_obj_t * o, lv_style_t * a0, int32_t a1, const char * a2)
-{
-    lv_obj_add_style(o, a0, a1);
-    lv_obj_set_name(o, a2);
 }
 
 void alarm_ui_run_68(lv_obj_t * o, lv_style_t * a0, int32_t a1, const char * a2)
@@ -496,14 +502,20 @@ void alarm_ui_run_68(lv_obj_t * o, lv_style_t * a0, int32_t a1, const char * a2)
     lv_obj_set_name(o, a2);
 }
 
-lv_obj_t * alarm_ui_run_69(lv_obj_t * parent, const char * a0)
+void alarm_ui_run_69(lv_obj_t * o, lv_style_t * a0, int32_t a1, const char * a2)
+{
+    lv_obj_add_style(o, a0, a1);
+    lv_obj_set_name(o, a2);
+}
+
+lv_obj_t * alarm_ui_run_70(lv_obj_t * parent, const char * a0)
 {
     lv_obj_t * o = time_rollers_create(parent, ROLLER_W, ROLLER_AMPM_W);
     lv_obj_set_name(o, a0);
     return o;
 }
 
-void alarm_ui_run_70(lv_obj_t * o, lv_color_t a0, int32_t a1, int32_t a2, int32_t a3, int32_t a4)
+void alarm_ui_run_71(lv_obj_t * o, lv_color_t a0, int32_t a1, int32_t a2, int32_t a3, int32_t a4)
 {
     lv_obj_set_style_bg_grad_color(o, a0, 0);
     lv_obj_set_style_bg_grad_dir(o, a1, 0);
@@ -513,32 +525,32 @@ void alarm_ui_run_70(lv_obj_t * o, lv_color_t a0, int32_t a1, int32_t a2, int32_
     lv_obj_set_style_bg_grad_stop(o, a4, 0);
 }
 
-void alarm_ui_run_71(lv_obj_t * o, int32_t a0, int32_t a1)
+void alarm_ui_run_72(lv_obj_t * o, int32_t a0, int32_t a1)
 {
     lv_obj_set_style_pad_top(o, a0, 0);
     lv_obj_set_style_pad_bottom(o, a1, 0);
 }
 
-lv_obj_t * alarm_ui_run_72(lv_obj_t * parent, const char * a0)
+lv_obj_t * alarm_ui_run_73(lv_obj_t * parent, const char * a0)
 {
     lv_obj_t * o = day_toggle_create(parent);
     lv_obj_set_name(o, a0);
     return o;
 }
 
-void alarm_ui_run_73(lv_obj_t * o, int32_t a0, lv_subject_t * a1, int32_t a2)
+void alarm_ui_run_74(lv_obj_t * o, int32_t a0, lv_subject_t * a1, int32_t a2)
 {
     lv_obj_set_style_pad_row(o, a0, 0);
     lv_obj_bind_flag_if_not_eq(o, a1, LV_OBJ_FLAG_HIDDEN, a2);
 }
 
-void alarm_ui_run_74(lv_obj_t * o, const char * a0)
+void alarm_ui_run_75(lv_obj_t * o, const char * a0)
 {
     lv_label_set_text(o, a0);
     lv_obj_set_style_text_font(o, font_title, 0);
 }
 
-void alarm_ui_run_75(lv_obj_t * o, int32_t a0)
+void alarm_ui_run_76(lv_obj_t * o, int32_t a0)
 {
     lv_obj_set_style_text_font(o, font_title, 0);
     lv_obj_bind_flag_if_not_eq(o, &subject_zone_filter, LV_OBJ_FLAG_HIDDEN, a0);

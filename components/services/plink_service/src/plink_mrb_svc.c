@@ -230,6 +230,13 @@ void mrbsvc_poll(plink_master_t *m, uint64_t now)
 
 /* ---- the worker ---- */
 
+static atomic_uchar s_holder; /* the keypad holding installer mode, 0 none (any task reads) */
+
+uint8_t mrbsvc_holder(void)
+{
+    return atomic_load(&s_holder);
+}
+
 void mrbsvc_auth(uint8_t device, uint8_t user)
 {
     if (!s_ready || device == 0u || device > PLINK_KEYPADS_MAX || user == 0u ||
@@ -327,6 +334,11 @@ static void grants(void)
                 }
             }
         }
+        uint8_t holder = 0;
+        for (uint8_t o = 1; o <= PLINK_KEYPADS_MAX; o++) {
+            holder = s_grant[o - 1u].installer ? o : holder;
+        }
+        atomic_store(&s_holder, holder);
         want.areas = ui_remote_areas(&be);
         if (memcmp(&want, &s_sent[d - 1u], sizeof want) != 0) {
             s_sent[d - 1u] = want;

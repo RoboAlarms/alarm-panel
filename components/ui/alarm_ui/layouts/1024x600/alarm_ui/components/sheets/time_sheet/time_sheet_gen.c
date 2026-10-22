@@ -56,7 +56,7 @@ lv_obj_t * time_sheet_create(lv_obj_t * parent)
         alarm_ui_run_3(box_3);
         lv_obj_set_style_pad_column(box_3, SPACE_XXL, 0);
         lv_obj_set_style_pad_top(box_3, SPACE_SM, 0);
-        alarm_ui_run_69(box_3, "time_at");
+        alarm_ui_run_70(box_3, "time_at");
 
         lv_obj_t * box_4 = alarm_ui_run_0(box_3, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_4, LV_FLEX_FLOW_COLUMN);
@@ -67,19 +67,19 @@ lv_obj_t * time_sheet_create(lv_obj_t * parent)
         lv_obj_t * box_5 = alarm_ui_run_0(box_4, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_5, LV_FLEX_FLOW_ROW);
         lv_obj_set_style_pad_column(box_5, SPACE_SM, 0);
-        alarm_ui_run_72(box_5, "day_1");
+        alarm_ui_run_73(box_5, "day_1");
 
-        alarm_ui_run_72(box_5, "day_2");
+        alarm_ui_run_73(box_5, "day_2");
 
-        alarm_ui_run_72(box_5, "day_3");
+        alarm_ui_run_73(box_5, "day_3");
 
-        alarm_ui_run_72(box_5, "day_4");
+        alarm_ui_run_73(box_5, "day_4");
 
-        alarm_ui_run_72(box_5, "day_5");
+        alarm_ui_run_73(box_5, "day_5");
 
-        alarm_ui_run_72(box_5, "day_6");
+        alarm_ui_run_73(box_5, "day_6");
 
-        alarm_ui_run_72(box_5, "day_7");
+        alarm_ui_run_73(box_5, "day_7");
 
         lv_obj_t * box_6 = alarm_ui_run_0(time_card, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_19(box_6);

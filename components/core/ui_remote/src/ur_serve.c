@@ -55,6 +55,12 @@
 #include "panel_link/plink_crypto.h"
 #include "ur_internal.h"
 
+_Static_assert(UR_AREA_SESSION == UI_LINK_AREA_SESSION && UR_AREA_CONFIG == UI_LINK_AREA_CONFIG &&
+                   UR_AREA_USERS == UI_LINK_AREA_USERS && UR_AREA_ZONES == UI_LINK_AREA_ZONES &&
+                   UR_AREA_ZWAVE == UI_LINK_AREA_ZWAVE && UR_AREA_ZIGBEE == UI_LINK_AREA_ZIGBEE &&
+                   UR_AREA_OUTPUTS == UI_LINK_AREA_OUTPUTS,
+               "the screen's area bits are ui_remote's");
+
 static const ui_remote_info_t CALLS[] = {
     {UR_GRANT_END, UR_ACCESS_SESSION, false, false},
     {UR_PROGRAM_ENTER, UR_ACCESS_SESSION, false, true},
@@ -231,6 +237,9 @@ static ui_remote_status_t program_enter(ui_remote_server_t *s, const ui_backend_
     if (!r->ok) {
         plink_wipe(code, sizeof(code));
         return UR_BAD;
+    }
+    if (code[0] == '\0') {
+        return UR_NOT_AUTHORIZED; /* the power-up recovery is for whoever is at the alarm panel */
     }
     be->get_snapshot(be->ctx, &s->snap);
     if (s->snap.program && !g->installer) {

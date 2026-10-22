@@ -196,20 +196,26 @@ void alarm_ui_run_24(lv_style_t * o, lv_color_t a0, int32_t a1)
     lv_style_set_bg_opa(o, a1);
 }
 
-void alarm_ui_run_25(lv_style_t * o, int32_t a0, int32_t a1)
+void alarm_ui_run_25(lv_obj_t * o, lv_subject_t * a0, int32_t a1, const char * a2)
+{
+    lv_obj_bind_flag_if_eq(o, a0, LV_OBJ_FLAG_HIDDEN, a1);
+    lv_obj_set_name(o, a2);
+}
+
+void alarm_ui_run_26(lv_style_t * o, int32_t a0, int32_t a1)
 {
     lv_style_set_width(o, a0);
     lv_style_set_height(o, a1);
 }
 
-void alarm_ui_run_26(lv_obj_t * o, int32_t a0, int32_t a1, const char * a2)
+void alarm_ui_run_27(lv_obj_t * o, int32_t a0, int32_t a1, const char * a2)
 {
     lv_obj_bind_style(o, &style_nav_active, 0, &subject_view, a0);
     lv_obj_add_subject_set_int_event(o, &subject_view, LV_EVENT_CLICKED, a1);
     lv_obj_set_name(o, a2);
 }
 
-lv_obj_t * alarm_ui_run_27(lv_obj_t * parent, const char * a0, int32_t a1, int32_t a2)
+lv_obj_t * alarm_ui_run_28(lv_obj_t * parent, const char * a0, int32_t a1, int32_t a2)
 {
     lv_obj_t * o = segment_create(parent, a0);
     lv_obj_bind_style(o, &style_segment_active, 0, &subject_zone_filter, a1);
@@ -217,16 +223,10 @@ lv_obj_t * alarm_ui_run_27(lv_obj_t * parent, const char * a0, int32_t a1, int32
     return o;
 }
 
-void alarm_ui_run_28(lv_obj_t * o)
+void alarm_ui_run_29(lv_obj_t * o)
 {
     lv_obj_set_style_text_font(o, font_label, 0);
     lv_obj_set_name(o, "title_label");
-}
-
-void alarm_ui_run_29(lv_obj_t * o, lv_subject_t * a0, int32_t a1, const char * a2)
-{
-    lv_obj_bind_flag_if_eq(o, a0, LV_OBJ_FLAG_HIDDEN, a1);
-    lv_obj_set_name(o, a2);
 }
 
 void alarm_ui_run_30(lv_obj_t * o, int32_t a0, int32_t a1)

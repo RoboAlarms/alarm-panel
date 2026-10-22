@@ -1595,7 +1595,9 @@ the voice editor (`voice_seen`, `voice_apply_approve`).
 - **Installer mode.** `program_enter` from a keypad enters the engine's installer mode as
   `{KEYPAD, n}` (`program_src`), with the usual event. Only one holder at a time: a keypad that
   asks while another source holds it gets BUSY, and RB_GRANT names the holder. The master's own
-  screen and its Panel Manager's installer may end a keypad's installer mode. A keypad sends
+  screen and its Panel Manager's installer may end a keypad's installer mode (on the screen: a tap
+  on the banner, "End installer mode at Keypad 2?", End it - no code, as leaving installer mode
+  never needs one; the proposal drew the installer code, a question for the owner). A keypad sends
   `program_keepalive` every 30 s while a page of it is open. The master ends a keypad's
   installer mode 60 s after it stops hearing that keypad, and after 15 minutes without activity as
   today (`ALARM_PROGRAM_TIMEOUT_S`).
@@ -2120,17 +2122,25 @@ The master's settings and installer menu on keypads (BL-223):
   keypads")
 - [x] The owner approves the proposal `BL-223-keypad-master-settings.js` and its five questions
   (2026-10-21)
-- [ ] `ui_remote` and the link's messages: call ids, the codecs of every call, the messages, the frozen fixture; the
-  master's grant, holder, answer cache and paging; the keypad's read copy (LINK-058, -059, -061,
-  -064, -065) (BL-223)
-- [ ] The session, configuration and zones' sensor groups served and proxied: an installer enters
+- [x] `ui_remote` and the link's messages: call ids, the codecs of every call, the messages, the
+  frozen fixtures; the master's grant, holder, answer cache and paging; the keypad's read copy
+  (LINK-058, -059, -061, -064, -065) (BL-223, d436703, dc9a1e3, cbca10e)
+- [x] The session, configuration and zones' sensor groups served and proxied: an installer enters
   the master's installer menu and adds a zone from a keypad in `link_smoke` (LINK-060, -061)
-  (BL-223)
-- [ ] The radios' groups (Z-Wave, Zigbee, sirens and 433 MHz, keypads): pairing a device on the
-  master from a keypad in `link_smoke` (LINK-062) (BL-223)
-- [ ] Users, automations, Smart Home's settings, integrations and the event log (BL-223)
-- [ ] The screens as approved, in the simulator and the preview (`host_link_demo`); the mockup's
-  screens made today's (LINK-057, -063) (BL-223)
+  (BL-223, 3c60a44)
+- [x] Z-Wave, Zigbee, sirens and 433 MHz served and proxied, a Z-Wave device paired on the master
+  from a keypad in `link_smoke`; the panels' services (`plink_mrb_svc.c`, `plink_krb_svc.c`)
+  (LINK-062) (BL-223, cbca10e)
+- [ ] Pairing another keypad from a keypad (decision 5): the keypads page's calls go to the
+  master while the keypad's own link requests stay its own (BL-223)
+- [ ] Automations, Smart Home's settings, integrations and the event log: their groups, then their
+  sections in the keypad's list (BL-223)
+- [ ] The screens as approved, in the simulator and the preview (`host_link_demo`): the Settings
+  list's two groups, the keypad's Installer, installer mode held elsewhere, the pages dimmed while
+  the link is down, the banner's words and the installer code through the call task built; the
+  other saves of the alarm panel's pages through the call task (LINK-054; they wait at most 13 s
+  on the screen's task today), "Not confirmed", and the mockup's screens made today's, still to do
+  (LINK-057, -063) (BL-223)
 - [ ] On the panels: the S3 master with the 7" and 10.1" as its keypads - a zone added and a
   device paired from a keypad, the link cut in installer mode, commands' timing while an
   installer works (BL-223)

@@ -76,7 +76,7 @@ lv_obj_t * month_calendar_create(lv_obj_t * parent, int32_t cal_w, int32_t day_h
         lv_obj_t * cal_prev = alarm_ui_run_21(cal_head);
         lv_obj_set_ext_click_area(cal_prev, 6);
         lv_obj_add_style(cal_prev, &style_cal_round, 0);
-        alarm_ui_run_68(cal_prev, &style_button_pressed, LV_STATE_PRESSED, "cal_prev");
+        alarm_ui_run_69(cal_prev, &style_button_pressed, LV_STATE_PRESSED, "cal_prev");
         alarm_ui_run_11(cal_prev, "\xEE\x81\xAE");
 
         lv_obj_t * cal_title = box_create(cal_head);
@@ -88,7 +88,7 @@ lv_obj_t * month_calendar_create(lv_obj_t * parent, int32_t cal_w, int32_t day_h
         alarm_ui_run_1(cal_title, LV_FLEX_FLOW_ROW);
         lv_obj_set_style_flex_main_place(cal_title, LV_FLEX_ALIGN_CENTER, 0);
         alarm_ui_run_3(cal_title);
-        alarm_ui_run_48(cal_title, SPACE_XS, "cal_title");
+        alarm_ui_run_49(cal_title, SPACE_XS, "cal_title");
         lv_obj_t * cal_month = lv_label_create(cal_title);
         lv_label_set_long_mode(cal_month, LV_LABEL_LONG_MODE_DOTS);
         lv_label_set_text(cal_month, "");
@@ -101,16 +101,16 @@ lv_obj_t * month_calendar_create(lv_obj_t * parent, int32_t cal_w, int32_t day_h
         lv_obj_t * cal_next = alarm_ui_run_21(cal_head);
         lv_obj_set_ext_click_area(cal_next, 6);
         lv_obj_add_style(cal_next, &style_cal_round, 0);
-        alarm_ui_run_68(cal_next, &style_button_pressed, LV_STATE_PRESSED, "cal_next");
+        alarm_ui_run_69(cal_next, &style_button_pressed, LV_STATE_PRESSED, "cal_next");
         alarm_ui_run_11(cal_next, "\xEE\x81\xAF");
 
         lv_obj_t * cal_body = alarm_ui_run_0(box_0, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_1(cal_body, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_49(cal_body, SPACE_XS, "cal_body");
+        alarm_ui_run_46(cal_body, SPACE_XS, "cal_body");
         lv_obj_t * cal_week = alarm_ui_run_0(cal_body, lv_pct(100), 24);
         alarm_ui_run_1(cal_week, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(cal_week);
-        alarm_ui_run_48(cal_week, SPACE_XS, "cal_week");
+        alarm_ui_run_49(cal_week, SPACE_XS, "cal_week");
         lv_obj_t * lv_label_3 = alarm_ui_run_23(cal_week, "");
         lv_obj_add_style(lv_label_3, &style_cal_week, 0);
 
@@ -134,7 +134,7 @@ lv_obj_t * month_calendar_create(lv_obj_t * parent, int32_t cal_w, int32_t day_h
 
         lv_obj_t * cal_days = alarm_ui_run_0(cal_body, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_1(cal_days, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_49(cal_days, SPACE_XS, "cal_days");
+        alarm_ui_run_46(cal_days, SPACE_XS, "cal_days");
         lv_obj_t * box_1 = box_create(cal_days);
         lv_obj_set_height(box_1, day_h);
         lv_obj_add_style(box_1, &style_cal_row, 0);
@@ -164,7 +164,7 @@ lv_obj_t * month_calendar_create(lv_obj_t * parent, int32_t cal_w, int32_t day_h
         alarm_ui_run_1(cal_pick, LV_FLEX_FLOW_ROW);
         lv_obj_set_style_flex_main_place(cal_pick, LV_FLEX_ALIGN_CENTER, 0);
         alarm_ui_run_3(cal_pick);
-        alarm_ui_run_48(cal_pick, SPACE_SM, "cal_pick");
+        alarm_ui_run_49(cal_pick, SPACE_SM, "cal_pick");
         lv_obj_t * roll_month = lv_roller_create(cal_pick);
         lv_obj_set_flex_grow(roll_month, 1);
         alarm_ui_run_54(roll_month, &style_roller, 0, &style_roller_selected, LV_PART_SELECTED);

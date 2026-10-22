@@ -93,6 +93,7 @@ lv_style_t style_step_on;
  * Subjects
  *----------------*/
 
+lv_subject_t subject_program_text;
 lv_subject_t subject_view;
 lv_subject_t subject_panel;
 lv_subject_t subject_alarm_active;
@@ -563,14 +564,14 @@ void alarm_ui_init_gen(const char * asset_path)
         alarm_ui_run_6(&style_nav_active, COLOR_RAISED, (255 * 100 / 100));
         lv_style_set_text_color(&style_nav_active, COLOR_TEXT);
         lv_style_set_text_color(&style_nav_on, COLOR_BLUE);
-        alarm_ui_run_65(&style_device_arrange, 3, COLOR_BLUE);
+        alarm_ui_run_66(&style_device_arrange, 3, COLOR_BLUE);
         lv_style_set_border_opa(&style_device_arrange, (255 * 0 / 100));
-        alarm_ui_run_65(&style_device_picked, 3, COLOR_BLUE);
+        alarm_ui_run_66(&style_device_picked, 3, COLOR_BLUE);
         lv_style_set_border_opa(&style_device_picked, (255 * 100 / 100));
         lv_style_set_bg_color(&style_device_still, COLOR_SURFACE);
         alarm_ui_run_6(&style_segment_active, COLOR_RAISED, (255 * 100 / 100));
         lv_style_set_text_color(&style_segment_active, COLOR_TEXT);
-        alarm_ui_run_64(&style_button, 52, RADIUS_FULL);
+        alarm_ui_run_65(&style_button, 52, RADIUS_FULL);
         alarm_ui_run_6(&style_button, COLOR_RAISED, (255 * 100 / 100));
         alarm_ui_run_15(&style_button, SPACE_XL, SPACE_XL);
         lv_style_set_pad_column(&style_button, SPACE_SM);
@@ -585,7 +586,7 @@ void alarm_ui_init_gen(const char * asset_path)
         lv_style_set_radius(&style_bar_round, RADIUS_FULL);
         alarm_ui_run_6(&style_bar_round, COLOR_SURFACE, (255 * 100 / 100));
         lv_style_set_text_color(&style_bar_round, COLOR_TEXT_2);
-        alarm_ui_run_64(&style_bar_pill, 40, RADIUS_FULL);
+        alarm_ui_run_65(&style_bar_pill, 40, RADIUS_FULL);
         alarm_ui_run_6(&style_bar_pill, COLOR_AMBER, (255 * 16 / 100));
         alarm_ui_run_15(&style_bar_pill, SPACE_MD, SPACE_MD);
         lv_style_set_pad_column(&style_bar_pill, 6);
@@ -598,7 +599,7 @@ void alarm_ui_init_gen(const char * asset_path)
         lv_style_set_layout(&style_sheet_card, LV_LAYOUT_FLEX);
         lv_style_set_flex_flow(&style_sheet_card, LV_FLEX_FLOW_COLUMN);
         lv_style_set_pad_row(&style_sheet_card, SPACE_MD);
-        alarm_ui_run_64(&style_roller, ROLLER_H, RADIUS_MD);
+        alarm_ui_run_65(&style_roller, ROLLER_H, RADIUS_MD);
         alarm_ui_run_6(&style_roller, COLOR_BG, (255 * 100 / 100));
         lv_style_set_border_width(&style_roller, 0);
         lv_style_set_pad_all(&style_roller, 0);
@@ -657,6 +658,14 @@ void alarm_ui_init_gen(const char * asset_path)
     /*----------------
      * Subjects
      *----------------*/
+    static char subject_program_text_buf[UI_SUBJECT_STRING_LENGTH];
+    static char subject_program_text_prev_buf[UI_SUBJECT_STRING_LENGTH];
+    lv_subject_init_string(&subject_program_text,
+                           subject_program_text_buf,
+                           subject_program_text_prev_buf,
+                           UI_SUBJECT_STRING_LENGTH,
+                           alarm_ui_tr("Installer \xC2\xB7 Arming off \xC2\xB7 Tap to leave")
+                          );
     lv_subject_init_int(&subject_view, 0);
     lv_subject_set_min_value_int(&subject_view, 0);
     lv_subject_set_max_value_int(&subject_view, 6);
@@ -1166,6 +1175,7 @@ void alarm_ui_init_gen(const char * asset_path)
     lv_xml_register_font(NULL, "icons_96", icons_96);
 
     /* Register subjects */
+    lv_xml_register_subject(NULL, "subject_program_text", &subject_program_text);
     lv_xml_register_subject(NULL, "subject_view", &subject_view);
     lv_xml_register_subject(NULL, "subject_panel", &subject_panel);
     lv_xml_register_subject(NULL, "subject_alarm_active", &subject_alarm_active);

@@ -221,6 +221,8 @@ bool mrbsvc_run(void *ctx, uint32_t ticket, uint8_t device, uint16_t call, const
 void mrbsvc_poll(plink_master_t *m, uint64_t now);
 void mrbsvc_auth(uint8_t device, uint8_t user);
 void mrbsvc_worker(void);
+/* The keypad holding this panel's installer mode now, 0 none (any task). */
+uint8_t mrbsvc_holder(void);
 /* ---- plink_krb_svc.c: the remote backend on a keypad ---------------------------------------- */
 /* Its buffers (PSRAM): PLINK_CAP_RB, or 0 without them; the manager's buffers attached; each turn
  * of the link task; the proxies put into the screen's backend; the generation that moves when a

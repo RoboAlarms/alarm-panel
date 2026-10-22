@@ -28,6 +28,7 @@ typedef enum {
     OP_CHANGE_CODE,
     OP_PARTITION,
     OP_DEV_ACT,
+    OP_PROGRAM_ENTER, /* a keypad's alarm panel's installer code (BL-223) */
 } call_op_t;
 
 typedef struct {
@@ -65,6 +66,10 @@ static void call_work(void *arg)
         c->r = S.be.partition_select != NULL
                    ? S.be.partition_select(S.be.ctx, c->partition, c->activity)
                    : ALARM_ERR_UNAVAILABLE;
+        break;
+    case OP_PROGRAM_ENTER:
+        c->r = S.be.program_enter != NULL ? S.be.program_enter(S.be.ctx, c->code, &c->user)
+                                          : ALARM_ERR_DISABLED;
         break;
     case OP_DEV_ACT:
         c->r = ALARM_OK;
@@ -239,6 +244,15 @@ bool ui_call_command(const alarm_cmd_t *cmd, ui_call_done_fn done, uintptr_t tag
 bool ui_call_authenticate(const char *code, ui_call_done_fn done, uintptr_t tag)
 {
     slot_t *s = call_new(OP_AUTHENTICATE, true, done, tag);
+    if (s != NULL) {
+        code_copy(s->c.code, sizeof(s->c.code), code);
+    }
+    return call_start(s);
+}
+
+bool ui_call_program_enter(const char *code, ui_call_done_fn done, uintptr_t tag)
+{
+    slot_t *s = call_new(OP_PROGRAM_ENTER, true, done, tag);
     if (s != NULL) {
         code_copy(s->c.code, sizeof(s->c.code), code);
     }

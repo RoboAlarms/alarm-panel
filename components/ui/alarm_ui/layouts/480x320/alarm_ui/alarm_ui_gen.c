@@ -81,6 +81,7 @@ lv_style_t style_step_on;
  * Subjects
  *----------------*/
 
+lv_subject_t subject_program_text;
 lv_subject_t subject_view;
 lv_subject_t subject_panel;
 lv_subject_t subject_alarm_active;
@@ -402,7 +403,7 @@ void alarm_ui_init_gen(const char * asset_path)
         lv_style_set_text_color(&style_text_3, COLOR_TEXT_3);
         lv_style_set_text_color(&style_text_error, COLOR_RED);
         lv_style_set_text_color(&style_text_warn, COLOR_AMBER);
-        alarm_ui_run_25(&style_nav_item, 64, 48);
+        alarm_ui_run_26(&style_nav_item, 64, 48);
         lv_style_set_radius(&style_nav_item, RADIUS_MD);
         alarm_ui_run_19(&style_nav_item, LV_FLEX_FLOW_COLUMN);
         lv_style_set_pad_row(&style_nav_item, 1);
@@ -471,6 +472,14 @@ void alarm_ui_init_gen(const char * asset_path)
     /*----------------
      * Subjects
      *----------------*/
+    static char subject_program_text_buf[UI_SUBJECT_STRING_LENGTH];
+    static char subject_program_text_prev_buf[UI_SUBJECT_STRING_LENGTH];
+    lv_subject_init_string(&subject_program_text,
+                           subject_program_text_buf,
+                           subject_program_text_prev_buf,
+                           UI_SUBJECT_STRING_LENGTH,
+                           alarm_ui_tr("Installer \xC2\xB7 Arming off \xC2\xB7 Tap to leave")
+                          );
     lv_subject_init_int(&subject_view, 0);
     lv_subject_set_min_value_int(&subject_view, 0);
     lv_subject_set_max_value_int(&subject_view, 5);
@@ -884,6 +893,7 @@ void alarm_ui_init_gen(const char * asset_path)
     lv_xml_register_font(NULL, "icons_40", icons_40);
 
     /* Register subjects */
+    lv_xml_register_subject(NULL, "subject_program_text", &subject_program_text);
     lv_xml_register_subject(NULL, "subject_view", &subject_view);
     lv_xml_register_subject(NULL, "subject_panel", &subject_panel);
     lv_xml_register_subject(NULL, "subject_alarm_active", &subject_alarm_active);

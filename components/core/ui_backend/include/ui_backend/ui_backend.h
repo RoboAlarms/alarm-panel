@@ -1651,7 +1651,28 @@ typedef struct {
     bool return_never;
     uint16_t return_s;
     uint8_t selected;
+    /* Appended (BL-223, docs/features/11 "The master's settings and installer menu on keypads"):
+     * the alarm panel's pages a keypad may show - the groups its alarm panel serves (ui_remote's
+     * UR_AREA_*; 0 with an older one, which keeps them hidden) - whether this keypad holds the
+     * alarm panel's installer mode, who holds it otherwise (UI_LINK_HOLDER_*, or a keypad number
+     * 1..8), and a generation that moves whenever an answer the screen read from the alarm panel
+     * changed: an open page of the alarm panel's reads again then (LINK-063). */
+    uint32_t remote_areas;
+    bool remote_installer;
+    uint8_t remote_holder;
+    uint32_t remote_gen;
 } ui_link_info_t;
+/* remote_areas' bits: ui_remote.h's UR_AREA_* (the same numbers, asserted there) */
+#define UI_LINK_AREA_SESSION (1u << 0) /* installer mode */
+#define UI_LINK_AREA_CONFIG  (1u << 1) /* the configuration */
+#define UI_LINK_AREA_USERS   (1u << 2)
+#define UI_LINK_AREA_ZONES   (1u << 3) /* zones' sensors */
+#define UI_LINK_AREA_ZWAVE   (1u << 4)
+#define UI_LINK_AREA_ZIGBEE  (1u << 5)
+#define UI_LINK_AREA_OUTPUTS (1u << 6) /* sirens, outputs and 433 MHz */
+#define UI_LINK_KEYPADS_MAX  8u    /* keypad numbers 1..8 (docs/features/11 LINK-001) */
+#define UI_LINK_HOLDER_NONE  0u    /* nobody holds installer mode */
+#define UI_LINK_HOLDER_PANEL 0xFFu /* the alarm panel's own screen, or its Panel Manager */
 
 /* Local enrollment progress; never includes network secrets. */
 enum {
@@ -2257,7 +2278,8 @@ typedef struct {
 
     /* Optional (LINK-054): runs work(arg) once on a task of the backend's and returns at once;
      * false: not now (the UI runs it itself). The UI hands over its calls to command,
-     * authenticate, change_code, dev_act and partition_select, one at a time, when they may wait
+     * authenticate, change_code, dev_act, partition_select and
+     * program_enter (BL-223), one at a time, when they may wait
      * for another panel (a keypad's master answers them); work calls only those entries and
      * nothing of LVGL. NULL: every call runs on the UI's task, as an engine on this panel answers
      * at once. */

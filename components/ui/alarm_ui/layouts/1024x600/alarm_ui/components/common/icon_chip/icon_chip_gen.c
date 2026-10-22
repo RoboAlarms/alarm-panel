@@ -26,7 +26,7 @@ lv_obj_t * icon_chip_create(lv_obj_t * parent, const char * glyph, int32_t size,
         /*Init all styles*/
         lv_style_init(&style_icon_chip);
 
-        alarm_ui_run_63(&style_icon_chip, RADIUS_FULL, OPA_TINT);
+        alarm_ui_run_64(&style_icon_chip, RADIUS_FULL, OPA_TINT);
 
         alarm_ui_style_track(&style_icon_chip, ALARM_UI_STYLE_ICON_CHIP_ICON_CHIP);
 

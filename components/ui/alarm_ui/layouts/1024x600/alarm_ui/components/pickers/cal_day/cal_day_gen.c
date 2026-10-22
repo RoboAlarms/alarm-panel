@@ -44,7 +44,7 @@ lv_obj_t * cal_day_create(lv_obj_t * parent)
         alarm_ui_run_6(&style_cal_day, COLOR_PRESSED, (255 * 0 / 100));
         alarm_ui_run_45(&style_cal_day, font_label, COLOR_TEXT);
         lv_style_set_bg_opa(&style_cal_day_pressed, (255 * 100 / 100));
-        alarm_ui_run_65(&style_cal_day_today, 2, COLOR_LINE);
+        alarm_ui_run_66(&style_cal_day_today, 2, COLOR_LINE);
         alarm_ui_run_6(&style_cal_day_chosen, COLOR_BLUE, (255 * 100 / 100));
         lv_style_set_text_color(&style_cal_day_chosen, COLOR_ON_TONE);
 

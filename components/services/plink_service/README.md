@@ -40,6 +40,17 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
   keypads list (name, home, online, firmware, signal, the settings report, can, voice; only the id
   while the keypad is online in a session without PREFS) from what the link task publishes every
   0.5 s; a write's end publishes the keypad's report before its `done` runs. `panel_app` sets `ha_link`'s settings port onto these two.
+- **A keypad's calls of the master's pages** (docs/features/11 "The master's settings and
+  installer menu on keypads", BL-223; `plink_mrb_svc.c`, `plink_krb_svc.c`). On a master, each
+  keypad's remote-backend call runs on the worker with `ui_remote_serve` over this panel's own
+  backend (`ui_port_esp`'s, as the Panel Manager takes it), installer mode, users and codes acting
+  as `{ALARM_SRC_KEYPAD, n}`; a code accepted at the keypad's code check is its grant; the grants
+  go to the keypads (RB_GRANT) every second when they change, and `link_info` names a keypad
+  holding installer mode. On a keypad with a screen, the screen's entries for the master's pages
+  are `ui_remote` proxies: a write is handed to the link task and waited for from the screen's call
+  task; a read answers from a copy the link task keeps fresh while the screen reads it, and
+  `link_info.remote_gen` moves when one changes. All their buffers are PSRAM (about 300 KB on a
+  master, 270 KB on a keypad), allocated once; without them `PLINK_CAP_RB` isn't offered.
 - **On a keypad** (`panel_app` starts no engine: `alarm_service_set_dormant()`) the link task
   finds the master (mDNS, the subnet broadcast, or an address set at the console; again whenever
   the manager's handshake goes unanswered, `port.resolve`; the subnet broadcast, ip | ~netmask,
@@ -157,7 +168,7 @@ protocol; this component gives it the network, NVS, PSA, the engine and the scre
 | `plink_console.c` | the `plink` command |
 
 ## Depends on
-- Project components: `panel_link` (the protocol and the managers), `platform_esp` (`alarm_service`, `net_wifi`, `panel_prefs`, `sounder`, `panel_log`), `panel_ota` (the heartbeat, the gate's answer), `ui_backend` (the UI's types), `alarm_mem`, `alarm_core`, `alarm_proto` (the panel id, `proto_fw_install_allowed`; public for `proto_link_keypad_t` and `proto_prefs`), `device_service` (the registry and the judge, on a master), `panel_voice` (a keypad's voice state in its settings report), `i18n`, and for the reporting state on a master `ha_link` and `net_mqtt`.
+- Project components: `panel_link` (the protocol and the managers), `platform_esp` (`alarm_service`, `net_wifi`, `panel_prefs`, `sounder`, `panel_log`), `panel_ota` (the heartbeat, the gate's answer), `ui_backend` (the UI's types), `alarm_mem`, `alarm_core`, `alarm_proto` (the panel id, `proto_fw_install_allowed`; public for `proto_link_keypad_t` and `proto_prefs`), `device_service` (the registry and the judge, on a master), `panel_voice` (a keypad's voice state in its settings report), `i18n`, `ui_remote` and `ui_port_esp` (the master's pages for keypads, BL-223), and for the reporting state on a master `ha_link` and `net_mqtt`.
 - ESP-IDF: `lwip` (one UDP socket), `esp_netif`, `nvs_flash`, `mbedtls` (PSA), `console`, `esp_app_format`; `espressif/mdns` `^1.8.0` from the component registry (`idf_component.yml`, already in both P4 lock files through `ha_link`).
 
 ## Options

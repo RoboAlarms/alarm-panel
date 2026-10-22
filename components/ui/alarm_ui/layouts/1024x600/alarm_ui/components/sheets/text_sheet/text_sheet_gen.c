@@ -64,7 +64,7 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
         lv_style_set_width(&style_text_field, lv_pct(100));
         lv_style_set_radius(&style_text_field, RADIUS_MD);
         alarm_ui_run_6(&style_text_field, COLOR_RAISED, (255 * 100 / 100));
-        alarm_ui_run_65(&style_text_field, 2, COLOR_RAISED);
+        alarm_ui_run_66(&style_text_field, 2, COLOR_RAISED);
         lv_style_set_pad_left(&style_text_field, SPACE_LG);
         lv_style_set_pad_right(&style_text_field, SPACE_LG);
         lv_style_set_pad_top(&style_text_field, 15);
@@ -129,7 +129,7 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
         lv_obj_add_style(box_0, &style_backdrop, 0);
         lv_obj_t * text_card = box_create(box_0);
         lv_obj_set_align(text_card, LV_ALIGN_BOTTOM_MID);
-        alarm_ui_run_67(text_card, &style_text_card, 0, "text_card");
+        alarm_ui_run_68(text_card, &style_text_card, 0, "text_card");
         lv_obj_t * box_1 = alarm_ui_run_0(text_card, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_1(box_1, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(box_1);
@@ -150,7 +150,7 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
         lv_obj_t * sheet_done = alarm_ui_run_5(box_1, &style_button_primary, 0);
         lv_obj_add_style(sheet_done, &style_button_tone_pressed, LV_STATE_PRESSED);
         alarm_ui_run_10(sheet_done, ui_on_sheet_done, "sheet_done");
-        alarm_ui_run_62(sheet_done, &subject_sheet_ok);
+        alarm_ui_run_63(sheet_done, &subject_sheet_ok);
 
         lv_obj_t * box_3 = alarm_ui_run_0(text_card, lv_pct(100), LV_SIZE_CONTENT);
         lv_obj_t * sheet_text = lv_textarea_create(box_3);

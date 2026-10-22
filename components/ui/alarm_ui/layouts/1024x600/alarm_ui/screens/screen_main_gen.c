@@ -34,8 +34,8 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_40(rail, COLOR_LINE);
         alarm_ui_run_1(rail, LV_FLEX_FLOW_COLUMN);
         alarm_ui_run_3(rail);
-        alarm_ui_run_71(rail, SPACE_LG, SPACE_LG);
-        alarm_ui_run_49(rail, SPACE_SM, "rail");
+        alarm_ui_run_72(rail, SPACE_LG, SPACE_LG);
+        alarm_ui_run_46(rail, SPACE_SM, "rail");
         lv_obj_t * rail_logo = alarm_ui_run_0(rail, 56, 56);
         lv_obj_set_style_margin_bottom(rail_logo, SPACE_SM, 0);
         lv_obj_set_name(rail_logo, "rail_logo");
@@ -89,7 +89,7 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_26(bar, SPACE_XL, SPACE_XL);
         alarm_ui_run_1(bar, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(bar);
-        alarm_ui_run_48(bar, SPACE_LG, "bar");
+        alarm_ui_run_49(bar, SPACE_LG, "bar");
         lv_obj_t * bar_date = lv_label_create(bar);
         alarm_ui_run_35(bar_date, 26);
         alarm_ui_run_4(bar_date, font_label, COLOR_TEXT_2);
@@ -107,9 +107,10 @@ lv_obj_t * screen_main_create(void)
         lv_obj_t * lv_label_2 = alarm_ui_run_23(program_banner, "\xEE\x86\xB1");
         alarm_ui_run_4(lv_label_2, icons_20, COLOR_BLUE);
 
-        lv_obj_t * lv_label_3 = alarm_ui_run_14(program_banner, alarm_ui_tr("Installer \xC2\xB7 Arming off \xC2\xB7 Tap to leave"));
+        lv_obj_t * lv_label_3 = lv_label_create(program_banner);
         alarm_ui_run_35(lv_label_3, 26);
         alarm_ui_run_4(lv_label_3, font_label, COLOR_BLUE);
+        lv_label_bind_text(lv_label_3, &subject_program_text, NULL);
 
         lv_obj_t * codes_banner = alarm_ui_run_0(bar, LV_SIZE_CONTENT, 40);
         lv_obj_set_flag(codes_banner, LV_OBJ_FLAG_CLICKABLE, true);
@@ -241,7 +242,7 @@ lv_obj_t * screen_main_create(void)
 
         lv_obj_t * bar_battery = alarm_ui_run_0(bar, LV_SIZE_CONTENT, 24);
         alarm_ui_run_1(bar_battery, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_66(bar_battery, LV_FLEX_ALIGN_CENTER, 4);
+        alarm_ui_run_67(bar_battery, LV_FLEX_ALIGN_CENTER, 4);
         alarm_ui_run_52(bar_battery, &style_text_2, 0, &style_text_warn, &subject_battery_warn, 1);
         lv_obj_bind_style(bar_battery, &style_text_error, 0, &subject_battery_critical, 1);
         lv_obj_t * box_0 = alarm_ui_run_0(bar_battery, 24, 24);
@@ -266,7 +267,7 @@ lv_obj_t * screen_main_create(void)
 
         lv_obj_t * bar_clock = alarm_ui_run_0(bar, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(bar_clock, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_66(bar_clock, LV_FLEX_ALIGN_END, 4);
+        alarm_ui_run_67(bar_clock, LV_FLEX_ALIGN_END, 4);
         lv_obj_t * bar_time = lv_label_create(bar_clock);
         alarm_ui_run_12(bar_time, font_title, &subject_time);
 
@@ -324,7 +325,7 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_32(link_strip, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_9(link_strip, COLOR_SURFACE, 0, (255 * 100 / 100), RADIUS_LG);
         alarm_ui_run_40(link_strip, COLOR_LINE);
-        alarm_ui_run_71(link_strip, SPACE_MD, SPACE_MD);
+        alarm_ui_run_72(link_strip, SPACE_MD, SPACE_MD);
         alarm_ui_run_26(link_strip, SPACE_LG, SPACE_LG);
         alarm_ui_run_1(link_strip, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(link_strip);
@@ -339,7 +340,7 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_1(box_2, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(box_2, 2, 0);
         lv_obj_t * lv_label_23 = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_WRAP);
-        alarm_ui_run_74(lv_label_23, alarm_ui_tr("Check the alarm panel"));
+        alarm_ui_run_75(lv_label_23, alarm_ui_tr("Check the alarm panel"));
 
         lv_obj_t * lv_label_24 = alarm_ui_run_2(box_2, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(lv_label_24, alarm_ui_tr("Is it on, and on the same Wi-Fi?"));
@@ -350,13 +351,13 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_1(panel_arm, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(panel_arm, SPACE_LG, 0);
         alarm_ui_run_38(panel_arm, &subject_panel, 0, "panel_arm");
-        lv_obj_t * arm_tile_0 = alarm_ui_run_46(panel_arm, "\xEE\x84\x8E", alarm_ui_tr_c("arming mode", "Away"), alarm_ui_tr_c("arming mode", "Everyone is leaving"), COLOR_ROSE);
+        lv_obj_t * arm_tile_0 = alarm_ui_run_47(panel_arm, "\xEE\x84\x8E", alarm_ui_tr_c("arming mode", "Away"), alarm_ui_tr_c("arming mode", "Everyone is leaving"), COLOR_ROSE);
         lv_obj_add_event_cb(arm_tile_0, ui_on_arm, LV_EVENT_CLICKED, (void *)"away");
 
-        lv_obj_t * arm_tile_1 = alarm_ui_run_46(panel_arm, "\xEE\x83\xB5", alarm_ui_tr_c("arming mode", "Stay"), alarm_ui_tr_c("arming mode", "Someone is home"), COLOR_BLUE);
+        lv_obj_t * arm_tile_1 = alarm_ui_run_47(panel_arm, "\xEE\x83\xB5", alarm_ui_tr_c("arming mode", "Stay"), alarm_ui_tr_c("arming mode", "Someone is home"), COLOR_BLUE);
         lv_obj_add_event_cb(arm_tile_1, ui_on_arm, LV_EVENT_CLICKED, (void *)"stay");
 
-        lv_obj_t * arm_tile_2 = alarm_ui_run_46(panel_arm, "\xEE\x84\x9E", alarm_ui_tr_c("arming mode", "Night"), alarm_ui_tr_c("arming mode", "Going to bed"), COLOR_VIOLET);
+        lv_obj_t * arm_tile_2 = alarm_ui_run_47(panel_arm, "\xEE\x84\x9E", alarm_ui_tr_c("arming mode", "Night"), alarm_ui_tr_c("arming mode", "Going to bed"), COLOR_VIOLET);
         lv_obj_add_event_cb(arm_tile_2, ui_on_arm, LV_EVENT_CLICKED, (void *)"night");
 
         lv_obj_t * panel_disarm = alarm_ui_run_0(pane, lv_pct(100), lv_pct(100));
@@ -377,7 +378,7 @@ lv_obj_t * screen_main_create(void)
 
         lv_obj_t * panel_walk = alarm_ui_run_0(pane, lv_pct(100), lv_pct(100));
         alarm_ui_run_1(panel_walk, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_73(panel_walk, SPACE_MD, &subject_panel, 4);
+        alarm_ui_run_74(panel_walk, SPACE_MD, &subject_panel, 4);
         lv_obj_t * walk_from = alarm_ui_run_0(panel_walk, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_9(walk_from, COLOR_BLUE, 0, (255 * 16 / 100), RADIUS_LG);
         lv_obj_set_style_pad_all(walk_from, SPACE_MD, 0);
@@ -444,7 +445,7 @@ lv_obj_t * screen_main_create(void)
 
         lv_obj_t * view_zones = alarm_ui_run_0(content, lv_pct(100), lv_pct(100));
         alarm_ui_run_1(view_zones, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_73(view_zones, SPACE_LG, &subject_view, 1);
+        alarm_ui_run_74(view_zones, SPACE_LG, &subject_view, 1);
         lv_obj_t * box_4 = alarm_ui_run_0(view_zones, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_1(box_4, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(box_4);
@@ -455,7 +456,7 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_9(zone_filters, COLOR_SURFACE, 0, (255 * 100 / 100), RADIUS_LG);
         lv_obj_set_style_pad_all(zone_filters, 4, 0);
         alarm_ui_run_1(zone_filters, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_48(zone_filters, 4, "zone_filters");
+        alarm_ui_run_49(zone_filters, 4, "zone_filters");
         alarm_ui_run_28(zone_filters, alarm_ui_tr_c("zone filter", "All"), &subject_zone_filter, 0, &subject_zone_filter, 0);
 
         alarm_ui_run_28(zone_filters, alarm_ui_tr_c("zone filter", "Open"), &subject_zone_filter, 1, &subject_zone_filter, 1);
@@ -480,17 +481,17 @@ lv_obj_t * screen_main_create(void)
         icon_chip_create(zones_none, "\xEE\x88\xA6", 112, icons_40, COLOR_GREEN);
 
         lv_obj_t * lv_label_26 = alarm_ui_run_14(zones_none, alarm_ui_tr("No open zones"));
-        alarm_ui_run_75(lv_label_26, 1);
+        alarm_ui_run_76(lv_label_26, 1);
 
         lv_obj_t * lv_label_27 = alarm_ui_run_14(zones_none, alarm_ui_tr("No bypassed zones"));
-        alarm_ui_run_75(lv_label_27, 2);
+        alarm_ui_run_76(lv_label_27, 2);
 
         lv_obj_t * lv_label_28 = alarm_ui_run_14(zones_none, alarm_ui_tr("No zone troubles"));
-        alarm_ui_run_75(lv_label_28, 3);
+        alarm_ui_run_76(lv_label_28, 3);
 
         lv_obj_t * view_devices = alarm_ui_run_0(content, lv_pct(100), lv_pct(100));
         alarm_ui_run_1(view_devices, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_73(view_devices, SPACE_LG, &subject_view, 6);
+        alarm_ui_run_74(view_devices, SPACE_LG, &subject_view, 6);
         lv_obj_t * box_5 = alarm_ui_run_0(view_devices, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_1(box_5, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(box_5);
@@ -512,7 +513,7 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_9(device_areas, COLOR_SURFACE, 0, (255 * 100 / 100), RADIUS_LG);
         lv_obj_set_style_pad_all(device_areas, 4, 0);
         alarm_ui_run_1(device_areas, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_48(device_areas, 4, "device_areas");
+        alarm_ui_run_49(device_areas, 4, "device_areas");
 
         lv_obj_t * device_spacer = alarm_ui_run_0(box_5, 1, 1);
         lv_obj_set_flex_grow(device_spacer, 1);
@@ -527,7 +528,7 @@ lv_obj_t * screen_main_create(void)
 
         lv_obj_t * device_arrange_add = alarm_ui_run_18(box_5, LV_SIZE_CONTENT, LV_OBJ_FLAG_HIDDEN);
         alarm_ui_run_29(device_arrange_add, &style_button);
-        alarm_ui_run_68(device_arrange_add, &style_button_pressed, LV_STATE_PRESSED, "device_arrange_add");
+        alarm_ui_run_69(device_arrange_add, &style_button_pressed, LV_STATE_PRESSED, "device_arrange_add");
         lv_obj_t * lv_label_30 = alarm_ui_run_23(device_arrange_add, "\xEE\x84\xBD");
         lv_obj_set_style_text_font(lv_label_30, icons_20, 0);
 
@@ -555,11 +556,11 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_9(device_arrange_size, COLOR_SURFACE, 0, (255 * 100 / 100), RADIUS_LG);
         lv_obj_set_style_pad_all(device_arrange_size, 4, 0);
         alarm_ui_run_1(device_arrange_size, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_48(device_arrange_size, 4, "device_arrange_size");
+        alarm_ui_run_49(device_arrange_size, 4, "device_arrange_size");
 
         lv_obj_t * device_arrange_room = alarm_ui_run_18(box_5, LV_SIZE_CONTENT, LV_OBJ_FLAG_HIDDEN);
         alarm_ui_run_29(device_arrange_room, &style_button);
-        alarm_ui_run_68(device_arrange_room, &style_button_pressed, LV_STATE_PRESSED, "device_arrange_room");
+        alarm_ui_run_69(device_arrange_room, &style_button_pressed, LV_STATE_PRESSED, "device_arrange_room");
         lv_obj_t * lv_label_34 = alarm_ui_run_23(device_arrange_room, "\xEE\x8F\x96");
         lv_obj_set_style_text_font(lv_label_34, icons_20, 0);
 
@@ -568,7 +569,7 @@ lv_obj_t * screen_main_create(void)
 
         lv_obj_t * device_arrange_rooms = alarm_ui_run_18(box_5, LV_SIZE_CONTENT, LV_OBJ_FLAG_HIDDEN);
         alarm_ui_run_29(device_arrange_rooms, &style_button);
-        alarm_ui_run_68(device_arrange_rooms, &style_button_pressed, LV_STATE_PRESSED, "device_arrange_rooms");
+        alarm_ui_run_69(device_arrange_rooms, &style_button_pressed, LV_STATE_PRESSED, "device_arrange_rooms");
         lv_obj_t * lv_label_36 = alarm_ui_run_23(device_arrange_rooms, "\xEE\x83\xB5");
         lv_obj_set_style_text_font(lv_label_36, icons_20, 0);
 
@@ -577,7 +578,7 @@ lv_obj_t * screen_main_create(void)
 
         lv_obj_t * device_arrange_remove = alarm_ui_run_18(box_5, LV_SIZE_CONTENT, LV_OBJ_FLAG_HIDDEN);
         alarm_ui_run_29(device_arrange_remove, &style_button);
-        alarm_ui_run_68(device_arrange_remove, &style_button_pressed, LV_STATE_PRESSED, "device_arrange_remove");
+        alarm_ui_run_69(device_arrange_remove, &style_button_pressed, LV_STATE_PRESSED, "device_arrange_remove");
         lv_obj_t * lv_label_38 = alarm_ui_run_23(device_arrange_remove, "\xEE\x8A\xB0");
         lv_obj_set_style_text_font(lv_label_38, icons_20, 0);
 
@@ -586,7 +587,7 @@ lv_obj_t * screen_main_create(void)
 
         lv_obj_t * device_arrange_done = alarm_ui_run_18(box_5, LV_SIZE_CONTENT, LV_OBJ_FLAG_HIDDEN);
         alarm_ui_run_29(device_arrange_done, &style_button);
-        alarm_ui_run_68(device_arrange_done, &style_button_primary, 0, "device_arrange_done");
+        alarm_ui_run_69(device_arrange_done, &style_button_primary, 0, "device_arrange_done");
         lv_obj_t * lv_label_40 = alarm_ui_run_14(device_arrange_done, alarm_ui_tr("Done"));
         lv_obj_set_style_text_font(lv_label_40, font_label, 0);
 
@@ -596,14 +597,14 @@ lv_obj_t * screen_main_create(void)
 
         lv_obj_t * view_activity = alarm_ui_run_0(content, lv_pct(100), lv_pct(100));
         alarm_ui_run_1(view_activity, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_73(view_activity, SPACE_LG, &subject_view, 2);
+        alarm_ui_run_74(view_activity, SPACE_LG, &subject_view, 2);
         view_header_create(view_activity, alarm_ui_tr("Activity"), &subject_events_note);
 
         lv_obj_t * event_filters = alarm_ui_run_0(view_activity, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_9(event_filters, COLOR_SURFACE, 0, (255 * 100 / 100), RADIUS_LG);
         lv_obj_set_style_pad_all(event_filters, 4, 0);
         alarm_ui_run_1(event_filters, LV_FLEX_FLOW_ROW);
-        alarm_ui_run_48(event_filters, 4, "event_filters");
+        alarm_ui_run_49(event_filters, 4, "event_filters");
         alarm_ui_run_28(event_filters, alarm_ui_tr_c("event log filter", "All"), &subject_event_filter, 0, &subject_event_filter, 0);
 
         alarm_ui_run_28(event_filters, alarm_ui_tr_c("event log filter", "Alarms"), &subject_event_filter, 1, &subject_event_filter, 1);
@@ -619,7 +620,7 @@ lv_obj_t * screen_main_create(void)
         lv_obj_t * event_list = alarm_ui_run_31(view_activity);
         alarm_ui_run_13(event_list);
         alarm_ui_run_1(event_list, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_49(event_list, SPACE_SM, "event_list");
+        alarm_ui_run_46(event_list, SPACE_SM, "event_list");
 
         lv_obj_t * view_troubles = alarm_ui_run_0(content, lv_pct(100), lv_pct(100));
         alarm_ui_run_1(view_troubles, LV_FLEX_FLOW_COLUMN);
@@ -650,7 +651,7 @@ lv_obj_t * screen_main_create(void)
         lv_obj_t * trouble_list = alarm_ui_run_31(view_troubles);
         alarm_ui_run_13(trouble_list);
         alarm_ui_run_1(trouble_list, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_49(trouble_list, SPACE_SM, "trouble_list");
+        alarm_ui_run_46(trouble_list, SPACE_SM, "trouble_list");
 
         lv_obj_t * trouble_pager = alarm_ui_run_0(view_troubles, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_1(trouble_pager, LV_FLEX_FLOW_ROW);
@@ -696,7 +697,7 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_1(view_panic, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_flex_main_place(view_panic, LV_FLEX_ALIGN_CENTER, 0);
         alarm_ui_run_3(view_panic);
-        alarm_ui_run_73(view_panic, SPACE_XXL, &subject_view, 4);
+        alarm_ui_run_74(view_panic, SPACE_XXL, &subject_view, 4);
         lv_obj_t * box_7 = alarm_ui_run_0(view_panic, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(box_7, LV_FLEX_FLOW_COLUMN);
         alarm_ui_run_3(box_7);
@@ -741,7 +742,7 @@ lv_obj_t * screen_main_create(void)
         lv_obj_t * settings_nav = alarm_ui_run_0(view_settings, 300, lv_pct(100));
         alarm_ui_run_13(settings_nav);
         alarm_ui_run_1(settings_nav, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_row(settings_nav, SPACE_XS, 0);
+        alarm_ui_run_46(settings_nav, SPACE_XS, "settings_nav");
         lv_obj_t * set_display = alarm_ui_run_41(settings_nav, "\xEE\x85\xB8", alarm_ui_tr("Screen and sound"), 0);
         lv_obj_add_event_cb(set_display, ui_on_settings_section, LV_EVENT_CLICKED, (void *)"display");
         lv_obj_set_name(set_display, "set_display");
@@ -805,11 +806,25 @@ lv_obj_t * screen_main_create(void)
         lv_label_set_text(lv_label_53, alarm_ui_tr_c("settings list, an update was undone", "Rolled back"));
         alarm_ui_run_4(lv_label_53, font_caption, COLOR_AMBER);
 
+        lv_obj_t * set_head_local = alarm_ui_run_62(settings_nav, alarm_ui_tr("This keypad"));
+        alarm_ui_run_4(set_head_local, font_caption, COLOR_TEXT_3);
+        lv_obj_set_name(set_head_local, "set_head_local");
+
+        lv_obj_t * set_head_master = alarm_ui_run_62(settings_nav, alarm_ui_tr("Alarm panel"));
+        alarm_ui_run_4(set_head_master, font_caption, COLOR_TEXT_3);
+        lv_obj_set_name(set_head_master, "set_head_master");
+
+        lv_obj_t * set_installer = settings_item_create(settings_nav, "\xEE\x86\xB1", alarm_ui_tr("Installer"));
+        lv_obj_set_flag(set_installer, LV_OBJ_FLAG_HIDDEN, true);
+        lv_obj_bind_style(set_installer, &style_nav_active, 0, &subject_settings_section, 6);
+        lv_obj_add_event_cb(set_installer, ui_on_settings_section, LV_EVENT_CLICKED, (void *)"installer");
+        lv_obj_set_name(set_installer, "set_installer");
+
         lv_obj_t * settings_page = box_create(view_settings);
         lv_obj_set_flex_grow(settings_page, 1);
         lv_obj_set_height(settings_page, lv_pct(100));
         alarm_ui_run_1(settings_page, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_49(settings_page, SPACE_MD, "settings_page");
+        alarm_ui_run_46(settings_page, SPACE_MD, "settings_page");
         lv_obj_t * page_head = alarm_ui_run_0(settings_page, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_1(page_head, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(page_head);
@@ -898,14 +913,14 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_26(poff_hour, SPACE_XL, SPACE_XL);
         alarm_ui_run_1(poff_hour, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(poff_hour);
-        alarm_ui_run_48(poff_hour, SPACE_XL, "poff_hour");
+        alarm_ui_run_49(poff_hour, SPACE_XL, "poff_hour");
         icon_chip_create(poff_hour, "\xEE\x82\x87", 64, icons_28, COLOR_BLUE);
 
         lv_obj_t * box_11 = alarm_ui_run_8(poff_hour);
         alarm_ui_run_1(box_11, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(box_11, 4, 0);
         lv_obj_t * lv_label_58 = alarm_ui_run_2(box_11, LV_LABEL_LONG_MODE_WRAP);
-        alarm_ui_run_74(lv_label_58, alarm_ui_tr("An hour later"));
+        alarm_ui_run_75(lv_label_58, alarm_ui_tr("An hour later"));
 
         lv_obj_t * lv_label_59 = alarm_ui_run_2(box_11, LV_LABEL_LONG_MODE_WRAP);
         alarm_ui_run_30(lv_label_59, COLOR_TEXT_2, &subject_poff_hour);
@@ -921,7 +936,7 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_26(poff_night, SPACE_XL, SPACE_XL);
         alarm_ui_run_1(poff_night, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(poff_night);
-        alarm_ui_run_48(poff_night, SPACE_XL, "poff_night");
+        alarm_ui_run_49(poff_night, SPACE_XL, "poff_night");
         icon_chip_create(poff_night, "\xEE\x8C\x84", 64, icons_28, COLOR_BLUE);
 
         lv_obj_t * box_12 = alarm_ui_run_8(poff_night);
@@ -942,7 +957,7 @@ lv_obj_t * screen_main_create(void)
         lv_obj_t * poff_cancel = alarm_ui_run_18(box_13, LV_SIZE_CONTENT, LV_OBJ_FLAG_CLICKABLE);
         alarm_ui_run_54(poff_cancel, &style_button, 0, &style_button_pressed, LV_STATE_PRESSED);
         alarm_ui_run_10(poff_cancel, ui_on_sheet_cancel, "poff_cancel");
-        alarm_ui_run_62(poff_cancel, &subject_sheet_cancel);
+        alarm_ui_run_63(poff_cancel, &subject_sheet_cancel);
 
         lv_obj_t * form_sheet = form_sheet_create(lv_obj_0);
         alarm_ui_run_38(form_sheet, &subject_sheet, 10, "form_sheet");
@@ -956,7 +971,7 @@ lv_obj_t * screen_main_create(void)
         alarm_ui_run_9(toast, COLOR_PRESSED, 0, (255 * 100 / 100), RADIUS_FULL);
         alarm_ui_run_40(toast, COLOR_TOAST_LINE);
         alarm_ui_run_26(toast, SPACE_XL, SPACE_XL);
-        alarm_ui_run_71(toast, 12, 12);
+        alarm_ui_run_72(toast, 12, 12);
         alarm_ui_run_1(toast, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(toast);
         alarm_ui_run_43(toast, &subject_toast_visible, 0, "toast");

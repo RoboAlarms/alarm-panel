@@ -1727,6 +1727,16 @@ static void publish(uint64_t now, const plink_keypad_info_t *info)
     li.switch_allowed = info->switch_allowed;
     li.return_never = info->return_never;
     li.return_s = info->return_s;
+    /* its master's pages (BL-223): what the master's newest RB_GRANT said */
+    plink_rb_grant_t g;
+    if (info->state == PLINK_LINK_ONLINE && plink_keypad_rb_grant(K.k, &g)) {
+        li.remote_areas = g.areas;
+        li.remote_installer = g.installer;
+        li.remote_holder = g.holder_kind == 0u   ? UI_LINK_HOLDER_NONE
+                           : g.holder_id == 0u   ? UI_LINK_HOLDER_PANEL
+                                                 : (uint8_t)g.holder_id;
+    }
+    li.remote_gen = krbsvc_gen();
 
     li.home_gen = K.home_gen;
     li.since_epoch_ms = (info->status_age_s != UINT32_MAX && epoch != 0)

@@ -55,7 +55,7 @@ lv_obj_t * form_sheet_create(lv_obj_t * parent)
         lv_obj_t * form_body = alarm_ui_run_0(form_card, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_13(form_body);
         alarm_ui_run_1(form_body, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_49(form_body, SPACE_SM, "form_body");
+        alarm_ui_run_46(form_body, SPACE_SM, "form_body");
 
         the_root = box_0;
     }

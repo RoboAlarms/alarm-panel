@@ -60,7 +60,7 @@ lv_obj_t * device_setpoint_create(lv_obj_t * parent, const char * label, const c
         alarm_ui_run_3(box_1);
         lv_obj_t * what_label = lv_label_create(box_1);
         lv_label_set_text(what_label, label);
-        alarm_ui_run_47(what_label, "what_label");
+        alarm_ui_run_48(what_label, "what_label");
 
         lv_obj_t * value_label = lv_label_create(box_1);
         lv_label_set_text(value_label, value);

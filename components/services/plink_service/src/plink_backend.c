@@ -48,6 +48,7 @@ static bool link_info(void *ctx, ui_link_info_t *out)
     } else {
         out->role = UI_LINK_ROLE_MASTER;
         out->keypads = (uint8_t)g_pub.keypads;
+        out->remote_holder = mrbsvc_holder(); /* a keypad holding installer mode (BL-223) */
         out->keypads_down = g_pub.keypads_down;
         if (g_pub.setup_keypad && g_pub.setup_paired) {
             /* the setup's pairing as a keypad (Option C): what it was given, for its last step

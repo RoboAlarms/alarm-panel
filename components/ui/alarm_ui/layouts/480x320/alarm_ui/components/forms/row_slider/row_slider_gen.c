@@ -38,7 +38,7 @@ lv_obj_t * row_slider_create(lv_obj_t * parent, const char * glyph, const char *
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_25(&style_row_slider, lv_pct(100), LV_SIZE_CONTENT);
+        alarm_ui_run_26(&style_row_slider, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_21(&style_row_slider, SPACE_LG, SPACE_XL, LV_FLEX_FLOW_COLUMN);
         lv_style_set_pad_row(&style_row_slider, SPACE_LG);
         alarm_ui_run_11(&style_slider, 8, RADIUS_FULL, COLOR_PRESSED, (255 * 100 / 100));

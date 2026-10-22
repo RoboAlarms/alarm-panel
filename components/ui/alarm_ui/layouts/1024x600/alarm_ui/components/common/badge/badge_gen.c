@@ -28,7 +28,7 @@ lv_obj_t * badge_create(lv_obj_t * parent, lv_subject_t * subject, lv_color_t co
 
         lv_style_set_height(&style_badge, 22);
         lv_style_set_min_width(&style_badge, 22);
-        alarm_ui_run_63(&style_badge, RADIUS_FULL, (255 * 100 / 100));
+        alarm_ui_run_64(&style_badge, RADIUS_FULL, (255 * 100 / 100));
         lv_style_set_pad_left(&style_badge, 6);
         lv_style_set_pad_right(&style_badge, 6);
         alarm_ui_run_17(&style_badge, LV_FLEX_FLOW_ROW);

@@ -28,7 +28,7 @@ lv_obj_t * row_button_create(lv_obj_t * parent, const char * glyph, const char *
         lv_style_init(&style_row_button);
         lv_style_init(&style_row_button_pressed);
 
-        alarm_ui_run_25(&style_row_button, lv_pct(100), 52);
+        alarm_ui_run_26(&style_row_button, lv_pct(100), 52);
         alarm_ui_run_42(&style_row_button, RADIUS_MD, (255 * 14 / 100));
         lv_style_set_border_width(&style_row_button, 1);
         alarm_ui_run_19(&style_row_button, LV_FLEX_FLOW_ROW);

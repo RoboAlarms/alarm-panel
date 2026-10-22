@@ -36,7 +36,7 @@ lv_obj_t * screen_wizard_create(void)
         lv_obj_set_style_pad_all(wiz_side, SPACE_XXL, 0);
         alarm_ui_run_1(wiz_side, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(wiz_side, SPACE_MD, 0);
-        alarm_ui_run_29(wiz_side, &subject_wiz_pad, 1, "wiz_side");
+        alarm_ui_run_25(wiz_side, &subject_wiz_pad, 1, "wiz_side");
         lv_obj_t * wiz_steps = alarm_ui_run_0(wiz_side, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(wiz_steps, LV_FLEX_FLOW_ROW);
         lv_obj_set_style_pad_column(wiz_steps, SPACE_SM, 0);
@@ -74,7 +74,7 @@ lv_obj_t * screen_wizard_create(void)
         lv_obj_t * wiz_body = alarm_ui_run_7(wiz_main);
         alarm_ui_run_1(wiz_body, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_pad_row(wiz_body, SPACE_SM, 0);
-        alarm_ui_run_29(wiz_body, &subject_wiz_pad, 1, "wiz_body");
+        alarm_ui_run_25(wiz_body, &subject_wiz_pad, 1, "wiz_body");
 
         lv_obj_t * wiz_pad_area = alarm_ui_run_33(wiz_main, lv_pct(100));
         lv_obj_bind_flag_if_eq(wiz_pad_area, &subject_wiz_pad, LV_OBJ_FLAG_HIDDEN, 0);

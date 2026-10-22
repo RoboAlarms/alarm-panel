@@ -479,6 +479,12 @@ int krbsvc_console(int argc, char **argv)
                ms_since(t0));
         return 0;
     }
+    if (strcmp(w, "unbind") == 0 && argc == 4) {
+        const zone_hub_result_t r = s_cb.zone_unbind(s_cb.ctx, (uint16_t)atoi(argv[3]));
+        printf("unbind: %u, status %u, %" PRIu32 " ms\n", (unsigned)r, (unsigned)s_px->last,
+               ms_since(t0));
+        return 0;
+    }
     if (strcmp(w, "info") == 0 && argc == 4) {
         static zone_hub_info_t info;
         bool found = false;
@@ -552,7 +558,7 @@ int krbsvc_console(int argc, char **argv)
         return 0;
     }
     printf("plink rb [enter <code>|exit|sources|learn <kind> on|off|cands <kind>|bind <zone> <kind> "
-           "<id> [input]|info <zone>|zone <n> <name>|off|zw|zwadd|zwstop|zwdismiss|zwprog|zb|out]\n");
+           "<id> [input]|unbind <zone>|info <zone>|zone <n> <name>|off|zw|zwadd|zwstop|zwdismiss|zwprog|zb|out]\n");
     return 1;
 }
 #endif /* CONFIG_ALARM_BUILD_DEV */

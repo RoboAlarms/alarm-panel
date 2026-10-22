@@ -2156,6 +2156,17 @@ The master's settings and installer menu on keypads (BL-223):
   never got its grant (now resent every 30 s too); "gone" read "connected", which lasts the
   supervision time (now the link's own clock); a read's old refusal outlived a new grant (copies
   now dropped at a grant change). The screens themselves were not looked at on the panels (BL-223)
+- [x] On the panels the other way round (2026-10-22, speakers off; the 7" the master with its own
+  Z-Wave and Zigbee radios, the 10.1" keypad 1, the S3 keypad 2): the installer code checked on the
+  7" (a wrong one refused, the right one in 106-261 ms); every kind of source listed - the 7"'s own
+  terminals, its Zigbee and Z-Wave sensors in use, both keypads' terminals, the S3's among them; a
+  zone saved (362 ms), bound to the S3's IO4 (320 ms), turned off (383 ms) and unbound (77 ms) from
+  the 10.1"; the 7"'s real Z-Wave radio put into adding mode from the 10.1" (its 60 s count shown)
+  and stopped (87 ms); Zigbee and the sirens' page answered; the 10.1" held in reset 90 s: the 7"
+  ended its installer mode at 60 s, and the 10.1" took it again after. The S3, without a screen,
+  offers no master pages (by design), so one keypad holding installer mode while another asks was
+  not repeated here (it was the night before). Alarm commands: Stay from the S3, Off from the
+  10.1" (124-198 ms). Not tried: a real Z-Wave device added (needs a person at the device) (BL-223)
 - [ ] On the panels, by a person: the keypad's Settings and Installer pages on the 7" and 10.1"
   screens, a zone added and a sensor learnt from the screen (BL-223)
 

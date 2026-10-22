@@ -52,6 +52,7 @@
 #include "panel_link/plink_home.h"
 #include "panel_link/plink_keypad.h"
 #include "panel_link/plink_master.h"
+#include "ui_remote/ui_remote.h"
 
 #if defined(__GNUC__) || defined(__clang__)
 #define LINK_PRINTF(f, a) __attribute__((format(printf, f, a)))
@@ -80,6 +81,9 @@ typedef struct {
     struct link_mfw *mfw;
     struct link_kfw *kfw;
 } link_io_t;
+
+/* One line through io's say (quiet without one). */
+void link_io_say(const link_io_t *io, const char *line);
 
 /* Where a record is kept: in a file (path) and in memory, or in memory only (path NULL). */
 typedef struct {
@@ -173,6 +177,25 @@ typedef struct {
     proto_prefs_values_t values; /* OK: what the keypad keeps now (values.have: the fields) */
 } link_pset_end_t;
 
+/* The remote backend on the virtual master (link_rb.c; BL-223): its server, each keypad's grant
+ * and what was last sent of it, the link's buffers, and a pretend sensor source of eight inputs
+ * with a binding kept for each of zones 1..LINK_RB_ZONES. */
+#define LINK_RB_ZONES 16u
+typedef struct {
+    ui_remote_server_t srv;
+    ui_remote_grant_t grant[PLINK_KEYPADS_MAX];
+    plink_rb_grant_t sent[PLINK_KEYPADS_MAX];
+    uint8_t up[UR_ARGS_MAX];
+    uint8_t ans[PLINK_KEYPADS_MAX][UR_ANSWER_MAX];
+    uint8_t args[UR_ARGS_MAX];
+    uint8_t out[UR_ANSWER_MAX];
+    zone_hub_binding_t bind[LINK_RB_ZONES];
+    bool bound[LINK_RB_ZONES];
+    bool learning;
+    uint16_t heard_input; /* the input opened while listening (0: none) */
+    unsigned runs;        /* calls served */
+} link_mrb_t;
+
 typedef struct {
     /* private */
     const plink_crypto_t *c;
@@ -219,6 +242,7 @@ typedef struct {
     uint32_t pset_req; /* the last settings write's req */
     link_pset_end_t pset_end;
     uint32_t said_report[PLINK_KEYPADS_MAX]; /* each keypad's settings report said (its count) */
+    link_mrb_t rb; /* the remote backend (BL-223) */
 } link_master_t;
 
 /* name: shown on keypads (NULL "PC master"); panel_id: six hex characters (NULL "0ac5e1"). The
@@ -256,6 +280,15 @@ bool link_master_prefs_set(link_master_t *v, uint64_t now_ms, uint8_t device, ui
                            uint32_t value);
 /* The house's device ref as the registry has it now (NULL: none). */
 const hc_device_t *link_master_device(const link_master_t *v, const char *ref);
+
+/* The remote backend (link_rb.c, BL-223): the master's runner (port.rb_run), a code accepted for
+ * keypad device (its grant), the sensor opened while a keypad listens, and the grants' upkeep. */
+void link_mrb_attach(link_master_t *v);
+bool link_mrb_run(void *ctx, uint32_t ticket, uint8_t device, uint16_t call, const uint8_t *args,
+                  size_t len);
+void link_mrb_auth(link_master_t *v, uint8_t device, uint8_t user, uint64_t now);
+void link_mrb_heard(link_master_t *v, uint16_t input);
+void link_mrb_tick(link_master_t *v, uint64_t now);
 
 /* ---- the virtual keypad -------------------------------------------------------------------- */
 typedef struct {
@@ -300,7 +333,12 @@ typedef struct {
     uint64_t now;
     bool have_find;     /* where to look for the master (port.resolve) */
     plink_addr_t find;
+    uint8_t rb_args[UR_ARGS_MAX]; /* the remote backend's call (BL-223) */
+    uint8_t rb_ans[UR_ANSWER_MAX];
 } link_keypad_t;
+
+/* The keypad's remote backend buffers, attached at each start (link_rb.c). */
+void link_krb_attach(link_keypad_t *v);
 
 /* name: what the keypad calls itself (NULL "PC keypad"); panel_id: its own panel id for its
  * settings report, six lowercase hex characters (NULL "1c2d3e"); master: where to look for the

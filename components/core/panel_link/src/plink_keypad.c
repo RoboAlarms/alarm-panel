@@ -3440,6 +3440,11 @@ const alarm_config_t *plink_keypad_config(const plink_keypad_t *k)
     return k != NULL && k->have_cfg ? k->cfg : NULL;
 }
 
+uint32_t plink_keypad_cfg_crc(const plink_keypad_t *k)
+{
+    return k != NULL && k->have_cfg ? k->cfg_installed_crc : 0u;
+}
+
 size_t plink_keypad_events(const plink_keypad_t *k, alarm_event_t *out, size_t max)
 {
     if (k == NULL || out == NULL) {

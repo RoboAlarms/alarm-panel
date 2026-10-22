@@ -578,6 +578,9 @@ uint32_t plink_keypad_seq(const plink_keypad_t *k);
 uint32_t plink_keypad_config_seq(const plink_keypad_t *k);
 /* The installed configuration, NULL before the first. */
 const alarm_config_t *plink_keypad_config(const plink_keypad_t *k);
+/* The master's cfg_crc of the installed configuration (0: none yet): a save from this copy names
+ * it (LINK-061). */
+uint32_t plink_keypad_cfg_crc(const plink_keypad_t *k);
 /* The newest events, newest first; returns how many. */
 size_t plink_keypad_events(const plink_keypad_t *k, alarm_event_t *out, size_t max);
 /* A one-shot sound from the master to play now (false: none waiting). */

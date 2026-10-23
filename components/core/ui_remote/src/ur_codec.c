@@ -626,6 +626,7 @@ static const ur_field_t f_out_wired[] = {
     UR_BOOL(ui_out_wired_t, active_low),
     UR_BOOL(ui_out_wired_t, on),
     UR_BOOL(ui_out_wired_t, trouble),
+    UR_STR(ui_out_wired_t, name), /* an AUTOMATION output's (BL-224) */
 };
 const ur_table_t ur_t_out_wired = UR_TABLE(ui_out_wired_t, f_out_wired);
 static const ur_field_t f_out_rf[] = {

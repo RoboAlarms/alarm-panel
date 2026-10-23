@@ -884,6 +884,10 @@ static alarm_result_t automation_guard(const alarm_engine_t *e, const alarm_cmd_
             return ALARM_ERR_NOT_AUTHORIZED;
         }
         return (pr->state != ALARM_STATE_DISARMED) ? ALARM_OK : ALARM_ERR_BAD_STATE;
+    case ALARM_CMD_CHIME:
+        /* docs/features/41 BL-224: an automation turns the door chime on or off as the person
+         * who saved it (CORE-CHIME-008); only while disarmed, as anyone */
+        return (pr->state == ALARM_STATE_DISARMED) ? ALARM_OK : ALARM_ERR_BAD_STATE;
     default:
         return ALARM_ERR_NOT_AUTHORIZED;
     }
@@ -1037,7 +1041,9 @@ static alarm_result_t dispatch(alarm_engine_t *e, const alarm_cmd_t *cmd,
         pr->chime = !pr->chime;
         eng_emit(e, pr->chime ? ALARM_EV_CHIME_ON : ALARM_EV_CHIME_OFF, p, 0u, user, src, 0u, 0u,
                  0u, REPORT_NONE);
-        eng_sound(e, p, ALARM_SOUND_ACK, 0u);
+        if (src->kind != (uint8_t)ALARM_SRC_AUTOMATION) {
+            eng_sound(e, p, ALARM_SOUND_ACK, 0u); /* nobody at the keys to hear it (BL-224) */
+        }
         pr->dirty = true;
         e->persist_dirty = true;
         return ALARM_OK;

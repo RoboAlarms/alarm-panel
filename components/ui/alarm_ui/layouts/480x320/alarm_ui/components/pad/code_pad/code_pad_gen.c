@@ -57,7 +57,7 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
         lv_style_set_flex_cross_place(&style_pad, LV_FLEX_ALIGN_CENTER);
         lv_style_set_flex_track_place(&style_pad, LV_FLEX_ALIGN_CENTER);
         lv_style_set_pad_column(&style_pad, SPACE_MD);
-        alarm_ui_run_25(&style_pad_icon, 44, 44);
+        alarm_ui_run_26(&style_pad_icon, 44, 44);
         alarm_ui_run_42(&style_pad_icon, RADIUS_FULL, (255 * 22 / 100));
         lv_style_set_text_opa(&style_pad_hint_under_dots, 0);
         lv_style_set_width(&style_pad_dot, 8);
@@ -135,7 +135,7 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
         lv_obj_set_style_pad_row(pad_lead, SPACE_SM, 0);
         lv_obj_t * pad_icon = alarm_ui_run_32(pad_lead, &style_pad_icon);
         lv_obj_bind_style_prop(pad_icon, LV_STYLE_BG_COLOR, 0, &subject_pad_color);
-        alarm_ui_run_29(pad_icon, &subject_pad_glyph_on, 0, "pad_icon");
+        alarm_ui_run_25(pad_icon, &subject_pad_glyph_on, 0, "pad_icon");
         lv_obj_t * lv_label_1 = alarm_ui_run_15(pad_icon);
         alarm_ui_run_8(lv_label_1, icons_20, &subject_pad_glyph);
         lv_obj_bind_style_prop(lv_label_1, LV_STYLE_TEXT_COLOR, 0, &subject_pad_color);
@@ -197,7 +197,7 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
         alarm_ui_run_1(pad_options, LV_FLEX_FLOW_COLUMN);
         alarm_ui_run_3(pad_options);
         lv_obj_set_style_pad_row(pad_options, SPACE_SM, 0);
-        alarm_ui_run_29(pad_options, &subject_pad_options, 0, "pad_options");
+        alarm_ui_run_25(pad_options, &subject_pad_options, 0, "pad_options");
         chip_create(pad_options, alarm_ui_tr("No entry delay"), &subject_opt_instant);
 
         lv_obj_t * chip_1 = chip_create(pad_options, alarm_ui_tr("Silent exit"), &subject_opt_silent);

@@ -62,6 +62,28 @@ static bool alarm_action(uint8_t kind)
     return kind == AUTO_ACT_ARM || kind == AUTO_ACT_DISARM;
 }
 
+/* The actions that name a partition: an arm, a disarm, and BL-224's reminder, "still armed" and
+ * door chime. */
+static bool partition_action(uint8_t kind)
+{
+    return alarm_action(kind) || kind == AUTO_ACT_REMIND || kind == AUTO_ACT_CHECK_ARMED ||
+           kind == AUTO_ACT_CHIME;
+}
+
+/* BL-224: Remind and "still armed" mean something only at their time, and alone. */
+static bool time_only_action(uint8_t kind)
+{
+    return kind == AUTO_ACT_REMIND || kind == AUTO_ACT_CHECK_ARMED;
+}
+
+/* BL-224's actions that need no device: no device fields, nothing of an arm's. */
+static bool panel_fields_clear(const auto_action_t *a)
+{
+    return a->source == DSRC_NONE && a->dev_kind == DEV_NONE && a->confirmed == 0u &&
+           a->ref[0] == '\0' && a->mode[0] == '\0' && a->name[0] == '\0' &&
+           a->arm_level == 0u && a->warn_min == 0u;
+}
+
 /* INCOMPLETE for the parts every action needs (the Arm fields come after UNSUPPORTED). */
 static bool action_incomplete(const auto_action_t *a)
 {
@@ -69,6 +91,29 @@ static bool action_incomplete(const auto_action_t *a)
      * NEWER (a device kind past the last on an Arm action would). */
     if (a->bypass_open != 0u && (a->kind != AUTO_ACT_ARM || a->bypass_open != 1u)) {
         return true; /* D29: "Bypass open zones" is an Arm action's, and a yes or no */
+    }
+    /* BL-224: an output is an output action's, an option a reminder's or a chime's (a yes or no) */
+    if (a->output != 0u && a->kind != AUTO_ACT_OUTPUT) {
+        return true;
+    }
+    if (a->option > 1u || (a->option != 0u && a->kind != AUTO_ACT_REMIND &&
+                           a->kind != AUTO_ACT_CHIME)) {
+        return true;
+    }
+    switch (a->kind) {
+    case AUTO_ACT_OUTPUT:
+        return !panel_fields_clear(a) || a->partition != 0u || a->output == 0u ||
+               a->output > AUTO_OUTPUTS ||
+               (a->dev_action != ACT_ON && a->dev_action != ACT_OFF);
+    case AUTO_ACT_REMIND:
+    case AUTO_ACT_CHECK_ARMED:
+    case AUTO_ACT_CHIME:
+        return !panel_fields_clear(a) || a->dev_action != ACT_NONE || a->off_after_min != 0u;
+    case AUTO_ACT_NOTIFY:
+        return !panel_fields_clear(a) || a->dev_action != ACT_NONE || a->off_after_min != 0u ||
+               a->partition != 0u;
+    default:
+        break;
     }
     if (a->kind == AUTO_ACT_DEVICE) {
         size_t ref = bounded_len(a->ref, sizeof a->ref);
@@ -88,7 +133,7 @@ static bool action_incomplete(const auto_action_t *a)
                a->ref[0] != '\0' || a->mode[0] != '\0' || a->arm_level != 0u ||
                a->warn_min != 0u;
     }
-    return true; /* NONE, 3 (an output, reserved) and anything newer */
+    return true; /* NONE and anything newer */
 }
 
 bool auto_action_less_secure(const auto_action_t *a)
@@ -107,7 +152,7 @@ bool auto_action_less_secure(const auto_action_t *a)
 static bool action_not_allowed(const auto_action_t *a)
 {
     if (a->off_after_min != 0u &&
-        (a->kind != AUTO_ACT_DEVICE || a->dev_action != ACT_ON ||
+        ((a->kind != AUTO_ACT_DEVICE && a->kind != AUTO_ACT_OUTPUT) || a->dev_action != ACT_ON ||
          a->off_after_min > AUTO_MINUTES_PER_DAY)) {
         return true;
     }
@@ -151,7 +196,8 @@ static bool same_action_sentence(const auto_action_t *a, const auto_action_t *b)
            a->dev_action == b->dev_action && a->partition == b->partition &&
            a->arm_level == b->arm_level && a->warn_min == b->warn_min &&
            a->bypass_open == b->bypass_open && a->value == b->value &&
-           a->off_after_min == b->off_after_min &&
+           a->off_after_min == b->off_after_min && a->output == b->output &&
+           a->option == b->option &&
            strncmp(a->mode, b->mode, sizeof a->mode) == 0 &&
            strncmp(a->ref, b->ref, sizeof a->ref) == 0 &&
            strncmp(a->name, b->name, sizeof a->name) == 0;
@@ -166,7 +212,8 @@ bool auto_rule_sentence_changed(const auto_rule_t *was, const auto_rule_t *now)
     const auto_trigger_t *b = &now->when;
     if (a->kind != b->kind || a->partitions != b->partitions || a->levels != b->levels ||
         a->days != b->days || a->zone != b->zone || a->minute != b->minute ||
-        a->win_from != b->win_from || a->win_to != b->win_to || was->n != now->n) {
+        a->win_from != b->win_from || a->win_to != b->win_to || a->trouble != b->trouble ||
+        was->n != now->n) {
         return true;
     }
     for (unsigned i = 0; i < was->n && i < AUTO_ACTIONS; i++) {
@@ -199,7 +246,14 @@ auto_check_t auto_rule_check(const auto_rule_t *r, const auto_env_t *env)
     if (w->kind == AUTO_TRIG_ARMED && (w->levels & (uint8_t)~arm_levels) != 0u) {
         return AUTO_ERR_INCOMPLETE;
     }
+    if (w->trouble > AUTO_TROUBLE_LAST || (w->trouble != 0u && w->kind != AUTO_TRIG_TROUBLE)) {
+        return AUTO_ERR_INCOMPLETE; /* BL-224: which trouble belongs to a trouble trigger */
+    }
     bool any_arm = false;
+    bool any_disarm = false;
+    bool any_alone = false; /* an action that must be the automation's only one */
+    bool any_time_only = false;
+    bool any_chime = false;
     bool any_alarm = false;
     bool any_less_secure = false;
     unsigned alarm_actions = 0u;
@@ -209,6 +263,10 @@ auto_check_t auto_rule_check(const auto_rule_t *r, const auto_env_t *env)
             return AUTO_ERR_INCOMPLETE;
         }
         any_arm = any_arm || a->kind == AUTO_ACT_ARM;
+        any_disarm = any_disarm || a->kind == AUTO_ACT_DISARM;
+        any_time_only = any_time_only || time_only_action(a->kind);
+        any_alone = any_alone || a->kind == AUTO_ACT_ARM || time_only_action(a->kind);
+        any_chime = any_chime || a->kind == AUTO_ACT_CHIME;
         if (alarm_action(a->kind)) {
             any_alarm = true;
             alarm_actions++;
@@ -223,10 +281,10 @@ auto_check_t auto_rule_check(const auto_rule_t *r, const auto_env_t *env)
         }
     }
 
-    /* NOT_ALLOWED (BL-187, USR-001): the installer never arms or disarms, and a save makes the
-     * saver the person an alarm action acts as (D23): an installer's save of one would arm as
-     * the installer, or quietly stop a master's automation from arming */
-    if (any_alarm && env->by_installer) {
+    /* NOT_ALLOWED (BL-187, USR-001): the installer never disarms, and a save makes the saver
+     * the person an alarm action acts as (D23). An installer's Arm acts as the system master
+     * (BL-224, approved 2026-10-21): auto_store_save_at makes them its maker */
+    if (any_disarm && env->by_installer) {
         return AUTO_ERR_NOT_ALLOWED;
     }
 
@@ -247,8 +305,14 @@ auto_check_t auto_rule_check(const auto_rule_t *r, const auto_env_t *env)
         }
     }
 
-    /* ARM_ALONE: arming is the automation's only action; SAME_DEVICE: one alarm action at most */
-    if (any_arm && r->n != 1u) {
+    /* NEEDS_TIME (BL-224): a reminder or "still armed" looks at the panel at its time */
+    if (any_time_only && w->kind != AUTO_TRIG_TIME) {
+        return AUTO_ERR_NEEDS_TIME;
+    }
+
+    /* ARM_ALONE: arming (and a reminder, "still armed") is the automation's only action;
+     * SAME_DEVICE: one alarm action at most */
+    if (any_alone && r->n != 1u) {
         return AUTO_ERR_ARM_ALONE;
     }
     if (alarm_actions > 1u) {
@@ -273,7 +337,7 @@ auto_check_t auto_rule_check(const auto_rule_t *r, const auto_env_t *env)
     }
     for (unsigned i = 0; i < r->n; i++) {
         const auto_action_t *a = &r->then[i];
-        if (!alarm_action(a->kind)) {
+        if (!partition_action(a->kind)) {
             continue;
         }
         if (a->partition == 0u || a->partition > ALARM_MAX_PARTITIONS ||
@@ -319,9 +383,19 @@ auto_check_t auto_rule_check(const auto_rule_t *r, const auto_env_t *env)
         }
     }
 
-    /* MAKER (AUT-011, AUT-015): an alarm or less secure action acts as the person who saved it */
-    if ((any_alarm || any_less_secure) && (r->made_by == 0u || r->made_by > ALARM_MAX_USERS)) {
+    /* MAKER (AUT-011, AUT-015): an alarm or less secure action, or a door chime, acts as the
+     * person who saved it */
+    if ((any_alarm || any_less_secure || any_chime) &&
+        (r->made_by == 0u || r->made_by > ALARM_MAX_USERS)) {
         return AUTO_ERR_MAKER;
+    }
+
+    /* OUTPUT (BL-224): only a wired output set "For automations" */
+    for (unsigned i = 0; i < r->n; i++) {
+        const auto_action_t *a = &r->then[i];
+        if (a->kind == AUTO_ACT_OUTPUT && (env->outputs & (1u << (a->output - 1u))) == 0u) {
+            return AUTO_ERR_OUTPUT;
+        }
     }
 
     /* NEEDS_CONFIRM (D24, AUT-016): a less secure action after a trigger someone outside may
@@ -333,10 +407,15 @@ auto_check_t auto_rule_check(const auto_rule_t *r, const auto_env_t *env)
         }
     }
 
-    /* SAME_DEVICE (AUT-007) */
+    /* SAME_DEVICE (AUT-007): one device, one output, one chime, one notification */
     if (r->n == 2u && r->then[0].kind == AUTO_ACT_DEVICE && r->then[1].kind == AUTO_ACT_DEVICE &&
         r->then[0].source == r->then[1].source &&
         strncmp(r->then[0].ref, r->then[1].ref, DEV_REF_LEN) == 0) {
+        return AUTO_ERR_SAME_DEVICE;
+    }
+    if (r->n == 2u && r->then[0].kind == r->then[1].kind &&
+        (r->then[0].kind == AUTO_ACT_CHIME || r->then[0].kind == AUTO_ACT_NOTIFY ||
+         (r->then[0].kind == AUTO_ACT_OUTPUT && r->then[0].output == r->then[1].output))) {
         return AUTO_ERR_SAME_DEVICE;
     }
     return AUTO_OK;

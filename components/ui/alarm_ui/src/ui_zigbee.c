@@ -769,17 +769,30 @@ static void open_zigbee(void *ctx)
     ui_page_open(PAGE_ZIGBEE, 0);
 }
 
+/* The Zigbee row's detail and the Zigbee page's note: the radio is the alarm panel's, named on a
+ * keypad (BL-223). */
+static void radio_words(char *out, size_t len)
+{
+    if (ui_link_keypad()) {
+        /* TR: a keypad's installer menu, the Zigbee row's detail and the Zigbee page's note; {0} is
+         * its alarm panel's name (up to 47 bytes). At most 95 bytes */
+        I18N_FORMAT(out, len, TR("Sensors on {0}'s Zigbee radio"), ui_link_master_name());
+    } else {
+        /* TR: the Zigbee row's detail in the installer menu, and the Zigbee page's note */
+        i18n_utf8_copy(out, len, TR("Sensors on the panel's Zigbee radio"));
+    }
+}
+
 void ui_zigbee_menu_row(lv_obj_t *body)
 {
     ui_zb_status_t st;
     if (!read_status(&st)) {
         return; /* no Zigbee service: no row (devices.md §9) */
     }
+    char words[96];
+    radio_words(words, sizeof(words));
     s_menu_row = ui_row_link(body, G_RADIO, ui_tone_blue(), NOTR("Zigbee") /* a protocol name */,
-                             /* TR: the Zigbee row's detail in the installer menu, and the Zigbee
-                              * page's note */
-                             TR("Sensors on the panel's Zigbee radio"), "-", UI_ICON_CHEVRON_RIGHT,
-                             open_zigbee, NULL);
+                             words, "-", UI_ICON_CHEVRON_RIGHT, open_zigbee, NULL);
     menu_words(s_menu_row, &st);
     s_menu_polled = lv_tick_get();
 }
@@ -1164,7 +1177,7 @@ static void build_network(int32_t arg, lv_obj_t *body, char *title, size_t tlen,
 {
     (void)arg;
     i18n_utf8_copy(title, tlen, NOTR("Zigbee")); /* a protocol name */
-    i18n_utf8_copy(note, nlen, TR("Sensors on the panel's Zigbee radio"));
+    radio_words(note, nlen);
     if (s_net.shown == NULL) {
         s_net.shown = ui_slow_alloc(UI_ZB_DEVICES_MAX * sizeof(*s_net.shown));
     }

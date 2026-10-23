@@ -2,8 +2,10 @@
  * test_automation.c - the automation source (docs/features/41 phase C): the guard that lets only
  * an arm and a disarm through, as the person who saved the automation; ARM_FAILED reported for
  * the unattended sources; the automation's narrowed bypass, its mark on the ARMED and each zone
- * watched again once closed; ALARM_CMD_CODE_CHECK; who armed (arm_source) and the put-off event.
- * Requirements: CORE-USR-029..036; AUT-002, AUT-011, AUT-013, AUT-014, AUT-015 (docs/features/41)
+ * watched again once closed; ALARM_CMD_CODE_CHECK; who armed (arm_source) and the put-off event;
+ * the door chime as its maker (BL-224).
+ * Requirements: CORE-USR-029..036, CORE-CHIME-008; AUT-002, AUT-011, AUT-013, AUT-014, AUT-015
+ * (docs/features/41)
  */
 #include <stddef.h>
 
@@ -89,14 +91,14 @@ static void expect_source(const alarm_event_t *ev, const alarm_source_t *src, ui
     TEST_ASSERT_EQUAL_UINT8(user, ev->user);
 }
 
-/* Everything but an arm and a disarm run as a user, with a valid code, none, a wrong one and as
- * the master: refused before any code check. */
+/* Everything but an arm, a disarm and the chime run as a user, with a valid code, none, a wrong
+ * one and as the master: refused before any code check. */
 static void auto_refuse_all(void)
 {
     static const alarm_cmd_type_t types[] = {
         ALARM_CMD_PANIC,        ALARM_CMD_SILENCE,      ALARM_CMD_BYPASS,
-        ALARM_CMD_UNBYPASS,     ALARM_CMD_QUICK_BYPASS, ALARM_CMD_CHIME,
-        ALARM_CMD_EXIT_RESTART, ALARM_CMD_WALK_TEST,    ALARM_CMD_CODE_CHECK,
+        ALARM_CMD_UNBYPASS,     ALARM_CMD_QUICK_BYPASS, ALARM_CMD_EXIT_RESTART,
+        ALARM_CMD_WALK_TEST,    ALARM_CMD_CODE_CHECK,
     };
     for (unsigned i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
         EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, auto_cmd(types[i], CODE_MASTER, false, 0));
@@ -106,9 +108,9 @@ static void auto_refuse_all(void)
         EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
                       auto_cmd(types[i], CODE_MASTER, true, ALARM_USER_MASTER));
     }
-    /* An arm or a disarm by code (alarm_engine_command), right, wrong or none. */
-    static const alarm_cmd_type_t pass[] = {ALARM_CMD_ARM, ALARM_CMD_DISARM};
-    for (unsigned i = 0; i < 2u; i++) {
+    /* An arm, a disarm or the chime by code (alarm_engine_command), right, wrong or none. */
+    static const alarm_cmd_type_t pass[] = {ALARM_CMD_ARM, ALARM_CMD_DISARM, ALARM_CMD_CHIME};
+    for (unsigned i = 0; i < sizeof(pass) / sizeof(pass[0]); i++) {
         EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, auto_cmd(pass[i], CODE_MASTER, false, 0));
         EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, auto_cmd(pass[i], "", false, 0));
         EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, auto_cmd(pass[i], "0000", false, 0));
@@ -116,9 +118,9 @@ static void auto_refuse_all(void)
 }
 
 /* CORE-USR-029, AUT-002, AUT-011: disarmed, with a fire sounding, everything an automation
- * could try but its arm and disarm is refused - panic, silence, bypass, chime, walk test, code
- * check; an arm or disarm by code, not as a user - with no state change, no event and nothing
- * toward a lockout. A refusal plays the error sound. */
+ * could try but its arm, disarm and chime is refused - panic, silence, bypass, walk test, code
+ * check; an arm, disarm or chime by code, not as a user - with no state change, no event and
+ * nothing toward a lockout. A refusal plays the error sound. */
 static void test_automation_refuses_all_but_arm_and_disarm(void)
 {
     /* Its name is an MQTT/JSON contract (strings.c): added, never renamed. */
@@ -857,6 +859,51 @@ static void test_runtime_state_layout_unchanged(void)
     TEST_ASSERT_EQUAL_UINT8(ALARM_SRC_SYSTEM, sim_status(&S, 1).arm_source.kind);
 }
 
+/* CORE-CHIME-008 (docs/features/41 BL-224): an automation turns the door chime on and off as the
+ * person who saved it, without a code even with "chime needs a code" on: CHIME_ON / CHIME_OFF
+ * name that person and the automation's source, and no ACK plays (nobody is at the keys). Only
+ * while disarmed (BAD_STATE, no event, from the exit time on); an empty slot or user 0 is
+ * NOT_AUTHORIZED; by code it is refused (auto_refuse_all). */
+static void test_automation_chime(void)
+{
+    TEST_ASSERT_TRUE(S.eng.cfg.opt.chime_needs_code);
+    const bool was = sim_status(&S, 1).chime;
+    sim_clear_records(&S);
+    EXPECT_RESULT(ALARM_OK, auto_cmd(ALARM_CMD_CHIME, NULL, true, 4)); /* an arm-only user too */
+    TEST_ASSERT_EQUAL(!was, sim_status(&S, 1).chime);
+    const alarm_event_t *ev = sim_last_event(&S, was ? ALARM_EV_CHIME_OFF : ALARM_EV_CHIME_ON);
+    expect_source(ev, &AUTO_SRC, 4);
+    TEST_ASSERT_EQUAL_UINT8(1, ev->partition);
+    EXPECT_RESULT(ALARM_OK, auto_cmd(ALARM_CMD_CHIME, NULL, true, ALARM_USER_MASTER));
+    TEST_ASSERT_EQUAL(was, sim_status(&S, 1).chime);
+    ev = sim_last_event(&S, was ? ALARM_EV_CHIME_ON : ALARM_EV_CHIME_OFF);
+    expect_source(ev, &AUTO_SRC, ALARM_USER_MASTER);
+    TEST_ASSERT_EQUAL_UINT(2, S.n_events);
+    TEST_ASSERT_EQUAL_UINT(0, sim_count_sounds(&S, ALARM_SOUND_ACK));
+    TEST_ASSERT_EQUAL_UINT(0, sim_count_sounds(&S, ALARM_SOUND_ERROR));
+    /* A keypad's chime still acknowledges. */
+    alarm_cmd_t kp;
+    cmd_init(&kp, ALARM_CMD_CHIME, CODE_MASTER);
+    EXPECT_RESULT(ALARM_OK, sim_cmd(&S, &kp));
+    TEST_ASSERT_EQUAL_UINT(1, sim_count_sounds(&S, ALARM_SOUND_ACK));
+    EXPECT_RESULT(ALARM_OK, sim_cmd(&S, &kp));
+
+    /* the maker is checked again: an empty slot, none */
+    sim_clear_records(&S);
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, auto_cmd(ALARM_CMD_CHIME, NULL, true, 9));
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, auto_cmd(ALARM_CMD_CHIME, NULL, true, 0));
+    TEST_ASSERT_EQUAL_UINT(0, S.n_events);
+    TEST_ASSERT_EQUAL(was, sim_status(&S, 1).chime);
+
+    /* not while arming or armed */
+    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, CODE_MASTER, ALARM_LEVEL_AWAY, 0));
+    sim_clear_records(&S);
+    EXPECT_RESULT(ALARM_ERR_BAD_STATE, auto_cmd(ALARM_CMD_CHIME, NULL, true, ALARM_USER_MASTER));
+    TEST_ASSERT_EQUAL_UINT(0, S.n_events);
+    TEST_ASSERT_EQUAL(was, sim_status(&S, 1).chime);
+    expect_no_auto_lockout();
+}
+
 /* CORE-USR-036, AUT-013, D26, D30: a put-off is ALARM_EV_ARMING_PUT_OFF - whose code, the
  * automation's source, the partition, the choice and the minutes to the new arm time - reported
  * at once, never silent, changing nothing else. */
@@ -988,6 +1035,7 @@ int main(void)
     RUN_TEST(test_arm_source_in_snapshot);
     RUN_TEST(test_arm_source_survives_restart);
     RUN_TEST(test_runtime_state_layout_unchanged);
+    RUN_TEST(test_automation_chime);
     RUN_TEST(test_arming_put_off_event);
     RUN_TEST(test_arming_put_off_refused);
     RUN_TEST(test_put_off_minutes);

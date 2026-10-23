@@ -861,10 +861,17 @@ void ui_zwave_menu_row(lv_obj_t *body)
     if (!read_status(&st)) {
         return;
     }
+    char words[96];
+    if (ui_link_keypad()) {
+        /* TR: a keypad's installer menu, the Z-Wave row's detail; {0} is its alarm panel's name
+         * (up to 47 bytes). At most 95 bytes */
+        I18N_FORMAT(words, sizeof(words), TR("Sensors on {0}'s Z-Wave radio"), ui_link_master_name());
+    } else {
+        /* TR: a row or paragraph on a Z-Wave page */
+        i18n_utf8_copy(words, sizeof(words), TR("Sensors on the panel's Z-Wave radio"));
+    }
     s_menu_row = page_row(body, UI_ICON_RADIO_TOWER, ui_tone_blue(),
-                          /* TR: a row or paragraph on a Z-Wave page */
-                          NOTR("Z-Wave") /* Z-Wave term */, TR("Sensors on the panel's Z-Wave radio"),
-                          "-", PAGE_ZWAVE);
+                          NOTR("Z-Wave") /* Z-Wave term */, words, "-", PAGE_ZWAVE);
     menu_words(s_menu_row, &st);
     s_menu_polled = lv_tick_get();
 }

@@ -49,7 +49,7 @@ lv_obj_t * row_switch_icon_create(lv_obj_t * parent, const char * glyph, lv_colo
         alarm_ui_run_7(&style_row_setting_icon, SPACE_MD, SPACE_LG, SPACE_SM, SPACE_SM, SPACE_MD);
         alarm_ui_run_20(&style_switch_icon, 64, 36, RADIUS_FULL);
         alarm_ui_run_6(&style_switch_icon, COLOR_PRESSED, (255 * 100 / 100));
-        alarm_ui_run_63(&style_switch_icon_indicator, RADIUS_FULL, (255 * 0 / 100));
+        alarm_ui_run_64(&style_switch_icon_indicator, RADIUS_FULL, (255 * 0 / 100));
         alarm_ui_run_6(&style_switch_icon_on, COLOR_GREEN, (255 * 100 / 100));
         lv_style_set_radius(&style_switch_icon_knob, RADIUS_FULL);
         alarm_ui_run_6(&style_switch_icon_knob, COLOR_KNOB, (255 * 100 / 100));
@@ -96,7 +96,7 @@ lv_obj_t * row_switch_icon_create(lv_obj_t * parent, const char * glyph, lv_colo
         lv_obj_set_ext_click_area(toggle, 12);
         alarm_ui_run_16(toggle, &style_switch_icon, 0, &style_switch_icon_indicator, LV_PART_INDICATOR);
         alarm_ui_run_16(toggle, &style_switch_icon_on, LV_PART_INDICATOR | LV_STATE_CHECKED, &style_switch_icon_knob, LV_PART_KNOB);
-        alarm_ui_run_67(toggle, &style_switch_icon_knob_on, LV_PART_KNOB | LV_STATE_CHECKED, "toggle");
+        alarm_ui_run_68(toggle, &style_switch_icon_knob_on, LV_PART_KNOB | LV_STATE_CHECKED, "toggle");
 
         the_root = box_0;
     }

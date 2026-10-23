@@ -36,7 +36,7 @@ lv_obj_t * hold_button_create(lv_obj_t * parent, const char * text, lv_color_t c
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_25(&style_hold_button, lv_pct(100), 56);
+        alarm_ui_run_26(&style_hold_button, lv_pct(100), 56);
         alarm_ui_run_42(&style_hold_button, RADIUS_MD, (255 * 14 / 100));
         lv_style_set_border_width(&style_hold_button, 1);
         lv_style_set_clip_corner(&style_hold_button, true);

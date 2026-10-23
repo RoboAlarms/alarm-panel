@@ -20,7 +20,7 @@ static auto_env_t env_of(bool arm_supported)
     s_zones[1] = (auto_zone_t){ALARM_ZT_INTERIOR_FOLLOWER, 1, ALARM_DEVCLASS_MOTION};
     s_zones[2] = (auto_zone_t){ALARM_ZT_FIRE, 1, ALARM_DEVCLASS_SMOKE};
     s_zones[ALARM_MAX_ZONES - 1] = (auto_zone_t){ALARM_ZT_PERIMETER, 2, ALARM_DEVCLASS_WINDOW};
-    auto_env_t e = {0x03u, arm_supported, s_zones, true, false};
+    auto_env_t e = {0x03u, arm_supported, s_zones, true, false, 0u};
     return e;
 }
 
@@ -543,8 +543,9 @@ static void test_disarm(void)
 
 /* AUT-015 (D25): with the installer option off, a disarm, unlock, open or stop is refused at
  * save; a Lock, a Close and a light are not; a script stays NOT_ALLOWED (checked first). */
-/* BL-187, USR-001: the installer never saves an Arm or a Disarm (an edit would make the installer
- * the person it acts as); device actions stay theirs to save */
+/* BL-187, USR-001: the installer never saves a Disarm (an edit would make the installer the person
+ * it acts as); device actions stay theirs to save. BL-224: an Arm is theirs to save too - it acts
+ * as the system master (auto_store_save_at makes them its maker) */
 static void test_installer_saves_no_alarm_action(void)
 {
     auto_env_t env = env_of(true);
@@ -554,7 +555,7 @@ static void test_installer_saves_no_alarm_action(void)
     r.off = true; /* turned off, it would still act as the installer once turned back on */
     TEST_ASSERT_EQUAL_INT(AUTO_ERR_NOT_ALLOWED, auto_rule_check(&r, &env));
     r = arm_night();
-    TEST_ASSERT_EQUAL_INT(AUTO_ERR_NOT_ALLOWED, auto_rule_check(&r, &env));
+    TEST_ASSERT_EQUAL_INT(AUTO_OK, auto_rule_check(&r, &env)); /* BL-224 */
     /* a disarm with a device action, the device first */
     r = disarm_at_ten();
     r.n = 2;

@@ -41,4 +41,28 @@ uint64_t auto_arm_deadline(const auto_run_t *r, const auto_entry_t *e, uint64_t 
 /* Is this ARMED or DISARMED the runner's own (AUT-007)? Updates its notes of what it did. */
 bool auto_arm_own_occurrence(auto_run_t *r, const auto_occ_t *o);
 
+/* auto_run.c, for auto_panel.c */
+void auto_run_finish(auto_run_t *r, auto_entry_t *e, uint8_t idx, uint8_t res, uint8_t tried,
+                     uint64_t now);
+bool auto_run_cap_full(const auto_run_t *r, uint64_t now);
+void auto_run_cap_note(auto_run_t *r, uint64_t now);
+
+/* auto_panel.c (BL-224): outputs, the chime, notifications, reminders */
+bool auto_panel_kind(uint8_t kind);
+/* Action idx of a run; o the occurrence (NULL: a time, a close, Try it now). */
+void auto_panel_run(auto_run_t *r, auto_entry_t *e, uint8_t idx, const auto_occ_t *o,
+                    uint8_t tried, uint64_t now);
+/* A time trigger's Remind or "still armed" crossed its minute in span s. */
+void auto_panel_time(auto_run_t *r, auto_entry_t *e, const auto_span_t *s, uint64_t now);
+/* An ARMED of that partition: its reminders' notes end. */
+void auto_panel_partition_armed(auto_run_t *r, uint8_t partition);
+/* Notes that wait for a local time: ended by a valid reading at or past their end. */
+void auto_panel_hold_check(auto_run_t *r, const auto_local_t *lt);
+void auto_panel_tick(auto_run_t *r, auto_entry_t *e, uint64_t now);
+uint64_t auto_panel_deadline(const auto_entry_t *e, uint64_t d);
+/* Ends the note and drops waiting output sends (changed, turned off, deleted); keep_timers: an
+ * off timer already running still turns its output off (turned off). */
+void auto_panel_end(auto_run_t *r, auto_entry_t *e, bool keep_timers);
+bool auto_panel_wants_clock(const auto_run_t *r);
+
 #endif /* AUTOMATION_AUTO_RUN_INT_H */

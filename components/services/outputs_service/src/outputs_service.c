@@ -184,11 +184,15 @@ static bool load_blob(const char *key, uint8_t *buf, size_t *len)
 static void save_if_dirty(void)
 {
     if (S.ow.dirty) {
-        uint8_t buf[OW_BLOB_MAX];
-        const size_t n = ow_encode(&S.ow, buf, sizeof(buf));
+        uint8_t buf[OW_BLOB_MAX > OW_AUTO_BLOB_MAX ? OW_BLOB_MAX : OW_AUTO_BLOB_MAX];
+        size_t n = ow_encode(&S.ow, buf, sizeof(buf));
         if (n != 0u) {
             store_blob(OW_KEY, buf, n);
-            S.ow.dirty = false;
+            n = ow_auto_encode(&S.ow, buf, sizeof(buf)); /* BL-224: a key of its own */
+            if (n != 0u) {
+                store_blob(OW_AUTO_KEY, buf, n);
+                S.ow.dirty = false;
+            }
         }
     }
     if (S.rf.dirty) {
@@ -204,23 +208,36 @@ static void save_if_dirty(void)
 static void load(void)
 {
     const uint64_t now = now_ms();
-    uint8_t buf[OW_BLOB_MAX > RFS_BLOB_MAX ? OW_BLOB_MAX : RFS_BLOB_MAX];
+    uint8_t buf[OW_AUTO_BLOB_MAX > RFS_BLOB_MAX ? OW_AUTO_BLOB_MAX : RFS_BLOB_MAX];
+    _Static_assert(OW_AUTO_BLOB_MAX >= OW_BLOB_MAX, "the load buffer holds outputs/wired");
     size_t len = sizeof(buf);
+    ow_config_t oc[OW_CHANNELS];
+    memset(oc, 0, sizeof(oc));
+    bool any = false;
     if (load_blob(OW_KEY, buf, &len)) {
-        ow_config_t cfg[OW_CHANNELS];
-        if (ow_decode(buf, len, cfg)) {
-            for (size_t i = 0; i < OW_CHANNELS; i++) {
-                if (cfg[i].function != OW_FN_NONE) {
-                    const ow_result_t r = ow_set(&S.ow, now, i, &cfg[i]);
-                    if (r != OW_OK) {
-                        ESP_LOGW(TAG, "output %u on GPIO %u not started (%d): a zone or another "
-                                      "output has its pin", (unsigned)i + 1u, cfg[i].gpio, (int)r);
-                    }
-                }
-            }
-        } else {
+        any = true;
+        if (!ow_decode(buf, len, oc)) {
+            memset(oc, 0, sizeof(oc));
             ESP_LOGW(TAG, "the stored wired outputs are damaged: none started");
         }
+    }
+    len = sizeof(buf);
+    if (load_blob(OW_AUTO_KEY, buf, &len)) { /* BL-224: the outputs for automations */
+        any = true;
+        if (!ow_auto_decode(buf, len, oc)) {
+            ESP_LOGW(TAG, "the stored outputs for automations are damaged: none started");
+        }
+    }
+    for (size_t i = 0; i < OW_CHANNELS; i++) {
+        if (oc[i].function != OW_FN_NONE) {
+            const ow_result_t r = ow_set(&S.ow, now, i, &oc[i]);
+            if (r != OW_OK) {
+                ESP_LOGW(TAG, "output %u on GPIO %u not started (%d): a zone or another "
+                              "output has its pin", (unsigned)i + 1u, oc[i].gpio, (int)r);
+            }
+        }
+    }
+    if (any) {
         S.ow.dirty = false; /* what was read is what is stored */
     }
     len = sizeof(buf);
@@ -438,6 +455,48 @@ esp_err_t outputs_service_wired_test(size_t slot)
     return ow_err(r);
 }
 
+size_t outputs_service_auto_list(outputs_auto_t *out, size_t max)
+{
+    size_t n = 0u;
+    if (!S.started) {
+        return 0u;
+    }
+    lock();
+    for (size_t i = 0; i < OW_CHANNELS && n < max; i++) {
+        const ow_channel_t *ch = &S.ow.ch[i];
+        if (ch->c.function == OW_FN_AUTOMATION && ch->pin_ok) {
+            out[n].number = (uint8_t)(i + 1u);
+            out[n].gpio = ch->c.gpio;
+            snprintf(out[n].name, sizeof(out[n].name), "%s", ch->c.name);
+            n++;
+        }
+    }
+    xSemaphoreGive(S.lock); /* nothing moved: no need to wake the task */
+    return n;
+}
+
+uint8_t outputs_service_auto_mask(void)
+{
+    if (!S.started) {
+        return 0u;
+    }
+    lock();
+    const uint8_t mask = ow_auto_mask(&S.ow);
+    xSemaphoreGive(S.lock);
+    return mask;
+}
+
+bool outputs_service_auto_set(uint8_t number, bool on)
+{
+    if (!S.started || number < 1u || number > OW_CHANNELS) {
+        return false;
+    }
+    lock();
+    const ow_result_t r = ow_auto_set(&S.ow, now_ms(), (size_t)(number - 1u), on);
+    unlock();
+    return r == OW_OK;
+}
+
 size_t outputs_service_free_terminals(size_t slot, uint8_t *out, size_t max)
 {
     size_t n = 0u;
@@ -627,6 +686,11 @@ static void print_all(void)
             printf("  %u: free\n", (unsigned)i + 1u);
             continue;
         }
+        if (c->function == OW_FN_AUTOMATION) {
+            printf("  %u: automation \"%s\" on GPIO %u%s, %s\n", (unsigned)i + 1u, c->name, c->gpio,
+                   c->active_low ? " (active low)" : "", w[i].on ? "ON" : "off");
+            continue;
+        }
         char parts[24];
         char also[24];
         mask_words(c->partitions, parts, sizeof(parts));
@@ -664,7 +728,7 @@ static const char *err_words(esp_err_t err)
     switch (err) {
     case ESP_OK: return "done";
     case ESP_ERR_INVALID_STATE: return "refused: armed, sounding, or the pin is a zone's or another output's";
-    case ESP_ERR_NOT_FOUND: return "refused: no such siren, or nothing can transmit";
+    case ESP_ERR_NOT_FOUND: return "refused: no such siren or output for automations, or nothing can transmit";
     case ESP_ERR_NO_MEM: return "refused: no free place";
     case ESP_FAIL: return "the pin could not be set up";
     default: return "refused: check the words";
@@ -717,6 +781,33 @@ static int cmd_out(int argc, char **argv)
             err = outputs_service_wired_clear(slot);
         } else if (strcmp(argv[3], "test") == 0) {
             err = outputs_service_wired_test(slot);
+        } else if (strcmp(argv[3], "on") == 0 || strcmp(argv[3], "off") == 0) {
+            err = outputs_service_auto_set((uint8_t)n, strcmp(argv[3], "on") == 0) ? ESP_OK
+                                                                                 : ESP_ERR_NOT_FOUND;
+        } else if (strcmp(argv[3], "auto") == 0) {
+            if (argc < 5) {
+                printf("out wired <n> auto <gpio> [low] [name <words>]\n");
+                return 1;
+            }
+            ow_config_t c = {.function = OW_FN_AUTOMATION, .sense = OW_SENSE_NONE};
+            c.gpio = (uint8_t)strtoul(argv[4], NULL, 10);
+            for (int i = 5; i < argc; i++) {
+                if (strcmp(argv[i], "low") == 0) {
+                    c.active_low = true;
+                } else if (strcmp(argv[i], "name") == 0) {
+                    size_t len = 0u;
+                    for (int k = i + 1; k < argc; k++) { /* the rest, as typed */
+                        const int w = snprintf(c.name + len, sizeof(c.name) - len, "%s%s",
+                                               k > i + 1 ? " " : "", argv[k]);
+                        if (w < 0 || (size_t)w >= sizeof(c.name) - len) {
+                            break; /* ow_set keeps what fits, whole characters */
+                        }
+                        len += (size_t)w;
+                    }
+                    break;
+                }
+            }
+            err = outputs_service_wired_set(slot, &c);
         } else {
             ow_config_t c = {.sense = OW_SENSE_NONE, .partitions = 0x01u, .burglary = true,
                              .fire = true};
@@ -727,7 +818,8 @@ static int cmd_out(int argc, char **argv)
                                                           : OW_FN_COUNT;
             if (c.function == OW_FN_COUNT || argc < 5) {
                 printf("out wired <n> siren|strobe|smoke|armed <gpio> [parts 1,2] [also 3] "
-                       "[burglary|fire|both] [squawk] [low] [sense <gpio>]\n");
+                       "[burglary|fire|both] [squawk] [low] [sense <gpio>] | out wired <n> auto "
+                       "<gpio> [low] [name <words>] | out wired <n> test|clear|on|off\n");
                 return 1;
             }
             c.gpio = (uint8_t)strtoul(argv[4], NULL, 10);
@@ -806,7 +898,8 @@ esp_err_t outputs_service_console_register(void)
         .command = "out",
         .help = "Sirens and outputs: `out` lists them; `out wired <n> siren|strobe|smoke|armed "
                 "<gpio> [parts 1,2] [also 3] [burglary|fire|both] [squawk] [low] [sense <gpio>]`, "
-                "`out wired <n> test|clear`; `out rf add [...]`, `out rf <n> pair|test|clear|set "
+                "`out wired <n> auto <gpio> [low] [name <words>]` (for automations), "
+                "`out wired <n> test|clear|on|off`; `out rf add [...]`, `out rf <n> pair|test|clear|set "
                 "[...]|codes <alarm> <stop> <arm> <disarm>`",
         .hint = "[wired|rf]",
         .func = cmd_out};
@@ -856,6 +949,22 @@ size_t outputs_service_free_terminals(size_t slot, uint8_t *out, size_t max)
     (void)out;
     (void)max;
     return 0u;
+}
+size_t outputs_service_auto_list(outputs_auto_t *out, size_t max)
+{
+    (void)out;
+    (void)max;
+    return 0u;
+}
+uint8_t outputs_service_auto_mask(void)
+{
+    return 0u;
+}
+bool outputs_service_auto_set(uint8_t number, bool on)
+{
+    (void)number;
+    (void)on;
+    return false;
 }
 void outputs_service_rf(outputs_rf_info_t out[RFS_SIRENS])
 {

@@ -323,6 +323,9 @@ static void run_job(job_t *job)
         uint8_t user = 0;
         r = alarm_service_authenticate(&src, c->cmd.code, c->cmd.partition, &user);
         res.user = user;
+        if (r == ALARM_OK) {
+            mrbsvc_auth(job->device, user); /* the code opens this panel's pages (LINK-059) */
+        }
         break;
     }
     case PLINK_OP_PUT_OFF: /* LINK-056: an automation's arming put off from a keypad */
@@ -864,6 +867,7 @@ static void publish(uint64_t now)
     g_pub.pairing_open = plink_master_pairing(s_m);
     g_pub.keypads = n;
     g_pub.keypads_down = 0;
+    g_pub.published_ms = now;
     for (size_t i = 0; i < n; i++) {
         const plink_peer_info_t *p = &peers[i];
         ui_link_keypad_t *k = &g_pub.keypad[i];
@@ -887,6 +891,7 @@ static void publish(uint64_t now)
         g_pub.kind[i] = p->kind;
         g_pub.rssi[i] = p->hb.rssi;
         g_pub.caps[i] = p->caps;
+        g_pub.heard_ago_s[i] = p->heard_ago_s;
         home_wanted = home_wanted || (p->caps & PLINK_CAP_HOME) != 0u;
         /* its Smart Home and settings side, the newest settings report with it (BL-216) */
         if (g_pub.home != NULL && plink_master_keypad_home(s_m, now, p->device, &g_pub.home[i]) &&
@@ -964,6 +969,7 @@ void msvc_poll(uint64_t now)
         }
     }
     hsvc_poll(s_m, now); /* the settings writes queued for keypads (BL-216) */
+    mrbsvc_poll(s_m, now); /* keypads' calls of this panel's pages answered (BL-223) */
     fsvc_poll(s_m, now); /* keypad updates: the planner's orders go at this tick (BL-048) */
     plink_master_tick(s_m, now);
     mdns_apply();
@@ -1182,13 +1188,16 @@ esp_err_t msvc_prepare(uint64_t now)
      * (NULL dev_run otherwise: an action is answered UNAVAILABLE), PREFS with the UI, FW with the
      * planner's service (keypad updates go live in each session whose keypad offers it too). */
     const uint16_t caps =
-        (uint16_t)(hsvc_caps() | fsvc_caps() | PLINK_CAP_WIFI | miosvc_prepare() | masvc_caps());
+        (uint16_t)(hsvc_caps() | fsvc_caps() | PLINK_CAP_WIFI | miosvc_prepare() | masvc_caps() |
+                   mrbsvc_prepare());
     port.io_state = (caps & PLINK_CAP_IO) != 0u ? miosvc_io_state : NULL;
     port.dev_run = (caps & PLINK_CAP_HOME) != 0u ? hsvc_dev_run : NULL;
     port.fw_read = (caps & PLINK_CAP_FW) != 0u ? fsvc_fw_read : NULL;
+    port.rb_run = (caps & PLINK_CAP_RB) != 0u ? mrbsvc_run : NULL; /* BL-223 */
     port.ctx = s_m; /* hsvc_prefs_done reads the keypad's report back (the others need no ctx) */
     plink_master_init(s_m, &g_link.crypto, &port, have ? &rec : NULL, s_name, g_link.panel_id, caps,
                       now);
+    mrbsvc_attach(s_m); /* the remote backend's buffers (BL-223) */
     plink_wipe(&rec, sizeof rec);
     /* The manager starts with the network up; the service says how it is now, so supervision
      * pauses at once on a master whose Wi-Fi isn't there yet and resumes one period after it is

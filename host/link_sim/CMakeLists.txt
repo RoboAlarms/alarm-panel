@@ -28,12 +28,14 @@ add_library(link_sim_lib STATIC
     link_console.c
     link_node.c
     link_fw.c
+    link_rb.c
     ${LINK_CORE}/zwave_host/test/zw_host_crypto.c
 )
 target_include_directories(link_sim_lib PUBLIC ${CMAKE_CURRENT_LIST_DIR}
                                                ${LINK_CORE}/zwave_host/test)
 # BL-216: the master's devices are home_control's registry; settings travel as proto_prefs fields.
-target_link_libraries(link_sim_lib PUBLIC panel_link alarm_core zwave_host home_control alarm_proto)
+target_link_libraries(link_sim_lib PUBLIC panel_link alarm_core zwave_host home_control alarm_proto
+                                          ui_remote ui_backend)
 if(WIN32)
     target_link_libraries(link_sim_lib PUBLIC ws2_32 bcrypt)
 else()

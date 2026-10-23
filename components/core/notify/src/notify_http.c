@@ -113,6 +113,14 @@ static void json_field(sink_t *s, const char *key, const char *value, size_t max
 
 notify_prio_t notify_priority(const alarm_event_t *ev)
 {
+    if (ev->type == ALARM_EV_AUTOMATION_NOTICE) {
+        /* NOTE-042: asked for, so it sounds as an arming does; an alarm's a step louder, never
+         * urgent (the alarm's own notification is) */
+        return (ev->arg == (uint8_t)ALARM_AUTO_NOTICE_ALARM ||
+                ev->arg == (uint8_t)ALARM_AUTO_NOTICE_FIRE)
+                   ? NOTIFY_PRIO_HIGH
+                   : NOTIFY_PRIO_NORMAL;
+    }
     switch (notify_category(ev->type)) {
     case NOTIFY_CAT_ALARM:
         /* Only a live alarm is urgent: the ones that say it is over are not. */

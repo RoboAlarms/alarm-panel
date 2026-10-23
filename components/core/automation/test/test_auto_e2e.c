@@ -165,7 +165,7 @@ static void load(void)
         Z[z].partition = S.cfg.zones[z].partition;
         Z[z].dev_class = S.cfg.zones[z].device_class;
     }
-    const auto_env_t env = {0x01u, false, Z, true, false};
+    const auto_env_t env = {0x01u, false, Z, true, false, 0u};
     auto_run_rules(&R, RULES, NR, &env);
     for (size_t i = 0; i < NR; i++) {
         TEST_ASSERT_EQUAL_INT_MESSAGE(AUTO_OK, auto_rule_check(&RULES[i], &env), "rule");
@@ -186,7 +186,7 @@ void setUp(void)
     sim_start(&S, NULL, NULL);
     auto_watch_init(&W, S.now, 0);
     const auto_ports_t p = {NULL, port_act, port_settled, port_kind, port_arm, NULL, port_failed,
-                            NULL, NULL, NULL, NULL, NULL};
+                            NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
     auto_run_init(&R, &p, S.now);
     NR = 0;
     SEEN = 0;

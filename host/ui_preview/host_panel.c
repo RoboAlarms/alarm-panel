@@ -839,6 +839,7 @@ static void be_out_wired(void *ctx, ui_out_wired_t out[UI_OUT_WIRED_MAX])
                                   .burglary = ch->c.burglary, .fire = ch->c.fire,
                                   .squawk = ch->c.squawk, .active_low = ch->c.active_low,
                                   .on = ch->on, .trouble = ch->trouble};
+        snprintf(out[i].name, sizeof(out[i].name), "%s", ch->c.name); /* BL-224 */
     }
 }
 
@@ -866,10 +867,11 @@ static uint8_t be_out_wired_set(void *ctx, uint8_t slot, const ui_out_wired_t *c
     if (!sir_may_change()) {
         return UI_OUT_NOT_ALLOWED;
     }
-    const ow_config_t oc = {.function = c->function, .gpio = c->gpio, .partitions = c->partitions,
-                            .also = c->also, .burglary = c->burglary, .fire = c->fire,
-                            .squawk = c->squawk, .active_low = c->active_low,
-                            .sense = c->sense == UI_OUT_NO_PIN ? OW_SENSE_NONE : c->sense};
+    ow_config_t oc = {.function = c->function, .gpio = c->gpio, .partitions = c->partitions,
+                      .also = c->also, .burglary = c->burglary, .fire = c->fire,
+                      .squawk = c->squawk, .active_low = c->active_low,
+                      .sense = c->sense == UI_OUT_NO_PIN ? OW_SENSE_NONE : c->sense};
+    snprintf(oc.name, sizeof(oc.name), "%s", c->name); /* BL-224 */
     const uint8_t r = ow_answer(ow_set(&s_sir.ow, H.now, slot, &oc));
     return r;
 }
@@ -7193,6 +7195,14 @@ static struct {
     bool engine_called;   /* an arm or disarm port ran the engine: a new snapshot is due */
     bool chiming;         /* a warning is ON and has chimed */
     uint64_t chime_next;
+    /* BL-224: automations without devices, as automation_service's ports */
+    bool outputs_on;              /* host_panel_auto_outputs: output 1 "Garden Lights" (GPIO 47) */
+    bool out_state[AUTO_OUTPUTS]; /* what the output port last set */
+    auto_remind_t remind[AUTO_MAX]; /* the reminders' mailbox (automation_service's s_remind) */
+    size_t nremind;
+    bool remind_chime;            /* a note began: its one chime, after the runner's call */
+    unsigned notices;             /* notifications the notify port raised */
+    auto_notice_t last_notice;
 } s_auto;
 
 /* ---- the store's key-value port: RAM, refusing every write while kv_fail ---- */
@@ -7557,6 +7567,158 @@ static void auto_chime(void)
     }
 }
 
+/* ---- BL-224: automations without devices, as automation_service's ports (DESIGN.md section
+ * 15). The outputs "For automations" are a fixed fake list (host_panel_auto_outputs), the
+ * notification goes to the simulator's ntfy and Pushover settings, the chime and the
+ * partition's state are the engine's. Called from the runner inside auto_pump: never inside an
+ * engine call. ---- */
+
+#define AUTO_SIM_OUTPUT      1u  /* "Garden Lights" */
+#define AUTO_SIM_OUTPUT_GPIO 47u
+
+static void auto_give_rules(void);
+
+static bool auto_port_output(void *ctx, uint8_t output, bool on)
+{
+    (void)ctx;
+    if (!s_auto.outputs_on || output != AUTO_SIM_OUTPUT) {
+        return false; /* not one for automations now */
+    }
+    s_auto.out_state[output - 1u] = on;
+    return true;
+}
+
+/* port_chime's do_chime: the chime as it is, and the toggle as the maker when it isn't so. */
+static alarm_result_t auto_port_chime(void *ctx, uint16_t uid, uint8_t p, bool on, uint8_t maker, bool *already)
+{
+    (void)ctx;
+    *already = false;
+    alarm_partition_status_t ps;
+    alarm_engine_partition_status(&H.eng, p, &ps);
+    if (ps.state != ALARM_STATE_DISARMED || alarm_engine_program_active(&H.eng)) {
+        return ALARM_ERR_BAD_STATE;
+    }
+    if (ps.chime == on) {
+        *already = true;
+        return ALARM_OK;
+    }
+    alarm_cmd_t cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = ALARM_CMD_CHIME;
+    cmd.partition = p;
+    const alarm_source_t src = {.kind = ALARM_SRC_AUTOMATION, .id = uid};
+    const alarm_result_t r = alarm_engine_command_as(&H.eng, &cmd, &src, maker, H.now, NULL);
+    H.dirty = true;
+    s_auto.engine_called = true;
+    return r;
+}
+
+/* A phone service is set up and on (net_notify_any_service). */
+static bool auto_notify_any(void)
+{
+    return H.ntfy.enabled || H.push.enabled;
+}
+
+/* port_notify: ALARM_EV_AUTOMATION_NOTICE into the engine (the build contract's mapping), which
+ * logs it as the panel does; false when no phone service is set up. */
+static bool auto_port_notify(void *ctx, const auto_notice_t *n)
+{
+    (void)ctx;
+    if (!auto_notify_any()) {
+        return false;
+    }
+    uint8_t arg = 0u;
+    if (n->what == (uint8_t)AUTO_NOTICE_REMIND) {
+        arg = (uint8_t)ALARM_AUTO_NOTICE_REMIND;
+    } else if (n->what == (uint8_t)AUTO_NOTICE_STILL_ARMED) {
+        arg = (uint8_t)ALARM_AUTO_NOTICE_STILL_ARMED;
+    } else {
+        switch (n->trig) {
+        case AUTO_TRIG_ZONE_OPENED: arg = (uint8_t)ALARM_AUTO_NOTICE_OPENED; break;
+        case AUTO_TRIG_ZONE_CLOSED: arg = (uint8_t)ALARM_AUTO_NOTICE_CLOSED; break;
+        case AUTO_TRIG_ARMED: arg = (uint8_t)ALARM_AUTO_NOTICE_ARMED; break;
+        case AUTO_TRIG_DISARMED: arg = (uint8_t)ALARM_AUTO_NOTICE_DISARMED; break;
+        case AUTO_TRIG_ALARM: arg = (uint8_t)ALARM_AUTO_NOTICE_ALARM; break;
+        case AUTO_TRIG_FIRE: arg = (uint8_t)ALARM_AUTO_NOTICE_FIRE; break;
+        case AUTO_TRIG_TIME: arg = (uint8_t)ALARM_AUTO_NOTICE_TIME; break;
+        case AUTO_TRIG_TROUBLE: arg = (uint8_t)ALARM_AUTO_NOTICE_TROUBLE; break;
+        default: return false;
+        }
+    }
+    uint8_t arg2 = arg == (uint8_t)ALARM_AUTO_NOTICE_ARMED     ? n->level
+                   : arg == (uint8_t)ALARM_AUTO_NOTICE_TROUBLE ? n->cause
+                                                               : 0u;
+    if (n->tried != 0u) {
+        arg2 = (uint8_t)(arg2 | ALARM_AUTO_NOTICE_TRIED);
+    }
+    const uint8_t part = n->partition <= ALARM_MAX_PARTITIONS ? n->partition : 0u;
+    const uint16_t zone = n->zone <= ALARM_MAX_ZONES ? n->zone : 0u;
+    if (alarm_engine_automation_notice(&H.eng, n->uid, part, zone, arg, arg2, H.now) != ALARM_OK && part != 0u) {
+        (void)alarm_engine_automation_notice(&H.eng, n->uid, 0u, zone, arg, arg2, H.now);
+    }
+    H.dirty = true;
+    s_auto.engine_called = true;
+    s_auto.notices++;
+    s_auto.last_notice = *n;
+    return true;
+}
+
+static int auto_port_part_armed(void *ctx, uint8_t p)
+{
+    (void)ctx;
+    if (p == 0u || p > ALARM_MAX_PARTITIONS) {
+        return -1;
+    }
+    alarm_partition_status_t ps;
+    alarm_engine_partition_status(&H.eng, p, &ps);
+    return ps.state == ALARM_STATE_DISARMED ? 0 : 1;
+}
+
+/* port_remind: the mailbox, and one chime when a note begins (auto_pump plays it). */
+static void auto_port_remind(void *ctx, const auto_remind_t *m)
+{
+    (void)ctx;
+    size_t i = 0;
+    while (i < s_auto.nremind && s_auto.remind[i].uid != m->uid) {
+        i++;
+    }
+    if (m->on == 0u) {
+        if (i < s_auto.nremind) {
+            memmove(&s_auto.remind[i], &s_auto.remind[i + 1u],
+                    (s_auto.nremind - i - 1u) * sizeof(s_auto.remind[0]));
+            s_auto.nremind--;
+        }
+        return;
+    }
+    if (i < s_auto.nremind) {
+        s_auto.remind[i] = *m;
+    } else if (s_auto.nremind < AUTO_MAX) {
+        s_auto.remind[s_auto.nremind++] = *m;
+    }
+    s_auto.remind_chime = true;
+}
+
+void host_panel_auto_outputs(bool on)
+{
+    s_auto.outputs_on = on;
+    if (s_auto.ready) {
+        auto_give_rules(); /* the env's outputs mask */
+    }
+}
+
+bool host_panel_auto_output_on(uint8_t output)
+{
+    return output >= 1u && output <= AUTO_OUTPUTS && s_auto.out_state[output - 1u];
+}
+
+unsigned host_panel_auto_notices(auto_notice_t *last)
+{
+    if (last != NULL) {
+        *last = s_auto.last_notice;
+    }
+    return s_auto.notices;
+}
+
 /* The runner's view of the panel, from the engine's configuration. */
 static void auto_env(auto_env_t *env)
 {
@@ -7575,6 +7737,7 @@ static void auto_env(auto_env_t *env)
     env->arm_supported = true; /* phase C */
     env->zones = s_auto.zones;
     env->less_secure = cfg->opt.auto_less_secure; /* AUT-015 */
+    env->outputs = s_auto.outputs_on ? (uint8_t)(1u << (AUTO_SIM_OUTPUT - 1u)) : 0u; /* BL-224 */
 }
 
 static void auto_give_rules(void)
@@ -7706,7 +7869,12 @@ static void automations_reset(void)
                                 .failed = auto_port_failed,
                                 .maker_ok = auto_port_maker_ok,
                                 .disarm = auto_port_disarm,
-                                .put_off = auto_port_put_off};
+                                .put_off = auto_port_put_off,
+                                .output = auto_port_output,
+                                .chime = auto_port_chime,
+                                .notify = auto_port_notify,
+                                .part_armed = auto_port_part_armed,
+                                .remind = auto_port_remind};
     auto_watch_init(&s_auto.watch, H.now,
                     (uint32_t)alarm_engine_config(&H.eng)->opt.power_up_settle_s * 1000u);
     auto_run_init(&s_auto.run, &ports, H.now);
@@ -7805,6 +7973,12 @@ static bool auto_pump(void)
     auto_answers();
     auto_run_tick(&s_auto.run, H.now);
     auto_chime();
+    if (s_auto.remind_chime) { /* a reminder's note began: one chime, never over another sound */
+        s_auto.remind_chime = false;
+        if (H.snap.part[0].sounder == ALARM_SOUND_NONE) {
+            say_sound(ALARM_SOUND_CHIME);
+        }
+    }
     const bool logged = s_auto.nfail != 0u || s_auto.engine_called;
     s_auto.engine_called = false;
     for (size_t i = 0; i < s_auto.nfail; i++) {
@@ -8093,6 +8267,34 @@ static size_t be_auto_warnings(void *ctx, auto_warning_t *out, size_t max)
     const size_t n = s_auto.nwarn < max ? s_auto.nwarn : max;
     memcpy(out, s_auto.warn, n * sizeof(out[0]));
     return n;
+}
+
+/* BL-224 (ui_port_esp's auto_outputs, auto_reminders, auto_notify_services) */
+static size_t be_auto_outputs(void *ctx, ui_auto_output_t *out, size_t max)
+{
+    (void)ctx;
+    if (!s_auto.outputs_on || max == 0u) {
+        return 0u;
+    }
+    memset(&out[0], 0, sizeof(out[0]));
+    out[0].number = AUTO_SIM_OUTPUT;
+    out[0].gpio = AUTO_SIM_OUTPUT_GPIO;
+    snprintf(out[0].name, sizeof(out[0].name), "Garden Lights");
+    return 1u;
+}
+
+static size_t be_auto_reminders(void *ctx, auto_remind_t *out, size_t max)
+{
+    (void)ctx;
+    const size_t n = s_auto.nremind < max ? s_auto.nremind : max;
+    memcpy(out, s_auto.remind, n * sizeof(out[0]));
+    return n;
+}
+
+static uint8_t be_auto_notify_services(void *ctx)
+{
+    (void)ctx;
+    return (uint8_t)((H.ntfy.enabled ? 1u << UI_NOTIFY_NTFY : 0u) | (H.push.enabled ? 1u << UI_NOTIFY_PUSHOVER : 0u));
 }
 
 /* ui_port_esp's auto_put_off: the code checked as the keypad's (ALARM_CMD_CODE_CHECK on the
@@ -8392,6 +8594,10 @@ void host_panel_backend(ui_backend_t *out)
     out->auto_try = CONFIG_ALARM_FEATURE_AUTOMATIONS ? be_auto_try : NULL;
     out->auto_warnings = CONFIG_ALARM_FEATURE_AUTOMATIONS ? be_auto_warnings : NULL;
     out->auto_put_off = CONFIG_ALARM_FEATURE_AUTOMATIONS ? be_auto_put_off : NULL;
+    out->auto_reminders = CONFIG_ALARM_FEATURE_AUTOMATIONS ? be_auto_reminders : NULL; /* BL-224 */
+    out->auto_outputs = CONFIG_ALARM_FEATURE_AUTOMATIONS ? be_auto_outputs : NULL;
+    out->auto_notify_services =
+        CONFIG_ALARM_FEATURE_AUTOMATIONS && CONFIG_ALARM_FEATURE_NOTIFY ? be_auto_notify_services : NULL;
     /* the voice comes with its feature (ui_port_esp_backend: panel_voice) */
     out->voice_info = CONFIG_ALARM_FEATURE_VOICE ? be_voice_info : NULL;
     out->voice_pack_acquire = CONFIG_ALARM_FEATURE_VOICE ? be_voice_pack_acquire : NULL;

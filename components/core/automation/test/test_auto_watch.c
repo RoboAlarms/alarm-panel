@@ -298,6 +298,18 @@ static void test_rearm_same_level_after_disarm(void)
     TEST_ASSERT_EQUAL_UINT(2, count(AUTO_TRIG_DISARMED));
 }
 
+/* The zone occurrences of n, first in o (BL-224's trouble occurrences dropped). */
+static size_t zones_only(auto_occ_t *o, size_t n)
+{
+    size_t k = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (o[i].kind == AUTO_TRIG_ZONE_OPENED || o[i].kind == AUTO_TRIG_ZONE_CLOSED) {
+            o[k++] = o[i];
+        }
+    }
+    return k;
+}
+
 /* AUT-003 B5: an edge whose old flags carried trouble is dropped even when the new ones are clean
  * (a sensor that comes back open hasn't opened). */
 static void test_edge_after_trouble_dropped(void)
@@ -309,16 +321,16 @@ static void test_edge_after_trouble_dropped(void)
     for (size_t i = 0; i < 3u; i++) {
         const unsigned z = Z_WINDOW - 1u;
         SNAP.zone[z].flags = bad[i];
-        TEST_ASSERT_EQUAL_size_t(0, auto_watch_snapshot(&W, &SNAP, o, 2));
+        TEST_ASSERT_EQUAL_size_t(0, zones_only(o, auto_watch_snapshot(&W, &SNAP, o, 2)));
         SNAP.zone[z].flags = ALARM_ZS_FAULT;
-        TEST_ASSERT_EQUAL_size_t(0, auto_watch_snapshot(&W, &SNAP, o, 2));
+        TEST_ASSERT_EQUAL_size_t(0, zones_only(o, auto_watch_snapshot(&W, &SNAP, o, 2)));
         SNAP.zone[z].flags = (uint16_t)(ALARM_ZS_FAULT | bad[i]);
-        TEST_ASSERT_EQUAL_size_t(0, auto_watch_snapshot(&W, &SNAP, o, 2));
+        TEST_ASSERT_EQUAL_size_t(0, zones_only(o, auto_watch_snapshot(&W, &SNAP, o, 2)));
         SNAP.zone[z].flags = 0;
-        TEST_ASSERT_EQUAL_size_t(0, auto_watch_snapshot(&W, &SNAP, o, 2));
+        TEST_ASSERT_EQUAL_size_t(0, zones_only(o, auto_watch_snapshot(&W, &SNAP, o, 2)));
     }
-    SNAP.zone[Z_WINDOW - 1u].flags = ALARM_ZS_FAULT | ALARM_ZS_LOW_BATTERY; /* not a trouble */
-    TEST_ASSERT_EQUAL_size_t(1, auto_watch_snapshot(&W, &SNAP, o, 2));
+    SNAP.zone[Z_WINDOW - 1u].flags = ALARM_ZS_FAULT | ALARM_ZS_LOW_BATTERY; /* not a B5 trouble */
+    TEST_ASSERT_EQUAL_size_t(1, zones_only(o, auto_watch_snapshot(&W, &SNAP, o, 2)));
     TEST_ASSERT_EQUAL_UINT8(AUTO_TRIG_ZONE_OPENED, o[0].kind);
 }
 

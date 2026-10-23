@@ -14,6 +14,11 @@
  * alarm. Live words (UI-020): the warnings are read once a second, and a subject is written only
  * when its text changed; nothing counts down, blinks or moves. The UI plays nothing: the chime
  * is the automation service's.
+ *
+ * A reminder to arm (BL-224, drawing bl-224-home-remind): while an automation's reminder note
+ * stands for the screen's partition and it is disarmed, the same card without a button, steady:
+ * "Not armed yet" / "Reminder at 11:00 PM". It needs no answer; arming by hand ends it, and so
+ * does 6:00 AM (the runner's). A warning that needs an answer comes first.
  */
 #include <stdio.h>
 #include <string.h>
@@ -28,16 +33,19 @@
 
 static struct {
     bool ready;          /* the backend has the hooks */
+    bool remind_ready;   /* ... and the reminders' (BL-224) */
     bool polled_once;
     uint32_t polled;
     bool banner;         /* a warning is on: the bar may show banner 5 */
     uint16_t poff_uid;   /* the warning the choice or the code pad is about; 0 = none */
     uint8_t poff_choice; /* auto_put_off_choice_t */
     size_t n;            /* s_warn's count at the last read */
+    size_t nrem;         /* s_remind's */
 } W;
 
 static UI_SLOW_BSS auto_warning_t s_warn[AUTO_MAX];
 static UI_SLOW_BSS auto_rule_t s_rules[AUTO_MAX];
+static UI_SLOW_BSS auto_remind_t s_remind[AUTO_MAX];
 
 static bool poff_code(const char *code);
 
@@ -232,11 +240,53 @@ static void banner_update(size_t n, const auto_warning_t *own)
     }
 }
 
-/* Home's card: the warning with Put off, or the quiet hold note in its place. Only beside the
- * arming tiles (subject_panel 0): never over the code pad, the disarm tile or a walk test. */
+/* The screen's partition's reminder note, while it stands (BL-224); NULL when none. */
+static const auto_remind_t *my_reminder(void)
+{
+    for (size_t i = 0; i < W.nrem; i++) {
+        if (s_remind[i].on != 0u && s_remind[i].partition == S.opt.partition) {
+            return &s_remind[i];
+        }
+    }
+    return NULL;
+}
+
+/* "Not armed yet" / "Reminder at 11:00 PM": the quiet card, no button (drawing
+ * bl-224-home-remind). */
+static void remind_card(const auto_remind_t *m)
+{
+    char at[24];
+    char detail[96];
+    ui_minute_text((int)(m->minute % AUTO_MINUTES_PER_DAY), at, sizeof(at));
+    /* TR: Home's quiet note while an automation's reminder to arm stands (BL-224): the title. At
+     * most 63 bytes */
+    ui_set_str(&subject_arm_strip_title, TR("Not armed yet"));
+    /* TR: Home's quiet reminder note, its line; {0} is the reminder's time, such as 11:00 PM. At
+     * most 79 bytes */
+    I18N_FORMAT(detail, sizeof(detail), TR("Reminder at {0}"), at);
+    ui_set_str(&subject_arm_strip_detail, detail);
+    ui_set_int(&subject_arm_strip_note_on, 0);
+    ui_set_str(&subject_arm_strip_glyph, UI_ICON_BELL);
+    ui_set_color(&subject_arm_strip_color, ui_tone_amber());
+    ui_set_int(&subject_arm_strip, 2);
+}
+
+/* Home's card: the warning with Put off, a reminder's note, or the quiet hold note in its place.
+ * Only beside the arming tiles (subject_panel 0): never over the code pad, the disarm tile or a
+ * walk test. */
 static void card_update(const auto_warning_t *w)
 {
-    if (w == NULL || !disarmed(w->partition) || lv_subject_get_int(&subject_panel) != 0) {
+    if (lv_subject_get_int(&subject_panel) != 0) {
+        ui_set_int(&subject_arm_strip, 0);
+        return;
+    }
+    const auto_remind_t *m = my_reminder();
+    const bool warning = w != NULL && w->state == AUTO_WARN_ON && disarmed(w->partition);
+    if (!warning && m != NULL && disarmed(m->partition)) {
+        remind_card(m); /* before a hold's note: it is today's */
+        return;
+    }
+    if (w == NULL || !disarmed(w->partition)) {
         ui_set_int(&subject_arm_strip, 0);
         return;
     }
@@ -315,10 +365,22 @@ static size_t read_warnings(void)
     return W.n;
 }
 
+/* A copy of the reminders' mailbox (BL-224), into s_remind. */
+static void read_reminders(void)
+{
+    const size_t got = W.remind_ready ? S.be.auto_reminders(S.be.ctx, s_remind, AUTO_MAX) : 0u;
+    W.nrem = got < AUTO_MAX ? got : AUTO_MAX;
+}
+
 static void refresh(void)
 {
     W.polled = lv_tick_get();
     W.polled_once = true;
+    read_reminders();
+    if (!W.ready) {
+        card_update(NULL); /* a reminder's note only */
+        return;
+    }
     const size_t n = read_warnings();
     const auto_warning_t *own = mine(n);
     banner_update(n, own);
@@ -328,7 +390,7 @@ static void refresh(void)
 
 void ui_auto_warn_tick(void)
 {
-    if (!W.ready || (W.polled_once && lv_tick_elaps(W.polled) < POLL_MS)) {
+    if ((!W.ready && !W.remind_ready) || (W.polled_once && lv_tick_elaps(W.polled) < POLL_MS)) {
         return;
     }
     refresh();
@@ -341,7 +403,7 @@ bool ui_auto_warn_banner(void)
 
 void ui_auto_warn_language_changed(void)
 {
-    if (W.ready) {
+    if (W.ready || W.remind_ready) {
         refresh();
     }
 }
@@ -530,8 +592,8 @@ static void panel_changed(lv_observer_t *o, lv_subject_t *s)
 {
     (void)o;
     (void)s;
-    if (W.ready && W.polled_once) {
-        card_update(mine(W.n));
+    if ((W.ready || W.remind_ready) && W.polled_once) {
+        card_update(W.ready ? mine(W.n) : NULL);
     }
 }
 
@@ -539,11 +601,15 @@ void ui_auto_warn_init(void)
 {
     memset(&W, 0, sizeof(W));
     W.ready = S.be.auto_warnings != NULL && S.be.auto_put_off != NULL;
+    W.remind_ready = S.be.auto_reminders != NULL;
     ui_set_int(&subject_arm_strip, 0);
-    if (!W.ready) {
+    if (!W.ready && !W.remind_ready) {
         return;
     }
     lv_subject_add_observer(&subject_panel, panel_changed, NULL);
+    if (!W.ready) {
+        return;
+    }
     on_click(ui_find(S.main, "arm_strip_put_off"), on_put_off, 0u);
     on_click(ui_find(S.main, "poff_hour"), on_choice, (uintptr_t)AUTO_PUT_OFF_HOUR);
     on_click(ui_find(S.main, "poff_night"), on_choice, (uintptr_t)AUTO_PUT_OFF_NIGHT);

@@ -24,6 +24,10 @@
 //   arm adds the arming and disarming ones (phase C, slots 5..10) with their statuses.
 //   MOCK_AUTO_WARN=on|hour|night|day: automation 5 (Arm Night) warns now, or was put off by Pat (an hour, not tonight,
 //   not today): the Overview's card or note (docs/features/41 D19, D20, D27). POST mock/automation-warning {state} sets it.
+//   MOCK_AUTO_REMIND=1: a "Remind to arm" automation at 11:00 PM found Home disarmed: its steady note on the Overview
+//   (BL-224). POST mock/automation-reminder {on} sets it. MOCK_AUTO_OUTPUTS=0: no wired output "For automations" (one,
+//   Garden Lights, otherwise); MOCK_AUTO_NOTIFY=0: no phone service set up (the Pushover one otherwise);
+//   MOCK_AUTO_DEVICES=0: a new panel with no smart device (no Home Assistant, Z-Wave or Zigbee one).
 //   MOCK_GRANT=1: the autologin session is a workstation's grant, not a password sign-in (WEB-024).
 //   MOCK_SETUP=unclaimed|key|network|check|confirm|recovery: a panel without a screen being set up from a phone
 //   (docs/features/31 headless-setup.md, web_setup.c): the setup pages instead of the sign-in. Whoever is on the setup
@@ -645,7 +649,13 @@ const automationsMode = process.env.MOCK_AUTOMATIONS || '';
 const automationsOn = automationsMode !== '0';
 const AU_MAX = 16;
 const AU_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-const AU_TRIGGERS = ['armed', 'disarmed', 'alarm', 'fire', 'zone_opened', 'zone_closed', 'time'];
+const AU_TRIGGERS = ['armed', 'disarmed', 'alarm', 'fire', 'zone_opened', 'zone_closed', 'time', 'trouble'];
+// BL-224 (docs/features/41 DESIGN.md section 15): the troubles a trigger may name, the wired outputs "For automations"
+// (outputs_service_auto_list: number, name, GPIO), the kinds of action that need no device.
+const AU_TROUBLES = ['any', 'ac', 'battery', 'sensor', 'siren'];
+const auOutputs = process.env.MOCK_AUTO_OUTPUTS === '0' ? [] : [{number: 1, name: 'Garden Lights', gpio: 47}];
+const AU_PANEL = ['output', 'remind', 'still_armed', 'chime', 'notify'];
+const AU_TIME_ONLY = ['remind', 'still_armed'];
 const AU_ACTIONS = ['on', 'off', 'toggle', 'lock', 'unlock', 'close', 'open', 'stop', 'run'];
 // hc_auto_allowed with the option on, per kind (the server's words: a thermostat is "climate", its "off" a mode).
 const AU_OFFER = {light: ['on', 'off', 'toggle'], fan: ['on', 'off'], switch: ['on', 'off', 'toggle'], lock: ['lock', 'unlock'],
@@ -655,13 +665,14 @@ const AU_CONFIRM = (kind, action) => (kind === 'scene' && action === 'run') || (
 const AU_OUTSIDE = ['zone_opened', 'zone_closed', 'alarm', 'fire']; // D24: triggers someone outside may cause
 // The fictional house's devices (DESIGN.md section 10's list; the simulator's refs for the four it seeds). A script is
 // in the registry but never offered (AUT-002); the garage door isn't answering.
-const auHouse = [
+const auHouseAll = [
   ['light.porch', 'Porch Light', 'Outside', 'light'], ['light.hallway', 'Hallway Light', 'Downstairs', 'light'],
   ['switch.living_lamp', 'Living Room Lamp', 'Living Room', 'switch'], ['switch.christmas', 'Christmas Lights', 'Outside', 'switch'],
   ['lock.front_door', 'Front Door', 'Entry', 'lock'], ['cover.garage_door', 'Garage Door', 'Garage', 'cover', false],
   ['valve.water_main', 'Water Main', 'Utility', 'valve'], ['climate.hallway', 'Hallway', 'Downstairs', 'climate'],
   ['scene.good_night', 'Good Night', '', 'scene'], ['script.movie_night', 'Movie Night', 'Living Room', 'script'],
 ].map(([ref, name, area, kind, online = true]) => ({source: 'ha', ref, name, area, kind, online}));
+const auHouse = process.env.MOCK_AUTO_DEVICES === '0' ? [] : auHouseAll;
 const auLessSecure = () => alarm.options.auto_less_secure !== false; // opt.auto_less_secure (AUT-015), on by default
 const auDev = (source, ref) => auHouse.find(d => d.source === source && d.ref === ref);
 const auZoneClass = z => DEVICE_CLASS_NAMES[z.device_class] || 'generic';
@@ -675,12 +686,14 @@ function auUsable(z, close) {
 }
 const auAt = (h, m) => new Date().setHours(h, m, 0, 0);
 const auWhen = (kind, extra = {}) => ({kind, partitions: [], levels: [], zone: 0, minute: 0, days: [], window: null, ...extra});
-const auThen = (ref, action, extra = {}) => ({source: 'ha', ref, name: auDev('ha', ref).name, action, off_after: 0, confirmed: false, ...extra});
+const auThen = (ref, action, extra = {}) => ({source: 'ha', ref, name: auHouseAll.find(d => d.ref === ref).name, action, off_after: 0, confirmed: false, ...extra});
 const auStatusNone = () => ({result: 'none', tried: false, at: null, action: null, device: null, reason: null});
 // Phase C (AUT-011): an arm or a disarm, as web_automations.c sends it; made_by is the name of who saved it (D30).
 const auArm = (level, warn_min, made_by, extra = {}) => ({kind: 'arm', partition: 1, level, warn_min, bypass: false, made_by, ...extra});
 const auDisarm = (made_by, extra = {}) => ({kind: 'disarm', partition: 1, confirmed: false, made_by, ...extra});
 const auAlarmAct = a => a.kind === 'arm' || a.kind === 'disarm';
+// The actions that name a partition (auto_model.c partition_action).
+const auPartAct = a => auAlarmAct(a) || ['remind', 'still_armed', 'chime'].includes(a.kind);
 const automations = {gen: 1, nextUid: 5, rules: []};
 function auSeed() {
   const rules = [
@@ -713,6 +726,9 @@ function auSeed() {
     ].forEach(r => rules.push({slot: rules.length + 1, uid: rules.length + 1, record: 'ok', ...r}));
   }
   if (automationsMode === 'newer') rules.push({slot: 5, uid: 5, on: true, record: 'newer', when: null, then: [], status: auStatusNone()});
+  if (process.env.MOCK_AUTO_REMIND) // BL-224: "At 11:00 PM every day · Remind to arm", which found Home disarmed
+    rules.push({slot: rules.length + 1, uid: rules.length + 1, on: true, record: 'ok', when: auWhen('time', {minute: 1380, days: [...AU_DAYS]}),
+      then: [{kind: 'remind', partition: 1, notify: true}], status: {...auStatusNone(), result: 'ran', at: auAt(23, 0)}});
   if (automationsMode === 'full') {
     for (let slot = rules.length + 1; slot <= AU_MAX; slot++)
       rules.push({slot, uid: slot, on: true, record: 'ok', when: auWhen('zone_opened', {zone: 3}), then: [auThen('light.hallway', 'on', {off_after: slot})], status: auStatusNone()});
@@ -733,6 +749,20 @@ function auSetWarning(state, by = 'Pat') {
   auWarnings.push({uid: 5, partition: 1, level: 'night', at, state, by: state === 'on' ? null : by, bypass: false});
 }
 if (automationsOn) auSetWarning(process.env.MOCK_AUTO_WARN || '');
+// The reminders' notes (automation_service_reminders, BL-224): the seeded reminder's, when MOCK_AUTO_REMIND says so.
+const auReminders = [];
+function auSetReminder(on) {
+  auReminders.length = 0;
+  const r = automations.rules.find(x => x.then.some(a => a.kind === 'remind'));
+  if (on && r) auReminders.push({uid: r.uid, partition: r.then[0].partition, minute: r.when.minute});
+}
+if (automationsOn) auSetReminder(!!process.env.MOCK_AUTO_REMIND);
+const auRemindersFor = numbers => auClone(auReminders.filter(r => numbers.includes(r.partition)));
+// The phone services set up (net_notify_services): on, with what each needs to send, whatever its categories say.
+const auNotify = () => process.env.MOCK_AUTO_NOTIFY === '0' ? [] : [config.ntfy.enabled && config.ntfy.topic ? 'ntfy' : '',
+  config.pushover.enabled && config.pushover.user_key && config.pushover.app_token ? 'pushover' : ''].filter(Boolean);
+const auMaster = () => nameOf(2); // ALARM_USER_MASTER: whom an installer's Arm acts as (BL-224)
+const auIsInstaller = s => users.find(u => u.number === s.user)?.authority === 1;
 // The ones on the partitions this person sees (status's automation_warnings; GET automations has them all).
 const auWarningsFor = numbers => auClone(auWarnings.filter(w => numbers.includes(w.partition)));
 const auClone = x => JSON.parse(JSON.stringify(x));
@@ -745,7 +775,8 @@ function automationsJson() {
     if (r.record !== 'ok') return {...out, when: null, then: []};
     const when = {...auClone(r.when), zone_name: alarm.zones[r.when.zone - 1]?.name || ''};
     const then = r.then.map(a => {
-      if (auAlarmAct(a)) return auClone(a);
+      if (a.kind === 'arm') return {saved_by: null, ...auClone(a)}; // BL-224: who set it up when that isn't its maker
+      if (auAlarmAct(a) || AU_PANEL.includes(a.kind)) return auClone(a);
       const d = auDev(a.source, a.ref);
       return {kind: 'device', source: a.source, ref: a.ref, device: d ? d.name : a.name, area: d ? d.area : '', found: !!d, online: !!d?.online,
         action: a.action, off_after: a.off_after, confirmed: a.confirmed};
@@ -755,7 +786,8 @@ function automationsJson() {
   return {maximum: AU_MAX, used: automations.rules.length, gen: automations.gen, clock_set: automationsMode !== 'clock',
     read_only: automationsMode === 'readonly', less_secure: auLessSecure(), automations: rows, zones,
     partitions: alarm.partitions.filter(p => p.enabled).map(p => ({number: p.number, name: p.name})),
-    warnings: auWarningsFor(alarm.partitions.map(p => p.number))};
+    outputs: auClone(auOutputs), notify: auNotify(), master: auMaster(),
+    warnings: auWarningsFor(alarm.partitions.map(p => p.number)), reminders: auRemindersFor(alarm.partitions.map(p => p.number))};
 }
 // GET automations/devices: only devices with an offered action; Unlock, Open and Stop only with the option on (D25).
 function automationDevicesJson() {
@@ -772,30 +804,39 @@ const auLessAct = a => a.kind === 'disarm' || (a.kind === 'device' && AU_LESS(au
 // auto_action_needs_trigger_confirm (D24, D31): a less secure action after a door, window, motion or alarm trigger;
 // after an armed trigger an unlock, an open or a stop (a disarm there is refused, undoes_arming).
 const auNeedsTriggerConfirm = (kind, a) => AU_OUTSIDE.includes(kind) ? auLessAct(a) : kind === 'armed' && a.kind === 'device' && auLessAct(a);
-function auCheck(r) {
+// byInstaller: the saver is the installer, who never disarms (BL-187) and whose Arm acts as the system master (BL-224).
+function auCheck(r, byInstaller = false) {
   const w = r.when, zoneTrig = ['zone_opened', 'zone_closed'].includes(w.kind);
   if (!r.then.length || (zoneTrig && !w.zone)) return ['incomplete'];
   const kindOf = a => auDev(a.source, a.ref)?.kind;
   let i = r.then.findIndex(a => a.kind === 'device' && (!(AU_OFFER[kindOf(a)] || []).includes(a.action) || (a.off_after && a.action !== 'on') ||
     (AU_CONFIRM(kindOf(a), a.action) && !a.confirmed)));
   if (i >= 0) return ['action_not_allowed', i];
+  i = r.then.findIndex(a => a.kind === 'disarm');
+  if (i >= 0 && byInstaller) return ['action_not_allowed', i];
   i = r.then.findIndex(a => auLessAct(a) || a.bypass);
   if (i >= 0 && !auLessSecure()) return ['less_secure_off', i];
   if (r.then.some(a => a.kind === 'arm' && !(['away', 'stay', 'night'].includes(a.level) && auInt(a.warn_min, 1, 15)))) return ['incomplete'];
-  if (r.then.some(a => a.kind === 'arm') && r.then.length !== 1) return ['arm_alone'];
+  i = r.then.findIndex(a => AU_TIME_ONLY.includes(a.kind)); // BL-224: they look at the panel at their time
+  if (i >= 0 && w.kind !== 'time') return ['needs_time', i];
+  if (r.then.some(a => a.kind === 'arm' || AU_TIME_ONLY.includes(a.kind)) && r.then.length !== 1) return ['arm_alone'];
   if (r.then.filter(auAlarmAct).length > 1) return ['same_device', 1];
   if (zoneTrig) {
     const z = alarm.zones[w.zone - 1];
     if (!z || !z.type || !auUsable(z, w.kind === 'zone_closed')) return ['bad_zone'];
   }
   const enabled = n => !!alarm.partitions.find(p => p.number === n && p.enabled);
-  if (!w.partitions.every(enabled) || r.then.some(a => auAlarmAct(a) && !enabled(a.partition))) return ['incomplete'];
+  if (!w.partitions.every(enabled) || r.then.some(a => auPartAct(a) && !enabled(a.partition))) return ['incomplete'];
   i = r.then.findIndex(a => a.kind === 'disarm' && w.kind === 'armed' && (!w.partitions.length || w.partitions.includes(a.partition)));
   if (i >= 0) return ['undoes_arming', i];
   if (w.window && (w.kind === 'time' || w.window.from === w.window.to)) return ['incomplete'];
+  i = r.then.findIndex(a => a.kind === 'output' && !auOutputs.some(o => o.number === a.output)); // BL-224: "For automations" only
+  if (i >= 0) return ['bad_output', i];
   i = r.then.findIndex(a => auNeedsTriggerConfirm(w.kind, a) && !a.confirmed);
   if (i >= 0) return ['needs_confirm', i];
   if (r.then.length === 2 && r.then.every(a => a.kind === 'device') && r.then[0].source === r.then[1].source && r.then[0].ref === r.then[1].ref) return ['same_device', 1];
+  const [x, y] = r.then; // one chime, one notification, one output each (AUT-007)
+  if (y && x.kind === y.kind && (['chime', 'notify'].includes(x.kind) || (x.kind === 'output' && x.output === y.output))) return ['same_device', 1];
   return null;
 }
 // POST automations: {action: save|switch|delete|try, slot, gen, automation} (web_automations_post).
@@ -817,6 +858,7 @@ function automationsPost(s, body) {
     if (!Array.isArray(a.then) || a.then.length > 2) return auError(400, 'bad_request');
     const days = Array.isArray(w.days) ? w.days.filter(d => AU_DAYS.includes(d)) : [];
     if (w.kind === 'time' && !auInt(w.minute, 0, 1439)) return auError(400, 'bad_request');
+    if (w.kind === 'trouble' && w.trouble !== undefined && w.trouble !== null && !AU_TROUBLES.includes(w.trouble)) return auError(400, 'bad_request');
     if (w.window && !(auInt(w.window.from, 0, 1439) && auInt(w.window.to, 0, 1439))) return auError(400, 'bad_request');
     const then = [];
     let actErr = null;
@@ -825,8 +867,23 @@ function automationsPost(s, body) {
         const arm = x.kind === 'arm', bool = v => v === undefined || v === null || typeof v === 'boolean';
         if (!auInt(x.partition, 1, 4) || !bool(x.confirmed) || !bool(x.bypass) || (!arm && x.bypass === true) ||
           (arm && (!['away', 'stay', 'night'].includes(x.level) || !auInt(x.warn_min, 0, 255) || x.confirmed === true))) return auError(400, 'bad_request');
-        then.push(arm ? auArm(x.level, x.warn_min, nameOf(s.user), {partition: x.partition, bypass: x.bypass === true})
+        // the installer's Arm acts as the system master; saved_by keeps who set it up (BL-224)
+        const installer = auIsInstaller(s);
+        then.push(arm ? auArm(x.level, x.warn_min, installer ? auMaster() : nameOf(s.user), {partition: x.partition, bypass: x.bypass === true, saved_by: installer ? nameOf(s.user) : null})
           : auDisarm(nameOf(s.user), {partition: x.partition, confirmed: x.confirmed === true}));
+        continue;
+      }
+      if (x && AU_PANEL.includes(x.kind)) { // parse_panel_action: its own fields, in the model's ranges (BL-224)
+        const bool = (v, need = false) => need ? typeof v === 'boolean' : v === undefined || v === null || typeof v === 'boolean';
+        if (x.kind === 'output') {
+          if (!auInt(x.output, 1, 4) || !['on', 'off'].includes(x.action) || !auInt(x.off_after ?? 0, 0, 1440) || (x.off_after && x.action !== 'on')) return auError(400, 'bad_request');
+          then.push({kind: 'output', output: x.output, action: x.action, off_after: x.off_after || 0});
+        } else if (x.kind === 'notify') then.push({kind: 'notify'});
+        else {
+          if (!auInt(x.partition, 1, 4) || (x.kind === 'remind' && !bool(x.notify)) || (x.kind === 'chime' && !bool(x.on, true))) return auError(400, 'bad_request');
+          then.push(x.kind === 'remind' ? {kind: 'remind', partition: x.partition, notify: x.notify === true}
+            : x.kind === 'chime' ? {kind: 'chime', partition: x.partition, on: x.on} : {kind: 'still_armed', partition: x.partition});
+        }
         continue;
       }
       if (!x || x.kind !== 'device' || !['ha', 'zigbee', 'zwave'].includes(x.source) || typeof x.ref !== 'string' || !x.ref.length ||
@@ -842,9 +899,10 @@ function automationsPost(s, body) {
     if (!at && S.rules.length >= AU_MAX) return auError(409, 'full');
     const rule = {slot: at ? at.slot : 0, uid: at ? at.uid : S.nextUid, on: a.on !== false, record: 'ok',
       when: {kind: w.kind, partitions: (w.partitions || []).filter(p => auInt(p, 1, 4)), levels: (w.levels || []).filter(l => ['away', 'stay', 'night'].includes(l)),
-        zone: Number(w.zone) || 0, minute: w.kind === 'time' ? w.minute : 0, days: w.kind === 'time' ? days : [], window: w.window || null},
+        zone: Number(w.zone) || 0, minute: w.kind === 'time' ? w.minute : 0, days: w.kind === 'time' ? days : [], window: w.window || null,
+        ...(w.kind === 'trouble' ? {trouble: w.trouble || 'any'} : {})},
       then, status: at ? at.status : auStatusNone()};
-    const why = auCheck(rule);
+    const why = auCheck(rule, auIsInstaller(s));
     if (why) return auError(409, ...why);
     if (at) S.rules[S.rules.indexOf(at)] = rule;
     else {
@@ -874,7 +932,14 @@ function automationsPost(s, body) {
   // try: Try it now runs it once as the runner would with the option on, and says why it can't (AUT-009)
   if (body.gen !== S.gen) return auError(409, 'changed');
   if (at.record !== 'ok') return auError(409, 'newer');
-  if (at.then.some(auAlarmAct)) return auError(409, 'action_not_allowed', 0); // nothing arms without its warning
+  if (at.then.some(a => auAlarmAct(a) || AU_TIME_ONLY.includes(a.kind))) return auError(409, 'action_not_allowed', 0); // nothing arms without its warning
+  if (at.then.some(a => AU_PANEL.includes(a.kind))) { // BL-224: an output, the chime, a notification run at once
+    const note = at.then.findIndex(a => a.kind === 'notify');
+    const out = at.then.find(a => a.kind === 'output');
+    at.status = note >= 0 && !auNotify().length ? {...auStatusNone(), result: 'skipped', tried: true, at: Date.now(), action: null, device: null, reason: 'no_service'}
+      : {...auStatusNone(), result: 'tried', tried: true, at: Date.now(), action: out ? out.action : null, device: out ? auOutputs.find(o => o.number === out.output)?.name || '' : null};
+    return [200, {result: 'tried', gen: S.gen, status: auClone(at.status)}];
+  }
   const missing = at.then.findIndex(a => !auDev(a.source, a.ref));
   if (missing >= 0) return auError(409, 'missing_device', missing);
   if (!auLessSecure() && at.then.some(a => AU_LESS(auDev(a.source, a.ref).kind, a.action))) { // nothing was sent (D25)
@@ -1347,7 +1412,9 @@ function status(s) {
     access: {...Object.fromEntries(['users', 'shared', 'system', 'installer'].map(k => [k, ACC[k](s.authority)])), arm: s.authority !== 'installer'}, // USR-001
     config_revision: alarm.revision, program: false, troubles: live.troubles, trouble_count: troubleList(s).length, trouble_sig: troubleSig(troubleList(s)), locked: isLocked(), updating: updating(),
     // An automation's coming arming or its hold, on the partitions this person sees (panel_web.c status, D19, D27).
-    ...(automationsOn ? {automation_warnings: auWarningsFor(viewerPartitions(s).map(p => p.number))} : {}),
+    ...(automationsOn ? {automation_warnings: auWarningsFor(viewerPartitions(s).map(p => p.number)),
+      automation_reminders: auRemindersFor(viewerPartitions(s).map(p => p.number))} : {}), // BL-224: a reminder's note
+
     // The partitions this person sees, as the firmware: all for the installer and the system master.
     partitions: viewerPartitions(s).map(c => {
       const p = parts[c.number - 1], faults = alarm.zones.filter(z => z.type && z.partition === p.number && live.open.has(z.number) && !p.bypass.has(z.number)).length;
@@ -2045,6 +2112,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET') return apiGet(p, s, res, url.searchParams);
   // For tests only (the firmware has none): the session's last password is long ago, or just now.
   if (req.method === 'POST' && p === 'mock/automation-warning') { auSetWarning((await readBody(req)).state || ''); return send(res, 200, {ok: true}); }
+  if (req.method === 'POST' && p === 'mock/automation-reminder') { auSetReminder(!!(await readBody(req)).on); return send(res, 200, {ok: true}); }
   if (req.method === 'POST' && p === 'mock/keypad-event') { keypadEvent((await readBody(req)).event); return send(res, 200, {ok: true}); }
   if (req.method === 'POST' && p === 'mock/confirmation') { s.confirmed = (await readBody(req)).recent ? Date.now() : 0; return send(res, 200, {ok: true}); }
   if (req.method === 'POST' && p === 'backup') { // CFG-005: the installer, a recent password, a backup password

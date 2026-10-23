@@ -47,7 +47,7 @@ lv_obj_t * list_row_create(lv_obj_t * parent, const char * glyph, lv_color_t col
         alarm_ui_run_20(&style_list_row_level, lv_pct(100), 8, RADIUS_FULL);
         alarm_ui_run_6(&style_list_row_level, COLOR_PRESSED, (255 * 100 / 100));
         lv_style_set_margin_top(&style_list_row_level, SPACE_SM);
-        alarm_ui_run_63(&style_list_row_level_indicator, RADIUS_FULL, (255 * 100 / 100));
+        alarm_ui_run_64(&style_list_row_level_indicator, RADIUS_FULL, (255 * 100 / 100));
 
         static const uint16_t style_ids[] = {
             ALARM_UI_STYLE_LIST_ROW_LIST_ROW,

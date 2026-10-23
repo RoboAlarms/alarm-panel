@@ -502,6 +502,8 @@ typedef struct {
 typedef void (*ui_call_done_fn)(const ui_call_t *c);
 bool ui_call_command(const alarm_cmd_t *cmd, ui_call_done_fn done, uintptr_t tag);
 bool ui_call_authenticate(const char *code, ui_call_done_fn done, uintptr_t tag);
+/* Installer mode with the installer code (on a keypad its alarm panel's, BL-223). */
+bool ui_call_program_enter(const char *code, ui_call_done_fn done, uintptr_t tag);
 bool ui_call_change_code(const char *current, const char *new_code, ui_call_done_fn done,
                          uintptr_t tag);
 bool ui_call_partition(uint8_t partition, bool activity, ui_call_done_fn done, uintptr_t tag);
@@ -604,6 +606,9 @@ void ui_pick_sheet_dim(int32_t index);
 /* After ui_pick_sheet: what its close button (Cancel) does, once the sheet is gone; nothing after
  * a pick. A sheet that opened it from another (the arm sheet's partition) goes back to it. */
 void ui_pick_sheet_on_cancel(ui_confirm_fn fn);
+/* After ui_pick_sheet: a quiet grey paragraph after the choices, nothing to pick ("Lights, locks
+ * and other devices show here once one is connected.", docs/features/41 BL-224). */
+void ui_pick_sheet_tail(const char *text);
 /* The sheets' note (subject_sheet_note) holds more than the other string subjects' 127 bytes: a
  * confirmation may join two sentences of up to 95 bytes each, as a Zigbee device's Remove and
  * Forget do (I18N-023). ui_sheet_note_init gives it this buffer, before any screen binds it. */
@@ -1066,6 +1071,21 @@ bool ui_link_keypad(void);  /* a keypad: the alarm panel's pages are left out (t
 /* LINK-025: 10 minutes without system communication; Wi-Fi, Software update and "Make it a
  * stand-alone panel" open without a code. */
 bool ui_link_maintenance(void);
+/* A keypad's alarm panel's pages (BL-223): whether the alarm panel serves every group in areas
+ * (UI_LINK_AREA_*; the last it said while the link is down), whether the link is down (its pages
+ * are dimmed), whether this keypad holds the alarm panel's installer mode, and who holds it
+ * (UI_LINK_HOLDER_* or a keypad number; on an alarm panel, the keypad holding its own). */
+bool ui_link_remote(uint32_t areas);
+bool ui_link_remote_down(void);
+bool ui_link_remote_installer(void);
+uint8_t ui_link_remote_holder(void);
+/* The Settings list's lines for the role (ui_settings.c), and an open page of the alarm panel's
+ * read again after its answers changed, the link went or came back. */
+void ui_settings_gate(void);
+/* Where the Installer page sits in Settings' pages: under About on an alarm panel (BL-189), a
+ * section of its own on a keypad (BL-223). */
+unsigned ui_installer_root(void);
+void ui_settings_remote_changed(void);
 /* A keypad that can't show the alarm panel's state (connecting, lost, not paired): arming waits. */
 bool ui_link_holds_home(void);
 /* Software update opens without a code: LINK-025's maintenance, or a keypad that can't read its

@@ -34,7 +34,7 @@ lv_obj_t * screen_wizard_create(void)
         alarm_ui_run_40(wiz_side, COLOR_LINE);
         lv_obj_set_style_pad_all(wiz_side, 48, 0);
         alarm_ui_run_1(wiz_side, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_49(wiz_side, SPACE_LG, "wiz_side");
+        alarm_ui_run_46(wiz_side, SPACE_LG, "wiz_side");
         lv_obj_t * wiz_steps = alarm_ui_run_0(wiz_side, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         alarm_ui_run_1(wiz_steps, LV_FLEX_FLOW_ROW);
         lv_obj_set_style_pad_column(wiz_steps, SPACE_SM, 0);
@@ -110,7 +110,7 @@ lv_obj_t * screen_wizard_create(void)
         lv_obj_set_flag(wiz_shade, LV_OBJ_FLAG_SCROLLABLE, false);
         lv_obj_set_style_border_width(wiz_shade, 0, 0);
         alarm_ui_run_22(wiz_shade, 0, COLOR_BG, (255 * 100 / 100));
-        alarm_ui_run_70(wiz_shade, COLOR_BG, LV_GRAD_DIR_VER, (255 * 0 / 100), (255 * 100 / 100), 255);
+        alarm_ui_run_71(wiz_shade, COLOR_BG, LV_GRAD_DIR_VER, (255 * 0 / 100), (255 * 100 / 100), 255);
         lv_obj_set_name(wiz_shade, "wiz_shade");
 
         lv_obj_t * wiz_pad_area = alarm_ui_run_31(wiz_main);
@@ -148,7 +148,7 @@ lv_obj_t * screen_wizard_create(void)
         alarm_ui_run_54(wiz_next, &style_button, 0, &style_button_primary, 0);
         alarm_ui_run_52(wiz_next, &style_button_tone_pressed, LV_STATE_PRESSED, &style_disabled, &subject_wiz_next_on, 0);
         alarm_ui_run_10(wiz_next, ui_on_wizard_next, "wiz_next");
-        alarm_ui_run_62(wiz_next, &subject_wiz_next);
+        alarm_ui_run_63(wiz_next, &subject_wiz_next);
 
         lv_obj_t * lv_label_5 = alarm_ui_run_23(wiz_next, "\xEE\x81\xAF");
         lv_obj_set_style_text_font(lv_label_5, icons_20, 0);
@@ -168,7 +168,7 @@ lv_obj_t * screen_wizard_create(void)
         alarm_ui_run_9(wiz_toast, COLOR_PRESSED, 0, (255 * 100 / 100), RADIUS_FULL);
         alarm_ui_run_40(wiz_toast, COLOR_TOAST_LINE);
         alarm_ui_run_26(wiz_toast, SPACE_XL, SPACE_XL);
-        alarm_ui_run_71(wiz_toast, 12, 12);
+        alarm_ui_run_72(wiz_toast, 12, 12);
         alarm_ui_run_1(wiz_toast, LV_FLEX_FLOW_ROW);
         alarm_ui_run_3(wiz_toast);
         lv_obj_bind_flag_if_eq(wiz_toast, &subject_toast_visible, LV_OBJ_FLAG_HIDDEN, 0);

@@ -49,7 +49,7 @@ bool plink_dec_wifi(const uint8_t *p, size_t n, uint32_t req, plink_wifi_t *out)
 /* Capability bits (the caps of PAIR_REQ, PAIR_COMMIT, HELLO and WELCOME; LINK-017, LINK-043). A
  * panel offers them at run time (plink_master_init, plink_keypad_init); a session keeps the bits
  * both sides offered, and a type or a field of a capability goes only in a session with its bit.
- * Never renumbered or reused; the next free bit is 0x0010. */
+ * Never renumbered or reused; the next free bit is 0x0080. */
 #define PLINK_CAP_FW    0x0001u /* updates through the link: FW_INFO..FW_PAGE */
 #define PLINK_CAP_HOME  0x0002u /* Smart Home on keypads: DEV_LIST_REQ..DEV_ACK */
 #define PLINK_CAP_PREFS 0x0004u /* a keypad's settings: PREFS, PREFS_REQ, PREFS_SET, HEARTBEAT's
@@ -57,10 +57,11 @@ bool plink_dec_wifi(const uint8_t *p, size_t n, uint32_t req, plink_wifi_t *out)
 #define PLINK_CAP_WIFI  0x0008u /* authenticated, requested enrollment credentials: WIFI_REQ, WIFI */
 #define PLINK_CAP_IO    0x0010u /* a keypad's own wired inputs as the master's zones: IO_STATE */
 #define PLINK_CAP_AUTO  0x0020u /* an automation's arming warnings on keypads: AUTO_WARN, PUT_OFF */
+#define PLINK_CAP_RB    0x0040u /* the remote backend: RB_CALL, RB_ANSWER, RB_MORE, RB_GRANT */
 /* What this firmware's codecs know: an offer is masked with it, so a peer's unknown bit is never
  * common. */
 #define PLINK_CAPS_KNOWN (PLINK_CAP_FW | PLINK_CAP_HOME | PLINK_CAP_PREFS | PLINK_CAP_WIFI | \
-                          PLINK_CAP_IO | PLINK_CAP_AUTO)
+                          PLINK_CAP_IO | PLINK_CAP_AUTO | PLINK_CAP_RB)
 
 /* IO_STATE (LINK-055, keypad -> master, PLINK_CAP_IO): the keypad's wired terminals as they read
  * now, so the master can bind its zones to them (zone source ZSRC_KEYPAD). count u8, rec_len u8,
@@ -112,6 +113,62 @@ typedef struct {
 } plink_auto_warn_t;
 bool plink_enc_auto_warn(const plink_auto_warn_t *m, uint8_t *out, size_t cap, size_t *len);
 bool plink_dec_auto_warn(const uint8_t *p, size_t len, plink_auto_warn_t *m);
+
+/* The remote backend (LINK-058; docs/features/11 "The master's settings and installer menu on
+ * keypads"): a keypad's call of its master's ui_backend_t (components/core/ui_remote: the call
+ * ids and their arguments' and answers' bytes, opaque here), in parts of what fits a frame.
+ *   RB_CALL   K->M  req u32 (not 0), call u16, offset u32, total u32, len u16, len bytes: the
+ *                   arguments' bytes [offset, offset + len) of total, sent in order from 0
+ *   RB_ANSWER M->K  req u32, status u8, total u32, offset u32, len u16, len bytes: the answer's
+ *                   bytes from offset (status not 0: total and len 0)
+ *   RB_MORE   K->M  req u32, offset u32, max u16: the answer's bytes from offset
+ *   RB_GRANT  M->K  grant section (user u8, authority u8, partitions u8, installer u8,
+ *                   idle_left_s u16), holder section (installer mode's source kind u8, id u16:
+ *                   kind 0 when nobody holds it), areas u32 (the call groups this master serves)
+ * RB_CALL is PLINK_RB_CALL_HDR + len bytes and RB_ANSWER PLINK_RB_ANSWER_HDR + len; an encoder
+ * copies the data in, a decoder points at it inside the payload. */
+#define PLINK_RB_CALL_HDR   16u /* RB_CALL's bytes before its data */
+#define PLINK_RB_ANSWER_HDR 15u /* RB_ANSWER's */
+/* The statuses the link answers by itself (the rest are ui_remote's; the same numbers). */
+#define PLINK_RB_OK         0u
+#define PLINK_RB_BUSY       4u  /* a call of this keypad's already runs, or another's upload */
+#define PLINK_RB_TOO_BIG    7u
+#define PLINK_RB_GONE       8u  /* the answer isn't kept any more: call again */
+#define PLINK_RB_NO_ANSWER  10u /* the keypad's own: no answer came in time */
+typedef struct {
+    uint32_t req;
+    uint16_t call;
+    uint32_t offset, total;
+    uint16_t len;
+    const uint8_t *data; /* len bytes (decoded: inside the payload) */
+} plink_rb_call_t;
+typedef struct {
+    uint32_t req;
+    uint8_t status;
+    uint32_t total, offset;
+    uint16_t len;
+    const uint8_t *data;
+} plink_rb_answer_t;
+typedef struct {
+    uint32_t req, offset;
+    uint16_t max;
+} plink_rb_more_t;
+typedef struct {
+    uint8_t user, authority, partitions;
+    bool installer;
+    uint16_t idle_left_s;
+    uint8_t holder_kind; /* alarm_source_kind_t of installer mode's holder, 0: nobody */
+    uint16_t holder_id;
+    uint32_t areas;
+} plink_rb_grant_t;
+bool plink_enc_rb_call(const plink_rb_call_t *m, uint8_t *out, size_t cap, size_t *len);
+bool plink_dec_rb_call(const uint8_t *p, size_t len, plink_rb_call_t *m);
+bool plink_enc_rb_answer(const plink_rb_answer_t *m, uint8_t *out, size_t cap, size_t *len);
+bool plink_dec_rb_answer(const uint8_t *p, size_t len, plink_rb_answer_t *m);
+bool plink_enc_rb_more(const plink_rb_more_t *m, uint8_t *out, size_t cap, size_t *len);
+bool plink_dec_rb_more(const uint8_t *p, size_t len, plink_rb_more_t *m);
+bool plink_enc_rb_grant(const plink_rb_grant_t *m, uint8_t *out, size_t cap, size_t *len);
+bool plink_dec_rb_grant(const uint8_t *p, size_t len, plink_rb_grant_t *m);
 
 #define PLINK_NAME_MAX  47u /* names on the wire, bytes without the NUL */
 #define PLINK_FW_MAX    31u

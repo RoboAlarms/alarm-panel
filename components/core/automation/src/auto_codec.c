@@ -24,6 +24,8 @@ enum {
     ID_WIN_FROM = 0x16,
     ID_WIN_TO = 0x17,
     /* 0x18 reserved: a zone bitmap (OUT-005); unknown here, so NEWER */
+    ID_TROUBLE = 0x19, /* u8: a trouble trigger's auto_trouble_t (BL-224); an older firmware
+                        * already loads the trigger kind as NEWER */
     ID_ACT1 = 0x20,
     ID_ACT2 = 0x30,
     ID_IGNORABLE = 0x80, /* 0x80 itself reserved: a typed name */
@@ -34,6 +36,9 @@ enum {
                            * open zone instead, never arms less protected */
     ID_CHANGED_AT = 0x83, /* u32 epoch seconds, when the sentence last changed (D30). An older
                            * firmware shows no "changed since": words only */
+    ID_SAVED_BY = 0x84,   /* u8: who saved it when that isn't made_by (BL-224: the installer, for
+                           * an Arm that acts as the system master). An older firmware shows "Set
+                           * up by" the system master: words only */
 };
 
 /* Action sub-ids: ID_ACT1 / ID_ACT2 + n. */
@@ -51,7 +56,9 @@ enum {
     SUB_ARM_PARTITION = 0xA,
     SUB_ARM_LEVEL = 0xB,
     SUB_WARN_MIN = 0xC,
-    SUB_LAST = SUB_WARN_MIN,
+    SUB_OUTPUT = 0xD,   /* BL-224: AUTO_ACT_OUTPUT's wired output */
+    SUB_OPTION = 0xE,   /* BL-224: a reminder's notification, a chime's on */
+    SUB_LAST = SUB_OPTION,
 };
 
 #define FLAG_OFF 0x01u
@@ -133,6 +140,8 @@ static void put_action(writer_t *w, uint8_t base, const auto_action_t *a)
     put_u8(w, (uint8_t)(base + SUB_ARM_PARTITION), a->partition);
     put_u8(w, (uint8_t)(base + SUB_ARM_LEVEL), a->arm_level);
     put_u8(w, (uint8_t)(base + SUB_WARN_MIN), a->warn_min);
+    put_u8(w, (uint8_t)(base + SUB_OUTPUT), a->output);
+    put_u8(w, (uint8_t)(base + SUB_OPTION), a->option);
 }
 
 size_t auto_encode(const auto_rule_t *r, uint8_t *out, size_t cap)
@@ -154,6 +163,7 @@ size_t auto_encode(const auto_rule_t *r, uint8_t *out, size_t cap)
     put_u8(&w, ID_DAYS, r->when.days);
     put_u16(&w, ID_WIN_FROM, r->when.win_from);
     put_u16(&w, ID_WIN_TO, r->when.win_to);
+    put_u8(&w, ID_TROUBLE, r->when.trouble);
     uint8_t bypass = 0u;
     for (unsigned i = 0; i < r->n; i++) {
         put_action(&w, i == 0u ? (uint8_t)ID_ACT1 : (uint8_t)ID_ACT2, &r->then[i]);
@@ -168,6 +178,7 @@ size_t auto_encode(const auto_rule_t *r, uint8_t *out, size_t cap)
                               (uint8_t)((t >> 16) & 0xFFu), (uint8_t)(t >> 24)};
         put(&w, ID_CHANGED_AT, b, 4u);
     }
+    put_u8(&w, ID_SAVED_BY, r->saved_by);
     /* the ignorable fields this firmware doesn't know, as stored (whole TLVs) */
     if (w.ok && r->keep_len > 0u) {
         if (w.len + r->keep_len > cap) {
@@ -243,8 +254,11 @@ static auto_rec_t get_action(auto_action_t *a, unsigned sub, const uint8_t *v, s
     switch (sub) {
     case SUB_KIND:
         a->kind = b;
-        return (b == AUTO_ACT_DEVICE || b == AUTO_ACT_ARM || b == AUTO_ACT_DISARM) ? AUTO_REC_OK
-                                                                                  : AUTO_REC_NEWER;
+        return (b == AUTO_ACT_DEVICE || b == AUTO_ACT_ARM || b == AUTO_ACT_DISARM ||
+                b == AUTO_ACT_OUTPUT || b == AUTO_ACT_REMIND || b == AUTO_ACT_CHECK_ARMED ||
+                b == AUTO_ACT_CHIME || b == AUTO_ACT_NOTIFY)
+                   ? AUTO_REC_OK
+                   : AUTO_REC_NEWER;
     case SUB_SOURCE:
         a->source = b;
         return b <= AUTO_SOURCE_LAST ? AUTO_REC_OK : AUTO_REC_NEWER;
@@ -265,6 +279,12 @@ static auto_rec_t get_action(auto_action_t *a, unsigned sub, const uint8_t *v, s
         return AUTO_REC_OK;
     case SUB_WARN_MIN:
         a->warn_min = b;
+        return AUTO_REC_OK;
+    case SUB_OUTPUT:
+        a->output = b;
+        return AUTO_REC_OK;
+    case SUB_OPTION:
+        a->option = b;
         return AUTO_REC_OK;
     default:
         return AUTO_REC_NEWER; /* a sub-id this firmware doesn't know */
@@ -303,6 +323,7 @@ static auto_rec_t get_field(auto_rule_t *r, unsigned id, const uint8_t *v, size_
     case ID_PARTITIONS:
     case ID_LEVELS:
     case ID_DAYS:
+    case ID_TROUBLE:
         break;
     default:
         return AUTO_REC_NEWER; /* a critical id this firmware doesn't know */
@@ -327,6 +348,9 @@ static auto_rec_t get_field(auto_rule_t *r, unsigned id, const uint8_t *v, size_
     case ID_LEVELS:
         r->when.levels = b;
         return AUTO_REC_OK;
+    case ID_TROUBLE:
+        r->when.trouble = b;
+        return b <= AUTO_TROUBLE_LAST ? AUTO_REC_OK : AUTO_REC_NEWER;
     default: /* ID_DAYS */
         r->when.days = b;
         return AUTO_REC_OK;
@@ -372,6 +396,10 @@ auto_rec_t auto_decode(const uint8_t *in, size_t len, auto_rule_t *out)
 
         if (id == ID_BYPASS && n == 1u) {
             bypass = v[0];
+            continue;
+        }
+        if (id == ID_SAVED_BY && n == 1u) {
+            out->saved_by = v[0];
             continue;
         }
         if (id == ID_CHANGED_AT && n == 4u) {

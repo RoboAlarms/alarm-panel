@@ -99,6 +99,12 @@ typedef enum {
     PLINK_T_IO_STATE = 0x3D,
     /* An automation's arming warnings on keypads (PLINK_CAP_AUTO, LINK-056). */
     PLINK_T_AUTO_WARN = 0x3E,
+    /* The remote backend: a keypad calls its master's settings and installer menu
+     * (PLINK_CAP_RB, LINK-058). */
+    PLINK_T_RB_CALL = 0x3F,
+    PLINK_T_RB_ANSWER = 0x40,
+    PLINK_T_RB_MORE = 0x41,
+    PLINK_T_RB_GRANT = 0x42,
 } plink_type_t;
 
 /* What this firmware knows about a type: known, sealed, and which side sends it. */

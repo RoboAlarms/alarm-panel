@@ -71,7 +71,7 @@ lv_obj_t * device_level_create(lv_obj_t * parent, int32_t value)
         lv_slider_set_max_value(level, 100);
         lv_slider_set_value(level, value, LV_ANIM_OFF);
         alarm_ui_run_16(level, &style_device_level, 0, &style_device_level_fill, LV_PART_INDICATOR);
-        alarm_ui_run_67(level, &style_device_level_edge, LV_PART_KNOB, "level");
+        alarm_ui_run_68(level, &style_device_level_edge, LV_PART_KNOB, "level");
 
         lv_obj_t * lv_label_0 = lv_label_create(box_0);
         lv_obj_set_align(lv_label_0, LV_ALIGN_LEFT_MID);

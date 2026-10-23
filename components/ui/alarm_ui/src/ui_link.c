@@ -113,6 +113,38 @@ bool ui_link_keypad(void)
     return L.have && L.info.role == UI_LINK_ROLE_KEYPAD;
 }
 
+/* ---- its alarm panel's pages (BL-223, LINK-057..LINK-063) ---- */
+
+static uint32_t s_remote_areas; /* the last the alarm panel said: kept while the link is down */
+
+bool ui_link_remote(uint32_t areas)
+{
+    if (!ui_link_keypad()) {
+        return false;
+    }
+    if (L.info.state == UI_LINK_ONLINE && L.info.remote_areas != 0u) {
+        /* (none while a new session's grant is on its way: the pages stay, and so does installer
+         * mode; an older alarm panel never says any) */
+        s_remote_areas = L.info.remote_areas;
+    }
+    return areas != 0u && (s_remote_areas & areas) == areas;
+}
+
+bool ui_link_remote_down(void)
+{
+    return ui_link_keypad() && L.info.state != UI_LINK_ONLINE;
+}
+
+bool ui_link_remote_installer(void)
+{
+    return ui_link_keypad() && L.info.state == UI_LINK_ONLINE && L.info.remote_installer;
+}
+
+uint8_t ui_link_remote_holder(void)
+{
+    return L.have ? L.info.remote_holder : UI_LINK_HOLDER_NONE;
+}
+
 bool ui_link_maintenance(void)
 {
     return ui_link_keypad() && L.info.maintenance;
@@ -1769,9 +1801,21 @@ void ui_link_tick(void)
                          now.panic_pending != was->panic_pending || now.device != was->device ||
                          now.home != was->home || now.since_epoch_ms != was->since_epoch_ms ||
                          strcmp(now.master_name, was->master_name) != 0;
+    /* the alarm panel's pages: what it serves, who holds installer mode, a newer answer */
+    const bool remote_moved = now.remote_areas != was->remote_areas ||
+                              now.remote_installer != was->remote_installer ||
+                              now.remote_holder != was->remote_holder;
+    const bool remote_gen = now.remote_gen != was->remote_gen || now.state != was->state;
     L.have = have;
     L.info = now;
     home_partition_follow();
+    if (remote_moved) {
+        ui_settings_gate(); /* the list's lines */
+        ui_refresh(true);   /* the banner's words */
+    }
+    if (ui_link_keypad() && (remote_moved || remote_gen)) {
+        ui_settings_remote_changed();
+    }
     if (changed) {
         subjects_follow();
         ui_refresh(true); /* Home's card, the status bar's banner */

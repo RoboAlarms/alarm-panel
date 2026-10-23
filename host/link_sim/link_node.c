@@ -16,7 +16,7 @@
 #define LINK_FW          "link_sim 1"
 #define LINK_TZ          "UTC0"
 /* What both sides offer (LINK-043): Smart Home and settings on keypads (BL-216). */
-#define LINK_CAPS        (PLINK_CAP_HOME | PLINK_CAP_PREFS)
+#define LINK_CAPS        (PLINK_CAP_HOME | PLINK_CAP_PREFS | PLINK_CAP_RB)
 /* A keypad's announcements' fields: the PC keypad has no voice, so it doesn't take them (as a
  * panel built without one). */
 #define LINK_PREFS_VOICE                                                                           \
@@ -26,6 +26,13 @@
 _Static_assert(ALARM_CODE_HASH_LEN == PLINK_SHA256_LEN, "the code hash is one SHA-256");
 
 /* ---- small helpers ------------------------------------------------------------------------- */
+
+void link_io_say(const link_io_t *io, const char *line)
+{
+    if (io->say != NULL) {
+        io->say(io->say_ctx, line);
+    }
+}
 
 static void say(const link_io_t *io, const char *fmt, ...) LINK_PRINTF(2, 3);
 static void say(const link_io_t *io, const char *fmt, ...)
@@ -645,6 +652,9 @@ static void run_one(link_master_t *v, uint64_t now, link_run_t *r)
         rc = alarm_engine_authenticate(&v->eng, &src, r->cmd.cmd.code, r->cmd.cmd.partition, now,
                                        &user);
         cr.user = user;
+        if (rc == ALARM_OK) {
+            link_mrb_auth(v, r->device, user, now); /* the code opens its settings (LINK-059) */
+        }
         snprintf(what, sizeof(what), "code check");
         break;
     }
@@ -1373,6 +1383,7 @@ bool link_master_init(link_master_t *v, const plink_crypto_t *c, const link_io_t
     port.note = m_note;
     port.dev_run = m_dev_run;
     port.prefs_done = m_prefs_done;
+    port.rb_run = link_mrb_run; /* BL-223 */
     /* Updates through the link (link_fw.h): offered with the PC's stand-in for panel_ota. */
     port.fw_read = io->mfw != NULL ? link_mfw_read : NULL;
 
@@ -1401,6 +1412,7 @@ bool link_master_init(link_master_t *v, const plink_crypto_t *c, const link_io_t
     snprintf(id, sizeof(id), "%s", panel_id != NULL ? panel_id : "0ac5e1");
     plink_master_init(&v->m, c, &port, have, name != NULL ? name : "PC master", id,
                       (uint16_t)(LINK_CAPS | (io->mfw != NULL ? PLINK_CAP_FW : 0u)), now_ms);
+    link_mrb_attach(v);
     const unsigned count = have != NULL ? rec.count : 0u;
     plink_wipe(&rec, sizeof(rec));
     plink_master_net(&v->m, now_ms, true);
@@ -1437,6 +1449,7 @@ void link_master_tick(link_master_t *v, uint64_t now_ms)
     }
     house_tick(v, now_ms);
     hc_tick(&v->hc, now_ms);
+    link_mrb_tick(v, now_ms); /* the keypads' grants (BL-223) */
     if (plink_master_next(&v->m) <= now_ms) {
         plink_master_tick(&v->m, now_ms);
     }
@@ -1816,6 +1829,7 @@ void link_keypad_init(link_keypad_t *v, const plink_crypto_t *c, const link_io_t
                       io->kfw != NULL ? io->kfw->running : LINK_FW, now_ms);
     plink_wipe(&rec, sizeof(rec));
     plink_keypad_home_attach(&v->k, &v->mirror); /* before the first tick: HOME is offered */
+    link_krb_attach(v);                          /* ... and RB with its buffers (BL-223) */
     if (io->kfw != NULL) {
         link_kfw_boot(v, now_ms); /* its facts, last result, master's version, trial */
     }

@@ -62,7 +62,7 @@ lv_obj_t * device_stepper_create(lv_obj_t * parent, const char * label, const ch
         lv_obj_set_style_pad_column(box_1, SPACE_SM, 0);
         lv_obj_t * what_label = lv_label_create(box_1);
         lv_label_set_text(what_label, label);
-        alarm_ui_run_47(what_label, "what_label");
+        alarm_ui_run_48(what_label, "what_label");
 
         lv_obj_t * value_label = lv_label_create(box_1);
         lv_label_set_text(value_label, value);

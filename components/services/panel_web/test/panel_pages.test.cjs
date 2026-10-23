@@ -68,7 +68,8 @@ function browser(base) {
 
 const ARGS = {integration: ['mqtt', 'ntfy', 'pushover', 'home_assistant'], binding: ['1', '4', '50'], zones: ['', 'setup', '1'],
   'zone-setup': ['', '1', '3', '4', '5', '50', 'new'], 'zigbee-device': ['1', '4', '5', '6', '7', '8', '99'],
-  automations: ['', 'new', 'new/door-light', 'new/lock-away', 'new/alarm-lights', 'new/leak-water', 'new/scratch', 'new/arm-night', 'new/nothing', '1', '2', '3', '4', '9']};
+  automations: ['', 'new', 'new/door-light', 'new/lock-away', 'new/alarm-lights', 'new/leak-water', 'new/scratch', 'new/bedtime', 'new/morning', 'new/remind',
+    'new/still-armed', 'new/open', 'new/door', 'new/chime', 'new/output', 'new/nothing', '1', '2', '3', '4', '9']};
 // What each role finds in the menu: the panel's table, page by page.
 const EXPECTED = {
   installer: ['people', 'integrations', 'automations', 'network', 'walk', 'zone-setup', 'partitions', 'zwave', 'zwaveradio', 'zigbee', 'zigbee-device', 'options', 'access', 'updates', 'developer'],
@@ -3816,7 +3817,7 @@ test('UI-023: the state lines are read again every 2 s at most, and written only
 test('AUT-011 D30: GET automations sends an arm and a disarm with who set them up; a save reads back the same', async () => {
   await withServer('master', {MOCK_AUTOMATIONS: 'arm'}, async server => {
     const list = await auGet(server);
-    assert.deepEqual(list.automations[4].then, [{kind: 'arm', partition: 1, level: 'night', warn_min: 5, bypass: false, made_by: 'Alex'}]);
+    assert.deepEqual(list.automations[4].then, [{kind: 'arm', partition: 1, level: 'night', warn_min: 5, bypass: false, made_by: 'Alex', saved_by: null}]);
     assert.deepEqual(list.automations[9].then.map(x => x.kind), ['disarm', 'device'], 'a Disarm, then one device action');
     assert.deepEqual(list.automations.map(x => x.record), Array(10).fill('ok'), 'never "newer" any more');
     assert.deepEqual(list.warnings, []);
@@ -3824,12 +3825,12 @@ test('AUT-011 D30: GET automations sends an arm and a disarm with who set them u
     const r = await auPost(server, {action: 'save', slot: 0, gen: 1, automation: {when: {kind: 'disarmed'},
       then: [{kind: 'arm', partition: 1, level: 'away', warn_min: 15, bypass: true, made_by: 'Sam'}]}});
     assert.deepEqual(await r.json(), {result: 'saved', gen: 2, slot: 11});
-    assert.deepEqual((await auGet(server)).automations[10].then, [{kind: 'arm', partition: 1, level: 'away', warn_min: 15, bypass: true, made_by: 'Alex'}]);
+    assert.deepEqual((await auGet(server)).automations[10].then, [{kind: 'arm', partition: 1, level: 'away', warn_min: 15, bypass: true, made_by: 'Alex', saved_by: null}]);
   });
 });
 
 test('AUT-011 AUT-015 AUT-016 D29 D31: the server refuses what the validator refuses, in the page\'s codes', async () => {
-  await withServer('installer', {}, async server => {
+  await withServer('master', {}, async server => {
     const save = async (then, when = {kind: 'time', minute: 600, days: ['mon']}) => {
       const r = await auPost(server, {action: 'save', slot: 0, gen: 1, automation: {when, then}});
       return [r.status, await r.json()];
@@ -3850,12 +3851,16 @@ test('AUT-011 AUT-015 AUT-016 D29 D31: the server refuses what the validator ref
     assert.deepEqual(await save([disarm()], {kind: 'zone_opened', zone: 1}), [409, {error: 'needs_confirm', index: 0}], 'D24');
     assert.deepEqual(await save([disarm({confirmed: true})], {kind: 'zone_opened', zone: 1}), [200, {result: 'saved', gen: 2, slot: 5}]);
     assert.deepEqual(await save([disarm(), light]), [409, {error: 'changed'}], 'the old gen');
+  });
+  // The installer turns the option off (System options); an installer's Disarm is refused before it (BL-187)
+  await withServer('installer', {}, async server => {
+    const arm = (extra = {}) => ({kind: 'arm', partition: 1, level: 'night', warn_min: 5, ...extra});
     const a = await auContext(server);
     await a.run('loadAlarm().then(() => applyAlarm({options: {auto_less_secure: false}}))');
-    const off = async then => { const r = await auPost(server, {action: 'save', slot: 0, gen: 2, automation: {when: {kind: 'time', minute: 600, days: ['mon']}, then}}); return [r.status, await r.json()]; };
-    assert.deepEqual(await off([disarm()]), [409, {error: 'less_secure_off', index: 0}], 'D25');
+    const off = async then => { const r = await auPost(server, {action: 'save', slot: 0, gen: 1, automation: {when: {kind: 'time', minute: 600, days: ['mon']}, then}}); return [r.status, await r.json()]; };
+    assert.deepEqual(await off([{kind: 'disarm', partition: 1}]), [409, {error: 'action_not_allowed', index: 0}], 'the installer never disarms');
     assert.deepEqual(await off([arm({bypass: true})]), [409, {error: 'less_secure_off', index: 0}], 'D31: Bypass open zones');
-    assert.deepEqual(await off([arm()]), [200, {result: 'saved', gen: 3, slot: 6}], 'an arm without bypassing');
+    assert.deepEqual(await off([arm()]), [200, {result: 'saved', gen: 2, slot: 5}], 'an arm without bypassing (BL-224: as the master)');
     for (const code of ['needs_confirm', 'undoes_arming', 'arm_alone']) {
       a.context.__code = code;
       assert.ok(/^[A-Z].*\.$/.test(a.run('auMessage({code: __code, message: __code})')), `${code} has words`);
@@ -3869,7 +3874,7 @@ test('AUT-011 AUT-012 AUT-014 D29 D31: Then\'s first group "The alarm"; the arm 
     await a.page('new/scratch');
     a.edit('kind', 'zone_closed');
     const group = () => a.run('auDeviceSelect(au.now.then[0], 0)');
-    assert.match(group(), /<optgroup label="The alarm"><option value="alarm:arm">Arm the panel<\/option><option value="alarm:disarm">Disarm<\/option><\/optgroup><optgroup/,
+    assert.match(group(), /<optgroup label="The alarm"><option value="alarm:arm">Arm the panel<\/option><option value="alarm:disarm">Disarm<\/option>(<option value="panel:[^"]+">[^<]+<\/option>)*<\/optgroup><optgroup label="Tell someone">/,
       'first, before the devices, after any trigger (D23)');
     a.edit('kind', 'alarm');
     assert.ok(group().includes('Arm the panel') && !group().includes('alarm:disarm'), 'no Disarm after an alarm (D22)');
@@ -3903,7 +3908,7 @@ test('AUT-011 AUT-012 AUT-014 D29 D31: Then\'s first group "The alarm"; the arm 
   });
   await withServer('master', {}, async server => { // the option off (D31): no Bypass row, no Disarm, the arm's own note
     const a = await auContext(server);
-    await a.page('new/arm-night');
+    await a.page('new/bedtime');
     a.run('au.data.less_secure = false; au.now.then[0].bypass = true');
     const body = a.words(a.run('auBody()'));
     assert.ok(!body.includes('Bypass open zones') && !a.run('auDeviceSelect(au.now.then[0], 0)').includes('alarm:disarm'));
@@ -3930,7 +3935,7 @@ test('AUT-011 AUT-016 D24 D31: a Disarm is first with at most one device action;
     assert.equal(a.posts().length, 0, 'refused before it is sent');
     a.edit('kind', 'zone_opened');
     await a.click('add2');
-    assert.ok(!a.run('auDeviceSelect(au.now.then[1], 1)').includes('The alarm'), 'the second action is a device');
+    assert.ok(!/alarm:(arm|disarm)/.test(a.run('auDeviceSelect(au.now.then[1], 1)')), 'the second action is no arming');
     a.edit('dev', 'ha:light.porch', {i: '1'});
     await a.click('save');
     assert.match(a.context.__dialogs.at(-1), /Anyone who opens Front door will disarm Home\./);
@@ -3979,6 +3984,180 @@ test('D19 D20 D27: the Overview\'s warning card above Home\'s unchanged card, th
     await html('overview');
     const armed = vm.runInContext("Object.assign(state.partitions[0], {state: 'armed', level: 'away'}); overviewBody()", context);
     assert.ok(!armed.includes('Arming Night') && !armed.includes('put off by'), 'never while that partition is armed');
+  });
+});
+
+// ---- BL-224: automations without devices (docs/features/41 DESIGN.md section 15) ------------------------------------
+const NEW_PANEL = {MOCK_AUTOMATIONS: 'empty', MOCK_AUTO_DEVICES: '0'};
+const auSave = async (server, then, when = {kind: 'time', minute: 1380, days: ['mon']}, gen = 1) => {
+  const r = await auPost(server, {action: 'save', slot: 0, gen, automation: {when, then}});
+  return [r.status, await r.json()];
+};
+
+test('BL-224 AUT-011: on a new panel the installer sees the arming ideas and no Disarm, and saves "Arm Away at 11:00 PM every day" as the master', async () => {
+  await withServer('installer', NEW_PANEL, async server => {
+    const a = await auContext(server);
+    const ideas = a.words((await a.page('new')).html);
+    for (const idea of ['Arm at bedtime', 'Arm Away on weekday mornings', 'Remind me to arm', 'Tell me if it’s still armed', 'Tell me when a door opens at night',
+      'Quiet the door chime at night', 'Switch an output when an alarm sounds', 'Start from scratch'])
+      assert.ok(ideas.includes(idea), idea);
+    assert.ok(!ideas.includes('Disarm at opening time') && !ideas.includes('Turn on a light'), 'no Disarm, no device idea');
+    const data = await auGet(server);
+    assert.deepEqual([data.outputs, data.notify, data.master], [[{number: 1, name: 'Garden Lights', gpio: 47}], ['pushover'], 'Alex']);
+    await a.page('new/scratch');
+    a.edit('kind', 'time');
+    const group = a.run('auDeviceSelect(au.now.then[0], 0)');
+    assert.ok(group.includes('alarm:arm') && !group.includes('alarm:disarm') && group.includes('panel:remind') && group.includes('panel:notify') &&
+      group.includes('panel:output:1'), group);
+    assert.match(a.words(a.run('auBody()')), /Lights, locks and other devices show here once one is connected\./);
+    assert.ok(!a.run('auBody()').includes('No devices to choose'));
+    a.edit('dev', 'alarm:arm', {i: '0', k: 'dev-0'});
+    a.edit('arm-level', 'away', {i: '0', k: 'arm-level-0'});
+    assert.match(a.words(a.run('auBody()')), /Arm Away Set up by Installer · uses Alex’s permission · warns 5 minutes before/);
+    assert.equal(a.run('auWhenText(au.now.when)'), 'At 11:00 PM every day');
+    await a.click('save');
+    assert.deepEqual(a.posts().at(-1).automation.then, [{kind: 'arm', partition: 1, level: 'away', warn_min: 5, bypass: false}]);
+    const saved = (await auGet(server)).automations[0];
+    assert.deepEqual([saved.when.minute, saved.when.days.length, saved.then[0].made_by, saved.then[0].saved_by], [1380, 7, 'Alex', 'Installer']);
+    assert.match(a.words((await a.page('')).html), /At 11:00 PM every day.*Arm Away/);
+    assert.match(a.words((await a.page('1')).html), /Set up by Installer · uses Alex’s permission · warns 5 minutes before/);
+    assert.ok(!/arms as/i.test(a.words((await a.page('1')).html)), 'D30');
+    // the installer never disarms (BL-187): refused whatever the page offers
+    assert.deepEqual(await auSave(server, [{kind: 'disarm', partition: 1}], undefined, 2), [409, {error: 'action_not_allowed', index: 0}]);
+  });
+  await withServer('master', NEW_PANEL, async server => {
+    const a = await auContext(server);
+    assert.ok(a.words((await a.page('new')).html).includes('Disarm at opening time'), 'the master is offered Disarm');
+    await a.page('new/scratch');
+    a.edit('kind', 'time');
+    a.edit('dev', 'alarm:arm', {i: '0', k: 'dev-0'});
+    a.edit('arm-level', 'away', {i: '0', k: 'arm-level-0'});
+    assert.match(a.words(a.run('auBody()')), /Set up by Alex · warns 5 minutes before/);
+    await a.click('save');
+    const saved = (await auGet(server)).automations[0];
+    assert.deepEqual([saved.when.minute, saved.then[0].level, saved.then[0].made_by, saved.then[0].saved_by], [1380, 'away', 'Alex', null]);
+  });
+});
+
+test('BL-224: Remind to arm and "still armed" only after a time of day, alone; the server refuses them otherwise', async () => {
+  await withServer('master', NEW_PANEL, async server => {
+    const a = await auContext(server);
+    await a.page('new/scratch');
+    a.edit('kind', 'zone_opened');
+    assert.ok(!a.run('auDeviceSelect(au.now.then[0], 0)').includes('panel:remind'), 'not after a door');
+    a.edit('kind', 'time');
+    a.edit('dev', 'panel:remind', {i: '0', k: 'dev-0'});
+    assert.equal(a.run('au.now.then[0].kind'), 'remind');
+    assert.ok(!a.run('auBody()').includes('data-au="add2"'), 'alone');
+    a.edit('kind', 'alarm');
+    assert.equal(a.run('JSON.stringify(au.now.then.map(x => x.kind))'), '["device"]', 'another trigger drops it');
+    await a.page('new/remind');
+    const body = a.words(a.run('auBody()'));
+    for (const words of ['Remind to arm', 'A chime and a note on the panel · also a notification', 'Also send a notification', 'To Pushover',
+      'At 11:00 PM, if the panel isn’t armed: a chime and a note on the panel.', 'It never arms by itself. The note goes once the panel is armed, or at 6:00 AM.'])
+      assert.ok(body.includes(words), `"${words}" in ${body}`);
+    await a.click('save');
+    assert.deepEqual(a.posts().at(-1).automation.then, [{kind: 'remind', partition: 1, notify: true}]);
+    await a.page('new/still-armed');
+    assert.match(a.words(a.run('auBody()')), /Tell me if it’s still armed “Home is still armed at 4:00 PM” · Pushover/);
+    assert.equal(a.run('auWhenText(au.now.when)'), 'At 4:00 PM on weekdays');
+    await a.click('save');
+    assert.deepEqual(a.posts().at(-1).automation.then, [{kind: 'still_armed', partition: 1}]);
+    assert.deepEqual(await auSave(server, [{kind: 'remind', partition: 1}], {kind: 'disarmed'}, 3), [409, {error: 'needs_time', index: 0}]);
+    assert.deepEqual(await auSave(server, [{kind: 'still_armed', partition: 1}, {kind: 'notify'}], undefined, 3), [409, {error: 'arm_alone'}]);
+    assert.deepEqual(await auSave(server, [{kind: 'remind', partition: 1, notify: 'yes'}], undefined, 3), [400, {error: 'bad_request'}]);
+    assert.equal(a.run("auMessage({code: 'needs_time'})"), 'A reminder and “still armed” run only at a time of day.');
+    const list = await auGet(server);
+    assert.deepEqual(list.automations.map(x => x.then[0]), [{kind: 'remind', partition: 1, notify: true}, {kind: 'still_armed', partition: 1}]);
+    assert.deepEqual(await (await auPost(server, {action: 'try', slot: 1, gen: 3})).json(), {error: 'action_not_allowed', index: 0}, 'never tried');
+  });
+});
+
+test('BL-224: an output, the door chime and a notification; where it goes, Try it now, and the refusals', async () => {
+  await withServer('master', NEW_PANEL, async server => {
+    const a = await auContext(server);
+    await a.page('new/output');
+    let body = a.words(a.run('auBody()'));
+    assert.ok(body.includes('Turn on Garden Lights for 30 minutes') && body.includes('Output on GPIO 47') && body.includes('Turn it off after'), body);
+    a.edit('out-act', 'off', {i: '0', k: 'oa-0'});
+    assert.deepEqual(a.run('JSON.stringify(auWire(au.now).then)'), JSON.stringify([{kind: 'output', output: 1, action: 'off', off_after: 0}]));
+    a.edit('out-act', 'on', {i: '0', k: 'oa-0'});
+    a.edit('out-off', '30', {i: '0', k: 'of-0'});
+    await a.click('add2');
+    assert.ok(!a.run('auDeviceSelect(au.now.then[1], 1)').includes('panel:output:1'), 'one output once');
+    a.edit('dev', 'panel:notify', {i: '1', k: 'dev-1'});
+    assert.match(a.words(a.run('auBody()')), /Send a notification “An alarm is sounding” · Pushover/);
+    await a.click('save');
+    assert.deepEqual(a.posts().at(-1).automation, {on: true, when: {kind: 'alarm', partitions: [], levels: [], zone: 0, minute: 1380, days: [], window: null},
+      then: [{kind: 'output', output: 1, action: 'on', off_after: 30}, {kind: 'notify'}]});
+    await a.page('new/chime');
+    body = a.words(a.run('auBody()'));
+    assert.ok(body.includes('Turn the door chime off') && body.includes('Nothing turns it on again. Add one for the morning.'), body);
+    await a.click('save');
+    assert.deepEqual(a.posts().at(-1).automation.then, [{kind: 'chime', partition: 1, on: false}]);
+    await a.page('new/door');
+    assert.match(a.words(a.run('auBody()')), /Send a notification “Front door opened” · Pushover/);
+    assert.equal(a.run('auWhenText(au.now.when)'), 'When Front door opens');
+    // Try it now runs an output, the chime and a notification
+    const page = await a.page('1');
+    assert.ok(page.html.includes('data-au="try"'), 'Try it now for an output and a notification');
+    await a.click('try');
+    assert.match(a.words(a.run('auLastHtml()')), /Tried at/);
+    assert.deepEqual(await auSave(server, [{kind: 'output', output: 2, action: 'on'}], undefined, 3), [409, {error: 'bad_output', index: 0}], 'not for automations');
+    assert.deepEqual(await auSave(server, [{kind: 'output', output: 9, action: 'on'}], undefined, 3), [400, {error: 'bad_request'}]);
+    assert.deepEqual(await auSave(server, [{kind: 'output', output: 1, action: 'off', off_after: 5}], undefined, 3), [400, {error: 'bad_request'}], 'off after only with on');
+    assert.deepEqual(await auSave(server, [{kind: 'chime', partition: 1}], undefined, 3), [400, {error: 'bad_request'}], 'on or off');
+    assert.deepEqual(await auSave(server, [{kind: 'notify'}, {kind: 'notify'}], undefined, 3), [409, {error: 'same_device', index: 1}]);
+    assert.equal(a.run("auMessage({code: 'bad_output'})"), 'That output isn’t one for automations now.');
+  });
+  await withServer('master', {...NEW_PANEL, MOCK_AUTO_NOTIFY: '0', MOCK_AUTO_OUTPUTS: '0'}, async server => {
+    const a = await auContext(server);
+    const ideas = a.words((await a.page('new')).html);
+    assert.ok(!ideas.includes('Switch an output when an alarm sounds'), 'no output for automations: no output idea');
+    await a.page('new/door');
+    assert.match(a.words(a.run('auBody()')), /Can’t send: no phone notifications are set up/);
+    assert.ok(!a.run('auDeviceSelect(au.now.then[0], 0)').includes('label="Outputs"'));
+    await a.click('save');
+    await a.page('1');
+    await a.click('try');
+    assert.match(a.words(a.run('auLastHtml()')), /Not sent: no phone notifications are set up/);
+  });
+});
+
+test('BL-224: "When there\'s a trouble": which one, its words, and what the panel stores', async () => {
+  await withServer('installer', NEW_PANEL, async server => {
+    const a = await auContext(server);
+    await a.page('new/scratch');
+    a.edit('kind', 'trouble');
+    assert.match(a.words(a.run('auBody()')), /Which trouble\? It runs once when the trouble starts\. Any trouble/);
+    assert.equal(a.run('auWhenText(au.now.when)'), 'When there’s a trouble');
+    a.edit('trouble', 'ac', {k: 'trouble'});
+    assert.equal(a.run('auWhenText(au.now.when)'), 'When the power goes off');
+    a.edit('dev', 'panel:notify', {i: '0', k: 'dev-0'});
+    assert.match(a.words(a.run('auBody()')), /“The power went off” · Pushover/);
+    assert.ok(!a.run('auDeviceSelect(au.now.then[0], 0)').includes('panel:remind'), 'a reminder needs a time');
+    await a.click('save');
+    assert.deepEqual(a.posts().at(-1).automation.when, {kind: 'trouble', partitions: [], levels: [], zone: 0, minute: 1380, days: [], window: null, trouble: 'ac'});
+    const list = await auGet(server);
+    assert.equal(list.automations[0].when.trouble, 'ac');
+    assert.match(a.words((await a.page('')).html), /When the power goes off.*Send a notification/);
+    assert.deepEqual(await auSave(server, [{kind: 'notify'}], {kind: 'trouble', trouble: 'flood'}, 2), [400, {error: 'bad_request'}]);
+    assert.deepEqual((await auSave(server, [{kind: 'notify'}], {kind: 'trouble'}, 2))[0], 200, 'none named is any');
+    assert.equal((await auGet(server)).automations[1].when.trouble, 'any');
+  });
+});
+
+test('BL-224: the Overview shows a reminder\'s steady line beside its partition while it stands, never while armed', async () => {
+  await withPage('master', {MOCK_AUTO_REMIND: '1'}, async (context, html, api) => {
+    let page = await html('overview');
+    clean(page, 'the reminder');
+    assert.match(words(page), /Not armed yet · reminder at 11:00 PM/);
+    assert.equal(vm.runInContext('overviewBody()', context), vm.runInContext('overviewBody()', context), 'the same words while nothing changed');
+    const armed = vm.runInContext("Object.assign(state.partitions[0], {state: 'armed', level: 'away'}); overviewBody()", context);
+    assert.ok(!armed.includes('Not armed yet'), 'never while armed');
+    await api.post('mock/automation-reminder', {on: false});
+    page = await html('overview');
+    assert.ok(!page.includes('Not armed yet'), 'it goes');
   });
 });
 
@@ -4316,7 +4495,7 @@ test('the installer’s Overview has no arm or disarm, whatever the state (USR-0
   });
   await overviewOf('master', {MOCK_SCENARIO: 'alarm'}, html => assert.ok(/data-disarm=/.test(html)));
 });
-test('the installer keeps Silence for a fire, and Add an automation has no arming idea (USR-001)', async () => {
+test('the installer keeps Silence for a fire, and Add an automation has the arming ideas but no Disarm (USR-001, BL-224)', async () => {
   await overviewOf('installer', {MOCK_SCENARIO: 'fire'}, html => {
     assert.ok(/data-silence=/.test(html), 'Silence is gone');
     assert.ok(!/data-disarm=|data-arm=/.test(html));
@@ -4327,8 +4506,12 @@ test('the installer keeps Silence for a fire, and Add an automation has no armin
     await vm.runInContext('refreshStatus()', context);
     return vm.runInContext("auIdeas({zones: []}, []).map(i => i.id)", context);
   };
-  assert.ok(!(await ids('installer')).includes('arm-night'));
-  assert.ok((await ids('master')).includes('arm-night'));
+  for (const who of ['installer', 'master']) {
+    const list = await ids(who);
+    assert.ok(['bedtime', 'morning', 'remind', 'still-armed', 'chime'].every(id => list.includes(id)), who);
+  }
+  assert.ok(!(await ids('installer')).includes('open'), 'the installer never disarms');
+  assert.ok((await ids('master')).includes('open'));
 });
 function said(html) { return /The installer doesn’t/.test(html); }
 

@@ -111,7 +111,8 @@ bool auto_store_load(auto_store_t *s, const auto_kv_port_t *kv);
 
 /* Adds (r->uid 0: a new uid, the first empty slot) or changes (r->uid of a stored OK record) an
  * automation. made_by is `user` for every save (an edit makes the editor the maker, D23) - never
- * the caller's.
+ * the caller's - except an Arm saved by the installer (env->by_installer): it acts as the system
+ * master (ALARM_USER_MASTER) and saved_by keeps `user` (BL-224, AUT-018); saved_by is 0 otherwise.
  * A change keeps the stored record's ignorable bytes. *why (may be NULL) gets the validator's
  * answer; *uid_out (may be NULL) the uid saved. */
 auto_save_t auto_store_save(auto_store_t *s, const auto_kv_port_t *kv, const auto_rule_t *r,

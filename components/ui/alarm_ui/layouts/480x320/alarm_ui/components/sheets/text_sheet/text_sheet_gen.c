@@ -50,7 +50,7 @@ lv_obj_t * text_sheet_create(lv_obj_t * parent)
             lv_style_init(style_list[i]);
         }
 
-        alarm_ui_run_25(&style_text_card, lv_pct(100), LV_SIZE_CONTENT);
+        alarm_ui_run_26(&style_text_card, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_6(&style_text_card, RADIUS_XL);
         lv_style_set_pad_left(&style_text_card, SPACE_MD);
         lv_style_set_pad_right(&style_text_card, SPACE_MD);

@@ -56,7 +56,7 @@ lv_obj_t * trouble_row_create(lv_obj_t * parent, const char * glyph, const char 
 
         lv_obj_t * detail_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_WRAP);
         lv_label_set_text(detail_label, detail);
-        alarm_ui_run_47(detail_label, "detail_label");
+        alarm_ui_run_48(detail_label, "detail_label");
 
         the_root = box_0;
     }

@@ -17,6 +17,8 @@ Two drivers live here:
   light on a terminal, through a relay or MOSFET module. Temporal-3 (NFPA 72) and temporal-4
   (NFPA 720) on the line to the millisecond, chirps (one to arm, two to disarm), a safe level at
   configuration, and bell supervision from a second terminal (open 10 s = the bell trouble).
+  A channel may also be "For automations" (BL-224): named, never following the engine, on only
+  while an automation sets it (`ow_auto_set`).
 - **433 MHz sirens** (`rf_siren`): the cheap one-way sirens that learn their panel like a key fob.
   The panel transmits as a fob of its own (a fresh EV1527 address per siren): the alarm code at
   once and every 20 s while the sound is wanted, the stop code three times when it ends, the arm
@@ -30,7 +32,7 @@ It doesn't touch pins or the radio (ports), keep a clock, or post troubles (the 
 | Header | What it offers |
 |---|---|
 | `include/sirens/siren.h` | `siren_view_t`, `siren_scope_t`, `siren_sound_t`; `siren_view_output()`, `siren_view_armed()`, `siren_pick()`, `siren_strobe()`, `siren_armed()`, `siren_level()` (the wired patterns), `siren_chirp_level()`, `siren_crc16()` |
-| `include/sirens/out_wired.h` | `ow_t`, `ow_config_t`, `ow_port_t`; `ow_set/clear/output/armed/set_armed/test/poll/next_deadline`, the store `ow_encode/ow_decode` (NVS `outputs`/`wired`) |
+| `include/sirens/out_wired.h` | `ow_t`, `ow_config_t`, `ow_port_t`; `ow_set/clear/output/armed/set_armed/test/poll/next_deadline`, `ow_auto_set/ow_auto_mask` (outputs for automations), the stores `ow_auto_encode/ow_auto_decode` (NVS `outputs`/`auto`) and `ow_encode/ow_decode` (NVS `outputs`/`wired`) |
 | `include/sirens/rf_siren.h` | `rfs_t`, `rfs_config_t`, `rfs_port_t`; `rfs_defaults/pick_address/set/clear/output/armed/transmitter/test/pair/poll/next_deadline`, the store `rfs_encode/rfs_decode` (NVS `outputs`/`rf`) |
 
 ## Depends on
@@ -40,4 +42,6 @@ It doesn't touch pins or the radio (ports), keep a clock, or post troubles (the 
 ## Stored formats
 `outputs`/`wired` and `outputs`/`rf` are stored contracts (components/core/AGENTS.md): never
 renumber a function or move a field; a new field goes at an entry's end (a shorter entry reads it
-as 0). Their frozen fixtures are `test/sirens_fixture_v1.h`.
+as 0). Their frozen fixtures are `test/sirens_fixture_v1.h`. The outputs for automations
+(BL-224) are `outputs`/`auto`, never in `wired`, so older firmware still reads `wired` whole; its
+frozen fixture is `test/sirens_fixture_auto_v1.h`.

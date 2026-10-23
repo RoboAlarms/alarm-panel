@@ -56,7 +56,8 @@ bool automation_service_read_only(void);
 /* The panel as the validator sees it now (AUT-002, AUT-015): the enabled partitions, each zone's
  * type, partition and class into zones[] (env->zones points at it) and the installer option
  * opt.auto_less_secure, all read from the live configuration on the alarm task
- * (alarm_service_call: never call it from the alarm task); arm_supported true (phase C). False,
+ * (alarm_service_call: never call it from the alarm task); arm_supported true (phase C); the
+ * wired outputs set "For automations" (outputs_service_auto_mask, BL-224). False,
  * *env all zero, when the configuration couldn't be read - or without the feature. The editors
  * build their pickers (hc_auto_offer) and confirms from it; every save builds its own. */
 bool automation_service_env(auto_env_t *env, auto_zone_t zones[ALARM_MAX_ZONES]);
@@ -94,6 +95,15 @@ auto_try_t automation_service_try(uint16_t uid);
 size_t automation_service_warnings(auto_warning_t *out, size_t max);
 /* Automation uid's warning or hold; false (and *out zeroed, state NONE) when it has none. */
 bool automation_service_warning(uint16_t uid, auto_warning_t *out);
+
+/* ---- Reminders (BL-224, DESIGN.md section 15) ---- */
+
+/* The reminders' notes showing now ("Not armed yet · reminder at 11:00 PM": a Remind to arm
+ * automation found its partition disarmed at its time; on until that partition is armed, 6:00 AM,
+ * or the automation changes), copied into out[max]: the count, one per automation, all with on
+ * = 1. RAM only; a restart forgets them. Readers on any task: a short copy under the service's
+ * lock, no engine call. */
+size_t automation_service_reminders(auto_remind_t *out, size_t max);
 
 /* Put off automation uid's warning (auto_run_put_off on the task: AUT-013, D26, D27) for user,
  * whose code the caller has checked with ALARM_CMD_CODE_CHECK on the warning's partition

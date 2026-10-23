@@ -3,7 +3,10 @@
  * page, the words and looks the editors share, and the saves (ui_automations.h, part A).
  *
  * Drawn from the approved screens (mockup screens/automations.js): the list
- * (screens 2-6) and an automation's page (16-20). Every rule is read through ui_backend_t's
+ * (screens 2-6) and an automation's page (16-20); BL-224's actions without devices (DESIGN.md
+ * section 15) - an output, a reminder, "still armed", the door chime, a notification, the trouble
+ * trigger - in the same rows, and "Set up by Installer · uses Alex's permission" for an Arm the
+ * installer set up. Every rule is read through ui_backend_t's
  * auto_* hooks; the generation read when a page is built is the one an edit sends back
  * (AUT-008), so a page another device changed meanwhile is refused CHANGED and drawn again.
  *
@@ -16,6 +19,7 @@
  * out of the column (BL-131). Until then the walk opens the section directly.
  */
 #include <string.h>
+#include <time.h>
 
 #include "ui_automations.h"
 #include "ui_backend/ui_dev_model.h"
@@ -35,7 +39,9 @@ typedef enum {
     PROB_ZONE,       /* its zone can't start an automation now (retyped) */
     PROB_KIND,       /* a device changed kind, or the runner said it can't run it */
     PROB_OPTION,     /* a less secure action while the installer option is off (AUT-015) */
-    PROB_FIX,        /* anything else it can't run until it is opened (AUT-015) */
+    PROB_FIX,        /* anything else it can't run until it is opened (AUT-015), or a wired
+                        output that isn't one for automations now (BL-224) */
+    PROB_NO_SERVICE, /* BL-224: it notifies, and no phone service is set up: it runs, can't send */
 } prob_t;
 
 typedef struct {
@@ -61,6 +67,8 @@ static UI_SLOW_BSS struct {
     uint8_t row_slot[AUTO_MAX];
     char subs[AUTO_MAX][96];
 } A;
+
+static bool notifies(const auto_rule_t *r);
 
 static auto_rule_t *s_rules; /* AUTO_MAX, from ui_slow_alloc */
 static size_t s_nrules;
@@ -200,6 +208,11 @@ static void rule_state(const auto_rule_t *r, const auto_status_t *st, rule_state
             option = true; /* AUT-015: kept as it is, never sent while the option is off */
             out->verb = a->kind == AUTO_ACT_DISARM ? 2u : a->dev_action == ACT_UNLOCK ? 0u : 1u;
         }
+        if (a->kind == AUTO_ACT_OUTPUT && S.be.auto_outputs != NULL) {
+            char detail[32];
+            ui_auto_output_detail(a->output, detail, sizeof(detail));
+            fix = fix || detail[0] == '\0'; /* not "For automations" now (AUTO_ERR_OUTPUT) */
+        }
         if (a->kind != AUTO_ACT_DEVICE) {
             continue;
         }
@@ -224,6 +237,8 @@ static void rule_state(const auto_rule_t *r, const auto_status_t *st, rule_state
         out->prob = PROB_OPTION;
     } else if (fix || st->result == AUTO_RES_LESS_SECURE_OFF) {
         out->prob = PROB_FIX;
+    } else if (notifies(r) && (st->result == AUTO_RES_NO_SERVICE || ui_auto_notify_services() == 0u)) {
+        out->prob = PROB_NO_SERVICE;
     }
     out->clock_wait = needs_clock(r) && !ui_clock_known();
 }
@@ -412,6 +427,17 @@ void ui_auto_when_text(const auto_trigger_t *w, char *out, size_t len)
         }
         break;
     }
+    case AUTO_TRIG_TROUBLE:
+        /* TR: the trigger of an automation (BL-224): which trouble starts it. At most 63 bytes */
+        switch (w->trouble) {
+        case AUTO_TROUBLE_ANY: copy(out, len, TR("When there's a trouble")); break;
+        case AUTO_TROUBLE_AC: copy(out, len, TR("When the power goes off")); break;
+        case AUTO_TROUBLE_BATTERY: copy(out, len, TR("When the panel's battery is low")); break;
+        case AUTO_TROUBLE_SENSOR: copy(out, len, TR("When a sensor stops reporting")); break;
+        case AUTO_TROUBLE_SIREN: copy(out, len, TR("When there's a siren problem")); break;
+        default: copy(out, len, CANT_SHOW()); break;
+        }
+        break;
     default: copy(out, len, CANT_SHOW()); break;
     }
 }
@@ -473,6 +499,252 @@ static void arm_text(const auto_action_t *a, char *out, size_t len)
     }
 }
 
+/* ---- automations without devices (BL-224): outputs, notifications, the words they share ---- */
+
+size_t ui_auto_outputs(ui_auto_output_t *out, size_t max)
+{
+    if (S.be.auto_outputs == NULL || out == NULL || max == 0u) {
+        return 0u;
+    }
+    const size_t n = S.be.auto_outputs(S.be.ctx, out, max);
+    return n < max ? n : max;
+}
+
+static bool output_of(uint8_t number, ui_auto_output_t *out)
+{
+    ui_auto_output_t list[AUTO_OUTPUTS];
+    const size_t n = ui_auto_outputs(list, AUTO_OUTPUTS);
+    for (size_t i = 0; i < n; i++) {
+        if (list[i].number == number) {
+            *out = list[i];
+            return true;
+        }
+    }
+    return false;
+}
+
+void ui_auto_output_name(uint8_t number, char *out, size_t len)
+{
+    ui_auto_output_t o;
+    if (output_of(number, &o) && o.name[0] != '\0') {
+        copy(out, len, o.name); /* a household name: a value */
+        return;
+    }
+    /* TR: a wired output for automations without a name ({0} its number). At most 31 bytes */
+    I18N_FORMAT(out, len, TR("Output {0}"), (unsigned)number);
+}
+
+void ui_auto_output_detail(uint8_t number, char *out, size_t len)
+{
+    ui_auto_output_t o;
+    out[0] = '\0';
+    if (output_of(number, &o)) {
+        /* TR: under a wired output in "What should it do?" and on an automation's page ({0} its
+         * terminal's GPIO number). At most 31 bytes */
+        I18N_FORMAT(out, len, TR("Output on GPIO {0}"), (unsigned)o.gpio);
+    }
+}
+
+uint8_t ui_auto_notify_services(void)
+{
+    return S.be.auto_notify_services != NULL ? S.be.auto_notify_services(S.be.ctx) : 0u;
+}
+
+void ui_auto_services_text(uint8_t mask, char *out, size_t len)
+{
+    out[0] = '\0';
+    /* the services' own names, never translated */
+    static const char *const NAME[UI_NOTIFY_PROVIDERS] = {NOTR("ntfy"), NOTR("Pushover")};
+    for (unsigned p = 0; p < UI_NOTIFY_PROVIDERS; p++) {
+        if ((mask & (1u << p)) == 0u) {
+            continue;
+        }
+        const size_t used = strlen(out);
+        if (used > 0u) {
+            /* TR: between the phone services a notification goes to ("ntfy, Pushover"). At most 7
+             * bytes */
+            copy(out + used, len - used, TR_C("list separator", ", "));
+        }
+        const size_t at = strlen(out);
+        copy(out + at, len - at, NAME[p]);
+    }
+}
+
+/* The first partition a mask names, or 1. */
+static uint8_t first_of(uint8_t mask)
+{
+    for (unsigned p = 1u; p <= ALARM_MAX_PARTITIONS; p++) {
+        if ((mask & (1u << (p - 1u))) != 0u) {
+            return (uint8_t)p;
+        }
+    }
+    return 1u;
+}
+
+/* A moment at this local minute of the day (a mid-month day, as the clock words need only its
+ * time): what the notification's words read their time from. */
+static int64_t epoch_at_minute(uint16_t minute)
+{
+    struct tm tm;
+    memset(&tm, 0, sizeof(tm));
+    tm.tm_year = 2026 - 1900;
+    tm.tm_mon = 0;
+    tm.tm_mday = 15;
+    tm.tm_hour = (int)(minute / 60u % 24u);
+    tm.tm_min = (int)(minute % 60u);
+    tm.tm_isdst = -1;
+    const time_t t = mktime(&tm);
+    return t == (time_t)-1 ? 0 : (int64_t)t * 1000;
+}
+
+bool ui_auto_notice_title(const auto_trigger_t *w, uint8_t what, uint8_t p, char *out, size_t len)
+{
+    if (w == NULL || out == NULL || len == 0u || S.cfg == NULL) {
+        return false;
+    }
+    out[0] = '\0';
+    /* the event the notify port raises (the build contract's mapping) */
+    alarm_event_t ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = ALARM_EV_AUTOMATION_NOTICE;
+    ev.source.kind = ALARM_SRC_AUTOMATION;
+    ev.flags = ALARM_EVF_REPORT;
+    if (what == AUTO_NOTICE_REMIND || what == AUTO_NOTICE_STILL_ARMED) {
+        ev.arg = what == AUTO_NOTICE_REMIND ? ALARM_AUTO_NOTICE_REMIND : ALARM_AUTO_NOTICE_STILL_ARMED;
+        ev.partition = p >= 1u && p <= ALARM_MAX_PARTITIONS ? p : 1u;
+        ev.epoch_ms = epoch_at_minute(w->minute);
+        w = NULL;
+    }
+    switch (w != NULL ? w->kind : AUTO_TRIG_NONE) {
+    case AUTO_TRIG_NONE: break; /* a reminder's or "still armed"'s, above */
+    case AUTO_TRIG_TIME:
+        ev.arg = ALARM_AUTO_NOTICE_TIME;
+        ev.epoch_ms = epoch_at_minute(w->minute);
+        break;
+    case AUTO_TRIG_ZONE_OPENED:
+    case AUTO_TRIG_ZONE_CLOSED:
+        if (w->zone == 0u || w->zone > ALARM_MAX_ZONES) {
+            return false;
+        }
+        ev.arg = w->kind == AUTO_TRIG_ZONE_OPENED ? ALARM_AUTO_NOTICE_OPENED : ALARM_AUTO_NOTICE_CLOSED;
+        ev.zone = w->zone;
+        ev.partition = S.cfg->zones[w->zone - 1u].partition;
+        break;
+    case AUTO_TRIG_ARMED:
+        if (w->levels != ALARM_LEVEL_BIT(ALARM_LEVEL_AWAY) && w->levels != ALARM_LEVEL_BIT(ALARM_LEVEL_STAY) &&
+            w->levels != ALARM_LEVEL_BIT(ALARM_LEVEL_NIGHT)) {
+            return false; /* "any level": the words name the level it was armed at */
+        }
+        ev.arg = ALARM_AUTO_NOTICE_ARMED;
+        ev.partition = first_of(w->partitions);
+        ev.arg2 = w->levels == ALARM_LEVEL_BIT(ALARM_LEVEL_AWAY)   ? ALARM_LEVEL_AWAY
+                  : w->levels == ALARM_LEVEL_BIT(ALARM_LEVEL_STAY) ? ALARM_LEVEL_STAY
+                                                                   : ALARM_LEVEL_NIGHT;
+        break;
+    case AUTO_TRIG_DISARMED:
+        ev.arg = ALARM_AUTO_NOTICE_DISARMED;
+        ev.partition = first_of(w->partitions);
+        break;
+    case AUTO_TRIG_ALARM: ev.arg = ALARM_AUTO_NOTICE_ALARM; break;
+    case AUTO_TRIG_FIRE: ev.arg = ALARM_AUTO_NOTICE_FIRE; break;
+    case AUTO_TRIG_TROUBLE:
+        ev.arg = ALARM_AUTO_NOTICE_TROUBLE;
+        ev.arg2 = w->trouble == AUTO_TROUBLE_ANY ? (uint8_t)AUTO_TROUBLE_OTHER : w->trouble;
+        break;
+    default: return false;
+    }
+    ui_line_t line;
+    memset(&line, 0, sizeof(line));
+    if (!ui_event_line(S.cfg, &ev, true, &line) || line.title[0] == '\0') {
+        return false;
+    }
+    copy(out, len, line.title);
+    return true;
+}
+
+/* The tone and words of a partition-wide action: the partition named only with more than one. */
+static const char *action_partition(const auto_action_t *a, char *buf, size_t len)
+{
+    return a->partition >= 1u && a->partition <= ALARM_MAX_PARTITIONS
+               ? partition_named((uint8_t)(1u << (a->partition - 1u)), buf, len)
+               : NULL;
+}
+
+/* BL-224's actions in words; false for any other kind. */
+static bool panel_then_text(const auto_action_t *a, bool with_time, char *out, size_t len)
+{
+    char part[ALARM_NAME_LEN + 16];
+    char name[48];
+    switch (a->kind) {
+    case AUTO_ACT_OUTPUT:
+        ui_auto_output_name(a->output, name, sizeof(name));
+        if (a->dev_action == ACT_OFF) {
+            I18N_FORMAT(out, len, TR("Turn off {0}"), name);
+        } else if (with_time && a->off_after_min > 0u) {
+            char span[32];
+            ui_auto_off_after_text(a->off_after_min, span, sizeof(span));
+            I18N_FORMAT(out, len, TR("Turn on {0} for {1}"), name, span);
+        } else {
+            I18N_FORMAT(out, len, TR("Turn on {0}"), name);
+        }
+        return true;
+    case AUTO_ACT_REMIND: {
+        const char *p = action_partition(a, part, sizeof(part));
+        /* TR: an automation's action (BL-224): a reminder to arm at its time; {0} the partition.
+         * At most 47 bytes */
+        p != NULL ? (void)I18N_FORMAT(out, len, TR("Remind to arm {0}"), p) : copy(out, len, TR("Remind to arm"));
+        return true;
+    }
+    case AUTO_ACT_CHECK_ARMED: {
+        const char *p = action_partition(a, part, sizeof(part));
+        /* TR: an automation's action (BL-224): a notification if it is still armed at its time;
+         * {0} the partition. At most 47 bytes */
+        p != NULL ? (void)I18N_FORMAT(out, len, TR("Tell me if {0} is still armed"), p)
+                  : copy(out, len, TR("Tell me if it's still armed"));
+        return true;
+    }
+    case AUTO_ACT_CHIME: {
+        const char *p = action_partition(a, part, sizeof(part));
+        /* TR: an automation's action (BL-224): the door chime on or off; {0} the partition. At
+         * most 47 bytes */
+        if (a->option != 0u) {
+            p != NULL ? (void)I18N_FORMAT(out, len, TR("Turn the door chime on in {0}"), p)
+                      : copy(out, len, TR("Turn the door chime on"));
+        } else {
+            p != NULL ? (void)I18N_FORMAT(out, len, TR("Turn the door chime off in {0}"), p)
+                      : copy(out, len, TR("Turn the door chime off"));
+        }
+        return true;
+    }
+    case AUTO_ACT_NOTIFY:
+        /* TR: an automation's action (BL-224): a notification to the phones. At most 47 bytes */
+        copy(out, len, TR("Send a notification"));
+        return true;
+    default: return false;
+    }
+}
+
+/* The name an action's reasons say: its device's, or its output's. */
+static void action_name(const auto_action_t *a, char *out, size_t len)
+{
+    if (a->kind == AUTO_ACT_OUTPUT) {
+        ui_auto_output_name(a->output, out, len);
+    } else {
+        copy(out, len, a->name[0] != '\0' ? a->name : a->ref);
+    }
+}
+
+/* It sends a notification (or "still armed" does). */
+static bool notifies(const auto_rule_t *r)
+{
+    for (uint8_t i = 0; i < r->n && i < AUTO_ACTIONS; i++) {
+        if (r->then[i].kind == AUTO_ACT_NOTIFY || r->then[i].kind == AUTO_ACT_CHECK_ARMED) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* An action's sentence; with_time: "for 10 minutes" after a Turn on that turns off again (the
  * list), else without (the page shows it on its own row). */
 static void then_text(const auto_action_t *a, bool with_time, char *out, size_t len)
@@ -497,6 +769,9 @@ static void then_text(const auto_action_t *a, bool with_time, char *out, size_t 
          * bytes */
         name != NULL ? (void)I18N_FORMAT(out, len, TR("Disarm {0}"), name) : copy(out, len, TR("Disarm the panel"));
         return;
+    }
+    if (panel_then_text(a, with_time, out, len)) {
+        return; /* BL-224: an output, a reminder, "still armed", the chime, a notification */
     }
     if (a->kind != AUTO_ACT_DEVICE) {
         copy(out, len, CANT_SHOW());
@@ -613,6 +888,14 @@ const char *ui_auto_when_glyph(const auto_trigger_t *w)
         return cls == ALARM_DEVCLASS_WATER ? UI_ICON_DROPLETS : ui_device_class_glyph((alarm_device_class_t)cls);
     }
     case AUTO_TRIG_TIME: return UI_ICON_CLOCK;
+    case AUTO_TRIG_TROUBLE: /* BL-224 (drawing bl-224-trouble-which) */
+        switch (w->trouble) {
+        case AUTO_TROUBLE_AC: return UI_AUTO_G_UNPLUG;
+        case AUTO_TROUBLE_BATTERY: return UI_AUTO_G_BATTERY_LOW;
+        case AUTO_TROUBLE_SENSOR: return UI_AUTO_G_RADIO;
+        case AUTO_TROUBLE_SIREN: return UI_ICON_SIREN;
+        default: return UI_ICON_TRIANGLE_ALERT;
+        }
     default: return UI_ICON_ZAP;
     }
 }
@@ -627,7 +910,8 @@ lv_color_t ui_auto_when_tone(const auto_trigger_t *w)
     case AUTO_TRIG_ZONE_CLOSED: return ui_tone_green();
     case AUTO_TRIG_ALARM:
     case AUTO_TRIG_FIRE: return ui_tone_red();
-    case AUTO_TRIG_ZONE_OPENED: return ui_tone_amber();
+    case AUTO_TRIG_ZONE_OPENED:
+    case AUTO_TRIG_TROUBLE: return ui_tone_amber();
     case AUTO_TRIG_ARMED:
     case AUTO_TRIG_TIME: return ui_tone_blue();
     default: return ui_tone_gray();
@@ -643,6 +927,14 @@ static const char *action_glyph(const auto_action_t *a)
     if (a->kind == AUTO_ACT_DISARM) {
         return UI_ICON_SHIELD_OFF;
     }
+    switch (a->kind) { /* BL-224 (drawing bl-224-list) */
+    case AUTO_ACT_OUTPUT: return a->dev_action == ACT_OFF ? UI_AUTO_G_TOGGLE_LEFT : UI_AUTO_G_TOGGLE_RIGHT;
+    case AUTO_ACT_REMIND: return UI_ICON_BELL;
+    case AUTO_ACT_CHECK_ARMED:
+    case AUTO_ACT_NOTIFY: return UI_ICON_SEND;
+    case AUTO_ACT_CHIME: return a->option != 0u ? UI_ICON_BELL_RING : UI_ICON_BELL_OFF;
+    default: break;
+    }
     return a->kind == AUTO_ACT_DEVICE ? ui_auto_kind_glyph(a->dev_kind, a->ref) : UI_ICON_ZAP;
 }
 
@@ -656,6 +948,14 @@ static lv_color_t action_tone(const auto_action_t *a)
     }
     if (a->kind == AUTO_ACT_DISARM) {
         return ui_tone_amber(); /* less secure (drawing automation-disarm-page) */
+    }
+    switch (a->kind) { /* BL-224 */
+    case AUTO_ACT_OUTPUT: return a->dev_action == ACT_OFF ? ui_tone_gray() : ui_tone_blue();
+    case AUTO_ACT_REMIND: return ui_tone_amber();
+    case AUTO_ACT_CHECK_ARMED:
+    case AUTO_ACT_NOTIFY: return ui_tone_blue();
+    case AUTO_ACT_CHIME: return a->option != 0u ? ui_tone_blue() : ui_tone_gray();
+    default: break;
     }
     return ui_auto_kind_tone(a->dev_kind);
 }
@@ -686,8 +986,8 @@ static bool when_text(int64_t epoch_ms, char *out, size_t len)
 static void reason_text(const auto_rule_t *r, const auto_status_t *st, char *out, size_t len)
 {
     const uint8_t i = st->action_index < AUTO_ACTIONS ? st->action_index : 0u;
-    const auto_action_t *a = &r->then[i];
-    const char *n = a->name[0] != '\0' ? a->name : a->ref;
+    char n[DEV_NAME_LEN];
+    action_name(&r->then[i], n, sizeof(n)); /* a device's, or an output's (BL-224) */
     /* TR: why an automation's last run didn't work, after "didn't work at 8:02 AM: "; {0} is a
      * device's name. At most 47 bytes */
     switch (st->result) {
@@ -941,6 +1241,69 @@ static bool arm_use_text(const auto_rule_t *r, const auto_status_t *st, char *ou
     return true;
 }
 
+/* BL-224: the page's switch detail for a reminder's, "still armed"'s or the door chime's own
+ * outcomes (drawing bl-224-page-remind); false when it isn't one of theirs. */
+static bool panel_use_text(const auto_rule_t *r, const auto_status_t *st, char *out, size_t len, bool *alert)
+{
+    const uint8_t i = st->action_index < AUTO_ACTIONS ? st->action_index : 0u;
+    if (r->n == 0u || i >= r->n) {
+        return false;
+    }
+    const auto_action_t *a = &r->then[i];
+    char at[32];
+    const bool dated = st->at_epoch_ms > 0;
+    const bool today = dated && when_text(st->at_epoch_ms, at, sizeof(at));
+    switch (a->kind) {
+    case AUTO_ACT_REMIND:
+        if (st->result == AUTO_RES_DONE) {
+            /* TR: a reminder's state on its page: it reminded (a chime and Home's note); {0} a
+             * time of day or a day. At most 79 bytes */
+            !dated ? copy(out, len, TR("On \xC2\xB7 reminded"))
+            : today ? (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 reminded at {0}"), at)
+                    : (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 reminded on {0}"), at);
+            return true;
+        }
+        if (st->result == AUTO_RES_ALREADY) { /* not amber: nothing was needed */
+            !dated ? copy(out, len, TR("On \xC2\xB7 already armed"))
+            : today ? (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 already armed at {0}"), at)
+                    : (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 already armed on {0}"), at);
+            return true;
+        }
+        return false;
+    case AUTO_ACT_CHECK_ARMED:
+        if (st->result == AUTO_RES_ALREADY) { /* disarmed by then: nobody needed telling */
+            !dated ? copy(out, len, TR("On \xC2\xB7 already disarmed"))
+            : today ? (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 already disarmed at {0}"), at)
+                    : (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 already disarmed on {0}"), at);
+            return true;
+        }
+        return false;
+    case AUTO_ACT_CHIME:
+        if (st->result == AUTO_RES_ALREADY) {
+            /* TR: a door chime automation's state on its page: the chime was so already; {0} a
+             * time of day or a day. At most 79 bytes */
+            if (a->option != 0u) {
+                today ? (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 the door chime was already on at {0}"), at)
+                      : copy(out, len, TR("On \xC2\xB7 the door chime was already on"));
+            } else {
+                today ? (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 the door chime was already off at {0}"), at)
+                      : copy(out, len, TR("On \xC2\xB7 the door chime was already off"));
+            }
+            return true;
+        }
+        if (st->result == AUTO_RES_ARM_REFUSED) {
+            *alert = true;
+            const char *why = TR("the panel said no");
+            !dated ? (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 didn't work: {0}"), why)
+            : today ? (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 didn't work at {0}: {1}"), at, why)
+                    : (void)I18N_FORMAT(out, len, TR("On \xC2\xB7 didn't work on {0}: {1}"), at, why);
+            return true;
+        }
+        return false;
+    default: return false;
+    }
+}
+
 /* The list row's line for a put-off (grey: nothing is wrong, D20); false otherwise. */
 static bool put_off_line(const auto_rule_t *r, const auto_status_t *st, char *out, size_t len)
 {
@@ -1027,6 +1390,12 @@ static void use_text(const auto_rule_t *r, const auto_status_t *st, const rule_s
         /* TR: an automation's state, on its page and in the list. At most 95 bytes */
         copy(out, len, TR("Can't run: open it to fix it"));
         return;
+    case PROB_NO_SERVICE:
+        *alert = true;
+        /* TR: an automation's state, on its page and in the list (BL-224): it sends a
+         * notification and no phone service is set up in Integrations. At most 95 bytes */
+        copy(out, len, TR("Can't send: no phone notifications are set up"));
+        return;
     default: break;
     }
     if (rs->clock_wait) {
@@ -1037,6 +1406,9 @@ static void use_text(const auto_rule_t *r, const auto_status_t *st, const rule_s
     }
     if (arm_use_text(r, st, out, len, alert)) {
         return; /* an arming's or a disarming's outcome (phase C) */
+    }
+    if (panel_use_text(r, st, out, len, alert)) {
+        return; /* a reminder's, "still armed"'s or the chime's (BL-224) */
     }
     const bool dated = st->at_epoch_ms > 0;
     const bool today = dated && when_text(st->at_epoch_ms, at, sizeof(at));
@@ -1083,6 +1455,7 @@ static void row_sub_text(const auto_rule_t *r, const auto_status_t *st, const ru
     case PROB_OPTION: option_words(rs->verb, out, len); return;
     case PROB_ZONE:
     case PROB_FIX: copy(out, len, TR("Can't run: open it to fix it")); return;
+    case PROB_NO_SERVICE: copy(out, len, TR("Can't send: no phone notifications are set up")); return;
     default: break;
     }
     for (uint8_t i = 0; i < r->n && i < AUTO_ACTIONS; i++) {
@@ -1095,7 +1468,9 @@ static void row_sub_text(const auto_rule_t *r, const auto_status_t *st, const ru
     if (put_off_line(r, st, out, len)) {
         return;
     }
-    if (failed_result(st->result) || arm_failed(r, st)) {
+    const bool chime_refused = st->result == AUTO_RES_ARM_REFUSED && st->action_index < r->n &&
+                               st->action_index < AUTO_ACTIONS && r->then[st->action_index].kind == AUTO_ACT_CHIME;
+    if (failed_result(st->result) || arm_failed(r, st) || chime_refused) {
         char at[32];
         if (st->at_epoch_ms <= 0) {
             /* TR: the amber line of an automation's row: its last run didn't work. At most 95
@@ -1149,6 +1524,8 @@ static const char *check_words(auto_check_t why)
     case AUTO_ERR_LESS_SECURE_OFF:
         return TR("Your installer has turned off automations that unlock, open or disarm");
     case AUTO_ERR_UNDOES_ARMING: return TR("It can't disarm what its own trigger just armed");
+    case AUTO_ERR_OUTPUT: return TR("That output isn't one for automations now");
+    case AUTO_ERR_NEEDS_TIME: return TR("A reminder runs only at a time of day");
     default: return TR("An automation can't do that");
     }
 }
@@ -1242,7 +1619,9 @@ static void build_list(lv_obj_t *body, char *note, size_t nlen)
     lv_obj_t *add = ui_row_action(body, UI_ICON_PLUS, TR("Add an automation"), ui_tone_blue(), add_one, NULL);
     if (s_nrules == 0u) {
         /* TR: Settings > Automations with none yet: what an automation is. At most 127 bytes */
-        ui_paragraph(body, TR("The panel can do things by itself, like turning on the porch light when the front door opens."),
+        ui_paragraph(body,
+                     TR("The panel can do things by itself, like arming at bedtime or telling your phone when a door "
+                        "opens at night."),
                      ui_tone_gray());
         return;
     }
@@ -1284,7 +1663,8 @@ static void build_list(lv_obj_t *body, char *note, size_t nlen)
             ui_auto_when_text(&r->when, title, sizeof(title));
             thens_text(r, detail, sizeof(detail));
         }
-        const bool gray = r->off || rs.prob != PROB_NONE || rs.missing != 0u;
+        /* grey: it can't run; one that runs but can't send keeps its tone (drawing bl-224-list) */
+        const bool gray = r->off || (rs.prob != PROB_NONE && rs.prob != PROB_NO_SERVICE) || rs.missing != 0u;
         lv_obj_t *row = ui_row_link(body, rule_glyph(r), gray ? ui_tone_gray() : rule_tone(r), title, detail,
                                     /* TR: an automation's row in the list while it is turned off */
                                     r->off ? TR_C("automation state", "Off") : NULL, UI_ICON_CHEVRON_RIGHT,
@@ -1426,10 +1806,32 @@ static void alarm_detail(const auto_rule_t *r, const auto_action_t *a, char *out
     if (!maker_name(r, who, sizeof(who))) {
         return;
     }
+    char saver[ALARM_NAME_LEN + 16];
+    saver[0] = '\0';
+    if (r->saved_by != 0u && r->saved_by != r->made_by && S.cfg != NULL) {
+        ui_user_name(S.cfg, r->saved_by, saver, sizeof(saver));
+    }
     if (a->kind == AUTO_ACT_DISARM) {
         /* TR: under a disarming automation's action on its page; {0} who saved it. At most 79
          * bytes */
         I18N_FORMAT(out, len, TR("Set up by {0}"), who);
+    } else if (saver[0] != '\0' && a->bypass_open != 0u && A.less_secure) {
+        /* TR: under an arming automation the installer set up (BL-224): it uses the system
+         * master's permission; {0} who set it up, {1} the master, {2} the minutes it warns first.
+         * At most 127 bytes */
+        I18N_FORMAT(out, len,
+                    TRN("Set up by {0} \xC2\xB7 uses {1}'s permission \xC2\xB7 warns {2} minute before \xC2\xB7 bypasses open zones",
+                        "Set up by {0} \xC2\xB7 uses {1}'s permission \xC2\xB7 warns {2} minutes before \xC2\xB7 bypasses open zones",
+                        a->warn_min),
+                    saver, who, (unsigned)a->warn_min);
+    } else if (saver[0] != '\0') {
+        /* TR: under an arming automation the installer set up (BL-224, drawing
+         * bl-224-page-installer-arm); {0} who set it up, {1} the master, {2} the minutes it warns
+         * first. At most 127 bytes */
+        I18N_FORMAT(out, len,
+                    TRN("Set up by {0} \xC2\xB7 uses {1}'s permission \xC2\xB7 warns {2} minute before",
+                        "Set up by {0} \xC2\xB7 uses {1}'s permission \xC2\xB7 warns {2} minutes before", a->warn_min),
+                    saver, who, (unsigned)a->warn_min);
     } else if (a->bypass_open != 0u && A.less_secure) {
         /* TR: under an arming automation's action on its page; {0} who saved it, {1} the minutes
          * it warns first. At most 95 bytes */
@@ -1463,6 +1865,86 @@ static bool disarm_alone(const auto_rule_t *r)
         }
     }
     return true;
+}
+
+/* A time-of-day "Turn the door chime off" with no automation that turns that partition's chime on
+ * again (BL-224, drawing bl-224-chime). */
+static bool chime_off_alone(const auto_rule_t *r)
+{
+    const auto_action_t *off = NULL;
+    for (uint8_t i = 0; i < r->n && i < AUTO_ACTIONS; i++) {
+        if (r->then[i].kind == AUTO_ACT_CHIME && r->then[i].option == 0u) {
+            off = &r->then[i];
+        }
+    }
+    if (r->when.kind != AUTO_TRIG_TIME || off == NULL) {
+        return false;
+    }
+    for (size_t k = 0; k < s_nrules; k++) {
+        const auto_rule_t *o = &s_rules[k];
+        for (uint8_t i = 0; o->rec == AUTO_REC_OK && !o->off && i < o->n && i < AUTO_ACTIONS; i++) {
+            if (o->then[i].kind == AUTO_ACT_CHIME && o->then[i].option != 0u && o->then[i].partition == off->partition) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool ui_auto_may_add_second(const auto_action_t *first)
+{
+    switch (first->kind) {
+    case AUTO_ACT_DEVICE:
+    case AUTO_ACT_DISARM:
+    case AUTO_ACT_OUTPUT:
+    case AUTO_ACT_CHIME:
+    case AUTO_ACT_NOTIFY: return true;
+    default: return false;
+    }
+}
+
+/* Under BL-224's actions on the page (drawings bl-224-page-*): an output's terminal, what a
+ * reminder does, where a notification goes (amber when nowhere); false for any other kind. */
+static bool panel_detail(const auto_rule_t *r, const auto_action_t *a, char *out, size_t len, bool *alert)
+{
+    *alert = false;
+    out[0] = '\0';
+    char services[48];
+    char quote[64];
+    switch (a->kind) {
+    case AUTO_ACT_OUTPUT: ui_auto_output_detail(a->output, out, len); return true;
+    case AUTO_ACT_REMIND:
+        /* TR: under "Remind to arm" on an automation's page (BL-224). At most 95 bytes */
+        copy(out, len, a->option != 0u ? TR("A chime and a note on Home \xC2\xB7 also a notification")
+                                       : TR("A chime and a note on Home"));
+        return true;
+    case AUTO_ACT_CHECK_ARMED:
+    case AUTO_ACT_NOTIFY: {
+        const uint8_t mask = ui_auto_notify_services();
+        if (mask == 0u) {
+            *alert = true;
+            copy(out, len, TR("Can't send: no phone notifications are set up"));
+            return true;
+        }
+        ui_auto_services_text(mask, services, sizeof(services));
+        if (a->kind == AUTO_ACT_NOTIFY && ui_auto_notice_title(&r->when, AUTO_NOTICE_EVENT, 0u, quote, sizeof(quote))) {
+            if (services[0] != '\0') {
+                /* TR: under "Send a notification" on an automation's page (BL-224): what it says
+                 * and where it goes ({0} its words, "Front Door opened"; {1} the services, "ntfy,
+                 * Pushover"). At most 127 bytes */
+                I18N_FORMAT(out, len, TR("\"{0}\" \xC2\xB7 {1}"), quote, services);
+            } else {
+                /* TR: the same without the services' names ({0} its words). At most 95 bytes */
+                I18N_FORMAT(out, len, TR("\"{0}\""), quote);
+            }
+        } else {
+            copy(out, len, services);
+        }
+        return true;
+    }
+    case AUTO_ACT_CHIME: return true;
+    default: return false;
+    }
 }
 
 static void build_rule(lv_obj_t *body, uint8_t slot)
@@ -1517,10 +1999,11 @@ static void build_rule(lv_obj_t *body, uint8_t slot)
                         on_window, NULL);
         }
         ui_section(body, TR_C("automation section", "Then"));
-        bool device_only = true;
+        /* Try it now: only what may run outside its trigger (AUT-006; never an arm, a disarm, a
+         * reminder or "still armed": AUTO_TRY_ARM) */
+        bool try_it = true;
         for (uint8_t i = 0; i < r->n && i < AUTO_ACTIONS; i++) {
             const auto_action_t *a = &r->then[i];
-            device_only = device_only && a->kind == AUTO_ACT_DEVICE;
             then_text(a, false, title, sizeof(title));
             const ui_dev_t *d = a->kind == AUTO_ACT_DEVICE ? device_of(a) : NULL;
             const bool missing = (rs.missing & (1u << i)) != 0u;
@@ -1530,12 +2013,22 @@ static void build_rule(lv_obj_t *body, uint8_t slot)
                 alarm_detail(r, a, detail, sizeof(detail));
                 under = detail[0] != '\0' ? detail : NULL;
             }
+            bool under_alert = false;
+            if (a->kind != AUTO_ACT_ARM && a->kind != AUTO_ACT_DISARM &&
+                panel_detail(r, a, detail, sizeof(detail), &under_alert)) {
+                under = detail[0] != '\0' ? detail : NULL; /* BL-224's actions */
+            }
+            try_it = try_it && (a->kind == AUTO_ACT_DEVICE || a->kind == AUTO_ACT_OUTPUT ||
+                                a->kind == AUTO_ACT_CHIME || a->kind == AUTO_ACT_NOTIFY);
             /* A Disarm with one partition has nothing to change: no chevron, no tap (the Arm's
              * row opens its sheet) */
             const bool opens = a->kind != AUTO_ACT_DISARM || enabled_partitions() >= 2;
             lv_obj_t *row = ui_row_link(body, action_glyph(a), gray ? ui_tone_gray() : action_tone(a), title, under, NULL,
                                         opens ? UI_ICON_CHEVRON_RIGHT : NULL, opens ? on_action : NULL,
                                         (void *)(intptr_t)i);
+            if (under_alert && under != NULL) {
+                ui_row_set_detail(row, under, true, ui_tone_amber());
+            }
             if (!missing && (!A.less_secure || st.result == AUTO_RES_LESS_SECURE_OFF) &&
                 auto_action_less_secure(a)) {
                 /* TR: an automation's action the installer option stops (AUT-015): only the
@@ -1550,21 +2043,22 @@ static void build_rule(lv_obj_t *body, uint8_t slot)
                             a->name[0] != '\0' ? a->name : a->ref);
                 ui_row_set_detail(row, detail, true, ui_tone_amber());
             }
-            if (a->kind == AUTO_ACT_DEVICE && a->dev_action == ACT_ON) {
+            if ((a->kind == AUTO_ACT_DEVICE || a->kind == AUTO_ACT_OUTPUT) && a->dev_action == ACT_ON) {
                 ui_auto_off_after_text(a->off_after_min, value, sizeof(value));
                 /* TR: an automation's page: when a device it turned on is turned off again */
                 ui_row_link(body, UI_ICON_TIMER, ui_tone_blue(), TR("Turn it off after"), NULL, value,
                             UI_ICON_CHEVRON_RIGHT, on_off_after, (void *)(intptr_t)i);
             }
         }
-        /* A second action after a device action or a Disarm (D23); never after an Arm, the
+        /* A second action after a device action, a Disarm (D23), an output, the chime or a
+         * notification (BL-224); never after an Arm, a reminder or "still armed", each the
          * automation's only action (AUT-011) */
-        const bool second = r->n == 1u && (r->then[0].kind == AUTO_ACT_DEVICE || r->then[0].kind == AUTO_ACT_DISARM);
+        const bool second = r->n == 1u && ui_auto_may_add_second(&r->then[0]);
         if (second) {
             /* TR: an automation's page, the row that adds its second action */
             ui_row_action(body, UI_ICON_PLUS, TR("Add a second action"), ui_tone_blue(), on_add_action, NULL);
         }
-        if (device_only) {
+        if (try_it) {
             /* TR: an automation's page: runs its actions now (AUT-006) */
             ui_row_action(body, UI_ICON_PLAY, TR("Try it now"), ui_tone_blue(), on_try, NULL);
         }
@@ -1572,6 +2066,12 @@ static void build_rule(lv_obj_t *body, uint8_t slot)
             /* TR: an automation's page, under a time-of-day Disarm when no automation arms that
              * partition (DESIGN.md "Disarming" 5): a nudge, not a rule. At most 127 bytes */
             ui_paragraph(body, TR("Nothing arms it again. Add one that arms in the evening."), ui_tone_gray());
+        }
+        if (chime_off_alone(r)) {
+            /* TR: an automation's page, under a time-of-day "Turn the door chime off" when no
+             * automation turns it on again (BL-224, drawing bl-224-chime): a nudge. At most 127
+             * bytes */
+            ui_paragraph(body, TR("Nothing turns it on again. Add one for the morning."), ui_tone_gray());
         }
     }
     ui_section(body, "");

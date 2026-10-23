@@ -232,8 +232,9 @@ static void print_status(void)
     printf("  panel %s, UDP %u, stack minimum free: link %u bytes", g_link.panel_id,
            (unsigned)PLINK_UDP_PORT, (unsigned)uxTaskGetStackHighWaterMark(g_link.task));
     if (!keypad) {
-        printf(", worker %u, plink_dev %u", (unsigned)msvc_stack_free(),
-               (unsigned)hsvc_stack_free());
+        const uint32_t rb = mrbsvc_stack_free();
+        printf(", worker %u, plink_dev %u, plink_rb %u", (unsigned)msvc_stack_free(),
+               (unsigned)hsvc_stack_free(), rb == UINT32_MAX ? 0u : (unsigned)rb);
     }
     printf("\n");
     if (keypad) {
@@ -718,6 +719,9 @@ static int cmd_plink(int argc, char **argv)
         printf("Enrollment Wi-Fi %u; authenticated online %u\n",
                (unsigned)pair.wifi_setup, (unsigned)pair.online);
         return 0;
+    }
+    if (argc >= 2 && strcmp(argv[1], "rb") == 0) {
+        return krbsvc_console(argc, argv); /* BL-223: the master's pages, as the screen calls them */
     }
     if (argc == 3 && strcmp(argv[1], "radio") == 0 && strcmp(argv[2], "window") == 0) {
         net_wifi_radio_window();

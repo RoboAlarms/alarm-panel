@@ -51,7 +51,7 @@ lv_obj_t * pick_sheet_create(lv_obj_t * parent)
         lv_obj_t * pick_list = alarm_ui_run_0(pick_card, lv_pct(100), LV_SIZE_CONTENT);
         alarm_ui_run_13(pick_list);
         alarm_ui_run_1(pick_list, LV_FLEX_FLOW_COLUMN);
-        alarm_ui_run_49(pick_list, SPACE_SM, "pick_list");
+        alarm_ui_run_46(pick_list, SPACE_SM, "pick_list");
 
         the_root = box_0;
     }

@@ -75,9 +75,9 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
         lv_style_set_pad_row(&style_pad_keys, 8);
         lv_style_set_pad_column(&style_pad_keys, 16);
         lv_style_set_text_color(&style_pad_enter, COLOR_ON_TONE);
-        alarm_ui_run_64(&style_pad_silence, 44, RADIUS_FULL);
+        alarm_ui_run_65(&style_pad_silence, 44, RADIUS_FULL);
         alarm_ui_run_6(&style_pad_silence, COLOR_RED, (255 * 18 / 100));
-        alarm_ui_run_65(&style_pad_silence, 1, COLOR_RED);
+        alarm_ui_run_66(&style_pad_silence, 1, COLOR_RED);
         alarm_ui_run_15(&style_pad_silence, SPACE_XL, SPACE_XL);
         lv_style_set_pad_column(&style_pad_silence, SPACE_SM);
         alarm_ui_run_45(&style_pad_silence, font_label, COLOR_TEXT);
@@ -121,7 +121,7 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
 
         lv_obj_t * pad_top = alarm_ui_run_0(box_0, lv_pct(100), LV_SIZE_CONTENT);
         lv_obj_set_flex_grow(pad_top, top_grow);
-        alarm_ui_run_71(pad_top, SPACE_MD, SPACE_MD);
+        alarm_ui_run_72(pad_top, SPACE_MD, SPACE_MD);
         alarm_ui_run_1(pad_top, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_style_flex_main_place(pad_top, LV_FLEX_ALIGN_CENTER, 0);
         alarm_ui_run_3(pad_top);
@@ -231,7 +231,7 @@ lv_obj_t * code_pad_create(lv_obj_t * parent, int32_t top_grow, int32_t words_ma
         alarm_ui_run_14(pad_silence, alarm_ui_tr("Silence"));
 
         lv_obj_t * pad_keys = alarm_ui_run_0(box_0, 392, LV_SIZE_CONTENT);
-        alarm_ui_run_67(pad_keys, &style_pad_keys, 0, "pad_keys");
+        alarm_ui_run_68(pad_keys, &style_pad_keys, 0, "pad_keys");
         lv_obj_t * pad_key_0 = pad_key_create(pad_keys, "1", font_keypad);
         lv_obj_add_event_cb(pad_key_0, ui_on_pad_key, LV_EVENT_CLICKED, (void *)"1");
 

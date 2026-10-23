@@ -252,7 +252,7 @@ void setUp(void)
     NR = 0;
     memset(Z, 0, sizeof Z);
     Z[0] = (auto_zone_t){ALARM_ZT_ENTRY_EXIT_1, 1, ALARM_DEVCLASS_DOOR};
-    ENV = (auto_env_t){0x03u, true, Z, true, false};
+    ENV = (auto_env_t){0x03u, true, Z, true, false, 0u};
 }
 
 void tearDown(void) {}

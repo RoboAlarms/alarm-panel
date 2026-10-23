@@ -26,7 +26,7 @@ lv_obj_t * trouble_row_create(lv_obj_t * parent, const char * glyph, const char 
         /*Init all styles*/
         lv_style_init(&style_trouble_row);
 
-        alarm_ui_run_25(&style_trouble_row, lv_pct(100), 56);
+        alarm_ui_run_26(&style_trouble_row, lv_pct(100), 56);
         alarm_ui_run_6(&style_trouble_row, RADIUS_MD);
         alarm_ui_run_5(&style_trouble_row, SPACE_MD, SPACE_LG);
         lv_style_set_pad_column(&style_trouble_row, SPACE_MD);
@@ -50,7 +50,7 @@ lv_obj_t * trouble_row_create(lv_obj_t * parent, const char * glyph, const char 
         lv_obj_set_style_pad_row(box_1, 0, 0);
         lv_obj_t * title_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_DOTS);
         lv_label_set_text(title_label, title);
-        alarm_ui_run_28(title_label);
+        alarm_ui_run_29(title_label);
 
         lv_obj_t * detail_label = alarm_ui_run_2(box_1, LV_LABEL_LONG_MODE_DOTS);
         lv_label_set_text(detail_label, detail);

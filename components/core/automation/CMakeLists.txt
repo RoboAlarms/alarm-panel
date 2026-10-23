@@ -1,7 +1,8 @@
 # automation - the panel's built-in automations (docs/features/41): the model, the validator and the
 # stored record (auto_model.c, auto_codec.c), the observer that turns engine events and snapshots
 # into occurrences (auto_watch.c), the local clock's crossings (auto_clock.c) and the runner
-# (auto_run.c, with arming and disarming in auto_arm.c) and the store over a key-value port (auto_store.c). Portable C11;
+# (auto_run.c, with arming and disarming in auto_arm.c and the actions that need no device in
+# auto_panel.c) and the store over a key-value port (auto_store.c). Portable C11;
 # components/services/automation_service runs it on the panel and host/ui_preview/host_panel.c
 # in the PC simulator.
 set(AUTOMATION_SRCS
@@ -11,6 +12,7 @@ set(AUTOMATION_SRCS
     src/auto_clock.c
     src/auto_run.c
     src/auto_arm.c
+    src/auto_panel.c
     src/auto_store.c
 )
 

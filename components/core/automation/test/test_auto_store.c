@@ -155,7 +155,7 @@ static auto_env_t env_of(bool arm_supported)
 {
     memset(s_zones, 0, sizeof s_zones);
     s_zones[0] = (auto_zone_t){ALARM_ZT_ENTRY_EXIT_1, 1, ALARM_DEVCLASS_DOOR};
-    auto_env_t e = {0x01u, arm_supported, s_zones, true, false};
+    auto_env_t e = {0x01u, arm_supported, s_zones, true, false, 0u};
     return e;
 }
 
@@ -666,6 +666,48 @@ static void test_made_by_is_the_saver(void)
     TEST_ASSERT_EQUAL_UINT8(1u, got.made_by);
 }
 
+/* BL-224 (approved 2026-10-21): an Arm the installer saves acts as the system master, and keeps
+ * who set it up (saved_by, an ignorable field); a later save by the master makes it theirs again.
+ * The installer's Disarm stays refused; their device and output rules stay their own. */
+static void test_installer_arm_acts_as_the_master(void)
+{
+    TEST_ASSERT_TRUE(auto_store_load(&g_s, &KV));
+    auto_env_t env = env_of(true);
+    env.by_installer = true;
+    auto_rule_t r = arm_night();
+    uint16_t uid = 0;
+    auto_check_t why = AUTO_ERR_INCOMPLETE;
+    TEST_ASSERT_EQUAL_INT(AUTO_SAVE_OK,
+                          auto_store_save(&g_s, &KV, &r, &env, ALARM_USER_INSTALLER, 0u, &why, &uid));
+    auto_rule_t got;
+    TEST_ASSERT_TRUE(auto_store_get(&g_s, uid, &got));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, got.made_by);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_INSTALLER, got.saved_by);
+    auto_rule_t dec;
+    const kv_ent_t *e = kv_find("a01");
+    TEST_ASSERT_EQUAL_INT(AUTO_REC_OK, auto_decode(e->data, e->len, &dec));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, dec.made_by);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_INSTALLER, dec.saved_by);
+
+    /* the master saves it: theirs, no saved_by */
+    env.by_installer = false;
+    TEST_ASSERT_EQUAL_INT(AUTO_SAVE_OK,
+                          auto_store_save(&g_s, &KV, &got, &env, ALARM_USER_MASTER, 1u, NULL, NULL));
+    TEST_ASSERT_TRUE(auto_store_get(&g_s, uid, &got));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, got.made_by);
+    TEST_ASSERT_EQUAL_UINT8(0u, got.saved_by);
+
+    /* a device rule the installer saves stays the installer's */
+    env.by_installer = true;
+    auto_rule_t p = porch("light.porch");
+    uint16_t light = 0;
+    TEST_ASSERT_EQUAL_INT(AUTO_SAVE_OK,
+                          auto_store_save(&g_s, &KV, &p, &env, ALARM_USER_INSTALLER, 2u, NULL, &light));
+    TEST_ASSERT_TRUE(auto_store_get(&g_s, light, &got));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_INSTALLER, got.made_by);
+    TEST_ASSERT_EQUAL_UINT8(0u, got.saved_by);
+}
+
 /* D30, AUT-009: changed_at is the store's - the time of an add or of an edit that changes the
  * sentence, kept through one that doesn't (a confirm, off, the maker), 0 when the caller can't
  * tell the time; the request's own value is never taken. */
@@ -902,6 +944,7 @@ int main(void)
     RUN_TEST(test_no_room_only_for_adds);
     RUN_TEST(test_invalid_and_not_found);
     RUN_TEST(test_made_by_is_the_saver);
+    RUN_TEST(test_installer_arm_acts_as_the_master);
     RUN_TEST(test_option_off_keeps_a_less_secure_record);
     RUN_TEST(test_ignorable_bytes_kept);
     RUN_TEST(test_changed_at);

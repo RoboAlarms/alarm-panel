@@ -75,7 +75,7 @@ lv_obj_t * device_tile_create(lv_obj_t * parent, const char * glyph, const char 
         lv_label_set_text(detail_label, detail);
         lv_obj_set_style_text_font(detail_label, font_caption, 0);
         lv_obj_set_style_text_line_space(detail_label, 0, 0);
-        alarm_ui_run_47(detail_label, "detail_label");
+        alarm_ui_run_48(detail_label, "detail_label");
 
         lv_obj_t * more = alarm_ui_run_0(box_0, 64, 72);
         alarm_ui_run_56(more, LV_ALIGN_TOP_RIGHT, 16, -12);

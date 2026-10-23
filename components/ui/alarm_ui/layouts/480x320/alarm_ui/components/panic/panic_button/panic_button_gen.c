@@ -42,7 +42,7 @@ lv_obj_t * panic_button_create(lv_obj_t * parent, const char * glyph, const char
         lv_style_set_arc_opa(&style_panic_ring, (255 * 0 / 100));
         lv_style_set_arc_width(&style_panic_ring_indicator, 8);
         lv_style_set_arc_rounded(&style_panic_ring_indicator, true);
-        alarm_ui_run_25(&style_panic_button, 84, 84);
+        alarm_ui_run_26(&style_panic_button, 84, 84);
         alarm_ui_run_42(&style_panic_button, RADIUS_FULL, (255 * 16 / 100));
         lv_style_set_border_width(&style_panic_button, 2);
         lv_style_set_border_opa(&style_panic_button, (255 * 50 / 100));

@@ -32,6 +32,7 @@
 #include "plink_wifi_fixture_v1.h"
 #include "plink_io_fixture_v1.h"
 #include "plink_auto_fixture_v1.h"
+#include "plink_rb_fixture_v1.h"
 #include "status_goto_fixture_v1.h"
 #include "status_policy_fixture_v1.h"
 
@@ -4772,7 +4773,9 @@ static void test_wire_numbers_v1(void)
     }
     TEST_ASSERT_EQUAL_size_t(frozen, here);
     /* The masks built from them. */
-    TEST_ASSERT_EQUAL_HEX32(0x0007u, PLINK_CAPS_KNOWN & ~(PLINK_CAP_WIFI | PLINK_CAP_IO | PLINK_CAP_AUTO));
+    TEST_ASSERT_EQUAL_HEX32(0x0007u, PLINK_CAPS_KNOWN & ~(PLINK_CAP_WIFI | PLINK_CAP_IO | PLINK_CAP_AUTO |
+                                                          PLINK_CAP_RB));
+    TEST_ASSERT_EQUAL_HEX32(0x0040u, PLINK_CAP_RB);
     TEST_ASSERT_EQUAL_HEX32(0x0020u, PLINK_CAP_AUTO);
     TEST_ASSERT_EQUAL_HEX32(0x0008u, PLINK_CAP_WIFI);
     TEST_ASSERT_EQUAL_HEX32(0x0010u, PLINK_CAP_IO);
@@ -4847,6 +4850,11 @@ static void test_wire_fixture_v1(void)
         if (t == PLINK_T_WIFI_REQ || t == PLINK_T_WIFI) {
             /* added after v1: frozen in plink_wifi_fixture_v1.h (test_wifi_fixture_v1) */
             TEST_ASSERT_TRUE(t == PLINK_WIFI_V1_TYPE_REQ || t == PLINK_WIFI_V1_TYPE);
+            continue;
+        }
+        if (t >= PLINK_T_RB_CALL && t <= PLINK_T_RB_GRANT) {
+            /* added after v1: frozen in plink_rb_fixture_v1.h (test_rb_fixture_v1) */
+            TEST_ASSERT_TRUE(t >= PLINK_RB_V1_TYPE_CALL && t <= PLINK_RB_V1_TYPE_GRANT);
             continue;
         }
         if (t == PLINK_T_AUTO_WARN) {
@@ -4924,6 +4932,85 @@ static void test_io_fixture_v1(void)
 /* LINK-056, LINK-017: the frozen AUTO_WARN payload (plink_auto_fixture_v1.h, built from the
  * published layout) keeps its numbers, reads as the values frozen with it, and encodes again to its
  * bytes; a longer record from a newer master is read for the bytes known, a short one refused. */
+/* LINK-058: the remote backend's messages, as v1 sends them */
+static void test_rb_fixture_v1(void)
+{
+    TEST_ASSERT_EQUAL_HEX16(PLINK_RB_V1_CAP, PLINK_CAP_RB);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_RB_V1_TYPE_CALL, PLINK_T_RB_CALL);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_RB_V1_TYPE_ANSWER, PLINK_T_RB_ANSWER);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_RB_V1_TYPE_MORE, PLINK_T_RB_MORE);
+    TEST_ASSERT_EQUAL_HEX8(PLINK_RB_V1_TYPE_GRANT, PLINK_T_RB_GRANT);
+    uint8_t again[64];
+    size_t n = 0;
+
+    plink_rb_call_t c;
+    TEST_ASSERT_TRUE(plink_dec_rb_call(PLINK_RB_V1_CALL, sizeof PLINK_RB_V1_CALL, &c));
+    TEST_ASSERT_EQUAL_HEX32(0x01020304u, c.req);
+    TEST_ASSERT_EQUAL_HEX16(0x0033u, c.call);
+    TEST_ASSERT_EQUAL_UINT32(0u, c.offset);
+    TEST_ASSERT_EQUAL_UINT32(3u, c.total);
+    TEST_ASSERT_EQUAL_UINT16(3u, c.len);
+    TEST_ASSERT_EQUAL_HEX8(0xBB, c.data[1]);
+    TEST_ASSERT_TRUE(plink_enc_rb_call(&c, again, sizeof again, &n));
+    TEST_ASSERT_EQUAL_size_t(sizeof PLINK_RB_V1_CALL, n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(PLINK_RB_V1_CALL, again, n);
+    TEST_ASSERT_EQUAL_size_t(PLINK_RB_CALL_HDR + 3u, n);
+    /* a part past its total, and req 0, are refused */
+    uint8_t bad[sizeof PLINK_RB_V1_CALL];
+    memcpy(bad, PLINK_RB_V1_CALL, sizeof bad);
+    bad[6] = 1u; /* offset 1: 1 + 3 > 3 */
+    TEST_ASSERT_FALSE(plink_dec_rb_call(bad, sizeof bad, &c));
+    memcpy(bad, PLINK_RB_V1_CALL, sizeof bad);
+    memset(bad, 0, 4u);
+    TEST_ASSERT_FALSE(plink_dec_rb_call(bad, sizeof bad, &c));
+    TEST_ASSERT_FALSE(plink_dec_rb_call(PLINK_RB_V1_CALL, sizeof PLINK_RB_V1_CALL - 1u, &c));
+
+    plink_rb_answer_t a;
+    TEST_ASSERT_TRUE(plink_dec_rb_answer(PLINK_RB_V1_ANSWER, sizeof PLINK_RB_V1_ANSWER, &a));
+    TEST_ASSERT_EQUAL_HEX32(0x01020304u, a.req);
+    TEST_ASSERT_EQUAL_UINT8(0u, a.status);
+    TEST_ASSERT_EQUAL_UINT32(5u, a.total);
+    TEST_ASSERT_EQUAL_UINT32(2u, a.offset);
+    TEST_ASSERT_EQUAL_UINT16(3u, a.len);
+    TEST_ASSERT_EQUAL_HEX8(0x33, a.data[2]);
+    TEST_ASSERT_TRUE(plink_enc_rb_answer(&a, again, sizeof again, &n));
+    TEST_ASSERT_EQUAL_size_t(sizeof PLINK_RB_V1_ANSWER, n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(PLINK_RB_V1_ANSWER, again, n);
+    TEST_ASSERT_EQUAL_size_t(PLINK_RB_ANSWER_HDR + 3u, n);
+
+    plink_rb_more_t mo;
+    TEST_ASSERT_TRUE(plink_dec_rb_more(PLINK_RB_V1_MORE, sizeof PLINK_RB_V1_MORE, &mo));
+    TEST_ASSERT_EQUAL_HEX32(0x01020304u, mo.req);
+    TEST_ASSERT_EQUAL_UINT32(1024u, mo.offset);
+    TEST_ASSERT_EQUAL_UINT16(0u, mo.max);
+    TEST_ASSERT_TRUE(plink_enc_rb_more(&mo, again, sizeof again, &n));
+    TEST_ASSERT_EQUAL_size_t(sizeof PLINK_RB_V1_MORE, n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(PLINK_RB_V1_MORE, again, n);
+
+    plink_rb_grant_t g;
+    TEST_ASSERT_TRUE(plink_dec_rb_grant(PLINK_RB_V1_GRANT, sizeof PLINK_RB_V1_GRANT, &g));
+    TEST_ASSERT_EQUAL_UINT8(2u, g.user);
+    TEST_ASSERT_EQUAL_UINT8(2u, g.authority);
+    TEST_ASSERT_EQUAL_HEX8(0x01u, g.partitions);
+    TEST_ASSERT_TRUE(g.installer);
+    TEST_ASSERT_EQUAL_UINT16(300u, g.idle_left_s);
+    TEST_ASSERT_EQUAL_UINT8(2u, g.holder_kind);
+    TEST_ASSERT_EQUAL_UINT16(1u, g.holder_id);
+    TEST_ASSERT_EQUAL_HEX32(0x0000000Fu, g.areas);
+    TEST_ASSERT_TRUE(plink_enc_rb_grant(&g, again, sizeof again, &n));
+    TEST_ASSERT_EQUAL_size_t(sizeof PLINK_RB_V1_GRANT, n);
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(PLINK_RB_V1_GRANT, again, n);
+    /* LINK-017: a newer grant section (a byte appended) reads the same */
+    uint8_t longer[sizeof PLINK_RB_V1_GRANT + 1u];
+    longer[0] = 0x07u;
+    memcpy(longer + 1, PLINK_RB_V1_GRANT + 1, 6u);
+    longer[7] = 0xEEu;
+    memcpy(longer + 8, PLINK_RB_V1_GRANT + 7, sizeof PLINK_RB_V1_GRANT - 7u);
+    plink_rb_grant_t g2;
+    TEST_ASSERT_TRUE(plink_dec_rb_grant(longer, sizeof longer, &g2));
+    TEST_ASSERT_EQUAL_MEMORY(&g, &g2, sizeof g);
+}
+
 static void test_auto_fixture_v1(void)
 {
     TEST_ASSERT_EQUAL_HEX8(PLINK_AUTO_V1_TYPE, PLINK_T_AUTO_WARN);
@@ -5028,6 +5115,7 @@ int main(void)
     RUN_TEST(test_io_state_codec);
     RUN_TEST(test_io_fixture_v1);
     RUN_TEST(test_auto_fixture_v1);
+    RUN_TEST(test_rb_fixture_v1);
     RUN_TEST(test_wifi_credentials_codec);
     RUN_TEST(test_wifi_fixture_v1);
     RUN_TEST(test_wire_numbers);

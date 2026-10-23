@@ -381,6 +381,16 @@ typedef enum {
     UI_NOTIFY_PUSHOVER,
     UI_NOTIFY_PROVIDERS,
 } ui_notify_provider_t;
+/* auto_notify_services: a phone service is set up, but the backend can't say which. */
+#define UI_AUTO_NOTIFY_SOME 0x80u
+
+/* A wired output "For automations" (docs/features/41 BL-224; outputs_service_auto_list's
+ * outputs_auto_t): an automation's Outputs row ("Garden Lights", "Output on GPIO 47"). */
+typedef struct {
+    uint8_t number;  /* 1..AUTO_OUTPUTS: the action's output */
+    uint8_t gpio;    /* its terminal's GPIO */
+    char name[24];   /* typed like a zone's; "" = none given */
+} ui_auto_output_t;
 
 typedef enum {
     UI_NOTIFY_OFF = 0,    /* turned off */
@@ -1651,7 +1661,28 @@ typedef struct {
     bool return_never;
     uint16_t return_s;
     uint8_t selected;
+    /* Appended (BL-223, docs/features/11 "The master's settings and installer menu on keypads"):
+     * the alarm panel's pages a keypad may show - the groups its alarm panel serves (ui_remote's
+     * UR_AREA_*; 0 with an older one, which keeps them hidden) - whether this keypad holds the
+     * alarm panel's installer mode, who holds it otherwise (UI_LINK_HOLDER_*, or a keypad number
+     * 1..8), and a generation that moves whenever an answer the screen read from the alarm panel
+     * changed: an open page of the alarm panel's reads again then (LINK-063). */
+    uint32_t remote_areas;
+    bool remote_installer;
+    uint8_t remote_holder;
+    uint32_t remote_gen;
 } ui_link_info_t;
+/* remote_areas' bits: ui_remote.h's UR_AREA_* (the same numbers, asserted there) */
+#define UI_LINK_AREA_SESSION (1u << 0) /* installer mode */
+#define UI_LINK_AREA_CONFIG  (1u << 1) /* the configuration */
+#define UI_LINK_AREA_USERS   (1u << 2)
+#define UI_LINK_AREA_ZONES   (1u << 3) /* zones' sensors */
+#define UI_LINK_AREA_ZWAVE   (1u << 4)
+#define UI_LINK_AREA_ZIGBEE  (1u << 5)
+#define UI_LINK_AREA_OUTPUTS (1u << 6) /* sirens, outputs and 433 MHz */
+#define UI_LINK_KEYPADS_MAX  8u    /* keypad numbers 1..8 (docs/features/11 LINK-001) */
+#define UI_LINK_HOLDER_NONE  0u    /* nobody holds installer mode */
+#define UI_LINK_HOLDER_PANEL 0xFFu /* the alarm panel's own screen, or its Panel Manager */
 
 /* Local enrollment progress; never includes network secrets. */
 enum {
@@ -1807,7 +1838,9 @@ typedef enum {
     UI_OUT_FN_STROBE = 2,
     UI_OUT_FN_SMOKE_RESET = 3,
     UI_OUT_FN_ARMED = 4,
+    UI_OUT_FN_AUTOMATION = 5, /* "For automations" (BL-224): switched by automations only */
 } ui_out_fn_t;
+#define UI_OUT_NAME_LEN 24u /* out_wired.h OW_NAME_LEN */
 
 typedef struct {
     uint8_t function;   /* ui_out_fn_t; NONE: the channel is free */
@@ -1819,6 +1852,7 @@ typedef struct {
     bool active_low;    /* the relay board switches on low */
     bool on;            /* driven on now */
     bool trouble;       /* its supervision input says so */
+    char name[UI_OUT_NAME_LEN]; /* AUTOMATION: its name as typed (may be empty); "" otherwise */
 } ui_out_wired_t;
 
 typedef struct {
@@ -2184,6 +2218,20 @@ typedef struct {
     auto_put_off_t (*auto_put_off)(void *ctx, uint16_t uid, uint8_t choice, const char *code,
                                    alarm_result_t *code_result);
 
+    /* ---- Automations without devices (docs/features/41 DESIGN.md section 15, BL-224). Each
+     * NULL = none: no Outputs in "What should it do?", no reminder note on Home, notifications
+     * shown as not set up. Copies of RAM tables or settings, no engine call: fine from a tick.
+     * The panel's outputs_service, automation_service and net_notify; the simulator's own ---- */
+    /* The wired outputs set "For automations" (outputs_service_auto_list): at most max, the
+     * count, by number. */
+    size_t (*auto_outputs)(void *ctx, ui_auto_output_t *out, size_t max);
+    /* The reminders' notes showing now (automation_service_reminders; on = 1): at most max. */
+    size_t (*auto_reminders)(void *ctx, auto_remind_t *out, size_t max);
+    /* The phone services an automation's notification goes to now: bit UI_NOTIFY_NTFY,
+     * bit UI_NOTIFY_PUSHOVER (set up and on), UI_AUTO_NOTIFY_SOME when one is but which can't
+     * be told; 0 = none (net_notify_any_service false). */
+    uint8_t (*auto_notify_services)(void *ctx);
+
     /* ---- the voice (docs/features/08 voice-first-build.md D03, D06, D09). voice_info, the
      * lease and voice_preview NULL = no voice in this build: the UI hides Voice volume, the
      * Announcements page and the zone's Spoken name row. voice_seen and voice_apply_approve NULL
@@ -2257,7 +2305,8 @@ typedef struct {
 
     /* Optional (LINK-054): runs work(arg) once on a task of the backend's and returns at once;
      * false: not now (the UI runs it itself). The UI hands over its calls to command,
-     * authenticate, change_code, dev_act and partition_select, one at a time, when they may wait
+     * authenticate, change_code, dev_act, partition_select and
+     * program_enter (BL-223), one at a time, when they may wait
      * for another panel (a keypad's master answers them); work calls only those entries and
      * nothing of LVGL. NULL: every call runs on the UI's task, as an engine on this panel answers
      * at once. */

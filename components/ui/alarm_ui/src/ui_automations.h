@@ -45,6 +45,34 @@ lv_color_t ui_auto_kind_tone(uint8_t k);
 const char *ui_auto_when_glyph(const auto_trigger_t *w);
 lv_color_t ui_auto_when_tone(const auto_trigger_t *w);
 
+/* ---- automations without devices (DESIGN.md section 15, BL-224) ---- */
+
+/* Glyphs ui_text.h doesn't name (Lucide, in icons_20: globals.xml) */
+#define UI_AUTO_G_TOGGLE_RIGHT "\xEE\x86\x8C" /* U+E18C toggle-right: an output turned on */
+#define UI_AUTO_G_TOGGLE_LEFT  "\xEE\x86\x8B" /* U+E18B toggle-left: an output turned off */
+#define UI_AUTO_G_UNPLUG       "\xEE\x91\x9D" /* U+E45D unplug: the power goes off */
+#define UI_AUTO_G_BATTERY_LOW  "\xEE\x81\x96" /* U+E056 battery-low */
+#define UI_AUTO_G_RADIO        "\xEE\x85\x82" /* U+E142 radio: a sensor stops reporting */
+
+/* The wired outputs "For automations" now (the backend's auto_outputs; 0 without): at most max. */
+size_t ui_auto_outputs(ui_auto_output_t *out, size_t max);
+/* Output n's name as the panel knows it now, else "Output {0}". */
+void ui_auto_output_name(uint8_t number, char *out, size_t len);
+/* "Output on GPIO 47" ("" when the output isn't one for automations now). */
+void ui_auto_output_detail(uint8_t number, char *out, size_t len);
+/* After this first action, may an automation have a second (a device, a Disarm, an output, the
+ * chime, a notification; never after an Arm, a reminder or "still armed")? */
+bool ui_auto_may_add_second(const auto_action_t *first);
+/* The phone services a notification goes to now (auto_notify_services; 0: none set up). */
+uint8_t ui_auto_notify_services(void);
+/* "ntfy, Pushover": the services in that mask, in words ("" for none). */
+void ui_auto_services_text(uint8_t mask, char *out, size_t len);
+/* What an automation's notification says, in the words a phone gets (notify_words.c, the one
+ * copy): what an auto_notice_kind_t - EVENT after trigger w ("Front Door opened", "It's 11:00
+ * PM"), REMIND or STILL_ARMED of partition p at w's minute ("Home is still armed at 4:00 PM").
+ * False when there is no single sentence to show. */
+bool ui_auto_notice_title(const auto_trigger_t *w, uint8_t what, uint8_t p, char *out, size_t len);
+
 /* Saves (r->uid 0 adds) and deletes through the backend, the expected gen being the one last
  * read. A refusal beeps and toasts its reason; true when stored. */
 bool ui_auto_save(const auto_rule_t *r, uint16_t *uid_out);

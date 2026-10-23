@@ -13,7 +13,11 @@
  * byte - an unlock without a code is answered NEED_CODE at once with nothing sent, an unlock with
  * Alex's code is judged once on the master as the keypad's and the keypad shows the lock unlocked,
  * the keypad's settings report reaches the master and a settings write from the master is taken on
- * the keypad and answered with what it keeps; the keypad stopped (no heartbeats) raises the
+ * the keypad and answered with what it keeps; the master's installer menu from the keypad (BL-223,
+ * LINK-058..062): through a ui_remote proxy on the keypad, installer mode entered with the
+ * installer code and held by the keypad, the master's sensor source listened to, a new zone saved
+ * in the master's configuration and bound to the sensor heard, installer mode left, and a save
+ * refused once it isn't the keypad's; the keypad stopped (no heartbeats) raises the
  * master's supervision trouble after the supervision time and clears it when it is back
  * (LINK-007); the master restarted from its stored record has the keypad ONLINE again within
  * 15 s (docs/features/11 "Test and acceptance") and its devices mirrored again; a removed keypad
@@ -60,6 +64,16 @@ static const uint8_t LO[4] = {127, 0, 0, 1};
 static const uint8_t BCAST[4] = {255, 255, 255, 255};
 
 static int fail(const char *fmt, ...) LINK_PRINTF(1, 2);
+static bool step(void);
+
+/* BL-223: the keypad's screen's calls of the master's pages - a ui_remote proxy whose port
+ * starts the call on the keypad's link manager and runs the network until it is answered, as a
+ * panel's call task waits for its link task. */
+static ui_remote_proxy_t RPX;
+static ui_backend_t RBE;
+static ui_remote_status_t rb_call(void *ctx, uint16_t call, const uint8_t *args, size_t len,
+                                  uint8_t *ans, size_t cap, size_t *ans_len);
+static uint32_t rb_cfg_crc(void *ctx);
 
 static void say_m(void *ctx, const char *line)
 {
@@ -350,6 +364,52 @@ static bool keypad_shows(void)
 
 /* ---- the run ------------------------------------------------------------------------------- */
 
+static uint32_t CFG_SEQ;
+
+static bool grant_arrived(void)
+{
+    plink_rb_grant_t g;
+    return plink_keypad_rb_grant(&K.k, &g) && (g.areas & UR_AREA_ZONES) != 0u;
+}
+
+static bool keypad_has_new_config(void)
+{
+    return plink_keypad_config_seq(&K.k) != CFG_SEQ;
+}
+
+static ui_remote_status_t rb_call(void *ctx, uint16_t call, const uint8_t *args, size_t len,
+                                  uint8_t *ans, size_t cap, size_t *ans_len)
+{
+    (void)ctx;
+    *ans_len = 0u;
+    uint32_t req = 0;
+    if (!plink_keypad_rb_start(&K.k, NOW, call, args, len, &req)) {
+        return UR_UNAVAILABLE;
+    }
+    const uint64_t end = NOW + 12000u;
+    uint8_t st = PLINK_RB_PENDING;
+    size_t n = 0u;
+    while ((st = plink_keypad_rb_poll(&K.k, req, &n)) == PLINK_RB_PENDING && NOW < end) {
+        if (!step()) {
+            break;
+        }
+    }
+    if (st == PLINK_RB_OK) {
+        if (n > cap) {
+            return UR_TOO_BIG;
+        }
+        memcpy(ans, K.rb_ans, n);
+        *ans_len = n;
+    }
+    return st == PLINK_RB_PENDING ? UR_NO_ANSWER : (ui_remote_status_t)st;
+}
+
+static uint32_t rb_cfg_crc(void *ctx)
+{
+    (void)ctx;
+    return plink_keypad_cfg_crc(&K.k);
+}
+
 static int fail(const char *fmt, ...)
 {
     char msg[256];
@@ -610,6 +670,116 @@ int main(int argc, char **argv)
     }
 
     /* LINK-007: a keypad that stops is a supervision trouble after its supervision time. */
+    /* BL-223, LINK-058..062: the master's installer menu from the keypad. */
+    STAGE = "installer from the keypad";
+    if (!run_until(grant_arrived, 3000u)) {
+        return fail("the master never told the keypad which of its settings it serves");
+    }
+    RPX.port = (ui_remote_port_t){.ctx = NULL, .call = rb_call, .cfg_crc = rb_cfg_crc};
+    plink_rb_grant_t g;
+    (void)plink_keypad_rb_grant(&K.k, &g);
+    ui_remote_proxy(&RBE, &RPX, g.areas);
+    if (RBE.program_enter == NULL || RBE.zone_bind == NULL || RBE.set_config == NULL) {
+        return fail("the master serves areas %08x: no installer menu", (unsigned)g.areas);
+    }
+    uint8_t iuser = 0;
+    alarm_result_t ir = RBE.program_enter(RBE.ctx, "1234", &iuser);
+    if (ir != ALARM_ERR_INVALID_CODE || M.eng.program) {
+        return fail("a wrong installer code from the keypad was answered %s", alarm_result_name(ir));
+    }
+    ir = RBE.program_enter(RBE.ctx, ALARM_DEFAULT_INSTALLER_CODE, &iuser);
+    if (ir != ALARM_OK || !M.eng.program || M.eng.program_src.kind != ALARM_SRC_KEYPAD ||
+        M.eng.program_src.id != DEVICE) {
+        return fail("installer mode from the keypad: %s (held by %u/%u)", alarm_result_name(ir),
+                    (unsigned)M.eng.program_src.kind, (unsigned)M.eng.program_src.id);
+    }
+    ui_zone_source_t srcs[4];
+    if (RBE.zone_sources(RBE.ctx, srcs, 4) != 1u || srcs[0].kind != ZSRC_SIM || !srcs[0].usable) {
+        return fail("the master's sensor sources didn't reach the keypad");
+    }
+    RBE.zone_learn(RBE.ctx, ZSRC_SIM, true);
+    link_mrb_heard(&M, 5u); /* someone opens the sensor on input 5 */
+    zsrc_candidate_t cands[8];
+    const size_t nc = RBE.zone_candidates(RBE.ctx, ZSRC_SIM, "", cands, 8);
+    size_t heard = 99u;
+    for (size_t i = 0; i < nc; i++) {
+        heard = cands[i].changed ? i : heard;
+    }
+    if (nc != 8u || heard >= nc || cands[heard].addr.id != 5u) {
+        return fail("the keypad didn't see the sensor heard on the master (%u inputs)", (unsigned)nc);
+    }
+    /* the zone itself, in the master's configuration: from the keypad's copy */
+    static alarm_config_t ncfg;
+    ncfg = *plink_keypad_config(&K.k);
+    alarm_zone_config_defaults(&ncfg.zones[4], 5u, ALARM_ZT_PERIMETER, 1u);
+    snprintf(ncfg.zones[4].name, sizeof(ncfg.zones[4].name), "Back Door");
+    const uint32_t cfg_seq = plink_keypad_config_seq(&K.k);
+    ir = RBE.set_config(RBE.ctx, &ncfg);
+    if (ir != ALARM_OK || strcmp(alarm_engine_config(&M.eng)->zones[4].name, "Back Door") != 0) {
+        return fail("the new zone from the keypad: %s (UR status %u)", alarm_result_name(ir),
+                    (unsigned)RPX.last);
+    }
+    if (alarm_engine_config(&M.eng)->users[1].code_hash[1] == 0xA5u) {
+        return fail("a keypad's configuration replaced the master's codes");
+    }
+    zone_hub_binding_t zb;
+    memset(&zb, 0, sizeof(zb));
+    zb.in[ZSRC_ROLE_MAIN].addr = cands[heard].addr;
+    if (RBE.zone_bind(RBE.ctx, 5u, &zb) != ZONE_HUB_OK) {
+        return fail("zone 5's sensor couldn't be set from the keypad");
+    }
+    zone_hub_info_t zi;
+    if (!RBE.zone_info(RBE.ctx, 5u, &zi) || strcmp(zi.address, "Input 5") != 0) {
+        return fail("zone 5's sensor isn't on the master");
+    }
+    RBE.zone_learn(RBE.ctx, ZSRC_SIM, false);
+    if (M.rb.learning) {
+        return fail("the master still listens after the keypad stopped");
+    }
+    /* a Z-Wave device paired on the master's radio from the keypad (LINK-062) */
+    ui_zw_status_t zs;
+    if (!RBE.zw_status(RBE.ctx, &zs) || zs.home_id != 0xC0FFEE01u) {
+        return fail("the master's Z-Wave radio didn't reach the keypad");
+    }
+    ui_zw_request_t zq;
+    memset(&zq, 0, sizeof(zq));
+    zq.kind = UI_ZW_REQ_ADD;
+    if (RBE.zw_request(RBE.ctx, &zq) != UI_ZW_REQ_OK) {
+        return fail("adding a Z-Wave device from the keypad was refused");
+    }
+    ui_zw_progress_t zp;
+    RBE.zw_progress(RBE.ctx, &zp);
+    if (zp.step != UI_ZW_STEP_LISTENING || zp.seconds_left == 0u) {
+        return fail("the master's radio isn't listening (step %u)", (unsigned)zp.step);
+    }
+    link_mrb_zw_join(&M); /* the installer presses the sensor's button */
+    run_for(100u);
+    RBE.zw_progress(RBE.ctx, &zp);
+    if (zp.step != UI_ZW_STEP_DONE || zp.result != UI_ZW_RES_ADDED || zp.node != 5u) {
+        return fail("the device didn't join the master (step %u, result %u)", (unsigned)zp.step,
+                    (unsigned)zp.result);
+    }
+    ui_zw_device_t zd[4];
+    if (RBE.zw_devices(RBE.ctx, zd, 4) != 1u || strcmp(zd[0].model, "Door sensor") != 0) {
+        return fail("the keypad doesn't list the master's new Z-Wave device");
+    }
+    zq.kind = UI_ZW_REQ_DISMISS;
+    (void)RBE.zw_request(RBE.ctx, &zq);
+    CFG_SEQ = cfg_seq;
+    if (!run_until(keypad_has_new_config, 3000u) ||
+        strcmp(plink_keypad_config(&K.k)->zones[4].name, "Back Door") != 0) {
+        return fail("the keypad's copy of the configuration lacks the new zone");
+    }
+    RBE.program_exit(RBE.ctx);
+    if (M.eng.program) {
+        return fail("installer mode stayed on after the keypad left it");
+    }
+    ir = RBE.set_config(RBE.ctx, &ncfg);
+    if (ir != ALARM_ERR_NOT_AUTHORIZED) {
+        return fail("a save outside installer mode was answered %s", alarm_result_name(ir));
+    }
+    printf("  installer from the keypad: %u calls served on the master\n", M.rb.runs);
+
     STAGE = "supervision";
     if (!plink_master_set_supervision(&M.m, NOW, DEVICE, (uint16_t)SUPERVISION_S)) {
         return fail("supervision %u s refused", SUPERVISION_S);

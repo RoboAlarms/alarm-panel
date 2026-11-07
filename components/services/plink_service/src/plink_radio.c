@@ -25,6 +25,50 @@ static atomic_uint state_at;
 static uint16_t sequence;
 static const uint8_t bcast[6] = {255, 255, 255, 255, 255, 255};
 
+/* The peers sealed frames went to: only paired ones get those. The C6 passes their frames on
+ * ahead of everyone else's (espnow_bridge.c, SEC-012), so it is told about each (ENB_ADD) when it
+ * is new and again every 30 s, which covers a co-processor that restarted. A stranger that was
+ * only answered (an unsealed HELLO reply) is never named. */
+#define NAMED_MAX 16
+static portMUX_TYPE named_lock = portMUX_INITIALIZER_UNLOCKED;
+static uint8_t named[NAMED_MAX][6];
+static size_t named_n;
+static bool named_new;
+
+static void name_peer(const uint8_t *mac)
+{
+    portENTER_CRITICAL(&named_lock);
+    bool have = false;
+    for (size_t i = 0; i < named_n && !have; i++)
+        have = memcmp(named[i], mac, 6) == 0;
+    if (!have) {
+        if (named_n == NAMED_MAX) {
+            memmove(named[0], named[1], (NAMED_MAX - 1) * 6);
+            named_n--;
+        }
+        memcpy(named[named_n++], mac, 6);
+        named_new = true;
+    }
+    portEXIT_CRITICAL(&named_lock);
+}
+
+/* The radio task's: every named peer, as ENB_ADD. */
+static void send_named(void)
+{
+    uint8_t list[NAMED_MAX][6];
+    portENTER_CRITICAL(&named_lock);
+    const size_t n = named_n;
+    memcpy(list, named, n * 6);
+    named_new = false;
+    portEXIT_CRITICAL(&named_lock);
+    for (size_t i = 0; i < n; i++) {
+        uint8_t add[ENB_HEADER] = {ENB_VERSION, ENB_ADD};
+        enb_put16(add + 2, ++sequence);
+        memcpy(add + 4, list[i], 6);
+        (void)eh_host_peer_data_send(ENB_MSG_ID, add, sizeof add);
+    }
+}
+
 /* Not on the ESP-Hosted receive task's stack: incoming() runs only there (one context, never
  * re-entered), and xQueueSend copies it before the next call. */
 static radio_packet_t rx_packet;
@@ -59,7 +103,7 @@ static void radio_task(void *arg)
         return;
     }
     radio_packet_t p;
-    uint64_t init_at = 0;
+    uint64_t init_at = 0, named_at = 0;
     unsigned last_channel = 255;
     for (;;) {
         net_wifi_status_t wifi;
@@ -76,6 +120,10 @@ static void radio_task(void *arg)
             (void)eh_host_peer_data_send(ENB_MSG_ID, init, sizeof init);
             init_at = link_now() + 1000u;
             last_channel = ch;
+        }
+        if (named_new || now >= named_at) {
+            send_named();
+            named_at = link_now() + 30000u;
         }
         if ((xQueueReceive(tx, &p, 0) == pdTRUE ||
              xQueueReceive(bulk, &p, pdMS_TO_TICKS(10)) == pdTRUE) &&
@@ -134,6 +182,10 @@ bool link_radio_send(const uint8_t *mac, const uint8_t *frame, size_t len)
     p.bytes[11] = low ? 0 : 1;
     enb_put16(p.bytes + 2, ++sequence);
     memcpy(p.bytes + 4, mac ? mac : bcast, 6);
+    if (mac != NULL && len > 4u && (frame[4] & PLINK_FLAG_SEALED) != 0u &&
+        memcmp(mac, bcast, 6) != 0) {
+        name_peer(mac);
+    }
     enb_put16(p.bytes + 12, (uint16_t)len);
     memcpy(p.bytes + ENB_HEADER, frame, len);
     return xQueueSend(low ? bulk : tx, &p, 0) == pdTRUE;

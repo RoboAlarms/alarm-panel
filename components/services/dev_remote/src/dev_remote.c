@@ -14,7 +14,7 @@
 #include "esp_chip_info.h"
 #include "esp_console.h"
 #include "esp_heap_caps.h"
-#include "esp_https_server.h"
+#include "esp_https_server.h" /* HTTPD_SSL_CONFIG_DEFAULT: the worker's defaults */
 #include "esp_mac.h"
 #include "esp_ota_ops.h"
 #include "esp_random.h"
@@ -31,6 +31,7 @@
 #include "pack_assets.h" /* PA_PICTURE_MAX_FILE */
 #include "panel_log.h"
 #include "panel_ota.h"
+#include "tls_httpd.h"
 #include "panel_prefs.h"
 #include "panel_voice.h"
 #include "psa/crypto.h"
@@ -160,20 +161,15 @@ static esp_err_t fail(httpd_req_t *r, const char *status, const char *why)
     httpd_resp_set_hdr(r, "Cache-Control", "no-store");
     return httpd_resp_send(r, why, HTTPD_RESP_USE_STRLEN);
 }
-static void tls_session(esp_https_server_user_cb_arg_t *arg)
+static void tls_session(httpd_handle_t hd, int fd, esp_tls_t *tls)
 {
-    if (arg->user_cb_state != HTTPD_SSL_USER_CB_SESS_CREATE || !server)
-        return;
-    int fd;
-    if (esp_tls_get_conn_sockfd(arg->tls, &fd) != ESP_OK)
-        return;
-    const mbedtls_x509_crt *p = mbedtls_ssl_get_peer_cert(esp_tls_get_ssl_context(arg->tls));
+    const mbedtls_x509_crt *p = mbedtls_ssl_get_peer_cert(esp_tls_get_ssl_context(tls));
     uint8_t *fp = malloc(32);
     if (!p || !fp || !digest(p->raw.p, p->raw.len, fp)) {
         free(fp);
         return;
     }
-    httpd_sess_set_ctx(server, fd, fp, free);
+    httpd_sess_set_ctx(hd, fd, fp, free);
 }
 static bool authorized(httpd_req_t *r)
 {
@@ -1115,7 +1111,7 @@ static void maintenance(void *arg)
         unsigned gen = atomic_load(&generation);
         if (gen != seen) {
             if (server) {
-                httpd_ssl_stop(server);
+                tls_httpd_stop(server);
                 server = NULL;
             }
             if (advertised) {
@@ -1134,14 +1130,7 @@ static void maintenance(void *arg)
                 A.control(false);
             if (atomic_load(&enabled) && atomic_load(&allowed)) {
                 xSemaphoreTake(trust_lock, portMAX_DELAY);
-                httpd_ssl_config_t cfg = HTTPD_SSL_CONFIG_DEFAULT();
-                cfg.port_secure = PORT;
-                cfg.servercert = cert;
-                cfg.servercert_len = cert_len;
-                cfg.prvtkey_pem = key;
-                cfg.prvtkey_len = key_len;
-                cfg.cacert_pem = peer;
-                cfg.cacert_len = peer_len;
+                httpd_ssl_config_t cfg = HTTPD_SSL_CONFIG_DEFAULT(); /* the worker's defaults */
                 /* Three, not two (docs/bugs/B016): the screen viewer's connection, an upload's,
                  * and room for the viewer to reconnect after a request timed out behind a long
                  * upload. With two, that reconnect made the purge below close the upload's
@@ -1155,9 +1144,12 @@ static void maintenance(void *arg)
                 cfg.httpd.send_wait_timeout = 3;
                 cfg.httpd.task_priority = 2;
                 cfg.httpd.stack_size = 16384; /* injected taps run UI handlers here: same as the LVGL task */
-                cfg.tls_handshake_timeout_ms = 5000;
-                cfg.user_cb = tls_session;
-                esp_err_t start_result = httpd_ssl_start(&server, &cfg);
+                /* Behind the panel's TLS gate, as the Panel Manager (SEC-012, docs/bugs/B033). */
+                const tls_httpd_opts_t tls = {.who = "developer tools", .port = PORT, .cert = cert,
+                                              .cert_len = cert_len, .key = key, .key_len = key_len,
+                                              .client_ca = peer, .client_ca_len = peer_len,
+                                              .handshake_timeout_ms = 2000, .on_session = tls_session};
+                esp_err_t start_result = tls_httpd_start(&server, &cfg.httpd, &tls);
                 xSemaphoreGive(trust_lock);
                 if (start_result == ESP_OK) {
                     add_uri("/dev/v1/info", HTTP_GET, info);

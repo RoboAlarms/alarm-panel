@@ -1859,6 +1859,7 @@ static unsigned rb_turn(plink_master_t *m, plink_peer_t *p, uint64_t now, unsign
     if (!home_ok(m, p, PLINK_CAP_RB)) {
         r->send_due = false;
         r->quick_req = 0u;
+        r->grant_due = false; /* a new session is told again (on_session_up) */
         return 0u;
     }
     unsigned sent = 0u;
@@ -1906,7 +1907,10 @@ static uint64_t rb_next(const plink_master_t *m, const plink_peer_t *p)
     if (m->rb_up_owner == dev_of(m, p)) {
         t = min64(t, m->rb_up_at + PLINK_RB_UP_IDLE_MS);
     }
-    if (r->quick_req != 0u || (r->send_due && r->have) || (r->grant_due && r->grant_len > 0u)) {
+    /* Only what rb_turn() can send: "due now" for a keypad it can't reach would never end, and the
+     * link task would go round without sleeping for as long as that lasted. */
+    if (home_ok(m, p, PLINK_CAP_RB) &&
+        (r->quick_req != 0u || (r->send_due && r->have) || (r->grant_due && r->grant_len > 0u))) {
         uint64_t due = 0u;
         if (p->change_ms != 0u && is_live(p)) {
             due = m->have_snap ? status_next(p) : UINT64_MAX; /* behind the STATUS it waits for */

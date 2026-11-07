@@ -457,7 +457,7 @@ int krbsvc_console(int argc, char **argv)
         return 0;
     }
     if (strcmp(w, "cands") == 0 && argc == 4) {
-        static zsrc_candidate_t c[16];
+        static zsrc_candidate_t c[16] ALARM_SLOW_BSS; /* the console's */
         size_t n = 0;
         READ(n = s_cb.zone_candidates(s_cb.ctx, (uint8_t)atoi(argv[3]), "", c, 16));
         printf("%u candidates (status %u):\n", (unsigned)n, (unsigned)s_px->last);

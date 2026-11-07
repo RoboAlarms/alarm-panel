@@ -5,9 +5,10 @@
 # device_service, panel_storage.
 idf_component_register(SRCS "src/alarm_service.c" "src/alarm_store.c" "src/code_hash.c" "src/sounder.c"
                             "src/net_check.c" "src/net_wifi.c" "src/panel_console.c" "src/panel_log.c"
-                            "src/panel_prefs.c" "src/panel_system.c" "src/zone_service.c"
+                            "src/panel_prefs.c" "src/panel_system.c" "src/zone_service.c" "src/tls_gate.c"
+                            "src/tls_gate_esp.c" "src/tls_httpd.c" "src/reset_policy.c"
                        INCLUDE_DIRS "include"
-                       REQUIRES alarm_core alarm_proto event_log esp_event esp_netif sounder zone_hub
+                       REQUIRES alarm_core alarm_proto event_log esp_event esp_netif sounder zone_hub esp_http_server esp-tls
                        PRIV_REQUIRES alarm_mem i18n ui_backend spi_flash app_update bootloader_support console
                                      esp_adc esp_app_format esp_driver_gpio esp_driver_uart esp_partition
                                      esp_timer esp_wifi lwip mbedtls nvs_flash)

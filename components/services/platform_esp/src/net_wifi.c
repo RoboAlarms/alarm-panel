@@ -15,7 +15,10 @@
 #include <string.h>
 #include <time.h>
 
+#include "alarm/alarm_snapshot.h"
 #include "alarm_service.h"
+#include "esp_system.h"
+#include "panel_log.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -39,6 +42,15 @@ static const char *NS = "net";
 #define RETRY_MIN_MS    1000u
 #define RETRY_MAX_MS    60000u
 #define COPROC_RETRY_MS 30000u
+/* The co-processor's watchdog (SEC-012, docs/bugs/B033): the net task asks it something every
+ * second. An answer that takes this long is a timeout (ESP-Hosted waits 5 s for one); after
+ * COPROC_SILENT_TROUBLE of them in a row the panel raises the co-processor trouble, and once it
+ * has been silent COPROC_SILENT_RESTART_US it restarts - which resets the co-processor too - as
+ * soon as no sounder is going and no entry or exit time is counting (the armed state survives
+ * a restart). */
+#define COPROC_TIMEOUT_US       2000000
+#define COPROC_SILENT_TROUBLE   3u
+#define COPROC_SILENT_RESTART_US 60000000
 
 static SemaphoreHandle_t s_lock;
 static net_wifi_status_t s_status;
@@ -58,6 +70,8 @@ static int64_t s_down_since_us; /* 0 = not down */
 static int64_t s_connect_since_us;
 #define CONNECT_STALL_US 15000000
 static bool s_net_trouble;
+static unsigned s_cp_timeouts;    /* net task only: answers that timed out in a row */
+static int64_t s_cp_silent_since; /* the first of them, 0: it answers */
 static bool s_clock_trouble;
 static atomic_uint s_time_syncs;
 static volatile bool s_required;
@@ -759,6 +773,51 @@ static void connect_now(void)
     }
 }
 
+/* Nothing an alarm needs right now would stop for a restart: no sounder going, no entry or
+ * exit time counting. */
+static bool quiet_for_restart(void)
+{
+    static alarm_snapshot_t snap ALARM_SLOW_BSS; /* net task only */
+    alarm_service_get_snapshot(&snap);
+    for (unsigned p = 0; p < ALARM_MAX_PARTITIONS; p++) {
+        if ((snap.partitions & (1u << p)) == 0u) {
+            continue;
+        }
+        if (snap.part[p].bell != ALARM_PAT_OFF || snap.part[p].delay_remaining_ms != 0u) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* timed_out: the co-processor didn't answer this second's question in time. */
+static void coproc_watchdog(bool timed_out)
+{
+    if (!timed_out) {
+        if (s_cp_timeouts >= COPROC_SILENT_TROUBLE) {
+            ESP_LOGW(TAG, "the Wi-Fi co-processor answers again");
+            alarm_service_system_trouble(ALARM_TRBL_COPROCESSOR, false);
+        }
+        s_cp_timeouts = 0;
+        s_cp_silent_since = 0;
+        return;
+    }
+    const int64_t now = esp_timer_get_time();
+    if (s_cp_timeouts++ == 0u) {
+        s_cp_silent_since = now;
+    }
+    if (s_cp_timeouts == COPROC_SILENT_TROUBLE) {
+        ESP_LOGE(TAG, "the Wi-Fi co-processor stopped answering: trouble raised");
+        alarm_service_system_trouble(ALARM_TRBL_COPROCESSOR, true);
+    }
+    if (now - s_cp_silent_since >= COPROC_SILENT_RESTART_US && quiet_for_restart()) {
+        ESP_LOGE(TAG, "the Wi-Fi co-processor has been silent for %d s: restarting to reset it",
+                 (int)((now - s_cp_silent_since) / 1000000));
+        panel_log_flush(2000);
+        esp_restart();
+    }
+}
+
 static void net_task(void *arg)
 {
     (void)arg;
@@ -873,15 +932,24 @@ static void net_task(void *arg)
             (void)esp_wifi_disconnect();
             retry_at = xTaskGetTickCount() + pdMS_TO_TICKS(1000); /* whether or not an event comes */
         }
+        /* Every second the co-processor is asked something: the signal while connected, else
+         * its mode. Either is an RPC to it, and its answer, or none, feeds the watchdog. */
+        const int64_t asked_us = esp_timer_get_time();
+        esp_err_t answer;
         if (st.state == NET_WIFI_CONNECTED) {
             wifi_ap_record_t ap;
-            if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+            answer = esp_wifi_sta_get_ap_info(&ap);
+            if (answer == ESP_OK) {
                 xSemaphoreTake(s_lock, portMAX_DELAY);
                 s_status.rssi = ap.rssi;
                 xSemaphoreGive(s_lock);
             }
             refresh_addr_info();
+        } else {
+            wifi_mode_t mode;
+            answer = esp_wifi_get_mode(&mode);
         }
+        coproc_watchdog(answer != ESP_OK && esp_timer_get_time() - asked_us >= COPROC_TIMEOUT_US);
     }
 }
 

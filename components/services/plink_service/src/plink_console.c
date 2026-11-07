@@ -114,7 +114,7 @@ static void print_pair(const ui_link_pair_t *p)
 }
 
 /* The console task's copy of what the link task published (one command at a time). */
-static link_pub_t s_pub;
+static link_pub_t s_pub ALARM_SLOW_BSS;
 
 static const link_pub_t *published(void)
 {

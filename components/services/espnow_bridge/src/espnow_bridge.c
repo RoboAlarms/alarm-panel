@@ -1,5 +1,11 @@
 /* CP-003: ESP-NOW on the radio, RPC to the P4. Wi-Fi callbacks only copy to
- * bounded queues. Hosted RPC and esp_now sends run on our worker, never there. */
+ * bounded queues. Hosted RPC and esp_now sends run on our worker, never there.
+ * SEC-012 (docs/bugs/B033, F7): anyone in radio range can send ESP-NOW frames, and each one the C6
+ * passes on loads the SDIO link the P4's Wi-Fi shares. A peer is known only when the P4 names it
+ * (ENB_ADD: the P4 names the peers it sends sealed frames to, which only paired ones get), never
+ * because a frame went to it, so a stranger answered once stays a stranger. Each known peer has
+ * its own bucket (a spoofed keypad address can only crowd out that keypad); everyone else (a
+ * keypad being paired, or a stranger) shares one small bucket. */
 #include "espnow_bridge.h"
 #include "sdkconfig.h"
 #if CONFIG_ESP_HOSTED_CP
@@ -8,6 +14,7 @@
 #include "esp_app_desc.h"
 #include "esp_event.h"
 #include "esp_now.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -27,9 +34,83 @@ static const uint8_t broadcast[6] = {255, 255, 255, 255, 255, 255};
  * and xQueueSend copies the packet before the next call. */
 static packet_t rx_packet, request_packet;
 
+/* The peers the P4 named (ENB_ADD), read by rx() on the Wi-Fi task and written by the worker:
+ * under known_lock. The broadcast address is never one; a full table drops its oldest. */
+#define KNOWN_MAX       20
+#define KNOWN_BURST     48u
+#define KNOWN_PER_S     200u
+#define STRANGER_BURST  20u
+#define STRANGER_PER_S  20u
+typedef struct {
+    uint32_t tokens;
+    int64_t at_us;
+} bucket_t;
+typedef struct {
+    uint8_t mac[6];
+    bucket_t bucket;
+} known_t;
+static portMUX_TYPE known_lock = portMUX_INITIALIZER_UNLOCKED;
+static known_t known[KNOWN_MAX];
+static size_t known_n;
+static bucket_t stranger_bucket = {STRANGER_BURST, 0};
+
+static bool take(bucket_t *b, uint32_t burst, uint32_t per_s, int64_t now)
+{
+    const int64_t every = 1000000 / per_s;
+    if (b->tokens < burst && now > b->at_us) {
+        const int64_t gained = (now - b->at_us) / every;
+        b->tokens = gained >= (int64_t)(burst - b->tokens) ? burst : b->tokens + (uint32_t)gained;
+        b->at_us = b->tokens >= burst ? now : b->at_us + gained * every;
+    } else if (b->tokens >= burst) {
+        b->at_us = now;
+    }
+    if (b->tokens == 0u)
+        return false;
+    b->tokens--;
+    return true;
+}
+
+static known_t *known_of(const uint8_t *mac)
+{
+    for (size_t i = 0; i < known_n; i++)
+        if (memcmp(known[i].mac, mac, 6) == 0)
+            return &known[i];
+    return NULL;
+}
+
+static void known_set(const uint8_t *mac, bool add)
+{
+    if (memcmp(mac, broadcast, 6) == 0)
+        return;
+    portENTER_CRITICAL(&known_lock);
+    known_t *k = known_of(mac);
+    if (k != NULL && !add) {
+        const size_t i = (size_t)(k - known);
+        memmove(&known[i], &known[i + 1], (known_n - i - 1) * sizeof(known[0]));
+        known_n--;
+    } else if (k == NULL && add) {
+        if (known_n == KNOWN_MAX) {
+            memmove(&known[0], &known[1], (KNOWN_MAX - 1) * sizeof(known[0]));
+            known_n--;
+        }
+        memcpy(known[known_n].mac, mac, 6);
+        known[known_n].bucket = (bucket_t){KNOWN_BURST, esp_timer_get_time()};
+        known_n++;
+    }
+    portEXIT_CRITICAL(&known_lock);
+}
+
 static void rx(const esp_now_recv_info_t *info, const uint8_t *data, int len)
 {
     if (!info || !data || len <= 0 || len > ENB_DATA_MAX)
+        return;
+    const int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL(&known_lock);
+    known_t *k = known_of(info->src_addr);
+    const bool pass = k != NULL ? take(&k->bucket, KNOWN_BURST, KNOWN_PER_S, now)
+                                : take(&stranger_bucket, STRANGER_BURST, STRANGER_PER_S, now);
+    portEXIT_CRITICAL(&known_lock);
+    if (!pass)
         return;
     packet_t *const p = &rx_packet;
     memset(p->p, 0, ENB_HEADER);
@@ -142,11 +223,13 @@ static void worker(void *arg)
             reply(p.p, ENB_STATE, ready ? ESP_OK : err);
             break;
         case ENB_ADD:
+            known_set(p.p + 4, true);
             if (ready)
                 err = peer(p.p + 4);
             reply(p.p, ENB_DONE, err);
             break;
         case ENB_DEL:
+            known_set(p.p + 4, false);
             if (ready)
                 err = esp_now_del_peer(p.p + 4);
             reply(p.p, ENB_DONE, err);

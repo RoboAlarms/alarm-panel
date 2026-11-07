@@ -31,6 +31,7 @@
 #include "alarm_service.h"
 #include "esp_app_desc.h"
 #include "esp_log.h"
+#include "tls_gate.h"
 #include "esp_mac.h"
 #include "esp_random.h"
 #include "freertos/FreeRTOS.h"
@@ -70,7 +71,8 @@ _Static_assert(ZSRC_REF_LEN_LINK == ZSRC_REF_LEN, "one entity_id length across t
 static const char *TAG = "ha_link";
 
 #define POLL_MS       500u  /* the task looks at flags and deadlines this often */
-#define HANDSHAKE_MS  8000u /* a TLS handshake that takes longer is abandoned */
+#define HANDSHAKE_MS  4000u /* a TLS handshake that takes longer is abandoned: one that stalls
+                             * holds the link task, which serves one client at a time (SEC-012) */
 #define IDLE_LIMIT_MS 90000u /* protocol.md: drop a connection silent for 90 s */
 #define RX_MAX        PROTO_LINK_FRAME_MAX
 #define EV_QUEUE      32 /* events waiting for the link task (the alarm task posts them) */
@@ -724,6 +726,8 @@ static bool pairing_wait(conn_t *c)
 static void when_now(proto_when_t *when)
 {
     when->now = alarm_service_now();
+    when->stamp = false; /* the server link's countdown dating only (proto_when_t) */
+    when->boot = 0u;
     /* Set by the time server, a clock module or a person (docs/features/35): 0 until then. */
     const time_t t = time(NULL);
     when->epoch_ms = t >= (time_t)1735689600 ? (int64_t)t * 1000 : 0;
@@ -1536,6 +1540,12 @@ static void connection(void)
     if (mbedtls_net_accept(&S.listen, &c.net, NULL, 0, NULL) != 0) {
         return;
     }
+    /* The panel's TLS gate before anything is allocated for it (SEC-012, docs/bugs/B033): a
+     * flood of connections to this port costs a closed socket each. */
+    if (!tls_gate_fd(c.net.fd, "Home Assistant link")) {
+        mbedtls_net_free(&c.net);
+        return;
+    }
     c.rx = alarm_mem_slow_malloc(RX_MAX);
     if (c.rx == NULL) {
         mbedtls_net_free(&c.net);
@@ -1578,11 +1588,10 @@ static void connection(void)
     const uint64_t hs_deadline = now_ms() + HANDSHAKE_MS;
     int r;
     while ((r = mbedtls_ssl_handshake(&c.ssl)) != 0) {
-        if (r != MBEDTLS_ERR_SSL_WANT_READ && r != MBEDTLS_ERR_SSL_WANT_WRITE &&
-            r != MBEDTLS_ERR_SSL_TIMEOUT) {
-            goto out;
-        }
-        if (now_ms() > hs_deadline || cancelled()) {
+        if ((r != MBEDTLS_ERR_SSL_WANT_READ && r != MBEDTLS_ERR_SSL_WANT_WRITE &&
+             r != MBEDTLS_ERR_SSL_TIMEOUT) ||
+            now_ms() > hs_deadline || cancelled()) {
+            tls_gate_fd_failed(c.net.fd);
             goto out;
         }
     }
@@ -1597,6 +1606,9 @@ static void connection(void)
     const bool paired = S.store.paired;
     c.peer_is_paired = paired && memcmp(c.peer_fp, S.store.pinned_fp, PROTO_LINK_FP_LEN) == 0;
     xSemaphoreGive(S.lock);
+    if (c.peer_is_paired) {
+        tls_gate_fd_trust(c.net.fd); /* F20: the paired Home Assistant isn't crowded out by a flood */
+    }
     if (paired && !c.peer_is_paired && SB.pair.state == PROTO_PAIR_IDLE) {
         /* one paired instance (HAI-002); a stranger may only talk during a pairing window */
         ESP_LOGW(TAG, "refusing a client that isn't the paired one");

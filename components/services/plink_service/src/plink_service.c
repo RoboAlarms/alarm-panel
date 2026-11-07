@@ -44,7 +44,7 @@ static const char *TAG = "plink";
 #define EPOCH_2025_MS 1735689600000LL
 
 link_t g_link = {.sock = -1};
-link_pub_t g_pub;
+link_pub_t g_pub ALARM_SLOW_BSS; /* tasks only, under link_pub_lock(): internal RAM is the reserve */
 
 static SemaphoreHandle_t s_pub_lock;
 
@@ -497,7 +497,9 @@ static void link_task(void *arg)
         const uint64_t next = next_due();
         uint32_t wait_ms = LINK_POLL_MS;
         if (next <= now) {
-            wait_ms = 0u;
+            /* Never 0: a timer that stays due must not keep this task (priority 5) off the CPU,
+             * or every task below it - the Panel Manager and the radio's own answers - starves. */
+            wait_ms = 2u;
         } else if (next - now < wait_ms) {
             wait_ms = (uint32_t)(next - now);
         }

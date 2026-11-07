@@ -973,7 +973,7 @@ static bool terminal_measures(void)
     if (S.be.zone_candidates == NULL) {
         return false;
     }
-    static zsrc_candidate_t c[ZSRC_WIRED_MAX];
+    static zsrc_candidate_t c[ZSRC_WIRED_MAX] UI_SLOW_BSS; /* LVGL task only */
     const size_t n = S.be.zone_candidates(S.be.ctx, ZSRC_WIRED, "", c, ZSRC_WIRED_MAX);
     for (size_t i = 0; i < n; i++) {
         if (c[i].addr.id == s_info.binding.in[ZSRC_ROLE_MAIN].addr.id) {

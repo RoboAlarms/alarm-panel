@@ -4112,6 +4112,19 @@ static void test_remote_backend_calls_over_the_link(void)
     rb_answer_now = true;
 }
 
+/* A grant for a keypad that can't take one is never due: "due now" for ever kept the link task
+ * awake without sleeping, and every task below it starved (seen on a bench panel: the radio's
+ * answers late, the Panel Manager's requests dropped). */
+static void test_grant_for_a_keypad_without_it_is_never_due(void)
+{
+    kp_t *a = rb_rig(0u);
+    const plink_rb_grant_t given = {.user = 2, .authority = 2, .partitions = 1, .areas = 0x0Fu};
+    plink_master_rb_grant(&R.m, a->k.rec.device, &given);
+    TEST_ASSERT_GREATER_THAN_UINT64(mnow(), plink_master_next(&R.m));
+    run_ms(200);
+    TEST_ASSERT_GREATER_THAN_UINT64(mnow(), plink_master_next(&R.m));
+}
+
 /* LINK-058, LINK-064: on a lossy network every call still runs exactly once and is answered */
 static void test_remote_backend_on_a_lossy_network(void)
 {
@@ -7561,6 +7574,7 @@ int main(void)
     RUN_TEST(test_keypad_inputs_reach_the_master_only_with_the_io_capability);
     RUN_TEST(test_arming_warnings_and_put_off_on_a_keypad);
     RUN_TEST(test_remote_backend_calls_over_the_link);
+    RUN_TEST(test_grant_for_a_keypad_without_it_is_never_due);
     RUN_TEST(test_remote_backend_on_a_lossy_network);
     RUN_TEST(test_remote_backend_needs_the_capability);
     RUN_TEST(test_wifi_enrollment_authenticated_requested_and_cancellable);

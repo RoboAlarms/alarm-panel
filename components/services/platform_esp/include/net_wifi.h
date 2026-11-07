@@ -97,6 +97,7 @@ typedef enum {
     NET_WIFI_REQ_NOTIFY = 1u << 1,
     NET_WIFI_REQ_HA = 1u << 2,
     NET_WIFI_REQ_LINK = 1u << 3, /* the panel link's keypads (docs/features/11) */
+    NET_WIFI_REQ_SERVER = 1u << 4, /* the link to an alarm-server (server_link) */
 } net_wifi_requester_t;
 void net_wifi_set_required(net_wifi_requester_t who, bool required);
 

@@ -532,6 +532,30 @@ static void test_auto_less_secure_option(void)
     TEST_ASSERT_TRUE(D.opt.auto_less_secure);
 }
 
+/* CORE-CFG-023: the app's panic alarms are off by default and written only once one is on, so a
+ * configuration without them stores the bytes it always did; each bit survives a round trip,
+ * and one this build doesn't know is kept, not refused. */
+static void test_app_panic_option(void)
+{
+    alarm_config_defaults(&C);
+    TEST_ASSERT_EQUAL_UINT8(0u, C.opt.app_panic_mask);
+    fixture_config(&C);
+    C.opt.app_panic_mask = 0u;
+    size_t len = encode();
+    TEST_ASSERT_EQUAL(0, find_item(len, 0x00, 0x1F));
+    C.opt.app_panic_mask = (uint8_t)((1u << ALARM_PANIC_POLICE) | (1u << ALARM_PANIC_MEDICAL));
+    len = encode();
+    TEST_ASSERT_NOT_EQUAL(0, find_item(len, 0x00, 0x1F));
+    EXPECT_RESULT(ALARM_OK, alarm_config_decode(B, len, &D));
+    TEST_ASSERT_EQUAL_UINT8(C.opt.app_panic_mask, D.opt.app_panic_mask);
+    TEST_ASSERT_EQUAL_MEMORY(&C, &D, sizeof(C));
+    C.opt.app_panic_mask = 0x30u; /* a newer build's types */
+    char why[96];
+    EXPECT_RESULT(ALARM_OK, alarm_config_validate(&C, why, sizeof(why)));
+    EXPECT_RESULT(ALARM_OK, alarm_config_decode(B, encode(), &D));
+    TEST_ASSERT_EQUAL_UINT8(0x30u, D.opt.app_panic_mask);
+}
+
 /* Appends an item (group, field, value) to B[0..*len) and reseals the header. */
 static void append_item(size_t *len, uint8_t group, uint8_t field, const void *val, uint8_t n)
 {
@@ -651,6 +675,7 @@ int main(void)
     RUN_TEST(test_voice_fixture);
     RUN_TEST(test_voice_fields_rejected);
     RUN_TEST(test_auto_less_secure_option);
+    RUN_TEST(test_app_panic_option);
     RUN_TEST(test_lenient_decode);
     RUN_TEST(test_crc32);
     return UNITY_END();

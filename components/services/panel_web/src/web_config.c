@@ -59,6 +59,8 @@ static const field_t options[] = {N(alarm_options_t, code_min_len, F_U8, 4, 10),
                                   B(alarm_options_t, relaxed_limits),
                                   B(alarm_options_t, power_up_program),
                                   B(alarm_options_t, chime_needs_code),
+                                  /* WEB-032: 1 << alarm_panic_t, police, silent, fire, medical */
+                                  N(alarm_options_t, app_panic_mask, F_U8, 0, 15),
                                   END};
 static const field_t partition[] = {B(alarm_partition_config_t, enabled),
                                     S(alarm_partition_config_t, name),

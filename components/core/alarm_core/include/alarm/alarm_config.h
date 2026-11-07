@@ -66,6 +66,10 @@ typedef struct {
                                       default true) */
     uint32_t voice_revision_counter; /* the last voice binding revision handed out (codec 0x1E,
                                         CORE-CFG-021): only grows, never wraps, never reused */
+    uint8_t app_panic_mask;        /* the panic alarms the RoboAlarms app may raise, bit
+                                      1 << alarm_panic_t (codec 0x1F, CORE-CFG-023; installer
+                                      only, default 0: none). Bits this build doesn't know are
+                                      kept and ignored, never refused. */
 } alarm_options_t;
 
 typedef struct {

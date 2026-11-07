@@ -55,6 +55,7 @@ void alarm_config_defaults(alarm_config_t *cfg)
     o->power_up_program = true;
     o->chime_needs_code = true;
     o->auto_less_secure = true; /* AUT-015 / D25: on by default, the installer may turn it off */
+    o->app_panic_mask = 0u;     /* CORE-CFG-023: no panic from the app until the installer says */
 
     for (unsigned i = 0; i < ALARM_MAX_PARTITIONS; i++) {
         alarm_partition_config_t *p = &cfg->partitions[i];

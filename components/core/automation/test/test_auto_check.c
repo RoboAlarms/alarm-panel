@@ -475,6 +475,21 @@ static auto_rule_t disarm_at_ten(void)
 
 /* AUT-011, AUT-015 (D23, D25): a disarm - alone or with one device action, one partition that is
  * enabled, a maker - only with the option on and only in phase C. */
+/* F18: a rule is less secure when any of its actions is, so it can't come on from afar. */
+static void test_rule_less_secure(void)
+{
+    auto_rule_t r = disarm_at_ten();
+    TEST_ASSERT_TRUE(auto_rule_less_secure(&r));
+    r.then[0].kind = AUTO_ACT_ARM;
+    TEST_ASSERT_FALSE(auto_rule_less_secure(&r));
+    r.then[1] = disarm_at_ten().then[0];
+    r.n = 2u;
+    TEST_ASSERT_TRUE(auto_rule_less_secure(&r));
+    r.n = 1u; /* only the actions it has count */
+    TEST_ASSERT_FALSE(auto_rule_less_secure(&r));
+    TEST_ASSERT_FALSE(auto_rule_less_secure(NULL));
+}
+
 static void test_disarm(void)
 {
     auto_env_t env = env_of(true);
@@ -800,6 +815,7 @@ int main(void)
     RUN_TEST(test_null_and_no_zones);
     RUN_TEST(test_every_pair_through_the_validator);
     RUN_TEST(test_disarm);
+    RUN_TEST(test_rule_less_secure);
     RUN_TEST(test_installer_saves_no_alarm_action);
     RUN_TEST(test_less_secure_off);
     RUN_TEST(test_needs_confirm_table);

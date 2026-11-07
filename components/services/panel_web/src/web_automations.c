@@ -1134,7 +1134,7 @@ static const auto_rule_t *rule_in_slot(const ctx_t *c, long slot)
 }
 
 static cJSON *post_save(ctx_t *c, const cJSON *body, long slot, uint16_t gen, uint8_t user,
-                        int *http)
+                        bool less_secure_ok, int *http)
 {
     const cJSON *a = cJSON_GetObjectItemCaseSensitive(body, "automation");
     if (!cJSON_IsObject(a)) {
@@ -1188,6 +1188,12 @@ static cJSON *post_save(ctx_t *c, const cJSON *body, long slot, uint16_t gen, ui
     if (act_err != NULL) {
         return answer_error(http, 409, act_err, act_index);
     }
+    /* F18: from afar, a rule that disarms, unlocks, opens or stops is kept switched off: only
+     * someone at the panel turns it on (the answer says so). */
+    const bool held_off = !less_secure_ok && !r->off && auto_rule_less_secure(r);
+    if (held_off) {
+        r->off = true;
+    }
     auto_check_t why = AUTO_OK;
     uint16_t uid = 0;
     /* The service checks it against the panel as it is now and makes `user` the maker. */
@@ -1205,6 +1211,9 @@ static cJSON *post_save(ctx_t *c, const cJSON *body, long slot, uint16_t gen, ui
         ok &= cJSON_AddNullToObject(o, "slot") != NULL;
     }
     ok &= cJSON_AddNumberToObject(o, "gen", automation_service_gen()) != NULL;
+    if (held_off) {
+        ok &= cJSON_AddBoolToObject(o, "approve_at_panel", true) != NULL;
+    }
     return built(o, ok); /* M01: a second press meets "changed", nothing saved twice */
 }
 
@@ -1254,7 +1263,7 @@ static cJSON *post_try(ctx_t *c, const auto_rule_t *r, uint16_t gen, int *http)
     return o;
 }
 
-cJSON *web_automations_post(const cJSON *body, uint8_t user, int *http)
+cJSON *web_automations_post(const cJSON *body, uint8_t user, bool less_secure_ok, int *http)
 {
     *http = 200;
     const char *action = get_string(body, "action");
@@ -1279,7 +1288,7 @@ cJSON *web_automations_post(const cJSON *body, uint8_t user, int *http)
     c->n_rules = automation_service_list(c->rules, AUTO_MAX);
     cJSON *o = NULL;
     if (save) {
-        o = post_save(c, body, slot, (uint16_t)gen, user, http);
+        o = post_save(c, body, slot, (uint16_t)gen, user, less_secure_ok, http);
     } else if (!strcmp(action, "delete")) {
         /* By slot: a broken, bad or newer record may have no uid to name it by (AUT-008). */
         const auto_save_t res = automation_service_delete_slot((uint8_t)slot, (uint16_t)gen);
@@ -1295,6 +1304,12 @@ cJSON *web_automations_post(const cJSON *body, uint8_t user, int *http)
         const auto_rule_t *r = rule_in_slot(c, slot);
         if (r == NULL) {
             o = answer_error(http, 409, "changed", -1);
+        } else if (!less_secure_ok && auto_rule_less_secure(r) &&
+                   (!strcmp(action, "try") ||
+                    (!strcmp(action, "switch") && !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(body, "on")) &&
+                     !cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(
+                         cJSON_GetObjectItemCaseSensitive(body, "automation"), "on"))))) {
+            o = answer_error(http, 403, "approve_at_panel", -1); /* F18: on or tried only at the panel */
         } else if (!strcmp(action, "try")) {
             o = post_try(c, r, (uint16_t)gen, http);
         } else { /* switch: `on` beside the action (or in `automation`) */
@@ -1363,10 +1378,11 @@ cJSON *web_automations_devices(void)
     return NULL;
 }
 
-cJSON *web_automations_post(const cJSON *body, uint8_t user, int *http)
+cJSON *web_automations_post(const cJSON *body, uint8_t user, bool less_secure_ok, int *http)
 {
     (void)body;
     (void)user;
+    (void)less_secure_ok;
     *http = 404;
     return NULL;
 }

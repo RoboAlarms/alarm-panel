@@ -215,6 +215,10 @@ bool auto_zone_usable(uint8_t zone_type, uint8_t dev_class, bool for_close);
 
 /* A less secure action (AUT-015): a disarm, or a device pair hc_auto_less_secure names. */
 bool auto_action_less_secure(const auto_action_t *a);
+/* Any of the rule's actions is (F18): from afar, through alarm-server, such a rule is saved switched
+ * off and only someone at the panel turns it on, unless the remote ceiling lets that person disarm
+ * from afar without a code anyway (docs/features/43). */
+bool auto_rule_less_secure(const auto_rule_t *r);
 
 /* The two confirms, one source for the editors and the validator (DESIGN.md section 3):
  * - auto_action_needs_confirm (D8, D9, AUT-002): a device of this kind with this action is saved

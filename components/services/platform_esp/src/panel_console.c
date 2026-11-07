@@ -19,6 +19,7 @@
 #include "esp_check.h"
 #include "esp_console.h"
 #include "esp_heap_caps.h"
+#include "esp_memory_utils.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
@@ -27,6 +28,7 @@
 #include "net_wifi.h"
 #include "panel_log.h"
 #include "panel_system.h"
+#include "reset_policy.h"
 #include "sdkconfig.h"
 #include "sounder.h"
 #include "zone_hub/zsrc_rf.h"
@@ -935,17 +937,46 @@ static int cmd_ntp(int argc, char **argv)
     return err == ESP_OK ? 0 : 1;
 }
 
+/* F2 (reset_policy.h): not while anything is armed, counting or sounding, only with the installer
+ * code, never the event log; without a running engine (storage unreadable), the way out. */
 static int cmd_factory_reset(int argc, char **argv)
 {
     if (argc < 2 || strcmp(argv[1], "confirm") != 0) {
         printf("erases zones, users, codes, Wi-Fi and preferences, then restarts with the\n"
-               "factory codes and the setup wizard. Add 'log' to erase the event log too:\n"
-               "  factory_reset confirm [log]\n");
+               "factory codes and the setup wizard. Needs the installer code, everything\n"
+               "disarmed and quiet; the event log stays:\n"
+               "  factory_reset confirm <installer code>\n");
         return 1;
     }
     const bool erase_log = argc > 2 && strcmp(argv[2], "log") == 0;
-    printf("factory reset%s, restarting\n", erase_log ? " (event log too)" : "");
-    panel_system_factory_reset(&SRC, 0, erase_log);
+    alarm_config_t *cfg = heap_caps_malloc(sizeof(*cfg), MALLOC_CAP_DEFAULT);
+    const bool running = cfg != NULL && alarm_service_get_config(cfg) == ESP_OK;
+    free(cfg);
+    bool locked = false, installer = false;
+    if (running) {
+        alarm_snapshot_t *snap = heap_caps_malloc(sizeof(*snap), MALLOC_CAP_DEFAULT);
+        if (snap == NULL) {
+            printf("factory reset: no memory just now\n");
+            return 1;
+        }
+        alarm_service_get_snapshot(snap);
+        locked = alarm_snapshot_locked(snap);
+        free(snap);
+        if (!locked && !erase_log && argc > 2) {
+            uint8_t user = 0;
+            alarm_authority_t authority = ALARM_AUTH_NONE;
+            installer = alarm_service_authenticate_as(&SRC, argv[2], 0, &user, &authority) ==
+                            ALARM_OK &&
+                        authority == ALARM_AUTH_INSTALLER;
+        }
+    }
+    const char *why = reset_policy_refusal(running, locked, installer, erase_log);
+    if (why != NULL) {
+        printf("factory reset: %s\n", why);
+        return 1;
+    }
+    printf("factory reset, restarting\n");
+    panel_system_factory_reset(&SRC, 0, false);
     return 0;
 }
 
@@ -964,6 +995,26 @@ static int cmd_memory(int argc, char **argv)
     }
     printf("crypto ready=%s faults=%" PRIu32 "\n",
            code_hash_status() == ESP_OK ? "yes" : "no", code_hash_faults());
+#if CONFIG_FREERTOS_USE_TRACE_FACILITY
+    /* Every task with where its stack is and the least it has had free (dev builds): what to
+     * shrink or move out of internal RAM (SEC-012, docs/bugs/B033). */
+    if (argc > 1 && strcmp(argv[1], "tasks") == 0) {
+        const UBaseType_t n = uxTaskGetNumberOfTasks() + 4u;
+        TaskStatus_t *t = heap_caps_malloc(n * sizeof(*t), MALLOC_CAP_SPIRAM);
+        if (t == NULL) {
+            return 1;
+        }
+        const UBaseType_t got = uxTaskGetSystemState(t, n, NULL);
+        for (UBaseType_t i = 0; i < got; i++) {
+            printf("task %-16s prio %2u stack %s, never less than %5u bytes free\n", t[i].pcTaskName,
+                   (unsigned)t[i].uxCurrentPriority,
+                   esp_ptr_internal(t[i].pxStackBase) ? "internal" : "PSRAM   ",
+                   (unsigned)t[i].usStackHighWaterMark);
+        }
+        heap_caps_free(t);
+        return 0;
+    }
+#endif
     if (argc > 1 && strcmp(argv[1], "check") == 0) {
         const bool ok = heap_caps_check_integrity_all(true);
         printf("heap integrity: %s\n", ok ? "PASS" : "FAIL");
@@ -1052,7 +1103,7 @@ esp_err_t panel_console_start(void)
 
     static const esp_console_cmd_t cmds[] = {
         {.command = "memory", .help = "Heap bytes, fragmentation, low water and crypto faults",
-         .hint = "[check]", .func = cmd_memory},
+         .hint = "[check|tasks]", .func = cmd_memory},
 #if CONFIG_ALARM_CRYPTO_DIAGNOSTICS
         {.command = "crypto_test", .help = "Isolated hash failure/recovery test; no real codes",
          .hint = "[1..100]", .func = cmd_crypto_test},
@@ -1093,7 +1144,7 @@ esp_err_t panel_console_start(void)
          .hint = "[on|off]", .func = cmd_speaker},
 #endif
         {.command = "factory_reset", .help = "Erase everything and restart with factory codes",
-         .hint = "confirm [log]", .func = cmd_factory_reset},
+         .hint = "confirm <installer code>", .func = cmd_factory_reset},
         {.command = "restart", .help = "Restart the panel", .func = cmd_restart},
     };
     for (size_t i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++) {

@@ -148,6 +148,16 @@ bool auto_action_less_secure(const auto_action_t *a)
            hc_auto_less_secure((dev_kind_t)a->dev_kind, (dev_action_t)a->dev_action, a->value);
 }
 
+bool auto_rule_less_secure(const auto_rule_t *r)
+{
+    for (uint8_t i = 0; r != NULL && i < r->n && i < AUTO_ACTIONS; i++) {
+        if (auto_action_less_secure(&r->then[i])) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /* NOT_ALLOWED: what no automation may do, whatever the installer option says (AUT-002). */
 static bool action_not_allowed(const auto_action_t *a)
 {

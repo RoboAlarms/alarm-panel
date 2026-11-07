@@ -46,7 +46,10 @@ cJSON *web_automations_devices(void);
 /* POST automations {action:'save'|'switch'|'delete'|'try', slot, gen, automation | on}, as the
  * signed-in `user` (the service makes them the maker). Returns the answer to send ({result, ...}
  * or {error, index?}) and its HTTP status in *http (200, 400, 409, 503); NULL: no memory (503).
- * Runs on the HTTPS worker, whose stack is internal: the service writes NVS on it. */
-cJSON *web_automations_post(const cJSON *body, uint8_t user, int *http);
+ * Runs on the HTTPS worker, whose stack is internal: the service writes NVS on it.
+ * less_secure_ok false (from afar, F18): a rule with a less secure action (auto_rule_less_secure)
+ * is saved switched off ({..., approve_at_panel: true}), and switching it on or trying it answers
+ * 403 approve_at_panel. */
+cJSON *web_automations_post(const cJSON *body, uint8_t user, bool less_secure_ok, int *http);
 
 #endif /* WEB_AUTOMATIONS_H */

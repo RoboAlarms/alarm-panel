@@ -335,6 +335,8 @@ typedef struct {
 } alarm_source_t;
 
 #define ALARM_SRC_ID_PANEL_MANAGER 31u /* ALARM_SRC_REMOTE id of the browser Panel Manager */
+#define ALARM_SRC_ID_SERVER_WEB    30u /* ... of a person on alarm-server's website (BL-225) */
+#define ALARM_SRC_ID_SERVER_APP    29u /* ... of a person in the app, through alarm-server */
 
 /* Keypad source ids (alarm_source_t.id with ALARM_SRC_KEYPAD). Remote keypads use their
  * device number 1..ALARM_MAX_DEVICES. */

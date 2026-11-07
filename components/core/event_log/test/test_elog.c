@@ -4,6 +4,7 @@
  * Requirements: LOG-001..006, LOG-007 (the viewer's filter paging), LOG-010
  * (docs/features/05-Event-Log)
  */
+#include "alarm/alarm_codec.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -587,6 +588,34 @@ static void test_clear_and_geometry(void)
     TEST_ASSERT_EQUAL_INT(-1, elog_append(&L, ELOG_KIND_EVENT, NULL));
 }
 
+/* API-017 (alarm-server's plan): a record keeps the event's uptime in milliseconds and what had set
+ * the clock, in the reserved bytes, so a record of an older firmware still reads. */
+static void test_uptime_ms_and_clock_source(void)
+{
+    alarm_event_t ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.seq = 7u;
+    ev.type = ALARM_EV_ALARM;
+    ev.mono_ms = 8710044u;
+    ev.epoch_ms = 1793662697699;
+    uint8_t rec[ELOG_RECORD_SIZE];
+    elog_encode(rec, 1u, ELOG_KIND_EVENT, 412u, &ev);
+    elog_entry_t e;
+    TEST_ASSERT_TRUE(elog_decode(rec, &e));
+    TEST_ASSERT_EQUAL_UINT32(8710u, e.uptime_s);
+    TEST_ASSERT_EQUAL_UINT64(8710044u, e.ev.mono_ms);
+    TEST_ASSERT_EQUAL_UINT8(0u, e.clock);
+    /* Older firmware wrote zeros there: whole seconds, clock not known. */
+    rec[39] = 0u;
+    rec[40] = 0u;
+    uint32_t crc = alarm_crc32(0u, rec, 60u);
+    for (unsigned i = 0; i < 4u; i++) {
+        rec[60u + i] = (uint8_t)(crc >> (8u * i));
+    }
+    TEST_ASSERT_TRUE(elog_decode(rec, &e));
+    TEST_ASSERT_EQUAL_UINT64(8710000u, e.ev.mono_ms);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -602,5 +631,6 @@ int main(void)
     RUN_TEST(test_failed_append_is_retried);
     RUN_TEST(test_garbage_partition);
     RUN_TEST(test_clear_and_geometry);
+    RUN_TEST(test_uptime_ms_and_clock_source);
     return UNITY_END();
 }

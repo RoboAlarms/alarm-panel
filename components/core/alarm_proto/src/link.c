@@ -156,17 +156,33 @@ static void state_arrays(pj_writer_t *w, const alarm_config_t *cfg, const alarm_
     pj_arr_end(w);
 }
 
-void proto_link_snapshot(pj_writer_t *w, const alarm_config_t *cfg, const alarm_snapshot_t *snap,
-                         const proto_when_t *when)
+/* When it was written, for the server link (proto_when_t.stamp). */
+static void written(pj_writer_t *w, const proto_when_t *when)
+{
+    if (when != NULL && when->stamp) {
+        pj_kuint(w, "boot", when->boot);
+        pj_kuint(w, "uptime_ms", when->now);
+    }
+}
+
+void proto_link_snapshot_open(pj_writer_t *w, const alarm_config_t *cfg,
+                              const alarm_snapshot_t *snap, const proto_when_t *when)
 {
     uint8_t all_zones[ALARM_ZONE_BITMAP_BYTES];
     memset(all_zones, 0xFF, sizeof(all_zones));
     pj_obj(w);
     pj_kstr(w, "t", "snapshot");
     pj_kuint(w, "seq", snap->seq);
+    written(w, when);
     state_arrays(w, cfg, snap, when, 0xFFu, all_zones);
     pj_key(w, "troubles");
     proto_troubles(w, cfg, snap);
+}
+
+void proto_link_snapshot(pj_writer_t *w, const alarm_config_t *cfg, const alarm_snapshot_t *snap,
+                         const proto_when_t *when)
+{
+    proto_link_snapshot_open(w, cfg, snap, when);
     pj_obj_end(w);
 }
 
@@ -177,6 +193,7 @@ void proto_link_delta(pj_writer_t *w, const alarm_config_t *cfg, const alarm_sna
     pj_obj(w);
     pj_kstr(w, "t", "delta");
     pj_kuint(w, "seq", snap->seq);
+    written(w, when);
     state_arrays(w, cfg, snap, when, partitions, zones);
     if (with_troubles) {
         pj_key(w, "troubles");

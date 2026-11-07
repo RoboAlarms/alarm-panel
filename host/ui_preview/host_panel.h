@@ -111,6 +111,9 @@ void host_panel_mqtt_preset(const char *host, const char *user, const char *pass
 /* The pretend Home Assistant answers an open pairing window: both screens show 588460
  * (golden vector 1) and the page waits for Allow (docs/features/23 HAI-003). */
 void host_panel_ha_pair_request(void);
+/* The link to alarm-server (BL-225): someone claims the code; the app scans the phone's QR code. */
+void host_panel_srv_claim(void);
+void host_panel_phone_scan(void);
 
 /* Once paired it shares three demo sensors (binary_sensor.porch_door, .garage_motion,
  * .attic_window); this pushes one of their states, like the integration would (M13). */

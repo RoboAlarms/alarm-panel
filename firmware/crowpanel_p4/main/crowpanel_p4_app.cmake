@@ -14,7 +14,7 @@ macro(crowpanel_p4_app board_component)
     idf_component_register(SRCS ${CROWPANEL_P4_APP_DIR}/app_main.c ${CROWPANEL_P4_APP_DIR}/dev_adapter.c
                            INCLUDE_DIRS ${CROWPANEL_P4_APP_DIR}
                            REQUIRES panel_app alarm_core alarm_features alarm_mem alarm_ui ui_port_esp
-                                    ${board_component} ha_link net_mqtt net_notify panel_ota
+                                    ${board_component} ha_link net_mqtt net_notify panel_ota server_link
                                     panel_storage platform_esp power_monitor rf_service zigbee_service
                                     device_service zone_hub console esp_event esp_netif esp_partition
                                     esp_timer nvs_flash

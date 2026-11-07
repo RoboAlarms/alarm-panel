@@ -1665,6 +1665,7 @@ static void build_user(lv_obj_t *body, int32_t arg, char *title, size_t tlen, ch
         /* Everyone signs in with their name here, the installer too */
         ui_login_rows(body, s_user,
                       s_user == ALARM_USER_INSTALLER ? ui_login_name(S.cfg, s_user) : name, true);
+        ui_phone_rows(body, s_user); /* the same people may have a phone (direct mode) */
     }
     if (!fixed) {
         ui_section(body, ""); /* a gap: Delete is last and apart */
@@ -2110,7 +2111,11 @@ static void build_page(void)
     case PAGE_INTEGRATIONS:
     case PAGE_HOME_ASSISTANT:
     case PAGE_MQTT:
+    case PAGE_ROBOALARMS:
         ui_integrations_build(pg->id, body, title, sizeof(title), note, sizeof(note));
+        break;
+    case PAGE_PHONE_ADD:
+        ui_phone_add_build(pg->arg, body, title, sizeof(title), note, sizeof(note));
         break;
     case PAGE_NTFY:
     case PAGE_PUSHOVER:

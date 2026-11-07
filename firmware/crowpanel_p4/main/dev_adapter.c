@@ -2,6 +2,7 @@
 #if CONFIG_ALARM_DEV_REMOTE || CONFIG_ALARM_PANEL_WEB
 #include "board.h"
 #include "dev_remote.h"
+#include "server_link.h"
 #include "driver/jpeg_encode.h"
 #include "driver/ppa.h"
 #include "esp_cache.h"
@@ -130,7 +131,9 @@ static dev_input_t take(uint8_t requester)
     board_touch_stats(&s, false);
     if (s.pressed || esp_timer_get_time() - local_at < LOCAL_GRACE_US)
         return DEV_INPUT_LOCAL;
-    if (!ui_dev_control_begin())
+    /* The enrolled workstation (requester 1, panelctl over mutual TLS) may take the first-start
+     * setup too: a bench panel on a desk nobody can reach by hand. The Panel Manager can't. */
+    if (!ui_dev_control_begin(requester == 1))
         return DEV_INPUT_BUSY;
     held = true;
     owner = requester;
@@ -641,6 +644,13 @@ esp_err_t dev_adapter_start(void)
     web.session = web_session_changed;
     web.pause = web_pause;
 #endif
-    return panel_web_start(&web);
+    const esp_err_t web_err = panel_web_start(&web);
+#if CONFIG_ALARM_FEATURE_SERVER
+    if (web_err == ESP_OK) {
+        server_link_set_req_handler(panel_web_tunnel); /* the same handlers from alarm-server */
+        server_link_set_cert_source(panel_web_cert_sha256); /* for a phone's QR code */
+    }
+#endif
+    return web_err;
 }
 #endif

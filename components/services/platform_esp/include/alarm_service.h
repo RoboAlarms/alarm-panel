@@ -85,6 +85,11 @@ alarm_ms_t alarm_service_now(void);
 /* ---- inputs (asynchronous, safe from any task, also before alarm_service_start) --- */
 void alarm_service_zone_event(uint16_t zone, alarm_zone_event_t ev);
 void alarm_service_system_trouble(alarm_sys_trouble_t trouble, bool active);
+/* The communication trouble stands while either owner holds it: one clearing its own must not
+ * clear the other's (the rule of the bell trouble, OUT-020). */
+#define ALARM_COMM_FAIL_MQTT   (1u << 0)
+#define ALARM_COMM_FAIL_SERVER (1u << 1)
+void alarm_service_comm_fail(uint8_t owner, bool active);
 /* CORE-TRBL-001, P4-013, ZW-039: owner raises or clears its hold on ALARM_TRBL_STORAGE
  * (alarm_engine_storage_trouble on the alarm task): it stands while any owner holds it. */
 void alarm_service_storage_trouble(alarm_storage_owner_t owner, bool active);

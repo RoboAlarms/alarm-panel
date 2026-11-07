@@ -342,6 +342,11 @@ uint32_t panel_log_boot(void)
     return s_log.boot;
 }
 
+void panel_log_set_clock(uint8_t clock)
+{
+    __atomic_store_n(&s_log.clock, clock, __ATOMIC_RELAXED);
+}
+
 bool panel_log_flush(uint32_t timeout_ms)
 {
     const TickType_t start = xTaskGetTickCount();

@@ -269,6 +269,8 @@ typedef enum {
     PAGE_OUT_RF,          /* a 433 MHz siren, arg = its slot */
     PAGE_OUT_RF_PAIR,     /* pairing a 433 MHz siren, arg = its slot */
     PAGE_RF,              /* the 433 MHz receiver, sensors and sirens */
+    PAGE_ROBOALARMS,      /* Integrations > RoboAlarms: the link to alarm-server (BL-225) */
+    PAGE_PHONE_ADD,       /* a user's page > Add a phone (direct mode), arg = user number */
 } page_id_t;
 
 typedef struct {
@@ -881,6 +883,9 @@ void ui_devices_settings_build(lv_obj_t *body, char *note, size_t nlen);
 void ui_integrations_build(page_id_t id, lv_obj_t *body, char *title, size_t tlen, char *note,
                            size_t nlen);
 void ui_integrations_tick(void); /* keeps the connection status current */
+/* A user's page: their paired phones and Add a phone (direct mode); nothing without the backend. */
+void ui_phone_rows(lv_obj_t *body, uint8_t user);
+void ui_phone_add_build(int32_t arg, lv_obj_t *body, char *title, size_t tlen, char *note, size_t nlen);
 void ui_integrations_stop(void); /* its page is being dropped */
 #else
 static inline void ui_integrations_build(page_id_t id, lv_obj_t *body, char *title, size_t tlen,
@@ -889,6 +894,12 @@ static inline void ui_integrations_build(page_id_t id, lv_obj_t *body, char *tit
     (void)id; (void)body; (void)title; (void)tlen; (void)note; (void)nlen;
 }
 static inline void ui_integrations_tick(void) {}
+static inline void ui_phone_rows(lv_obj_t *body, uint8_t user) { (void)body; (void)user; }
+static inline void ui_phone_add_build(int32_t arg, lv_obj_t *body, char *title, size_t tlen,
+                                      char *note, size_t nlen)
+{
+    (void)arg; (void)body; (void)title; (void)tlen; (void)note; (void)nlen;
+}
 static inline void ui_integrations_stop(void) {}
 #endif
 

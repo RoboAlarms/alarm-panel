@@ -811,6 +811,14 @@ void alarm_service_system_trouble(alarm_sys_trouble_t trouble, bool active)
     post(&m);
 }
 
+void alarm_service_comm_fail(uint8_t owner, bool active)
+{
+    static uint8_t s_owners; /* a task at a time: posting twice the same state is harmless */
+    const uint8_t now = active ? __atomic_or_fetch(&s_owners, owner, __ATOMIC_RELAXED)
+                               : __atomic_and_fetch(&s_owners, (uint8_t)~owner, __ATOMIC_RELAXED);
+    alarm_service_system_trouble(ALARM_TRBL_COMM_FAIL, now != 0u);
+}
+
 /* OUT-020: the bell trouble stands while any kind of siren holds it (Zigbee, Z-Wave, wired,
  * 433 MHz): one owner clearing its own must not clear another's. The roll-up and its post are
  * one step under a mutex, so two owners can't post out of order. */
@@ -1514,8 +1522,16 @@ typedef struct {
 static void do_program_apply_as(alarm_engine_t *e, alarm_ms_t now, void *ctx)
 {
     remote_cfg_ctx_t *c = ctx;
-    if (e->program || c->revision != s_config_seq) {
+    /* Installer mode this source already holds for this user (Setup mode opened through the server
+     * link) takes the change and stays open; anyone else's refuses it. */
+    const bool held = e->program && e->program_src.kind == c->src->kind &&
+                      e->program_src.id == c->src->id && e->program_user == c->user;
+    if ((e->program && !held) || c->revision != s_config_seq) {
         c->config.r = ALARM_ERR_BAD_STATE;
+        return;
+    }
+    if (held) {
+        do_set_config(e, now, &c->config);
         return;
     }
     c->config.r = alarm_engine_program_enter_as(e, c->src, c->user, now);

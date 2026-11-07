@@ -18,6 +18,8 @@ set(ALARM_PROTO_SRCS
     src/link_settings.c
     src/pair.c
     src/proto_prefs.c
+    src/server.c
+    src/phone.c
 )
 
 if(ESP_PLATFORM)

@@ -36,6 +36,13 @@ menu "Alarm features"
         help
             One lasting TLS session. Fits every board so far.
 
+    config ALARM_FEATURE_SERVER
+        bool "The link to an alarm-server (server_link: MQTT 5 over a secure WebSocket)"
+        default n
+        help
+            One lasting TLS session while linked, none otherwise. Needs espressif/libsodium and, in the
+            board's sdkconfig.defaults, MQTT_PROTOCOL_5 and MQTT_TRANSPORT_WEBSOCKET(_SECURE).
+
     config ALARM_FEATURE_NOTIFY
         bool "Phone notifications (net_notify: ntfy, Pushover)"
         default y if SPIRAM

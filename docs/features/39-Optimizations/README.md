@@ -278,7 +278,7 @@ well-specified work. The panel checks are bench work.
 - [x] Silent ESP-IDF checks (F1) in every build but dev, as BL-123 leaned: with F15 and F16, 196 KB less, 65.4 % -> 61.2 % (BL-123)
 - [ ] On a panel, for F1: a crash report of a non-dev build read back to its line (OPT-008); the decision on BL-123 (BL-123)
 - [x] LVGL (F12): the default theme off, UNSCII 8 as the default font (Montserrat 14 off: the keyboard's symbols and the placeholder draw from our fonts), premultiplied ARGB8888 off; RGB888 and plain ARGB8888 kept (the layers use them); the preview's `lv_conf.h` in step, its pictures unchanged: LVGL 275.3 -> 232.8 KB, the image 2,887,680 -> 2,822,144 bytes (BL-122)
-- [x] MQTT over WebSocket (F15) and the DHCP server (F16) off: `net_mqtt.c` sets TCP or TLS only, no code starts an access point (OPT-011) (BL-122)
+- [x] MQTT over WebSocket (F15) and the DHCP server (F16) off: `net_mqtt.c` sets TCP or TLS only, no code starts an access point (OPT-011) (BL-122); the secure WebSocket is back on for the alarm-server link (BL-225, docs/features/43)
 - [x] The TLS library's unused options (F17) off: 13 options in three measured groups (6.4 KB; `sdkconfig.defaults` names them), the list of what every feature needs under Design; two groups (finite-field DH, static RSA) were already gone in Mbed TLS 4; the host tests pass (82/82, through the host crypto shim) (OPT-011) (BL-122)
 - [ ] On a panel, for F17: the Panel Manager's sign-in, MQTT over TLS, a notification, an update's download (BL-122)
 - [ ] ESP-IDF's and the vendors' info lines (F18) measured with a per-component log level, and ESP-IDF's sleep code (F19) looked into; the numbers recorded, switched on only once the open question is answered (BL-122)

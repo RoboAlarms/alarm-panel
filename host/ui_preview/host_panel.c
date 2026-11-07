@@ -5284,6 +5284,151 @@ static void be_factory_reset(void *ctx, bool erase_log)
     printf("  (factory reset requested, event log %s)\n", erase_log ? "too" : "kept");
 }
 
+/* ---- the link to alarm-server and direct mode's phones (a scripted fake of server_link, BL-225) ---- */
+
+static struct {
+    ui_srvlink_state_t state;
+    ui_srvlink_status_t ceiling; /* only its four switches */
+    bool phone_open, phone_asking;
+    uint8_t phone_user;
+    ui_phone_t phones[2];
+    size_t phone_n;
+} s_cloud = {.ceiling = {.remote_disarm = true, .remote_setup = true, .remote_people = true}};
+
+static void be_srvlink_status(void *ctx, ui_srvlink_status_t *out)
+{
+    (void)ctx;
+    *out = s_cloud.ceiling;
+    out->state = s_cloud.state;
+    out->linked = s_cloud.state == UI_SRVLINK_CONNECTED;
+    snprintf(out->host, sizeof(out->host), "cloud.roboalarms.com");
+    if (s_cloud.state == UI_SRVLINK_SHOW_CODE || s_cloud.state == UI_SRVLINK_CLAIMED) {
+        snprintf(out->code, sizeof(out->code), "7KQ2MZ");
+        snprintf(out->url, sizeof(out->url), "cloud.roboalarms.com/link#7KQ2MZ");
+        out->code_left_s = 540u;
+    }
+    if (s_cloud.state == UI_SRVLINK_CLAIMED) {
+        snprintf(out->account, sizeof(out->account), "Alex");
+        snprintf(out->email, sizeof(out->email), "a\xe2\x80\xa2\xe2\x80\xa2\xe2\x80\xa2@example.org");
+        snprintf(out->location, sizeof(out->location), "Home");
+    }
+}
+
+static bool be_srvlink_begin(void *ctx, uint8_t user)
+{
+    (void)ctx;
+    (void)user;
+    if (s_cloud.state != UI_SRVLINK_IDLE) {
+        return false;
+    }
+    s_cloud.state = UI_SRVLINK_SHOW_CODE; /* the pretend server answers at once */
+    return true;
+}
+
+static void be_srvlink_decide(void *ctx, bool allow)
+{
+    (void)ctx;
+    if (s_cloud.state == UI_SRVLINK_CLAIMED) {
+        s_cloud.state = allow ? UI_SRVLINK_CONNECTED : UI_SRVLINK_IDLE;
+    }
+}
+
+static void be_srvlink_cancel(void *ctx)
+{
+    (void)ctx;
+    if (s_cloud.state != UI_SRVLINK_CONNECTED) {
+        s_cloud.state = UI_SRVLINK_IDLE;
+    }
+}
+
+static bool be_srvlink_unlink(void *ctx)
+{
+    (void)ctx;
+    s_cloud.state = UI_SRVLINK_IDLE;
+    return true;
+}
+
+static bool be_srvlink_set_ceiling(void *ctx, const ui_srvlink_status_t *in)
+{
+    (void)ctx;
+    s_cloud.ceiling.remote_disarm = in->remote_disarm;
+    s_cloud.ceiling.remote_setup = in->remote_setup;
+    s_cloud.ceiling.remote_people = in->remote_people;
+    s_cloud.ceiling.ask_code = in->ask_code;
+    return true;
+}
+
+void host_panel_srv_claim(void)
+{
+    if (s_cloud.state == UI_SRVLINK_SHOW_CODE) {
+        s_cloud.state = UI_SRVLINK_CLAIMED; /* someone typed the code on the website */
+    }
+}
+
+static size_t be_phone_list(void *ctx, ui_phone_t *out, size_t max)
+{
+    (void)ctx;
+    size_t n = s_cloud.phone_n < max ? s_cloud.phone_n : max;
+    memcpy(out, s_cloud.phones, n * sizeof(*out));
+    return n;
+}
+
+static bool be_phone_pair_begin(void *ctx, uint8_t user, char *uri, size_t cap, char *why, size_t why_len)
+{
+    (void)ctx;
+    (void)why;
+    (void)why_len;
+    s_cloud.phone_open = true;
+    s_cloud.phone_user = user;
+    snprintf(uri, cap, "roboalarms://pair?id=30eda0123456a1b2&h=192.0.2.10&fp=00&t=AAAAAAAAAAAAAAAAAAAAAA");
+    return true;
+}
+
+static bool be_phone_asking(void *ctx, char *name, size_t cap, uint8_t *user)
+{
+    (void)ctx;
+    if (s_cloud.phone_asking) {
+        snprintf(name, cap, "Alex's iPhone");
+        *user = s_cloud.phone_user;
+    }
+    return s_cloud.phone_asking;
+}
+
+static void be_phone_decide(void *ctx, bool allow)
+{
+    (void)ctx;
+    if (s_cloud.phone_asking && allow && s_cloud.phone_n < 2u) {
+        ui_phone_t *p = &s_cloud.phones[s_cloud.phone_n++];
+        snprintf(p->id, sizeof(p->id), "a1b2c3d4e5f60718");
+        snprintf(p->name, sizeof(p->name), "Alex's iPhone");
+        p->user = s_cloud.phone_user;
+    }
+    s_cloud.phone_asking = false;
+    s_cloud.phone_open = false;
+}
+
+static void be_phone_pair_cancel(void *ctx)
+{
+    (void)ctx;
+    s_cloud.phone_open = false;
+    s_cloud.phone_asking = false;
+}
+
+static bool be_phone_remove(void *ctx, const char *id)
+{
+    (void)ctx;
+    (void)id;
+    s_cloud.phone_n = 0;
+    return true;
+}
+
+void host_panel_phone_scan(void)
+{
+    if (s_cloud.phone_open) {
+        s_cloud.phone_asking = true; /* the app scanned the code and asked */
+    }
+}
+
 /* ---- the local Home Assistant link (a scripted fake of ha_link, docs/features/23) ---- */
 
 static struct {
@@ -8554,6 +8699,18 @@ void host_panel_backend(ui_backend_t *out)
     out->ntfy_new_topic = CONFIG_ALARM_FEATURE_NOTIFY ? be_ntfy_new_topic : NULL;
     out->pushover_get = CONFIG_ALARM_FEATURE_NOTIFY ? be_pushover_get : NULL;
     out->pushover_set = CONFIG_ALARM_FEATURE_NOTIFY ? be_pushover_set : NULL;
+    out->srvlink_status = be_srvlink_status;
+    out->srvlink_begin = be_srvlink_begin;
+    out->srvlink_decide = be_srvlink_decide;
+    out->srvlink_cancel = be_srvlink_cancel;
+    out->srvlink_unlink = be_srvlink_unlink;
+    out->srvlink_set_ceiling = be_srvlink_set_ceiling;
+    out->phone_list = be_phone_list;
+    out->phone_pair_begin = be_phone_pair_begin;
+    out->phone_asking = be_phone_asking;
+    out->phone_decide = be_phone_decide;
+    out->phone_pair_cancel = be_phone_pair_cancel;
+    out->phone_remove = be_phone_remove;
     out->halink_status = CONFIG_ALARM_FEATURE_HA ? be_halink_status : NULL;
     out->halink_enable = CONFIG_ALARM_FEATURE_HA ? be_halink_enable : NULL;
     out->halink_pair_begin = CONFIG_ALARM_FEATURE_HA ? be_halink_pair_begin : NULL;

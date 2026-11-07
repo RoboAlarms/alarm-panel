@@ -493,7 +493,7 @@ static void publish_state(bool force, alarm_ms_t now)
         size_t n = pj_finish(&w);
         const uint32_t crc = crc_of(s_buf, n);
         if (n > 0u && (force || crc != s_part_crc[p - 1u])) {
-            const proto_when_t when = {now, wall_ms()};
+            const proto_when_t when = {.now = now, .epoch_ms = wall_ms()};
             pj_init(&w, s_buf, PROTO_PAYLOAD_MAX);
             proto_partition_status(&w, s_cfg, &s_snap, p, &when);
             n = pj_finish(&w);
@@ -1422,7 +1422,7 @@ static void mqtt_task(void *arg)
         const bool fail = proto_report_comm_fail(&s_rep, now); /* MQTT-011 */
         if (fail != s_comm_fail) {
             s_comm_fail = fail;
-            alarm_service_system_trouble(ALARM_TRBL_COMM_FAIL, fail);
+            alarm_service_comm_fail(ALARM_COMM_FAIL_MQTT, fail);
         }
         s_waiting = proto_report_waiting(&s_rep) ||
                     (s_live != NULL && uxQueueMessagesWaiting(s_live) != 0u);

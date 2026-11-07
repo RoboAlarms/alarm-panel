@@ -4354,7 +4354,7 @@ static const i18n_entry_t entries[] = {
     {0xea6b39a1u, 138126u},
     {0xea86c67eu, 39758u | I18N_ENTRY_WEB},
     {0xea924cc3u, 146696u},
-    {0xeab5c54fu, 129836u},
+    {0xeab5c54fu, 129836u | I18N_ENTRY_WEB},
     {0xeabac87du, 18316u | I18N_ENTRY_WEB},
     {0xeac0a3eeu, 148878u},
     {0xeacaec6au, 2624u},

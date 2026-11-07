@@ -14,7 +14,9 @@
  *   28  u8   type, partition, user, source kind
  *   32  u16  zone, source id
  *   36  u8   arg, arg2, flags
- *   39  reserved (0)
+ *   39  u16  uptime_ms  the milliseconds beyond uptime_s (0 in records of older firmware)
+ *   41  u8   clock      what had set the clock (elog_t.clock), 0 = not known
+ *   42  reserved (0)
  *   60  u32  crc32 of bytes 0..59
  */
 #include "event_log/elog.h"
@@ -74,6 +76,7 @@ void elog_encode(uint8_t rec[ELOG_RECORD_SIZE], uint32_t index, elog_kind_t kind
     rec[36] = ev->arg;
     rec[37] = ev->arg2;
     rec[38] = ev->flags;
+    put16(rec + 39, (uint32_t)(ev->mono_ms % 1000u));
     put32(rec + OFF_CRC, alarm_crc32(0u, rec, OFF_CRC));
 }
 
@@ -92,7 +95,8 @@ bool elog_decode(const uint8_t rec[ELOG_RECORD_SIZE], elog_entry_t *out)
     alarm_event_t *ev = &out->ev;
     ev->seq = get32(rec + 8);
     ev->epoch_ms = (int64_t)((uint64_t)get32(rec + 12) | ((uint64_t)get32(rec + 16) << 32));
-    ev->mono_ms = (alarm_ms_t)out->uptime_s * 1000u;
+    ev->mono_ms = (alarm_ms_t)out->uptime_s * 1000u + get16(rec + 39);
+    out->clock = rec[41];
     ev->type = (alarm_event_type_t)rec[28];
     ev->partition = rec[29];
     ev->user = rec[30];
@@ -233,6 +237,8 @@ int elog_append(elog_t *log, elog_kind_t kind, const alarm_event_t *ev)
     }
     uint8_t rec[REC];
     elog_encode(rec, log->next_index, kind, log->boot, ev);
+    rec[41] = log->clock;
+    put32(rec + OFF_CRC, alarm_crc32(0u, rec, OFF_CRC));
     const int err = log->flash.write(log->flash.ctx, log->head * REC, rec, REC);
     if (err != 0) {
         uint8_t back[REC];

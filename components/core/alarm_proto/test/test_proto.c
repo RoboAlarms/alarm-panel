@@ -321,7 +321,7 @@ static void test_partition_status_golden(void)
     SNAP.part[0].delay_remaining_ms = 60000;
     SNAP.part[0].ready = true;
     SNAP.part[0].ready_levels = 0x0E;
-    const proto_when_t when = {SNAP.taken_ms + 15500u, 1789857660000LL};
+    const proto_when_t when = {.now = SNAP.taken_ms + 15500u, .epoch_ms = 1789857660000LL};
     pj_init(&W, BUF, sizeof(BUF));
     proto_partition_status(&W, &CFG, &SNAP, 1, &when);
     TEST_ASSERT_EQUAL_STRING(
@@ -343,12 +343,26 @@ static void test_partition_status_golden(void)
     SNAP.part[0].walk_tested = 14;
     SNAP.part[0].walk_total = 16;
     SNAP.part[0].walk_test_remaining_ms = 600000;
-    const proto_when_t later = {SNAP.taken_ms + 30500u, 1789857660000LL};
+    const proto_when_t later = {.now = SNAP.taken_ms + 30500u, .epoch_ms = 1789857660000LL};
     pj_init(&W, BUF, sizeof(BUF));
     proto_partition_status(&W, &CFG, &SNAP, 1, &later);
     TEST_ASSERT_NOT_NULL(strstr(done(),
         "\"walk_test\":true,\"walk_test_tested\":14,\"walk_test_total\":16,"
         "\"walk_test_remaining_s\":570,\"installer_mode\""));
+
+    /* The server link's countdown (proto_when_t.stamp): the time left unrounded beside the
+     * rounded-up seconds; nobody else gets it. 60000 ms at taken_ms, 15.5 s on: 44500 ms, 45 s. */
+    memset(&SNAP.part[0], 0, sizeof(SNAP.part[0]));
+    SNAP.part[0].state = ALARM_STATE_EXIT_DELAY;
+    SNAP.part[0].delay_remaining_ms = 60000;
+    const proto_when_t stamped = {.now = SNAP.taken_ms + 15500u, .epoch_ms = 1789857660000LL,
+                                  .stamp = true, .boot = 7u};
+    pj_init(&W, BUF, sizeof(BUF));
+    proto_partition_status(&W, &CFG, &SNAP, 1, &stamped);
+    TEST_ASSERT_NOT_NULL(strstr(done(), "\"delay_remaining_s\":45,\"delay_left_ms\":44500,\"triggered\""));
+    pj_init(&W, BUF, sizeof(BUF));
+    proto_partition_status(&W, &CFG, &SNAP, 1, &when);
+    TEST_ASSERT_NULL(strstr(done(), "delay_left_ms"));
 }
 
 /* MQTT-004: zone state and troubles. */
@@ -1185,7 +1199,7 @@ static void test_payloads_fit(void)
     SNAP.part[0].memory = 0xFFFFu;
     SNAP.part[0].ready_levels = 0x0E;
     SNAP.part[0].armed_by = ALARM_MAX_USERS;
-    const proto_when_t when = {0, 1789857660000LL};
+    const proto_when_t when = {.now = 0, .epoch_ms = 1789857660000LL};
     char big[PROTO_PAYLOAD_MAX];
     pj_writer_t w;
     pj_init(&w, big, sizeof(big));

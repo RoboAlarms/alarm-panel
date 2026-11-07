@@ -63,7 +63,8 @@ const ACC = {anyone: () => true, users: a => ['installer', 'master', 'partition_
   installer: a => a === 'installer'};
 const GET_ACCESS = p => ['status', 'frame', 'screen', 'history', 'activity', 'time', 'zone-status', 'troubles', 'storage', 'config/display', 'languages', 'voices'].includes(p) ? 'anyone'
   : p === 'people' ? 'users' : ['config/network', 'network-check', 'wifi-scan', 'walk-test'].includes(p) ? 'shared'
-  : ['updates', 'config/mqtt', 'config/ntfy', 'config/pushover', 'home_assistant', 'notification-status', 'automations', 'automations/devices'].includes(p) ? 'system' : 'installer';
+  : ['updates', 'config/mqtt', 'config/ntfy', 'config/pushover', 'home_assistant', 'notification-status', 'automations', 'automations/devices',
+     'outputs', 'backup', 'server-link'].includes(p) ? 'system' : 'installer';
 const POST_ACCESS = (p, body) => p === 'config/display'
   ? (body.values && ('lang' in body.values || 'region' in body.values) ? 'shared' : 'anyone') // docs/features/14
   // A walk test's start and extend: those who may start one (WALK-001); its end is the engine's to decide (WALK-025).
@@ -72,8 +73,12 @@ const POST_ACCESS = (p, body) => p === 'config/display'
   : ['config/network', 'wifi', 'time', 'network-check', 'wifi-scan', 'languages'].includes(p) ? 'shared'
   : p === 'updates' ? (['server_check', 'server', 'channel'].includes(body.action) ? 'installer' : 'system') // OTA-017..OTA-022
   : p === 'config/mqtt' ? (body.values && 'allow_panic' in body.values ? 'installer' : 'system') // BL-107
-  : ['config/ntfy', 'config/pushover', 'home_assistant', 'storage', 'notification-test', 'ntfy-topic', 'certificate-authority', 'automations'].includes(p) ? 'system' : 'installer';
+  : ['config/ntfy', 'config/pushover', 'home_assistant', 'storage', 'notification-test', 'ntfy-topic', 'certificate-authority', 'automations', 'server-link'].includes(p) ? 'system' : 'installer';
 const lockedEnv = !!process.env.MOCK_LOCKED;
+// The link to alarm-server and the phones paired directly (docs/features/43): Harbor House is linked.
+const serverLink = {state: 'connected', linked: true, server: 'cloud.roboalarms.com', port: 443, location: 'loc_harborhouse', waiting: false,
+  heard_s_ago: 12, ceiling: {remote_disarm: true, remote_setup: true, remote_people: true, ask_code: false, users: [2]}};
+const phones = [{id: 'a1b2c3d4e5f60718', name: 'Alex\'s iPhone', user: 2}];
 
 // The panel's lock (alarm_snapshot_locked): a partition armed from its exit time on, or in alarm.
 const isLocked = () => lockedEnv || parts.some(p => p.state !== 'disarmed' || p.alarm);
@@ -529,7 +534,7 @@ const SCHEMA = {
     num('smoke_reset_s', 1, 30), num('exit_restart_limit', 0, 3), num('recent_closing_s', 0, 600), bool('auto_stay'), bool('exit_sounds'),
     bool('quick_arm'), bool('quick_exit'), bool('remote_arm_without_code'), bool('auto_less_secure'), bool('power_up_previous_state'), num('power_up_settle_s', 0, 300),
     num('lockout_attempts', 0, 10), num('lockout_s', 60, 1800), num('walk_test_timeout_s', 600, 14400), num('trouble_beep_mask', 0, 4294967295),
-    bool('relaxed_limits'), bool('power_up_program'), bool('chime_needs_code')],
+    bool('relaxed_limits'), bool('power_up_program'), bool('chime_needs_code'), num('app_panic_mask', 0, 15)],
   partitions: [bool('enabled'), text('name', 24), num('exit_delay_s', 0, 600), num('entry_delay1_s', 0, 600), num('entry_delay2_s', 0, 600)],
   zones: [{...num('type', 0, 255), choices: Object.entries(ZONE_TYPE_NAMES).map(([v, l]) => ({value: Number(v), label: l}))}, num('partition', 1, 4),
     num('flags', 0, 65535), {...num('device_class', 0, 255), choices: DEVICE_CLASS_NAMES.map((l, v) => ({value: v, label: l}))}, num('user', 0, 64),
@@ -566,7 +571,7 @@ const alarm = {
     cross_zone_window_s: 300, fire_verify_window_s: 90, smoke_reset_s: 6, exit_restart_limit: 1, recent_closing_s: 120, auto_stay: true,
     exit_sounds: true, quick_arm: false, quick_exit: true, remote_arm_without_code: false, auto_less_secure: true, power_up_previous_state: true, power_up_settle_s: 60,
     lockout_attempts: 5, lockout_s: 300, walk_test_timeout_s: 3600, trouble_beep_mask: 0x3ff, relaxed_limits: false, power_up_program: true,
-    chime_needs_code: true},
+    chime_needs_code: true, app_panic_mask: Number(process.env.MOCK_APP_PANIC || 0)},
   panic_keys: [0, 3, 2],
   partitions: [1, 2, 3, 4].map(n => ({number: n, enabled: n === 1, name: n === 1 ? 'Home' : '', exit_delay_s: 60, entry_delay1_s: 30, entry_delay2_s: 45})),
   zones: Array.from({length: 128}, (_, i) => ({number: i + 1, type: 0, partition: 1, flags: 0, device_class: 0, user: 0, swinger_trips: 0,
@@ -1180,15 +1185,24 @@ function walkTest(s, query) {
       trips: walkTrips(p)};
   })};
 }
+// Panic from the app (WEB-032): alarm_options_t.app_panic_mask is 1 << alarm_panic_t (police 0, silent 1, fire 2,
+// medical 3); the status names the allowed ones in the app's order (web_app_panic_json).
+const APP_PANICS = ['police', 'fire', 'medical', 'silent'];
+const PANIC_BIT = {police: 1, silent: 2, fire: 4, medical: 8};
+const appPanics = mask => APP_PANICS.filter(k => (mask & PANIC_BIT[k]) !== 0);
 function partitionAction(s, body, res) {
   const answer = (code, json) => send(res, code, json);
   const refuse = (error, zone = 0) => answer(409, {error, zone});
   const isBool = v => v === undefined || typeof v === 'boolean';
   const zoneNumber = Number.isInteger(body.zone) && body.zone >= 1 && body.zone <= 128 ? body.zone : 0;
   if (!Number.isInteger(body.number) || !['arm', 'disarm', 'clear', 'acknowledge', 'chime', 'bypass', 'unbypass',
-    'walk_test_start', 'walk_test_end', 'walk_test_extend'].includes(body.action) ||
+    'walk_test_start', 'walk_test_end', 'walk_test_extend', 'panic'].includes(body.action) ||
       (body.action === 'arm' && !LEVELS.includes(body.level)) || (['bypass', 'unbypass'].includes(body.action) && !zoneNumber) ||
+      (body.action === 'panic' && !APP_PANICS.includes(body.type)) ||
       !isBool(body.no_entry_delay) || !isBool(body.silent_exit) || !isBool(body.bypass_open) || !isBool(body.life24)) return answer(400, {error: 'bad_request'});
+  // Panic from the app (WEB-032): never the installer's, and only the types the installer allows.
+  if (body.action === 'panic' && s.authority === 'installer') return refuse('not_authorized');
+  if (body.action === 'panic' && !appPanics(alarm.options.app_panic_mask).includes(body.type)) return answer(403, {error: 'panic_off'});
   if (!viewerPartitions(s).some(x => x.number === body.number)) return answer(403, {error: 'not_allowed'});
   const p = parts[body.number - 1], a = s.authority, source = 'Panel Manager';
   const disarmed = p.state === 'disarmed';
@@ -1196,7 +1210,7 @@ function partitionAction(s, body, res) {
   // on the alarm task, alarm_service_command_as): disarm while armed, in exit or entry time or in
   // an alarm; acknowledge in any state; everything else while disarmed (and, on a panel, with
   // installer mode closed - the mock never opens it).
-  const needs = {disarm: !disarmed || p.alarm, acknowledge: true}[body.action] ?? disarmed;
+  const needs = {disarm: !disarmed || p.alarm, acknowledge: true, panic: true}[body.action] ?? disarmed;
   if (!needs) return refuse('bad_state');
   const w = walks[p.number - 1];
   switch (body.action) {
@@ -1241,6 +1255,16 @@ function partitionAction(s, body, res) {
     case 'chime':
       p.chime = !p.chime;
       break;
+    case 'panic': { // as a keypad's panic key: police and fire sound, medical is the emergency one, silent shows nothing
+      const [kind, title] = {police: ['panic', 'Panic alarm'], fire: ['fire', 'Fire alarm'], medical: ['aux', 'Emergency'],
+        silent: ['', 'Silent panic']}[body.type];
+      if (kind) {
+        if (!p.alarm) p.alarm_at = Date.now();
+        Object.assign(p, {alarm: true, alarm_kind: kind, siren: true});
+      }
+      addEvent('alarm', title, `By ${nameOf(s.user)} · ${source}`, 0, 7, p, 0, s.user);
+      break;
+    }
     default: { // bypass, unbypass. The engine names the zone only when it can't be bypassed
       // (cmd_bypass sets not_ready_zone for NOT_BYPASSABLE); other refusals name none.
       if (!CAN_BYPASS.includes(a)) return refuse('not_authorized');
@@ -1403,13 +1427,14 @@ function status(s) {
   return {reauth_s: reauthLeft(s), panel_id: '30eda0123456', boot, board: 'crowpanel_p4', firmware: run.running, csrf: s.csrf, user: s.user, authority: s.authority,
     developer: web.developer, web: true, network_pending: false,
     capabilities: {width: 1024, height: 600, jpeg: true, frame_interval_ms: 100, input: true, video: ['h264', 'jpeg'], zwave: zwaveOn, zigbee: zigbeeOn, automations: automationsOn,
-      integrations: ['home_assistant', 'mqtt', 'ntfy', 'pushover']},
+      integrations: ['home_assistant', 'mqtt', 'ntfy', 'pushover', 'roboalarms']},
     wifi: {ssid: 'Harbor House', ip: '192.0.2.10', rssi: -58, time_synced: process.env.MOCK_SCENARIO !== 'notready'}, clock: clockJson(),
     health: {uptime_s: 93784, internal_kb: 231, psram_kb: 25480, stale: 0, chip: 'ESP32-P4 v1.3', idf: 'v6.1', internal_largest_kb: 180, web_stack_free: 9120,
       power: {battery: 'absent', percent: 0, low: false, charging: false},
       display: {frames: 5213440, late: 0, guard_trips: 0, forced_off: false}},
     name: users.find(u => u.number === s.user)?.name || '', has_password: true, password_change_required: temporary.has(s.user),
-    access: {...Object.fromEntries(['users', 'shared', 'system', 'installer'].map(k => [k, ACC[k](s.authority)])), arm: s.authority !== 'installer'}, // USR-001
+    access: {...Object.fromEntries(['users', 'shared', 'system', 'installer'].map(k => [k, ACC[k](s.authority)])), arm: s.authority !== 'installer',
+      panic: s.authority === 'installer' ? [] : appPanics(alarm.options.app_panic_mask)}, // USR-001; WEB-032
     config_revision: alarm.revision, program: false, troubles: live.troubles, trouble_count: troubleList(s).length, trouble_sig: troubleSig(troubleList(s)), locked: isLocked(), updating: updating(),
     // An automation's coming arming or its hold, on the partitions this person sees (panel_web.c status, D19, D27).
     ...(automationsOn ? {automation_warnings: auWarningsFor(viewerPartitions(s).map(p => p.number)),
@@ -1667,11 +1692,15 @@ async function apiGet(p, s, res, query = new URLSearchParams()) {
     : voice.mode === 'error' ? send(res, 503, {error: 'Memory busy'}) : ok(voiceJson());
   if (p === 'keypads') return ok(keypadGet(s.user));
   if (p === 'alarm') return ok({...alarm, schema: SCHEMA});
+  if (p === 'server-link') return ok(serverLink); // docs/features/43
+  if (p === 'outputs') return ok({outputs: [{number: 1, kind: 'siren', name: '', on: false, trouble: false}]});
+  if (p === 'backup') return ok({last_at: null, by: null, by_name: null, size: null});
   if (p === 'people') {
     const me = users.find(u => u.number === s.user);
     const seen = users.filter(u => u.authority && (me.authority !== 3 || u.number === me.number || (u.partitions & me.partitions)));
     return ok({users: seen.map(u => ({...u, you: u.number === s.user, manage: manages(s.user, u.number), web_login: webLogins.has(u.number),
-      web_login_possible: loginPossible(u), web_login_temporary: temporary.has(u.number)})), maximum: 64, code_min: Number(process.env.MOCK_CODE_MIN) || 4, panel_id: '30eda0123456', can_add: me.authority <= 3});
+      web_login_possible: loginPossible(u), web_login_temporary: temporary.has(u.number),
+      phones: phones.filter(ph => ph.user === u.number).map(({id, name}) => ({id, name}))})), maximum: 64, code_min: Number(process.env.MOCK_CODE_MIN) || 4, panel_id: '30eda0123456', can_add: me.authority <= 3});
   }
   if (p === 'history') return ok({events});
   if (p === 'troubles') { const list = troubleList(s); return ok({troubles: list, sig: troubleSig(list)}); }
@@ -1834,6 +1863,18 @@ async function apiPost(p, s, body, res) {
     if (c.panic_keys) alarm.panic_keys = c.panic_keys;
     for (const group of ['zones', 'partitions', 'devices']) for (const x of c[group] || []) Object.assign(alarm[group][x.number - 1], x);
     alarm.revision++;
+    return ok();
+  }
+  if (p === 'server-link') { // Unlink, with the password (docs/features/43)
+    if (body.action !== 'unlink') return fail('bad_request', 400);
+    Object.assign(serverLink, {linked: false, state: 'idle', location: '', heard_s_ago: null});
+    return ok();
+  }
+  if (p === 'people' && body.action === 'phone-remove') { // DIR-004: the person's own, or one they manage
+    if (body.number !== s.user && !manages(s.user, body.number)) return fail('not_allowed', 403);
+    const i = phones.findIndex(ph => ph.id === body.phone && ph.user === body.number);
+    if (i < 0) return fail('no_phone', 404);
+    phones.splice(i, 1);
     return ok();
   }
   if (p === 'people') {

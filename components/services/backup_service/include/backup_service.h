@@ -10,6 +10,7 @@
 #ifndef BACKUP_SERVICE_H
 #define BACKUP_SERVICE_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -47,6 +48,9 @@ esp_err_t backup_service_restore(const uint8_t *file, size_t len, const char *pa
 /* The PSA port against the frozen format-1 file (components/core/backup/test): true when this
  * panel opens it. The console's `backup check`. */
 bool backup_service_self_test(void);
+/* The last backup made here: when (s since 1970, 0 if the clock wasn't set), by which user, its
+ * size in bytes. false: none since this record began (or since a factory reset). */
+bool backup_service_last(uint64_t *at_s, uint8_t *user, uint32_t *size);
 
 esp_err_t backup_service_console_register(void);
 

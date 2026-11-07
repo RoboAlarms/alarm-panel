@@ -41,11 +41,13 @@ CONFIG_COMPILER_SAVE_RESTORE_LIBCALLS=y
 CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT=y
 CONFIG_COMPILER_OPTIMIZATION_CHECKS_SILENT=y
 
-# Left out because nothing in the panel uses them (docs/features/39 F15, F16): MQTT over WebSocket
-# (the panel's MQTT settings are mqtt and mqtts only, net_mqtt.c) and lwIP's DHCP server (the panel
+# Left out because nothing in the panel uses it (docs/features/39 F16): lwIP's DHCP server (the panel
 # never runs an access point: the setup Wi-Fi, net_wifi_setup_ap, is the headless panel's only).
-CONFIG_MQTT_TRANSPORT_WEBSOCKET=n
 CONFIG_LWIP_DHCPS=n
+# MQTT 5 over a secure WebSocket: the link to an alarm-server (server_link).
+CONFIG_MQTT_PROTOCOL_5=y
+CONFIG_MQTT_TRANSPORT_WEBSOCKET=y
+CONFIG_MQTT_TRANSPORT_WEBSOCKET_SECURE=y
 
 # FreeRTOS
 CONFIG_FREERTOS_HZ=1000
@@ -201,6 +203,14 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_CROSS_SIGNED_VERIFY=y
 # and no TLS code runs while the flash cache is off. With the "internal only" default every
 # browser, MQTT, HA and ntfy connection took ~21 KiB of internal RAM (docs/features/31 cleanup).
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+# The Panel Manager's server resumes a TLS session from a ticket: a phone that reconnects skips the
+# full handshake, the expensive part (SEC-012, docs/bugs/B033).
+CONFIG_ESP_TLS_SERVER_SESSION_TICKETS=y
+# lwIP's buffers come from PSRAM first, and the TCP/IP task's queue is shorter: a flood of packets from the
+# home network queues in PSRAM, or is dropped, instead of taking the internal RAM ESP-Hosted's SDIO
+# buffers need (SEC-012, docs/bugs/B033).
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=16
 # mDNS never writes flash: its task stack and its packet buffers come from PSRAM too.
 CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM=y
 CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
@@ -244,6 +254,7 @@ CONFIG_ALARM_MAX_ZONES=128
 CONFIG_ALARM_MAX_USERS=64
 CONFIG_ALARM_FEATURE_UI=y
 CONFIG_ALARM_FEATURE_MQTT=y
+CONFIG_ALARM_FEATURE_SERVER=y
 CONFIG_ALARM_FEATURE_NOTIFY=y
 CONFIG_ALARM_FEATURE_HA=y
 CONFIG_ALARM_PANEL_WEB=y

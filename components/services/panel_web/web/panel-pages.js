@@ -1110,7 +1110,8 @@ async function pcPersonPage(arg) {
   const all = partitionBits().reduce((mask, [bit]) => mask | bit, 0) || 1;
   const before = user ? {name: user.name || '', authority: user.authority, partitions: user.partitions, web_login: !!user.web_login,
     temporary: !!user.web_login_temporary} : {name: '', authority: 4, partitions: all, web_login: false, temporary: false};
-  Object.assign(pc, {number, isNew, self: !!user?.you, before, now: {...before}, code: '', password: '', mustChange: false,
+  Object.assign(pc, {phones: user?.phones || null,
+    number, isNew, self: !!user?.you, before, now: {...before}, code: '', password: '', mustChange: false,
     setting: mode === 'password' && before.web_login, codeMin: data.code_min || 4, fixedRole: number <= 2 || !!user?.you});
   const title = isNew ? t('Add a person') : before.name || tc('default user name', 'User {0}', number);
   const sub = isNew ? t('{0}, the next free number', pcUserNo(number))
@@ -1123,6 +1124,9 @@ async function pcPersonPage(arg) {
       root.addEventListener('change', pcInput);
       root.addEventListener('submit', event => event.preventDefault());
       if (!pc.listening) { $('#main').addEventListener('click', pcClick); pc.listening = true; } // #main outlives the page
+      $$('[data-phone]').forEach(b => b.onclick = () => review({title: t('Remove {0}?', b.dataset.phoneName || t('this phone')),
+        intro: t('It loses access to the panel at once.'), confirm: t('Remove'), danger: true, done: t('Phone removed.'),
+        run: () => api('people', {action: 'phone-remove', number: pc.number, phone: b.dataset.phone})}));
       if (pc.setting) $('[data-k="password"]')?.focus();
     },
   };
@@ -1138,7 +1142,17 @@ const pcCard = (title, inner, cls = '') => `<section class="card gap pc-card ${c
 const pcCanSignIn = () => WEB_ROLES.includes(pc.now.authority);
 
 function pcBody() {
-  return pcWhoCard() + pcRoleCard() + pcCodeCard() + `<div id="pc-login-card">${pcLoginCard()}</div>` + pcApartCard();
+  return pcWhoCard() + pcRoleCard() + pcCodeCard() + `<div id="pc-login-card">${pcLoginCard()}</div>` + pcPhonesCard() + pcApartCard();
+}
+// The phones paired with this person directly (alarm-server direct-mode.md): Remove here, Add at the
+// panel, where the QR code is shown and Allow pressed (DIR-001).
+function pcPhonesCard() {
+  if (pc.isNew || !Array.isArray(pc.phones)) return '';
+  const rows = pc.phones.map(p => pcRowHtml('', p.name || t('A phone'), t('Paired with the panel directly'),
+    `<button type="button" class="danger" data-phone="${esc(p.id)}" data-phone-name="${esc(p.name || '')}">${ht('Remove')}</button>`));
+  if (!pc.phones.length) rows.push(pcRowHtml('', t('No phones'), '', ''));
+  rows.push(pcRowHtml('', t('Add a phone'), t('At the panel: Settings, Users, this person, Add a phone. Scan its code with the RoboAlarms app.'), ''));
+  return pcCard(t('Phones'), `<div class="rows">${rows.join('')}</div>`);
 }
 function pcWhoCard() {
   const help = pc.self ? t('Also your browser user name: changing it signs you out.')
@@ -1351,23 +1365,26 @@ const integrations = () => ({
   mqtt: [nt('MQTT'), t('Publish alarm events to a broker; optionally accept commands.'), t('Home automation')],
   ntfy: [nt('ntfy'), t('Push alerts to phones through ntfy.sh or your own server.'), t('Phone notifications')],
   pushover: [nt('Pushover'), t('Push alerts, with alarms that repeat until acknowledged.'), t('Phone notifications')],
+  roboalarms: [nt('RoboAlarms'), t('See and control this panel from the RoboAlarms app and website.'), t('Away from home')],
 });
 async function integrationsPage() {
   const ids = state.capabilities.integrations || [];
   if (!ids.length) return pageHead(t('Integrations')) + notice('info', t('No integrations are included in this firmware.'));
   const INTEGRATIONS = integrations();
   const info = Object.fromEntries(await Promise.all(ids.map(id =>
-    (id === 'home_assistant' ? api(id) : api('config/' + id)).then(d => [id, d]).catch(() => [id, null]))));
+    (id === 'home_assistant' ? api(id) : id === 'roboalarms' ? api('server-link') : api('config/' + id)).then(d => [id, d]).catch(() => [id, null]))));
   const status = id => {
     const d = info[id];
     if (!d) return tag(t('Unknown'));
     if (id === 'home_assistant') return !d.enabled ? tag(t('Off')) : d.paired ? tag(t('Paired'), 'good') : tag(t('Not paired'), 'warn');
+    if (id === 'roboalarms') return !d.linked ? tag(t('Not linked')) : d.state === 'connected' ? tag(t('Connected'), 'good') : tag(t('Offline'), 'warn');
     return d.values.enabled ? tag(t('On'), 'good') : tag(t('Off'));
   };
   const detail = id => {
     const d = info[id];
     if (id === 'mqtt' && d?.values.enabled) return t('Broker {0}', `${d.values.host}:${d.values.port}`);
     if (id === 'home_assistant' && d?.paired) return t('Paired with {0}', d.client);
+    if (id === 'roboalarms' && d?.linked) return t('Server {0}', d.server);
     return '';
   };
   const other = t('Other');
@@ -1419,6 +1436,7 @@ const pushoverSpecs = () => [
 
 async function integrationPage(id) {
   if (id === 'home_assistant') return homeAssistantPage();
+  if (id === 'roboalarms' && (state.capabilities.integrations || []).includes(id)) return roboAlarmsPage();
   const specsFor = {mqtt: mqttSpecs, ntfy: ntfySpecs, pushover: pushoverSpecs}[id];
   if (!specsFor || !(state.capabilities.integrations || []).includes(id))
     return pageHead(t('Not available'), '', '', ['integrations', t('Integrations')]) + notice('info', t('This integration is not included in this firmware.'));
@@ -1513,6 +1531,40 @@ async function homeAssistantPage() {
         try { await run(); show(); } catch (error) { toast(error.message, 'error'); button.disabled = false; }
       });
       if (pairing) poll(async () => { if (!$('#dialog').open) await show(); }, 3000);
+    },
+  };
+}
+
+// RoboAlarms (docs/features/43): the link to an alarm-server. Linking, Allow and what the app and
+// website may do are set at the panel itself (alarm-server panel-link.md, D6); here, the state and Unlink.
+async function roboAlarmsPage() {
+  const d = await api('server-link');
+  const states = {idle: t('Not linked'), connecting: t('Connecting'), failed: t('Can’t reach the server'), waiting_code: t('Getting a code'),
+    showing_code: t('Showing a code on the panel'), claimed: t('Waiting for Allow on the panel'), connected: t('Connected')};
+  const [kind, words] = !d.linked ? ['', states[d.state] || t('Not linked')] : d.state === 'connected' ? ['good', t('Connected')]
+    : ['warn', t('Offline: trying again')];
+  const heard = d.heard_s_ago === null || d.heard_s_ago === undefined ? '' : t('Heard from {0} ago', fmtDuration(d.heard_s_ago));
+  const c = d.ceiling || {};
+  const yesNo = v => v ? tag(t('Allowed'), 'good') : tag(t('Not allowed'));
+  const rows = [[t('Disarm and silence'), t('Arming always works.'), yesNo(c.remote_disarm)],
+    [t('Open Setup mode'), '', yesNo(c.remote_setup)], [t('Change people and codes'), '', yesNo(c.remote_people)],
+    [t('Ask for the alarm code to disarm'), t('The code is sealed to this panel: the server can’t read it.'), c.ask_code ? tag(t('On'), 'good') : tag(t('Off'))]];
+  return {
+    html: pageHead(nt('RoboAlarms'), t('See and control this panel from the RoboAlarms app and website.'), '', ['integrations', t('Integrations')]) +
+      `<section class="card status-card ${kind}"><span class="state">${esc(words)}</span>
+      ${d.linked ? `<p>${esc(t('Server {0}', d.server))}${heard ? ` · ${esc(heard)}` : ''}</p>` : ''}
+      ${d.linked && d.waiting ? `<p>${ht('Some events are still waiting to reach the server.')}</p>` : ''}
+      ${!d.linked ? `<p>${ht('Link it at the panel: Settings, Integrations, RoboAlarms, with an Owner or Admin code. You get a code to type on the website or in the app, then Allow it on the panel.')}</p>` : ''}
+      ${d.linked ? `<div class="actions gap"><button type="button" class="danger" data-ra="unlink">${ht('Unlink')}</button></div>` : ''}</section>` +
+      (d.linked ? `<section class="section"><div class="section-head"><h2>${ht('What the app and website may do')}</h2></div>
+      <div class="card rows">${rows.map(([label, help, value]) => `<div class="row"><div><span class="label">${esc(label)}</span>${help ? `<span class="help">${esc(help)}</span>` : ''}</div>
+        <div class="control">${value}</div></div>`).join('')}</div>
+      <p class="muted">${ht('Only someone at the panel changes these: Settings, Integrations, RoboAlarms.')}</p></section>` : ''),
+    bind() {
+      $('[data-ra="unlink"]')?.addEventListener('click', () => review({title: t('Unlink from RoboAlarms?'),
+        intro: t('The app and website lose this panel. The alarm works the same; you can link it again at the panel.'),
+        confirm: t('Unlink'), danger: true, password: true, done: t('Unlinked.'),
+        run: pw => api('server-link', {action: 'unlink', ...withPassword(pw)})}));
     },
   };
 }
@@ -3001,6 +3053,9 @@ const optionGroups = () => {
       {name: 'panic_0', label: t('Panic key A'), type: 'select', numeric: true, options: panic, local: true},
       {name: 'panic_1', label: t('Panic key B'), type: 'select', numeric: true, options: panic, local: true},
       {name: 'panic_2', label: t('Panic key C'), type: 'select', numeric: true, options: panic, local: true},
+      // WEB-032: 1 << alarm_panic_t; none from the factory
+      {name: 'app_panic_mask', label: t('Panic buttons in the app'), type: 'bits', options: panic.map(([v, label]) => [1 << v, label]),
+        help: t('Held down for a few seconds in the RoboAlarms app, by the people who use the alarm. None: the app shows no panic buttons.')},
     ]],
     [t('Service'), [
       {name: 'walk_test_timeout_s', label: t('Walk test ends after'), type: 'number', unit: s},

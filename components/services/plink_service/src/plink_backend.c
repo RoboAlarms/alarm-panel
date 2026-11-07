@@ -516,6 +516,19 @@ static void keypad_backend(ui_backend_t *be)
     be->ntfy_new_topic = NULL;
     be->pushover_get = NULL;
     be->pushover_set = NULL;
+    /* the link to alarm-server and the phones paired directly are the master's (docs/features/43) */
+    be->srvlink_status = NULL;
+    be->srvlink_begin = NULL;
+    be->srvlink_decide = NULL;
+    be->srvlink_cancel = NULL;
+    be->srvlink_unlink = NULL;
+    be->srvlink_set_ceiling = NULL;
+    be->phone_list = NULL;
+    be->phone_pair_begin = NULL;
+    be->phone_asking = NULL;
+    be->phone_decide = NULL;
+    be->phone_pair_cancel = NULL;
+    be->phone_remove = NULL;
 #if CONFIG_ALARM_HOME_CONTROL
     /* Smart Home from the master through the link (BL-216); the layout entries stay ui_port_esp's:
      * Arrange is each panel's own (decision 2) */

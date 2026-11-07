@@ -38,6 +38,16 @@ alarm_add_test(web_rules
                SOURCES test_web_rules.c ${CMAKE_CURRENT_LIST_DIR}/../src/web_rules.c
                LIBS web_cjson event_log alarm_core unity INCLUDES ${CMAKE_CURRENT_LIST_DIR}/../src STRICT)
 
+# F8: wrong passwords counted per source address, with a lower shared ceiling.
+alarm_add_test(web_signin_gate
+               SOURCES test_web_signin_gate.c ${CMAKE_CURRENT_LIST_DIR}/../src/web_signin_gate.c
+               LIBS unity INCLUDES ${CMAKE_CURRENT_LIST_DIR}/../src STRICT)
+
+# The app's read-only answers: the sirens and outputs, the last backup.
+alarm_add_test(web_readouts
+               SOURCES test_web_readouts.c ${CMAKE_CURRENT_LIST_DIR}/../src/web_readouts.c
+               LIBS web_cjson alarm_core unity INCLUDES ${CMAKE_CURRENT_LIST_DIR}/../src STRICT)
+
 # The real keypad HTTP service compiled with and without a local display.
 alarm_add_test(web_setup_flow
     SOURCES test_web_setup_flow.c ${CMAKE_CURRENT_LIST_DIR}/../src/web_setup_flow.c

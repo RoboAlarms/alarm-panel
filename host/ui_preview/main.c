@@ -9059,6 +9059,72 @@ static void walk_automations_no_device(const ui_options_t *start)
     run(4000);
 }
 
+/* BL-225 (docs/features/43; the mockup's proposal BL-225-server-link.js): linking the panel to an
+ * alarm-server - a code, who is asking and Allow, then what the server may do - and a phone added to
+ * a person's page by QR code (direct mode). Appended: the shots before keep their numbers. */
+static void walk_server_link(const ui_options_t *start)
+{
+    printf("The link to alarm-server and a phone\n");
+    host_panel_init(AUTO_T0);
+    ui_app_apply_options(start);
+    run(500);
+    wake();
+    tap_name("nav_home");
+    run(300);
+    tap_name("bar_settings");
+    run(300);
+    tap_name("set_integrations");
+    run(300);
+    if (lv_subject_get_int(&subject_settings_pad) == 1) {
+        type("123456k");
+        run(1100);
+    }
+    tap_text("RoboAlarms");
+    run(300);
+    shot("roboalarms_connect");
+    tap_text("Connect to RoboAlarms");
+    run(1500);
+    expect(find_label(by_name("page_body"), "7KQ 2MZ") != NULL, "the link code isn't on the screen (API-003)");
+    shot("roboalarms_code");
+    host_panel_srv_claim();
+    run(1500);
+    expect(find_label_with(by_name("page_body"), "Alex") != NULL,
+           "the panel doesn't name who is asking to link it (API-003)");
+    shot("roboalarms_allow");
+    tap_text("Allow");
+    run(1500);
+    expect(find_label(by_name("page_body"), "Disarm and silence") != NULL,
+           "the linked page has no remote ceiling (D6)");
+    shot("roboalarms_linked");
+    tap_name("page_back");
+    run(300);
+
+    /* Add a phone on a person's page: a QR code, then Allow, then its row with Remove. */
+    tap_name("set_users");
+    run(300);
+    tap_text("Add a user");
+    type("2468k");
+    type("2468k");
+    run(300);
+    scroll_to_text("page_body", "Add a phone");
+    tap_text("Add a phone");
+    run(300);
+    shot("phone_add_qr");
+    host_panel_phone_scan();
+    run(1500);
+    expect(find_label_with(by_name("page_body"), "Add this phone for") != NULL,
+           "the panel doesn't ask before adding a phone (DIR-001)");
+    shot("phone_add_allow");
+    tap_text("Allow");
+    run(500);
+    scroll_to_text("page_body", "Add a phone");
+    expect(find_label_with(by_name("page_body"), "Remove Alex's iPhone") != NULL,
+           "the added phone isn't on the person's page (DIR-004)");
+    shot("user_page_phone");
+    tap_name("nav_home");
+    run(300);
+}
+
 static void walk_automations(const ui_options_t *start)
 {
     printf("Automations\n");
@@ -12136,7 +12202,7 @@ int main(int argc, char **argv)
     snprintf(start.lang, sizeof(start.lang), "%s", ALARM_PREVIEW_LOCALE);
 #endif
 #if CONFIG_ALARM_DEV_REMOTE || CONFIG_ALARM_PANEL_WEB
-    expect(ui_dev_control_begin(), "DEV-010: unauthenticated Home control unavailable");
+    expect(ui_dev_control_begin(false), "DEV-010: unauthenticated Home control unavailable");
 #endif
     run(400);
 
@@ -12779,7 +12845,7 @@ int main(int argc, char **argv)
     }
 #endif
 #if CONFIG_ALARM_DEV_REMOTE || CONFIG_ALARM_PANEL_WEB
-    expect(!ui_dev_control_begin(), "DEV-010: remote control inherited local installer session");
+    expect(!ui_dev_control_begin(false), "DEV-010: remote control inherited local installer session");
 #endif
     tap_text("Delays and arming");
     run(300);
@@ -14631,6 +14697,7 @@ int main(int argc, char **argv)
     /* KPD-006 (BL-048), appended too: its pictures are partition-switch.js's, so
      * ui_mockup.py check finds them in the walk's own shots */
     walk_partition_policy(&start);
+    walk_server_link(&start); /* BL-225, appended too */
 #endif
 
 #if ALARM_LV_BUDGET_KB > 0

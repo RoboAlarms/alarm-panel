@@ -28,6 +28,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "ha_link.h"
+#include "server_link.h"
 #include "asset_packs.h"
 #include "lang_packs.h"
 #include "net_check.h"
@@ -1008,6 +1009,126 @@ static bool pushover_set(void *ctx, const ui_pushover_settings_t *in, char *why,
 
 #endif
 /* ---- the local Home Assistant link (ha_link, docs/features/23) ---- */
+
+#if CONFIG_ALARM_FEATURE_SERVER
+/* ---- the link to alarm-server and direct mode's phones (server_link, BL-225) ---- */
+static void srvlink_status(void *ctx, ui_srvlink_status_t *out)
+{
+    (void)ctx;
+    static server_link_status_t st; /* LVGL thread only */
+    server_link_get_status(&st);
+    memset(out, 0, sizeof(*out));
+    out->state = (ui_srvlink_state_t)st.state; /* the same order (server_link_state_t) */
+    out->linked = st.linked;
+    out->old_software = st.fail == SERVER_LINK_FAIL_OLD;
+    snprintf(out->host, sizeof(out->host), "%s", st.host);
+    snprintf(out->code, sizeof(out->code), "%s", st.code);
+    snprintf(out->url, sizeof(out->url), "%s", st.url);
+    out->code_left_s = st.code_left_s;
+    snprintf(out->account, sizeof(out->account), "%s", st.account_name);
+    snprintf(out->email, sizeof(out->email), "%s", st.account_email);
+    snprintf(out->location, sizeof(out->location), "%s", st.location_name);
+    proto_srv_ceiling_t c;
+    server_link_get_ceiling(&c);
+    out->remote_disarm = c.remote_disarm;
+    out->remote_setup = c.remote_setup;
+    out->remote_people = c.remote_people;
+    out->ask_code = c.ask_code;
+}
+
+static bool srvlink_begin(void *ctx, uint8_t user)
+{
+    (void)ctx;
+    return server_link_begin(user) == ESP_OK;
+}
+
+static void srvlink_decide(void *ctx, bool allow)
+{
+    (void)ctx;
+    server_link_decide(allow);
+}
+
+static void srvlink_cancel(void *ctx)
+{
+    (void)ctx;
+    server_link_cancel();
+}
+
+static bool srvlink_unlink(void *ctx)
+{
+    (void)ctx;
+    return server_link_unlink() == ESP_OK;
+}
+
+static bool srvlink_set_ceiling(void *ctx, const ui_srvlink_status_t *in)
+{
+    (void)ctx;
+    proto_srv_ceiling_t c;
+    server_link_get_ceiling(&c);
+    c.remote_disarm = in->remote_disarm;
+    c.remote_setup = in->remote_setup;
+    c.remote_people = in->remote_people;
+    c.ask_code = in->ask_code;
+    return server_link_set_ceiling(&c) == ESP_OK;
+}
+
+static size_t phone_list(void *ctx, ui_phone_t *out, size_t max)
+{
+    (void)ctx;
+    static proto_phone_t list[PROTO_PHONE_MAX] EXT_RAM_BSS_ATTR;
+    const size_t n = server_link_phone_list(list, PROTO_PHONE_MAX);
+    size_t k = 0;
+    for (size_t i = 0; i < n && k < max; i++) {
+        proto_phone_id(list[i].pub, out[k].id);
+        snprintf(out[k].name, sizeof(out[k].name), "%s", list[i].name);
+        out[k].user = list[i].user;
+        k++;
+    }
+    memset(list, 0, sizeof(list)); /* the push keys */
+    return k;
+}
+
+static bool phone_pair_begin(void *ctx, uint8_t user, char *uri, size_t cap, char *why, size_t why_len)
+{
+    (void)ctx;
+    uint8_t fp[32];
+    if (!server_link_cert_sha256(fp)) {
+        snprintf(why, why_len, "%s", I18N_NOOP_C("why", "Switch the Panel Manager on first: the app talks to it"));
+        return false;
+    }
+    net_wifi_status_t ws;
+    net_wifi_get_status(&ws);
+    if (ws.ip[0] == '\0') {
+        snprintf(why, why_len, "%s", I18N_NOOP_C("why", "Waiting for Wi-Fi"));
+        return false;
+    }
+    return server_link_phone_pair_begin(user, fp, ws.ip, uri, cap) == ESP_OK;
+}
+
+static bool phone_asking(void *ctx, char *name, size_t cap, uint8_t *user)
+{
+    (void)ctx;
+    return server_link_phone_pair_asking(name, cap, user);
+}
+
+static void phone_decide(void *ctx, bool allow)
+{
+    (void)ctx;
+    (void)server_link_phone_pair_decide(allow);
+}
+
+static void phone_pair_cancel(void *ctx)
+{
+    (void)ctx;
+    server_link_phone_pair_cancel();
+}
+
+static bool phone_remove(void *ctx, const char *id)
+{
+    (void)ctx;
+    return server_link_phone_remove(id) == ESP_OK;
+}
+#endif
 
 #if CONFIG_ALARM_FEATURE_HA
 static void halink_status(void *ctx, ui_halink_status_t *out)
@@ -2023,6 +2144,20 @@ void ui_port_esp_backend(ui_backend_t *out)
     out->ntfy_new_topic = ntfy_new_topic;
     out->pushover_get = pushover_get;
     out->pushover_set = pushover_set;
+#endif
+#if CONFIG_ALARM_FEATURE_SERVER
+    out->srvlink_status = srvlink_status;
+    out->srvlink_begin = srvlink_begin;
+    out->srvlink_decide = srvlink_decide;
+    out->srvlink_cancel = srvlink_cancel;
+    out->srvlink_unlink = srvlink_unlink;
+    out->srvlink_set_ceiling = srvlink_set_ceiling;
+    out->phone_list = phone_list;
+    out->phone_pair_begin = phone_pair_begin;
+    out->phone_asking = phone_asking;
+    out->phone_decide = phone_decide;
+    out->phone_pair_cancel = phone_pair_cancel;
+    out->phone_remove = phone_remove;
 #endif
 #if CONFIG_ALARM_FEATURE_HA
     out->halink_status = halink_status;

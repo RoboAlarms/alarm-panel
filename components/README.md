@@ -85,6 +85,7 @@ removes it.
 | [`device_service`](services/device_service) | services | the Devices registry and Home Assistant as its source | [24](../docs/features/24-Home-Control/README.md) |
 | [`net_mqtt`](services/net_mqtt) | services | MQTT client over TLS: availability, replay, discovery, commands | [10](../docs/features/10-MQTT-and-Home-Assistant/README.md) |
 | [`net_notify`](services/net_notify) | services | sends notifications to ntfy and Pushover | [26](../docs/features/26-Notifications/README.md) |
+| [`server_link`](services/server_link) | services | the link to an alarm-server (MQTT 5 over WSS, signed key), direct mode's phones, push through the relay | alarm-server's 02-Panel-and-App-API |
 | [`ha_link`](services/ha_link) | services | the local Home Assistant integration API (HACS) | [23](../docs/features/23-Home-Assistant-Integration/README.md) |
 | [`plink_service`](services/plink_service) | services | the panel link on a panel: the role, the UDP link task, the master's listener and worker, the keypad's UI backend, sounds, time and update gate, the `plink` console | [11](../docs/features/11-Panel-Link-Master-Keypad/README.md) |
 | [`panel_ota`](services/panel_ota) | services | signed firmware updates, rollback, release check, serial upload, C6 updates | [13](../docs/features/13-OTA-Updates/README.md) |

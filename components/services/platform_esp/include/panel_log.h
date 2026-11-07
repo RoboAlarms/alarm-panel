@@ -39,6 +39,9 @@ uint32_t panel_log_last_seq(void);
 /* This boot's number (stamped on every record; the UI compares it to tell "since power-up"). */
 uint32_t panel_log_boot(void);
 
+/* What sets the clock now (PROTO_SRV_CLOCK_* as stored): stamped on the records from here on. */
+void panel_log_set_clock(uint8_t clock);
+
 /* Blocks until everything queued is on flash, or timeout_ms passes. */
 bool panel_log_flush(uint32_t timeout_ms);
 

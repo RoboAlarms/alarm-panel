@@ -20,6 +20,7 @@ FULL = {
     "ALARM_MAX_USERS": "32",
     "ALARM_FEATURE_UI": "y",
     "ALARM_FEATURE_MQTT": "y",
+    "ALARM_FEATURE_SERVER": "n",
     "ALARM_FEATURE_NOTIFY": "n",
     "ALARM_FEATURE_HA": "n",
     "ALARM_PANEL_WEB": "n",

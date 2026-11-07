@@ -80,6 +80,9 @@ void proto_link_pong(pj_writer_t *w);
  * PROTO_LINK_SNAPSHOT_MAX for a snapshot; the others stay small. */
 void proto_link_snapshot(pj_writer_t *w, const alarm_config_t *cfg, const alarm_snapshot_t *snap,
                          const proto_when_t *when);
+/* The same, with the object left open: the server link adds its own keys and closes it. */
+void proto_link_snapshot_open(pj_writer_t *w, const alarm_config_t *cfg,
+                              const alarm_snapshot_t *snap, const proto_when_t *when);
 /* Only what changed: the partitions whose bit is set (bit 0 = partition 1), the zones whose
  * bit is set (bit = zone - 1, ALARM_ZONE_BITMAP_BYTES long; NULL = none) and, when
  * with_troubles, the troubles object. */

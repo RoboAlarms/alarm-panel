@@ -220,6 +220,11 @@ void proto_partition_status(pj_writer_t *w, const alarm_config_t *cfg,
         const alarm_ms_t left = (ps->delay_remaining_ms > gone) ? ps->delay_remaining_ms - gone
                                                                 : 0u;
         pj_kuint(w, "delay_remaining_s", (left + 999u) / 1000u);
+        if (when->stamp) {
+            /* The same time left, not rounded: the seconds above round up (as the screen does),
+             * and taken as exact they would give a phone up to a second the panel doesn't have. */
+            pj_kuint(w, "delay_left_ms", left);
+        }
     }
     pj_kbool(w, "triggered", ps->triggered);
     pj_kbool(w, "exit_error", ps->exit_error);

@@ -1,7 +1,7 @@
 # MQTT messages and store-and-forward (MQTT-NNN, docs/features/10): golden JSON, command parsing,
 # Home Assistant discovery, replay from the event log; firmware-update helpers (OTA-NNN,
 # docs/features/13); the local Home Assistant link (framing, pairing, hello; docs/features/23).
-foreach(suite proto report link pair zwdev)
+foreach(suite proto report link pair zwdev server phone)
     alarm_add_test(${suite} SOURCES test_${suite}.c LIBS alarm_proto notify unity)
 endforeach()
 # test_fw also checks the update task's retry schedule and signed-profile rule

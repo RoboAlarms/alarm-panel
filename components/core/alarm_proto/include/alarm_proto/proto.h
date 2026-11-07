@@ -67,6 +67,12 @@ bool proto_iso8601(int64_t epoch_ms, char out[24]);
 typedef struct {
     alarm_ms_t now;   /* monotonic, same clock as the snapshot */
     int64_t epoch_ms; /* wall clock, 0 = unknown */
+    /* The server link's countdown dating: a snapshot or delta then also says when it was written
+     * (boot and uptime_ms = now, the hello's clock) and each partition its time left unrounded
+     * (delay_left_ms), so a phone is never told of time the panel doesn't have. false (as every
+     * other publisher leaves it) writes neither. */
+    bool stamp;
+    uint32_t boot;
 } proto_when_t;
 
 /* Partition status JSON (retained on .../partition/<n>/status). when = NULL leaves out

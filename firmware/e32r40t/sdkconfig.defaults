@@ -130,6 +130,7 @@ CONFIG_ALARM_FEATURE_UI=y
 # sheets, paged lists); the preview reports it as over budget until then.
 CONFIG_ALARM_UI_LVGL_BUDGET_KB=96
 CONFIG_ALARM_FEATURE_MQTT=y
+# CONFIG_ALARM_FEATURE_SERVER is not set
 # CONFIG_ALARM_FEATURE_NOTIFY is not set
 # CONFIG_ALARM_FEATURE_HA is not set
 # CONFIG_ALARM_PANEL_WEB is not set

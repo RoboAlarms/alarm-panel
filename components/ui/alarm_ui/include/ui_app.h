@@ -56,7 +56,11 @@ void ui_app_run_setup(void);
  * ui_app_start; the PC preview's walk starts it here. */
 void ui_app_first_setup(void);
 #if CONFIG_ALARM_DEV_REMOTE || CONFIG_ALARM_PANEL_WEB
-bool ui_dev_control_begin(void);
+/* May a remote session take the screen now? Never while someone at the panel is typing a code or
+ * on a protected page. setup_too: the first-start setup as well - only for an enrolled developer
+ * workstation (docs/features/30), so a bench panel nobody can reach by hand can be set up; the
+ * Panel Manager's remote keypad never gets the setup. */
+bool ui_dev_control_begin(bool setup_too);
 void ui_dev_control_end(void);
 #endif
 

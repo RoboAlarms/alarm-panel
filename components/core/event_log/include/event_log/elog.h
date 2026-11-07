@@ -46,6 +46,7 @@ typedef struct {
     uint8_t kind;      /* elog_kind_t */
     uint32_t boot;     /* boot counter when it was written */
     uint32_t uptime_s; /* seconds since that boot (ev.mono_ms / 1000 when written) */
+    uint8_t clock;     /* what had set the clock when it was written (elog_t.clock), 0 = not known */
     alarm_event_t ev;  /* ELOG_KIND_REPORTED: ev.seq names the event; other fields are copies */
 } elog_entry_t;
 
@@ -58,6 +59,7 @@ typedef struct {
     uint32_t count;      /* readable records in the ring */
     uint32_t last_seq;   /* newest engine event sequence number in the log, 0 = none */
     uint32_t boot;       /* stamped on new records */
+    uint8_t clock;       /* stamped on new records: what set the clock; the platform keeps it */
     bool ready;
 } elog_t;
 

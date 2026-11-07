@@ -1,18 +1,23 @@
 /* Panel Manager: embedded assets, HTTPS and bounded authenticated sessions.
  * No desktop bridge is involved. Alarm operations run on the existing alarm task. */
 #include "panel_web.h"
+#include "alarm_proto/proto_phone.h"
+#include "alarm_proto/proto_server.h"
+#include "sdkconfig.h"
+#include "server_link.h"
 #include "alarm_mem.h"
 #include "esp_attr.h"
 #include "alarm/alarm_strings.h"
 #include "alarm_proto/proto_fwsrv.h"
 #include "alarm_service.h"
 #include "backup_service.h"
+#include "outputs_service.h"
 #include "dev_cert.h"
 #include "esp_app_desc.h"
 #include "esp_console.h"
 #include "esp_heap_caps.h"
 #include "esp_http_server.h"
-#include "esp_https_server.h"
+#include "esp_https_server.h" /* HTTPD_SSL_CONFIG_DEFAULT: the worker's defaults */
 #include "http_redirect/http_redirect.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -48,6 +53,11 @@
 #include "web_mem.h"
 #include "web_rules.h"
 #include "web_screen.h"
+#include "mdns.h"
+#include "web_readouts.h"
+#include "web_signin_gate.h"
+#include "tls_gate.h"
+#include "tls_httpd.h"
 #include "web_setup.h"
 #include "web_zigbee.h"
 #include "web_zwave.h"
@@ -73,6 +83,9 @@
  * counts them (docs/bugs/B017). */
 #define WEB_URI_HANDLERS 16
 static const alarm_source_t SOURCE = {.kind = ALARM_SRC_REMOTE, .id = ALARM_SRC_ID_PANEL_MANAGER};
+#define SOURCE_NOW (s_tunnel_on ? &s_tunnel_source : &SOURCE)
+static bool s_tunnel_on;
+static alarm_source_t s_tunnel_source;
 static dev_remote_adapter_t A;
 static ui_backend_t B;
 static atomic_bool web_on, dev_on;
@@ -87,6 +100,122 @@ static httpd_handle_t redirect_server; /* port 80, only while `server` runs (WEB
 static bool s_setup_board;
 static SemaphoreHandle_t s_serve_lock;
 static char identity[13], boot[65];
+/* ---- a request from alarm-server (the server link, BL-225) --------------------------------------
+ * The same handlers, the same access table, every refusal in the same words (panel-link.md "Requests
+ * as a person"): panel_web_tunnel() hands them a request of its own, and these stand in for httpd on
+ * that one. Everything else goes to httpd. */
+#define TUNNEL_OUT_MAX 60000u
+static httpd_req_t s_tunnel_req;
+static struct {
+    uint8_t user;
+    bool fresh;
+    alarm_source_t source;
+    int status;
+    char *out;
+    size_t len, cap;
+    bool too_long;
+    const char *body;
+    size_t body_len, body_pos;
+    char uri[120];
+} s_tunnel;
+static inline bool is_tunnel(const httpd_req_t *r)
+{
+    return r == &s_tunnel_req;
+}
+static esp_err_t tunnel_append(const char *p, size_t n)
+{
+    if (s_tunnel.len + n + 1u > s_tunnel.cap) {
+        size_t cap = s_tunnel.cap ? s_tunnel.cap * 2u : 2048u;
+        while (cap < s_tunnel.len + n + 1u)
+            cap *= 2u;
+        char *grown = cap <= TUNNEL_OUT_MAX + 1u ? heap_caps_realloc(s_tunnel.out, cap, MALLOC_CAP_SPIRAM)
+                                                  : NULL;
+        if (!grown) {
+            s_tunnel.too_long = true;
+            return ESP_ERR_NO_MEM;
+        }
+        s_tunnel.out = grown;
+        s_tunnel.cap = cap;
+    }
+    memcpy(s_tunnel.out + s_tunnel.len, p, n);
+    s_tunnel.len += n;
+    s_tunnel.out[s_tunnel.len] = '\0';
+    return ESP_OK;
+}
+static inline esp_err_t web_resp_send(httpd_req_t *r, const char *p, ssize_t n)
+{
+    if (!is_tunnel(r))
+        return httpd_resp_send(r, p, n);
+    return tunnel_append(p, n == HTTPD_RESP_USE_STRLEN ? strlen(p) : (size_t)n);
+}
+static inline esp_err_t web_resp_send_chunk(httpd_req_t *r, const char *p, ssize_t n)
+{
+    if (!is_tunnel(r))
+        return httpd_resp_send_chunk(r, p, n);
+    return p ? tunnel_append(p, n == HTTPD_RESP_USE_STRLEN ? strlen(p) : (size_t)n) : ESP_OK;
+}
+static inline esp_err_t web_resp_send_err(httpd_req_t *r, httpd_err_code_t code, const char *why)
+{
+    if (!is_tunnel(r))
+        return httpd_resp_send_err(r, code, why);
+    s_tunnel.status = 503;
+    return ESP_OK;
+}
+static inline esp_err_t web_resp_set_status(httpd_req_t *r, const char *status)
+{
+    if (!is_tunnel(r))
+        return httpd_resp_set_status(r, status);
+    s_tunnel.status = atoi(status);
+    return ESP_OK;
+}
+static inline esp_err_t web_resp_set_type(httpd_req_t *r, const char *type)
+{
+    return is_tunnel(r) ? ESP_OK : httpd_resp_set_type(r, type);
+}
+static inline esp_err_t web_resp_set_hdr(httpd_req_t *r, const char *k, const char *v)
+{
+    return is_tunnel(r) ? ESP_OK : httpd_resp_set_hdr(r, k, v);
+}
+static inline int web_req_recv(httpd_req_t *r, char *buf, size_t n)
+{
+    if (!is_tunnel(r))
+        return httpd_req_recv(r, buf, n);
+    const size_t left = s_tunnel.body_len - s_tunnel.body_pos;
+    const size_t take = n < left ? n : left;
+    memcpy(buf, s_tunnel.body + s_tunnel.body_pos, take);
+    s_tunnel.body_pos += take;
+    return (int)take;
+}
+static inline esp_err_t web_req_hdr(httpd_req_t *r, const char *k, char *v, size_t n)
+{
+    if (!is_tunnel(r))
+        return httpd_req_get_hdr_value_str(r, k, v, n);
+    if (!strcmp(k, "Content-Type")) {
+        snprintf(v, n, "application/json");
+        return ESP_OK;
+    }
+    return ESP_ERR_NOT_FOUND;
+}
+static inline esp_err_t web_req_query(httpd_req_t *r, char *q, size_t n)
+{
+    if (!is_tunnel(r))
+        return httpd_req_get_url_query_str(r, q, n);
+    const char *at = strchr(r->uri, '?');
+    if (!at)
+        return ESP_ERR_NOT_FOUND;
+    snprintf(q, n, "%s", at + 1);
+    return ESP_OK;
+}
+#define httpd_resp_send web_resp_send
+#define httpd_resp_send_chunk web_resp_send_chunk
+#define httpd_resp_send_err web_resp_send_err
+#define httpd_resp_set_status web_resp_set_status
+#define httpd_resp_set_type web_resp_set_type
+#define httpd_resp_set_hdr web_resp_set_hdr
+#define httpd_req_recv web_req_recv
+#define httpd_req_get_hdr_value_str web_req_hdr
+#define httpd_req_get_url_query_str web_req_query
+
 static uint8_t cert[1024] ALARM_SLOW_BSS; /* PEM for mbedTLS to parse: slow memory */
 static uint8_t key[256];
 static size_t cert_len, key_len;
@@ -94,12 +223,18 @@ typedef struct {
     char token[65], csrf[65];
     uint8_t user, proof[32];
     bool grant; /* opened by an enrolled workstation's grant, not a password */
+    bool tunnel; /* a request from alarm-server, as this person: never a browser's */
+    bool phone;  /* opened by a paired phone's signature (direct mode) */
+    char phone_id[PROTO_PHONE_ID_LEN];
     int64_t created, used;
     int64_t confirmed; /* this person's password last typed here; 0: never (a grant) */
 } session_t;
-static session_t sessions[SESSION_COUNT] ALARM_SLOW_BSS; /* HTTP worker owns sessions */
+static esp_err_t people_code(httpd_req_t *r, const session_t *s, const cJSON *o);
+/* The browser's four, then the phones' own (direct-mode.md: a phone doesn't use one of the four). */
+#define PHONE_SESSIONS 2
+static session_t sessions[SESSION_COUNT + PHONE_SESSIONS] ALARM_SLOW_BSS; /* HTTP worker owns sessions */
 static session_t *controller;
-static int64_t next_login, next_frame, control_until;
+static int64_t next_frame, control_until;
 static uint32_t pointer_sequence;
 static char staged_operation[33];
 static uint8_t staged_elf[32];
@@ -265,6 +400,13 @@ static access_t get_access(const char *path)
         is(path, "home_assistant") || is(path, "notification-status") || is(path, "automations") ||
         is(path, "automations/devices"))
         return ACC_SYSTEM;
+    /* outputs, backup: read only, for the app - the sirens and outputs, the last backup made (its
+     * when, who and size, never the file) - the system master's without installer mode. */
+    if (is(path, "outputs") || is(path, "backup"))
+        return ACC_SYSTEM;
+    /* server-link: Integrations > RoboAlarms, its state and the remote ceiling (docs/features/43) */
+    if (is(path, "server-link"))
+        return ACC_SYSTEM;
     return ACC_INSTALLER; /* alarm, sources, binding/N, developer/logs and anything new */
 }
 static access_t post_access(const char *path, const cJSON *o)
@@ -314,6 +456,8 @@ static access_t post_access(const char *path, const cJSON *o)
         is(path, "home_assistant") || is(path, "storage") || is(path, "notification-test") ||
         is(path, "ntfy-topic") || is(path, "certificate-authority") ||
         is(path, "automations")) /* docs/features/41 DESIGN.md section 8; not while locked */
+        return ACC_SYSTEM;
+    if (is(path, "server-link")) /* Unlink: the system master's, with the password again */
         return ACC_SYSTEM;
     return ACC_INSTALLER;
 }
@@ -412,15 +556,32 @@ static const char *said(httpd_req_t *r, char *why, size_t why_len)
     i18n_utf8_copy(why, why_len, line);
     return why;
 }
+#define ERROR_DRAIN_MAX 4096u
 static esp_err_t error(httpd_req_t *r, const char *status, const char *message)
 {
     httpd_resp_set_status(r, status);
     cJSON *o = cJSON_CreateObject();
     cJSON_AddStringToObject(o, "error", message);
     if (s_body_unread && r->content_len > 0) {
+        s_body_unread = false;
+        /* A small body is read and dropped, so the connection stays: closing it would make a
+         * phone that was refused reconnect, a full TLS handshake each time (SEC-012). A large
+         * one (an upload) isn't worth receiving: the reply goes and the connection closes. */
+        if (!is_tunnel(r) && r->content_len <= ERROR_DRAIN_MAX) {
+            char sink[256];
+            size_t left = r->content_len;
+            while (left > 0) {
+                const int n = httpd_req_recv(r, sink, left < sizeof(sink) ? left : sizeof(sink));
+                if (n <= 0)
+                    break;
+                left -= (size_t)n;
+            }
+            mbedtls_platform_zeroize(sink, sizeof(sink));
+            if (left == 0)
+                return json(r, o);
+        }
         httpd_resp_set_hdr(r, "Connection", "close");
         (void)json(r, o);
-        s_body_unread = false;
         return ESP_FAIL; /* the reply went; this tells httpd to close, not purge */
     }
     return json(r, o);
@@ -444,10 +605,12 @@ static void api_path(httpd_req_t *r, char *out, size_t cap)
 }
 static bool plain_http(httpd_req_t *r)
 {
-    return redirect_server != NULL && r->handle == redirect_server;
+    return !is_tunnel(r) && redirect_server != NULL && r->handle == redirect_server;
 }
 static bool origin_ok(httpd_req_t *r)
 {
+    if (is_tunnel(r))
+        return true;
     char origin[160], host[128], expected[160], site[24];
     if (httpd_req_get_hdr_value_str(r, "Sec-Fetch-Site", site, sizeof(site)) == ESP_OK &&
         !strcmp(site, "cross-site"))
@@ -464,6 +627,8 @@ static bool origin_ok(httpd_req_t *r)
 /* The request came over the setup Wi-Fi (the panel's own address there), not the home network. */
 static bool via_setup_wifi(httpd_req_t *r)
 {
+    if (is_tunnel(r))
+        return false;
     struct sockaddr_storage local;
     socklen_t len = sizeof(local);
     if (getsockname(httpd_req_to_sockfd(r), (struct sockaddr *)&local, &len) != 0)
@@ -497,9 +662,10 @@ static bool unique_members(const cJSON *o, unsigned *remaining)
 static cJSON *body(httpd_req_t *r)
 {
     char type[48];
+    /* "application/json", with or without parameters ("; charset=utf-8", as phone apps send) */
     if (r->content_len <= 0 || r->content_len > BODY_LIMIT ||
         httpd_req_get_hdr_value_str(r, "Content-Type", type, sizeof(type)) != ESP_OK ||
-        strcmp(type, "application/json"))
+        strncmp(type, "application/json", 16) || (type[16] != 0 && type[16] != ';' && type[16] != ' '))
         return NULL;
     char *buf = web_alloc(r->content_len + 1);
     if (!buf)
@@ -597,6 +763,17 @@ static bool user_proof(uint8_t user, uint8_t proof[32], alarm_authority_t *autho
 }
 static session_t *session(httpd_req_t *r, alarm_authority_t *authority)
 {
+    if (is_tunnel(r)) {
+        /* Not one of the browser's four: it lives for this request. The server checked a step-up
+         * when it says fresh, which stands in for a recent password. */
+        static session_t tunnel ALARM_SLOW_BSS;
+        memset(&tunnel, 0, sizeof(tunnel));
+        tunnel.user = s_tunnel.user;
+        tunnel.tunnel = true;
+        tunnel.created = tunnel.used = esp_timer_get_time();
+        tunnel.confirmed = s_tunnel.fresh ? tunnel.created : 0;
+        return user_proof(tunnel.user, tunnel.proof, authority, NULL) ? &tunnel : NULL;
+    }
     if (!atomic_load(&web_on) || !origin_ok(r))
         return NULL;
     /* By name, whatever else the browser keeps for this address: a Cookie header longer than
@@ -607,14 +784,20 @@ static session_t *session(httpd_req_t *r, alarm_authority_t *authority)
         strlen(token) != 64)
         return NULL;
     int64_t now = esp_timer_get_time();
-    for (unsigned i = 0; i < SESSION_COUNT; i++) {
+    for (unsigned i = 0; i < SESSION_COUNT + PHONE_SESSIONS; i++) {
         session_t *s = &sessions[i];
         if (!s->token[0] || !equal(s->token, token, 64))
             continue;
         uint8_t proof[32];
         const bool have_proof = user_proof(s->user, proof, authority, NULL);
-        if (now - s->used > SESSION_IDLE_US || now - s->created > SESSION_MAX_US ||
-            (have_proof && !equal(proof, s->proof, 32))) {
+        /* A phone's lasts its 8 hours however quiet it is, then needs a new signature - and ends
+         * the moment the phone is removed or its user changes. */
+        bool phone_gone = false;
+#if CONFIG_ALARM_FEATURE_SERVER
+        phone_gone = s->phone && !server_link_phone_paired(s->phone_id, s->user);
+#endif
+        if ((!s->phone && now - s->used > SESSION_IDLE_US) || now - s->created > SESSION_MAX_US ||
+            (have_proof && !equal(proof, s->proof, 32)) || phone_gone) {
             if (controller == s)
                 release_control();
             mbedtls_platform_zeroize(s, sizeof(*s));
@@ -629,6 +812,10 @@ static session_t *session(httpd_req_t *r, alarm_authority_t *authority)
                 return NULL;
         }
         s->used = now;
+        /* F20: this address proved who it is, so a flood from others can't crowd it out of the
+         * TLS gate's shared bucket. */
+        if (!plain_http(r))
+            tls_gate_fd_trust(httpd_req_to_sockfd(r));
         return s;
     }
     return NULL;
@@ -735,19 +922,44 @@ static bool consume_grant(const char *token)
     xSemaphoreGive(settings_lock);
     return ok;
 }
-/* Wrong passwords: five are free, then every sign-in waits a minute, doubling with each
- * further miss up to 15 minutes; an hour without one forgets them. A wrong password typed for
- * a guarded change (recent_password()) counts here too: it is the same guess. */
-static web_gate_t s_login_gate;
+/* Wrong passwords, per source address (F8, web_signin_gate.h): five are free, then that source
+ * waits a minute, doubling with each further miss up to 15 minutes, and every source together
+ * waits a little after many; an hour without one forgets them. A wrong password typed for a
+ * guarded change (recent_password()), and a phone's bad signature, count here too: the same
+ * guess. Two seconds between one source's sign-ins. */
+static signin_gate_t s_signin;
+/* The address a request came from (IPv4 mapped), or one of its own for the server link's. */
+static void source_of(httpd_req_t *r, uint8_t out[16])
+{
+    memset(out, 0, 16);
+    if (is_tunnel(r)) {
+        out[0] = 0xfe; /* not an address a socket can have */
+        return;
+    }
+    struct sockaddr_storage ss;
+    socklen_t len = sizeof(ss);
+    if (getpeername(httpd_req_to_sockfd(r), (struct sockaddr *)&ss, &len) != 0)
+        return;
+    if (ss.ss_family == AF_INET) {
+        out[10] = out[11] = 0xff;
+        memcpy(out + 12, &((const struct sockaddr_in *)&ss)->sin_addr.s_addr, 4);
+    }
+#if CONFIG_LWIP_IPV6
+    else if (ss.ss_family == AF_INET6) {
+        memcpy(out, &((const struct sockaddr_in6 *)&ss)->sin6_addr, 16);
+    }
+#endif
+}
 static esp_err_t login(httpd_req_t *r)
 {
     s_body_unread = r->content_len > 0;
     if (!atomic_load(&web_on) || !origin_ok(r))
         return error(r, "403 Forbidden", "Same-origin HTTPS required");
-    int64_t now = esp_timer_get_time();
-    if (now < next_login)
+    uint8_t src[16];
+    source_of(r, src);
+    const signin_verdict_t gate = signin_gate_try(&s_signin, src, esp_timer_get_time(), true);
+    if (gate == SIGNIN_TOO_SOON)
         return error(r, "429 Too Many Requests", "Wait before trying again");
-    next_login = now + 2000000;
     cJSON *o = body(r);
     if (!o)
         return error(r, "400 Bad Request", "Expected JSON");
@@ -766,7 +978,7 @@ static esp_err_t login(httpd_req_t *r)
         erase_json(o);
         cJSON_Delete(o);
         return error(r, "400 Bad Request", "password_too_short");
-    } else if (!web_gate_open(&s_login_gate)) {
+    } else if (gate == SIGNIN_HELD) {
         erase_json(o);
         cJSON_Delete(o);
         return error(r, "429 Too Many Requests", "Too many wrong sign-ins; wait before trying again");
@@ -775,7 +987,7 @@ static esp_err_t login(httpd_req_t *r)
          * no longer sign in: a code seen over a shoulder must not open the panel remotely. */
         ok = web_login_check(str(o, "username"), str(o, "password"), &user, verified);
         if (!ok) {
-            web_gate_failed(&s_login_gate);
+            signin_gate_failed(&s_signin, src, esp_timer_get_time());
             ESP_LOGW("panel_web", "wrong browser sign-in");
         }
     }
@@ -807,7 +1019,7 @@ static esp_err_t login(httpd_req_t *r)
 /* Signed in with a temporary password: nothing but changing it (and signing out). */
 static bool must_change(const session_t *s)
 {
-    return !s->grant && web_login_temporary(s->user);
+    return !s->grant && !s->tunnel && !s->phone && web_login_temporary(s->user);
 }
 /* What is left of this session's recent password, in microseconds (0: the next guarded change
  * asks for it). */
@@ -833,19 +1045,20 @@ static bool recent_password(httpd_req_t *r, session_t *s, const char *password,
         return false;
     }
     /* The same guess as a sign-in: the same spacing between tries, and the same count. */
-    const int64_t now = esp_timer_get_time();
-    if (now < next_login) {
+    uint8_t src[16];
+    source_of(r, src);
+    const signin_verdict_t gate = signin_gate_try(&s_signin, src, esp_timer_get_time(), true);
+    if (gate == SIGNIN_TOO_SOON) {
         *answer = error(r, "429 Too Many Requests", "Wait before trying again");
         return false;
     }
-    next_login = now + 2000000;
-    if (!web_gate_open(&s_login_gate)) {
+    if (gate == SIGNIN_HELD) {
         *answer = error(r, "429 Too Many Requests",
                         "Too many wrong sign-ins; wait before trying again");
         return false;
     }
     if (!web_login_verify(s->user, password)) {
-        web_gate_failed(&s_login_gate);
+        signin_gate_failed(&s_signin, src, esp_timer_get_time());
         ESP_LOGW("panel_web", "user %u: wrong password for a guarded change", (unsigned)s->user);
         *answer = error(r, "403 Forbidden", "wrong_password");
         return false;
@@ -1618,6 +1831,9 @@ static cJSON *status(session_t *s, alarm_authority_t authority)
         ok &= web_attach(integrations, NULL, cJSON_CreateString("ntfy"));
     if (B.pushover_get)
         ok &= web_attach(integrations, NULL, cJSON_CreateString("pushover"));
+    /* RoboAlarms (docs/features/43): the master's; a keypad's backend leaves it out */
+    if (B.srvlink_status)
+        ok &= web_attach(integrations, NULL, cJSON_CreateString("roboalarms"));
     ok &= web_attach(caps, "integrations", integrations);
     ok &= web_attach(o, "capabilities", caps);
     ui_wifi_info_t w;
@@ -1671,6 +1887,12 @@ static cJSON *status(session_t *s, alarm_authority_t authority)
                                                ? "Installer"
                                                : cfg->users[s->user - 1].name);
         cJSON_AddNumberToObject(o, "config_revision", snap->config_seq);
+        /* The panic types this person may raise from the app (WEB-032): the installer's choice,
+         * for the people who arm and disarm, never a grant's. */
+        const bool may_panic =
+            !s->grant && authority != ALARM_AUTH_NONE && authority != ALARM_AUTH_INSTALLER;
+        ok &= web_attach(cJSON_GetObjectItemCaseSensitive(o, "access"), "panic",
+                         web_app_panic_json(may_panic ? cfg->opt.app_panic_mask : 0u));
         cJSON_AddBoolToObject(o, "program", snap->program);
         cJSON_AddBoolToObject(o, "locked", alarm_snapshot_locked(snap));
         cJSON_AddNumberToObject(o, "troubles", snap->sys_troubles);
@@ -2092,6 +2314,89 @@ static esp_err_t get(httpd_req_t *r)
     }
     if (!strcmp(path, "zwave")) /* the installer's (get_access): docs/features/36 screens.md §11 */
         return json(r, web_zwave_get(&B));
+#if CONFIG_ALARM_FEATURE_SERVER
+    if (!strcmp(path, "server-link")) {
+        /* Integrations > RoboAlarms (docs/features/43): linking, Allow and the remote ceiling are
+         * at the panel (alarm-server panel-link.md, D6); here the state, and Unlink. */
+        static const char *const STATES[] = {"idle", "connecting", "failed", "waiting_code",
+                                              "showing_code", "claimed", "connected"};
+        server_link_status_t *st = web_alloc(sizeof(*st));
+        proto_srv_ceiling_t *c = web_alloc(sizeof(*c));
+        if (!st || !c) {
+            free(st);
+            free(c);
+            return error(r, "503 Service Unavailable", "Memory busy");
+        }
+        server_link_get_status(st);
+        server_link_get_ceiling(c);
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "state", (unsigned)st->state < sizeof(STATES) / sizeof(STATES[0])
+                                                ? STATES[st->state] : "idle");
+        cJSON_AddBoolToObject(o, "linked", st->linked);
+        cJSON_AddStringToObject(o, "server", st->host);
+        cJSON_AddNumberToObject(o, "port", st->port ? st->port : 443);
+        cJSON_AddStringToObject(o, "location", st->location_id);
+        cJSON_AddBoolToObject(o, "waiting", st->waiting);
+        const uint64_t now = alarm_service_now();
+        if (st->linked && st->last_heard_ms && now >= st->last_heard_ms)
+            cJSON_AddNumberToObject(o, "heard_s_ago", (double)((now - st->last_heard_ms) / 1000u));
+        else
+            cJSON_AddNullToObject(o, "heard_s_ago");
+        cJSON *ce = cJSON_AddObjectToObject(o, "ceiling");
+        cJSON_AddBoolToObject(ce, "remote_disarm", c->remote_disarm);
+        cJSON_AddBoolToObject(ce, "remote_setup", c->remote_setup);
+        cJSON_AddBoolToObject(ce, "remote_people", c->remote_people);
+        cJSON_AddBoolToObject(ce, "ask_code", c->ask_code);
+        cJSON *users = cJSON_AddArrayToObject(ce, "users");
+        for (unsigned u = 1; users && u <= ALARM_MAX_USERS; u++)
+            if (c->remote_users[(u - 1) / 8] & (1u << ((u - 1) % 8)))
+                cJSON_AddItemToArray(users, cJSON_CreateNumber(u));
+        free(st);
+        free(c);
+        return json(r, o);
+    }
+#endif
+    if (!strcmp(path, "outputs")) {
+        outputs_wired_info_t wired[OW_CHANNELS];
+        outputs_rf_info_t rf[RFS_SIRENS];
+        outputs_service_wired(wired);
+        outputs_service_rf(rf);
+        web_output_t outs[OW_CHANNELS + RFS_SIRENS];
+        size_t n = 0;
+        for (size_t i = 0; i < OW_CHANNELS; i++)
+            outs[n++] = (web_output_t){.used = wired[i].c.function != OW_FN_NONE,
+                                       .number = (uint8_t)(i + 1u),
+                                       .kind = web_output_kind(wired[i].c.function),
+                                       .name = wired[i].c.name,
+                                       .on = wired[i].on,
+                                       .trouble = wired[i].trouble};
+        for (size_t i = 0; i < RFS_SIRENS; i++)
+            outs[n++] = (web_output_t){.used = rf[i].c.used,
+                                       .number = (uint8_t)(i + 1u),
+                                       .kind = "rf_siren",
+                                       .name = "",
+                                       .on = rf[i].sounding,
+                                       .trouble = false};
+        cJSON *o = web_outputs_json(outs, n);
+        return o ? json(r, o) : error(r, "503 Service Unavailable", "Memory busy");
+    }
+    if (!strcmp(path, "backup")) {
+        uint64_t at_s = 0;
+        uint8_t by = 0;
+        uint32_t size = 0;
+        const bool have = backup_service_last(&at_s, &by, &size);
+        char name[ALARM_NAME_LEN] = "";
+        if (have && by >= 1u && by <= ALARM_MAX_USERS) {
+            alarm_config_t *cfg = web_alloc(sizeof(*cfg));
+            if (cfg && alarm_service_get_config(cfg) == ESP_OK)
+                snprintf(name, sizeof(name), "%s", cfg->users[by - 1].name);
+            if (cfg)
+                mbedtls_platform_zeroize(cfg, sizeof(*cfg)); /* it holds the code hashes */
+            free(cfg);
+        }
+        cJSON *o = web_backup_json(have, at_s, by, name, size);
+        return o ? json(r, o) : error(r, "503 Service Unavailable", "Memory busy");
+    }
     /* ACC_SYSTEM (get_access): docs/features/41 DESIGN.md section 10. Read-only while locked: the
      * page shows the armed notice, every edit answers 409 locked. */
     if (!strcmp(path, "automations") || !strcmp(path, "automations/devices")) {
@@ -2149,6 +2454,10 @@ static esp_err_t get(httpd_req_t *r)
             o = cJSON_CreateObject();
             cJSON *a = cJSON_CreateArray();
             const alarm_user_t *me = &cfg->users[s->user - 1];
+#if CONFIG_ALARM_FEATURE_SERVER
+            static proto_phone_t phones[PROTO_PHONE_MAX] ALARM_SLOW_BSS; /* the HTTP worker's */
+            const size_t nphones = server_link_phone_list(phones, PROTO_PHONE_MAX);
+#endif
             for (unsigned i = 0; i < ALARM_MAX_USERS; i++) {
                 const alarm_user_t *u = &cfg->users[i];
                 const uint8_t n = (uint8_t)(i + 1);
@@ -2168,9 +2477,26 @@ static esp_err_t get(httpd_req_t *r)
                 cJSON_AddBoolToObject(v, "web_login", web_login_enabled(cfg, n));
                 cJSON_AddBoolToObject(v, "web_login_possible", web_login_eligible(cfg, n));
                 cJSON_AddBoolToObject(v, "web_login_temporary", web_login_temporary(n));
+#if CONFIG_ALARM_FEATURE_SERVER
+                /* The phones paired with this person directly (alarm-server direct-mode.md). */
+                cJSON *ph = cJSON_AddArrayToObject(v, "phones");
+                for (size_t p = 0; ph && p < nphones; p++) {
+                    if (phones[p].user != n)
+                        continue;
+                    char id[PROTO_PHONE_ID_LEN];
+                    proto_phone_id(phones[p].pub, id);
+                    cJSON *e = cJSON_CreateObject();
+                    cJSON_AddStringToObject(e, "id", id);
+                    cJSON_AddStringToObject(e, "name", phones[p].name);
+                    ok &= web_attach(ph, NULL, e);
+                }
+#endif
                 ok &= web_attach(a, NULL, v);
             }
             ok &= web_attach(o, "users", a);
+#if CONFIG_ALARM_FEATURE_SERVER
+            mbedtls_platform_zeroize(phones, sizeof(phones)); /* their push keys */
+#endif
             cJSON_AddNumberToObject(o, "maximum", ALARM_MAX_USERS);
             cJSON_AddStringToObject(o, "panel_id", web_login_panel_id());
             /* The fewest digits a new code may have (the installer's option, never under the
@@ -2355,6 +2681,10 @@ static esp_err_t partition_action(httpd_req_t *r, session_t *s, alarm_authority_
         {"walk_test_start", ALARM_CMD_WALK_TEST, ALARM_SVC_WHEN_DISARMED, ALARM_WALK_START},
         {"walk_test_end", ALARM_CMD_WALK_TEST, ALARM_SVC_WHEN_DISARMED, ALARM_WALK_END},
         {"walk_test_extend", ALARM_CMD_WALK_TEST, ALARM_SVC_WHEN_DISARMED, ALARM_WALK_EXTEND},
+        /* Panic from the app (WEB-032): police, fire, medical or silent, in any state, as a
+         * keypad's panic keys need no code. Only the types the installer allows
+         * (opt.app_panic_mask, off from the factory), never the installer's own. */
+        {"panic", ALARM_CMD_PANIC, ALARM_SVC_WHEN_ANY, ALARM_WALK_TOGGLE},
     };
     static const alarm_arm_level_t LEVELS[] = {ALARM_LEVEL_AWAY, ALARM_LEVEL_STAY, ALARM_LEVEL_NIGHT};
     /* Arming and disarming without a code is a person's, proved by their own password: never an
@@ -2379,6 +2709,22 @@ static esp_err_t partition_action(httpd_req_t *r, session_t *s, alarm_authority_
     if (!strcmp(op, "clear") && s->user == ALARM_USER_INSTALLER)
         return result(r, ALARM_ERR_NOT_AUTHORIZED);
     cmd.type = ACTIONS[a].type;
+    if (cmd.type == ALARM_CMD_PANIC) {
+        if (!web_app_panic_type(str(o, "type"), &cmd.panic))
+            return error(r, "400 Bad Request", "bad_request");
+        if (s->user == ALARM_USER_INSTALLER) /* as arming (BL-187): the people who live there */
+            return result(r, ALARM_ERR_NOT_AUTHORIZED);
+        alarm_config_t *cfg = web_alloc(sizeof(*cfg));
+        if (!cfg || alarm_service_get_config(cfg) != ESP_OK) {
+            free(cfg);
+            return error(r, "503 Service Unavailable", "Memory busy");
+        }
+        const uint8_t allowed = cfg->opt.app_panic_mask;
+        mbedtls_platform_zeroize(cfg, sizeof(*cfg)); /* it holds the code hashes */
+        free(cfg);
+        if (!web_app_panic_allowed(allowed, cmd.panic))
+            return error(r, "403 Forbidden", "panic_off");
+    }
     if (cmd.type == ALARM_CMD_WALK_TEST) {
         cmd.walk_op = (uint8_t)ACTIONS[a].walk_op;
         /* "Include panic and 24-hour zones" (WALK-007): read by a start only */
@@ -2421,7 +2767,7 @@ static esp_err_t partition_action(httpd_req_t *r, session_t *s, alarm_authority_
     cmd.partition = (uint8_t)part;
     alarm_cmd_result_t res = {0};
     const alarm_result_t e =
-        alarm_service_command_as(&cmd, &SOURCE, s->user, ACTIONS[a].when, &res);
+        alarm_service_command_as(&cmd, SOURCE_NOW, s->user, ACTIONS[a].when, &res);
     ESP_LOGI("panel_web", "user %u: partition %u %s: %s", (unsigned)s->user, (unsigned)part, op,
              alarm_result_name(e));
     if (e == ALARM_OK)
@@ -2449,14 +2795,16 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
     }
     if (!strcmp(path, "password")) {
         /* Your own password: the current one first, then the new one (web_login.h). */
-        if (!web_gate_open(&s_login_gate))
+        uint8_t src[16];
+        source_of(r, src);
+        if (signin_gate_try(&s_signin, src, esp_timer_get_time(), false) != SIGNIN_OK)
             return error(r, "429 Too Many Requests", "Too many wrong passwords; wait before trying again");
         bool wrong = false;
         uint8_t changed[32];
         if (!web_login_change(s->user, str(o, "current"), str(o, "password"), &wrong, changed,
                               why, sizeof(why))) {
             if (wrong)
-                web_gate_failed(&s_login_gate);
+                signin_gate_failed(&s_signin, src, esp_timer_get_time());
             /* Flash or memory, not the person: 503, as a refused turn-off. Decided before
              * said() translates why. */
             const char *status =
@@ -2478,6 +2826,20 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
         return error(r, "403 Forbidden", "not_allowed");
     if (!locked_exempt(path, o) && panel_locked())
         return error(r, "409 Conflict", "locked");
+#if CONFIG_ALARM_FEATURE_SERVER
+    if (!strcmp(path, "server-link")) {
+        /* Unlink (docs/features/43): the system master's, the password again. Never from the
+         * server itself (tunnel): it has its own unlink. */
+        if (s_tunnel_on)
+            return error(r, "403 Forbidden", "at_panel_only");
+        if (strcmp(str(o, "action"), "unlink"))
+            return error(r, "400 Bad Request", "bad_request");
+        esp_err_t refused = ESP_OK;
+        if (!recent_password(r, s, str(o, "me_password"), &refused))
+            return refused;
+        return server_link_unlink() == ESP_OK ? okay(r) : error(r, "503 Service Unavailable", "storage_busy");
+    }
+#endif
     if (!strcmp(path, "languages"))
         return languages_post(r, o);
     if (!strcmp(path, "partition"))
@@ -2557,10 +2919,21 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
         if (!web_automations_available())
             return error(r, "404 Not Found", "Automations are not in this firmware");
         int http = 200;
-        cJSON *res = web_automations_post(o, s->user, &http);
+        /* F18: from afar, a rule that disarms, unlocks, opens or stops goes on only at the panel,
+         * unless the remote ceiling lets anyone disarm from afar without a code anyway. */
+        bool less_secure_ok = !s_tunnel_on;
+#if CONFIG_ALARM_FEATURE_SERVER
+        if (s_tunnel_on) {
+            proto_srv_ceiling_t ceiling;
+            server_link_get_ceiling(&ceiling);
+            less_secure_ok = ceiling.remote_disarm && !ceiling.ask_code;
+        }
+#endif
+        cJSON *res = web_automations_post(o, s->user, less_secure_ok, &http);
         if (!res)
             return error(r, "503 Service Unavailable", "Memory busy");
         httpd_resp_set_status(r, http == 400   ? "400 Bad Request"
+                                 : http == 403 ? "403 Forbidden"
                                  : http == 409 ? "409 Conflict"
                                  : http == 503 ? "503 Service Unavailable"
                                                : HTTPD_200);
@@ -2611,8 +2984,10 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
         }
         alarm_service_get_snapshot(snap);
         uint32_t revision;
+        /* Through the server link, installer mode may be the one its Setup mode holds: the
+         * alarm task applies inside that and refuses anyone else's (program_apply_as). */
         bool current = number(o, "revision", 0, UINT32_MAX, &revision) &&
-                       revision == snap->config_seq && !snap->program;
+                       revision == snap->config_seq && (!snap->program || s_tunnel_on);
         free(snap);
         if (!current) {
             free(cfg);
@@ -2630,7 +3005,7 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
             mbedtls_platform_zeroize(cfg, sizeof(*cfg)); free(cfg);
             return error(r, "409 Conflict", "Move assigned keypads first; edit paired keypads in their popup");
         }
-        const alarm_result_t e = alarm_service_program_apply_as(&SOURCE, s->user, revision, cfg);
+        const alarm_result_t e = alarm_service_program_apply_as(SOURCE_NOW, s->user, revision, cfg);
         mbedtls_platform_zeroize(cfg, sizeof(*cfg));
         free(cfg);
         return result(r, e);
@@ -2642,6 +3017,29 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
          * master for the developer tools (as for arming, BL-113). */
         if (s->grant)
             return error(r, "403 Forbidden", "password_sign_in_required");
+        if (s_tunnel_on && (!strcmp(str(o, "action"), "create") || !strcmp(str(o, "action"), "set_code")))
+            return people_code(r, s, o);
+#if CONFIG_ALARM_FEATURE_SERVER
+        if (!strcmp(str(o, "action"), "phone-remove")) {
+            /* A phone paired directly goes at once (DIR-004): the person's own, or anyone's they
+             * manage, as on the touchscreen. */
+            uint32_t who;
+            if (!number(o, "number", 1, ALARM_MAX_USERS, &who))
+                return error(r, "400 Bad Request", "bad_request");
+            alarm_config_t *cfg = web_alloc(sizeof(*cfg));
+            const bool may = cfg && alarm_service_get_config(cfg) == ESP_OK &&
+                             (who == s->user || alarm_config_user_manages(cfg, s->user, (uint8_t)who));
+            if (cfg)
+                mbedtls_platform_zeroize(cfg, sizeof(*cfg));
+            free(cfg);
+            if (!may)
+                return error(r, "403 Forbidden", "not_allowed");
+            if (!server_link_phone_paired(str(o, "phone"), (uint8_t)who))
+                return error(r, "404 Not Found", "no_phone");
+            return server_link_phone_remove(str(o, "phone")) == ESP_OK
+                       ? okay(r) : error(r, "503 Service Unavailable", "storage_busy");
+        }
+#endif
         uint32_t user, auth, parts;
         if (!number(o, "number", 1, ALARM_MAX_USERS, &user))
             return error(r, "400 Bad Request", "bad_request");
@@ -2663,15 +3061,15 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
             return people_login(r, s, (uint8_t)user, false, "", false);
         alarm_result_t e;
         if (!strcmp(op, "delete"))
-            e = alarm_service_user_delete_as(&SOURCE, s->user, (uint8_t)user);
+            e = alarm_service_user_delete_as(SOURCE_NOW, s->user, (uint8_t)user);
         else if (number(o, "authority", 0, ALARM_AUTH_DURESS, &auth) &&
                  number(o, "partitions", 0, 255, &parts)) {
             if (str(o, "new_code")[0])
-                e = alarm_service_user_set_as(&SOURCE, s->user, (uint8_t)user,
+                e = alarm_service_user_set_as(SOURCE_NOW, s->user, (uint8_t)user,
                                               str(o, "new_code"), (alarm_authority_t)auth,
                                               (uint8_t)parts, str(o, "name"));
             else
-                e = alarm_service_user_update_as(&SOURCE, s->user, (uint8_t)user,
+                e = alarm_service_user_update_as(SOURCE_NOW, s->user, (uint8_t)user,
                                                  (alarm_authority_t)auth, (uint8_t)parts,
                                                  str(o, "name"));
         } else
@@ -2736,13 +3134,13 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
             return e == ESP_OK ? okay(r) : error(r, "409 Conflict", esp_err_to_name(e));
         }
         if (!strcmp(op, "install")) {
-            const esp_err_t e = panel_ota_install(&SOURCE, s->user, false);
+            const esp_err_t e = panel_ota_install(SOURCE_NOW, s->user, false);
             return e == ESP_OK                  ? okay(r)
                    : e == ESP_ERR_INVALID_STATE ? error(r, "409 Conflict", "busy")
                                                 : error(r, "409 Conflict", esp_err_to_name(e));
         }
         if (!strcmp(op, "cancel")) { /* Stop (OTA-027): allowed while armed */
-            const esp_err_t e = panel_ota_stop(&SOURCE, s->user);
+            const esp_err_t e = panel_ota_stop(SOURCE_NOW, s->user);
             return e == ESP_OK                  ? okay(r)
                    : e == ESP_ERR_NOT_FOUND     ? error(r, "409 Conflict", "no_update")
                    : e == ESP_ERR_NOT_SUPPORTED ? error(r, "409 Conflict", "not_stoppable")
@@ -2782,14 +3180,14 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
             if (going)
                 return error(r, "409 Conflict", "update_running");
             const esp_err_t e = panel_ota_server_commit(str(o, "domain"), digest, factory == 1,
-                                                        &SOURCE, s->user);
+                                                        SOURCE_NOW, s->user);
             return e == ESP_OK                  ? okay(r)
                    : e == ESP_ERR_NOT_ALLOWED   ? error(r, "409 Conflict", "factory_code")
                    : e == ESP_ERR_INVALID_STATE ? error(r, "409 Conflict", "stale")
                                                 : error(r, "409 Conflict", esp_err_to_name(e));
         }
         if (!strcmp(op, "channel")) { /* OTA-019 */
-            const esp_err_t e = panel_ota_set_channel(str(o, "channel"), &SOURCE, s->user);
+            const esp_err_t e = panel_ota_set_channel(str(o, "channel"), SOURCE_NOW, s->user);
             return e == ESP_OK                  ? okay(r)
                    : e == ESP_ERR_INVALID_ARG   ? error(r, "400 Bad Request", "bad_request")
                    : e == ESP_ERR_INVALID_STATE ? error(r, "409 Conflict", "update_running")
@@ -2806,7 +3204,7 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
             return error(r, "409 Conflict", "Panel must be disarmed and idle");
         esp_err_t e = panel_ota_remote_prepare(staged_operation, staged_elf);
         if (e == ESP_OK)
-            e = panel_ota_apply(&SOURCE, s->user);
+            e = panel_ota_apply(SOURCE_NOW, s->user);
         return e == ESP_OK ? okay(r) : error(r, "409 Conflict", esp_err_to_name(e));
     }
     if (!strcmp(path, "developer/enroll")) {
@@ -2870,6 +3268,225 @@ static esp_err_t setup_post(httpd_req_t *r, session_t *s, alarm_authority_t auth
         return error(r, status, why);
     return json(r, out);
 }
+#if CONFIG_ALARM_FEATURE_SERVER
+/* ---- direct mode: a phone paired at the panel (alarm-server's direct-mode.md) ------------------
+ * POST phone/pair        {token, pub, name, push?}    -> 202 {state: asking}, Allow is on the panel
+ * POST phone/pair-status {pub}                        -> {state: asking|allowed|refused, id, user}
+ * POST phone/challenge   {phone, action?}             -> {challenge, expires_s}
+ * POST phone/session     {phone, challenge, signature}-> {token, csrf, user, expires_s}
+ * The rest of the API then answers its session (Cookie panel_session, X-Panel-CSRF), with disarm,
+ * silence, people and Setup asking a fresh signature in "phone_proof". */
+static bool unb64_fixed(const char *s, uint8_t *out, size_t len)
+{
+    uint8_t tmp[96];
+    const size_t n = len <= sizeof(tmp) ? proto_srv_unb64url(s, tmp, sizeof(tmp)) : 0u;
+    if (n != len)
+        return false;
+    memcpy(out, tmp, len);
+    return true;
+}
+static bool phone_push_fields(const cJSON *o, proto_phone_t *p)
+{
+    const cJSON *push = cJSON_GetObjectItemCaseSensitive(o, "push");
+    p->levels = PROTO_PUSH_ALL_LEVELS;
+    if (!cJSON_IsObject(push))
+        return push == NULL;
+    const char *handle = str(push, "handle"), *kid = str(push, "kid");
+    if (!handle[0] || strlen(handle) >= sizeof(p->handle) || !kid[0] || strlen(kid) >= sizeof(p->kid) ||
+        !unb64_fixed(str(push, "key"), p->push_key, sizeof(p->push_key)))
+        return false;
+    snprintf(p->handle, sizeof(p->handle), "%s", handle);
+    snprintf(p->kid, sizeof(p->kid), "%s", kid);
+    return true;
+}
+static esp_err_t phone_pair(httpd_req_t *r, const cJSON *o)
+{
+    uint8_t token[PROTO_PHONE_TOKEN_LEN];
+    proto_phone_t p;
+    memset(&p, 0, sizeof(p));
+    const char *name = str(o, "name");
+    if (!unb64_fixed(str(o, "token"), token, sizeof(token)) ||
+        !unb64_fixed(str(o, "pub"), p.pub, sizeof(p.pub)) || !name[0] || !phone_push_fields(o, &p))
+        return error(r, "400 Bad Request", "bad_request");
+    snprintf(p.name, sizeof(p.name), "%s", name);
+    const server_link_phone_ask_t a = server_link_phone_pair_request(token, &p);
+    mbedtls_platform_zeroize(&p, sizeof(p));
+    if (a == SERVER_LINK_PHONE_REFUSED)
+        return error(r, "403 Forbidden", "pairing_closed");
+    if (a == SERVER_LINK_PHONE_BUSY)
+        return error(r, "409 Conflict", "busy");
+    httpd_resp_set_status(r, "202 Accepted");
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddStringToObject(out, "state", "asking");
+    return json(r, out);
+}
+static esp_err_t phone_pair_status(httpd_req_t *r, const cJSON *o)
+{
+    uint8_t pub[PROTO_PHONE_KEY_LEN];
+    if (!unb64_fixed(str(o, "pub"), pub, sizeof(pub)))
+        return error(r, "400 Bad Request", "bad_request");
+    const int state = server_link_phone_pair_result(pub);
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddStringToObject(out, "state", state == 0 ? "asking" : state > 0 ? "allowed" : "refused");
+    if (state > 0) {
+        char id[PROTO_PHONE_ID_LEN];
+        proto_phone_id(pub, id);
+        cJSON_AddStringToObject(out, "id", id);
+    }
+    return json(r, out);
+}
+static esp_err_t phone_challenge(httpd_req_t *r, const cJSON *o)
+{
+    char challenge[PROTO_SRV_B64_KEY_LEN];
+    if (!server_link_phone_challenge(str(o, "phone"), str(o, "action"), challenge))
+        return error(r, "404 Not Found", "unknown_phone");
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddStringToObject(out, "challenge", challenge);
+    cJSON_AddNumberToObject(out, "expires_s", PROTO_PHONE_CHALLENGE_MS / 1000u);
+    return json(r, out);
+}
+static esp_err_t phone_session(httpd_req_t *r, const cJSON *o)
+{
+    uint8_t sig[PROTO_PHONE_SIG_LEN];
+    uint8_t user = 0;
+    uint8_t src[16];
+    source_of(r, src);
+    if (signin_gate_try(&s_signin, src, esp_timer_get_time(), false) != SIGNIN_OK)
+        return error(r, "429 Too Many Requests", "Wait before trying again");
+    if (!unb64_fixed(str(o, "signature"), sig, sizeof(sig)) ||
+        !server_link_phone_verify(str(o, "phone"), str(o, "challenge"), "", sig, &user)) {
+        signin_gate_failed(&s_signin, src, esp_timer_get_time());
+        return error(r, "403 Forbidden", "bad_signature");
+    }
+    const int64_t now = esp_timer_get_time();
+    session_t *s = NULL;
+    for (unsigned i = SESSION_COUNT; i < SESSION_COUNT + PHONE_SESSIONS; i++) {
+        session_t *c = &sessions[i];
+        if (!c->token[0] || now - c->created > SESSION_MAX_US) {
+            s = c;
+            break;
+        }
+        if (!s || c->created < s->created)
+            s = c; /* 2 at once (direct-mode.md): the oldest goes */
+    }
+    alarm_authority_t authority;
+    mbedtls_platform_zeroize(s, sizeof(*s));
+    s->user = user;
+    if (!user_proof(user, s->proof, &authority, NULL)) {
+        mbedtls_platform_zeroize(s, sizeof(*s));
+        return error(r, "503 Service Unavailable", "Memory busy");
+    }
+    s->phone = true;
+    snprintf(s->phone_id, sizeof(s->phone_id), "%s", str(o, "phone"));
+    s->created = s->used = now;
+    random_token(s->token);
+    random_token(s->csrf);
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddStringToObject(out, "token", s->token);
+    cJSON_AddStringToObject(out, "csrf", s->csrf);
+    cJSON_AddNumberToObject(out, "user", user);
+    cJSON_AddNumberToObject(out, "expires_s", PROTO_PHONE_SESSION_MS / 1000u);
+    return json(r, out);
+}
+/* DIR-003: a guarded request from a phone carries a signature on a challenge for this one action. */
+static bool phone_proof_ok(const session_t *s, const char *path, const cJSON *o)
+{
+    const char *action = str(o, "action");
+    if (!proto_phone_guarded("POST", path, action))
+        return true;
+    const cJSON *proof = cJSON_GetObjectItemCaseSensitive(o, "phone_proof");
+    uint8_t sig[PROTO_PHONE_SIG_LEN];
+    uint8_t user = 0;
+    if (!cJSON_IsObject(proof) || !unb64_fixed(str(proof, "signature"), sig, sizeof(sig)))
+        return false;
+    return server_link_phone_verify(str(proof, "phone"), str(proof, "challenge"),
+                                    action[0] ? action : path, sig, &user) &&
+           user == s->user;
+}
+#define NULL_ANSWER ((esp_err_t)-12345) /* not one of the paths that need no session */
+/* POST phone/sender: who the panel is to the relay, for a phone to make it a handle (push-api.md).
+ * POST phone/push {handle, kid, key, levels?}: this phone's handle and key; {} stops its alerts. */
+static esp_err_t phone_session_path(httpd_req_t *r, const session_t *s, const char *path, const cJSON *o)
+{
+    if (!strcmp(path, "phone/sender")) {
+        char sender[48], relay[PROTO_SRV_HOST_LEN + 16];
+        bool own_ca;
+        cJSON *out = cJSON_CreateObject();
+        server_link_relay_base(relay, sizeof(relay), &own_ca);
+        cJSON_AddStringToObject(out, "relay", relay);
+        if (server_link_push_sender(sender, sizeof(sender)))
+            cJSON_AddStringToObject(out, "sender", sender);
+        else
+            httpd_resp_set_status(r, "202 Accepted");
+        return json(r, out);
+    }
+    proto_phone_t p;
+    memset(&p, 0, sizeof(p));
+    if (!strcmp(str(o, "handle"), "")) {
+        (void)server_link_phone_set_push(s->phone_id, "", "", NULL, 0u);
+        return okay(r);
+    }
+    cJSON *wrap = cJSON_CreateObject();
+    cJSON_AddItemReferenceToObject(wrap, "push", (cJSON *)o);
+    const bool ok = phone_push_fields(wrap, &p);
+    cJSON_Delete(wrap);
+    uint32_t levels = PROTO_PUSH_ALL_LEVELS;
+    if (!ok || (cJSON_GetObjectItemCaseSensitive(o, "levels") != NULL &&
+                !number(o, "levels", 0u, PROTO_PUSH_ALL_LEVELS, &levels)))
+        return error(r, "400 Bad Request", "bad_request");
+    const esp_err_t e = server_link_phone_set_push(s->phone_id, p.handle, p.kid, p.push_key, (uint8_t)levels);
+    mbedtls_platform_zeroize(&p, sizeof(p));
+    return e == ESP_OK ? okay(r) : error(r, "404 Not Found", "unknown_phone");
+}
+#endif /* CONFIG_ALARM_FEATURE_SERVER */
+bool panel_web_cert_sha256(uint8_t out[32])
+{
+    return cert_len != 0u && digest(cert, cert_len, out); /* the certificate is kept as DER */
+}
+/* POST people through the server link with a code server_link has opened from the app's sealed one
+ * (MOB-044, panel-link.md "Sealed codes"): "create" puts a new person in the first free slot,
+ * "set_code" gives an existing person a new code; both as the signed-in person, whose authority
+ * the engine checks as at a keypad. Answers {number}. */
+static esp_err_t people_code(httpd_req_t *r, const session_t *s, const cJSON *o)
+{
+    const bool create = !strcmp(str(o, "action"), "create");
+    alarm_config_t *cfg = web_alloc(sizeof(*cfg));
+    if (!cfg || alarm_service_get_config(cfg) != ESP_OK) {
+        free(cfg);
+        return error(r, "503 Service Unavailable", "Memory busy");
+    }
+    uint32_t user = 0, auth, parts;
+    alarm_result_t e = ALARM_ERR_BAD_ARG;
+    const char *refused = NULL;
+    if (create) {
+        for (uint32_t u = ALARM_USER_MASTER + 1u; u <= ALARM_MAX_USERS && !user; u++)
+            if (cfg->users[u - 1].authority == ALARM_AUTH_NONE)
+                user = u;
+        if (!user)
+            refused = "no_free_slot";
+        else if (number(o, "authority", ALARM_AUTH_INSTALLER, ALARM_AUTH_DURESS, &auth) &&
+                 number(o, "partitions", 1, 255, &parts))
+            e = alarm_service_user_set_as(SOURCE_NOW, s->user, (uint8_t)user, str(o, "code"),
+                                          (alarm_authority_t)auth, (uint8_t)parts, str(o, "name"));
+    } else if (number(o, "number", 1, ALARM_MAX_USERS, &user) &&
+               cfg->users[user - 1].authority != ALARM_AUTH_NONE) {
+        e = alarm_service_user_set_as(SOURCE_NOW, s->user, (uint8_t)user, str(o, "code"),
+                                      cfg->users[user - 1].authority, cfg->users[user - 1].partitions,
+                                      NULL);
+    } else {
+        refused = "no_user";
+    }
+    mbedtls_platform_zeroize(cfg, sizeof(*cfg)); /* it holds the code hashes */
+    free(cfg);
+    if (refused)
+        return error(r, create ? "409 Conflict" : "404 Not Found", refused);
+    if (e != ALARM_OK)
+        return result(r, e);
+    cJSON *out = cJSON_CreateObject();
+    cJSON_AddNumberToObject(out, "number", user);
+    return json(r, out);
+}
+
 static esp_err_t post(httpd_req_t *r)
 {
     s_body_unread = r->content_len > 0;
@@ -2881,6 +3498,45 @@ static esp_err_t post(httpd_req_t *r)
         return setup_post(r, s, authority);
     if (web_setup_unclaimed())
         return error(r, "403 Forbidden", "setup_first");
+#if CONFIG_ALARM_FEATURE_SERVER
+    if (!strncmp(setup_path, "phone/", 6)) {
+        /* Before a session: the token or the signature is what proves it. */
+        if (is_tunnel(r))
+            return error(r, "403 Forbidden", "not_allowed");
+        cJSON *q = body(r);
+        if (!q)
+            return error(r, "400 Bad Request", "Expected bounded JSON body");
+        esp_err_t answered;
+        if (!strcmp(setup_path, "phone/pair"))
+            answered = phone_pair(r, q);
+        else if (!strcmp(setup_path, "phone/pair-status"))
+            answered = phone_pair_status(r, q);
+        else if (!strcmp(setup_path, "phone/challenge"))
+            answered = phone_challenge(r, q);
+        else if (!strcmp(setup_path, "phone/session"))
+            answered = phone_session(r, q);
+        else
+            answered = NULL_ANSWER;
+        if (answered != NULL_ANSWER) {
+            erase_json(q);
+            cJSON_Delete(q);
+            return answered;
+        }
+        if (!s) { /* phone/sender and phone/push want its session */
+            erase_json(q);
+            cJSON_Delete(q);
+            return error(r, "401 Unauthorized", "Sign in again");
+        }
+        char path_now[96];
+        api_path(r, path_now, sizeof(path_now));
+        esp_err_t done = s->phone && (!strcmp(path_now, "phone/sender") || !strcmp(path_now, "phone/push"))
+                             ? phone_session_path(r, s, path_now, q)
+                             : error(r, "404 Not Found", "not_found");
+        erase_json(q);
+        cJSON_Delete(q);
+        return done;
+    }
+#endif
     if (!s)
         return error(r, "401 Unauthorized", "Sign in again or reload the page");
     cJSON *o = body(r);
@@ -2888,7 +3544,20 @@ static esp_err_t post(httpd_req_t *r)
         return error(r, "400 Bad Request", "Expected bounded JSON body");
     char path[96];
     api_path(r, path, sizeof(path));
-    esp_err_t e = action(r, s, authority, path, o);
+    esp_err_t e;
+#if CONFIG_ALARM_FEATURE_SERVER
+    if (s->phone && !phone_proof_ok(s, path, o)) {
+        e = error(r, "403 Forbidden", "phone_signature_required");
+    } else
+#endif
+    {
+        if (s->phone) {
+            s_tunnel_source = (alarm_source_t){.kind = ALARM_SRC_REMOTE, .id = ALARM_SRC_ID_SERVER_APP};
+            s_tunnel_on = true;
+        }
+        e = action(r, s, authority, path, o);
+        s_tunnel_on = false;
+    }
     erase_json(o);
     cJSON_Delete(o);
     return e;
@@ -2978,7 +3647,7 @@ static esp_err_t backup_post(httpd_req_t *r)
     uint8_t *file = NULL;
     size_t len = 0;
     backup_result_t why = BACKUP_OK;
-    const esp_err_t e = backup_service_make(str(o, "password"), &SOURCE, s->user, &file, &len, &why);
+    const esp_err_t e = backup_service_make(str(o, "password"), SOURCE_NOW, s->user, &file, &len, &why);
     erase_json(o);
     cJSON_Delete(o);
     if (e != ESP_OK)
@@ -3054,7 +3723,7 @@ static esp_err_t backup_put(httpd_req_t *r)
     backup_result_t why = BACKUP_ERR_FORMAT;
     esp_err_t e = ESP_ERR_INVALID_ARG;
     if (got == r->content_len)
-        e = backup_service_restore(file, got, password, &SOURCE, s->user, &sum, &why);
+        e = backup_service_restore(file, got, password, SOURCE_NOW, s->user, &sum, &why);
     mbedtls_platform_zeroize(password, sizeof(password));
     heap_caps_free(file);
     if (e == ESP_ERR_INVALID_STATE)
@@ -3311,6 +3980,197 @@ static esp_err_t serialized(httpd_req_t *r)
     xSemaphoreGiveRecursive(s_serve_lock);
     return e;
 }
+/* What stays on the home network whatever the access table says (panel-link.md "Not tunnelled",
+ * "fresh ... except factory reset and turning remote access off"). */
+static bool tunnel_refused(const char *path)
+{
+    static const char *const NEVER[] = {"frame",  "screen",        "control",  "login", "logout",
+                                        "password", "remote",      "factory-reset"};
+    for (size_t i = 0; i < sizeof(NEVER) / sizeof(NEVER[0]); i++)
+        if (!strcmp(path, NEVER[i]))
+            return true;
+    return !strncmp(path, "developer", 9);
+}
+/* GET setup: which pages this person may open, by the same table as each page's own request. */
+static int tunnel_setup_menu(uint8_t user, char **out, size_t *out_len)
+{
+    static const struct {
+        const char *id, *path;
+    } PAGES[] = {
+        {"alarm", "alarm"},         {"people", "people"},       {"network", "config/network"},
+        {"display", "config/display"}, {"mqtt", "config/mqtt"}, {"ntfy", "config/ntfy"},
+        {"pushover", "config/pushover"},
+    };
+    alarm_authority_t authority = ALARM_AUTH_NONE;
+    uint8_t proof[32];
+    if (!user_proof(user, proof, &authority, NULL))
+        return 503;
+    cJSON *o = cJSON_CreateObject();
+    cJSON *list = cJSON_AddArrayToObject(o, "domains");
+    for (size_t i = 0; list && i < sizeof(PAGES) / sizeof(PAGES[0]); i++)
+        if (allowed(authority, get_access(PAGES[i].path)))
+            cJSON_AddItemToArray(list, cJSON_CreateString(PAGES[i].id));
+    char *text = cJSON_PrintUnformatted(o);
+    cJSON_Delete(o);
+    if (!text)
+        return 503;
+    *out = text;
+    *out_len = strlen(text);
+    return 200;
+}
+/* POST setup-mode {open} (panel-link.md): installer mode as the person - only an installer may open
+ * it, as at a keypad, until the installer workflow plan lets the Owner in - held by the server's
+ * source until it closes it or the engine's idle timeout ends it. Its setup/alarm changes apply
+ * inside it. 409 while anything is armed or someone else is in installer mode. */
+static int tunnel_answer(char **out, size_t *out_len, cJSON *o)
+{
+    char *text = o ? cJSON_PrintUnformatted(o) : NULL;
+    cJSON_Delete(o);
+    if (!text)
+        return 503;
+    *out = text;
+    *out_len = strlen(text);
+    return 0;
+}
+static int tunnel_setup_mode(uint8_t user, uint16_t source_id, const char *method,
+                             const char *body_json, size_t body_len, char **out, size_t *out_len)
+{
+    if (strcmp(method, "POST"))
+        return 405;
+    cJSON *in = body_json ? cJSON_ParseWithLength(body_json, body_len) : NULL;
+    const cJSON *open = cJSON_GetObjectItemCaseSensitive(in, "open");
+    const bool valid = cJSON_IsBool(open), want = cJSON_IsTrue(open);
+    cJSON_Delete(in);
+    if (!valid)
+        return 400;
+    const alarm_source_t src = {.kind = ALARM_SRC_REMOTE, .id = source_id};
+    alarm_result_t e = ALARM_OK;
+    if (want)
+        e = alarm_service_program_enter_as(&src, user);
+    else
+        alarm_service_program_exit_owned(&src);
+    alarm_snapshot_t *snap = web_alloc(sizeof(*snap));
+    if (!snap)
+        return 503;
+    alarm_service_get_snapshot(snap);
+    const bool program = snap->program;
+    free(snap);
+    cJSON *o = cJSON_CreateObject();
+    int status = 200;
+    if (e == ALARM_ERR_NOT_AUTHORIZED) {
+        status = 403;
+        cJSON_AddStringToObject(o, "error", "installer_only");
+    } else if (e != ALARM_OK) {
+        status = 409;
+        cJSON_AddStringToObject(o, "error", program ? "setup_mode_in_use" : "not_disarmed");
+    } else {
+        cJSON_AddBoolToObject(o, "open", program);
+    }
+    const int failed = tunnel_answer(out, out_len, o);
+    return failed ? failed : status;
+}
+/* alarm-server sends a Setup page's changed fields flat (panel-link.md, POST setup/<domain>); the
+ * Panel Manager's requests carry them in "values" (config/<domain>), or in "changes" with the
+ * revision they were read at (alarm: the current one, so the fields sent are the ones changed).
+ * NULL when the body already has that shape or isn't a JSON object: it goes on as it came. */
+static char *tunnel_wrap(const char *path, const char *body, size_t len)
+{
+    const bool alarm = !strcmp(path, "alarm");
+    const char *key = alarm ? "changes" : "values";
+    cJSON *in = cJSON_ParseWithLength(body, len);
+    if (!cJSON_IsObject(in) || cJSON_GetObjectItemCaseSensitive(in, key)) {
+        cJSON_Delete(in);
+        return NULL;
+    }
+    cJSON *o = cJSON_CreateObject();
+    if (alarm) {
+        alarm_snapshot_t *snap = web_alloc(sizeof(*snap));
+        if (snap) {
+            alarm_service_get_snapshot(snap);
+            cJSON_AddNumberToObject(o, "revision", snap->config_seq);
+            free(snap);
+        }
+    }
+    cJSON_AddItemToObject(o, key, in);
+    char *text = cJSON_PrintUnformatted(o);
+    cJSON_Delete(o);
+    return text;
+}
+int panel_web_tunnel(uint8_t user, bool fresh, uint16_t source_id, const char *method,
+                     const char *path, const char *body_json, size_t body_len, char **out,
+                     size_t *out_len)
+{
+    *out = NULL;
+    *out_len = 0;
+    const size_t path_len = strcspn(path, "?");
+    char bare[96];
+    if (!s_serve_lock || path_len >= sizeof(bare))
+        return 503;
+    memcpy(bare, path, path_len);
+    bare[path_len] = 0;
+    if (tunnel_refused(bare))
+        return 403;
+    /* alarm-server's names for the Panel Manager's paths. */
+    char mapped[sizeof(bare) + 8];
+    if (!strcmp(bare, "ota")) {
+        snprintf(mapped, sizeof(mapped), "updates");
+    } else if (!strcmp(bare, "setup/alarm") || !strcmp(bare, "setup/people")) {
+        snprintf(mapped, sizeof(mapped), "%s", bare + 6);
+    } else if (!strncmp(bare, "setup/", 6)) {
+        snprintf(mapped, sizeof(mapped), "config/%s", bare + 6);
+    } else if (!strcmp(bare, "setup") && !strcmp(method, "GET")) {
+        return tunnel_setup_menu(user, out, out_len);
+    } else if (!strcmp(bare, "setup-mode")) {
+        return tunnel_setup_mode(user, source_id, method, body_json, body_len, out, out_len);
+    } else if (!strcmp(bare, "setup")) {
+        return 404; /* the headless panel's own page */
+    } else {
+        snprintf(mapped, sizeof(mapped), "%s", bare);
+    }
+    path = mapped;
+    const bool is_get = !strcmp(method, "GET");
+    if (!is_get && strcmp(method, "POST"))
+        return 405;
+    char *wrapped = NULL;
+    if (!is_get && body_json && !strncmp(bare, "setup/", 6) && strcmp(bare, "setup/people"))
+        wrapped = tunnel_wrap(path, body_json, body_len);
+    if (wrapped) {
+        body_json = wrapped;
+        body_len = strlen(wrapped);
+    }
+    xSemaphoreTakeRecursive(s_serve_lock, portMAX_DELAY);
+    memset(&s_tunnel, 0, sizeof(s_tunnel));
+    memset(&s_tunnel_req, 0, sizeof(s_tunnel_req));
+    s_tunnel.user = user;
+    s_tunnel.fresh = fresh;
+    s_tunnel.status = 200;
+    s_tunnel.body = body_json;
+    s_tunnel.body_len = body_json ? body_len : 0;
+    s_tunnel_source = (alarm_source_t){.kind = ALARM_SRC_REMOTE, .id = source_id};
+    s_tunnel_on = true;
+    snprintf(s_tunnel.uri, sizeof(s_tunnel.uri), "/api/v1/%s", path);
+    /* httpd_req_t.uri is the request's own array */
+    snprintf((char *)s_tunnel_req.uri, sizeof(s_tunnel_req.uri), "%s", s_tunnel.uri);
+    s_tunnel_req.method = is_get ? HTTP_GET : HTTP_POST;
+    s_tunnel_req.content_len = s_tunnel.body_len;
+    (void)(is_get ? get(&s_tunnel_req) : post(&s_tunnel_req));
+    s_tunnel_on = false;
+    int status = s_tunnel.too_long ? 413 : s_tunnel.status;
+    *out = s_tunnel.out;
+    *out_len = s_tunnel.len;
+    if (s_tunnel.too_long) {
+        free(s_tunnel.out);
+        *out = NULL;
+        *out_len = 0;
+    }
+    s_body_unread = false;
+    xSemaphoreGiveRecursive(s_serve_lock);
+    if (wrapped) {
+        mbedtls_platform_zeroize(wrapped, body_len); /* a page's password fields */
+        cJSON_free(wrapped);
+    }
+    return status;
+}
 static void route(const char *uri, httpd_method_t method, esp_err_t (*fn)(httpd_req_t *))
 {
     httpd_uri_t u = {.uri = uri, .method = method, .handler = serialized, .user_ctx = (void *)fn};
@@ -3430,6 +4290,70 @@ static void redirect_start(void)
     }
     ESP_LOGI("panel_web", "HTTP 80 redirects to HTTPS 443");
 }
+/* The app finds the panel on the home network (web_readouts.h web_app_txt): _roboalarms-app._tcp on
+ * 443 while the Panel Manager runs, on the shared responder (ha_link, dev_remote, the panel link:
+ * whoever starts it names the host roboalarms-<id>; each adds and removes only its own service).
+ * It grants nothing: pairing still needs the code shown at the panel (DIR-001). The maintenance
+ * task's alone. */
+static bool s_app_mdns;
+static web_app_txt_t s_app_txt;
+static void app_mdns(bool on)
+{
+    if (!on) {
+        if (s_app_mdns)
+            mdns_service_remove("_roboalarms-app", "_tcp");
+        s_app_mdns = false;
+        return;
+    }
+    static unsigned ticks; /* once announced, the words are looked at every 10 s */
+    if (s_app_mdns && ++ticks % 10u != 0u)
+        return;
+    net_wifi_status_t w;
+    net_wifi_get_status(&w);
+    if (w.state != NET_WIFI_CONNECTED)
+        return;
+    static web_app_txt_t now;
+    char id[40];
+    snprintf(id, sizeof(id), "%s", identity);
+    const char *host = NULL;
+    uint16_t port = 0;
+#if CONFIG_ALARM_FEATURE_SERVER
+    static server_link_status_t st;
+    char sid[PROTO_SRV_ID_LEN];
+    server_link_panel_id(sid);
+    snprintf(id, sizeof(id), "%s", sid); /* the id the pairing QR code carries */
+    server_link_get_status(&st);
+    if (st.linked) {
+        host = st.host;
+        port = st.port;
+    }
+#endif
+    static alarm_config_t cfg ALARM_SLOW_BSS;
+    const char *name = alarm_service_get_config(&cfg) == ESP_OK ? cfg.partitions[0].name : "";
+    web_app_txt(&now, id, name, host, port);
+    mbedtls_platform_zeroize(cfg.users, sizeof(cfg.users)); /* only the name was wanted */
+    if (!s_app_mdns) {
+        if (mdns_init() != ESP_OK)
+            return; /* the network stack isn't ready: next second */
+        char current[32] = "";
+        if (mdns_hostname_get(current) != ESP_OK || !current[0]) {
+            char hostname[32];
+            snprintf(hostname, sizeof(hostname), "roboalarms-%s", identity);
+            mdns_hostname_set(hostname);
+        }
+        if (mdns_service_add(NULL, "_roboalarms-app", "_tcp", 443, NULL, 0) != ESP_OK)
+            return;
+        s_app_mdns = true;
+        memset(&s_app_txt, 0, sizeof(s_app_txt));
+    }
+    if (memcmp(&now, &s_app_txt, sizeof(now)) == 0)
+        return;
+    mdns_txt_item_t items[WEB_APP_TXT_ITEMS];
+    for (unsigned i = 0; i < now.n; i++)
+        items[i] = (mdns_txt_item_t){now.key[i], now.value[i]};
+    if (mdns_service_txt_set("_roboalarms-app", "_tcp", items, (uint8_t)now.n) == ESP_OK)
+        s_app_txt = now;
+}
 /* On the HTTPS worker (httpd_queue_work): the browser sign-ins' owed flash writes. The worker
  * writes them on every sign-in already; this task's slow stack must not (web_login_retry()). */
 static void login_retry_work(void *arg)
@@ -3460,7 +4384,7 @@ static void maintenance(void *arg)
             if (server) {
                 voice_drain(); /* an upload's task holds a request of this server */
                 web_screen_stop(); /* nothing of the remote keypad's reaches it any more */
-                httpd_ssl_stop(server);
+                tls_httpd_stop(server);
                 server = NULL;
                 web_screen_stopped();
                 voice_drain_end();
@@ -3469,11 +4393,6 @@ static void maintenance(void *arg)
             mbedtls_platform_zeroize(sessions, sizeof(sessions));
             if (wanted) {
                 httpd_ssl_config_t c = HTTPD_SSL_CONFIG_DEFAULT();
-                c.port_secure = 443;
-                c.servercert = cert;
-                c.servercert_len = cert_len;
-                c.prvtkey_pem = key;
-                c.prvtkey_len = key_len;
                 c.httpd.ctrl_port = 32770; /* HTTPS default 32769 belongs to dev_remote */
                 c.httpd.max_open_sockets = 4; /* the remote keypad's WebSocket and the pages */
                 c.httpd.max_uri_handlers = WEB_URI_HANDLERS;
@@ -3483,10 +4402,15 @@ static void maintenance(void *arg)
                 c.httpd.close_fn = socket_closed;
                 c.httpd.recv_wait_timeout = 3;
                 c.httpd.send_wait_timeout = 3;
-                c.tls_handshake_timeout_ms = 5000;
                 c.httpd.uri_match_fn = httpd_uri_match_wildcard;
                 c.httpd.lru_purge_enable = true;
-                esp_err_t e = httpd_ssl_start(&server, &c);
+                /* The handshake behind a gate (SEC-012, docs/bugs/B033): a flood from the home
+                 * network is closed before mbedTLS allocates, and a stalled one gives the worker
+                 * back after 2 s. */
+                const tls_httpd_opts_t tls = {.who = "Panel Manager", .port = 443, .cert = cert,
+                                              .cert_len = cert_len, .key = key, .key_len = key_len,
+                                              .handshake_timeout_ms = 2000, .session_tickets = true};
+                esp_err_t e = tls_httpd_start(&server, &c.httpd, &tls);
                 if (e == ESP_OK) {
                     /* First match wins: specific API routes, then the API, then files. */
                     web_screen_register(server);
@@ -3515,6 +4439,7 @@ static void maintenance(void *arg)
          * (web_login_retry() itself waits its own 5 s between flash tries; code review S01). */
         if (server && web_login_owed() && ++owed_ticks % 5 == 0)
             (void)httpd_queue_work(server, login_retry_work, NULL);
+        app_mdns(server != NULL && atomic_load(&web_on));
         if (server)
             (void)httpd_queue_work(server, web_keypads_tick, NULL);
         else
@@ -3566,6 +4491,15 @@ static int console(int argc, char **argv)
     }
     printf("WEB enabled=%d developer=%d HTTPS=443 HTTP80=%s ID=%s\n", atomic_load(&web_on),
            atomic_load(&dev_on), redirect_server ? "redirect" : "off", identity);
+    printf("WEB app discovery: %s", s_app_mdns ? "_roboalarms-app._tcp on 443" : "not announced");
+    for (unsigned i = 0; s_app_mdns && i < s_app_txt.n; i++)
+        printf("%s %s=%s", i ? "," : ";", s_app_txt.key[i], s_app_txt.value[i]);
+    printf("\n");
+    uint32_t n[4];
+    tls_gate_counts(n); /* every TLS server's together (SEC-012) */
+    printf("WEB handshakes admitted %" PRIu32 "; closed first: %" PRIu32 " over an address's limit, %" PRIu32
+           " over everyone's, %" PRIu32 " for internal RAM\n", n[TLS_GATE_ADMIT], n[TLS_GATE_PEER_LIMIT],
+           n[TLS_GATE_ALL_LIMIT], n[TLS_GATE_LOW_MEMORY]);
     uint8_t hash[32];
     char fingerprint[65];
     if (digest(cert, cert_len, hash)) {

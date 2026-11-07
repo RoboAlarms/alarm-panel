@@ -607,9 +607,10 @@ static void activity_forget(void);
 /* DEV-010: remote control never borrows a local authenticated session, and never leaves one
  * of its own behind. Every screen may be viewed remotely except Activity's private events
  * (LOG-008): not while a code shows them, and a remote session's are forgotten when it ends. */
-bool ui_dev_control_begin(void)
+bool ui_dev_control_begin(bool setup_too)
 {
-    if (S.program || S.auth_user || S.wizard_on || S.digits[0] || s_priv_user != 0u) return false;
+    if (S.program || S.auth_user || (S.wizard_on && !setup_too) || S.digits[0] || s_priv_user != 0u)
+        return false;
     return true;
 }
 void ui_dev_control_end(void)

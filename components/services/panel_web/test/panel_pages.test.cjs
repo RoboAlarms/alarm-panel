@@ -921,6 +921,29 @@ test('bypass, chime, clear and acknowledge follow the engine\'s rules', async ()
   });
 });
 
+// WEB-032: panic from the app, only the types the installer allows (none from the factory), never the installer's.
+test('panic from the app raises only the types the installer allows', async () => {
+  const act = async (a, body) => { const r = await a.post('partition', {number: 1, ...body}); return [r.status, await r.json()]; };
+  await withMock('master', {}, async a => {
+    assert.deepEqual((await a.get('status')).access.panic, [], 'none from the factory');
+    assert.deepEqual(await act(a, {action: 'panic', type: 'police'}), [403, {error: 'panic_off'}]);
+  });
+  await withMock('master', {MOCK_APP_PANIC: '9'}, async a => { // police and medical
+    assert.deepEqual((await a.get('status')).access.panic, ['police', 'medical']);
+    assert.deepEqual(await act(a, {action: 'panic', type: 'fire'}), [403, {error: 'panic_off'}]);
+    assert.equal((await act(a, {action: 'panic', type: 'Police'}))[0], 400);
+    assert.equal((await act(a, {action: 'panic'}))[0], 400);
+    assert.deepEqual(await act(a, {action: 'panic', type: 'police'}), [200, {ok: true}]);
+    const p = await partitionOne(a);
+    assert.deepEqual([p.alarm, p.alarm_kind, p.siren], [true, 'panic', true]);
+    assert.equal((await act(a, {action: 'panic', type: 'medical'}))[0], 200, 'in any state');
+  });
+  await withMock('installer', {MOCK_APP_PANIC: '15'}, async a => {
+    assert.deepEqual((await a.get('status')).access.panic, []);
+    assert.deepEqual(await act(a, {action: 'panic', type: 'police'}), [409, {error: 'not_authorized', zone: 0}]);
+  });
+});
+
 test('a guest and the installer disarm only what they armed themselves', async () => {
   await withMock('guest', {MOCK_SCENARIO: 'armed'}, async a => {
     const refused = await a.post('partition', {number: 1, action: 'disarm'});

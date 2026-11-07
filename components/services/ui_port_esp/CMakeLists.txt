@@ -6,4 +6,4 @@ idf_component_register(SRCS "src/ui_port_esp.c"
                        PRIV_REQUIRES alarm_core alarm_proto automation_service platform_esp device_service
                                      ha_link lang_packs panel_voice
                                      net_mqtt net_notify nvs_flash outputs_service panel_clock panel_ota
-                                     panel_storage rf_service zigbee_service zwave_service)
+                                     panel_storage rf_service server_link zigbee_service zwave_service)

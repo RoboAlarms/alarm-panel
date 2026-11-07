@@ -363,6 +363,45 @@ typedef enum {
     UI_HALINK_CONNECTED,
 } ui_halink_state_t;
 
+/* The link to an alarm-server (BL-225, docs/features/43): linked by a code and Allow on this screen. */
+typedef enum {
+    UI_SRVLINK_IDLE = 0,    /* not linked, not linking */
+    UI_SRVLINK_NO_NETWORK,
+    UI_SRVLINK_CONNECTING,
+    UI_SRVLINK_FAILED,      /* trying again by itself */
+    UI_SRVLINK_WAIT_CODE,   /* linking: the server is making a code */
+    UI_SRVLINK_SHOW_CODE,   /* linking: code and url to show */
+    UI_SRVLINK_CLAIMED,     /* linking: srvlink_decide */
+    UI_SRVLINK_CONNECTED,
+} ui_srvlink_state_t;
+
+typedef struct {
+    ui_srvlink_state_t state;
+    bool linked;
+    bool old_software;      /* the server says this panel needs an update */
+    char host[96];
+    char code[8];
+    char url[144];
+    uint32_t code_left_s;
+    char account[48];
+    char email[64];
+    char location[48];
+    uint32_t heard_ago_s;   /* since the server last said anything, UINT32_MAX = never */
+    /* The remote ceiling (D6): what the app and website may do. */
+    bool remote_disarm;
+    bool remote_setup;
+    bool remote_people;
+    bool ask_code;
+} ui_srvlink_status_t;
+
+/* A phone paired with the panel (direct mode). */
+typedef struct {
+    char id[17];
+    char name[32];
+    uint8_t user;
+} ui_phone_t;
+#define UI_PHONES_MAX 16
+
 typedef struct {
     ui_halink_state_t state;
     bool enabled;
@@ -1989,6 +2028,23 @@ typedef struct {
     void (*halink_pair_decide)(void *ctx, bool allow);
     void (*halink_pair_cancel)(void *ctx);
     void (*halink_unpair)(void *ctx);
+
+    /* The link to alarm-server (optional as a set: NULL srvlink_status hides it). user: whose code
+     * opened Integrations. srvlink_set_ceiling takes the four switches of a status. */
+    void (*srvlink_status)(void *ctx, ui_srvlink_status_t *out);
+    bool (*srvlink_begin)(void *ctx, uint8_t user);
+    void (*srvlink_decide)(void *ctx, bool allow);
+    void (*srvlink_cancel)(void *ctx);
+    bool (*srvlink_unlink)(void *ctx);
+    bool (*srvlink_set_ceiling)(void *ctx, const ui_srvlink_status_t *in);
+    /* Direct mode's phones (optional as a set). phone_pair_begin: the QR code's text in uri, false
+     * with why when it can't (the Web server off). phone_asking: a phone is waiting for Allow. */
+    size_t (*phone_list)(void *ctx, ui_phone_t *out, size_t max);
+    bool (*phone_pair_begin)(void *ctx, uint8_t user, char *uri, size_t cap, char *why, size_t why_len);
+    bool (*phone_asking)(void *ctx, char *name, size_t cap, uint8_t *user);
+    void (*phone_decide)(void *ctx, bool allow);
+    void (*phone_pair_cancel)(void *ctx);
+    bool (*phone_remove)(void *ctx, const char *id);
 
     /* Push notifications (optional as a set: a NULL notify_status hides the Notifications
      * group in Integrations, the way a NULL halink_status hides Home Assistant). */

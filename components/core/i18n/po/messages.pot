@@ -5144,7 +5144,9 @@ msgstr ""
 msgid "Silence"
 msgstr ""
 
+#. A switch row's title (one line).
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
 msgid "Disarm and silence"
 msgstr ""
 
@@ -5777,6 +5779,70 @@ msgstr ""
 msgid "{0}, the next free number"
 msgstr ""
 
+#. Smart Home: the question before removing a room; {0} is its name. At most 63 bytes
+#. a confirmation's title; {0} is the zone's name (cut to 31 bytes). At most 30 bytes
+#. a confirmation's title; {0} is a device's model. At most 95 bytes
+#. a confirmation's title; {0} is a device's name. At most 95 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_devices.c
+#: components/ui/alarm_ui/src/ui_installer.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+msgid "Remove {0}?"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "this phone"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "It loses access to the panel at once."
+msgstr ""
+
+#. A confirmation sheet. At most 127 bytes.
+#. a confirmation's title and text: removing a wired siren or output
+#. a confirmation's title and text: removing a 433 MHz siren
+#. Text from the layout XML, no context.
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_installer.c
+#: components/ui/alarm_ui/src/ui_sirens.c
+#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
+msgid "Remove"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Phone removed."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "A phone"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Paired with the panel directly"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "No phones"
+msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#. the title of a person's Add a phone page. At most 47 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
+#: components/ui/alarm_ui/src/ui_notify.c
+msgid "Add a phone"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "At the panel: Settings, Users, this person, Add a phone. Scan its code with the RoboAlarms app."
+msgstr ""
+
+#. a user's page: the phones paired with the panel directly. At most 47 bytes
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Phones"
+msgstr ""
+
 #: components/services/panel_web/web/panel-pages.js
 msgid "Also your browser user name: changing it signs you out."
 msgstr ""
@@ -5963,17 +6029,6 @@ msgstr ""
 msgid "Their code and browser sign-in stop working at once."
 msgstr ""
 
-#. A confirmation sheet. At most 127 bytes.
-#. a confirmation's title and text: removing a wired siren or output
-#. a confirmation's title and text: removing a 433 MHz siren
-#. Text from the layout XML, no context.
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_sirens.c
-#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
-msgid "Remove"
-msgstr ""
-
 #: components/services/panel_web/web/panel-pages.js
 #: components/services/panel_web/web/panel.js
 msgid "(empty)"
@@ -6058,17 +6113,6 @@ msgstr ""
 msgid "Saved."
 msgstr ""
 
-#. Smart Home: the question before removing a room; {0} is its name. At most 63 bytes
-#. a confirmation's title; {0} is the zone's name (cut to 31 bytes). At most 30 bytes
-#. a confirmation's title; {0} is a device's model. At most 95 bytes
-#. a confirmation's title; {0} is a device's name. At most 95 bytes
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_devices.c
-#: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_zigbee.c
-msgid "Remove {0}?"
-msgstr ""
-
 #: components/services/panel_web/web/panel-pages.js
 msgid "Their code and browser sign-in stop working at once. This can’t be undone."
 msgstr ""
@@ -6095,6 +6139,14 @@ msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 msgid "Push alerts, with alarms that repeat until acknowledged."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "See and control this panel from the RoboAlarms app and website."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Away from home"
 msgstr ""
 
 #. A Settings page's title. At most 47 bytes.
@@ -6127,11 +6179,20 @@ msgid "Not paired"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Not linked"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
 msgid "Broker {0}"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 msgid "Paired with {0}"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Server {0}"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -6397,10 +6458,12 @@ msgstr ""
 
 #. the button that closes a sheet without doing anything. At most 127 bytes
 #. the button that closes a question without doing anything. At most 127 bytes
+#. A button row's text (one line).
 #. Text from the layout XML, no context.
 #: components/services/panel_web/web/panel-pages.js
 #: components/services/panel_web/web/panel.js
 #: components/ui/alarm_ui/src/ui_forms.c
+#: components/ui/alarm_ui/src/ui_integrations.c
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/globals.xml
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/components/sheets/clock_sheet/clock_sheet.xml
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/components/sheets/form_sheet/form_sheet.xml
@@ -6499,6 +6562,109 @@ msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 msgid "Done."
+msgstr ""
+
+#. The MQTT row's state in the Integrations list. At most 63 bytes
+#. A checklist row's detail. At most 47 bytes.
+#: components/services/panel_web/web/panel-pages.js
+#: components/services/panel_web/web/panel.html
+#: components/ui/alarm_ui/src/ui_integrations.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Connecting"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Can’t reach the server"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Getting a code"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Showing a code on the panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Waiting for Allow on the panel"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Offline: trying again"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Heard from {0} ago"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Allowed"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Not allowed"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Arming always works."
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Open Setup mode"
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Change people and codes"
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Ask for the alarm code to disarm"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "The code is sealed to this panel: the server can’t read it."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Some events are still waiting to reach the server."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Link it at the panel: Settings, Integrations, RoboAlarms, with an Owner or Admin code. You get a code to type on the website or in the app, then Allow it on the panel."
+msgstr ""
+
+#. A press-and-hold button's text (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Unlink"
+msgstr ""
+
+#. A section heading above a group of rows (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "What the app and website may do"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Only someone at the panel changes these: Settings, Integrations, RoboAlarms."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Unlink from RoboAlarms?"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "The app and website lose this panel. The alarm works the same; you can link it again at the panel."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Unlinked."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -7228,7 +7394,9 @@ msgstr ""
 msgid "Time zone"
 msgstr ""
 
+#. who is asking to link the panel: {0} the account's name, {1} its masked e-mail. At most 111 bytes
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
 msgid "{0} ({1})"
 msgstr ""
 
@@ -8955,6 +9123,14 @@ msgid "Panic key C"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
+msgid "Panic buttons in the app"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Held down for a few seconds in the RoboAlarms app, by the people who use the alarm. None: the app shows no panic buttons."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
 msgid "Service"
 msgstr ""
 
@@ -10042,14 +10218,6 @@ msgid "Same or older version"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Allowed"
-msgstr ""
-
-#: components/services/panel_web/web/panel-pages.js
-msgid "Not allowed"
-msgstr ""
-
-#: components/services/panel_web/web/panel-pages.js
 msgid "The panel checks the signature before anything changes, then restarts to install it."
 msgstr ""
 
@@ -10816,10 +10984,12 @@ msgstr ""
 msgid "The Z-Wave radio restarted, so it stopped listening. Try again."
 msgstr ""
 
+#. A toast (one line over the screen). At most 127 bytes.
 #. A Settings page: the line under its title. At most 127 bytes.
 #. the box on the remove page when it couldn't be done
 #. A list row's title (one line; a long one ends in ...).
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 msgid "Not removed"
 msgstr ""
@@ -10934,6 +11104,7 @@ msgstr ""
 #. A confirmation sheet. At most 127 bytes.
 #. A button row's text (one line).
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_integrations.c
 #: components/ui/alarm_ui/src/ui_zwave.c
 msgid "Allow"
 msgstr ""
@@ -15254,14 +15425,6 @@ msgstr ""
 msgid "Open menu"
 msgstr ""
 
-#. The MQTT row's state in the Integrations list. At most 63 bytes
-#. A checklist row's detail. At most 47 bytes.
-#: components/services/panel_web/web/panel.html
-#: components/ui/alarm_ui/src/ui_integrations.c
-#: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Connecting"
-msgstr ""
-
 #: components/services/panel_web/web/panel.html
 msgid "Connecting to your panel…"
 msgstr ""
@@ -16028,6 +16191,16 @@ msgstr ""
 #: components/services/ui_port_esp/src/ui_port_esp.c
 msgctxt "why"
 msgid "Pick a date from 2025 to 2099"
+msgstr ""
+
+#: components/services/ui_port_esp/src/ui_port_esp.c
+msgctxt "why"
+msgid "Switch the Panel Manager on first: the app talks to it"
+msgstr ""
+
+#: components/services/ui_port_esp/src/ui_port_esp.c
+msgctxt "why"
+msgid "Waiting for Wi-Fi"
 msgstr ""
 
 #. an amount of data; {0} is the number. The units count in 1024s, as a memory card's label does. At most 31 bytes
@@ -19817,6 +19990,7 @@ msgstr ""
 
 #. The MQTT row's state in the Integrations list. At most 63 bytes
 #. The Home Assistant row's state in the Integrations list. At most 63 bytes
+#. The RoboAlarms row's state in the Integrations list. At most 63 bytes
 #. The notification service's state in the Integrations list. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_integrations.c
 #: components/ui/alarm_ui/src/ui_notify.c
@@ -19872,6 +20046,7 @@ msgid "On · certificate not trusted, check the security setting"
 msgstr ""
 
 #. The MQTT row's state in the Integrations list. At most 63 bytes
+#. The RoboAlarms row's state in the Integrations list. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_integrations.c
 msgid "Can't connect"
 msgstr ""
@@ -19932,6 +20107,46 @@ msgstr ""
 #. The line under the Home Assistant switch when it is off. At most 111 bytes
 #: components/ui/alarm_ui/src/ui_integrations.c
 msgid "Off · switch it on so Home Assistant can find the panel"
+msgstr ""
+
+#. The line under RoboAlarms' status on its page. At most 111 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Linked · waiting for Wi-Fi"
+msgstr ""
+
+#. The line under RoboAlarms' status on its page, {0} the server's address. At most 111 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Connecting to {0}"
+msgstr ""
+
+#. The RoboAlarms row's state in the Integrations list. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Needs a software update"
+msgstr ""
+
+#. The line under RoboAlarms' status on its page, {0} the server's address. At most 111 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "{0} needs newer software on this panel"
+msgstr ""
+
+#. The line under RoboAlarms' status on its page, {0} the server's address. At most 111 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Can't reach {0}, trying again"
+msgstr ""
+
+#. The RoboAlarms row's state in the Integrations list while linking. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Linking"
+msgstr ""
+
+#. The line under RoboAlarms' status on its page, {0} the server's address. At most 111 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Connected to {0}"
+msgstr ""
+
+#. The RoboAlarms row in the Integrations list when not linked. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Not linked · the RoboAlarms app and website"
 msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
@@ -20021,9 +20236,19 @@ msgstr ""
 msgid "Switch the integration on first"
 msgstr ""
 
-#. A Settings page: the line under its title. At most 127 bytes.
+#. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_integrations.c
-msgid "Smart-home systems and alerts to your phone"
+msgid "Not now: it is already linked or linking"
+msgstr ""
+
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Unlinked for now, but not saved: it is tried again"
+msgstr ""
+
+#. the RoboAlarms page's note. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "See and control this panel from the RoboAlarms app and website"
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
@@ -20031,6 +20256,122 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_net.c
 #: components/ui/alarm_ui/src/ui_notify.c
 msgid "Not available on this panel."
+msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_integrations.c
+#: components/ui/alarm_ui/src/ui_notify.c
+msgid "Server"
+msgstr ""
+
+#. A button row's text (one line).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Connect to RoboAlarms"
+msgstr ""
+
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "You get a code to type on the website or in the app, then allow it here. The alarm works the same whether it is linked or not."
+msgstr ""
+
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Asking the server for a code..."
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "On your phone or computer, enter"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "{0} · {1} min left, or scan the code"
+msgstr ""
+
+#. under who is asking: the place they link it as, {0} its name. At most 111 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Wants to link this panel as {0}"
+msgstr ""
+
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Don't allow"
+msgstr ""
+
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "If you don't know this account, don't allow it."
+msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Linked"
+msgstr ""
+
+#. A switch row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Arming always works"
+msgstr ""
+
+#. A switch row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "A duress code then works from the app"
+msgstr ""
+
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Only someone at the panel changes these. Off is off for everyone."
+msgstr ""
+
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Works without the server too, and changes nothing else on the panel."
+msgstr ""
+
+#. the remove page's title; {0} the device's name. At most 47 bytes
+#. a page's title; {0} is the device's name
+#: components/ui/alarm_ui/src/ui_integrations.c
+#: components/ui/alarm_ui/src/ui_zigbee.c
+#: components/ui/alarm_ui/src/ui_zwave.c
+msgid "Remove {0}"
+msgstr ""
+
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "The RoboAlarms app, on this Wi-Fi"
+msgstr ""
+
+#. A toast (one line over the screen). At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Phone added"
+msgstr ""
+
+#. A Settings page: the line under its title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "The RoboAlarms app, straight to this panel"
+msgstr ""
+
+#. a phone asks to be added: {0} the person's name. At most 111 bytes
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Add this phone for {0}?"
+msgstr ""
+
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Not available now"
+msgstr ""
+
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Open the RoboAlarms app and scan this code, on this panel's Wi-Fi."
+msgstr ""
+
+#. An explanation under a group of rows (wraps over several lines).
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "It works for 5 minutes, once. Then you allow the phone here."
+msgstr ""
+
+#. A Settings page: the line under its title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_integrations.c
+msgid "Smart-home systems and alerts to your phone"
 msgstr ""
 
 #. A section heading above a group of rows (one line).
@@ -21592,11 +21933,6 @@ msgstr ""
 msgid "Point your phone's camera at this. Anyone who photographs it can read your alerts, so don't leave it showing - it goes away by itself in a minute."
 msgstr ""
 
-#. A list row's title (one line; a long one ends in ...).
-#: components/ui/alarm_ui/src/ui_notify.c
-msgid "Add a phone"
-msgstr ""
-
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_notify.c
 msgid "Install ntfy, then scan a QR code or type the topic"
@@ -21605,11 +21941,6 @@ msgstr ""
 #. A section heading above a group of rows (one line).
 #: components/ui/alarm_ui/src/ui_notify.c
 msgid "Where they go"
-msgstr ""
-
-#. A list row's title (one line; a long one ends in ...).
-#: components/ui/alarm_ui/src/ui_notify.c
-msgid "Server"
 msgstr ""
 
 #. A list row's detail line, under its title (one line).
@@ -26773,13 +27104,6 @@ msgstr ""
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_zigbee.c
 msgid "If it is gone or broken it can't answer. Forget it anyway? The panel stops trusting it."
-msgstr ""
-
-#. the remove page's title; {0} the device's name. At most 47 bytes
-#. a page's title; {0} is the device's name
-#: components/ui/alarm_ui/src/ui_zigbee.c
-#: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Remove {0}"
 msgstr ""
 
 #. a paragraph on the remove page outside installer mode

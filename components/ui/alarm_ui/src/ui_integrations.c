@@ -6,6 +6,11 @@
  * This section is the only place the UI names Home Assistant; the rest of the panel speaks of
  * "connected services" (docs/features/10, docs/features/14).
  *
+ * Settings > Integrations > RoboAlarms links the panel to an alarm-server (BL-225, docs/features/43):
+ * a code to type on the website or app, then Allow here once the panel names who is asking. A user's
+ * page offers Add a phone (direct mode): a QR code, then Allow. Both are drawn in the mockup's
+ * proposal BL-225-server-link.js.
+ *
  * Opens with the system master or the installer code. Every change is handed to the backend at
  * once, which checks, stores and applies it.
  */
@@ -24,6 +29,12 @@ static ui_halink_status_t s_ha;  /* the link state the open page was built for *
 static page_id_t s_page;         /* which page the rows belong to */
 static uint32_t s_polled;
 static bool s_enable_after_host; /* "Connect" was switched on before an address was set */
+static lv_obj_t *s_srv_row;      /* the RoboAlarms row (the list) or its status row (its page) */
+static ui_srvlink_status_t s_srv; /* what the open page was built for */
+static uint8_t s_phone_user;     /* PAGE_PHONE_ADD: whose phone */
+static bool s_phone_open;        /* PAGE_PHONE_ADD: the QR code is up */
+static bool s_phone_asking;      /* PAGE_PHONE_ADD: a phone waits for Allow */
+static bool s_srv_page;          /* PAGE_ROBOALARMS is the open page */
 
 static bool available(void)
 {
@@ -35,6 +46,27 @@ static bool ha_available(void)
     return S.be.halink_status != NULL && S.be.halink_enable != NULL &&
            S.be.halink_pair_begin != NULL && S.be.halink_pair_decide != NULL &&
            S.be.halink_pair_cancel != NULL && S.be.halink_unpair != NULL;
+}
+
+static bool srv_available(void)
+{
+    return S.be.srvlink_status != NULL && S.be.srvlink_begin != NULL && S.be.srvlink_decide != NULL &&
+           S.be.srvlink_cancel != NULL && S.be.srvlink_unlink != NULL &&
+           S.be.srvlink_set_ceiling != NULL;
+}
+
+static bool phones_available(void)
+{
+    return S.be.phone_list != NULL && S.be.phone_pair_begin != NULL && S.be.phone_asking != NULL &&
+           S.be.phone_decide != NULL && S.be.phone_pair_cancel != NULL && S.be.phone_remove != NULL;
+}
+
+static void read_srv(ui_srvlink_status_t *st)
+{
+    memset(st, 0, sizeof(*st));
+    if (S.be.srvlink_status != NULL) {
+        S.be.srvlink_status(S.be.ctx, st);
+    }
 }
 
 static void read_status(ui_mqtt_status_t *st)
@@ -170,6 +202,56 @@ static void ha_words(const ui_halink_status_t *st, char *list, size_t llen, char
     }
 }
 
+/* The link to alarm-server in words, as for MQTT. */
+static void srv_words(const ui_srvlink_status_t *st, char *list, size_t llen, char *page, size_t plen,
+                      bool *alert, lv_color_t *tone)
+{
+    *alert = false;
+    *tone = ui_tone_amber();
+    switch (st->state) {
+    case UI_SRVLINK_NO_NETWORK:
+        /* TR: The RoboAlarms row's state in the Integrations list. At most 63 bytes */
+        i18n_utf8_copy(list, llen, TR("Waiting for Wi-Fi"));
+        /* TR: The line under RoboAlarms' status on its page. At most 111 bytes */
+        i18n_utf8_copy(page, plen, TR("Linked · waiting for Wi-Fi"));
+        *alert = true;
+        break;
+    case UI_SRVLINK_CONNECTING:
+        i18n_utf8_copy(list, llen, TR("Connecting"));
+        /* TR: The line under RoboAlarms' status on its page, {0} the server's address. At most 111 bytes */
+        I18N_FORMAT(page, plen, TR("Connecting to {0}"), st->host);
+        break;
+    case UI_SRVLINK_FAILED:
+        *alert = true;
+        *tone = ui_tone_red();
+        /* TR: The RoboAlarms row's state in the Integrations list. At most 63 bytes */
+        i18n_utf8_copy(list, llen, st->old_software ? TR("Needs a software update") : TR("Can't connect"));
+        /* TR: The line under RoboAlarms' status on its page, {0} the server's address. At most 111 bytes */
+        I18N_FORMAT(page, plen,
+                    st->old_software ? TR("{0} needs newer software on this panel")
+                                     : TR("Can't reach {0}, trying again"),
+                    st->host);
+        break;
+    case UI_SRVLINK_WAIT_CODE:
+    case UI_SRVLINK_SHOW_CODE:
+    case UI_SRVLINK_CLAIMED:
+        /* TR: The RoboAlarms row's state in the Integrations list while linking. At most 63 bytes */
+        i18n_utf8_copy(list, llen, TR("Linking"));
+        i18n_utf8_copy(page, plen, TR("Linking"));
+        break;
+    case UI_SRVLINK_CONNECTED:
+        i18n_utf8_copy(list, llen, TR("Connected"));
+        /* TR: The line under RoboAlarms' status on its page, {0} the server's address. At most 111 bytes */
+        I18N_FORMAT(page, plen, TR("Connected to {0}"), st->host);
+        break;
+    default:
+        /* TR: The RoboAlarms row in the Integrations list when not linked. At most 63 bytes */
+        i18n_utf8_copy(list, llen, TR("Not linked · the RoboAlarms app and website"));
+        i18n_utf8_copy(page, plen, TR("Not linked"));
+        break;
+    }
+}
+
 /* On the Integrations list the row keeps its name and only the line beneath changes; on a page of
  * its own the switch's line says it. */
 static void fill_row(lv_obj_t *row, const char *list, const char *page, bool alert, lv_color_t tone)
@@ -195,6 +277,20 @@ static void show_ha(void)
     fill_row(s_ha_row, list, page, alert, tone);
 }
 
+static void show_srv(void)
+{
+    if (s_srv_row == NULL) {
+        return;
+    }
+    char list[64];
+    char page[112];
+    bool alert;
+    lv_color_t tone;
+    read_srv(&s_srv);
+    srv_words(&s_srv, list, sizeof(list), page, sizeof(page), &alert, &tone);
+    fill_row(s_srv_row, list, page, alert, tone);
+}
+
 static void show_mqtt(void)
 {
     if (s_mqtt_row == NULL) {
@@ -209,18 +305,67 @@ static void show_mqtt(void)
     fill_row(s_mqtt_row, list, page, alert, tone);
 }
 
+/* Add a phone is on the page stack (it is being rebuilt, or a sheet is over it). */
+static bool phone_page_open(void)
+{
+    if (lv_subject_get_int(&subject_view) != VIEW_SETTINGS) {
+        return false;
+    }
+    for (size_t i = 0; i < S.depth; i++) {
+        if (S.pages[i].id == PAGE_PHONE_ADD) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void ui_integrations_stop(void)
 {
     s_ha_row = NULL;
     s_mqtt_row = NULL;
+    s_srv_row = NULL;
+    s_srv_page = false;
+    if (s_phone_open && !phone_page_open()) {
+        s_phone_open = false;
+        if (S.be.phone_pair_cancel != NULL) {
+            S.be.phone_pair_cancel(S.be.ctx); /* leaving the page closes the window; a rebuild doesn't */
+        }
+    }
 }
 
 void ui_integrations_tick(void)
 {
-    if ((s_ha_row == NULL && s_mqtt_row == NULL) || lv_tick_elaps(s_polled) < STATUS_POLL_MS) {
+    const bool phone_page = s_page == PAGE_PHONE_ADD && s_phone_open;
+    if ((s_ha_row == NULL && s_mqtt_row == NULL && s_srv_row == NULL && !phone_page && !s_srv_page) ||
+        lv_tick_elaps(s_polled) < STATUS_POLL_MS) {
         return;
     }
     s_polled = lv_tick_get();
+    if (phone_page) {
+        char name[32];
+        uint8_t user = 0;
+        if (S.be.phone_asking(S.be.ctx, name, sizeof(name), &user) != s_phone_asking) {
+            ui_page_rebuild(); /* a phone asked: the page turns into Allow */
+        }
+        return;
+    }
+    if (s_srv_page) {
+        ui_srvlink_status_t st;
+        read_srv(&st);
+        /* rows appear and disappear with the state; the countdown is its own line, once a minute */
+        if (st.state != s_srv.state || st.linked != s_srv.linked || strcmp(st.code, s_srv.code) != 0 ||
+            st.code_left_s / 60u != s_srv.code_left_s / 60u) {
+            ui_page_rebuild();
+        }
+        return;
+    }
+    if (s_srv_row != NULL) {
+        ui_srvlink_status_t st;
+        read_srv(&st);
+        if (st.state != s_srv.state || st.old_software != s_srv.old_software) {
+            show_srv();
+        }
+    }
     if (s_page == PAGE_HOME_ASSISTANT) {
         ui_halink_status_t st;
         read_ha(&st);
@@ -493,12 +638,306 @@ static void ha_unpair(void *ctx)
     lv_async_call(rebuild_later, NULL); /* the Paired section disappears */
 }
 
+/* ---- RoboAlarms: the link to alarm-server (BL-225) ------------------------------------------------ */
+
+static void srv_connect(void *ctx)
+{
+    (void)ctx;
+    if (!S.be.srvlink_begin(S.be.ctx, S.auth_user)) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_toast(TR("Not now: it is already linked or linking"));
+    }
+    lv_async_call(rebuild_later, NULL);
+}
+
+static void srv_cancel(void *ctx)
+{
+    (void)ctx;
+    S.be.srvlink_cancel(S.be.ctx);
+    lv_async_call(rebuild_later, NULL);
+}
+
+static void srv_allow(void *ctx)
+{
+    (void)ctx;
+    S.be.srvlink_decide(S.be.ctx, true);
+    lv_async_call(rebuild_later, NULL);
+}
+
+static void srv_reject(void *ctx)
+{
+    (void)ctx;
+    S.be.srvlink_decide(S.be.ctx, false);
+    lv_async_call(rebuild_later, NULL);
+}
+
+static void srv_unlink(void *ctx)
+{
+    (void)ctx;
+    if (!S.be.srvlink_unlink(S.be.ctx)) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_toast(TR("Unlinked for now, but not saved: it is tried again"));
+    }
+    lv_async_call(rebuild_later, NULL);
+}
+
+/* The four switches of the remote ceiling: only someone at the panel changes them (D6). */
+static void srv_ceiling(bool on, void *ctx)
+{
+    ui_srvlink_status_t next = s_srv;
+    switch ((uintptr_t)ctx) {
+    case 0: next.remote_disarm = on; break;
+    case 1: next.remote_setup = on; break;
+    case 2: next.remote_people = on; break;
+    default: next.ask_code = on; break;
+    }
+    if (!S.be.srvlink_set_ceiling(S.be.ctx, &next)) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_toast(TR("Not saved"));
+    }
+    lv_async_call(rebuild_later, NULL);
+}
+
+/* "7KQ 2MZ": two groups of three are easier to copy. */
+static void grouped(const char *code, char *out, size_t cap)
+{
+    size_t n = 0;
+    out[0] = '\0';
+    for (size_t i = 0; code[i] != '\0' && n + 2u < cap; i++) {
+        if (i == 3u) {
+            out[n++] = ' ';
+        }
+        out[n++] = code[i];
+        out[n] = '\0';
+    }
+}
+
+/* A still picture, never an animation (UI-020), with a quiet zone so a phone finds it. */
+static void link_qr(lv_obj_t *body, const char *text)
+{
+#if LV_USE_QRCODE
+    lv_obj_t *box = lv_obj_create(body);
+    lv_obj_remove_style_all(box);
+    lv_obj_set_width(box, lv_pct(100));
+    lv_obj_set_height(box, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_remove_flag(box, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_t *qr = lv_qrcode_create(box);
+    lv_qrcode_set_size(qr, 180);
+    lv_qrcode_set_dark_color(qr, lv_color_black());
+    lv_qrcode_set_light_color(qr, lv_color_white());
+    lv_qrcode_update(qr, text, (uint32_t)strlen(text));
+    lv_obj_set_style_border_color(qr, lv_color_white(), 0);
+    lv_obj_set_style_border_width(qr, 8, 0);
+#else
+    (void)body;
+    (void)text;
+#endif
+}
+
+static void build_roboalarms(lv_obj_t *body, char *note, size_t nlen)
+{
+    /* TR: the RoboAlarms page's note. At most 127 bytes */
+    i18n_utf8_copy(note, nlen, TR("See and control this panel from the RoboAlarms app and website"));
+    if (!srv_available()) {
+        ui_paragraph(body, TR("Not available on this panel."), ui_tone_gray());
+        return;
+    }
+    read_srv(&s_srv);
+    s_srv_page = true;
+    char value[112];
+    switch (s_srv.state) {
+    case UI_SRVLINK_IDLE:
+        ui_row_link(body, UI_ICON_GLOBE, ui_tone_gray(), TR("Server"), NULL, s_srv.host, NULL, NULL, NULL);
+        ui_row_action(body, UI_ICON_LOG_IN, TR("Connect to RoboAlarms"), ui_tone_blue(), srv_connect, NULL);
+        ui_paragraph(body,
+                     TR("You get a code to type on the website or in the app, then allow it here. "
+                        "The alarm works the same whether it is linked or not."),
+                     ui_tone_gray());
+        return;
+    case UI_SRVLINK_WAIT_CODE:
+        ui_paragraph(body, TR("Asking the server for a code..."), ui_tone_gray());
+        ui_row_action(body, UI_ICON_CIRCLE_X, TR("Cancel"), ui_tone_gray(), srv_cancel, NULL);
+        return;
+    case UI_SRVLINK_SHOW_CODE: {
+        char code[16];
+        grouped(s_srv.code, code, sizeof(code));
+        ui_big_value(body, TR("On your phone or computer, enter"), code);
+        link_qr(body, s_srv.url);
+        /* TR: under the link code: where to type it, {0} the address, {1} the minutes left. At most 127 bytes */
+        char minutes[12];
+        snprintf(minutes, sizeof(minutes), "%u", (unsigned)((s_srv.code_left_s + 59u) / 60u));
+        I18N_FORMAT(value, sizeof(value), TR("{0} · {1} min left, or scan the code"), s_srv.url, minutes);
+        ui_paragraph(body, value, ui_tone_gray());
+        ui_row_action(body, UI_ICON_CIRCLE_X, TR("Cancel"), ui_tone_gray(), srv_cancel, NULL);
+        return;
+    }
+    case UI_SRVLINK_CLAIMED: {
+        for (char *b = strstr(s_srv.email, "\xE2\x80\xA2"); b != NULL; b = strstr(b, "\xE2\x80\xA2")) {
+            b[0] = '*'; /* a bullet (U+2022) isn't in the screen's fonts */
+            memmove(b + 1, b + 3, strlen(b + 3) + 1u);
+        }
+        /* TR: who is asking to link the panel: {0} the account's name, {1} its masked e-mail. At most 111 bytes */
+        I18N_FORMAT(value, sizeof(value), TR("{0} ({1})"), s_srv.account, s_srv.email);
+        char detail[112];
+        /* TR: under who is asking: the place they link it as, {0} its name. At most 111 bytes */
+        I18N_FORMAT(detail, sizeof(detail), TR("Wants to link this panel as {0}"), s_srv.location);
+        ui_row_link(body, UI_ICON_USER, ui_tone_blue(), value, detail, NULL, NULL, NULL, NULL);
+        ui_action_pair(body, UI_ICON_CIRCLE_X, TR("Don't allow"), ui_tone_red(), srv_reject,
+                       UI_ICON_CIRCLE_CHECK, TR("Allow"), ui_tone_green(), srv_allow, NULL);
+        ui_paragraph(body, TR("If you don't know this account, don't allow it."), ui_tone_amber());
+        return;
+    }
+    default:
+        break; /* linked: the status and what the server may do */
+    }
+    s_srv_row = ui_row_link(body, UI_ICON_SHIELD_CHECK, ui_tone_green(), TR("Linked"), " ", NULL, NULL,
+                            NULL, NULL);
+    show_srv();
+    ui_section(body, TR("What the app and website may do"));
+    ui_row_toggle(body, TR("Disarm and silence"), TR("Arming always works"), s_srv.remote_disarm,
+                  srv_ceiling, (void *)(uintptr_t)0);
+    ui_row_toggle(body, TR("Open Setup mode"), NULL, s_srv.remote_setup, srv_ceiling,
+                  (void *)(uintptr_t)1);
+    ui_row_toggle(body, TR("Change people and codes"), NULL, s_srv.remote_people, srv_ceiling,
+                  (void *)(uintptr_t)2);
+    ui_row_toggle(body, TR("Ask for the alarm code to disarm"),
+                  TR("A duress code then works from the app"), s_srv.ask_code, srv_ceiling,
+                  (void *)(uintptr_t)3);
+    ui_paragraph(body, TR("Only someone at the panel changes these. Off is off for everyone."),
+                 ui_tone_gray());
+    ui_section(body, "");
+    ui_row_hold(body, TR("Unlink"), srv_unlink, NULL);
+    ui_paragraph(body, TR("Works without the server too, and changes nothing else on the panel."),
+                 ui_tone_gray());
+}
+
+/* ---- a phone for a person (direct mode) ----------------------------------------------------------- */
+
+static void open_phone_add(void *ctx)
+{
+    ui_page_open(PAGE_PHONE_ADD, (int32_t)(uintptr_t)ctx);
+}
+
+static void phone_remove(void *ctx)
+{
+    const ui_phone_t *p = ctx;
+    if (!S.be.phone_remove(S.be.ctx, p->id)) {
+        ui_beep(UI_BEEP_ERROR);
+        ui_toast(TR("Not removed"));
+    }
+    lv_async_call(rebuild_later, NULL);
+}
+
+void ui_phone_rows(lv_obj_t *body, uint8_t user)
+{
+    if (!phones_available()) {
+        return;
+    }
+    static ui_phone_t list[UI_PHONES_MAX];
+    const size_t n = S.be.phone_list(S.be.ctx, list, UI_PHONES_MAX);
+    /* TR: a user's page: the phones paired with the panel directly. At most 47 bytes */
+    ui_section(body, TR("Phones"));
+    for (size_t i = 0; i < n; i++) {
+        if (list[i].user != user) {
+            continue;
+        }
+        /* TR: a paired phone's row on its person's page, held to remove it. {0} the phone's name. At most 63 bytes */
+        char text[80];
+        I18N_FORMAT(text, sizeof(text), TR("Remove {0}"), list[i].name);
+        ui_row_hold(body, text, phone_remove, &list[i]);
+    }
+    ui_row_link(body, UI_ICON_PLUS, ui_tone_blue(), TR("Add a phone"),
+                TR("The RoboAlarms app, on this Wi-Fi"), NULL, UI_ICON_CHEVRON_RIGHT, open_phone_add,
+                (void *)(uintptr_t)user);
+}
+
+static void back_later(void *unused)
+{
+    (void)unused;
+    ui_page_back();
+}
+
+/* The button that was pressed can't delete its own page: back after the event. */
+static void phone_allow(void *ctx)
+{
+    (void)ctx;
+    S.be.phone_decide(S.be.ctx, true);
+    s_phone_open = false;
+    ui_toast(TR("Phone added"));
+    lv_async_call(back_later, NULL);
+}
+
+static void phone_reject(void *ctx)
+{
+    (void)ctx;
+    S.be.phone_decide(S.be.ctx, false);
+    s_phone_open = false;
+    lv_async_call(back_later, NULL);
+}
+
+static void build_phone_add(lv_obj_t *body, int32_t arg, char *note, size_t nlen)
+{
+    s_phone_user = (uint8_t)arg;
+    i18n_utf8_copy(note, nlen, TR("The RoboAlarms app, straight to this panel"));
+    if (!phones_available() || !ui_settings_allowed(ACCESS_USERS)) {
+        ui_paragraph(body, TR("Not available on this panel."), ui_tone_gray());
+        return;
+    }
+    char name[32];
+    uint8_t user = 0;
+    s_phone_asking = S.be.phone_asking(S.be.ctx, name, sizeof(name), &user);
+    if (s_phone_asking) {
+        s_phone_open = true;
+        char who[ALARM_NAME_LEN + 8];
+        char detail[112];
+        /* TR: a phone asks to be added: {0} the person's name. At most 111 bytes */
+        I18N_FORMAT(detail, sizeof(detail), TR("Add this phone for {0}?"), ui_user_name(S.cfg, user, who, sizeof(who)));
+        ui_row_link(body, UI_ICON_KEY_ROUND, ui_tone_blue(), name, detail, NULL, NULL, NULL, NULL);
+        ui_action_pair(body, UI_ICON_CIRCLE_X, TR("Don't allow"), ui_tone_red(), phone_reject,
+                       UI_ICON_CIRCLE_CHECK, TR("Allow"), ui_tone_green(), phone_allow, NULL);
+        return;
+    }
+    static char uri[256];
+    if (!s_phone_open) {
+        char why[96] = "";
+        if (!S.be.phone_pair_begin(S.be.ctx, s_phone_user, uri, sizeof(uri), why, sizeof(why))) {
+            ui_paragraph(body, why[0] ? ui_answer("why", why) : TR("Not available now"), ui_tone_amber());
+            return;
+        }
+        s_phone_open = true;
+    }
+    ui_paragraph(body, TR("Open the RoboAlarms app and scan this code, on this panel's Wi-Fi."),
+                 ui_tone_gray());
+    link_qr(body, uri);
+    ui_paragraph(body, TR("It works for 5 minutes, once. Then you allow the phone here."), ui_tone_gray());
+}
+
+void ui_phone_add_build(int32_t arg, lv_obj_t *body, char *title, size_t tlen, char *note, size_t nlen)
+{
+    s_ha_row = NULL;
+    s_mqtt_row = NULL;
+    s_srv_row = NULL;
+    s_page = PAGE_PHONE_ADD;
+    s_polled = lv_tick_get();
+    /* TR: the title of a person's Add a phone page. At most 47 bytes */
+    i18n_utf8_copy(title, tlen, TR("Add a phone"));
+    build_phone_add(body, arg, note, nlen);
+}
+
 /* ---- pages ---------------------------------------------------------------------------------- */
 
 static void open_home_assistant(void *ctx)
 {
     (void)ctx;
     ui_page_open(PAGE_HOME_ASSISTANT, 0);
+}
+
+static void open_roboalarms(void *ctx)
+{
+    (void)ctx;
+    ui_page_open(PAGE_ROBOALARMS, 0);
 }
 
 static void open_mqtt(void *ctx)
@@ -513,13 +952,18 @@ static void open_mqtt(void *ctx)
 static void build_list(lv_obj_t *body, char *note, size_t nlen)
 {
     i18n_utf8_copy(note, nlen, TR("Smart-home systems and alerts to your phone"));
-    const bool smart_home = available() || ha_available();
+    const bool smart_home = available() || ha_available() || srv_available();
     if (!smart_home && !ui_notify_available()) {
         ui_paragraph(body, TR("Not available on this panel."), ui_tone_gray());
         return;
     }
     if (smart_home) {
         ui_section(body, TR("Smart home"));
+        if (srv_available()) {
+            s_srv_row = ui_row_link(body, UI_ICON_GLOBE, ui_tone_blue(), NOTR("RoboAlarms" /* product name */),
+                                    " ", NULL, UI_ICON_CHEVRON_RIGHT, open_roboalarms, NULL);
+            show_srv();
+        }
         if (ha_available()) {
             s_ha_row = ui_row_link(body, UI_ICON_HOUSE_WIFI, ui_tone_violet(), NOTR("Home Assistant" /* product name */),
                                    " ", NULL, UI_ICON_CHEVRON_RIGHT, open_home_assistant, NULL);
@@ -687,12 +1131,14 @@ void ui_integrations_build(page_id_t id, lv_obj_t *body, char *title, size_t tle
 {
     s_ha_row = NULL;
     s_mqtt_row = NULL;
+    s_srv_row = NULL;
     s_page = id;
     memset(&s_shown, 0, sizeof(s_shown));
     memset(&s_ha, 0, sizeof(s_ha));
     s_polled = lv_tick_get();
-    i18n_utf8_copy(title, tlen, 
-             id == PAGE_HOME_ASSISTANT ? NOTR("Home Assistant" /* product name */)
+    i18n_utf8_copy(title, tlen,
+             id == PAGE_ROBOALARMS     ? NOTR("RoboAlarms" /* product name */)
+             : id == PAGE_HOME_ASSISTANT ? NOTR("Home Assistant" /* product name */)
              : id == PAGE_MQTT         ? NOTR("MQTT" /* protocol name */)
                                        : TR("Integrations"));
     if (!ui_settings_allowed(ACCESS_SYSTEM)) {
@@ -700,7 +1146,9 @@ void ui_integrations_build(page_id_t id, lv_obj_t *body, char *title, size_t tle
                            TR("The master or installer code connects other systems"), note, nlen);
         return;
     }
-    if (id == PAGE_HOME_ASSISTANT) {
+    if (id == PAGE_ROBOALARMS) {
+        build_roboalarms(body, note, nlen);
+    } else if (id == PAGE_HOME_ASSISTANT) {
         build_home_assistant(body, note, nlen);
     } else if (id == PAGE_MQTT) {
         build_mqtt(body, note, nlen);

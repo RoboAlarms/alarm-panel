@@ -52,6 +52,7 @@
 #include "net_mqtt.h"
 #include "net_notify.h"
 #include "net_wifi.h"
+#include "server_link.h"
 #include "nvs_flash.h"
 #include "panel_clock.h"
 #include "panel_console.h"
@@ -2021,6 +2022,9 @@ void panel_app_run(const panel_app_config_t *cfg)
 #if CONFIG_ALARM_FEATURE_MQTT
     ESP_ERROR_CHECK(alarm_service_add_listener(net_mqtt_listener()));
 #endif
+#if CONFIG_ALARM_FEATURE_SERVER
+    ESP_ERROR_CHECK(alarm_service_add_listener(server_link_listener()));
+#endif
 #if CONFIG_ALARM_FEATURE_HA
     ESP_ERROR_CHECK(alarm_service_add_listener(ha_link_listener()));
 #endif
@@ -2140,6 +2144,12 @@ void panel_app_run(const panel_app_config_t *cfg)
         ESP_LOGE(TAG, "MQTT client failed to start: no remote reporting");
     }
 #endif
+#if CONFIG_ALARM_FEATURE_SERVER
+    server_link_set_model(cfg->mqtt_model != NULL ? cfg->mqtt_model : board_name());
+    if (server_link_start() != ESP_OK) {
+        ESP_LOGE(TAG, "the alarm-server link failed to start");
+    }
+#endif
 #if CONFIG_ALARM_FEATURE_NOTIFY
     if (net_notify_start() != ESP_OK) {
         ESP_LOGE(TAG, "notifications failed to start: no alerts to a phone");
@@ -2195,6 +2205,9 @@ void panel_app_run(const panel_app_config_t *cfg)
     START_OR_LOG(panel_console_start());
 #if CONFIG_ALARM_FEATURE_MQTT
     START_OR_LOG(net_mqtt_console_register());
+#endif
+#if CONFIG_ALARM_FEATURE_SERVER
+    START_OR_LOG(server_link_console_register());
 #endif
 #if CONFIG_ALARM_FEATURE_NOTIFY
     START_OR_LOG(net_notify_console_register());

@@ -236,6 +236,46 @@ static backup_store_t nvs_port(nvs_port_t *p)
 
 /* ---- making a backup ---------------------------------------------------------------------- */
 
+/* The last backup made: when (s since 1970, 0 unknown), by whom, how big. Its own namespace, which
+ * the backup policy doesn't hold (a backup doesn't carry the record of itself). Best effort: the
+ * file was made either way. */
+#define LAST_NS "backup_last"
+typedef struct {
+    uint64_t at_s;
+    uint32_t size;
+    uint8_t user;
+} last_t;
+
+static void remember_last(uint64_t at_s, uint8_t user, size_t size)
+{
+    const last_t l = {.at_s = at_s, .size = (uint32_t)size, .user = user};
+    nvs_handle_t h;
+    if (nvs_open(LAST_NS, NVS_READWRITE, &h) == ESP_OK) {
+        if (nvs_set_blob(h, "last", &l, sizeof(l)) == ESP_OK) {
+            (void)nvs_commit(h);
+        }
+        nvs_close(h);
+    }
+}
+
+bool backup_service_last(uint64_t *at_s, uint8_t *user, uint32_t *size)
+{
+    last_t l;
+    size_t n = sizeof(l);
+    nvs_handle_t h;
+    bool ok = false;
+    if (nvs_open(LAST_NS, NVS_READONLY, &h) == ESP_OK) {
+        ok = nvs_get_blob(h, "last", &l, &n) == ESP_OK && n == sizeof(l);
+        nvs_close(h);
+    }
+    if (ok) {
+        *at_s = l.at_s;
+        *user = l.user;
+        *size = l.size;
+    }
+    return ok;
+}
+
 esp_err_t backup_service_make(const char *password, const alarm_source_t *src, uint8_t user,
                               uint8_t **file, size_t *len, backup_result_t *why)
 {
@@ -307,6 +347,7 @@ esp_err_t backup_service_make(const char *password, const alarm_source_t *src, u
         return err;
     }
     (void)alarm_service_backup_event(false, src, user);
+    remember_last(meta.created_s, user, flen);
     *file = out;
     *len = flen;
     return ESP_OK;

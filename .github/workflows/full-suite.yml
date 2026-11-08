@@ -48,6 +48,9 @@ jobs:
         files: [source, minified]
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
       - name: Browser capture scheduling regressions
         if: matrix.files == 'source'
         run: node --test components/services/panel_web/test/panel_frames.test.cjs

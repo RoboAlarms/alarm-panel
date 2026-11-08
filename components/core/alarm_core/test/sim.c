@@ -132,7 +132,7 @@ void sim_config_basic(alarm_config_t *cfg)
     cfg->zones[Z_FOB_OFF - 1].user = 3;
     cfg->zones[Z_KEYSWITCH - 1].user = 3;
 
-    alarm_config_set_default_users(cfg, sim_hash, NULL); /* 01 installer, 02 master */
+    alarm_config_set_legacy_users(cfg, sim_hash, NULL); /* 01 installer, 02 master */
     sim_set_user(cfg, 3, ALARM_AUTH_STANDARD, 0x01, CODE_USER);
     sim_set_user(cfg, 4, ALARM_AUTH_ARM_ONLY, 0x01, CODE_ARMONLY);
     sim_set_user(cfg, 5, ALARM_AUTH_GUEST, 0x01, CODE_GUEST);

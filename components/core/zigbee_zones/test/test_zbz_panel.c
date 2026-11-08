@@ -1700,7 +1700,10 @@ static void test_network_reset(void)
     TEST_ASSERT_EQUAL_UINT8(UI_ZB_RES_FAILED, progress().result);
 
     TEST_ASSERT_EQUAL(UI_ZB_REQ_OK, zbz_reset_code_result(ALARM_OK, ALARM_AUTH_INSTALLER));
-    TEST_ASSERT_EQUAL(UI_ZB_REQ_WRONG_CODE, zbz_reset_code_result(ALARM_OK, ALARM_AUTH_MASTER));
+    /* the system master's too: the owner's decision of 2026-11-08 */
+    TEST_ASSERT_EQUAL(UI_ZB_REQ_OK, zbz_reset_code_result(ALARM_OK, ALARM_AUTH_MASTER));
+    TEST_ASSERT_EQUAL(UI_ZB_REQ_WRONG_CODE,
+                      zbz_reset_code_result(ALARM_OK, ALARM_AUTH_PARTITION_MASTER));
     TEST_ASSERT_EQUAL(UI_ZB_REQ_WRONG_CODE, zbz_reset_code_result(ALARM_OK, ALARM_AUTH_STANDARD));
     TEST_ASSERT_EQUAL(UI_ZB_REQ_WRONG_CODE,
                       zbz_reset_code_result(ALARM_ERR_INVALID_CODE, ALARM_AUTH_INSTALLER));

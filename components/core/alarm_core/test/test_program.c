@@ -108,6 +108,60 @@ static void test_duress_code_never_enters_installer_mode(void)
     TEST_ASSERT_FALSE(alarm_engine_program_active(&S.eng));
 }
 
+static const alarm_source_t PM = {ALARM_SRC_REMOTE, ALARM_SRC_ID_PANEL_MANAGER};
+
+/* CORE-PROG-014: whether the installer code opens installer mode is the Owner's to decide (the
+ * owner's decision of 2026-11-08): on by default; only the system master, in installer mode at the
+ * panel, turns it off or on - never the installer, never over the network. With no system master
+ * yet nobody can turn the installer away. */
+static void test_owner_decides_the_installer(void)
+{
+    alarm_config_t c = S.cfg;
+    TEST_ASSERT_EQUAL_UINT8(0u, c.opt.installer_setup_off);
+    c.opt.installer_setup_off = 1u;
+
+    /* The installer can't turn itself off (nor on), nor can the master from the Panel Manager. */
+    EXPECT_RESULT(ALARM_OK, enter(CODE_INSTALLER, NULL));
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, alarm_engine_set_config(&S.eng, &c, S.now));
+    leave();
+    EXPECT_RESULT(ALARM_OK, alarm_engine_program_enter_as(&S.eng, &PM, ALARM_USER_MASTER, S.now));
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, alarm_engine_set_config(&S.eng, &c, S.now));
+    alarm_engine_program_exit(&S.eng, &PM, S.now);
+
+    /* The Owner at the panel turns it off: the installer's code and sign-in are refused. */
+    EXPECT_RESULT(ALARM_OK, enter(CODE_MASTER, NULL));
+    EXPECT_RESULT(ALARM_OK, alarm_engine_set_config(&S.eng, &c, S.now));
+    leave();
+    uint8_t who = 0;
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, enter(CODE_INSTALLER, &who));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_INSTALLER, who); /* the screen says why */
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  alarm_engine_program_enter_as(&S.eng, &PM, ALARM_USER_INSTALLER, S.now));
+    EXPECT_EVENTS(&S, ALARM_EV_INVALID_CODE, 0);
+    EXPECT_RESULT(ALARM_OK, alarm_engine_program_enter_as(&S.eng, &PM, ALARM_USER_MASTER, S.now));
+    alarm_engine_program_exit(&S.eng, &PM, S.now);
+
+    /* Kept across a restart, and on again from the Owner. */
+    const alarm_config_t kept = *alarm_engine_config(&S.eng);
+    sim_start(&S, &kept, NULL);
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, enter(CODE_INSTALLER, NULL));
+    EXPECT_RESULT(ALARM_OK, enter(CODE_MASTER, NULL));
+    c = S.cfg;
+    c.opt.installer_setup_off = 0u;
+    EXPECT_RESULT(ALARM_OK, alarm_engine_set_config(&S.eng, &c, S.now));
+    leave();
+    EXPECT_RESULT(ALARM_OK, enter(CODE_INSTALLER, NULL));
+    leave();
+
+    /* No Owner yet (set up for someone else): the setting can't keep the installer out. */
+    alarm_config_t none;
+    sim_config_basic(&none);
+    none.opt.installer_setup_off = 1u;
+    memset(&none.users[ALARM_USER_MASTER - 1u], 0, sizeof(none.users[0]));
+    sim_start(&S, &none, NULL);
+    EXPECT_RESULT(ALARM_OK, enter(CODE_INSTALLER, NULL));
+}
+
 /* CORE-PROG-002: only while every partition is disarmed, silent and out of walk test. */
 static void test_installer_mode_only_when_idle(void)
 {
@@ -150,7 +204,6 @@ static void test_installer_mode_blocks_arming_only(void)
     TEST_ASSERT_TRUE(sim_alarm_reported(&S, 0, ALARM_CAUSE_PANIC_POLICE));
 }
 
-static const alarm_source_t PM = {ALARM_SRC_REMOTE, ALARM_SRC_ID_PANEL_MANAGER};
 
 /* CORE-PROG-011: the signed-in installer enters installer mode without a code; logged and
  * reported as the coded entry, by that user and source - never as a power-up recovery, even
@@ -167,11 +220,14 @@ static void test_program_enter_as_installer(void)
     TEST_ASSERT_EQUAL_UINT8(ALARM_SRC_REMOTE, ev->source.kind);
     TEST_ASSERT_EQUAL_UINT16(ALARM_SRC_ID_PANEL_MANAGER, ev->source.id);
 
-    /* Again from the same source: refreshed, not logged twice; the codes can be set. */
+    /* Again from the same source: refreshed, not logged twice; its own code can be set, never
+     * the Owner's (CORE-USR-040). */
     EXPECT_RESULT(ALARM_OK, alarm_engine_program_enter_as(&S.eng, &PM, ALARM_USER_INSTALLER, S.now));
     EXPECT_EVENTS(&S, ALARM_EV_PROGRAM_ENTER, 1);
-    EXPECT_RESULT(ALARM_OK, alarm_engine_program_set_code(&S.eng, &PM, ALARM_USER_MASTER,
-                                                          "8642", S.now));
+    EXPECT_RESULT(ALARM_OK, alarm_engine_program_set_code(&S.eng, &PM, ALARM_USER_INSTALLER,
+                                                          "86420", S.now));
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  alarm_engine_program_set_code(&S.eng, &PM, ALARM_USER_MASTER, "8642", S.now));
     alarm_engine_program_exit(&S.eng, &PM, S.now);
     TEST_ASSERT_FALSE(alarm_engine_program_active(&S.eng));
     EXPECT_EVENTS(&S, ALARM_EV_INVALID_CODE, 0);
@@ -294,14 +350,18 @@ static void test_power_up_recovery(void)
     TEST_ASSERT_EQUAL_UINT8(1, ev->arg);
     TEST_ASSERT_EQUAL_UINT8(0, ev->user);
 
-    EXPECT_RESULT(ALARM_OK, alarm_engine_program_set_code(&S.eng, &S.keypad, ALARM_USER_INSTALLER,
+    /* CORE-PROG-015: it gives the panel back to the Owner, never to an installer: a new master
+     * code, never an installer code (the owner's decision of 2026-11-08). */
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  alarm_engine_program_set_code(&S.eng, &S.keypad, ALARM_USER_INSTALLER, "24680",
+                                                S.now));
+    EXPECT_RESULT(ALARM_OK, alarm_engine_program_set_code(&S.eng, &S.keypad, ALARM_USER_MASTER,
                                                           "24680", S.now));
-    TEST_ASSERT_EQUAL_UINT8(ALARM_DEFAULT_CODE_MASTER, alarm_engine_default_codes(&S.eng));
     TEST_ASSERT_EQUAL_UINT(1, S.n_config_changed);
     leave();
-    EXPECT_RESULT(ALARM_ERR_INVALID_CODE, enter(CODE_INSTALLER, NULL));
+    EXPECT_RESULT(ALARM_ERR_INVALID_CODE, enter(CODE_MASTER, NULL));
     EXPECT_RESULT(ALARM_OK, enter("24680", &user));
-    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_INSTALLER, user);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, user);
 }
 
 /* CORE-PROG-006: the recovery window closes, can be switched off and needs every
@@ -328,11 +388,16 @@ static void test_recovery_window_limits(void)
     EXPECT_STATE(&S, 1, ALARM_STATE_ARMED);
     EXPECT_RESULT(ALARM_ERR_BAD_STATE, enter("", NULL));
 
-    /* Turning the option off in installer mode closes a window that is still open. */
+    /* Turning the option off in the Owner's installer mode closes a window that is still open;
+     * the installer can't (CORE-PROG-015: no installer locks the Owner out). */
     sim_start(&S, NULL, NULL);
     EXPECT_RESULT(ALARM_OK, enter(CODE_INSTALLER, NULL));
     c = S.cfg;
     c.opt.power_up_program = false;
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, alarm_engine_set_config(&S.eng, &c, S.now));
+    TEST_ASSERT_NOT_EQUAL(0, alarm_engine_recovery_left(&S.eng));
+    leave();
+    EXPECT_RESULT(ALARM_OK, enter(CODE_MASTER, NULL));
     EXPECT_RESULT(ALARM_OK, alarm_engine_set_config(&S.eng, &c, S.now));
     TEST_ASSERT_EQUAL_UINT64(0, alarm_engine_recovery_left(&S.eng));
 }
@@ -342,7 +407,7 @@ static void test_program_set_code_rules(void)
 {
     EXPECT_RESULT(ALARM_ERR_BAD_STATE, alarm_engine_program_set_code(
                                            &S.eng, &S.keypad, ALARM_USER_MASTER, "13579", S.now));
-    EXPECT_RESULT(ALARM_OK, enter(CODE_INSTALLER, NULL));
+    EXPECT_RESULT(ALARM_OK, enter(CODE_MASTER, NULL)); /* the Owner's: both codes */
     const alarm_source_t other = {ALARM_SRC_KEYPAD, 2};
     EXPECT_RESULT(ALARM_ERR_BAD_STATE, alarm_engine_program_set_code(
                                            &S.eng, &other, ALARM_USER_MASTER, "13579", S.now));
@@ -359,7 +424,7 @@ static void test_program_set_code_rules(void)
     const alarm_event_t *ev = sim_last_report(&S, ALARM_EV_USER_CHANGED);
     TEST_ASSERT_NOT_NULL(ev);
     TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, ev->arg);
-    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_INSTALLER, ev->user);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, ev->user);
     leave();
     EXPECT_RESULT(ALARM_ERR_INVALID_CODE, sim_arm(&S, 1, CODE_MASTER, ALARM_LEVEL_STAY, 0));
     EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, "13579", ALARM_LEVEL_STAY, 0));
@@ -943,6 +1008,7 @@ int main(void)
     RUN_TEST(test_installer_code_enters_installer_mode);
     RUN_TEST(test_master_code_enters_installer_mode);
     RUN_TEST(test_duress_code_never_enters_installer_mode);
+    RUN_TEST(test_owner_decides_the_installer);
     RUN_TEST(test_installer_mode_only_when_idle);
     RUN_TEST(test_installer_mode_blocks_arming_only);
     RUN_TEST(test_installer_mode_exit_and_timeout);

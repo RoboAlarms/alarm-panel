@@ -18,8 +18,12 @@ extern "C" {
 #define ALARM_RUNTIME_VERSION 1
 
 /* Factory default codes. Change them after install. */
-#define ALARM_DEFAULT_INSTALLER_CODE "69420"  /* user 01 */
-#define ALARM_DEFAULT_MASTER_CODE    "123456" /* user 02 */
+/* The codes panels shipped with before the owner's decision of 2026-11-08 (no factory codes:
+ * CORE-USR-041). Never installed by the firmware any more; still recognised, so a panel that
+ * kept them is warned (alarm_engine_default_codes), and used by tests and simulators as an
+ * already set-up panel's codes (alarm_config_set_legacy_users). */
+#define ALARM_LEGACY_INSTALLER_CODE "69420"  /* user 01 */
+#define ALARM_LEGACY_MASTER_CODE    "123456" /* user 02 */
 
 /* A spoken name holds at most this many vocabulary entries (D02). Token IDs: 0 = none,
  * 1..ALARM_VOICE_TOKEN_SELECTABLE_MAX may be chosen for a name (recording-script.csv
@@ -58,7 +62,9 @@ typedef struct {
     alarm_panic_t panic_keys[3];   /* keypad panic keys A, B, C */
     bool relaxed_limits;           /* allow values outside CP-01 ranges (dev / special cases) */
     bool power_up_program;         /* installer mode without a code for ALARM_RECOVERY_WINDOW_S
-                                      after power-up (default true) */
+                                      after power-up, to set a new master code (default true;
+                                      the Owner's: changed only in an Owner session at the
+                                      panel, never by the installer - CORE-PROG-015) */
     bool chime_needs_code;         /* chime on/off asks for a code (default true);
                                       off = one touch */
     bool auto_less_secure;         /* automations may disarm, unlock, open and stop (docs/features/41
@@ -66,6 +72,11 @@ typedef struct {
                                       default true) */
     uint32_t voice_revision_counter; /* the last voice binding revision handed out (codec 0x1E,
                                         CORE-CFG-021): only grows, never wraps, never reused */
+    uint8_t installer_setup_off;   /* 1: the Owner (the system master) turned off the installer
+                                      code's installer mode (codec 0x20, CORE-PROG-014; the
+                                      owner's decision of 2026-11-08). 0 (default): it opens it.
+                                      Changed only in an Owner session at the panel
+                                      (alarm_engine_set_config), like power_up_program. */
     uint8_t app_panic_mask;        /* the panic alarms the RoboAlarms app may raise, bit
                                       1 << alarm_panic_t (codec 0x1F, CORE-CFG-023; installer
                                       only, default 0: none). Bits this build doesn't know are
@@ -147,17 +158,18 @@ typedef struct {
     uint32_t event_seq; /* last event sequence number handed out */
 } alarm_runtime_state_t;
 
-/* Fill with defaults: partition 1 enabled, no zones, no users.
- * Call alarm_config_set_default_users() afterwards for the factory codes. */
+/* Fill with defaults: partition 1 enabled, no zones, no users - and so no codes: the setup's
+ * first code is made at the panel (alarm_engine_first_code, CORE-USR-041). */
 void alarm_config_defaults(alarm_config_t *cfg);
 
 /* Default settings for a zone of the given type (chime, device class, name). */
 void alarm_zone_config_defaults(alarm_zone_config_t *zone, uint16_t zone_no,
                                 alarm_zone_type_t type, uint8_t partition);
 
-/* Install the factory users: 01 installer (ALARM_DEFAULT_INSTALLER_CODE) and
- * 02 system master (ALARM_DEFAULT_MASTER_CODE), both with every partition. */
-void alarm_config_set_default_users(alarm_config_t *cfg, alarm_hash_fn hash, void *hash_ctx);
+/* Tests and simulators only: install the old panels' users, 01 installer
+ * (ALARM_LEGACY_INSTALLER_CODE) and 02 system master (ALARM_LEGACY_MASTER_CODE), both with every
+ * partition - a panel that was set up before there were no factory codes. */
+void alarm_config_set_legacy_users(alarm_config_t *cfg, alarm_hash_fn hash, void *hash_ctx);
 
 /* Store a user slot (the code hash comes from ports.hash_code). */
 void alarm_config_set_user(alarm_config_t *cfg, uint8_t user_no, alarm_authority_t authority,
@@ -219,6 +231,12 @@ alarm_result_t alarm_config_check(const alarm_config_t *cfg, alarm_config_why_t 
  * and the standard, arm-only, guest and duress users (or empty slots) within its partitions;
  * nobody else manages anyone. The touchscreen and the Panel Manager ask the same question. */
 bool alarm_config_user_manages(const alarm_config_t *cfg, uint8_t actor, uint8_t target);
+
+/* CORE-PROG-014: does the installer code open installer mode (Setup mode)? Yes unless the Owner
+ * turned it off (opt.installer_setup_off) - and always while there is no system master yet, so a
+ * panel set up for someone else is never left with nobody to open it. The system master's code
+ * always opens it. The engine, the touchscreen and the Panel Manager ask this one rule. */
+bool alarm_config_installer_sets_up(const alarm_config_t *cfg);
 
 /* Zone type helpers. */
 bool alarm_zone_type_valid(int type);

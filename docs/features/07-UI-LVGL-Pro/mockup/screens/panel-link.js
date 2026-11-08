@@ -428,7 +428,7 @@ kpSet({id: 'kp-about-end', shot: 'bl-048-kp-about-end', title: 'Keypad: About, s
   ].join('')});
 
 kpSet({id: 'kp-standalone', shot: 'bl-048-kp-standalone', title: 'Keypad: make it a stand-alone panel (factory reset, held)'},
-  'A keypad\'s factory-reset page, held half way after the installer code (checked by Harbor House through authenticate; any other code: "That isn\'t the installer code"). Before the code the hold is "Enter the installer code"; after 10 minutes with no system communication (link_info.maintenance, LINK-025) it opens without one, so a keypad whose alarm panel is gone isn\'t stuck. It erases everything and restarts in the setup, where the role is asked again. No event-log switch: a keypad has none.',
+  'A keypad\'s factory-reset page, held half way after the installer code (checked by Harbor House through authenticate; any other code: "That isn\'t the master or installer code"). Before the code the hold is "Enter the master or installer code"; after 10 minutes with no system communication (link_info.maintenance, LINK-025) it opens without one, so a keypad whose alarm panel is gone isn\'t stuck. It erases everything and restarts in the setup, where the role is asked again. No event-log switch: a keypad has none.',
   {section: 'about', title: 'Make it a stand-alone panel', note: 'A factory reset', back: 'kp-about-end', body: [
     M.paragraph('Erases the pairing with Harbor House, Wi-Fi and every setting, then restarts with the setup.'),
     M.paragraph('Harbor House shows a trouble for this keypad until it is removed there.', 'amber'),

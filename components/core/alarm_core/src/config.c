@@ -56,6 +56,7 @@ void alarm_config_defaults(alarm_config_t *cfg)
     o->chime_needs_code = true;
     o->auto_less_secure = true; /* AUT-015 / D25: on by default, the installer may turn it off */
     o->app_panic_mask = 0u;     /* CORE-CFG-023: no panic from the app until the installer says */
+    o->installer_setup_off = 0u; /* CORE-PROG-014: the installer code opens installer mode */
 
     for (unsigned i = 0; i < ALARM_MAX_PARTITIONS; i++) {
         alarm_partition_config_t *p = &cfg->partitions[i];
@@ -139,14 +140,14 @@ void alarm_config_set_user(alarm_config_t *cfg, uint8_t user_no, alarm_authority
     }
 }
 
-void alarm_config_set_default_users(alarm_config_t *cfg, alarm_hash_fn hash, void *hash_ctx)
+void alarm_config_set_legacy_users(alarm_config_t *cfg, alarm_hash_fn hash, void *hash_ctx)
 {
     const uint8_t all = (uint8_t)((1u << ALARM_MAX_PARTITIONS) - 1u);
     uint8_t h[ALARM_CODE_HASH_LEN];
 
-    hash(hash_ctx, cfg->code_salt, ALARM_DEFAULT_INSTALLER_CODE, h);
+    hash(hash_ctx, cfg->code_salt, ALARM_LEGACY_INSTALLER_CODE, h);
     alarm_config_set_user(cfg, ALARM_USER_INSTALLER, ALARM_AUTH_INSTALLER, all, "Installer", h);
-    hash(hash_ctx, cfg->code_salt, ALARM_DEFAULT_MASTER_CODE, h);
+    hash(hash_ctx, cfg->code_salt, ALARM_LEGACY_MASTER_CODE, h);
     alarm_config_set_user(cfg, ALARM_USER_MASTER, ALARM_AUTH_MASTER, all, "Master", h);
 }
 

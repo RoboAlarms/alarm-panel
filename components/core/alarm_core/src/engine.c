@@ -472,6 +472,16 @@ alarm_result_t alarm_engine_set_config(alarm_engine_t *e, const alarm_config_t *
     if (r == ALARM_OK && alarm_config_validate(cfg, NULL, 0u) != ALARM_OK) {
         r = ALARM_ERR_BAD_ARG;
     }
+    /* CORE-PROG-014, 015: the Owner's own options - whether the installer code opens installer
+     * mode, and the power-up recovery that gives the panel back to the Owner - change only in an
+     * Owner session at the panel: no installer can lock the Owner out (the owner's decision of
+     * 2026-11-08). */
+    if (r == ALARM_OK &&
+        ((cfg->opt.installer_setup_off != 0u) != (e->cfg.opt.installer_setup_off != 0u) ||
+         cfg->opt.power_up_program != e->cfg.opt.power_up_program) &&
+        !eng_owner_session(e)) {
+        r = ALARM_ERR_NOT_AUTHORIZED;
+    }
     if (r == ALARM_OK) {
         for (unsigned i = 0; i < ALARM_MAX_ZONES; i++) {
             if (alarm_zone_config_resets_state(&e->cfg.zones[i], &cfg->zones[i])) {

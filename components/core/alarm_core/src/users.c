@@ -218,6 +218,12 @@ static bool low_authority(alarm_authority_t a)
            a == ALARM_AUTH_DURESS;
 }
 
+bool alarm_config_installer_sets_up(const alarm_config_t *cfg)
+{
+    return cfg != NULL && (cfg->opt.installer_setup_off == 0u ||
+                           cfg->users[ALARM_USER_MASTER - 1u].authority != ALARM_AUTH_MASTER);
+}
+
 bool alarm_config_user_manages(const alarm_config_t *cfg, uint8_t actor, uint8_t target)
 {
     if (cfg == NULL || actor < 1u || actor > ALARM_MAX_USERS || target < 1u ||
@@ -228,10 +234,15 @@ bool alarm_config_user_manages(const alarm_config_t *cfg, uint8_t actor, uint8_t
     const alarm_user_t *t = &cfg->users[target - 1u];
     switch (a->authority) {
     case ALARM_AUTH_INSTALLER:
-        /* The installer manages every user, household codes included (decided
-         * 2026-09-23). */
+        /* The installer manages every user, household codes included (decided 2026-09-23) -
+         * but never the Owner's own code: it may only make one where there is none yet, at the
+         * handover of a panel set up for someone else (CORE-USR-040, the owner's decision of
+         * 2026-11-08: no installer locks the Owner out). */
+        return target != ALARM_USER_MASTER || t->authority == ALARM_AUTH_NONE;
+    case ALARM_AUTH_MASTER:
+        /* The Owner manages everyone, the installer's code included: changes or removes it
+         * (CORE-USR-040, the owner's decision of 2026-11-08). */
         return true;
-    case ALARM_AUTH_MASTER: return target != ALARM_USER_INSTALLER;
     case ALARM_AUTH_PARTITION_MASTER:
         if (target == actor) {
             return true; /* own code; authority/partitions are kept */
@@ -482,11 +493,23 @@ alarm_result_t alarm_engine_program_set_code(alarm_engine_t *e, const alarm_sour
         src = &sys;
     }
     alarm_result_t r = ALARM_OK;
+    const alarm_authority_t by =
+        e->program_user == 0u ? ALARM_AUTH_NONE : eng_user_auth(e, e->program_user);
     if (!e->program || src->kind != e->program_src.kind || src->id != e->program_src.id) {
         r = ALARM_ERR_BAD_STATE;
     } else if ((user_no != ALARM_USER_INSTALLER && user_no != ALARM_USER_MASTER) ||
                !code_policy_ok(e, new_code)) {
         r = ALARM_ERR_BAD_ARG;
+    } else if (user_no == ALARM_USER_INSTALLER && by != ALARM_AUTH_INSTALLER &&
+               by != ALARM_AUTH_MASTER) {
+        /* CORE-PROG-015: the power-up recovery gives the panel back to the Owner, never to an
+         * installer: it sets the master code alone. */
+        r = ALARM_ERR_NOT_AUTHORIZED;
+    } else if (user_no == ALARM_USER_MASTER && by == ALARM_AUTH_INSTALLER &&
+               e->cfg.users[ALARM_USER_MASTER - 1u].authority != ALARM_AUTH_NONE) {
+        /* CORE-USR-040: the installer makes the Owner's code only where there is none yet (the
+         * handover); it never changes the Owner's. */
+        r = ALARM_ERR_NOT_AUTHORIZED;
     }
     if (r == ALARM_OK) {
         uint8_t h[ALARM_CODE_HASH_LEN];
@@ -515,7 +538,65 @@ alarm_result_t alarm_engine_program_set_code(alarm_engine_t *e, const alarm_sour
     return r;
 }
 
-/* Recompute which factory codes are still in use (two hashes; config changes only). */
+/* CORE-USR-041: a panel with no master and no installer code (a new one, or after a factory
+ * reset: there are no factory codes, the owner's decision of 2026-11-08) takes its first code from
+ * whoever sets it up, at the panel: the Owner's (user 2) by default, or the installer's (user 1)
+ * when they set it up for someone else - the Owner's slot then stays open for the handover. */
+alarm_result_t alarm_engine_first_code(alarm_engine_t *e, const alarm_source_t *src,
+                                       uint8_t user_no, const char *code, alarm_ms_t now)
+{
+    if (e == NULL || !e->initialized) {
+        return ALARM_ERR_BAD_ARG;
+    }
+    if (!eng_enter(e, now)) {
+        return ALARM_ERR_BAD_STATE;
+    }
+    const alarm_source_t sys = {ALARM_SRC_SYSTEM, 0u};
+    if (src == NULL) {
+        src = &sys;
+    }
+    alarm_result_t r = ALARM_OK;
+    if (!alarm_engine_no_codes(e)) {
+        r = ALARM_ERR_NOT_AUTHORIZED; /* only the first: everything after asks for a code */
+    } else if (src->kind != ALARM_SRC_KEYPAD) {
+        r = ALARM_ERR_NOT_AUTHORIZED; /* at the panel only, never over the network */
+    } else if ((user_no != ALARM_USER_INSTALLER && user_no != ALARM_USER_MASTER) ||
+               !code_policy_ok(e, code)) {
+        r = ALARM_ERR_BAD_ARG;
+    } else if (!eng_all_idle(e)) {
+        r = ALARM_ERR_BAD_STATE;
+    }
+    if (r == ALARM_OK) {
+        uint8_t h[ALARM_CODE_HASH_LEN];
+        uint8_t holder = 0u;
+        r = find_user(e, code, &holder, h);
+        if (r == ALARM_OK && holder != 0u) {
+            r = ALARM_ERR_CODE_IN_USE;
+        } else if (r == ALARM_OK) {
+            alarm_user_t *u = &e->cfg.users[user_no - 1u];
+            memset(u, 0, sizeof(*u));
+            u->authority = user_no == ALARM_USER_INSTALLER ? ALARM_AUTH_INSTALLER
+                                                           : ALARM_AUTH_MASTER;
+            u->partitions = all_partitions();
+            memcpy(u->code_hash, h, sizeof(h));
+            copy_name(u->name, user_no == ALARM_USER_INSTALLER ? "Installer" : "Master");
+            eng_emit(e, ALARM_EV_USER_CHANGED, 0u, 0u, 0u, src, user_no, (uint8_t)u->authority,
+                     ALARM_EVF_SYSTEM, REPORT_NOW);
+            e->config_dirty = true;
+            eng_update_default_codes(e);
+        }
+    }
+    eng_leave(e);
+    return r;
+}
+
+bool alarm_engine_no_codes(const alarm_engine_t *e)
+{
+    return e != NULL && e->cfg.users[ALARM_USER_INSTALLER - 1u].authority == ALARM_AUTH_NONE &&
+           e->cfg.users[ALARM_USER_MASTER - 1u].authority == ALARM_AUTH_NONE;
+}
+
+/* Recompute which old-panel factory codes are still in use (two hashes; config changes only). */
 void eng_update_default_codes(alarm_engine_t *e)
 {
     uint8_t mask = 0u;
@@ -524,7 +605,7 @@ void eng_update_default_codes(alarm_engine_t *e)
     const alarm_user_t *master = &e->cfg.users[ALARM_USER_MASTER - 1u];
 
     if (inst->authority == ALARM_AUTH_INSTALLER) {
-        if (!hash_code(e, ALARM_DEFAULT_INSTALLER_CODE, h)) {
+        if (!hash_code(e, ALARM_LEGACY_INSTALLER_CODE, h)) {
             return; /* retain the last known warning; never clear it on an unknown hash */
         }
         if (hash_equal(h, inst->code_hash)) {
@@ -532,7 +613,7 @@ void eng_update_default_codes(alarm_engine_t *e)
         }
     }
     if (master->authority == ALARM_AUTH_MASTER) {
-        if (!hash_code(e, ALARM_DEFAULT_MASTER_CODE, h)) {
+        if (!hash_code(e, ALARM_LEGACY_MASTER_CODE, h)) {
             return;
         }
         if (hash_equal(h, master->code_hash)) {
@@ -565,8 +646,8 @@ static alarm_result_t user_delete(alarm_engine_t *e, const alarm_source_t *src,
 
     alarm_result_t r = ALARM_OK;
     uint8_t actor = 0u;
-    if (user_no <= ALARM_USER_MASTER || user_no > ALARM_MAX_USERS) {
-        r = ALARM_ERR_BAD_ARG; /* installer and system master cannot be deleted */
+    if (user_no == ALARM_USER_MASTER || user_no < 1u || user_no > ALARM_MAX_USERS) {
+        r = ALARM_ERR_BAD_ARG; /* the system master (the Owner) cannot be deleted */
     } else {
         r = actor_of(e, src, actor_code, as, as_user, &actor);
     }

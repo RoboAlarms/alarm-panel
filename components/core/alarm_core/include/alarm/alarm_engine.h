@@ -402,6 +402,17 @@ alarm_result_t alarm_engine_program_enter(alarm_engine_t *e, const alarm_source_
 alarm_result_t alarm_engine_program_enter_as(alarm_engine_t *e, const alarm_source_t *src,
                                              uint8_t user, alarm_ms_t now);
 
+/* CORE-USR-041: the first code of a panel with neither a master nor an installer code (a new
+ * panel, or after a factory reset: no factory codes), from the panel itself (an ALARM_SRC_KEYPAD
+ * source; anything else NOT_AUTHORIZED): user 2, the Owner's, by default; user 1, the installer's,
+ * for a panel set up for someone else (the Owner makes theirs at the handover). Every partition
+ * idle; the minimum code length applies. Once either slot holds a code, NOT_AUTHORIZED. Logged as
+ * user_changed by user 0. */
+alarm_result_t alarm_engine_first_code(alarm_engine_t *e, const alarm_source_t *src,
+                                       uint8_t user_no, const char *code, alarm_ms_t now);
+/* No master and no installer code yet: the setup's first code is still to be made. */
+bool alarm_engine_no_codes(const alarm_engine_t *e);
+
 /* Leave installer mode. Logged and reported (program_exit). */
 void alarm_engine_program_exit(alarm_engine_t *e, const alarm_source_t *src, alarm_ms_t now);
 

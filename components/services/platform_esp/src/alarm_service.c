@@ -8,6 +8,7 @@
 #include "esp_attr.h"
 
 #include <inttypes.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
@@ -342,9 +343,19 @@ static void port_persist(void *ctx, const alarm_runtime_state_t *state)
     s_rt_rev++;
 }
 
+/* CORE-PROG-014: the installer code opens installer mode (alarm_config_installer_sets_up), kept
+ * for readers on other tasks (the Panel Manager asks it with every request). */
+static _Atomic bool s_installer_sets_up = true;
+
+bool alarm_service_installer_sets_up(void)
+{
+    return atomic_load(&s_installer_sets_up);
+}
+
 static void port_config_changed(void *ctx)
 {
     (void)ctx;
+    atomic_store(&s_installer_sets_up, alarm_config_installer_sets_up(alarm_engine_config(&s_eng)));
     s_cfg_rev++;    /* changed in RAM; whether it reached flash is tracked by s_cfg_saved */
     s_config_seq++; /* listeners re-read the configuration whether or not the write lands */
     s_status_dirty = true;
@@ -707,7 +718,7 @@ esp_err_t alarm_service_start(void)
     }
     if (origin == ALARM_CFG_CREATED) {
         ESP_LOGW(TAG, "first boot: factory configuration (installer %s, master %s)",
-                 ALARM_DEFAULT_INSTALLER_CODE, ALARM_DEFAULT_MASTER_CODE);
+                 ALARM_LEGACY_INSTALLER_CODE, ALARM_LEGACY_MASTER_CODE);
     }
     /* Stored data this firmware could not use, or a first-boot write that did not land: say so
      * on the screen and keep saying it until a configuration write succeeds. */
@@ -768,6 +779,7 @@ esp_err_t alarm_service_start(void)
         ESP_LOGE(TAG, "the alarm engine would not start (%s)", alarm_result_name(r));
         return ESP_FAIL;
     }
+    atomic_store(&s_installer_sets_up, alarm_config_installer_sets_up(alarm_engine_config(&s_eng)));
     after_engine();
 
     if (xTaskCreatePinnedToCore(alarm_task, "alarm", 8192, NULL, CONFIG_ALARM_TASK_PRIORITY,

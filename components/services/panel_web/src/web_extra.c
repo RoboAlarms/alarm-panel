@@ -552,10 +552,12 @@ static void reset_task(void *arg)
     panel_system_factory_reset(&SOURCE, request.user, request.erase_log);
     vTaskDelete(NULL);
 }
-/* Setup mode's programming: the installer's and the system master's (the Owner's, CORE-PROG-001). */
+/* Setup mode's: the installer's and the system master's (the Owner's, CORE-PROG-001; the owner's
+ * decision of 2026-11-08). */
 static bool programs(alarm_authority_t authority)
 {
-    return authority == ALARM_AUTH_INSTALLER || authority == ALARM_AUTH_MASTER;
+    return authority == ALARM_AUTH_MASTER ||
+           (authority == ALARM_AUTH_INSTALLER && alarm_service_installer_sets_up());
 }
 
 cJSON *web_extra_action(const ui_backend_t *b, const char *path, const cJSON *o, uint8_t user,
@@ -663,8 +665,8 @@ cJSON *web_extra_action(const ui_backend_t *b, const char *path, const cJSON *o,
     }
     if (!strcmp(path, "factory-reset")) {
         /* panel_web.c asked for a recent password first; installer mode as the signed-in
-         * installer (CORE-PROG-011) holds the panel still until the restart. */
-        if (authority != ALARM_AUTH_INSTALLER || strcmp(str(o, "confirm"), "ERASE THIS PANEL"))
+         * installer or system master (CORE-PROG-011) holds the panel still until the restart. */
+        if (!programs(authority) || strcmp(str(o, "confirm"), "ERASE THIS PANEL"))
             return answer(false, "Installer authority and ERASE THIS PANEL confirmation required");
         const alarm_result_t e = alarm_service_program_enter_as(&SOURCE, user);
         if (e != ALARM_OK)

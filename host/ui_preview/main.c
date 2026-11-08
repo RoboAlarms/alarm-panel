@@ -1503,12 +1503,12 @@ static void walk_zwave(void)
     tap_text("Change it");
     run(300);
     expect(find_label(lv_screen_active(), "Confirm the region") != NULL,
-           "ZW-045: a region change that stops devices did not ask for the installer code");
+           "ZW-045: a region change that stops devices did not ask for the master or installer code");
     shot("zwave_region_code");
-    type("123456k"); /* the master code */
+    type("8642k"); /* nobody's code */
     run(300);
     expect(find_label(lv_screen_active(), "Wrong code, try again") != NULL,
-           "ZW-045: a region change that stops devices accepted a master code");
+           "ZW-045: a region change that stops devices accepted a wrong code");
     tap(lv_obj_find_by_name(by_name("settings_pad"), "pad_close"));
     run(300);
     tap_name("page_back"); /* the region page -> the Z-Wave page */
@@ -1529,20 +1529,20 @@ static void walk_zwave(void)
     expect(find_label(lv_screen_active(), "Reset the Z-Wave network?") != NULL,
            "the reset dialog never opened");
     shot("zwave_reset_confirm");
-    /* ZW-013: only the installer code may confirm the second, plain question - a master code is
-     * refused exactly like a wrong one. */
+    /* ZW-013: only the master or installer code may confirm the second, plain question (the
+     * system master's too since the owner's decision of 2026-11-08) - any other is refused. */
     tap_text("Reset the network");
     run(300);
     expect(find_label(lv_screen_active(), "Confirm the reset") != NULL,
            "the reset's second confirmation did not ask for the code again");
-    type("123456k"); /* the master code */
+    type("8642k"); /* nobody's code */
     run(300);
     expect(find_label(lv_screen_active(), "Wrong code, try again") != NULL,
-           "the Z-Wave network reset accepted a master code");
-    type("69420k"); /* the installer code */
+           "the Z-Wave network reset accepted a wrong code");
+    type("123456k"); /* the master code: the Owner's */
     run(300);
     expect(find_label_with(lv_screen_active(), "No devices") != NULL,
-           "the Z-Wave network was not reset by the installer code");
+           "the Z-Wave network was not reset by the master code");
     /* the reset restarts the radio too: it comes back working, with a network of its own */
     run(3000);
     wait_for_text("Radio · Working", 20000u, "ZW-018: the radio did not come back after the reset");
@@ -2526,7 +2526,7 @@ static void zw_trouble_open(const char *row)
     run(600);
     if (lv_subject_get_int(&subject_toast_visible) == 1 &&
         strcmp(lv_subject_get_string(&subject_toast),
-               "Enter the installer code to see the radio") == 0) {
+               "Enter the master or installer code to see the radio") == 0) {
         tap_text("Enter the master or installer code");
         run(300);
         type("69420k");
@@ -2559,7 +2559,7 @@ static void walk_zwave_troubles(void)
            "ZW-019: the trouble opens the Z-Wave page without the installer code");
     expect(lv_subject_get_int(&subject_toast_visible) == 1 &&
                strcmp(lv_subject_get_string(&subject_toast),
-                      "Enter the installer code to see the radio") == 0,
+                      "Enter the master or installer code to see the radio") == 0,
            "ZW-019: the Z-Wave trouble doesn't say the radio needs the installer code");
     tap_text("Enter the master or installer code");
     run(300);
@@ -8159,28 +8159,28 @@ static void walk_zigbee(const ui_options_t *start)
     shot("bl-144-reset");
     tap_name("dialog_ok");
     run(300);
-    /* ZB-017: asked twice, as the Panel Manager asks, then the installer code */
+    /* ZB-017: asked twice, as the Panel Manager asks, then the master or installer code */
     expect(find_label(lv_screen_active(), "Reset it now?") != NULL,
            "ZB-017: the reset doesn't ask a second time");
-    expect(find_label(lv_screen_active(), "Enter the installer code once more") == NULL,
+    expect(find_label(lv_screen_active(), "Enter the master or installer code once more") == NULL,
            "ZB-017: the reset asks for the code after one confirmation");
     shot("bl-144-reset-again");
     tap_name("dialog_ok");
     run(300);
-    expect(find_label(lv_screen_active(), "Enter the installer code once more") != NULL,
-           "ZB-017: the reset doesn't ask for the installer code again");
+    expect(find_label(lv_screen_active(), "Enter the master or installer code once more") != NULL,
+           "ZB-017: the reset doesn't ask for the master or installer code again");
     shot("bl-144-reset-code");
-    type("123456k"); /* the master's code: not the installer's */
+    type("8642k"); /* nobody's code */
     run(300);
     expect(find_label(lv_screen_active(), "Wrong code, try again") != NULL,
-           "ZB-017: the reset took a code that isn't the installer's");
+           "ZB-017: the reset took a code that isn't the master's or the installer's");
     /* ZB-017: the keypad's lockout ends the try with its own words, and nothing is reset */
     host_zigbee_demo_code_once(HOST_ZB_CODE_LOCKED);
     type("69420k");
     run(300);
     zb_toast("Too many wrong codes: try again later",
              "ZB-017: the reset's code during the keypad's lockout isn't said");
-    expect(find_label(lv_screen_active(), "Enter the installer code once more") == NULL,
+    expect(find_label(lv_screen_active(), "Enter the master or installer code once more") == NULL,
            "ZB-017: the reset's pad stays open during the keypad's lockout");
     expect(find_label_with(by_name("page_body"), "No devices yet") == NULL,
            "ZB-017: the network was reset during the keypad's lockout");
@@ -8191,7 +8191,7 @@ static void walk_zigbee(const ui_options_t *start)
     run(300);
     tap_name("dialog_ok");
     run(300);
-    type("69420k");
+    type("123456k"); /* the master's code: the Owner's (the owner's decision of 2026-11-08) */
     run(2500);
     zb_top();
     zb_has("No devices yet. Add one: most sensors join when you hold their button until their light "
@@ -8224,7 +8224,7 @@ static void walk_zigbee(const ui_options_t *start)
     run(300);
     expect(find_label(by_name("page_body"), "Radio · Not answering") == NULL,
            "ZB-027: the sensor radio trouble shows the Zigbee page without the installer code");
-    zb_toast("Enter the installer code to see the radio",
+    zb_toast("Enter the master or installer code to see the radio",
              "ZB-027: the sensor radio trouble doesn't say the radio needs the installer code");
     tap_text("Enter the master or installer code");
     run(300);
@@ -8511,9 +8511,10 @@ static void walk_activity_log(void)
            "LOG-008: the row doesn't offer to hide the private events");
     lv_obj_scroll_to_y(by_name("event_list"), 0, LV_ANIM_OFF);
     run(100);
+    /* the system master clears it too since the owner's decision of 2026-11-08 */
     expect(find_label(by_name("event_list"), "12 events couldn't be saved") != NULL &&
-               find_label(by_name("event_list"), "Clear the warning") == NULL,
-           "LOG-010: a master sees no loss warning, or may clear it");
+               find_label(by_name("event_list"), "Clear the warning") != NULL,
+           "LOG-010: a master sees no loss warning, or can't clear it");
     shot("activity_loss_master");
     activity_to_end(); /* the row that hides them again */
     shot("activity_private");
@@ -8522,7 +8523,7 @@ static void walk_activity_log(void)
     run(300);
     expect(!activity_shows_silent(), "LOG-008: Hide private events left them shown");
 
-    /* The installer's code clears the warning (docs/features/14). */
+    /* The installer's code clears the warning too (docs/features/14). */
     activity_private_with("69420k");
     lv_obj_scroll_to_y(by_name("event_list"), 0, LV_ANIM_OFF);
     run(100);
@@ -8793,6 +8794,11 @@ static void walk_automations_no_device(const ui_options_t *start)
      * notification with no phone service (bl-224-then-door, bl-224-notify-none) */
     tap_text("Add an automation");
     run(300);
+    if (find_label(lv_screen_active(), "Start from scratch") == NULL) {
+        /* the first tap right after the picker closed can land while it is still closing */
+        tap_text("Add an automation");
+        run(300);
+    }
     tap_text("Start from scratch");
     run(300);
     tap_text("When a door or window opens");
@@ -11426,7 +11432,7 @@ static void walk_link_keypad(void)
     expect(find_label(lv_screen_active(), "Hold to erase everything") == NULL,
            "BL-048: a stand-alone panel opens without the installer code (LINK-025: only after 10 "
            "min)");
-    tap_text("Enter the installer code");
+    tap_text("Enter the master or installer code");
     run(200);
     type("69420k");
     run(300);
@@ -12071,7 +12077,7 @@ static void walk_link_keypad_master_pages(void)
     tap_name("set_installer");
     run(300);
     link_has("Changes how Harbor House works", "BL-223: the keypad's Installer doesn't name its alarm panel");
-    expect(find_label(by_name("page_body"), "Lost the installer code?") == NULL,
+    expect(find_label(by_name("page_body"), "Lost the master code?") == NULL,
            "BL-223: a keypad offers the alarm panel's lost-code page");
     shot("bl-223-kp-installer-locked");
     tap_text("Enter the master or installer code");
@@ -12711,8 +12717,8 @@ int main(int argc, char **argv)
     tap_name("nav_activity");
     run(300);
     shot("event_log");
-    /* LOG-010: a latched loss shows only after the private step; a master sees it, only the
-     * installer clears it. */
+    /* LOG-010: a latched loss shows only after the private step; the system master and the
+     * installer clear it (the master too since the owner's decision of 2026-11-08). */
     host_panel_log_loss(12, 3);
     run(1200);
     expect(find_label(by_name("event_list"), "12 events couldn't be saved") == NULL,
@@ -12726,8 +12732,8 @@ int main(int argc, char **argv)
     run(100);
     expect(find_label(by_name("event_list"), "12 events couldn't be saved") != NULL,
            "LOG-010: the lost events aren't shown on Activity after a master code");
-    expect(find_label(by_name("event_list"), "Clear the warning") == NULL,
-           "LOG-010: a master code must not clear the log's loss");
+    expect(find_label(by_name("event_list"), "Clear the warning") != NULL,
+           "LOG-010: the master code can't clear the log's loss");
     shot("event_log_loss");
     tap_name("bar_settings"); /* back where the walk was; leaving Activity forgot the code */
     run(300);
@@ -12761,10 +12767,10 @@ int main(int argc, char **argv)
     expect(find_label(by_name("page_body"), "Enter the master or installer code") != NULL,
            "BL-189: the locked Installer page lost its code row");
     /* BL-131: the lost-code explanation is a row of its own, opened before the code */
-    tap_text("Lost the installer code?");
+    tap_text("Lost the master code?");
     run(300);
     expect(find_label_with(by_name("page_body"), "Unplug the panel for ten seconds") != NULL,
-           "BL-131: the Lost the installer code? row doesn't open its explanation");
+           "BL-131: the Lost the master code? row doesn't open its explanation");
     shot("installer_lost_code");
     tap_name("page_back");
     run(300);
@@ -13996,8 +14002,9 @@ int main(int argc, char **argv)
     expect(find_label_with(by_name("page_body"), "User name: 0c8b95a1f2d4") == NULL,
            "the installer's sign-in still uses the panel ID");
     shot("web_login_installer");
-    /* The installer's code opens Users too, and manages every user (2026-09-23). Leaving the
-     * Installer section ends installer mode; the code typed for it still opens Users. */
+    /* The installer's code opens Users too, and manages every user (2026-09-23) but the Owner
+     * (CORE-USR-040, the owner's decision of 2026-11-08). Leaving the Installer section ends
+     * installer mode; the code typed for it still opens Users. */
     tap_name("set_users");
     run(300);
     if (lv_subject_get_int(&subject_settings_pad) == 1) {
@@ -14006,23 +14013,11 @@ int main(int argc, char **argv)
     }
     expect(find_label(by_name("page_body"), "Add a user") != NULL,
            "the installer code doesn't open Users");
-    tap_text("Master");
-    run(300);
-    expect(find_label(by_name("page_body"), "Change the code") != NULL,
-           "the installer can't change the master's code in Users");
-    expect(find_label(by_name("page_body"), "Browser sign-in") != NULL,
-           "the installer can't give the master a browser sign-in");
-    tap_text("Browser sign-in");
-    run(300);
-    sheet_text("a password for somebody");
-    tap_name("sheet_done");
-    run(300);
-    sheet_text("a password for somebody");
-    tap_name("sheet_done");
-    run(500);
-    expect(host_panel_web_login_temporary(ALARM_USER_MASTER),
-           "a password set for somebody else isn't temporary");
+    /* The Owner's code and browser sign-in are the Owner's: an installer who could set them
+     * could sign in as the Owner, so the master is listed but doesn't open (CORE-USR-040). */
     shot("installer_users");
+    tap_text("User 03");
+    run(300);
 
     /* docs/features/31: someone on the remote keypad. The red banner says so and the screen saver
      * stays off; a keyboard at the remote end types into the sheet or the code pad on screen;
@@ -14039,10 +14034,10 @@ int main(int argc, char **argv)
         run(300);
         expect(find_label_with(lv_screen_active(), "Remote: Alex") != NULL,
                "no red banner while someone uses the remote keypad");
-        /* The master's name, retyped on a computer's keyboard. */
+        /* User 03's name, retyped on a computer's keyboard. */
         tap_text("Name");
         run(300);
-        for (int i = 0; i < 6; i++) {
+        for (int i = 0; i < 7; i++) {
             expect(ui_app_remote_key(UI_REMOTE_KEY_BACKSPACE), "backspace didn't reach the sheet");
         }
         expect(ui_app_remote_text("Pat"), "typing didn't reach the sheet");

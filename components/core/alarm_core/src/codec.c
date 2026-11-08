@@ -78,6 +78,7 @@ static const field_t SYSTEM_FIELDS[] = {
     F_BOOL(alarm_config_t, 0x1D, opt.auto_less_secure),
     F_UINT_NZ(alarm_config_t, 0x1E, opt.voice_revision_counter, 4), /* CORE-CFG-021 */
     F_UINT_NZ(alarm_config_t, 0x1F, opt.app_panic_mask, 1),          /* CORE-CFG-023 */
+    F_UINT_NZ(alarm_config_t, 0x20, opt.installer_setup_off, 1),     /* CORE-PROG-014 */
     F_BYTES(alarm_config_t, 0x40, code_salt),
 };
 

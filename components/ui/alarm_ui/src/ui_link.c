@@ -28,7 +28,7 @@ static struct {
     uint32_t polled;     /* lv_tick of the last read */
     bool gen_known;      /* home_gen was seen once */
     uint32_t home_gen;   /* ... and what it was */
-    bool standalone_ok;  /* the installer code opened "Make it a stand-alone panel" */
+    bool standalone_ok;  /* the master or installer code opened "Make it a stand-alone panel" */
     uint32_t page_sig;   /* the open page's live words, as they were drawn */
 } L;
 
@@ -1601,10 +1601,12 @@ static void standalone_checked(const ui_call_t *c)
                                                     : ui_result_text(c->r));
         return;
     }
+    /* The system master's too: no code outranks the Owner (the owner's decision of 2026-11-08). */
     if (user < 1u || user > ALARM_MAX_USERS ||
-        S.cfg->users[user - 1u].authority != ALARM_AUTH_INSTALLER) {
+        (S.cfg->users[user - 1u].authority != ALARM_AUTH_INSTALLER &&
+         S.cfg->users[user - 1u].authority != ALARM_AUTH_MASTER)) {
         ui_beep(UI_BEEP_ERROR);
-        ui_pad_error(TR("That isn't the installer code"));
+        ui_pad_error(TR("That isn't the master or installer code"));
         return;
     }
     L.standalone_ok = true;
@@ -1625,7 +1627,7 @@ static void standalone_ask(void *ctx)
 {
     (void)ctx;
     ui_pad_ask(HOST_SETTINGS, UI_ICON_ROTATE_CCW, TR("Make it a stand-alone panel"),
-               TR("Enter the installer code"), ui_tone_red(), standalone_code);
+               TR("Enter the master or installer code"), ui_tone_red(), standalone_code);
 }
 
 static void standalone_now(void *ctx)
@@ -1661,9 +1663,9 @@ static void build_standalone(lv_obj_t *body, char *title, size_t tlen, char *not
     if (L.standalone_ok || ui_link_maintenance()) {
         ui_row_hold(body, TR("Hold to erase everything"), standalone_now, NULL);
     } else {
-        /* the installer code, checked by the alarm panel; after 10 minutes without it, none
-         * (LINK-025) */
-        ui_row_action(body, UI_ICON_KEY, TR("Enter the installer code"), ui_tone_amber(),
+        /* the master or installer code, checked by the alarm panel; after 10 minutes without it,
+         * none (LINK-025) */
+        ui_row_action(body, UI_ICON_KEY, TR("Enter the master or installer code"), ui_tone_amber(),
                       standalone_ask, NULL);
     }
     L.page_sig = ui_link_maintenance() ? 2u : 1u;

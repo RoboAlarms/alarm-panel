@@ -16722,7 +16722,7 @@ msgstr ""
 
 #. Activity, under the warning: who can clear it. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_app.c
-msgid "Only the installer code clears this warning."
+msgid "Only the master or installer code clears this warning."
 msgstr ""
 
 #. Activity, the button at the end of the list that loads earlier events
@@ -19038,11 +19038,17 @@ msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Installer mode without a code: set a new installer code"
+msgid "Installer mode without a code: set a new master code"
+msgstr ""
+
+#. the code pad's hint after the installer code was refused because the owner turned its installer mode off. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "The owner turned installer mode off for the installer code"
 msgstr ""
 
 #. The code pad's hint line. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
+#: components/ui/alarm_ui/src/ui_link.c
 msgid "That isn't the master or installer code"
 msgstr ""
 
@@ -19055,6 +19061,7 @@ msgstr ""
 #. The code pad's hint line. At most 95 bytes.
 #. A button row's text (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
+#: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_settings.c
 msgid "Enter the master or installer code"
 msgstr ""
@@ -19071,7 +19078,7 @@ msgstr ""
 
 #. A confirmation sheet. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "For a lost installer code, right after power-up only. It is logged and reported. Choose a new code next."
+msgid "For a lost master code, right after power-up only. It is logged and reported. Choose a new master code next."
 msgstr ""
 
 #. A confirmation sheet. At most 127 bytes.
@@ -19202,9 +19209,9 @@ msgstr[0] ""
 msgstr[1] ""
 
 #. Installer, before the code: the row that says what to do about a lost code. At most 47 bytes
-#. Installer > Lost the installer code?, the page title. At most 47 bytes
+#. Installer > Lost the master code?, the page title. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Lost the installer code?"
+msgid "Lost the master code?"
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
@@ -19595,12 +19602,17 @@ msgstr ""
 
 #. A switch row's title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Installer code recovery"
+msgid "Master code recovery"
 msgstr ""
 
 #. A switch row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "For two minutes after power-up, Installer opens without the code. When off, a lost installer code can't be recovered"
+msgid "For two minutes after power-up, Installer opens without a code to set a new master code. When off, a lost master code can't be recovered"
+msgstr ""
+
+#. A switch row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Only the master code changes this"
 msgstr ""
 
 #. A number row's title (one line).
@@ -19911,17 +19923,20 @@ msgstr ""
 msgid "New master code"
 msgstr ""
 
-#. the line under the page title. At most 127 bytes
-#: components/ui/alarm_ui/src/ui_installer.c
-msgid "The two codes that can't be deleted"
-msgstr ""
-
-#. Installer > codes, under a code row that is still the factory code (no digits on the screen: the factory codes are public, BL-187). At most 40 bytes
+#. Installer > codes, under a code row that is still a factory code of an older panel (no digits on the screen: those codes are public, BL-187). At most 40 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
 msgid "Still the factory code"
 msgstr ""
 
-#. Installer > codes, under a code row that is no longer the factory code
+#. Installer > codes, under a code row that is still a factory code of an older panel (no digits on the screen: those codes are public, BL-187). At most 40 bytes
+#. Installer > codes, under a code row with no code yet. At most 40 bytes
+#: components/ui/alarm_ui/src/ui_installer.c
+msgctxt "code state"
+msgid "Not made yet"
+msgstr ""
+
+#. Installer > codes, under a code row that is still a factory code of an older panel (no digits on the screen: those codes are public, BL-187). At most 40 bytes
+#. Installer > codes, under a code row that has a code
 #: components/ui/alarm_ui/src/ui_installer.c
 msgctxt "code state"
 msgid "Changed"
@@ -19939,9 +19954,29 @@ msgstr ""
 msgid "Master code"
 msgstr ""
 
+#. the line under the page title. At most 127 bytes
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "The owner's code and the installer's"
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Let the installer code open installer mode"
+msgstr ""
+
+#. A switch row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "On: the installer can change settings. The master code always can"
+msgstr ""
+
+#. Installer > codes, while a panel set up for someone else has no master code yet. At most 191 bytes
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Hand the panel to the owner to make the master code: it arms, disarms and outranks every other code. You can't change it afterwards."
+msgstr ""
+
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "The installer code programs the panel; it never arms or disarms. The factory codes are public: anyone can look them up. Everyone else's code is managed in Settings > Users with the master code."
+msgid "The master code is the owner's: it outranks every other code. The installer code programs the panel; it never arms or disarms. Everyone else's code, the installer's included, is in Settings > Users."
 msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
@@ -19984,7 +20019,7 @@ msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Unplug the panel for ten seconds. For two minutes after it starts, Installer opens without the code (unless the installer turned that off)."
+msgid "Unplug the panel for ten seconds. For two minutes after it starts, Installer opens without a code to set a new master code (unless the owner turned that off)."
 msgstr ""
 
 #. The MQTT row's state in the Integrations list. At most 63 bytes
@@ -21158,17 +21193,6 @@ msgstr ""
 #. the alarm panel's Software update, under the Keypads heading. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "Keypads update with this panel. They restart together once everything is disarmed."
-msgstr ""
-
-#. The code pad's hint line. At most 127 bytes.
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "That isn't the installer code"
-msgstr ""
-
-#. The code pad's hint line. At most 95 bytes.
-#. A button row's text (one line).
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Enter the installer code"
 msgstr ""
 
 #. Make it a stand-alone panel, the line under the title. At most 127 bytes
@@ -27251,7 +27275,7 @@ msgstr ""
 #. a code pad's title, after confirming a Z-Wave region change that stops devices
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Enter the installer code once more"
+msgid "Enter the master or installer code once more"
 msgstr ""
 
 #. the Zigbee reset's second confirmation, after "Continue"
@@ -27296,7 +27320,7 @@ msgstr ""
 #. a toast when the sensor radio trouble opens the locked Installer page. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Enter the installer code to see the radio"
+msgid "Enter the master or installer code to see the radio"
 msgstr ""
 
 #. a toast, why the Z-Wave radio refused a request

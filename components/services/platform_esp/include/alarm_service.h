@@ -212,6 +212,10 @@ alarm_result_t alarm_service_user_update_as(const alarm_source_t *src, uint8_t a
 alarm_result_t alarm_service_user_delete_as(const alarm_source_t *src, uint8_t actor,
                                             uint8_t user_no);
 
+/* CORE-PROG-014: whether the installer code may open installer mode now (the Owner's setting,
+ * alarm_config_installer_sets_up); any task, no wait. */
+bool alarm_service_installer_sets_up(void);
+
 /* Installer mode (see alarm_engine_program_enter): code NULL or "" uses the power-up recovery. */
 alarm_result_t alarm_service_program_enter(const alarm_source_t *src, const char *code,
                                            uint8_t *user_out);

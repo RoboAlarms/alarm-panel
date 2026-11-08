@@ -40,8 +40,9 @@ says what the panel does and what it doesn't yet.
   once; direct push reaches only phones whose user has the event's partition.
 - **Setup mode** (`POST setup-mode {open}`): installer mode as the person, held by the server's source
   until it closes it or the 15-minute idle timeout ends it; Setup page changes apply inside it. The
-  installer or the system master (the Owner) may open it, as at a keypad (anyone else: 403
-  `installer_only`, the name kept); the remote ceiling's `remote_setup` switch and the step-up
+  system master (the Owner) may open it, and the installer while the Owner lets the installer code
+  open installer mode (CORE-PROG-014), as at a keypad (anyone else: 403 `installer_only`, the name
+  kept); the remote ceiling's `remote_setup` switch and the step-up
   still apply, and setting the installer or master code (`installer-code`) is behind them too; 409 `not_disarmed` or
   `setup_mode_in_use`. A Setup page's flat fields are wrapped for the Panel Manager's handlers
   (`values`, or `changes` with the current revision).

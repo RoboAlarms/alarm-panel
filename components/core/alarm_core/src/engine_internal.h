@@ -162,6 +162,10 @@ alarm_result_t eng_auth(alarm_engine_t *e, const alarm_source_t *src, const char
 bool eng_code_format_ok(const char *code);
 void eng_update_default_codes(alarm_engine_t *e);
 alarm_authority_t eng_user_auth(const alarm_engine_t *e, uint8_t user);
+/* program.c: who may open installer mode (CORE-PROG-001, 014), and whether the one open is an
+ * Owner session at the panel (the master's or the power-up recovery's, CORE-PROG-014, 015). */
+bool eng_may_open_program(const alarm_engine_t *e, uint8_t user);
+bool eng_owner_session(const alarm_engine_t *e);
 /* May this user operate this partition at all? (masters/installer: every partition) */
 bool eng_user_in_partition(const alarm_engine_t *e, uint8_t user, uint8_t partition);
 

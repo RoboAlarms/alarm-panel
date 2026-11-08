@@ -552,7 +552,7 @@ int main(int argc, char **argv)
 
     /* LINK-002: the master checks the code; the keypad shows the master's state. */
     STAGE = "arm away";
-    if (!keypad_command(ALARM_CMD_ARM, ALARM_LEVEL_AWAY, ALARM_DEFAULT_MASTER_CODE)) {
+    if (!keypad_command(ALARM_CMD_ARM, ALARM_LEVEL_AWAY, ALARM_LEGACY_MASTER_CODE)) {
         return fail("no answer to arm away");
     }
     if (RES.result != ALARM_OK) {
@@ -571,7 +571,7 @@ int main(int argc, char **argv)
     }
 
     STAGE = "disarm";
-    if (!keypad_command(ALARM_CMD_DISARM, ALARM_LEVEL_NONE, ALARM_DEFAULT_MASTER_CODE)) {
+    if (!keypad_command(ALARM_CMD_DISARM, ALARM_LEVEL_NONE, ALARM_LEGACY_MASTER_CODE)) {
         return fail("no answer to disarm");
     }
     if (RES.result != ALARM_OK) {
@@ -687,7 +687,7 @@ int main(int argc, char **argv)
     if (ir != ALARM_ERR_INVALID_CODE || M.eng.program) {
         return fail("a wrong installer code from the keypad was answered %s", alarm_result_name(ir));
     }
-    ir = RBE.program_enter(RBE.ctx, ALARM_DEFAULT_INSTALLER_CODE, &iuser);
+    ir = RBE.program_enter(RBE.ctx, ALARM_LEGACY_INSTALLER_CODE, &iuser);
     if (ir != ALARM_OK || !M.eng.program || M.eng.program_src.kind != ALARM_SRC_KEYPAD ||
         M.eng.program_src.id != DEVICE) {
         return fail("installer mode from the keypad: %s (held by %u/%u)", alarm_result_name(ir),

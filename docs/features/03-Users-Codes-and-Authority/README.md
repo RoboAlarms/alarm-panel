@@ -21,8 +21,8 @@ installer code arms and disarms what it armed; here it never arms or disarms (de
 
 | Level | Arm | Disarm | Bypass | Chime | Walk test | Manage users |
 |---|---|---|---|---|---|---|
-| Installer (01) | no | no (ends a walk test) | yes (while disarmed) | yes | yes | everyone |
-| System master (02) | yes | yes | yes | yes | yes | everyone except 01 |
+| Installer (01) | no | no (ends a walk test) | yes (while disarmed) | yes | yes | everyone except 02 (whose empty slot it may fill at the handover) |
+| System master (02), the Owner | yes | yes | yes | yes | yes | everyone, 01 included (changes or removes it) |
 | Partition master | yes | yes | yes | yes | yes | standard/arm-only/guest/duress in own partitions; own code |
 | Standard | yes | yes | yes | yes | yes | no |
 | Arm only | yes | no | no | yes | no | no |
@@ -31,12 +31,22 @@ installer code arms and disarms what it armed; here it never arms or disarms (de
 
 Masters and the installer have access to every partition. Everyone else has a partition mask.
 
-**Setup mode** (installer mode, [14](../14-Configuration-and-Installer-Programming/README.md)) opens
-with the installer's code or the system master's: the system master is the Owner, and no code
-outranks the Owner (decided 2026-11-02). Never a partition master's, a duress code or anyone else's
-(CORE-PROG-001, 011). Inside it the system master programs what the installer does, the installer
-code included (set without the old one); the installer code, the factory codes and the power-up
-recovery are unchanged for now.
+**The Owner is the top authority** (decided 2026-11-02 and 2026-11-08): the system master is the
+Owner, and no code outranks the Owner.
+- **Setup mode** (installer mode, [14](../14-Configuration-and-Installer-Programming/README.md))
+  opens with the system master's code always, and with the installer's (the Admin's, in
+  alarm-server's words) while the Owner allows it: the Owner's setting "Let the installer code open
+  installer mode", on by default, changed only by the system master in installer mode at the panel
+  (CORE-PROG-001, 011, 014). Never a partition master's, a duress code or anyone else's.
+- Everything that was the installer's alone takes the system master too: the installer code once
+  more before a Z-Wave or Zigbee reset or a region change that drops devices, the Panel Manager's
+  keypads, Z-Wave, Zigbee, remote access, developer tools, backups, factory reset and older
+  firmware, a keypad's "Make it a stand-alone panel", clearing the event log's loss warning.
+- **No installer lockout**: the installer never changes or removes the Owner's code (it may make
+  one where there is none yet, at the handover), never gives the Owner a browser sign-in, and can't
+  change the Owner's own settings (the installer code's Setup mode, the power-up recovery). The
+  power-up recovery gives the panel back to the Owner: it sets a new master code, never an
+  installer code (CORE-USR-040, CORE-PROG-015).
 
 ## Requirements
 | ID | Requirement | Verified by |
@@ -51,6 +61,7 @@ recovery are unchanged for now.
 | USR-007 | Users can be added, changed and deleted from the touch UI, from classic keystrokes (`code + CODE + uu + new code + #`, `code + CODE + uu + # 0`) and over MQTT by an authorised code; a name or authority changes without a new code (`alarm_engine_user_update`) | `CORE-USR-007, 013, 021, 022`, preview; MQTT not built (left out of M5, BL-075) |
 | USR-008 | Each user has a name (<= 23 chars) shown in events | core |
 | USR-009 | Keyfob/keyswitch zones act as an assigned user | `CORE-USR-015, 016` |
+| USR-011 | The Owner is the top authority (the owner's decision of 2026-11-08), as in "The Owner is the top authority" above: the system master opens Setup mode and does everything the installer does, manages the installer's code, decides whether the installer's code opens Setup mode, and no installer can lock it out | `CORE-USR-040`, `CORE-PROG-001, 014, 015`, Panel Manager page tests, preview |
 
 ## Design
 - **Core**: `alarm_engine_user_set()`, `alarm_engine_user_delete()` and

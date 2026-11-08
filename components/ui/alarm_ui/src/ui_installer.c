@@ -30,6 +30,14 @@ static uint8_t part_index(void)
 
 /* ---- entering and leaving ------------------------------------------------------------------ */
 
+/* An Owner session (CORE-PROG-014, 015): installer mode opened here with the system master's
+ * code, or by the power-up recovery. Only it changes the Owner's own settings (the engine checks
+ * again: alarm_engine_set_config). */
+static bool owner_here(void)
+{
+    return S.program && (S.auth_user == ALARM_USER_MASTER || S.auth_user == 0u);
+}
+
 static void enter_program(uint8_t user, bool recovery)
 {
     (void)user;
@@ -43,7 +51,7 @@ static void enter_program(uint8_t user, bool recovery)
     memcpy(S.edit, S.cfg, sizeof(alarm_config_t));
     S.edit_dirty = false;
     if (recovery) {
-        ui_toast(TR("Installer mode without a code: set a new installer code"));
+        ui_toast(TR("Installer mode without a code: set a new master code"));
         ui_page_open(PAGE_CODES, 0);
     } else {
         ui_page_rebuild();
@@ -65,6 +73,13 @@ static void installer_checked(const ui_call_t *c)
         /* Only a real BAD_STATE means the alarm is busy; everything else keeps its own words.
          * "Disarm first" used to be shown for any failure that was not one of the first two,
          * so an unavailable hash told the owner to disarm an already disarmed panel (B001). */
+        /* CORE-PROG-014: the installer's own code, turned away by the Owner */
+        if (r == ALARM_ERR_NOT_AUTHORIZED && user == ALARM_USER_INSTALLER) {
+            /* TR: the code pad's hint after the installer code was refused because the owner
+             * turned its installer mode off. At most 95 bytes */
+            ui_pad_error(TR("The owner turned installer mode off for the installer code"));
+            return;
+        }
         ui_pad_error(r == ALARM_ERR_INVALID_CODE     ? TR("Wrong code, try again")
                      : r == ALARM_ERR_NOT_AUTHORIZED ? TR("That isn't the master or installer code")
                      : r == ALARM_ERR_BAD_STATE      ? TR("Disarm first, and silence any alarm")
@@ -117,8 +132,8 @@ static void ask_recovery(void *ctx)
 {
     (void)ctx;
     ui_confirm(TR("Open installer mode without the code?"),
-               TR("For a lost installer code, right after power-up only. It is logged and "
-                  "reported. Choose a new code next."),
+               TR("For a lost master code, right after power-up only. It is logged and "
+                  "reported. Choose a new master code next."),
                TR("Open installer mode"), recovery_confirmed);
 }
 
@@ -416,7 +431,7 @@ static void build_locked(lv_obj_t *body, char *note, size_t nlen)
         /* a row that opens the explanation, not a paragraph under the code button (BL-131) */
         /* TR: Installer, before the code: the row that says what to do about a lost code. At most
          * 47 bytes */
-        ui_row_link(body, UI_ICON_LIFE_BUOY, ui_tone_gray(), TR("Lost the installer code?"), NULL, NULL,
+        ui_row_link(body, UI_ICON_LIFE_BUOY, ui_tone_gray(), TR("Lost the master code?"), NULL, NULL,
                     UI_ICON_CHEVRON_RIGHT, open_lost_code, NULL);
     }
     ui_paragraph(body,
@@ -769,10 +784,16 @@ static void build_options(lv_obj_t *body, char *note, size_t nlen)
     ui_section(body, TR("Power"));
     ui_row_toggle(body, TR("Come back armed after a power cut"), TR("Otherwise the panel starts disarmed"),
                   o->power_up_previous_state, on_flag, (void *)(intptr_t)FLAG_POWER_UP_STATE);
-    ui_row_toggle(body, TR("Installer code recovery"),
-                  TR("For two minutes after power-up, Installer opens without the code. When off, "
-                  "a lost installer code can't be recovered"),
-                  o->power_up_program, on_flag, (void *)(intptr_t)FLAG_RECOVERY);
+    /* CORE-PROG-015: the Owner's own: only the master changes it, never the installer */
+    lv_obj_t *recovery = ui_row_toggle(
+        body, TR("Master code recovery"),
+        owner_here() ? TR("For two minutes after power-up, Installer opens without a code to set a "
+                          "new master code. When off, a lost master code can't be recovered")
+                     : TR("Only the master code changes this"),
+        o->power_up_program, on_flag, (void *)(intptr_t)FLAG_RECOVERY);
+    if (!owner_here()) {
+        ui_row_disable(recovery);
+    }
     ui_row_number(body, TR("Settling time"), TR("After power-up, zone alarms wait this long for the "
                                          "sensors to settle"),
                   o->power_up_settle_s, 0, 300, 10, UNIT_SECONDS, TR_C("setting value", "None"), on_number,
@@ -1906,30 +1927,68 @@ static void change_code(void *ctx)
                    new_code);
 }
 
+static void on_installer_setup(bool on, void *ctx)
+{
+    (void)ctx;
+    S.edit->opt.installer_setup_off = on ? 0u : 1u;
+    dirty();
+}
+
+/* One code row: its state under the title, and whether this session may set it (CORE-USR-040,
+ * CORE-PROG-015: the installer never changes the Owner's code but makes one where there is none
+ * yet; the power-up recovery sets the master code alone). */
+static void code_row(lv_obj_t *body, uint8_t user, bool may)
+{
+    const alarm_user_t *u = &S.cfg->users[user - 1u];
+    const bool none = u->authority == ALARM_AUTH_NONE;
+    const bool factory = (S.snap.default_codes & (user == ALARM_USER_INSTALLER
+                                                      ? ALARM_DEFAULT_CODE_INSTALLER
+                                                      : ALARM_DEFAULT_CODE_MASTER)) != 0u;
+    /* TR: Installer > codes, under a code row that is still a factory code of an older panel (no
+     * digits on the screen: those codes are public, BL-187). At most 40 bytes */
+    const char *detail = factory ? TR("Still the factory code")
+                         /* TR: Installer > codes, under a code row with no code yet. At most 40
+                          * bytes */
+                         : none ? TR_C("code state", "Not made yet")
+                                /* TR: Installer > codes, under a code row that has a code */
+                                : TR_C("code state", "Changed");
+    lv_obj_t *row = ui_row_link(body, UI_ICON_KEY_ROUND,
+                                factory || none ? ui_tone_amber() : ui_tone_green(),
+                                user == ALARM_USER_INSTALLER ? TR("Installer code")
+                                                             : TR("Master code"),
+                                detail, NULL, UI_ICON_CHEVRON_RIGHT, change_code,
+                                (void *)(uintptr_t)user);
+    if (!may) {
+        ui_row_disable(row);
+    }
+}
+
 static void build_codes(lv_obj_t *body, char *note, size_t nlen)
 {
     /* TR: the line under the page title. At most 127 bytes */
-    i18n_utf8_copy(note, nlen, TR("The two codes that can't be deleted"));
-    const bool inst_default = (S.snap.default_codes & ALARM_DEFAULT_CODE_INSTALLER) != 0u;
-    const bool master_default = (S.snap.default_codes & ALARM_DEFAULT_CODE_MASTER) != 0u;
-    char inst_text[48], master_text[48];
-    /* TR: Installer > codes, under a code row that is still the factory code (no digits on
-     * the screen: the factory codes are public, BL-187). At most 40 bytes */
-    const char *still = TR("Still the factory code");
-    /* TR: Installer > codes, under a code row that is no longer the factory code */
-    const char *changed = TR_C("code state", "Changed");
-    snprintf(inst_text, sizeof(inst_text), "%s", inst_default ? still : changed);
-    snprintf(master_text, sizeof(master_text), "%s", master_default ? still : changed);
-    ui_row_link(body, UI_ICON_KEY_ROUND, inst_default ? ui_tone_amber() : ui_tone_green(),
-                TR("Installer code"), inst_text, NULL, UI_ICON_CHEVRON_RIGHT, change_code,
-                (void *)(uintptr_t)ALARM_USER_INSTALLER);
-    ui_row_link(body, UI_ICON_KEY_ROUND, master_default ? ui_tone_amber() : ui_tone_green(),
-                TR("Master code"), master_text, NULL, UI_ICON_CHEVRON_RIGHT, change_code,
-                (void *)(uintptr_t)ALARM_USER_MASTER);
+    i18n_utf8_copy(note, nlen, TR("The owner's code and the installer's"));
+    const bool master_none = S.cfg->users[ALARM_USER_MASTER - 1u].authority == ALARM_AUTH_NONE;
+    const bool by_installer = S.auth_user == ALARM_USER_INSTALLER;
+    code_row(body, ALARM_USER_MASTER, !by_installer || master_none);
+    code_row(body, ALARM_USER_INSTALLER, S.auth_user != 0u);
+    /* CORE-PROG-014: the Owner's setting, changed only by the master code here */
+    lv_obj_t *t = ui_row_toggle(
+        body, TR("Let the installer code open installer mode"),
+        owner_here() ? TR("On: the installer can change settings. The master code always can")
+                     : TR("Only the master code changes this"),
+        S.edit->opt.installer_setup_off == 0u, on_installer_setup, NULL);
+    if (!owner_here()) {
+        ui_row_disable(t);
+    }
     ui_paragraph(body,
-                 TR("The installer code programs the panel; it never arms or disarms. The factory "
-                    "codes are public: anyone can look them up. Everyone else's code is managed in "
-                    "Settings > Users with the master code."),
+                 by_installer && master_none
+                     /* TR: Installer > codes, while a panel set up for someone else has no master
+                      * code yet. At most 191 bytes */
+                     ? TR("Hand the panel to the owner to make the master code: it arms, disarms "
+                          "and outranks every other code. You can't change it afterwards.")
+                     : TR("The master code is the owner's: it outranks every other code. The "
+                          "installer code programs the panel; it never arms or disarms. Everyone "
+                          "else's code, the installer's included, is in Settings > Users."),
                  ui_tone_gray());
 }
 
@@ -1962,7 +2021,7 @@ static void build_reset(lv_obj_t *body, char *note, size_t nlen)
     I18N_FORMAT(erase, sizeof(erase),
                 TR("Erases the zones, users and codes, Wi-Fi and every setting, then restarts "
                    "with the factory codes (installer {0}, master {1}) and the setup."),
-                NOTR(ALARM_DEFAULT_INSTALLER_CODE), NOTR(ALARM_DEFAULT_MASTER_CODE));
+                NOTR(ALARM_LEGACY_INSTALLER_CODE), NOTR(ALARM_LEGACY_MASTER_CODE));
     ui_paragraph(body, erase, ui_tone_gray());
     s_reset_log = false;
     ui_row_toggle(body, TR("Also erase the event log"), TR("Off keeps the history, with the reset in it"),
@@ -1978,11 +2037,12 @@ bool ui_installer_build(page_id_t id, int32_t arg, lv_obj_t *body, char *title, 
     if (id == PAGE_INSTALLER_LOST) { /* before the code, so open without it */
         (void)note;
         (void)nlen;
-        /* TR: Installer > Lost the installer code?, the page title. At most 47 bytes */
-        i18n_utf8_copy(title, tlen, TR("Lost the installer code?"));
+        /* TR: Installer > Lost the master code?, the page title. At most 47 bytes */
+        i18n_utf8_copy(title, tlen, TR("Lost the master code?"));
         ui_paragraph(body,
                      TR("Unplug the panel for ten seconds. For two minutes after it starts, "
-                        "Installer opens without the code (unless the installer turned that off)."),
+                        "Installer opens without a code to set a new master code (unless the owner "
+                        "turned that off)."),
                      ui_tone_gray());
         return true;
     }

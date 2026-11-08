@@ -189,15 +189,15 @@ static void test_partition_master_limits(void)
     EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, "4448", ALARM_LEVEL_STAY, 0));
 }
 
-/* CORE-USR-012: the installer programs every user - its own code, the system master's and the
- * household's (decided 2026-09-23). */
+/* CORE-USR-012: the installer programs every user - its own code and the household's (decided
+ * 2026-09-23) - but never the Owner's (CORE-USR-040, the owner's decision of 2026-11-08). */
 static void test_installer_sets_master_code(void)
 {
     const alarm_config_t *cfg = alarm_engine_config(&S.eng);
-    EXPECT_RESULT(ALARM_OK, user_set(CODE_INSTALLER, 2, "8888", ALARM_AUTH_MASTER, 0x01));
-    EXPECT_RESULT(ALARM_ERR_INVALID_CODE, sim_arm(&S, 1, CODE_MASTER, ALARM_LEVEL_STAY, 0));
-    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, "8888", ALARM_LEVEL_STAY, 0));
-    EXPECT_RESULT(ALARM_OK, sim_disarm(&S, 1, "8888"));
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  user_set(CODE_INSTALLER, 2, "8888", ALARM_AUTH_MASTER, 0x01));
+    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, CODE_MASTER, ALARM_LEVEL_STAY, 0));
+    EXPECT_RESULT(ALARM_OK, sim_disarm(&S, 1, CODE_MASTER));
     /* A household code, a new user and a partition master. */
     EXPECT_RESULT(ALARM_OK, user_set(CODE_INSTALLER, 3, "4444", ALARM_AUTH_STANDARD, 0x01));
     EXPECT_RESULT(ALARM_ERR_INVALID_CODE, sim_arm(&S, 1, CODE_USER, ALARM_LEVEL_STAY, 0));
@@ -208,10 +208,96 @@ static void test_installer_sets_master_code(void)
     TEST_ASSERT_EQUAL_UINT8(0x03, cfg->users[19].partitions);
     /* Still no second installer or system master, and the installer can't delete itself. */
     EXPECT_RESULT(ALARM_ERR_BAD_ARG, user_set(CODE_INSTALLER, 21, "4446", ALARM_AUTH_MASTER, 0x01));
-    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
                   alarm_engine_user_delete(&S.eng, &S.keypad, CODE_INSTALLER, 1, S.now));
     EXPECT_RESULT(ALARM_OK, alarm_engine_user_delete(&S.eng, &S.keypad, CODE_INSTALLER, 20, S.now));
     TEST_ASSERT_EQUAL_INT(ALARM_AUTH_NONE, cfg->users[19].authority);
+}
+
+/* CORE-USR-040: the Owner (system master) is the top authority (the owner's decision of
+ * 2026-11-08): it changes or removes the installer's code, and nobody removes the Owner's. The
+ * installer never changes the Owner's code, but makes one where there is none yet (the handover
+ * of a panel set up for someone else). */
+static void test_owner_manages_the_installer(void)
+{
+    const alarm_config_t *cfg = alarm_engine_config(&S.eng);
+    EXPECT_RESULT(ALARM_OK, user_set(CODE_MASTER, 1, "97531", ALARM_AUTH_INSTALLER, 0x01));
+    TEST_ASSERT_EQUAL_INT(ALARM_AUTH_INSTALLER, cfg->users[0].authority);
+    EXPECT_RESULT(ALARM_ERR_INVALID_CODE, sim_simple(&S, ALARM_CMD_CHIME, 1, CODE_INSTALLER));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_user_delete(&S.eng, &S.keypad, "97531", 2, S.now));
+    EXPECT_RESULT(ALARM_OK, alarm_engine_user_delete(&S.eng, &S.keypad, CODE_MASTER, 1, S.now));
+    TEST_ASSERT_EQUAL_INT(ALARM_AUTH_NONE, cfg->users[0].authority);
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_user_delete(&S.eng, &S.keypad, CODE_MASTER, 2, S.now));
+
+    /* A panel set up for someone else: the installer's code, no Owner yet. The installer makes
+     * the Owner's code at the handover, then can't change it. */
+    alarm_config_t c;
+    sim_config_basic(&c);
+    memset(&c.users[ALARM_USER_MASTER - 1u], 0, sizeof(c.users[0]));
+    sim_start(&S, &c, NULL);
+    cfg = alarm_engine_config(&S.eng);
+    EXPECT_RESULT(ALARM_OK, alarm_engine_program_enter(&S.eng, &S.keypad, CODE_INSTALLER, S.now,
+                                                       NULL));
+    EXPECT_RESULT(ALARM_OK, alarm_engine_program_set_code(&S.eng, &S.keypad, ALARM_USER_MASTER,
+                                                          "24680", S.now));
+    TEST_ASSERT_EQUAL_INT(ALARM_AUTH_MASTER, cfg->users[1].authority);
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  alarm_engine_program_set_code(&S.eng, &S.keypad, ALARM_USER_MASTER, "13579",
+                                                S.now));
+    alarm_engine_program_exit(&S.eng, &S.keypad, S.now);
+    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, "24680", ALARM_LEVEL_STAY, 0));
+}
+
+/* CORE-USR-041: no factory codes (the owner's decision of 2026-11-08). A panel with neither a
+ * master nor an installer code takes its first from whoever sets it up, at the panel only: the
+ * Owner's by default, the installer's for someone else's home; then never again. */
+static void test_first_code(void)
+{
+    alarm_config_t c;
+    alarm_config_defaults(&c);
+    for (unsigned i = 0; i < ALARM_CODE_SALT_LEN; i++) {
+        c.code_salt[i] = (uint8_t)(0x10u + i);
+    }
+    sim_start(&S, &c, NULL);
+    TEST_ASSERT_TRUE(alarm_engine_no_codes(&S.eng));
+    TEST_ASSERT_EQUAL_UINT8(0u, alarm_engine_default_codes(&S.eng));
+    EXPECT_RESULT(ALARM_ERR_INVALID_CODE, sim_arm(&S, 1, ALARM_LEGACY_MASTER_CODE, ALARM_LEVEL_STAY, 0));
+    EXPECT_RESULT(ALARM_ERR_INVALID_CODE,
+                  alarm_engine_program_enter(&S.eng, &S.keypad, ALARM_LEGACY_INSTALLER_CODE, S.now,
+                                             NULL));
+
+    const alarm_source_t pm = {ALARM_SRC_REMOTE, ALARM_SRC_ID_PANEL_MANAGER};
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  alarm_engine_first_code(&S.eng, &pm, ALARM_USER_MASTER, "24680", S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, alarm_engine_first_code(&S.eng, &S.keypad, 3, "24680", S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG,
+                  alarm_engine_first_code(&S.eng, &S.keypad, ALARM_USER_MASTER, "12", S.now));
+    EXPECT_RESULT(ALARM_OK,
+                  alarm_engine_first_code(&S.eng, &S.keypad, ALARM_USER_MASTER, "24680", S.now));
+    TEST_ASSERT_FALSE(alarm_engine_no_codes(&S.eng));
+    TEST_ASSERT_EQUAL_INT(ALARM_AUTH_MASTER, alarm_engine_config(&S.eng)->users[1].authority);
+    TEST_ASSERT_EQUAL_UINT8(0xFFu >> (8u - ALARM_MAX_PARTITIONS),
+                            alarm_engine_config(&S.eng)->users[1].partitions);
+    const alarm_event_t *ev = sim_last_report(&S, ALARM_EV_USER_CHANGED);
+    TEST_ASSERT_NOT_NULL(ev);
+    TEST_ASSERT_EQUAL_UINT8(0u, ev->user);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, ev->arg);
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  alarm_engine_first_code(&S.eng, &S.keypad, ALARM_USER_INSTALLER, "13579", S.now));
+    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, "24680", ALARM_LEVEL_STAY, 0));
+    EXPECT_RESULT(ALARM_OK, sim_disarm(&S, 1, "24680"));
+
+    /* Set up for someone else: the installer's first; the Owner's slot stays open. */
+    sim_start(&S, &c, NULL);
+    EXPECT_RESULT(ALARM_OK,
+                  alarm_engine_first_code(&S.eng, &S.keypad, ALARM_USER_INSTALLER, "13579", S.now));
+    TEST_ASSERT_EQUAL_INT(ALARM_AUTH_NONE, alarm_engine_config(&S.eng)->users[1].authority);
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  alarm_engine_first_code(&S.eng, &S.keypad, ALARM_USER_MASTER, "24680", S.now));
+    EXPECT_RESULT(ALARM_OK,
+                  alarm_engine_program_enter(&S.eng, &S.keypad, "13579", S.now, NULL));
 }
 
 /* CORE-USR-025: one rule for who manages whom, asked by the engine, the touchscreen and the
@@ -221,9 +307,11 @@ static void test_user_manages_rule(void)
     const alarm_config_t *cfg = alarm_engine_config(&S.eng);
     /* users: 1 installer, 2 master, 3 standard, 4 arm-only, 5 guest, 6 duress, 7 partition
      * master (partition 1), empty slots above */
+    /* The installer: everyone but the Owner; the Owner (system master): everyone, the installer
+     * included (CORE-USR-040, the owner's decision of 2026-11-08). */
     for (uint8_t t = 1; t <= 8; t++) {
-        TEST_ASSERT_TRUE(alarm_config_user_manages(cfg, 1, t));
-        TEST_ASSERT_EQUAL(t != 1, alarm_config_user_manages(cfg, 2, t));
+        TEST_ASSERT_EQUAL(t != 2, alarm_config_user_manages(cfg, 1, t));
+        TEST_ASSERT_TRUE(alarm_config_user_manages(cfg, 2, t));
     }
     TEST_ASSERT_TRUE(alarm_config_user_manages(cfg, 7, 7));
     TEST_ASSERT_TRUE(alarm_config_user_manages(cfg, 7, 3));
@@ -677,10 +765,12 @@ static void test_user_as_add_change_delete(void)
     TEST_ASSERT_EQUAL_INT(ALARM_AUTH_ARM_ONLY, cfg->users[7].authority);
     expect_by_pm(ALARM_EV_USER_UPDATED, ALARM_USER_MASTER, 8);
 
-    /* The installer changes the master's code (CORE-USR-012), as with the installer code. */
-    EXPECT_RESULT(ALARM_OK, as_set(ALARM_USER_INSTALLER, 2, "8642", ALARM_AUTH_STANDARD, 0x01));
-    TEST_ASSERT_EQUAL_INT(ALARM_AUTH_MASTER, cfg->users[1].authority);
-    expect_by_pm(ALARM_EV_USER_CHANGED, ALARM_USER_INSTALLER, 2);
+    /* The Owner changes the installer's code (CORE-USR-040); the installer never the Owner's. */
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  as_set(ALARM_USER_INSTALLER, 2, "8642", ALARM_AUTH_STANDARD, 0x01));
+    EXPECT_RESULT(ALARM_OK, as_set(ALARM_USER_MASTER, 1, "86420", ALARM_AUTH_STANDARD, 0x01));
+    TEST_ASSERT_EQUAL_INT(ALARM_AUTH_INSTALLER, cfg->users[0].authority);
+    expect_by_pm(ALARM_EV_USER_CHANGED, ALARM_USER_MASTER, 1);
 
     EXPECT_RESULT(ALARM_OK, as_delete(ALARM_USER_MASTER, 8));
     TEST_ASSERT_EQUAL_INT(ALARM_AUTH_NONE, cfg->users[7].authority);
@@ -733,11 +823,12 @@ static void test_user_as_follows_authority(void)
     sim_start(&S, &c, NULL);
     const alarm_config_t *cfg = alarm_engine_config(&S.eng);
 
+    /* The Owner manages the installer's code (CORE-USR-040); the installer never the Owner's. */
+    EXPECT_RESULT(ALARM_OK, as_set(ALARM_USER_MASTER, 1, "97531", ALARM_AUTH_INSTALLER, 0x01));
+    EXPECT_RESULT(ALARM_OK, as_update(ALARM_USER_MASTER, 1, ALARM_AUTH_INSTALLER, 0x01, "x"));
     EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
-                  as_set(ALARM_USER_MASTER, 1, "97531", ALARM_AUTH_INSTALLER, 0x01));
-    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
-                  as_update(ALARM_USER_MASTER, 1, ALARM_AUTH_INSTALLER, 0x01, "x"));
-    EXPECT_RESULT(ALARM_ERR_BAD_ARG, as_delete(ALARM_USER_MASTER, 1));
+                  as_update(ALARM_USER_INSTALLER, 2, ALARM_AUTH_MASTER, 0x01, "x"));
+    EXPECT_RESULT(ALARM_ERR_BAD_ARG, as_delete(ALARM_USER_INSTALLER, 2));
     EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, as_set(3, 9, "2468", ALARM_AUTH_STANDARD, 0x01));
     EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, as_update(3, 4, ALARM_AUTH_STANDARD, 0x01, "x"));
     EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, as_delete(3, 4));
@@ -857,8 +948,8 @@ static void test_min_length_policy_for_new_codes(void)
  * reports while they are still in use. */
 static void test_default_codes(void)
 {
-    TEST_ASSERT_EQUAL_STRING("69420", ALARM_DEFAULT_INSTALLER_CODE);
-    TEST_ASSERT_EQUAL_STRING("123456", ALARM_DEFAULT_MASTER_CODE);
+    TEST_ASSERT_EQUAL_STRING("69420", ALARM_LEGACY_INSTALLER_CODE);
+    TEST_ASSERT_EQUAL_STRING("123456", ALARM_LEGACY_MASTER_CODE);
     uint8_t user = 0;
     EXPECT_RESULT(ALARM_OK, alarm_engine_authenticate(&S.eng, &S.keypad, "69420", 0, S.now, &user));
     TEST_ASSERT_EQUAL_UINT8(ALARM_USER_INSTALLER, user);
@@ -923,8 +1014,11 @@ static void test_user_update_rules(void)
     EXPECT_RESULT(ALARM_ERR_INVALID_CODE,
                   user_update("8888", 3, ALARM_AUTH_STANDARD, 0x01, "x"));
 
-    /* The installer renames the master; slot 2 stays the system master. */
-    EXPECT_RESULT(ALARM_OK, user_update(CODE_INSTALLER, 2, ALARM_AUTH_STANDARD, 0x01, "Homeowner"));
+    /* The installer never changes the Owner's entry (CORE-USR-040); the Owner renames itself,
+     * and slot 2 stays the system master. */
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  user_update(CODE_INSTALLER, 2, ALARM_AUTH_STANDARD, 0x01, "Homeowner"));
+    EXPECT_RESULT(ALARM_OK, user_update(CODE_MASTER, 2, ALARM_AUTH_STANDARD, 0x01, "Homeowner"));
     TEST_ASSERT_EQUAL_STRING("Homeowner", cfg->users[1].name);
     TEST_ASSERT_EQUAL_INT(ALARM_AUTH_MASTER, cfg->users[1].authority);
     /* ...and changes household users too (CORE-USR-012). */
@@ -1045,7 +1139,7 @@ static void test_failed_program_hash_keeps_old_code(void)
 {
     enable_hash_faults();
     EXPECT_RESULT(ALARM_OK,
-                  alarm_engine_program_enter(&S.eng, &S.keypad, CODE_INSTALLER, S.now, NULL));
+                  alarm_engine_program_enter(&S.eng, &S.keypad, CODE_MASTER, S.now, NULL));
     const alarm_user_t old = S.eng.cfg.users[ALARM_USER_MASTER - 1u];
     hash_fail_after = 1;
     EXPECT_RESULT(ALARM_ERR_UNAVAILABLE,
@@ -1265,6 +1359,8 @@ int main(void)
     RUN_TEST(test_standard_user_cannot_add_users);
     RUN_TEST(test_partition_master_limits);
     RUN_TEST(test_installer_sets_master_code);
+    RUN_TEST(test_owner_manages_the_installer);
+    RUN_TEST(test_first_code);
     RUN_TEST(test_user_manages_rule);
     RUN_TEST(test_user_delete);
     RUN_TEST(test_authenticate_api);

@@ -2287,6 +2287,17 @@ static bool private_authority(uint8_t user)
     return a == ALARM_AUTH_MASTER || a == ALARM_AUTH_INSTALLER || a == ALARM_AUTH_PARTITION_MASTER;
 }
 
+/* LOG-010: who clears the lost-events warning: the installer, and the system master (no code
+ * outranks the Owner: the owner's decision of 2026-11-08). */
+static bool clears_loss(uint8_t user)
+{
+    if (user == 0u || user > ALARM_MAX_USERS) {
+        return false;
+    }
+    const alarm_authority_t a = S.cfg->users[user - 1u].authority;
+    return a == ALARM_AUTH_INSTALLER || a == ALARM_AUTH_MASTER;
+}
+
 static bool private_shown(void)
 {
     return !S.locked && private_authority(s_priv_user);
@@ -2327,8 +2338,9 @@ static void activity_more_click(lv_event_t *e)
 static void activity_clear_loss_click(lv_event_t *e)
 {
     (void)e;
-    /* Only the installer code (docs/features/14); checked again here, not only when drawn. */
-    if (private_shown() && S.cfg->users[s_priv_user - 1u].authority == ALARM_AUTH_INSTALLER &&
+    /* Only the installer or system master code (docs/features/14); checked again here, not only
+     * when drawn. */
+    if (private_shown() && clears_loss(s_priv_user) &&
         S.be.log_clear_loss != NULL) {
         S.be.log_clear_loss(S.be.ctx);
     }
@@ -2440,14 +2452,14 @@ static void activity_loss_rows(void)
     if (S.be.log_clear_loss == NULL) {
         return;
     }
-    if (S.cfg->users[s_priv_user - 1u].authority == ALARM_AUTH_INSTALLER) {
+    if (clears_loss(s_priv_user)) {
         /* TR: Activity, the button that clears the warning above */
         lv_obj_t *b = row_button_create(S.event_list, UI_ICON_CHECK, TR("Clear the warning"),
                                         ui_tone_blue());
         lv_obj_add_event_cb(b, activity_clear_loss_click, LV_EVENT_CLICKED, NULL);
     } else {
         /* TR: Activity, under the warning: who can clear it. At most 127 bytes */
-        ui_paragraph(S.event_list, TR("Only the installer code clears this warning."),
+        ui_paragraph(S.event_list, TR("Only the master or installer code clears this warning."),
                      ui_tone_gray());
     }
 }

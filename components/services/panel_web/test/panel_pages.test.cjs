@@ -116,7 +116,8 @@ test('the panel refuses what a role cannot open at the panel', async () => {
   // tools stay the installer's.
   for (const p of ['alarm', 'sources', 'binding/1'])
     assert.equal((await get('master', p)).status, 200, `the master can't read ${p}`);
-  assert.equal((await get('master', 'developer/logs')).status, 403, 'the master reads developer/logs');
+  // Developer tools too: no code outranks the Owner (the owner's decision of 2026-11-08).
+  assert.equal((await get('master', 'developer/logs')).status, 200, 'the master can\'t read developer/logs');
   for (const p of ['people', 'config/network', 'config/mqtt', 'home_assistant'])
     assert.equal((await get('standard', p)).status, 403, `a standard user reads ${p}`);
   assert.equal((await get('partition', 'config/mqtt')).status, 403, 'a partition master reads the integrations');
@@ -125,10 +126,11 @@ test('the panel refuses what a role cannot open at the panel', async () => {
   // The zone list shows the panel's own words, and only the viewer's partitions.
   const zones = await (await get('standard', 'zone-status')).json();
   assert.ok(zones.zones.length > 0 && zones.zones.every(z => z.partition === 1 && z.words && z.name !== undefined));
-  // Changes: the remote switches and enrolment need the installer, and (when due) their own password (WEB-016, BL-135).
+  // Changes: the remote switches and enrolment need the installer or the system master (the owner's decision of
+  // 2026-11-08), and (when due) their own password (WEB-016, BL-135).
   const post = (who, p, body) => fetch(servers[who].base + '/api/v1/' + p, {method: 'POST',
     headers: {'Content-Type': 'application/json', 'X-Panel-CSRF': 'auto'}, body: JSON.stringify(body)});
-  assert.equal((await post('master', 'remote', {web: true, developer: true, me_password: 'correct horse battery'})).status, 403);
+  assert.equal((await post('partition', 'remote', {web: true, developer: true, me_password: 'correct horse battery'})).status, 403);
   await confirmation('installer', false);
   const noPassword = await post('installer', 'remote', {web: true, developer: true});
   assert.equal(noPassword.status, 403, 'no password, no change');
@@ -154,8 +156,10 @@ test('the panel refuses what a role cannot open at the panel', async () => {
   assert.equal((await get('partition', 'updates')).status, 403);
   assert.equal((await get('standard', 'updates')).status, 403);
   assert.equal((await post('partition', 'updates', {action: 'check'})).status, 403);
-  assert.equal((await post('master', 'updates', {action: 'channel', channel: 'beta'})).status, 403, 'the channel is the installer’s');
-  assert.equal((await post('master', 'updates', {action: 'server_check', domain: 'example.net'})).status, 403);
+  // The channel and the server: the installer's and the system master's (the owner's decision of 2026-11-08)
+  assert.equal((await post('partition', 'updates', {action: 'channel', channel: 'beta'})).status, 403, 'the channel is the installer’s');
+  assert.equal((await post('partition', 'updates', {action: 'server_check', domain: 'example.net'})).status, 403);
+  assert.equal((await post('master', 'updates', {action: 'server_check', domain: 'example.net'})).status, 200, 'the master can\'t check a server');
 });
 
 // docs/features/36 screens.md §11 (ZW-024): the Z-Wave page is the installer's; a code is checked
@@ -164,7 +168,9 @@ test('Z-Wave: the installer registers sensors by their code; their PIN stays on 
   const get = who => fetch(servers[who].base + '/api/v1/zwave');
   const post = (who, body) => fetch(servers[who].base + '/api/v1/zwave', {method: 'POST',
     headers: {'Content-Type': 'application/json', 'X-Panel-CSRF': 'auto'}, body: JSON.stringify(body)});
-  for (const who of ['master', 'partition', 'standard']) {
+  // The system master's too (the owner's decision of 2026-11-08); nobody below.
+  assert.equal((await get('master')).status, 200, 'the master can\'t read the Z-Wave page');
+  for (const who of ['partition', 'standard']) {
     assert.equal((await get(who)).status, 403, `the ${who} reads the Z-Wave page`);
     assert.equal((await post(who, {action: 'register', code: '12345-23456-34567-45678-56789-01234-12345-23456'})).status, 403);
   }
@@ -201,7 +207,7 @@ test('Z-Wave: the installer adds a device with its PIN typed in the browser, and
     }
     assert.fail(`never reached ${step}`);
   };
-  assert.equal((await post('master', {action: 'add'})).status, 403, 'the master started an add');
+  assert.equal((await post('partition', {action: 'add'})).status, 403, 'a partition master started an add');
   const before = (await get()).devices.length;
   assert.equal(await result({action: 'add'}), 'ok');
   assert.equal(await result({action: 'remove'}), 'busy', 'two operations at once');
@@ -590,7 +596,9 @@ test('backup: the installer downloads an encrypted file and restores it', async 
   const post = (who, body) => fetch(base(who), {method: 'POST',
     headers: {'Content-Type': 'application/json', 'X-Panel-CSRF': 'auto'}, body: JSON.stringify(body)});
   await confirmation('installer', false);
-  assert.equal((await post('master', {password: 'Harbor House 2026', me_password: 'correct horse battery'})).status, 403, 'the master downloads a backup');
+  assert.equal((await post('partition', {password: 'Harbor House 2026', me_password: 'correct horse battery'})).status, 403, 'a partition master downloads a backup');
+  // The system master's too (the owner's decision of 2026-11-08).
+  assert.equal((await post('master', {password: 'Harbor House 2026', me_password: 'correct horse battery'})).status, 200, 'the master can\'t download a backup');
   assert.equal((await post('installer', {password: 'Harbor House 2026'})).status, 403, 'no password');
   assert.equal((await post('installer', {password: 'Harbor House 2026', me_password: 'correct horse battery'})).status, 403, 'someone else’s password');
   assert.equal((await post('installer', {password: 'short', me_password: 'installer password'})).status, 400, 'a password under 8 characters');
@@ -607,7 +615,7 @@ test('backup: the installer downloads an encrypted file and restores it', async 
   const put = (who, body, password, mePassword) => fetch(base(who), {method: 'PUT', body,
     headers: {'Content-Type': 'application/octet-stream', 'X-Panel-CSRF': 'auto', 'X-Backup-Password': hex(password),
       ...(mePassword ? {'X-Panel-Password': hex(mePassword)} : {})}});
-  assert.equal((await put('master', file, 'Harbor House 2026', 'correct horse battery')).status, 403, 'the master restores');
+  assert.equal((await put('partition', file, 'Harbor House 2026', 'correct horse battery')).status, 403, 'a partition master restores');
   await confirmation('installer', false);
   const bare = await put('installer', file, 'Harbor House 2026');
   assert.equal(bare.status, 403);
@@ -3343,8 +3351,10 @@ async function withZb(who, extra, run) {
 const zbPost = (a, body) => a.post('zigbee', body).then(async r => [r.status, await r.json()]);
 
 // ZB-025: the page and its API are the installer's alone; a device is read by its registry id.
-test('Zigbee: the installer reads the radio, the devices and a device’s page; nobody else (ZB-025)', async () => {
-  for (const who of ['master', 'partition', 'standard']) {
+test('Zigbee: the installer and the system master read the radio, the devices and a device’s page; nobody else (ZB-025)', async () => {
+  // The system master's too (the owner's decision of 2026-11-08); nobody below.
+  assert.equal((await fetch(servers.master.base + '/api/v1/zigbee')).status, 200, 'the master can\'t read the Zigbee page');
+  for (const who of ['partition', 'standard']) {
     assert.equal((await fetch(servers[who].base + '/api/v1/zigbee')).status, 403, `the ${who} reads the Zigbee page`);
     assert.equal((await api(servers[who].base).post('zigbee', {op: 'add'})).status, 403, `the ${who} adds a Zigbee device`);
   }
@@ -5030,8 +5040,10 @@ for (const headless of [false, true]) test(`BL-048: configured lists and enrollm
     assert.equal((await a.get('keypads')).keypads.length, 1);
   });
 });
-test('BL-048: keypad management is installer-only and locked while armed', async () => {
-  for (const role of ['master', 'partition', 'standard']) {
+test('BL-048: keypad management is the installer\'s and the system master\'s, and locked while armed', async () => {
+  // The system master's too since the owner's decision of 2026-11-08.
+  assert.equal((await fetch(servers.master.base + '/api/v1/keypads')).status, 200);
+  for (const role of ['partition', 'standard']) {
     assert.equal((await fetch(servers[role].base + '/api/v1/keypads')).status, 403);
     assert.equal((await api(servers[role].base).post('keypads', {op: 'start', attempt: '0123456789abcdef0123456789abcdef'})).status, 403);
   }

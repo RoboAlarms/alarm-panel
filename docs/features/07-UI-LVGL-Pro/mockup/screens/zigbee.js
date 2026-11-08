@@ -364,7 +364,7 @@ page({id: 'zigbee-reset-again', shot: 'bl-144-reset-again', title: 'Reset the Zi
 page({id: 'zigbee-reset-code', shot: 'bl-144-reset-code', title: 'Reset the Zigbee network: the installer code again',
   notes: 'Only the installer code is taken; a master or user code is refused like a wrong one, and wrong codes count toward the lockout.'},
 () => zigbeePage('working'),
-{over: () => M.modal_pad({title: 'Confirm the reset', tone: 'red', glyph: 'rotate-ccw', hint: 'Enter the installer code once more', digits: 3})});
+{over: () => M.modal_pad({title: 'Confirm the reset', tone: 'red', glyph: 'rotate-ccw', hint: 'Enter the master or installer code once more', digits: 3})});
 
 // ================================ 10: install codes waiting ================================
 const codesBody = () => ({title: 'Install codes waiting', note: 'They may join whenever the panel listens', back: 'zigbee', body: [
@@ -405,7 +405,7 @@ page({id: 'zigbee-zone-edit', shot: 'bl-144-zone-edit', title: 'A zone with a Zi
 // Troubles is a rail view, not a settings page: its own frame.
 M.screen({
   id: 'zigbee-troubles', area: AREA, title: 'Troubles: the radio\'s trouble opens its page', shot: 'bl-144-troubles',
-  notes: '"Sensor radio problem" is the one trouble every sensor radio shares (sensor_radio). Tapped in installer mode, it opens the page of the radio that has the problem: here the Zigbee page, not answering. Outside installer mode it opens the locked Installer page with the toast "Enter the installer code to see the radio"; once the code is taken the Zigbee page follows (looking needs installer mode, built so). Its second line says it can be tapped. Nothing else on Troubles changes.',
+  notes: '"Sensor radio problem" is the one trouble every sensor radio shares (sensor_radio). Tapped in installer mode, it opens the page of the radio that has the problem: here the Zigbee page, not answering. Outside installer mode it opens the locked Installer page with the toast "Enter the master or installer code to see the radio"; once the code is taken the Zigbee page follows (looking needs installer mode, built so). Its second line says it can be tapped. Nothing else on Troubles changes.',
   render: () => M.main({view: 'troubles', tone: 'amber', rail: {zones: 1, troubles: 2}, bar: {time: '10:48', troubles: 2}, content: `<div class="view column">
     <div class="row">${M.view_header({title: 'Troubles', note: '2 active'})}${M.button('Acknowledge', '', 'check')}</div><div class="list scroll">
       <div data-go="zigbee-not-answering">${M.trouble_row({glyph: 'radio-tower', title: 'Sensor radio problem', detail: 'Wireless sensors may not be heard · Tap to see the radio'})}</div>

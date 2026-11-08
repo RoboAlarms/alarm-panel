@@ -937,15 +937,16 @@ static int cmd_ntp(int argc, char **argv)
     return err == ESP_OK ? 0 : 1;
 }
 
-/* F2 (reset_policy.h): not while anything is armed, counting or sounding, only with the installer
- * code, never the event log; without a running engine (storage unreadable), the way out. */
+/* F2 (reset_policy.h): not while anything is armed, counting or sounding, only with the system
+ * master's or the installer's code (the owner's decision of 2026-11-08), never the event log;
+ * without a running engine (storage unreadable), the way out. */
 static int cmd_factory_reset(int argc, char **argv)
 {
     if (argc < 2 || strcmp(argv[1], "confirm") != 0) {
-        printf("erases zones, users, codes, Wi-Fi and preferences, then restarts with the\n"
-               "factory codes and the setup wizard. Needs the installer code, everything\n"
+        printf("erases zones, users, codes, Wi-Fi and preferences, then restarts with no\n"
+               "codes and the setup wizard. Needs the master or installer code, everything\n"
                "disarmed and quiet; the event log stays:\n"
-               "  factory_reset confirm <installer code>\n");
+               "  factory_reset confirm <master or installer code>\n");
         return 1;
     }
     const bool erase_log = argc > 2 && strcmp(argv[2], "log") == 0;
@@ -967,7 +968,7 @@ static int cmd_factory_reset(int argc, char **argv)
             alarm_authority_t authority = ALARM_AUTH_NONE;
             installer = alarm_service_authenticate_as(&SRC, argv[2], 0, &user, &authority) ==
                             ALARM_OK &&
-                        authority == ALARM_AUTH_INSTALLER;
+                        (authority == ALARM_AUTH_INSTALLER || authority == ALARM_AUTH_MASTER);
         }
     }
     const char *why = reset_policy_refusal(running, locked, installer, erase_log);

@@ -83,7 +83,11 @@ rework after it.
 ## Browser = panel (WEB-016)
 
 Every API path has one entry in `panel_web.c`'s table ("who may use what"), checked before its
-handler runs; anything not listed is the installer's (fail closed). The levels are docs/features/14's:
+handler runs; anything not listed is the installer level's (fail closed). The levels are
+docs/features/14's. Since the owner's decision of 2026-11-08 the installer level is the system
+master's too (`sets_up()`), but the browser still shows the Installer pages to the installer alone
+(`status.access.installer`; `access.setup` says what the server takes) until the pages for the Owner
+are approved (WEB-026; the proposal is `mockup/proposals/BL-090-owner-installer-pages.js`):
 
 | Level | Who | Paths (GET / POST) |
 |---|---|---|
@@ -91,7 +95,7 @@ handler runs; anything not listed is the installer's (fail closed). The levels a
 | users | installer, system or partition master | `people` (the users you see; changes as yourself, no code, never by a workstation's grant: the engine applies your authority, CORE-USR-028) |
 | shared | the same | `walk-test` (the walk test page's list) and `partition`'s `walk_test_start` and `walk_test_extend` (docs/features/40), `config/display` changes with `lang` or `region`, `languages` (install a pack, remove, download), `config/network`, `wifi`, `wifi-scan`, `network-check`, `time` changes |
 | system | system master, installer | integrations (`config/mqtt|ntfy|pushover`, `home_assistant`, notification test/status, ntfy topic, certificate authorities), SD card actions, `PUT voices` (the body is a signed `.robovoice`, 8192 to 970752 bytes in whole 4096-byte blocks, else `too_big` before it is read; never while armed or in alarm: `armed`; every answer is `{result}`: `ok`, `too_big`, `bad_signature`, `armed`, `busy`, `not_allowed`, or the language upload's `no_space`, `flash`, `off`; installing never changes the Announcements switches, AUD-029; the body is received and installed by one upload task of its own, never the HTTPS worker, so arming, disarming and the Remote keypad answer during a slow upload, and the sign-in is checked again before installing), `updates` (the status, check, install and stop; the update server and the channel are the installer's), `automations` and `automations/devices` (docs/features/41: the rules, the pickers and their edits; a POST as yourself, never by a workstation's grant, and not while armed); a `config/mqtt` change to `allow_panic` is the installer's (BL-107) |
-| installer | installer | `alarm` (as the signed-in installer, CORE-PROG-011), `sources`, `binding/N`, `zone-sources`, sensor search/listen, `installer-code`, `factory-reset` (+ a recent password), `backup` (+ a recent password), `remote` (+ a recent password), developer logs, enrolment (+ a recent password), signed upload |
+| installer | system master (the Owner, the owner's decision of 2026-11-08), and the installer while the Owner lets the installer code open installer mode (CORE-PROG-014, `alarm_service_installer_sets_up()`) | `alarm` (as the signed-in person, CORE-PROG-011), `sources`, `binding/N`, `zone-sources`, sensor search/listen, `installer-code`, `factory-reset` (+ a recent password), `backup` (+ a recent password), `remote` (+ a recent password), developer logs, enrolment (+ a recent password), signed upload |
 
 - **Recent password** (OWASP ASVS 5.0 V7.5; decided 2026-10-02): before what lets a computer in
   for good, carries every secret away or can't be undone - `remote` (the Web server and
@@ -222,8 +226,9 @@ planned backup/restore are not presented as implemented options.
 
 The authority column is the first delivery's; the per-path table in
 "Browser = panel" (WEB-016) decides: display and sound are open to anyone signed in; network and time to a partition master too; integrations, the SD card and
-Software updates to the system master and the installer, with the update server and the channel the
-installer's alone (OTA-022); a signed file upload to the installer alone.
+Software updates to the system master and the installer, with the update server and the channel
+the installer level's (OTA-022; shown to the installer alone until the Owner's pages are approved);
+a signed file upload to the installer level.
 
 | Area | Browser/API coverage | Authority and persistence |
 |---|---|---|

@@ -429,7 +429,7 @@ static void house(alarm_config_t *cfg, const uint8_t salt[ALARM_CODE_SALT_LEN])
         alarm_zone_config_defaults(&cfg->zones[i], (uint16_t)(i + 1u), zones[i].type, 1u);
         snprintf(cfg->zones[i].name, sizeof(cfg->zones[i].name), "%s", zones[i].name);
     }
-    alarm_config_set_default_users(cfg, m_hash, NULL); /* 01 installer, 02 master */
+    alarm_config_set_legacy_users(cfg, m_hash, NULL); /* 01 installer, 02 master */
     uint8_t h[ALARM_CODE_HASH_LEN];
     m_hash(NULL, cfg->code_salt, "1111", h);
     alarm_config_set_user(cfg, 3u, ALARM_AUTH_STANDARD, 0x01u, "Alex", h);

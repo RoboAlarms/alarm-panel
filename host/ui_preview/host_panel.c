@@ -3073,7 +3073,7 @@ void host_panel_init(int64_t epoch_ms_at_start)
     for (unsigned i = 0; i < ALARM_CODE_SALT_LEN; i++) {
         cfg.code_salt[i] = (uint8_t)(0x5Au ^ i);
     }
-    alarm_config_set_default_users(&cfg, preview_hash, NULL);
+    alarm_config_set_legacy_users(&cfg, preview_hash, NULL);
     snprintf(cfg.partitions[0].name, ALARM_NAME_LEN, "Home");
     cfg.opt.power_up_settle_s = 0;
     demo_zone(&cfg, 1, ALARM_ZT_ENTRY_EXIT_1, ALARM_DEVCLASS_DOOR, "Front Door");
@@ -5652,8 +5652,8 @@ static void zb_demo_bind(uint16_t zone, zsrc_address_t addr, uint8_t device_clas
     after();
 }
 
-/* ZB-017: the reset's installer code, checked by the engine (a wrong one counts toward the
- * keypad's lockout); any code that isn't the installer's is wrong. */
+/* ZB-017: the reset's master or installer code, checked by the engine (a wrong one counts toward
+ * the keypad's lockout); any other code is wrong. */
 static host_zb_code_t zb_demo_code(const char *code)
 {
     uint8_t user = 0;
@@ -5662,7 +5662,9 @@ static host_zb_code_t zb_demo_code(const char *code)
     if (r == ALARM_ERR_LOCKED_OUT) {
         return HOST_ZB_CODE_LOCKED;
     }
-    return r == ALARM_OK && user == ALARM_USER_INSTALLER ? HOST_ZB_CODE_OK : HOST_ZB_CODE_WRONG;
+    return r == ALARM_OK && (user == ALARM_USER_INSTALLER || user == ALARM_USER_MASTER)
+               ? HOST_ZB_CODE_OK
+               : HOST_ZB_CODE_WRONG;
 }
 
 static uint32_t zb_demo_now_s(void)

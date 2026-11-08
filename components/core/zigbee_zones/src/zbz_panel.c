@@ -2945,7 +2945,10 @@ void zbz_panel_replace_gated(zbz_panel_t *p, uint64_t now, const zbz_gate_port_t
 ui_zb_req_result_t zbz_reset_code_result(alarm_result_t r, alarm_authority_t authority)
 {
     if (r == ALARM_OK) {
-        return authority == ALARM_AUTH_INSTALLER ? UI_ZB_REQ_OK : UI_ZB_REQ_WRONG_CODE;
+        /* the installer's or the system master's: no code outranks the Owner (2026-11-08) */
+        return authority == ALARM_AUTH_INSTALLER || authority == ALARM_AUTH_MASTER
+                   ? UI_ZB_REQ_OK
+                   : UI_ZB_REQ_WRONG_CODE;
     }
     return r == ALARM_ERR_LOCKED_OUT ? UI_ZB_REQ_LOCKED_OUT : UI_ZB_REQ_WRONG_CODE;
 }

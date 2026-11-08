@@ -353,7 +353,8 @@ uint64_t zbz_panel_next_deadline(const zbz_panel_t *p);
 ui_zb_req_result_t zbz_panel_request(zbz_panel_t *p, uint64_t now, const ui_zb_request_t *req,
                                      bool allowed);
 /* The request result for the engine's answer to RESET's installer code (ZB-017), `authority`
- * being the code's user's: OK only for ALARM_OK from the installer (ALARM_AUTH_INSTALLER - a
+ * being the code's user's: OK only for ALARM_OK from the installer or the system master
+ * (ALARM_AUTH_INSTALLER, ALARM_AUTH_MASTER: the owner's decision of 2026-11-08 - a partition
  * master's or anyone else's valid code is WRONG_CODE), LOCKED_OUT for ALARM_ERR_LOCKED_OUT,
  * WRONG_CODE for everything else (an empty code included). Pure. */
 ui_zb_req_result_t zbz_reset_code_result(alarm_result_t r, alarm_authority_t authority);

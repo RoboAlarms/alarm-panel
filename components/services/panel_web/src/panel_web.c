@@ -342,10 +342,17 @@ typedef enum {
     ACC_USERS,     /* manages users: the installer, a system or partition master */
     ACC_SHARED,    /* Wi-Fi, time, software updates: a system or partition master, the installer */
     ACC_SYSTEM,    /* integrations, SD card, update source: the system master or the installer */
-    ACC_SETUP,     /* Setup mode's programming: the installer and the system master (the Owner,
-                    * whom no code outranks: CORE-PROG-001) */
-    ACC_INSTALLER, /* remote access, developer tools, the update server, factory reset */
+    ACC_INSTALLER, /* installer programming (Setup mode), keypads, Z-Wave, Zigbee, remote access,
+                    * developer tools, the update server, factory reset: sets_up() */
 } access_t;
+/* Who may do what installer mode (Setup mode) does: the system master - the Owner, whom no code
+ * outranks (CORE-PROG-001; the owner's decisions of 2026-11-02 and 2026-11-08) - always, and the
+ * installer while the Owner lets the installer code open it (CORE-PROG-014). */
+static bool sets_up(alarm_authority_t a)
+{
+    return a == ALARM_AUTH_MASTER ||
+           (a == ALARM_AUTH_INSTALLER && alarm_service_installer_sets_up());
+}
 static bool allowed(alarm_authority_t a, access_t need)
 {
     switch (need) {
@@ -355,24 +362,12 @@ static bool allowed(alarm_authority_t a, access_t need)
         return a == ALARM_AUTH_INSTALLER || a == ALARM_AUTH_MASTER ||
                a == ALARM_AUTH_PARTITION_MASTER;
     case ACC_SYSTEM: return a == ALARM_AUTH_INSTALLER || a == ALARM_AUTH_MASTER;
-    case ACC_SETUP: return a == ALARM_AUTH_INSTALLER || a == ALARM_AUTH_MASTER;
-    default: return a == ALARM_AUTH_INSTALLER;
+    default: return sets_up(a);
     }
 }
 static bool is(const char *path, const char *name)
 {
     return !strcmp(path, name);
-}
-/* What installer mode (Setup mode) programs, the pages alarm-server's Setup mode reaches too:
- * the alarm's settings, zones and their sensors, the installer and master codes. The engine
- * enters installer mode as the signed-in person for each change (CORE-PROG-011), which takes the
- * installer or the system master. Keypads, Z-Wave and Zigbee stay the installer's here (BL-048,
- * and their resets' installer code once more: ZW-045, ZB-017). */
-static bool setup_path(const char *path)
-{
-    return is(path, "alarm") || is(path, "sources") || is(path, "sources/learn") ||
-           is(path, "sources/search") || is(path, "zone-sources") || is(path, "installer-code") ||
-           !strncmp(path, "binding/", 8);
 }
 /* The partitions a signed-in user sees: every one for the installer and the system master,
  * their own for anyone else (as a keypad in their partition would show). false: no memory to
@@ -421,9 +416,7 @@ static access_t get_access(const char *path)
     /* server-link: Integrations > RoboAlarms, its state and the remote ceiling (docs/features/43) */
     if (is(path, "server-link"))
         return ACC_SYSTEM;
-    if (setup_path(path))
-        return ACC_SETUP;
-    return ACC_INSTALLER; /* zwave, zigbee, developer/logs and anything new */
+    return ACC_INSTALLER; /* alarm, sources, binding/N, zwave, zigbee, developer/logs, anything new */
 }
 static access_t post_access(const char *path, const cJSON *o)
 {
@@ -475,8 +468,6 @@ static access_t post_access(const char *path, const cJSON *o)
         return ACC_SYSTEM;
     if (is(path, "server-link")) /* Unlink: the system master's, with the password again */
         return ACC_SYSTEM;
-    if (setup_path(path))
-        return ACC_SETUP;
     return ACC_INSTALLER;
 }
 /* While a partition is armed (from its exit time on) or an alarm sounds, nothing changes - as
@@ -1419,6 +1410,8 @@ static esp_err_t updates_get(httpd_req_t *r, alarm_authority_t authority)
     } *v = web_alloc(sizeof(*v));
     if (!v)
         return error(r, "503 Service Unavailable", "Memory busy");
+    /* The update server and channel: shown to the installer alone until the Owner's pages are
+     * approved (WEB-026); POST updates takes the system master too (post_access). */
     const bool installer = authority == ALARM_AUTH_INSTALLER;
     panel_ota_get_status(&v->st);
     const panel_ota_status_t *st = &v->st;
@@ -1810,8 +1803,12 @@ static cJSON *status(session_t *s, alarm_authority_t authority)
     cJSON_AddBoolToObject(access, "users", allowed(authority, ACC_USERS));
     cJSON_AddBoolToObject(access, "shared", allowed(authority, ACC_SHARED));
     cJSON_AddBoolToObject(access, "system", allowed(authority, ACC_SYSTEM));
-    cJSON_AddBoolToObject(access, "setup", allowed(authority, ACC_SETUP));
-    cJSON_AddBoolToObject(access, "installer", allowed(authority, ACC_INSTALLER));
+    /* setup: the installer's pages may be used (the server checks each request). installer: the
+     * browser shows them - still the installer alone until the pages for the Owner are approved
+     * (docs/features/31 mockup, WEB-026). */
+    cJSON_AddBoolToObject(access, "setup", allowed(authority, ACC_INSTALLER));
+    cJSON_AddBoolToObject(access, "installer",
+                          authority == ALARM_AUTH_INSTALLER && allowed(authority, ACC_INSTALLER));
     /* Arming and disarming: never the installer's (BL-187), anyone else's who has a code. */
     cJSON_AddBoolToObject(access, "arm",
                           authority != ALARM_AUTH_NONE && authority != ALARM_AUTH_INSTALLER);
@@ -2993,7 +2990,7 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
         /* Programming as the signed-in installer or system master, without a code
          * (CORE-PROG-011): the engine enters installer mode as this user, read again on the
          * alarm task. */
-        if (!allowed(authority, ACC_SETUP))
+        if (!allowed(authority, ACC_INSTALLER))
             return error(r, "403 Forbidden", "not_allowed");
         alarm_snapshot_t *snap = web_alloc(sizeof(*snap));
         alarm_config_t *cfg = web_alloc(sizeof(*cfg));
@@ -3231,10 +3228,10 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
         if (!atomic_load(&dev_on))
             return error(r, "403 Forbidden", "Developer mode is disabled");
         /* The certificate enrolled here signs in as the master and updates the firmware,
-         * for as long as it exists: only the installer, who alone can switch developer mode
-         * on, gets to choose it (a master's own deletion would not revoke it), and with their
+         * for as long as it exists: only those who can switch developer mode on (the installer
+         * and the system master, the owner's decision of 2026-11-08) get to choose it, with their
          * password again (recent_password()). */
-        if (authority != ALARM_AUTH_INSTALLER)
+        if (!sets_up(authority))
             return error(r, "403 Forbidden", "Installer authority required");
         esp_err_t refused = ESP_OK;
         if (!recent_password(r, s, str(o, "me_password"), &refused))
@@ -3256,7 +3253,7 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
         return json(r, result);
     }
     /* Factory reset can't be undone: your password again (web_extra.c checks the rest). */
-    if (!strcmp(path, "factory-reset") && authority == ALARM_AUTH_INSTALLER) {
+    if (!strcmp(path, "factory-reset") && sets_up(authority)) {
         esp_err_t refused = ESP_OK;
         if (!recent_password(r, s, str(o, "me_password"), &refused))
             return refused;
@@ -3653,7 +3650,7 @@ static esp_err_t backup_post(httpd_req_t *r)
     session_t *s = session(r, &authority);
     if (!s)
         return error(r, "401 Unauthorized", "Sign in again or reload the page");
-    if (must_change(s) || authority != ALARM_AUTH_INSTALLER)
+    if (must_change(s) || !sets_up(authority))
         return error(r, "403 Forbidden", "not_allowed");
     cJSON *o = body(r);
     if (!o)
@@ -3696,7 +3693,7 @@ static esp_err_t backup_put(httpd_req_t *r)
     session_t *s = session(r, &authority);
     if (!s)
         return error(r, "401 Unauthorized", "Sign in again or reload the page");
-    if (must_change(s) || authority != ALARM_AUTH_INSTALLER)
+    if (must_change(s) || !sets_up(authority))
         return error(r, "403 Forbidden", "not_allowed");
     if (panel_locked())
         return error(r, "409 Conflict", "locked");
@@ -3778,7 +3775,7 @@ static esp_err_t zwave_radio_put(httpd_req_t *r)
     s_body_unread = r->content_len > 0;
     alarm_authority_t authority;
     session_t *s = session(r, &authority);
-    if (!s || must_change(s) || authority != ALARM_AUTH_INSTALLER)
+    if (!s || must_change(s) || !sets_up(authority))
         return error(r, "403 Forbidden", "The installer signed in is required");
     if (r->content_len < 16 || r->content_len > 1024 * 1024)
         return error(r, "400 Bad Request", "Not a Z-Wave radio file");
@@ -3811,7 +3808,7 @@ static esp_err_t upload(httpd_req_t *r)
     s_body_unread = r->content_len > 0;
     alarm_authority_t authority;
     session_t *s = session(r, &authority);
-    if (!s || !atomic_load(&dev_on) || must_change(s) || authority != ALARM_AUTH_INSTALLER)
+    if (!s || !atomic_load(&dev_on) || must_change(s) || !sets_up(authority))
         return error(r, "403 Forbidden",
                      "Developer access and the installer signed in are required");
     const char *idle_reason = NULL;
@@ -3831,7 +3828,7 @@ static esp_err_t upload(httpd_req_t *r)
         sha[i] = (uint8_t)n;
     }
     httpd_req_get_hdr_value_str(r, "X-Allow-Older", older, sizeof(older));
-    if (!strcmp(older, "yes") && authority != ALARM_AUTH_INSTALLER)
+    if (!strcmp(older, "yes") && !sets_up(authority))
         return error(r, "403 Forbidden", "Only the installer may install older firmware");
     esp_err_t e = panel_ota_begin((uint32_t)r->content_len, sha, !strcmp(older, "yes"));
     if (e != ESP_OK)

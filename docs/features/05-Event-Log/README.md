@@ -125,8 +125,8 @@ Activity is the whole log (BL-131 finding 7): newest first with icon, words, who
 and when ("10:50 PM", "Yesterday, 9:01 PM", "Sep 19, 10:50 PM"), filters (All, Alarms, Troubles,
 Arming, Bypass, System), "Show older events" paging and how much it keeps. Silent events show,
 marked "Silent", only after "Show private events" takes a master or installer code (LOG-008;
-dimmed while armed or in alarm), with LOG-010's latched loss at the top that only the installer
-clears. The Panel Manager's Activity page hides silent events too (`/api/v1/history`,
+dimmed while armed or in alarm), with LOG-010's latched loss at the top that the installer or the
+system master clears (the master too since the owner's decision of 2026-11-08). The Panel Manager's Activity page hides silent events too (`/api/v1/history`,
 [31](../31-Browser-Panel-Manager/README.md),
 [B007](../../bugs/B007-activity-blocked-by-content-blockers.md)).
 

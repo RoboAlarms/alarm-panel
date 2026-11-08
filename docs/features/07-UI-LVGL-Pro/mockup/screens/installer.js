@@ -266,8 +266,8 @@ inst({id: 'zwave-region-drop-confirm', title: 'Z-Wave region: a change that stop
   main: () => ({over: M.confirm_dialog({title: 'Change the region to Europe?', note: 'All 5 devices stop working. Each must be added again, and their zones show CHECK until then.', ok: 'Change it'})})});
 
 inst({id: 'zwave-region-code', title: 'Z-Wave region: the installer code once more', shot: null}, () => ({
-  pad: M.code_pad({title: 'Confirm the region', tone: 'red', glyph: 'triangle-alert', hint: 'Enter the installer code once more', width: 428}),
-}), {notes: 'Preview: zwave_region_code. The network reset\'s check: only the installer code; a master code says "Wrong code, try again"; the X closes it and nothing changes.'});
+  pad: M.code_pad({title: 'Confirm the region', tone: 'red', glyph: 'triangle-alert', hint: 'Enter the master or installer code once more', width: 428}),
+}), {notes: 'Preview: zwave_region_code. The network reset\'s check: the master or installer code (the owner's decision of 2026-11-08); any other code says "Wrong code, try again"; the X closes it and nothing changes.'});
 
 inst({id: 'zwave-radio-details', title: 'Z-Wave radio details', shot: null}, () => ({
   title: 'Z-Wave radio', note: 'What the panel knows about its radio', back: true,

@@ -22190,8 +22190,8 @@ msgstr "Quitar el aviso"
 #: components/ui/alarm_ui/src/ui_app.c
 # review: draft
 #, fuzzy
-msgid "Only the installer code clears this warning."
-msgstr "Solo el código del instalador quita este aviso."
+msgid "Only the master or installer code clears this warning."
+msgstr "Solo el código maestro o de instalador borra esta advertencia."
 
 #. Activity, the button at the end of the list that loads earlier events
 #: components/ui/alarm_ui/src/ui_app.c
@@ -25163,16 +25163,8 @@ msgstr "Mantenga presionado 2 segundos"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Installer mode without a code: set a new installer code"
-msgstr "Modo instalador sin código: establezca un código de instalador nuevo"
-
-#. The code pad's hint line. At most 127 bytes.
-#: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_link.c
-# review: draft
-#, fuzzy
-msgid "That isn't the installer code"
-msgstr "Ese no es el código de instalador"
+msgid "Installer mode without a code: set a new master code"
+msgstr "Modo instalador sin código: establezca un código maestro nuevo"
 
 #. The code pad's hint line. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -25188,15 +25180,6 @@ msgstr "Ese no es el código maestro ni el de instalador"
 #, fuzzy
 msgid "Disarm first, and silence any alarm"
 msgstr "Primero desarme y silencie cualquier alarma"
-
-#. The code pad's hint line. At most 95 bytes.
-#. A button row's text (one line).
-#: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_link.c
-# review: draft
-#, fuzzy
-msgid "Enter the installer code"
-msgstr "Ingrese el código de instalador"
 
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -25216,8 +25199,8 @@ msgstr "¿Abrir el modo instalador sin el código?"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "For a lost installer code, right after power-up only. It is logged and reported. Choose a new code next."
-msgstr "Para un código de instalador perdido, solo justo después de encender. Se registra y se reporta. Luego elija un código nuevo."
+msgid "For a lost master code, right after power-up only. It is logged and reported. Choose a new master code next."
+msgstr "Para un código maestro perdido, solo al encender. Se registra y se informa. Luego elija un código maestro nuevo."
 
 #. A confirmation sheet. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -25374,8 +25357,8 @@ msgstr[2] "¿Olvidó el código? Abra sin él (quedan {0} s)"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Lost the installer code?"
-msgstr "¿Perdió el código del instalador?"
+msgid "Lost the master code?"
+msgstr "¿Perdió el código maestro?"
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -25911,15 +25894,15 @@ msgstr "Si no, el panel arranca desarmado"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Installer code recovery"
-msgstr "Recuperación del código de instalador"
+msgid "Master code recovery"
+msgstr "Recuperación del código maestro"
 
 #. A switch row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "For two minutes after power-up, Installer opens without the code. When off, a lost installer code can't be recovered"
-msgstr "Durante dos minutos tras encender, Instalador se abre sin el código. Si está apagado, un código de instalador perdido no se puede recuperar"
+msgid "For two minutes after power-up, Installer opens without a code to set a new master code. When off, a lost master code can't be recovered"
+msgstr "Durante dos minutos después de encender, Instalador se abre sin código para establecer un código maestro nuevo. Si está desactivado, un código maestro perdido no se puede recuperar"
 
 #. A number row's title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -26354,8 +26337,8 @@ msgstr "Código maestro nuevo"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "The two codes that can't be deleted"
-msgstr "Los dos códigos que no se pueden eliminar"
+msgid "The owner's code and the installer's"
+msgstr "El código del propietario y el del instalador"
 
 #. Installer > codes, under a code row that is still the factory code (no digits on the screen: the factory codes are public, BL-187). At most 40 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -26390,8 +26373,8 @@ msgstr "Código maestro"
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "The installer code programs the panel; it never arms or disarms. The factory codes are public: anyone can look them up. Everyone else's code is managed in Settings > Users with the master code."
-msgstr ""
+msgid "The master code is the owner's: it outranks every other code. The installer code programs the panel; it never arms or disarms. Everyone else's code, the installer's included, is in Settings > Users."
+msgstr "El código maestro es del propietario: está por encima de cualquier otro código. El código de instalador programa el panel; nunca arma ni desarma. Los códigos de los demás, incluido el del instalador, están en Configuración > Usuarios."
 
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -26449,8 +26432,8 @@ msgstr "Mantenga presionado para borrar todo"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: changed source
 #, fuzzy
-msgid "Unplug the panel for ten seconds. For two minutes after it starts, Installer opens without the code (unless the installer turned that off)."
-msgstr "¿Perdió el código de instalador? Desconecte el panel diez segundos. Durante dos minutos tras arrancar, Instalador se abre sin el código (a menos que el instalador lo haya desactivado)."
+msgid "Unplug the panel for ten seconds. For two minutes after it starts, Installer opens without a code to set a new master code (unless the owner turned that off)."
+msgstr "Desconecte el panel durante diez segundos. Durante dos minutos después de encender, Instalador se abre sin código para establecer un código maestro nuevo (a menos que el propietario lo haya desactivado)."
 
 #. The MQTT row's state in the Integrations list. At most 63 bytes
 #. The Home Assistant row's state in the Integrations list. At most 63 bytes
@@ -35425,8 +35408,8 @@ msgstr "Confirme el restablecimiento"
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Enter the installer code once more"
-msgstr "Ingrese el código de instalador otra vez"
+msgid "Enter the master or installer code once more"
+msgstr "Ingrese de nuevo el código maestro o de instalador"
 
 #. the Zigbee reset's second confirmation, after "Continue"
 #. the Zigbee reset's second confirmation. At most 127 bytes
@@ -35485,8 +35468,8 @@ msgstr "Puede que no se oigan los sensores inalámbricos · Toque para ver la ra
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Enter the installer code to see the radio"
-msgstr "Escriba el código del instalador para ver la radio"
+msgid "Enter the master or installer code to see the radio"
+msgstr "Ingrese el código maestro o de instalador para ver la radio"
 
 #. a toast, why the Z-Wave radio refused a request
 #. A toast (one line over the screen). At most 127 bytes.
@@ -41823,3 +41806,34 @@ msgstr "Salir"
 #, fuzzy
 #~ msgid "The panel can do things by itself, like turning on the porch light when the front door opens."
 #~ msgstr "El panel puede hacer cosas por sí solo, como encender la luz del porche cuando se abre la puerta principal."
+
+# review: draft
+#, fuzzy
+msgid "The owner turned installer mode off for the installer code"
+msgstr "El propietario desactivó el modo instalador para el código de instalador"
+
+# review: draft
+#, fuzzy
+msgid "Only the master code changes this"
+msgstr "Solo el código maestro cambia esto"
+
+# review: draft
+#, fuzzy
+msgctxt "code state"
+msgid "Not made yet"
+msgstr "Aún no creado"
+
+# review: draft
+#, fuzzy
+msgid "Let the installer code open installer mode"
+msgstr "Permitir que el código de instalador abra el modo instalador"
+
+# review: draft
+#, fuzzy
+msgid "On: the installer can change settings. The master code always can"
+msgstr "Activado: el instalador puede cambiar la configuración. El código maestro siempre puede"
+
+# review: draft
+#, fuzzy
+msgid "Hand the panel to the owner to make the master code: it arms, disarms and outranks every other code. You can't change it afterwards."
+msgstr "Entregue el panel al propietario para crear el código maestro: arma, desarma y está por encima de cualquier otro código. Después no podrá cambiarlo."

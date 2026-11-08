@@ -46,12 +46,28 @@ static bool same_source(const alarm_source_t *a, const alarm_source_t *b)
     return a->kind == b->kind && a->id == b->id;
 }
 
-/* Who opens installer mode (Setup mode): the installer, and the system master - the Owner, whom
- * no code outranks (decided 2026-11-02). Never a partition master or anyone below. */
-static bool may_open_program(const alarm_engine_t *e, uint8_t user)
+/* Who opens installer mode (Setup mode): the system master - the Owner, whom no code outranks
+ * (decided 2026-11-02) - always, and the installer while the Owner allows it (CORE-PROG-014,
+ * opt.installer_setup_off; the owner's decision of 2026-11-08). With no system master yet (a
+ * panel set up for someone else, before the handover) nobody can turn the installer off. Never
+ * a partition master or anyone below. */
+bool eng_may_open_program(const alarm_engine_t *e, uint8_t user)
 {
     const alarm_authority_t a = eng_user_auth(e, user);
-    return a == ALARM_AUTH_INSTALLER || a == ALARM_AUTH_MASTER;
+    if (a == ALARM_AUTH_MASTER) {
+        return true;
+    }
+    return a == ALARM_AUTH_INSTALLER && alarm_config_installer_sets_up(&e->cfg);
+}
+
+/* An Owner session (CORE-PROG-014, 015): installer mode opened by the system master's code, or by
+ * the power-up recovery, at the panel itself (its touchscreen or a keypad), never over the
+ * network. Only it changes the Owner's own options. */
+bool eng_owner_session(const alarm_engine_t *e)
+{
+    return e->program && e->program_src.kind == ALARM_SRC_KEYPAD &&
+           (e->program_user == 0u ||
+            eng_user_auth(e, e->program_user) == ALARM_AUTH_MASTER);
 }
 
 /* as: for the already-identified as_user instead of by a code (CORE-PROG-011). */
@@ -75,7 +91,7 @@ static alarm_result_t program_enter(alarm_engine_t *e, const alarm_source_t *src
     if (as) {
         /* The installer or the system master, asked again now: a slot changed since the sign-in
          * no longer is. */
-        if (!may_open_program(e, as_user)) {
+        if (!eng_may_open_program(e, as_user)) {
             r = ALARM_ERR_NOT_AUTHORIZED;
         } else {
             user = as_user;
@@ -86,7 +102,7 @@ static alarm_result_t program_enter(alarm_engine_t *e, const alarm_source_t *src
         }
     } else {
         r = eng_auth(e, &source, code, 0u, &user);
-        if (r == ALARM_OK && !may_open_program(e, user)) {
+        if (r == ALARM_OK && !eng_may_open_program(e, user)) {
             r = ALARM_ERR_NOT_AUTHORIZED;
         }
     }

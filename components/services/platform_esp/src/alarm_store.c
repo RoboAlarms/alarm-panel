@@ -45,7 +45,7 @@ esp_err_t alarm_store_default_config(alarm_config_t *cfg)
 
     alarm_config_defaults(cfg);
     esp_fill_random(cfg->code_salt, sizeof(cfg->code_salt));
-    alarm_config_set_default_users(cfg, code_hash_pbkdf2, NULL);
+    alarm_config_set_legacy_users(cfg, code_hash_pbkdf2, NULL);
     if (code_hash_faults() != faults) {
         ESP_LOGE(TAG, "code hashing failed while creating the factory codes");
         return ESP_ERR_INVALID_STATE;

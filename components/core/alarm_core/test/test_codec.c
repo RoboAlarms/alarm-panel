@@ -289,7 +289,7 @@ static void fixture_config(alarm_config_t *c)
     for (unsigned i = 0; i < ALARM_CODE_SALT_LEN; i++) {
         c->code_salt[i] = (uint8_t)(0x10u + i);
     }
-    alarm_config_set_default_users(c, sim_hash, NULL);
+    alarm_config_set_legacy_users(c, sim_hash, NULL);
     set_name(c->partitions[0].name, "Home");
     c->opt.bell_timeout_s = 600;
     alarm_zone_config_defaults(&c->zones[0], 1, ALARM_ZT_ENTRY_EXIT_1, 1);
@@ -556,6 +556,24 @@ static void test_app_panic_option(void)
     TEST_ASSERT_EQUAL_UINT8(0x30u, D.opt.app_panic_mask);
 }
 
+/* CORE-PROG-014: the Owner's "the installer code opens installer mode" is on by default and its
+ * off is written only when set (field 0x20), so a configuration that keeps it on stores the bytes
+ * it always did (fixtures v1..v6 unchanged); off survives a round trip. */
+static void test_installer_setup_option(void)
+{
+    alarm_config_defaults(&C);
+    TEST_ASSERT_EQUAL_UINT8(0u, C.opt.installer_setup_off);
+    fixture_config(&C);
+    size_t len = encode();
+    TEST_ASSERT_EQUAL(0, find_item(len, 0x00, 0x20));
+    C.opt.installer_setup_off = 1u;
+    len = encode();
+    TEST_ASSERT_NOT_EQUAL(0, find_item(len, 0x00, 0x20));
+    EXPECT_RESULT(ALARM_OK, alarm_config_decode(B, len, &D));
+    TEST_ASSERT_EQUAL_UINT8(1u, D.opt.installer_setup_off);
+    TEST_ASSERT_EQUAL_MEMORY(&C, &D, sizeof(C));
+}
+
 /* Appends an item (group, field, value) to B[0..*len) and reseals the header. */
 static void append_item(size_t *len, uint8_t group, uint8_t field, const void *val, uint8_t n)
 {
@@ -676,6 +694,7 @@ int main(void)
     RUN_TEST(test_voice_fields_rejected);
     RUN_TEST(test_auto_less_secure_option);
     RUN_TEST(test_app_panic_option);
+    RUN_TEST(test_installer_setup_option);
     RUN_TEST(test_lenient_decode);
     RUN_TEST(test_crc32);
     return UNITY_END();

@@ -4002,14 +4002,15 @@ static void remove_tick(void)
 
 static uint8_t s_region_picked;
 
-/* The installer code once more, after the confirmation of something that drops devices (the
- * network reset; a region change that stops some, ZW-045): true when it is the installer's,
- * else the pad says so and stays open. */
+/* The master or installer code once more, after the confirmation of something that drops devices
+ * (the network reset; a region change that stops some, ZW-045): true when it is the system
+ * master's (the Owner's, whom no code outranks: the owner's decision of 2026-11-08) or the
+ * installer's, else the pad says so and stays open. */
 static bool installer_code_ok(const char *code)
 {
     uint8_t user = 0;
     if (S.be.authenticate == NULL || S.be.authenticate(S.be.ctx, code, &user) != ALARM_OK ||
-        user != ALARM_USER_INSTALLER) {
+        (user != ALARM_USER_INSTALLER && user != ALARM_USER_MASTER)) {
         ui_pad_error(TR("Wrong code, try again"));
         return false;
     }
@@ -4038,12 +4039,13 @@ static bool region_code_ok(const char *code)
     return true;
 }
 
-/* ZW-045: a change that stops devices asks for the installer code, as the network reset does. */
+/* ZW-045: a change that stops devices asks for the master or installer code, as the network reset
+ * does. */
 static void region_ask_code(void)
 {
     /* TR: a code pad's title, after confirming a Z-Wave region change that stops devices */
     ui_pad_ask(HOST_SETTINGS, UI_ICON_TRIANGLE_ALERT, TR("Confirm the region"),
-               TR("Enter the installer code once more"), ui_tone_red(), region_code_ok);
+               TR("Enter the master or installer code once more"), ui_tone_red(), region_code_ok);
 }
 
 /* What choosing `code` does (ZW-045): its ui_zw_region_change_t, and how many devices stop. */
@@ -4589,7 +4591,7 @@ static void reset_go(void)
     }
 }
 
-/* The second, plain confirmation: the installer code once more (CONTRIBUTING.md "Rules for the
+/* The second, plain confirmation: the master or installer code once more (CONTRIBUTING.md "Rules for the
  * UI"; the same weight as leaving installer mode by a lost-code recovery). */
 static bool reset_code_ok(const char *code)
 {
@@ -4603,7 +4605,7 @@ static bool reset_code_ok(const char *code)
 static void reset_ask_code(void)
 {
     ui_pad_ask(HOST_SETTINGS, UI_ICON_TRIANGLE_ALERT, TR("Confirm the reset"),
-               TR("Enter the installer code once more"), ui_tone_red(), reset_code_ok);
+               TR("Enter the master or installer code once more"), ui_tone_red(), reset_code_ok);
 }
 
 static void reset_row_tap(void *ctx)
@@ -6027,7 +6029,7 @@ static void trouble_open(lv_event_t *e)
     }
     s_after_code = true;
     /* TR: a toast when the sensor radio trouble opens the locked Installer page. At most 63 bytes */
-    ui_toast(TR("Enter the installer code to see the radio"));
+    ui_toast(TR("Enter the master or installer code to see the radio"));
 }
 
 static void trouble_follow(void)

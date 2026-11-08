@@ -587,7 +587,7 @@ static size_t panel_payload(const char *board, const backup_entry_t *extra, bool
 {
     alarm_config_t *cfg = &SCRATCH.cfg;
     alarm_config_defaults(cfg);
-    alarm_config_set_default_users(cfg, fake_hash, NULL);
+    alarm_config_set_legacy_users(cfg, fake_hash, NULL);
     alarm_zone_config_defaults(&cfg->zones[0], 1, ALARM_ZT_ENTRY_EXIT_1, 1);
     alarm_zone_config_defaults(&cfg->zones[1], 2, ALARM_ZT_PERIMETER, 1);
     size_t cfg_len = 0;
@@ -745,7 +745,7 @@ static void test_restore_config_never_brings_approval_back(void)
     /* The file: an older panel whose zone 1 name was approved under binding 3. */
     alarm_config_t *cfg = &SCRATCH.cfg;
     alarm_config_defaults(cfg);
-    alarm_config_set_default_users(cfg, fake_hash, NULL);
+    alarm_config_set_legacy_users(cfg, fake_hash, NULL);
     alarm_zone_config_defaults(&cfg->zones[0], 1, ALARM_ZT_ENTRY_EXIT_1, 1);
     alarm_zone_config_defaults(&cfg->zones[1], 2, ALARM_ZT_PERIMETER, 1);
     alarm_zone_set_word(&cfg->zones[0], 0, 12u);

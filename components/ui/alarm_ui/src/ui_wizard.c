@@ -575,8 +575,8 @@ static void build_clock(lv_obj_t *b)
 
 static bool code_done(const char *code)
 {
-    const char *current = s_code_user == ALARM_USER_INSTALLER ? ALARM_DEFAULT_INSTALLER_CODE
-                                                              : ALARM_DEFAULT_MASTER_CODE;
+    const char *current = s_code_user == ALARM_USER_INSTALLER ? ALARM_LEGACY_INSTALLER_CODE
+                                                              : ALARM_LEGACY_MASTER_CODE;
     const alarm_user_t *u = &S.cfg->users[s_code_user - 1u];
     const alarm_result_t r = S.be.user_set != NULL
                                  ? S.be.user_set(S.be.ctx, current, s_code_user, code,

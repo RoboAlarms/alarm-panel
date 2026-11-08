@@ -24,7 +24,9 @@ typedef struct {
     uint32_t dev_troubles;          /* missing devices (bit = device - 1) */
     /* a missing device's partition, a link keypad's home (0: every partition, or not known) */
     uint8_t dev_partition[ALARM_MAX_DEVICES];
-    uint8_t default_codes;          /* ALARM_DEFAULT_CODE_* still in use */
+    uint8_t default_codes;          /* ALARM_DEFAULT_CODE_* still in use (an older panel's) */
+    bool no_codes;                  /* neither a master nor an installer code yet: the setup's
+                                     * first is still to be made (CORE-USR-041) */
     bool program;                   /* installer mode: nothing can be armed */
     uint32_t recovery_left_ms;      /* power-up recovery window left at taken_ms, 0 = closed */
     alarm_ms_t local_lockout_until; /* the touchscreen's lockout ends at this engine time, 0 = not

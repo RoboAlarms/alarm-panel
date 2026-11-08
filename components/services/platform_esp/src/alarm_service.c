@@ -717,8 +717,7 @@ esp_err_t alarm_service_start(void)
         return (err != ESP_OK) ? err : ESP_FAIL;
     }
     if (origin == ALARM_CFG_CREATED) {
-        ESP_LOGW(TAG, "first boot: factory configuration (installer %s, master %s)",
-                 ALARM_LEGACY_INSTALLER_CODE, ALARM_LEGACY_MASTER_CODE);
+        ESP_LOGW(TAG, "first boot: factory configuration, no codes (the setup makes the first)");
     }
     /* Stored data this firmware could not use, or a first-boot write that did not land: say so
      * on the screen and keep saying it until a configuration write succeeds. */
@@ -1388,6 +1387,49 @@ alarm_result_t alarm_service_program_set_code(const alarm_source_t *src, uint8_t
         return ALARM_ERR_UNAVAILABLE;
     }
     alarm_service_call(do_program_set_code, &c);
+    return c.r;
+}
+
+typedef struct {
+    const alarm_source_t *src;
+    const char *installer;
+    const char *master;
+    uint8_t user_no;
+    alarm_result_t r;
+} first_ctx_t;
+
+static void do_first_code(alarm_engine_t *e, alarm_ms_t now, void *ctx)
+{
+    first_ctx_t *c = ctx;
+    c->r = c->user_no != 0u
+               ? alarm_engine_first_code(e, c->src, c->user_no,
+                                         c->user_no == ALARM_USER_INSTALLER ? c->installer
+                                                                            : c->master,
+                                         now)
+               : alarm_engine_first_codes(e, c->src, c->installer, c->master, now);
+}
+
+alarm_result_t alarm_service_first_code(const alarm_source_t *src, uint8_t user_no,
+                                        const char *code)
+{
+    first_ctx_t c = {.src = src, .installer = code, .master = code, .user_no = user_no,
+                     .r = not_run()};
+    if (crypto_ready("making the first code") != ALARM_OK) {
+        return ALARM_ERR_UNAVAILABLE;
+    }
+    alarm_service_call(do_first_code, &c);
+    return c.r;
+}
+
+alarm_result_t alarm_service_first_codes(const alarm_source_t *src, const char *installer_code,
+                                         const char *master_code)
+{
+    first_ctx_t c = {.src = src, .installer = installer_code, .master = master_code,
+                     .r = not_run()};
+    if (crypto_ready("making the first codes") != ALARM_OK) {
+        return ALARM_ERR_UNAVAILABLE;
+    }
+    alarm_service_call(do_first_code, &c);
     return c.r;
 }
 

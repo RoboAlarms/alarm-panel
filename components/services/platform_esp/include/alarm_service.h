@@ -212,6 +212,13 @@ alarm_result_t alarm_service_user_update_as(const alarm_source_t *src, uint8_t a
 alarm_result_t alarm_service_user_delete_as(const alarm_source_t *src, uint8_t actor,
                                             uint8_t user_no);
 
+/* CORE-USR-041: no factory codes. The first code of a panel with none, at the panel
+ * (alarm_engine_first_code), and a headless panel's claim (alarm_engine_first_codes). */
+alarm_result_t alarm_service_first_code(const alarm_source_t *src, uint8_t user_no,
+                                        const char *code);
+alarm_result_t alarm_service_first_codes(const alarm_source_t *src, const char *installer_code,
+                                         const char *master_code);
+
 /* CORE-PROG-014: whether the installer code may open installer mode now (the Owner's setting,
  * alarm_config_installer_sets_up); any task, no wait. */
 bool alarm_service_installer_sets_up(void);

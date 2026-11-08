@@ -1959,6 +1959,10 @@ typedef struct {
     void (*program_exit)(void *ctx);
     void (*program_keepalive)(void *ctx);
     alarm_result_t (*program_set_code)(void *ctx, uint8_t user, const char *new_code);
+    /* CORE-USR-041: the setup's first code on a panel with none (alarm_engine_first_code): user 2,
+     * the Owner's, or user 1, the installer's for someone else's home. NULL: not here (a
+     * keypad: its alarm panel has the codes). */
+    alarm_result_t (*first_code)(void *ctx, uint8_t user, const char *code);
     alarm_result_t (*set_config)(void *ctx, const alarm_config_t *cfg);
     alarm_result_t (*user_set)(void *ctx, const char *actor_code, uint8_t user,
                                const char *new_code, alarm_authority_t authority,

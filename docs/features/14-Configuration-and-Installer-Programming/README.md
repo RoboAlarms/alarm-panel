@@ -36,7 +36,7 @@ power-up. Touchscreen panels use menus behind the installer code.
 | CFG-004 | The configuration is stored as a versioned, self-describing blob: newer firmware reads older blobs (missing fields keep defaults), older firmware reads newer ones (unknown fields skipped), frozen fixtures from every format stay decodable | `CORE-CFG-012..017` |
 | CFG-005 | Backup: one file the installer downloads in the Panel Manager, always encrypted with a password the installer chooses (PBKDF2 and AES-GCM), holding everything needed to rebuild the panel - the configuration, users (code hashes and salts), zones and their bindings, the Z-Wave keys, node cache and SmartStart list, the integrations' settings and secrets and the Wi-Fi network - but never the panel's own identity (its certificates and keys, the developer enrollment, the panel ID). | `components/core/backup/test/test_backup.c` (CFG-005), `panel_pages.test.cjs` "backup"; on a panel (BL-002) |
 | CFG-006 | Restore, by the installer with every partition disarmed, onto the same panel or a replacement board: the file is decrypted and validated in full first, then applied all or nothing, then the panel restarts; a replacement board keeps its own identity and takes over the Z-Wave radio the file's keys belong to | `test_backup.c` (CFG-006), `panel_pages.test.cjs` "backup"; on a panel and a replacement board (BL-002) |
-| CFG-007 | Factory reset from installer mode on the touchscreen (hold to confirm) or the service console: wipes NVS (and the event log if asked), logs `factory_reset` first, restarts with the factory codes (installer 69420, master 123456) and the setup wizard. **No physical button is ever needed** (the boards sit behind a case) | preview, HIL |
+| CFG-007 | Factory reset from installer mode on the touchscreen (hold to confirm) or the service console: wipes NVS (and the event log if asked), logs `factory_reset` first, restarts with no codes and the setup wizard, where the first person makes their own (no factory codes, the owner's decision of 2026-11-08; the service console's reset takes the master or installer code). **No physical button is ever needed** (the boards sit behind a case) | preview, HIL |
 | CFG-008 | Validation warnings, not errors: entry time + report delay > 60 s, no night zones while Night arming exists | preview |
 | CFG-009 | **Lost master code**: for 2 minutes after power-up, with every partition disarmed, installer mode opens from the touchscreen without a code; logged and reported (`program_enter`, arg 1); it gives the panel back to the Owner: a new master code is set without the old one, never an installer code. Only the Owner turns this off ("Master code recovery", in an Owner session at the panel), so no installer can take it away (the owner's decision of 2026-11-08) | `CORE-PROG-005..007, 015`, preview |
 | CFG-010 | An unreadable stored configuration (damaged, or written by a newer firmware before a rollback) is kept, not overwritten: the panel runs on factory defaults in RAM and raises the `storage` trouble. A stored configuration that decodes but the engine rejects is treated the same way. Only a positively **absent** NVS key ever writes the factory configuration | code review |
@@ -213,7 +213,8 @@ confirmation. Unlocked (status bar: "Installer · Arming off · Tap to leave"):
   fire siren timeout, auto-stay, exit beeps, arm without a code, arm remotely without a code,
   quick exit, chime needs a code, shortest new
   code, wrong codes before lockout and lockout time, come back armed after a power cut,
-  installer code recovery, and every other system option ([07](../07-UI-LVGL-Pro/README.md)
+  master code recovery (the Owner's: only the master code changes it, CORE-PROG-015), and every
+  other system option ([07](../07-UI-LVGL-Pro/README.md)
   UI-041). Warnings as in CFG-008.
 - **Zones**: list (with where each sensor is), add ("Where is the sensor?" first, M11), and per
   zone how it is right now (the source and what it promises), name, type (the numbered zone types),
@@ -221,7 +222,11 @@ confirmation. Unlocked (status bar: "Installer · Arming off · Tap to leave"):
   unreachable after), night zone (interior types), chime, bypassable (24-hour types), report
   remotely, cross-zone partner, alarm limit (system setting, 1 to 6, or never), remove. A
   zone's sensor is stored at once, apart from the configuration ([22](../22-Zone-Sources/README.md)).
-- **System name** (partition 1), **installer and master codes**, **run the setup again**,
+- **System name** (partition 1), **installer and master codes** (the master code's row, the
+  installer code's, and the Owner's "Let the installer code open installer mode", which only the
+  master code changes; the installer sets its own code and the master code only where there is
+  none yet, the recovery the master code alone; CORE-USR-040, CORE-PROG-014, -015), **run the
+  setup again**,
   **factory reset** (hold to confirm, optionally with the event log).
 - **Partitions** (in use, name, delays), **keypads and devices**, **Z-Wave** after Zones (in
   builds with Z-Wave, [36](../36-Z-Wave-Sensors-ZAC93/README.md)), and under This panel the

@@ -16,7 +16,7 @@ report problems as troubles.
 ## Requirements
 | ID | Requirement | Verified by |
 |---|---|---|
-| NET-001 | First-boot wizard on the touchscreen: language (English until the language step of docs/features/37 I18N-012, M22 G3), **role** (Master / Keypad), Wi-Fi (scan list + hidden SSID + on-screen keyboard), time zone, optional change of the factory installer (69420) and master (123456) codes (master role), done | preview (the role step and a keypad's pairing too, BL-048; on panels: M7), HIL |
+| NET-001 | First-boot wizard on the touchscreen: language (English until the language step of docs/features/37 I18N-012, M22 G3), **role** (Master / Keypad), Wi-Fi (scan list + hidden SSID + on-screen keyboard), time zone, the first code (master role; there are no factory codes, CORE-USR-041, the owner's decision of 2026-11-08): "This alarm is mine" makes the owner's master code, "I'm setting it up for someone else" an installer code with the master code made at the handover; Next waits for it (a panel that kept an older version's factory codes is offered the old change instead), done | preview (the role step and a keypad's pairing too, BL-048; on panels: M7), HIL |
 | NET-002 | Wi-Fi uses the standard `esp_wifi` API through ESP-Hosted/`esp_wifi_remote` (C6 radio); WPA2/WPA3-Personal | HIL: joined a WPA2 network (2026-09-19) |
 | NET-003 | Reconnect with backoff (1 s -> 60 s); raise the `network` trouble after 5 min disconnected (configurable), only when something depends on the network (MQTT or LAN keypads) | unit + HIL |
 | NET-004 | SNTP time sync (default `pool.ntp.org`, configurable) with a POSIX TZ string chosen from a list; re-sync every 6 h | HIL: synced on the panel (2026-09-19) |
@@ -146,7 +146,7 @@ Notes on the table (2026-09-28):
 
 ```mermaid
 flowchart LR
-  A[Welcome] --> C[Wi-Fi, skippable] --> D[Time zone] --> E[Change factory codes? optional, each twice] --> G[System name] --> H[Done -> Home]
+  A[Welcome] --> C[Wi-Fi, skippable] --> D[Time zone] --> E[Make your code: the owner's, or the installer's for someone else, twice] --> G[System name] --> H[Done -> Home]
 ```
 
 The role step (Master / Keypad, then pairing for a keypad) is added with M7, when the keypad

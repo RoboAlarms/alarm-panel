@@ -542,8 +542,32 @@ alarm_result_t alarm_engine_program_set_code(alarm_engine_t *e, const alarm_sour
  * reset: there are no factory codes, the owner's decision of 2026-11-08) takes its first code from
  * whoever sets it up, at the panel: the Owner's (user 2) by default, or the installer's (user 1)
  * when they set it up for someone else - the Owner's slot then stays open for the handover. */
-alarm_result_t alarm_engine_first_code(alarm_engine_t *e, const alarm_source_t *src,
-                                       uint8_t user_no, const char *code, alarm_ms_t now)
+/* Makes slot user_no (1 or 2, empty) with code: hashed first, nothing stored on a failed hash. */
+static alarm_result_t make_first(alarm_engine_t *e, const alarm_source_t *src, uint8_t user_no,
+                                 const char *code)
+{
+    uint8_t h[ALARM_CODE_HASH_LEN];
+    uint8_t holder = 0u;
+    alarm_result_t r = find_user(e, code, &holder, h);
+    if (r == ALARM_OK && holder != 0u) {
+        r = ALARM_ERR_CODE_IN_USE;
+    } else if (r == ALARM_OK) {
+        alarm_user_t *u = &e->cfg.users[user_no - 1u];
+        memset(u, 0, sizeof(*u));
+        u->authority = user_no == ALARM_USER_INSTALLER ? ALARM_AUTH_INSTALLER : ALARM_AUTH_MASTER;
+        u->partitions = all_partitions();
+        memcpy(u->code_hash, h, sizeof(h));
+        copy_name(u->name, user_no == ALARM_USER_INSTALLER ? "Installer" : "Master");
+        eng_emit(e, ALARM_EV_USER_CHANGED, 0u, 0u, 0u, src, user_no, (uint8_t)u->authority,
+                 ALARM_EVF_SYSTEM, REPORT_NOW);
+        e->config_dirty = true;
+        eng_update_default_codes(e);
+    }
+    return r;
+}
+
+static alarm_result_t first_codes(alarm_engine_t *e, const alarm_source_t *src, bool at_panel,
+                                  const char *installer, const char *master, alarm_ms_t now)
 {
     if (e == NULL || !e->initialized) {
         return ALARM_ERR_BAD_ARG;
@@ -558,36 +582,44 @@ alarm_result_t alarm_engine_first_code(alarm_engine_t *e, const alarm_source_t *
     alarm_result_t r = ALARM_OK;
     if (!alarm_engine_no_codes(e)) {
         r = ALARM_ERR_NOT_AUTHORIZED; /* only the first: everything after asks for a code */
-    } else if (src->kind != ALARM_SRC_KEYPAD) {
+    } else if (at_panel && src->kind != ALARM_SRC_KEYPAD) {
         r = ALARM_ERR_NOT_AUTHORIZED; /* at the panel only, never over the network */
-    } else if ((user_no != ALARM_USER_INSTALLER && user_no != ALARM_USER_MASTER) ||
-               !code_policy_ok(e, code)) {
+    } else if ((installer == NULL && master == NULL) ||
+               (installer != NULL && !code_policy_ok(e, installer)) ||
+               (master != NULL && !code_policy_ok(e, master)) ||
+               (installer != NULL && master != NULL && strcmp(installer, master) == 0)) {
         r = ALARM_ERR_BAD_ARG;
     } else if (!eng_all_idle(e)) {
         r = ALARM_ERR_BAD_STATE;
     }
-    if (r == ALARM_OK) {
-        uint8_t h[ALARM_CODE_HASH_LEN];
-        uint8_t holder = 0u;
-        r = find_user(e, code, &holder, h);
-        if (r == ALARM_OK && holder != 0u) {
-            r = ALARM_ERR_CODE_IN_USE;
-        } else if (r == ALARM_OK) {
-            alarm_user_t *u = &e->cfg.users[user_no - 1u];
-            memset(u, 0, sizeof(*u));
-            u->authority = user_no == ALARM_USER_INSTALLER ? ALARM_AUTH_INSTALLER
-                                                           : ALARM_AUTH_MASTER;
-            u->partitions = all_partitions();
-            memcpy(u->code_hash, h, sizeof(h));
-            copy_name(u->name, user_no == ALARM_USER_INSTALLER ? "Installer" : "Master");
-            eng_emit(e, ALARM_EV_USER_CHANGED, 0u, 0u, 0u, src, user_no, (uint8_t)u->authority,
-                     ALARM_EVF_SYSTEM, REPORT_NOW);
-            e->config_dirty = true;
-            eng_update_default_codes(e);
+    if (r == ALARM_OK && master != NULL) {
+        r = make_first(e, src, ALARM_USER_MASTER, master);
+    }
+    if (r == ALARM_OK && installer != NULL) {
+        r = make_first(e, src, ALARM_USER_INSTALLER, installer);
+        if (r != ALARM_OK && master != NULL) {
+            memset(&e->cfg.users[ALARM_USER_MASTER - 1u], 0, sizeof(alarm_user_t)); /* all or none */
         }
     }
     eng_leave(e);
     return r;
+}
+
+alarm_result_t alarm_engine_first_code(alarm_engine_t *e, const alarm_source_t *src,
+                                       uint8_t user_no, const char *code, alarm_ms_t now)
+{
+    if (user_no != ALARM_USER_INSTALLER && user_no != ALARM_USER_MASTER) {
+        return ALARM_ERR_BAD_ARG;
+    }
+    return first_codes(e, src, true, user_no == ALARM_USER_INSTALLER ? code : NULL,
+                       user_no == ALARM_USER_MASTER ? code : NULL, now);
+}
+
+alarm_result_t alarm_engine_first_codes(alarm_engine_t *e, const alarm_source_t *src,
+                                        const char *installer_code, const char *master_code,
+                                        alarm_ms_t now)
+{
+    return first_codes(e, src, false, installer_code, master_code, now);
 }
 
 bool alarm_engine_no_codes(const alarm_engine_t *e)

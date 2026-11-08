@@ -181,7 +181,10 @@ static int cmd_status(int argc, char **argv)
     if (s->dev_troubles != 0u) {
         printf("  missing devices: 0x%08" PRIx32 "\n", s->dev_troubles);
     }
-    if (s->default_codes != 0u) {
+    if (s->no_codes) {
+        printf("  NO CODES YET: the setup at the panel makes the first\n");
+    }
+    if (s->default_codes != 0u) { /* an older panel that kept the codes it shipped with */
         printf("  FACTORY CODES IN USE:%s%s\n",
                (s->default_codes & ALARM_DEFAULT_CODE_INSTALLER) ? " installer(69420)" : "",
                (s->default_codes & ALARM_DEFAULT_CODE_MASTER) ? " master(123456)" : "");
@@ -981,6 +984,22 @@ static int cmd_factory_reset(int argc, char **argv)
     return 0;
 }
 
+/* CORE-USR-041: the first code of a panel with no codes, from the console at the panel (a bench
+ * with nobody at its screen): the master code, or "installer <code>". Refused once any exists. */
+static int cmd_first_code(int argc, char **argv)
+{
+    const bool installer = argc == 3 && strcmp(argv[1], "installer") == 0;
+    if (argc != 2 && !installer) {
+        printf("the panel's first code, while it has none: first_code <code> (the master code),\n"
+               "or first_code installer <code> for someone else's home\n");
+        return 1;
+    }
+    const alarm_result_t r = alarm_service_first_code(
+        &SRC, installer ? ALARM_USER_INSTALLER : ALARM_USER_MASTER, argv[argc - 1]);
+    printf("%s\n", alarm_result_name(r));
+    return r == ALARM_OK ? 0 : 1;
+}
+
 static int cmd_memory(int argc, char **argv)
 {
     const uint32_t caps[] = {MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT,
@@ -1144,8 +1163,10 @@ esp_err_t panel_console_start(void)
          .help = "Bench silence: off keeps the speaker off, alarms included (development builds)",
          .hint = "[on|off]", .func = cmd_speaker},
 #endif
-        {.command = "factory_reset", .help = "Erase everything and restart with factory codes",
-         .hint = "confirm <installer code>", .func = cmd_factory_reset},
+        {.command = "factory_reset", .help = "Erase everything and restart with no codes",
+         .hint = "confirm <master or installer code>", .func = cmd_factory_reset},
+        {.command = "first_code", .help = "Make the first code of a panel with none",
+         .hint = "[installer] <code>", .func = cmd_first_code},
         {.command = "restart", .help = "Restart the panel", .func = cmd_restart},
     };
     for (size_t i = 0; i < sizeof(cmds) / sizeof(cmds[0]); i++) {

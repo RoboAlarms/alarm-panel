@@ -3447,6 +3447,15 @@ void host_panel_set_net(ui_net_state_t state, int rssi)
     H.rssi = rssi;
 }
 
+void host_panel_forget_codes(void)
+{
+    alarm_config_t c = *alarm_engine_config(&H.eng);
+    memset(&c.users[ALARM_USER_INSTALLER - 1u], 0, sizeof(c.users[0]));
+    memset(&c.users[ALARM_USER_MASTER - 1u], 0, sizeof(c.users[0]));
+    (void)alarm_engine_set_config(&H.eng, &c, H.now);
+    after();
+}
+
 void host_panel_forget_wifi(void)
 {
     H.net = UI_NET_UNCONFIGURED;
@@ -3551,6 +3560,14 @@ static void be_program_keepalive(void *ctx)
 {
     (void)ctx;
     alarm_engine_program_keepalive(&H.eng, H.now);
+}
+
+static alarm_result_t be_first_code(void *ctx, uint8_t user, const char *code)
+{
+    (void)ctx;
+    const alarm_result_t r = alarm_engine_first_code(&H.eng, &SRC, user, code, H.now);
+    after();
+    return r;
 }
 
 static alarm_result_t be_program_set_code(void *ctx, uint8_t user, const char *code)
@@ -8643,6 +8660,7 @@ void host_panel_backend(ui_backend_t *out)
     out->program_exit = be_program_exit;
     out->program_keepalive = be_program_keepalive;
     out->program_set_code = be_program_set_code;
+    out->first_code = be_first_code;
     out->set_config = be_set_config;
     out->user_set = be_user_set;
     out->user_update = be_user_update;

@@ -9,7 +9,7 @@ M.screen({
     body: [
       M.row_link({glyph: 'wifi', title: 'Join Wi-Fi', detail: 'For the clock and updates', trail: ''}),
       M.row_link({glyph: 'globe', title: 'Choose your time zone', detail: 'So the event log shows your local time', trail: ''}),
-      M.row_link({glyph: 'key', color: 'amber', title: 'Change the factory codes', detail: 'Your own installer and master codes', trail: ''}),
+      M.row_link({glyph: 'key', color: 'amber', title: 'Make your code', detail: 'Yours, or the installer\'s for someone else\'s home', trail: ''}),
       M.row_link({glyph: 'tag', color: 'violet', title: 'Name your system', detail: 'How it shows up on the screen', trail: ''}),
       M.row_link({glyph: 'party-popper', color: 'green', title: 'Look it over', detail: 'A last look at what you chose', trail: ''}),
       M.paragraph('The panel already protects your home: fire, CO and panic work right now.'),
@@ -44,10 +44,11 @@ M.screen({
 });
 
 M.screen({
-  id: 'setup-codes', area: 'Setup', title: 'A new installer code', shot: 'setup_new_code',
-  render: () => M.wizard({step: 3, glyph: 'key', title: 'Change the factory codes',
-    note: 'Anyone can look up the factory codes, so choose your own for the installer and the master.',
-    pad: M.code_pad({title: 'New installer code', tone: 'blue', glyph: 'key', digits: 4, width: 428})}),
+  id: 'setup-codes', area: 'Setup', title: 'The owner\'s first code', shot: 'setup_new_code',
+  notes: 'No factory codes (CORE-USR-041, the owner\'s decision of 2026-11-08): "This alarm is mine" asks for the owner\'s code twice; it becomes the master code.',
+  render: () => M.wizard({step: 3, glyph: 'key', title: 'Make your code',
+    note: 'This panel has no codes yet. The code you make now arms and disarms it, and no other code outranks it.',
+    pad: M.code_pad({title: 'Your code', tone: 'blue', glyph: 'key', digits: 4, width: 428})}),
 });
 
 M.screen({
@@ -58,19 +59,30 @@ M.screen({
     body: [
       M.row_link({glyph: 'wifi', color: 'green', title: 'Wi-Fi', detail: 'Harbor House', trail: 'check', trailColor: 'green'}),
       M.row_link({glyph: 'globe', color: 'green', title: 'Time zone', detail: 'Eastern Time', trail: 'check', trailColor: 'green'}),
-      M.row_link({glyph: 'key-round', color: 'amber', title: 'Codes', detail: 'The master code is still the factory code', value: 'Change', trail: ''}),
+      M.row_link({glyph: 'key-round', color: 'green', title: 'Codes', detail: 'Your own codes, no factory ones', trail: 'check', trailColor: 'green'}),
       M.row_link({glyph: 'house', color: 'green', title: 'Name', detail: 'Home', trail: 'check', trailColor: 'green'}),
     ].join('')}),
 });
 
 M.screen({
-  id: 'setup-codes-one', area: 'Setup', title: 'One code changed', shot: 'setup_codes',
-  render: () => M.wizard({step: 3, glyph: 'key', title: 'Change the factory codes', leaveSide: true,
-    note: 'Anyone can look up the factory codes, so choose your own for the installer and the master.',
-    exit: true, back: true, next: 'Next',
+  id: 'setup-codes-one', area: 'Setup', title: 'The first code', shot: 'setup_codes',
+  notes: 'A new or factory-reset panel has no codes (CORE-USR-041). The person at the panel makes the first: the owner\'s master code, or a helper\'s installer code for someone else\'s home (the owner makes the master code at the handover: Installer > Installer and master codes). Next stays off until a code is made. A panel that still has an older version\'s factory codes shows the old "Change the factory codes" rows instead.',
+  render: () => M.wizard({step: 3, glyph: 'key', title: 'Make your code', leaveSide: true,
+    note: 'This panel has no codes yet. The code you make now arms and disarms it, and no other code outranks it.',
+    back: true, next: 'Next',
     body: [
-      M.row_link({glyph: 'shield-check', color: 'green', title: 'Installer code', detail: 'Changed · for programming the panel', value: 'Change again'}),
-      M.row_link({glyph: 'key-round', color: 'amber', title: 'Master code', detail: 'Still the factory code · arms, disarms, adds users', value: 'Change'}),
-      M.paragraph('Skip it for now and the status bar reminds you until the master code is changed.', 'amber'),
+      M.row_link({glyph: 'house', color: 'green', title: 'This alarm is mine', detail: 'Your code is the master code'}),
+      M.row_link({glyph: 'wrench', color: 'blue', title: 'I\'m setting it up for someone else', detail: 'Your installer code; the owner makes theirs at the handover'}),
+    ].join('')}),
+});
+
+M.screen({
+  id: 'setup-codes-made', area: 'Setup', title: 'The owner\'s code made', shot: 'setup_codes_made',
+  render: () => M.wizard({step: 3, glyph: 'key', title: 'Your codes', leaveSide: true,
+    note: 'The master code is the owner\'s: no other code outranks it. Codes change in Settings > Users.',
+    back: true, next: 'Next',
+    body: [
+      M.row_link({glyph: 'shield-check', color: 'green', title: 'Master code', detail: 'Made · arms, disarms, adds users', trail: ''}),
+      M.row_link({glyph: 'key-round', color: 'gray', title: 'Installer code', detail: 'None · the master code does everything it does', trail: ''}),
     ].join('')}),
 });

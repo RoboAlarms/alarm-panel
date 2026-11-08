@@ -194,6 +194,12 @@ static void program_keepalive(void *ctx)
     alarm_service_program_keepalive();
 }
 
+static alarm_result_t first_code(void *ctx, uint8_t user, const char *code)
+{
+    (void)ctx;
+    return alarm_service_first_code(&SRC, user, code);
+}
+
 static alarm_result_t program_set_code(void *ctx, uint8_t user, const char *new_code)
 {
     (void)ctx;
@@ -2073,6 +2079,7 @@ void ui_port_esp_backend(ui_backend_t *out)
     out->program_exit = program_exit;
     out->program_keepalive = program_keepalive;
     out->program_set_code = program_set_code;
+    out->first_code = first_code;
     out->set_config = set_config;
     out->user_set = user_set;
     out->user_update = user_update;

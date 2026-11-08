@@ -188,23 +188,53 @@ static bool name_ok(const char *name)
     return true;
 }
 
-/* Renames the user (as the installer, who looks after everyone) keeping its role and partitions. */
+/* Renames the user as itself (its own entry; the installer never changes the Owner's, CORE-USR-040)
+ * keeping its role and partitions. */
 static bool rename_user(const alarm_config_t *cfg, uint8_t user, const char *name)
 {
     static const alarm_source_t SRC = {.kind = ALARM_SRC_REMOTE, .id = ALARM_SRC_ID_PANEL_MANAGER};
     const alarm_user_t *u = &cfg->users[user - 1];
     if (!strcmp(u->name, name))
         return true;
-    return alarm_service_user_update_as(&SRC, ALARM_USER_INSTALLER, user, u->authority,
-                                        u->partitions, name) == ALARM_OK;
+    return alarm_service_user_update_as(&SRC, user, user, u->authority, u->partitions, name) ==
+           ALARM_OK;
+}
+
+/* A code nobody knows: ten random digits, for an account made before its person chose a code. */
+static void unknown_code(char out[ALARM_CODE_MAX_LEN + 1])
+{
+    for (unsigned i = 0; i < 10u; i++)
+        out[i] = (char)('0' + esp_random() % 10u);
+    out[10] = '\0';
+}
+
+/* CORE-USR-041: no factory codes. A new headless panel's claim makes the installer's slot (and the
+ * Owner's, when the household's access comes now) with codes nobody knows: the people choose their
+ * own codes in People and codes, where each manages their own. */
+static bool first_codes(bool owner)
+{
+    static const alarm_source_t SRC = {.kind = ALARM_SRC_REMOTE, .id = ALARM_SRC_ID_PANEL_MANAGER};
+    char inst[ALARM_CODE_MAX_LEN + 1], master[ALARM_CODE_MAX_LEN + 1];
+    unknown_code(inst);
+    do {
+        unknown_code(master);
+    } while (!strcmp(inst, master));
+    const alarm_result_t r = alarm_service_first_codes(&SRC, inst, owner ? master : NULL);
+    mbedtls_platform_zeroize(inst, sizeof(inst));
+    mbedtls_platform_zeroize(master, sizeof(master));
+    return r == ALARM_OK;
 }
 
 static bool accounts_commit(void)
 {
+    const bool owner = s_op.owner[0] != '\0';
     alarm_config_t *cfg = web_alloc(sizeof(*cfg));
-    bool ok = cfg && alarm_service_get_config(cfg) == ESP_OK &&
-              cfg->users[ALARM_USER_INSTALLER - 1].authority == ALARM_AUTH_INSTALLER &&
-              cfg->users[ALARM_USER_MASTER - 1].authority == ALARM_AUTH_MASTER;
+    bool ok = cfg && alarm_service_get_config(cfg) == ESP_OK;
+    if (ok && cfg->users[ALARM_USER_INSTALLER - 1].authority == ALARM_AUTH_NONE &&
+        cfg->users[ALARM_USER_MASTER - 1].authority == ALARM_AUTH_NONE)
+        ok = first_codes(owner) && alarm_service_get_config(cfg) == ESP_OK;
+    ok = ok && cfg->users[ALARM_USER_INSTALLER - 1].authority == ALARM_AUTH_INSTALLER &&
+         (!owner || cfg->users[ALARM_USER_MASTER - 1].authority == ALARM_AUTH_MASTER);
     if (cfg) {
         mbedtls_platform_zeroize(cfg, sizeof(*cfg));
         free(cfg);
@@ -214,7 +244,6 @@ static bool accounts_commit(void)
         return false;
     }
     /* Each user's own name and password; the passwords are the people's own (not temporary). */
-    const bool owner = s_op.owner[0] != '\0';
     cfg = web_alloc(sizeof(*cfg));
     ok = cfg && alarm_service_get_config(cfg) == ESP_OK &&
          (!owner || rename_user(cfg, ALARM_USER_MASTER, s_op.owner)) &&

@@ -33,23 +33,20 @@ static void demo_zone(alarm_config_t *cfg, uint16_t z, alarm_zone_type_t type,
 
 esp_err_t alarm_store_default_config(alarm_config_t *cfg)
 {
-    /* Creating credentials needs crypto that is known to work: a code hashed by a broken PSA
-     * could never be entered again, and must never be written to flash. */
+    /* A panel's first code is made by its first person at the panel, with crypto that is known
+     * to work then: a code hashed by a broken PSA could never be entered again. Checked here
+     * too, so a panel whose hashing is broken says so from its first start. */
     const esp_err_t crypto = code_hash_init();
     if (crypto != ESP_OK) {
-        ESP_LOGE(TAG, "code hashing unavailable (%s): refusing to create the factory codes",
+        ESP_LOGE(TAG, "code hashing unavailable (%s): no code could be made",
                  esp_err_to_name(crypto));
         return crypto;
     }
-    const uint32_t faults = code_hash_faults();
 
+    /* No users and so no codes: there are no factory codes (CORE-USR-041, the owner's decision of
+     * 2026-11-08); the setup makes the first. */
     alarm_config_defaults(cfg);
     esp_fill_random(cfg->code_salt, sizeof(cfg->code_salt));
-    alarm_config_set_legacy_users(cfg, code_hash_pbkdf2, NULL);
-    if (code_hash_faults() != faults) {
-        ESP_LOGE(TAG, "code hashing failed while creating the factory codes");
-        return ESP_ERR_INVALID_STATE;
-    }
     set_name(cfg->partitions[0].name, "Home");
 
 #if CONFIG_ALARM_DEMO_ZONES

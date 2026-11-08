@@ -13076,6 +13076,8 @@ int main(int argc, char **argv)
     host_panel_forget_wifi();
     tap_text("Run the setup again");
     run(300);
+    host_panel_forget_codes(); /* as from the box: no codes (CORE-USR-041) */
+    run(300);
 #ifdef ALARM_PREVIEW_LOCALE
     /* I18N-012: with more than one language the setup asks for it first. */
     expect(find_label(by_name("wiz_body"), "Region") != NULL, "the setup didn't ask for the language");
@@ -13100,13 +13102,23 @@ int main(int argc, char **argv)
     run(100);
     tap_name("wiz_next");
     run(300);
-    tap_text("Installer code");
+    /* CORE-USR-041: no factory codes; the first person makes the first, and Next waits for it */
+    expect(find_label(by_name("wiz_body"), "This alarm is mine") != NULL &&
+               find_label(by_name("wiz_body"), "I'm setting it up for someone else") != NULL,
+           "CORE-USR-041: the setup doesn't ask for the first code");
+    expect(lv_subject_get_int(&subject_wiz_next_on) == 0,
+           "CORE-USR-041: the setup goes on with no code");
+    shot("setup_codes");
+    tap_text("This alarm is mine");
     type("8642");
     shot("setup_new_code");
     type("0k");
     type("86420k");
     run(300);
-    shot("setup_codes");
+    expect(find_label(by_name("wiz_body"), "Made · arms, disarms, adds users") != NULL &&
+               lv_subject_get_int(&subject_wiz_next_on) == 1,
+           "CORE-USR-041: the owner's first code wasn't made");
+    shot("setup_codes_made");
     tap_name("wiz_next");
     run(300);
     tap_name("wiz_next");
@@ -13160,7 +13172,7 @@ int main(int argc, char **argv)
     expect_step(2, "picking a time zone");
     tap_name("wiz_next");
     expect_step(3, "Next after picking a time zone");
-    tap_name("wiz_next"); /* Next, factory codes kept */
+    tap_name("wiz_next"); /* Next, an older panel's factory codes kept */
     expect_step(4, "Next with the factory codes kept");
     tap_name("wiz_next");
     expect_step(5, "Next on the name step");

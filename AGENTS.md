@@ -135,8 +135,9 @@ A panel on a wall protects a house.
 - Before the first flash of a new board, back up its factory flash (CONTRIBUTING.md, "Set up a
   panel"), unless its owner says a development board needs none. Never install a bench fault image
   (a `-fault` version) on a panel that protects a house.
-- Codes: factory installer 69420, master 123456. Once changed, only the panel's owner knows them:
-  never guess at the console (5 wrong ones lock the keypad).
+- Codes: a new or factory-reset panel has none; its first person makes them at the setup. Older
+  panels may still have the old factory codes (installer 69420, master 123456). Otherwise only the
+  panel's owner knows them: never guess at the console (5 wrong ones lock the keypad).
 - Service console (115200 baud, `help` lists every command): `python tools/panel_console.py -p <PORT>
   status "zones"` types commands without a reset.
 - Without the USB bootloader: `tools/ota_serial.py -p <PORT> <image.bin>` (about 7 min; rolls back by

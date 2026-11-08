@@ -19759,7 +19759,7 @@ msgstr ""
 
 #. Installer > Factory reset; {0} is the factory installer code and {1} the master code, numbers. At most 230 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Erases the zones, users and codes, Wi-Fi and every setting, then restarts with the factory codes (installer {0}, master {1}) and the setup."
+msgid "Erases the zones, users and codes, Wi-Fi and every setting, then restarts with no codes and the setup, where the first person makes their own."
 msgstr ""
 
 #. A switch row's title (one line).
@@ -24870,7 +24870,7 @@ msgstr ""
 
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Your own installer and master codes"
+msgid "Yours, or the installer's for someone else's home"
 msgstr ""
 
 #. A list row's title (one line; a long one ends in ...).
@@ -31792,4 +31792,46 @@ msgid "On: the installer can change settings. The master code always can"
 msgstr ""
 
 msgid "Hand the panel to the owner to make the master code: it arms, disarms and outranks every other code. You can't change it afterwards."
+msgstr ""
+
+msgid "Make your code"
+msgstr ""
+
+msgid "Your installer code"
+msgstr ""
+
+msgid "This panel has no codes yet. The code you make now arms and disarms it, and no other code outranks it."
+msgstr ""
+
+msgid "This alarm is mine"
+msgstr ""
+
+msgid "Your code is the master code"
+msgstr ""
+
+msgid "I'm setting it up for someone else"
+msgstr ""
+
+msgid "Your installer code; the owner makes theirs at the handover"
+msgstr ""
+
+msgid "Your codes"
+msgstr ""
+
+msgid "The master code is the owner's: no other code outranks it. Codes change in Settings > Users."
+msgstr ""
+
+msgid "Not made yet · the owner makes it at the handover"
+msgstr ""
+
+msgid "Made · arms, disarms, adds users"
+msgstr ""
+
+msgid "None · the master code does everything it does"
+msgstr ""
+
+msgid "Made · for programming the panel"
+msgstr ""
+
+msgid "Your own codes, no factory ones"
 msgstr ""

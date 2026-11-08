@@ -26403,8 +26403,8 @@ msgstr "Empezar de cero, como recién salido de la caja"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Erases the zones, users and codes, Wi-Fi and every setting, then restarts with the factory codes (installer {0}, master {1}) and the setup."
-msgstr "Borra las zonas, los usuarios y los códigos, el Wi-Fi y todos los ajustes, y luego se reinicia con los códigos de fábrica (instalador {0}, maestro {1}) y la configuración inicial."
+msgid "Erases the zones, users and codes, Wi-Fi and every setting, then restarts with no codes and the setup, where the first person makes their own."
+msgstr "Borra las zonas, los usuarios y los códigos, el Wi-Fi y toda la configuración, y reinicia sin códigos y con la configuración inicial, donde la primera persona crea el suyo."
 
 #. A switch row's title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -32788,8 +32788,8 @@ msgstr "Cambie los códigos de fábrica"
 #: components/ui/alarm_ui/src/ui_wizard.c
 # review: draft
 #, fuzzy
-msgid "Your own installer and master codes"
-msgstr "Sus propios códigos de instalador y maestro"
+msgid "Yours, or the installer's for someone else's home"
+msgstr "El suyo, o el del instalador para la casa de otra persona"
 
 #. A list row's title (one line; a long one ends in ...).
 #. First-time setup: the step's title on the left. At most 127 bytes.
@@ -41837,3 +41837,73 @@ msgstr "Activado: el instalador puede cambiar la configuración. El código maes
 #, fuzzy
 msgid "Hand the panel to the owner to make the master code: it arms, disarms and outranks every other code. You can't change it afterwards."
 msgstr "Entregue el panel al propietario para crear el código maestro: arma, desarma y está por encima de cualquier otro código. Después no podrá cambiarlo."
+
+# review: draft
+#, fuzzy
+msgid "Make your code"
+msgstr "Cree su código"
+
+# review: draft
+#, fuzzy
+msgid "Your installer code"
+msgstr "Su código de instalador"
+
+# review: draft
+#, fuzzy
+msgid "This panel has no codes yet. The code you make now arms and disarms it, and no other code outranks it."
+msgstr "Este panel aún no tiene códigos. El código que cree ahora lo arma y lo desarma; ningún otro código lo supera."
+
+# review: draft
+#, fuzzy
+msgid "This alarm is mine"
+msgstr "Esta alarma es mía"
+
+# review: draft
+#, fuzzy
+msgid "Your code is the master code"
+msgstr "Su código es el código maestro"
+
+# review: draft
+#, fuzzy
+msgid "I'm setting it up for someone else"
+msgstr "La estoy configurando para otra persona"
+
+# review: draft
+#, fuzzy
+msgid "Your installer code; the owner makes theirs at the handover"
+msgstr "Su código de instalador; el dueño crea el suyo en la entrega"
+
+# review: draft
+#, fuzzy
+msgid "Your codes"
+msgstr "Sus códigos"
+
+# review: draft
+#, fuzzy
+msgid "The master code is the owner's: no other code outranks it. Codes change in Settings > Users."
+msgstr "El código maestro es del propietario: ningún código lo supera. Los códigos se cambian en Configuración > Usuarios."
+
+# review: draft
+#, fuzzy
+msgid "Not made yet · the owner makes it at the handover"
+msgstr "Aún no creado · el propietario lo crea en la entrega"
+
+# review: draft
+#, fuzzy
+msgid "Made · arms, disarms, adds users"
+msgstr "Creado · arma, desarma, agrega usuarios"
+
+# review: draft
+#, fuzzy
+msgid "None · the master code does everything it does"
+msgstr "Ninguno · el código maestro hace todo lo que hace"
+
+# review: draft
+#, fuzzy
+msgid "Made · for programming the panel"
+msgstr "Creado · para programar el panel"
+
+# review: draft
+#, fuzzy
+msgid "Your own codes, no factory ones"
+msgstr "Sus propios códigos, ninguno de fábrica"

@@ -2015,14 +2015,11 @@ static void build_reset(lv_obj_t *body, char *note, size_t nlen)
 {
     /* TR: the line under the page title. At most 127 bytes */
     i18n_utf8_copy(note, nlen, TR("Start again from the box"));
-    char erase[256];
-    /* TR: Installer > Factory reset; {0} is the factory installer code and {1} the master code,
-     * numbers. At most 230 bytes */
-    I18N_FORMAT(erase, sizeof(erase),
-                TR("Erases the zones, users and codes, Wi-Fi and every setting, then restarts "
-                   "with the factory codes (installer {0}, master {1}) and the setup."),
-                NOTR(ALARM_LEGACY_INSTALLER_CODE), NOTR(ALARM_LEGACY_MASTER_CODE));
-    ui_paragraph(body, erase, ui_tone_gray());
+    /* TR: Installer > Factory reset. At most 190 bytes */
+    ui_paragraph(body,
+                 TR("Erases the zones, users and codes, Wi-Fi and every setting, then restarts "
+                    "with no codes and the setup, where the first person makes their own."),
+                 ui_tone_gray());
     s_reset_log = false;
     ui_row_toggle(body, TR("Also erase the event log"), TR("Off keeps the history, with the reset in it"),
                   false, on_reset_log, NULL);

@@ -410,6 +410,13 @@ alarm_result_t alarm_engine_program_enter_as(alarm_engine_t *e, const alarm_sour
  * user_changed by user 0. */
 alarm_result_t alarm_engine_first_code(alarm_engine_t *e, const alarm_source_t *src,
                                        uint8_t user_no, const char *code, alarm_ms_t now);
+/* CORE-USR-041: a headless panel's claim (docs/features/42: no screen; the setup page's own proof
+ * of presence stands for "at the panel"): the installer's and, unless NULL, the Owner's codes at
+ * once, all or none, from any source, only while the panel has no codes. The platform passes
+ * codes nobody knows; the people set their own afterwards. */
+alarm_result_t alarm_engine_first_codes(alarm_engine_t *e, const alarm_source_t *src,
+                                        const char *installer_code, const char *master_code,
+                                        alarm_ms_t now);
 /* No master and no installer code yet: the setup's first code is still to be made. */
 bool alarm_engine_no_codes(const alarm_engine_t *e);
 

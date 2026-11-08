@@ -61,6 +61,10 @@ bool host_panel_prefs_cancel(uint32_t ticket);
 
 /* Forget the saved network (the setup starts from scratch). */
 void host_panel_forget_wifi(void);
+/* The panel as it comes from the box or a factory reset: no master and no installer code (there
+ * are no factory codes, CORE-USR-041). The preview's world otherwise starts as an older panel that
+ * kept the codes it shipped with. */
+void host_panel_forget_codes(void);
 
 /* The simulated house network. Its router is 192.168.1.1 on 255.255.255.0 and it leases
  * 192.168.1.42 to the panel; a fixed address on another network can't reach the router, the

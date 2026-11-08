@@ -1,6 +1,6 @@
 /*
- * ui_wizard.c - first-boot setup: welcome, Wi-Fi, time zone, the factory codes, the system
- * name, done. Runs on its own screen (screen_wizard); every step can be skipped, and anything
+ * ui_wizard.c - first-boot setup: welcome, Wi-Fi, time zone, the first code (no factory codes:
+ * the Owner's, or the installer's for someone else's home), the system name, done. Runs on its own screen (screen_wizard); every step can be skipped, and anything
  * set here can be changed later in Settings. An alarm takes the main screen over and the
  * setup continues afterwards. Run again from the installer menu, on a panel that is already
  * set up, every step also offers "Leave setup" (ui_wizard_exit).
@@ -40,6 +40,7 @@ static bool s_role;     /* a first start with the panel link: the role step afte
 static bool s_enrolled;
 static bool s_keypad;   /* the keypad's branch (chosen on the role step, or Pair again) */
 static uint8_t s_code_user;
+static bool s_code_first; /* the code pad makes the panel's first code (CORE-USR-041) */
 static alarm_config_t *s_scratch;
 
 static lv_obj_t *body(void)
@@ -112,8 +113,8 @@ static void build_welcome(lv_obj_t *b)
                 TR("For the clock and updates"), NULL, NULL, NULL, NULL);
     ui_row_link(b, UI_ICON_GLOBE, ui_tone_blue(), TR("Choose your time zone"),
                 TR("So the event log shows your local time"), NULL, NULL, NULL, NULL);
-    ui_row_link(b, UI_ICON_KEY_ROUND, ui_tone_amber(), TR("Change the factory codes"),
-                TR("Your own installer and master codes"), NULL, NULL, NULL, NULL);
+    ui_row_link(b, UI_ICON_KEY_ROUND, ui_tone_amber(), TR("Make your code"),
+                TR("Yours, or the installer's for someone else's home"), NULL, NULL, NULL, NULL);
     ui_row_link(b, UI_ICON_TAG, ui_tone_violet(), TR("Name your system"),
                 TR("How it shows up on the screen"), NULL, NULL, NULL, NULL);
     /* the progress bar counts the last step too: the list names all five */
@@ -575,13 +576,19 @@ static void build_clock(lv_obj_t *b)
 
 static bool code_done(const char *code)
 {
-    const char *current = s_code_user == ALARM_USER_INSTALLER ? ALARM_LEGACY_INSTALLER_CODE
-                                                              : ALARM_LEGACY_MASTER_CODE;
-    const alarm_user_t *u = &S.cfg->users[s_code_user - 1u];
-    const alarm_result_t r = S.be.user_set != NULL
-                                 ? S.be.user_set(S.be.ctx, current, s_code_user, code,
-                                                 u->authority, u->partitions, NULL)
-                                 : ALARM_ERR_DISABLED;
+    alarm_result_t r = ALARM_ERR_DISABLED;
+    if (s_code_first) {
+        /* CORE-USR-041: no factory codes; the first person makes the first */
+        if (S.be.first_code != NULL) {
+            r = S.be.first_code(S.be.ctx, s_code_user, code);
+        }
+    } else if (S.be.user_set != NULL) {
+        /* an older panel that still has the codes it shipped with: changed with the old one */
+        const char *current = s_code_user == ALARM_USER_INSTALLER ? ALARM_LEGACY_INSTALLER_CODE
+                                                                  : ALARM_LEGACY_MASTER_CODE;
+        const alarm_user_t *u = &S.cfg->users[s_code_user - 1u];
+        r = S.be.user_set(S.be.ctx, current, s_code_user, code, u->authority, u->partitions, NULL);
+    }
     if (r != ALARM_OK) {
         ui_beep(UI_BEEP_ERROR);
         ui_pad_error(ui_result_text(r));
@@ -596,14 +603,78 @@ static bool code_done(const char *code)
 static void change_code(void *ctx)
 {
     s_code_user = (uint8_t)(uintptr_t)ctx;
+    s_code_first = false;
     ui_pad_ask_new(HOST_WIZARD, UI_ICON_KEY_ROUND,
                    s_code_user == ALARM_USER_INSTALLER ? TR("New installer code")
                                                        : TR("New master code"),
                    code_done);
 }
 
+static void first_code(void *ctx)
+{
+    s_code_user = (uint8_t)(uintptr_t)ctx;
+    s_code_first = true;
+    ui_pad_ask_new(HOST_WIZARD, UI_ICON_KEY_ROUND,
+                   /* TR: setup, the code pad's title for the panel's first code: the owner's
+                    * (master) or, for someone else's home, the installer's. At most 31 bytes */
+                   s_code_user == ALARM_USER_INSTALLER ? TR("Your installer code")
+                                                       : TR("Your code"),
+                   code_done);
+}
+
+/* CORE-USR-041: a panel with no codes (new, or after a factory reset: there are no factory codes,
+ * the owner's decision of 2026-11-08). The person at the panel makes the first: the Owner's master
+ * code, or the installer's for someone else's home; Next waits for it. */
+static void build_first_code(lv_obj_t *b)
+{
+    side(UI_ICON_KEY_ROUND, TR("Make your code"),
+         TR("This panel has no codes yet. The code you make now arms and disarms it, and no other "
+            "code outranks it."));
+    /* TR: setup, the first code: the row for the person whose home it is. At most 63 bytes */
+    ui_row_link(b, UI_ICON_HOUSE, ui_tone_green(), TR("This alarm is mine"),
+                /* TR: setup, under that row. At most 95 bytes */
+                TR("Your code is the master code"), NULL, UI_ICON_CHEVRON_RIGHT, first_code,
+                (void *)(uintptr_t)ALARM_USER_MASTER);
+    /* TR: setup, the first code: the row for a helper or installer. At most 63 bytes */
+    ui_row_link(b, UI_ICON_WRENCH, ui_tone_blue(), TR("I'm setting it up for someone else"),
+                /* TR: setup, under that row. At most 95 bytes */
+                TR("Your installer code; the owner makes theirs at the handover"), NULL,
+                UI_ICON_CHEVRON_RIGHT, first_code, (void *)(uintptr_t)ALARM_USER_INSTALLER);
+    footer(TR("Next"), true);
+    ui_set_int(&subject_wiz_next_on, 0); /* a panel is never left without a code */
+}
+
 static void build_codes(lv_obj_t *b)
 {
+    if (S.snap.no_codes) {
+        build_first_code(b);
+        return;
+    }
+    const bool master_none = S.cfg->users[ALARM_USER_MASTER - 1u].authority == ALARM_AUTH_NONE;
+    const bool inst_none = S.cfg->users[ALARM_USER_INSTALLER - 1u].authority == ALARM_AUTH_NONE;
+    if (S.snap.default_codes == 0u) {
+        side(UI_ICON_KEY_ROUND, TR("Your codes"),
+             TR("The master code is the owner's: no other code outranks it. Codes change in "
+                "Settings > Users."));
+        /* TR: setup, the master code row once it is made. At most 95 bytes */
+        ui_row_link(b, master_none ? UI_ICON_KEY_ROUND : UI_ICON_SHIELD_CHECK,
+                    master_none ? ui_tone_amber() : ui_tone_green(), TR("Master code"),
+                    master_none
+                        /* TR: setup, the master code row on a panel set up for someone else,
+                         * before the handover. At most 95 bytes */
+                        ? TR("Not made yet · the owner makes it at the handover")
+                        : TR("Made · arms, disarms, adds users"),
+                    NULL, NULL, NULL, NULL);
+        /* TR: setup, the installer code row: made, or none (it isn't needed). At most 95 bytes */
+        ui_row_link(b, inst_none ? UI_ICON_KEY_ROUND : UI_ICON_SHIELD_CHECK,
+                    inst_none ? ui_tone_gray() : ui_tone_green(), TR("Installer code"),
+                    inst_none ? TR("None · the master code does everything it does")
+                              : TR("Made · for programming the panel"),
+                    NULL, NULL, NULL, NULL);
+        footer(TR("Next"), true);
+        return;
+    }
+    /* An older panel that still has the codes it shipped with. */
     side(UI_ICON_KEY_ROUND, TR("Change the factory codes"),
          TR("Anyone can look up the factory codes, so choose your own for the installer and the "
             "master."));
@@ -705,11 +776,19 @@ static void build_done(lv_obj_t *b)
              connected ? w.ssid : TR("Not connected: join later in Settings > Wi-Fi"), connected);
     done_row(b, UI_ICON_GLOBE, true, TR("Time zone"),
              zone >= 0 ? TR_C("time zone", UI_TIMEZONES[zone].name) : tz, true);
-    /* a factory code left: the row is amber and offers "Change"; the master's first */
+    /* a factory code left (an older panel): the row is amber and offers "Change"; the master's
+     * first. No master yet (set up for someone else): amber, made at the handover. */
     const uint8_t factory = S.snap.default_codes;
-    if (factory == 0u) {
+    const bool master_none = S.cfg->users[ALARM_USER_MASTER - 1u].authority == ALARM_AUTH_NONE;
+    if (factory == 0u && master_none) {
+        ui_row_link(b, UI_ICON_KEY_ROUND, ui_tone_amber(), TR_C("setup summary", "Codes"),
+                    TR("Not made yet · the owner makes it at the handover"), NULL, NULL, NULL,
+                    NULL);
+    } else if (factory == 0u) {
         done_row(b, UI_ICON_KEY_ROUND, true, TR_C("setup summary", "Codes"),
-                 TR("Your own installer and master codes"), true);
+                 /* TR: setup's summary, the codes row once the owner's code is made. At most 95
+                  * bytes */
+                 TR("Your own codes, no factory ones"), true);
     } else {
         ui_row_link(b, UI_ICON_KEY_ROUND, ui_tone_amber(), TR_C("setup summary", "Codes"),
                     factory == ALARM_DEFAULT_CODE_MASTER      ? TR("The master code is still the factory code")

@@ -28,6 +28,7 @@ void alarm_engine_snapshot(const alarm_engine_t *e, alarm_snapshot_t *out)
             (out->dev_troubles & (1u << d)) != 0u ? e->dev_trouble_partition[d] : 0u;
     }
     out->default_codes = alarm_engine_default_codes(e);
+    out->no_codes = alarm_engine_no_codes(e);
     out->program = alarm_engine_program_active(e);
     const alarm_ms_t left = alarm_engine_recovery_left(e);
     out->recovery_left_ms = left > UINT32_MAX ? UINT32_MAX : (uint32_t)left;

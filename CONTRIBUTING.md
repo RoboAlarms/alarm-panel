@@ -246,10 +246,12 @@ CrowPanel Advanced 7" just out of its box. Steps 1 and 2 are the ones you can't 
    so it stops guessing which board and which port it is talking to.
 
 On first boot the panel runs its setup on the touchscreen: Wi-Fi, the time zone, a name and your
-own installer and master codes. The factory codes are installer **69420** and master **123456**;
-until they change, the status bar says so on every screen. A lost installer code is recovered at
-the panel: unplug it for ten seconds, and for two minutes after it starts Settings > Installer
-opens without the code.
+own code. There are no factory codes: the first person makes the master code (the owner's, which
+no other code outranks), or an installer code when setting it up for someone else, who makes the
+master code at the handover. Panels from before this kept their old factory codes (installer
+69420, master 123456) until they are changed, and the status bar says so. A lost master code is
+recovered at the panel: unplug it for ten seconds, and for two minutes after it starts Settings >
+About > Installer opens without a code to set a new master code.
 
 If the first boot says `stored settings could not be opened` and the screen stays empty, the
 settings area still holds what the vendor demo left there. The panel won't erase it by itself (on
@@ -258,8 +260,8 @@ the serial console (or `python tools/panel_console.py -p COM4 "factory_reset con
 restarts by itself every two minutes until you do.
 
 The **service console** (115200 baud; `help` lists every command) shows the status, simulates
-zones (`zone 3 open`), types on a virtual keypad (`keys 123456W` arms Away with the factory master
-code), prints the event log (`events`, `log_export` as CSV), scans for Wi-Fi (`wifi scan`), sets
+zones (`zone 3 open`), types on a virtual keypad (`keys 123456W` arms Away with master code
+123456), prints the event log (`events`, `log_export` as CSV), scans for Wi-Fi (`wifi scan`), sets
 how the panel gets its address (`ip`, `ip static 192.0.2.42 255.255.255.0 192.0.2.1`) and walks
 the connection step by step (`netcheck`). From a script, without resetting the panel:
 `python tools/panel_console.py -p COM4 status zones`. To update a running panel without the USB

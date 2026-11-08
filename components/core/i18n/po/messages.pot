@@ -5926,7 +5926,9 @@ msgstr ""
 msgid "{0}. Left empty, the code stays as it is."
 msgstr ""
 
+#. The code pad's title. At most 63 bytes.
 #: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_wizard.c
 msgid "Your code"
 msgstr ""
 
@@ -19943,12 +19945,14 @@ msgid "Changed"
 msgstr ""
 
 #. A list row's title (one line; a long one ends in ...).
+#. setup, the installer code row: made, or none (it isn't needed). At most 95 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_wizard.c
 msgid "Installer code"
 msgstr ""
 
 #. A list row's title (one line; a long one ends in ...).
+#. setup, the master code row once it is made. At most 95 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_wizard.c
 msgid "Master code"
@@ -19996,9 +20000,9 @@ msgstr ""
 msgid "Start again from the box"
 msgstr ""
 
-#. Installer > Factory reset; {0} is the factory installer code and {1} the master code, numbers. At most 230 bytes
+#. Installer > Factory reset. At most 190 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Erases the zones, users and codes, Wi-Fi and every setting, then restarts with the factory codes (installer {0}, master {1}) and the setup."
+msgid "Erases the zones, users and codes, Wi-Fi and every setting, then restarts with no codes and the setup, where the first person makes their own."
 msgstr ""
 
 #. A switch row's title (one line).
@@ -25253,12 +25257,12 @@ msgstr ""
 #. A list row's title (one line; a long one ends in ...).
 #. First-time setup: the step's title on the left. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Change the factory codes"
+msgid "Make your code"
 msgstr ""
 
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Your own installer and master codes"
+msgid "Yours, or the installer's for someone else's home"
 msgstr ""
 
 #. A list row's title (one line; a long one ends in ...).
@@ -25570,6 +25574,75 @@ msgstr ""
 msgid "No internet yet, so set the clock here. The panel corrects it once it's online."
 msgstr ""
 
+#. setup, the code pad's title for the panel's first code: the owner's (master) or, for someone else's home, the installer's. At most 31 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Your installer code"
+msgstr ""
+
+#. First-time setup: the explanation under the step's title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "This panel has no codes yet. The code you make now arms and disarms it, and no other code outranks it."
+msgstr ""
+
+#. setup, the first code: the row for the person whose home it is. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "This alarm is mine"
+msgstr ""
+
+#. setup, the first code: the row for the person whose home it is. At most 63 bytes
+#. setup, under that row. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Your code is the master code"
+msgstr ""
+
+#. setup, the first code: the row for a helper or installer. At most 63 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "I'm setting it up for someone else"
+msgstr ""
+
+#. setup, the first code: the row for a helper or installer. At most 63 bytes
+#. setup, under that row. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Your installer code; the owner makes theirs at the handover"
+msgstr ""
+
+#. First-time setup: the step's title on the left. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Your codes"
+msgstr ""
+
+#. First-time setup: the explanation under the step's title. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "The master code is the owner's: no other code outranks it. Codes change in Settings > Users."
+msgstr ""
+
+#. setup, the master code row once it is made. At most 95 bytes
+#. setup, the master code row on a panel set up for someone else, before the handover. At most 95 bytes
+#. A list row's detail line, under its title (one line).
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Not made yet · the owner makes it at the handover"
+msgstr ""
+
+#. setup, the master code row once it is made. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Made · arms, disarms, adds users"
+msgstr ""
+
+#. setup, the installer code row: made, or none (it isn't needed). At most 95 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "None · the master code does everything it does"
+msgstr ""
+
+#. setup, the installer code row: made, or none (it isn't needed). At most 95 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Made · for programming the panel"
+msgstr ""
+
+#. First-time setup: the step's title on the left. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Change the factory codes"
+msgstr ""
+
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_wizard.c
 msgid "Anyone can look up the factory codes, so choose your own for the installer and the master."
@@ -25637,6 +25710,11 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_wizard.c
 msgctxt "setup summary"
 msgid "Codes"
+msgstr ""
+
+#. setup's summary, the codes row once the owner's code is made. At most 95 bytes
+#: components/ui/alarm_ui/src/ui_wizard.c
+msgid "Your own codes, no factory ones"
 msgstr ""
 
 #. A list row's detail line, under its title (one line).

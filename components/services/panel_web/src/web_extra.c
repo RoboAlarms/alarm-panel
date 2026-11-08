@@ -552,6 +552,12 @@ static void reset_task(void *arg)
     panel_system_factory_reset(&SOURCE, request.user, request.erase_log);
     vTaskDelete(NULL);
 }
+/* Setup mode's programming: the installer's and the system master's (the Owner's, CORE-PROG-001). */
+static bool programs(alarm_authority_t authority)
+{
+    return authority == ALARM_AUTH_INSTALLER || authority == ALARM_AUTH_MASTER;
+}
+
 cJSON *web_extra_action(const ui_backend_t *b, const char *path, const cJSON *o, uint8_t user,
                         alarm_authority_t authority, const i18n_catalog_t *words)
 {
@@ -564,7 +570,7 @@ cJSON *web_extra_action(const ui_backend_t *b, const char *path, const cJSON *o,
         return candidates((uint8_t)value, str(o, "query"));
     }
     if (!strcmp(path, "sources/learn")) {
-        if (authority != ALARM_AUTH_INSTALLER || !num(o, "kind", 1, 255, &value) ||
+        if (!programs(authority) || !num(o, "kind", 1, 255, &value) ||
             !cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(o, "enabled")))
             return answer(false, "Installer authority and source required");
         return answer(
@@ -574,8 +580,8 @@ cJSON *web_extra_action(const ui_backend_t *b, const char *path, const cJSON *o,
     }
     unsigned number;
     if (indexed(path, "binding/", ALARM_MAX_ZONES, &number)) {
-        /* The installer's, as the signed-in installer: no code (BL-135). */
-        if (authority != ALARM_AUTH_INSTALLER)
+        /* Setup mode's, as the signed-in installer or system master: no code (BL-135). */
+        if (!programs(authority))
             return answer(false, "Installer authority required");
         if (!strcmp(action, "unbind"))
             return answer(zone_service_unbind((uint16_t)number) == ZONE_HUB_OK,
@@ -645,8 +651,8 @@ cJSON *web_extra_action(const ui_backend_t *b, const char *path, const cJSON *o,
     }
     if (!strcmp(path, "installer-code")) {
         /* The installer and master codes, set in installer mode as at the panel: entered as
-         * the signed-in installer (CORE-PROG-011), no code. */
-        if (authority != ALARM_AUTH_INSTALLER || !num(o, "number", 1, 2, &value))
+         * the signed-in installer or system master (CORE-PROG-011), no code. */
+        if (!programs(authority) || !num(o, "number", 1, 2, &value))
             return answer(false, "Installer authority required");
         alarm_result_t e = alarm_service_program_enter_as(&SOURCE, user);
         if (e == ALARM_OK) {

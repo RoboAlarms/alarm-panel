@@ -690,6 +690,12 @@ static void test_req_rules(void)
     TEST_ASSERT_NULL(proto_srv_req_refusal("POST", "devices/act", false));
     TEST_ASSERT_EQUAL(PROTO_SRV_ACT_PEOPLE, proto_srv_req_act("POST", "people"));
     TEST_ASSERT_EQUAL(PROTO_SRV_ACT_SETUP, proto_srv_req_act("POST", "zwave/include"));
+    /* Setting the installer or master code without the old one: Setup mode's, behind the
+     * remote_setup switch and the step-up (the Owner reaches it too, CORE-PROG-001). */
+    TEST_ASSERT_EQUAL(PROTO_SRV_ACT_SETUP, proto_srv_req_act("POST", "installer-code"));
+    TEST_ASSERT_EQUAL(PROTO_SRV_ACT_SETUP, proto_srv_req_act("POST", "setup-mode"));
+    TEST_ASSERT_EQUAL_STRING("step_up", proto_srv_req_refusal("POST", "installer-code", false));
+    TEST_ASSERT_EQUAL_STRING("step_up", proto_srv_req_refusal("POST", "setup-mode", false));
     TEST_ASSERT_EQUAL(PROTO_SRV_ACT_ORDINARY, proto_srv_req_act("GET", "people"));
 }
 

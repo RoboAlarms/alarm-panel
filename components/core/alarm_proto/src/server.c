@@ -843,11 +843,13 @@ proto_srv_act_t proto_srv_req_act(const char *method, const char *path)
     if (strncmp(path, "people", 6) == 0 || strncmp(path, "setup/people", 12) == 0) {
         return PROTO_SRV_ACT_PEOPLE;
     }
-    /* Installer programming, as the touchscreen keeps it behind Setup mode. */
+    /* Installer programming, as the touchscreen keeps it behind Setup mode; the installer and
+     * master codes too (set there without the old one, by the installer or the Owner). */
     if (strncmp(path, "setup/alarm", 11) == 0 || strncmp(path, "setup-mode", 10) == 0 ||
         strncmp(path, "zwave", 5) == 0 || strncmp(path, "zigbee", 6) == 0 ||
         strncmp(path, "keypads", 7) == 0 || strncmp(path, "alarm", 5) == 0 ||
-        strncmp(path, "sources", 7) == 0 || strncmp(path, "binding", 7) == 0) {
+        strncmp(path, "sources", 7) == 0 || strncmp(path, "binding", 7) == 0 ||
+        strncmp(path, "installer-code", 14) == 0) {
         return PROTO_SRV_ACT_SETUP;
     }
     return PROTO_SRV_ACT_ORDINARY;

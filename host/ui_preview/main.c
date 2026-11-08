@@ -1196,8 +1196,8 @@ static void walk_zwave(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -1649,8 +1649,8 @@ static void walk_zwave_recovery(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -1900,8 +1900,8 @@ static void walk_zwave_firmware(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -2085,8 +2085,8 @@ static void walk_zwave_switches(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -2217,8 +2217,8 @@ static void walk_zwave_smartstart(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -2357,8 +2357,8 @@ static void walk_zwave_network_care(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -2527,7 +2527,7 @@ static void zw_trouble_open(const char *row)
     if (lv_subject_get_int(&subject_toast_visible) == 1 &&
         strcmp(lv_subject_get_string(&subject_toast),
                "Enter the installer code to see the radio") == 0) {
-        tap_text("Enter the installer code");
+        tap_text("Enter the master or installer code");
         run(300);
         type("69420k");
     }
@@ -2561,7 +2561,7 @@ static void walk_zwave_troubles(void)
                strcmp(lv_subject_get_string(&subject_toast),
                       "Enter the installer code to see the radio") == 0,
            "ZW-019: the Z-Wave trouble doesn't say the radio needs the installer code");
-    tap_text("Enter the installer code");
+    tap_text("Enter the master or installer code");
     run(300);
     type("69420k");
     run(1600);
@@ -2634,8 +2634,8 @@ static void walk_zwave_region_change(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -3687,8 +3687,8 @@ static void walk_walk_test(const ui_options_t *start)
     open_installer();
     run(300);
     if (lv_subject_get_int(&subject_settings_pad) == 0 &&
-        find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+        find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         run(300);
     }
     type("69420k");
@@ -7683,8 +7683,8 @@ static void walk_zigbee(const ui_options_t *start)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -8226,7 +8226,7 @@ static void walk_zigbee(const ui_options_t *start)
            "ZB-027: the sensor radio trouble shows the Zigbee page without the installer code");
     zb_toast("Enter the installer code to see the radio",
              "ZB-027: the sensor radio trouble doesn't say the radio needs the installer code");
-    tap_text("Enter the installer code");
+    tap_text("Enter the master or installer code");
     run(300);
     type("69420k");
     run(600);
@@ -8276,8 +8276,8 @@ static void walk_zigbee_real(const ui_options_t *start)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -9795,8 +9795,8 @@ static void voice_installer_zone(const char *zone)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -11584,8 +11584,8 @@ static void walk_link_master(const ui_options_t *start)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -11814,8 +11814,8 @@ static void walk_keypad_updates(const ui_options_t *start)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -12008,8 +12008,8 @@ static void walk_partition_policy(const ui_options_t *start)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -12074,7 +12074,7 @@ static void walk_link_keypad_master_pages(void)
     expect(find_label(by_name("page_body"), "Lost the installer code?") == NULL,
            "BL-223: a keypad offers the alarm panel's lost-code page");
     shot("bl-223-kp-installer-locked");
-    tap_text("Enter the installer code");
+    tap_text("Enter the master or installer code");
     run(200);
     type("69420k");
     run(400);
@@ -12758,7 +12758,7 @@ int main(int argc, char **argv)
     shot("installer_locked");
     expect(find_label_with(by_name("page_body"), "69420") == NULL,
            "BL-187: the locked Installer page shows the factory code");
-    expect(find_label(by_name("page_body"), "Enter the installer code") != NULL,
+    expect(find_label(by_name("page_body"), "Enter the master or installer code") != NULL,
            "BL-189: the locked Installer page lost its code row");
     /* BL-131: the lost-code explanation is a row of its own, opened before the code */
     tap_text("Lost the installer code?");
@@ -12768,7 +12768,7 @@ int main(int argc, char **argv)
     shot("installer_lost_code");
     tap_name("page_back");
     run(300);
-    tap_text("Enter the installer code");
+    tap_text("Enter the master or installer code");
     type("69420k");
     run(300);
     shot("installer_menu");
@@ -13064,7 +13064,7 @@ int main(int argc, char **argv)
 
     printf("First-boot setup\n");
     open_installer();
-    tap_text("Enter the installer code");
+    tap_text("Enter the master or installer code");
     type("69420k");
     run(300);
     host_panel_forget_wifi();
@@ -13253,7 +13253,7 @@ int main(int argc, char **argv)
     printf("Zone sources: a wired zone, then a sensor that stops answering\n");
     open_installer();
     run(300);
-    tap_text("Enter the installer code");
+    tap_text("Enter the master or installer code");
     type("69420k");
     run(300);
     tap_text("Zones");
@@ -13406,7 +13406,7 @@ int main(int argc, char **argv)
     printf("Chime by one touch once the installer allows it\n");
     tap_name("bar_settings");
     open_installer();
-    tap_text("Enter the installer code");
+    tap_text("Enter the master or installer code");
     type("69420k");
     run(300);
     tap_text("Delays and arming");
@@ -13738,7 +13738,7 @@ int main(int argc, char **argv)
     tap_name("bar_settings");
     open_installer();
     run(300);
-    tap_text("Enter the installer code");
+    tap_text("Enter the master or installer code");
     type("69420k");
     run(300);
     tap_text("Zones");
@@ -13859,8 +13859,8 @@ int main(int argc, char **argv)
     tap_name("bar_settings");
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -13984,8 +13984,8 @@ int main(int argc, char **argv)
     tap_name("bar_settings");
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -14116,8 +14116,8 @@ int main(int argc, char **argv)
     tap_name("bar_settings");
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }
@@ -14506,8 +14506,8 @@ int main(int argc, char **argv)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the installer code") != NULL) {
-        tap_text("Enter the installer code");
+    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
+        tap_text("Enter the master or installer code");
         type("69420k");
         run(300);
     }

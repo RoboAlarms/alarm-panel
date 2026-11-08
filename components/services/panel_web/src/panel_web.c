@@ -342,7 +342,9 @@ typedef enum {
     ACC_USERS,     /* manages users: the installer, a system or partition master */
     ACC_SHARED,    /* Wi-Fi, time, software updates: a system or partition master, the installer */
     ACC_SYSTEM,    /* integrations, SD card, update source: the system master or the installer */
-    ACC_INSTALLER, /* installer programming, remote access, developer tools */
+    ACC_SETUP,     /* Setup mode's programming: the installer and the system master (the Owner,
+                    * whom no code outranks: CORE-PROG-001) */
+    ACC_INSTALLER, /* remote access, developer tools, the update server, factory reset */
 } access_t;
 static bool allowed(alarm_authority_t a, access_t need)
 {
@@ -353,12 +355,24 @@ static bool allowed(alarm_authority_t a, access_t need)
         return a == ALARM_AUTH_INSTALLER || a == ALARM_AUTH_MASTER ||
                a == ALARM_AUTH_PARTITION_MASTER;
     case ACC_SYSTEM: return a == ALARM_AUTH_INSTALLER || a == ALARM_AUTH_MASTER;
+    case ACC_SETUP: return a == ALARM_AUTH_INSTALLER || a == ALARM_AUTH_MASTER;
     default: return a == ALARM_AUTH_INSTALLER;
     }
 }
 static bool is(const char *path, const char *name)
 {
     return !strcmp(path, name);
+}
+/* What installer mode (Setup mode) programs, the pages alarm-server's Setup mode reaches too:
+ * the alarm's settings, zones and their sensors, the installer and master codes. The engine
+ * enters installer mode as the signed-in person for each change (CORE-PROG-011), which takes the
+ * installer or the system master. Keypads, Z-Wave and Zigbee stay the installer's here (BL-048,
+ * and their resets' installer code once more: ZW-045, ZB-017). */
+static bool setup_path(const char *path)
+{
+    return is(path, "alarm") || is(path, "sources") || is(path, "sources/learn") ||
+           is(path, "sources/search") || is(path, "zone-sources") || is(path, "installer-code") ||
+           !strncmp(path, "binding/", 8);
 }
 /* The partitions a signed-in user sees: every one for the installer and the system master,
  * their own for anyone else (as a keypad in their partition would show). false: no memory to
@@ -407,7 +421,9 @@ static access_t get_access(const char *path)
     /* server-link: Integrations > RoboAlarms, its state and the remote ceiling (docs/features/43) */
     if (is(path, "server-link"))
         return ACC_SYSTEM;
-    return ACC_INSTALLER; /* alarm, sources, binding/N, developer/logs and anything new */
+    if (setup_path(path))
+        return ACC_SETUP;
+    return ACC_INSTALLER; /* zwave, zigbee, developer/logs and anything new */
 }
 static access_t post_access(const char *path, const cJSON *o)
 {
@@ -459,6 +475,8 @@ static access_t post_access(const char *path, const cJSON *o)
         return ACC_SYSTEM;
     if (is(path, "server-link")) /* Unlink: the system master's, with the password again */
         return ACC_SYSTEM;
+    if (setup_path(path))
+        return ACC_SETUP;
     return ACC_INSTALLER;
 }
 /* While a partition is armed (from its exit time on) or an alarm sounds, nothing changes - as
@@ -1792,6 +1810,7 @@ static cJSON *status(session_t *s, alarm_authority_t authority)
     cJSON_AddBoolToObject(access, "users", allowed(authority, ACC_USERS));
     cJSON_AddBoolToObject(access, "shared", allowed(authority, ACC_SHARED));
     cJSON_AddBoolToObject(access, "system", allowed(authority, ACC_SYSTEM));
+    cJSON_AddBoolToObject(access, "setup", allowed(authority, ACC_SETUP));
     cJSON_AddBoolToObject(access, "installer", allowed(authority, ACC_INSTALLER));
     /* Arming and disarming: never the installer's (BL-187), anyone else's who has a code. */
     cJSON_AddBoolToObject(access, "arm",
@@ -2971,9 +2990,10 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
         return why_keypad ? error(r, "409 Conflict", why_keypad) : okay(r);
     }
     if (!strcmp(path, "alarm")) {
-        /* Programming as the signed-in installer, without a code (CORE-PROG-011): the engine
-         * enters installer mode as this user, read again on the alarm task. */
-        if (authority != ALARM_AUTH_INSTALLER)
+        /* Programming as the signed-in installer or system master, without a code
+         * (CORE-PROG-011): the engine enters installer mode as this user, read again on the
+         * alarm task. */
+        if (!allowed(authority, ACC_SETUP))
             return error(r, "403 Forbidden", "not_allowed");
         alarm_snapshot_t *snap = web_alloc(sizeof(*snap));
         alarm_config_t *cfg = web_alloc(sizeof(*cfg));
@@ -4018,10 +4038,12 @@ static int tunnel_setup_menu(uint8_t user, char **out, size_t *out_len)
     *out_len = strlen(text);
     return 200;
 }
-/* POST setup-mode {open} (panel-link.md): installer mode as the person - only an installer may open
- * it, as at a keypad, until the installer workflow plan lets the Owner in - held by the server's
- * source until it closes it or the engine's idle timeout ends it. Its setup/alarm changes apply
- * inside it. 409 while anything is armed or someone else is in installer mode. */
+/* POST setup-mode {open} (panel-link.md): installer mode as the person - the installer or the
+ * system master (the Owner), as at a keypad (CORE-PROG-001; anyone else: 403 installer_only, a
+ * name kept for alarm-server) - held by the server's source until it closes it or the engine's
+ * idle timeout ends it. The remote ceiling's remote_setup switch was checked before it got here.
+ * Its setup/alarm changes apply inside it. 409 while anything is armed or someone else is in
+ * installer mode. */
 static int tunnel_answer(char **out, size_t *out_len, cJSON *o)
 {
     char *text = o ? cJSON_PrintUnformatted(o) : NULL;

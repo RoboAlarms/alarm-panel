@@ -46,6 +46,14 @@ static bool same_source(const alarm_source_t *a, const alarm_source_t *b)
     return a->kind == b->kind && a->id == b->id;
 }
 
+/* Who opens installer mode (Setup mode): the installer, and the system master - the Owner, whom
+ * no code outranks (decided 2026-11-02). Never a partition master or anyone below. */
+static bool may_open_program(const alarm_engine_t *e, uint8_t user)
+{
+    const alarm_authority_t a = eng_user_auth(e, user);
+    return a == ALARM_AUTH_INSTALLER || a == ALARM_AUTH_MASTER;
+}
+
 /* as: for the already-identified as_user instead of by a code (CORE-PROG-011). */
 static alarm_result_t program_enter(alarm_engine_t *e, const alarm_source_t *src,
                                     const char *code, bool as, uint8_t as_user, alarm_ms_t now,
@@ -65,8 +73,9 @@ static alarm_result_t program_enter(alarm_engine_t *e, const alarm_source_t *src
     uint8_t user = 0u;
     alarm_result_t r = ALARM_OK;
     if (as) {
-        /* The installer, asked again now: a slot changed since the sign-in no longer is. */
-        if (eng_user_auth(e, as_user) != ALARM_AUTH_INSTALLER) {
+        /* The installer or the system master, asked again now: a slot changed since the sign-in
+         * no longer is. */
+        if (!may_open_program(e, as_user)) {
             r = ALARM_ERR_NOT_AUTHORIZED;
         } else {
             user = as_user;
@@ -77,7 +86,7 @@ static alarm_result_t program_enter(alarm_engine_t *e, const alarm_source_t *src
         }
     } else {
         r = eng_auth(e, &source, code, 0u, &user);
-        if (r == ALARM_OK && eng_user_auth(e, user) != ALARM_AUTH_INSTALLER) {
+        if (r == ALARM_OK && !may_open_program(e, user)) {
             r = ALARM_ERR_NOT_AUTHORIZED;
         }
     }

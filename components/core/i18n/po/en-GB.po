@@ -18876,6 +18876,11 @@ msgid "That isn't the installer code"
 msgstr ""
 
 #. The code pad's hint line. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "That isn't the master or installer code"
+msgstr ""
+
+#. The code pad's hint line. At most 127 bytes.
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
 msgid "Disarm first, and silence any alarm"
@@ -22310,7 +22315,7 @@ msgstr ""
 
 #. Settings > About, the Installer row's line. At most 111 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "Changes how the alarm works · needs the installer code"
+msgid "Changes how the alarm works · needs the master or installer code"
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).

@@ -108,10 +108,15 @@ for (const who of ROLES) {
 test('the panel refuses what a role cannot open at the panel', async () => {
   const get = (who, p) => fetch(servers[who].base + '/api/v1/' + p);
   for (const p of ['alarm', 'sources', 'binding/1', 'developer/logs']) {
-    assert.equal((await get('master', p)).status, 403, `the master reads ${p}`);
+    assert.equal((await get('partition', p)).status, 403, `a partition master reads ${p}`);
     assert.equal((await get('standard', p)).status, 403, `a standard user reads ${p}`);
     assert.equal((await get('installer', p)).status, 200, `the installer can't read ${p}`);
   }
+  // Setup mode's programming is the system master's too (the Owner, CORE-PROG-001); the developer
+  // tools stay the installer's.
+  for (const p of ['alarm', 'sources', 'binding/1'])
+    assert.equal((await get('master', p)).status, 200, `the master can't read ${p}`);
+  assert.equal((await get('master', 'developer/logs')).status, 403, 'the master reads developer/logs');
   for (const p of ['people', 'config/network', 'config/mqtt', 'home_assistant'])
     assert.equal((await get('standard', p)).status, 403, `a standard user reads ${p}`);
   assert.equal((await get('partition', 'config/mqtt')).status, 403, 'a partition master reads the integrations');
@@ -642,10 +647,15 @@ test('BL-135: programming, people and the installer code take no keypad code and
     headers: {'Content-Type': 'application/json', 'X-Panel-CSRF': 'auto'}, body: JSON.stringify(body)});
   const revision = (await (await fetch(servers.installer.base + '/api/v1/alarm')).json()).revision;
   assert.equal((await send('installer', 'alarm', {changes: {options: {quick_exit: false}}, revision})).status, 200, 'programming saves with no code');
-  assert.equal((await send('master', 'alarm', {changes: {options: {quick_exit: false}}, revision})).status, 403);
+  // Setup mode's programming: the system master's too (the Owner, CORE-PROG-001), not a partition master's
+  assert.equal((await send('partition', 'alarm', {changes: {options: {quick_exit: false}}, revision})).status, 403);
+  const masterRevision = (await (await fetch(servers.master.base + '/api/v1/alarm')).json()).revision;
+  assert.equal((await send('master', 'alarm', {changes: {options: {quick_exit: false}}, revision: masterRevision})).status, 200,
+    'the Owner programs with no code');
   assert.equal((await send('installer', 'binding/6', {action: 'unbind'})).status, 200, 'a sensor link, no code');
   assert.equal((await send('installer', 'installer-code', {number: 1, new_code: '4321'})).status, 200, 'the installer code asks for nothing');
-  assert.equal((await send('master', 'installer-code', {number: 2, new_code: '1234'})).status, 403);
+  assert.equal((await send('partition', 'installer-code', {number: 2, new_code: '1234'})).status, 403);
+  assert.equal((await send('master', 'installer-code', {number: 2, new_code: '1234'})).status, 200, 'the Owner sets a code');
   assert.equal((await send('installer', 'people', {number: 3, action: 'web-off'})).status, 200, 'people ask for nothing');
   assert.equal((await (await fetch(servers.installer.base + '/api/v1/status')).json()).reauth_s, 0, 'still no password in the last 10 minutes');
   const source = read('panel-pages.js') + read('panel.js');
@@ -2994,9 +3004,10 @@ test('Remove the sensor keeps the zone; Remove this zone asks on its own and fre
   });
 });
 
-test('GET zone-sources says where each zone\'s sensor is, for the installer only; the search answers the wired terminals too (BL-134)', async () => {
+test('GET zone-sources says where each zone\'s sensor is, for the installer and the system master; the search answers the wired terminals too (BL-134)', async () => {
   const get = (who, p) => fetch(servers[who].base + '/api/v1/' + p);
-  assert.equal((await get('master', 'zone-sources')).status, 403);
+  assert.equal((await get('master', 'zone-sources')).status, 200); // Setup mode's: the Owner's too (CORE-PROG-001)
+  assert.equal((await get('partition', 'zone-sources')).status, 403);
   assert.equal((await get('standard', 'zone-sources')).status, 403);
   const mapped = await (await get('installer', 'zone-sources')).json();
   const at = n => mapped.zones.find(x => x.zone === n)?.address;

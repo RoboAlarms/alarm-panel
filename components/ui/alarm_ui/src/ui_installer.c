@@ -1,7 +1,7 @@
 /*
- * ui_installer.c - installer mode (programming mode) on the touchscreen: unlock
- * with the installer code or the power-up recovery, then system options, zones, the system
- * name, the installer and master codes, the setup wizard and the factory reset. Wi-Fi and the
+ * ui_installer.c - installer mode (programming mode) on the touchscreen: unlock with the
+ * installer code, the system master's or the power-up recovery, then system options, zones, the
+ * system name, the installer and master codes, the setup wizard and the factory reset. Wi-Fi and the
  * date and time are shared with the master in their own sections (docs/features/14).
  *
  * Pages edit a working copy (S.edit). Leaving a page or installer mode applies it: the options,
@@ -52,7 +52,7 @@ static void enter_program(uint8_t user, bool recovery)
 
 static bool installer_code(const char *code);
 
-/* The installer code's answer (on a keypad, from its alarm panel: LINK-054, LINK-060). */
+/* The installer or master code's answer (on a keypad, from its alarm panel: LINK-054, LINK-060). */
 static void installer_checked(const ui_call_t *c)
 {
     if (!ui_pad_asks(installer_code)) {
@@ -66,7 +66,7 @@ static void installer_checked(const ui_call_t *c)
          * "Disarm first" used to be shown for any failure that was not one of the first two,
          * so an unavailable hash told the owner to disarm an already disarmed panel (B001). */
         ui_pad_error(r == ALARM_ERR_INVALID_CODE     ? TR("Wrong code, try again")
-                     : r == ALARM_ERR_NOT_AUTHORIZED ? TR("That isn't the installer code")
+                     : r == ALARM_ERR_NOT_AUTHORIZED ? TR("That isn't the master or installer code")
                      : r == ALARM_ERR_BAD_STATE      ? TR("Disarm first, and silence any alarm")
                                                      : ui_result_text(r));
         return;
@@ -88,8 +88,9 @@ static bool installer_code(const char *code)
 static void ask_code(void *ctx)
 {
     (void)ctx;
-    ui_pad_ask(HOST_SETTINGS, UI_ICON_WRENCH, TR("Installer mode"), TR("Enter the installer code"),
-               ui_tone_amber(), installer_code);
+    /* The system master's code opens it too: the Owner's, which no code outranks (CORE-PROG-001) */
+    ui_pad_ask(HOST_SETTINGS, UI_ICON_WRENCH, TR("Installer mode"),
+               TR("Enter the master or installer code"), ui_tone_amber(), installer_code);
 }
 
 static void recovery_confirmed(void)
@@ -374,7 +375,7 @@ static void build_locked_keypad(lv_obj_t *body, char *note, size_t nlen)
         }
         ui_paragraph(body, text, ui_tone_amber());
     }
-    lv_obj_t *enter = ui_row_action(body, UI_ICON_KEY, TR("Enter the installer code"),
+    lv_obj_t *enter = ui_row_action(body, UI_ICON_KEY, TR("Enter the master or installer code"),
                                     ui_tone_amber(), ask_code, NULL);
     if (elsewhere) {
         ui_row_disable(enter);
@@ -396,8 +397,8 @@ static void build_locked(lv_obj_t *body, char *note, size_t nlen)
     }
     /* TR: the line under the page title. At most 127 bytes */
     i18n_utf8_copy(note, nlen, TR("Installer settings change how the alarm works"));
-    ui_row_action(body, UI_ICON_KEY, TR("Enter the installer code"), ui_tone_amber(), ask_code,
-                  NULL);
+    ui_row_action(body, UI_ICON_KEY, TR("Enter the master or installer code"), ui_tone_amber(),
+                  ask_code, NULL);
     const alarm_ms_t now = S.be.now_ms(S.be.ctx);
     const alarm_ms_t elapsed = now > S.snap.taken_ms ? now - S.snap.taken_ms : 0u;
     const alarm_ms_t left =

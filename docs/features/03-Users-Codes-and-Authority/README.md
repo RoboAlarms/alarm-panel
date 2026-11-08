@@ -31,6 +31,13 @@ installer code arms and disarms what it armed; here it never arms or disarms (de
 
 Masters and the installer have access to every partition. Everyone else has a partition mask.
 
+**Setup mode** (installer mode, [14](../14-Configuration-and-Installer-Programming/README.md)) opens
+with the installer's code or the system master's: the system master is the Owner, and no code
+outranks the Owner (decided 2026-11-02). Never a partition master's, a duress code or anyone else's
+(CORE-PROG-001, 011). Inside it the system master programs what the installer does, the installer
+code included (set without the old one); the installer code, the factory codes and the power-up
+recovery are unchanged for now.
+
 ## Requirements
 | ID | Requirement | Verified by |
 |---|---|---|
@@ -94,7 +101,8 @@ Masters and the installer have access to every partition. Everyone else has a pa
 - **Setup**: shows both factory codes and offers to change them (each new code twice); skipping
   keeps them and the status bar banner stays.
 - **Installer > Installer and master codes**: set either without the old one while in installer
-  mode, which is how a lost installer code is replaced after the power-up recovery ([14](../14-Configuration-and-Installer-Programming/README.md)).
+  mode (opened by the installer or the system master), which is how a lost installer code is
+  replaced after the power-up recovery ([14](../14-Configuration-and-Installer-Programming/README.md)).
 - **Code pad**: one dot per typed digit, iPhone-style; the check key submits, since users can
   have different code lengths.
 

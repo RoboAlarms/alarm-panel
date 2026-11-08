@@ -60,11 +60,14 @@ const AUTHORITY = {1: 'installer', 2: 'master', 3: 'partition_master', 4: 'stand
 // The firmware's table (panel_web.c get_access/post_access): who may use which path.
 const ACC = {anyone: () => true, users: a => ['installer', 'master', 'partition_master'].includes(a),
   shared: a => ['installer', 'master', 'partition_master'].includes(a), system: a => ['installer', 'master'].includes(a),
+  setup: a => ['installer', 'master'].includes(a), // Setup mode's programming: the Owner too (CORE-PROG-001)
   installer: a => a === 'installer'};
+const SETUP_PATH = p => ['alarm', 'sources', 'sources/learn', 'sources/search', 'zone-sources', 'installer-code'].includes(p) ||
+  p.startsWith('binding/');
 const GET_ACCESS = p => ['status', 'frame', 'screen', 'history', 'activity', 'time', 'zone-status', 'troubles', 'storage', 'config/display', 'languages', 'voices'].includes(p) ? 'anyone'
   : p === 'people' ? 'users' : ['config/network', 'network-check', 'wifi-scan', 'walk-test'].includes(p) ? 'shared'
   : ['updates', 'config/mqtt', 'config/ntfy', 'config/pushover', 'home_assistant', 'notification-status', 'automations', 'automations/devices',
-     'outputs', 'backup', 'server-link'].includes(p) ? 'system' : 'installer';
+     'outputs', 'backup', 'server-link'].includes(p) ? 'system' : SETUP_PATH(p) ? 'setup' : 'installer';
 const POST_ACCESS = (p, body) => p === 'config/display'
   ? (body.values && ('lang' in body.values || 'region' in body.values) ? 'shared' : 'anyone') // docs/features/14
   // A walk test's start and extend: those who may start one (WALK-001); its end is the engine's to decide (WALK-025).
@@ -73,7 +76,7 @@ const POST_ACCESS = (p, body) => p === 'config/display'
   : ['config/network', 'wifi', 'time', 'network-check', 'wifi-scan', 'languages'].includes(p) ? 'shared'
   : p === 'updates' ? (['server_check', 'server', 'channel'].includes(body.action) ? 'installer' : 'system') // OTA-017..OTA-022
   : p === 'config/mqtt' ? (body.values && 'allow_panic' in body.values ? 'installer' : 'system') // BL-107
-  : ['config/ntfy', 'config/pushover', 'home_assistant', 'storage', 'notification-test', 'ntfy-topic', 'certificate-authority', 'automations', 'server-link'].includes(p) ? 'system' : 'installer';
+  : ['config/ntfy', 'config/pushover', 'home_assistant', 'storage', 'notification-test', 'ntfy-topic', 'certificate-authority', 'automations', 'server-link'].includes(p) ? 'system' : SETUP_PATH(p) ? 'setup' : 'installer';
 const lockedEnv = !!process.env.MOCK_LOCKED;
 // The link to alarm-server and the phones paired directly (docs/features/43): Harbor House is linked.
 const serverLink = {state: 'connected', linked: true, server: 'cloud.roboalarms.com', port: 443, location: 'loc_harborhouse', waiting: false,
@@ -1433,7 +1436,7 @@ function status(s) {
       power: {battery: 'absent', percent: 0, low: false, charging: false},
       display: {frames: 5213440, late: 0, guard_trips: 0, forced_off: false}},
     name: users.find(u => u.number === s.user)?.name || '', has_password: true, password_change_required: temporary.has(s.user),
-    access: {...Object.fromEntries(['users', 'shared', 'system', 'installer'].map(k => [k, ACC[k](s.authority)])), arm: s.authority !== 'installer',
+    access: {...Object.fromEntries(['users', 'shared', 'system', 'setup', 'installer'].map(k => [k, ACC[k](s.authority)])), arm: s.authority !== 'installer',
       panic: s.authority === 'installer' ? [] : appPanics(alarm.options.app_panic_mask)}, // USR-001; WEB-032
     config_revision: alarm.revision, program: false, troubles: live.troubles, trouble_count: troubleList(s).length, trouble_sig: troubleSig(troubleList(s)), locked: isLocked(), updating: updating(),
     // An automation's coming arming or its hold, on the partitions this person sees (panel_web.c status, D19, D27).
@@ -1544,6 +1547,8 @@ function backupOpen(password, file) {
 }
 const hexPassword = hex => /^([0-9a-f]{2})*$/i.test(hex || '') ? Buffer.from(hex, 'hex').toString() : null;
 const needInstaller = s => s.authority !== 'installer' ? 'Installer authority required' : null;
+// Setup mode's programming (web_extra.c programs()): the installer or the system master.
+const needSetup = s => !ACC.setup(s.authority) ? 'Installer authority required' : null;
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 // Languages on this panel (docs/features/37 language-packs.md, I18N-046): a few installed packs in
@@ -1846,7 +1851,7 @@ async function apiPost(p, s, body, res) {
     return ok();
   }
   if (p === 'alarm') {
-    const why = needInstaller(s);
+    const why = needSetup(s);
     if (why) return fail(why, 403);
     if (body.revision !== alarm.revision) return fail('Configuration changed or installer mode is already occupied; reload');
     const c = body.changes || {};
@@ -1984,7 +1989,7 @@ async function apiPost(p, s, body, res) {
   if (p === 'sources/learn') return ok();
   const m = /^binding\/(\d+)$/.exec(p);
   if (m) {
-    const why = needInstaller(s);
+    const why = needSetup(s);
     if (why) return fail(why);
     if (body.action === 'unbind') { bindings.delete(Number(m[1])); savedInputs.delete(Number(m[1])); } else {
       bindings.set(Number(m[1]), body.inputs[0].address);
@@ -1992,7 +1997,7 @@ async function apiPost(p, s, body, res) {
     }
     return ok();
   }
-  if (p === 'installer-code') return needInstaller(s) ? fail(needInstaller(s)) : ok();
+  if (p === 'installer-code') return needSetup(s) ? fail(needSetup(s)) : ok();
   if (p === 'factory-reset') {
     if (needInstaller(s)) return fail(needInstaller(s));
     const no = needPassword(s, body.me_password);

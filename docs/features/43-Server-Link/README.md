@@ -39,8 +39,10 @@ says what the panel does and what it doesn't yet.
   A phone goes with its user on every config change, linked or not; a removed phone's session ends at
   once; direct push reaches only phones whose user has the event's partition.
 - **Setup mode** (`POST setup-mode {open}`): installer mode as the person, held by the server's source
-  until it closes it or the 15-minute idle timeout ends it; Setup page changes apply inside it. Only
-  the installer may open it, as at a keypad (403 `installer_only`); 409 `not_disarmed` or
+  until it closes it or the 15-minute idle timeout ends it; Setup page changes apply inside it. The
+  installer or the system master (the Owner) may open it, as at a keypad (anyone else: 403
+  `installer_only`, the name kept); the remote ceiling's `remote_setup` switch and the step-up
+  still apply, and setting the installer or master code (`installer-code`) is behind them too; 409 `not_disarmed` or
   `setup_mode_in_use`. A Setup page's flat fields are wrapped for the Panel Manager's handlers
   (`values`, or `changes` with the current revision).
 - **People codes from the app** (MOB-044): `POST people {action:"create"|"set_code", ..., sealed_code}`;
@@ -68,8 +70,7 @@ says what the panel does and what it doesn't yet.
 `cancel`, `unlink <code>`, `ceiling <code> ...`, `relay`, `offline <s>` (a bench's outage), `phone ...`.
 
 ## Not built yet
-- Setting the remote ceiling from the server with an Owner's step-up (panel only today). Setup mode
-  for the Owner from afar is the installer workflow plan's change (only the installer opens it now).
+- Setting the remote ceiling from the server with an Owner's step-up (panel only today).
 - F23: server technicians (time-limited Admins) have no panel user today. If one ever gets one, the
   automations' per-run check must enforce the maker's own arm, disarm and device rights.
 - Panic through the server: the `command` message (`proto_srv_command_map`) takes no `panic` yet, so a

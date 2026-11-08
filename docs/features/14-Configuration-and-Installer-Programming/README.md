@@ -31,7 +31,7 @@ power-up. Touchscreen panels use menus behind the installer code.
 | ID | Requirement | Verified by |
 |---|---|---|
 | CFG-001 | Core configuration is `alarm_config_t` (validated by `alarm_config_validate`); platform settings are separate NVS keys | `CORE-CFG-*` |
-| CFG-002 | Installer mode needs the installer code, only while every partition is disarmed and silent; entering and leaving are logged and reported; ends after 15 min without activity; nothing can be armed meanwhile; fire, CO, 24-hour zones and panics stay live | `CORE-PROG-001..004` |
+| CFG-002 | Installer mode (Setup mode) needs the installer code or the system master's (the Owner's: no code outranks it, decided 2026-11-02), only while every partition is disarmed and silent; entering and leaving are logged and reported; ends after 15 min without activity; nothing can be armed meanwhile; fire, CO, 24-hour zones and panics stay live | `CORE-PROG-001..004` |
 | CFG-003 | Changes are applied with `alarm_engine_set_config` (atomic; rejected unless idle) when a page is left, and stored before the call returns | `CORE-CFG-005`, UI |
 | CFG-004 | The configuration is stored as a versioned, self-describing blob: newer firmware reads older blobs (missing fields keep defaults), older firmware reads newer ones (unknown fields skipped), frozen fixtures from every format stay decodable | `CORE-CFG-012..017` |
 | CFG-005 | Backup: one file the installer downloads in the Panel Manager, always encrypted with a password the installer chooses (PBKDF2 and AES-GCM), holding everything needed to rebuild the panel - the configuration, users (code hashes and salts), zones and their bindings, the Z-Wave keys, node cache and SmartStart list, the integrations' settings and secrets and the Wi-Fi network - but never the panel's own identity (its certificates and keys, the developer enrollment, the panel ID). | `components/core/backup/test/test_backup.c` (CFG-005), `panel_pages.test.cjs` "backup"; on a panel (BL-002) |
@@ -187,14 +187,18 @@ are an external contract: never reuse or renumber one.
 
 ### Installer mode (engine: `components/core/alarm_core/src/program.c`)
 `alarm_engine_program_enter/exit/keepalive/set_code`, `alarm_engine_recovery_left`; state
-reported in the snapshot (`program`, `recovery_left_ms`). One installer session at a time
+reported in the snapshot (`program`, `recovery_left_ms`). The installer's code or the system
+master's opens it (`program_user` is 1 or 2; 0 for the power-up recovery), from a code
+(touchscreen, keypads through the link) or as an already identified person
+(`alarm_engine_program_enter_as`: a Panel Manager sign-in, the server link); anyone else gets
+`not_authorized`. One installer session at a time
 (another source gets `bad_state`). Arming and the walk test are refused (`bad_state`);
 alarms, fire, CO and panics work as always. The engine ends installer mode itself after
 `ALARM_PROGRAM_TIMEOUT_S` (15 min) without `keepalive`/`set_config`; the touchscreen sends a
 keepalive every 30 s while the installer is touching it.
 
 ### Installer screens (touch, `components/ui/alarm_ui/src/ui_installer.c`)
-Settings > About > Installer (the last row of About, BL-189). Locked: "Enter the installer code" (the screen
+Settings > About > Installer (the last row of About, BL-189). Locked: "Enter the master or installer code" (the screen
 never shows the factory code's digits, BL-187), and during the recovery window "Forgot the code? Open without it (N s left)" with a
 confirmation. Unlocked (status bar: "Installer · Arming off · Tap to leave"):
 

@@ -19043,8 +19043,7 @@ msgstr ""
 
 #. The code pad's hint line. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "That isn't the installer code"
+msgid "That isn't the master or installer code"
 msgstr ""
 
 #. The code pad's hint line. At most 127 bytes.
@@ -19056,8 +19055,8 @@ msgstr ""
 #. The code pad's hint line. At most 95 bytes.
 #. A button row's text (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_link.c
-msgid "Enter the installer code"
+#: components/ui/alarm_ui/src/ui_settings.c
+msgid "Enter the master or installer code"
 msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
@@ -21161,6 +21160,17 @@ msgstr ""
 msgid "Keypads update with this panel. They restart together once everything is disarmed."
 msgstr ""
 
+#. The code pad's hint line. At most 127 bytes.
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "That isn't the installer code"
+msgstr ""
+
+#. The code pad's hint line. At most 95 bytes.
+#. A button row's text (one line).
+#: components/ui/alarm_ui/src/ui_link.c
+msgid "Enter the installer code"
+msgstr ""
+
 #. Make it a stand-alone panel, the line under the title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_link.c
 msgid "A factory reset"
@@ -22103,10 +22113,6 @@ msgstr ""
 msgid "The master or installer code sets up notifications"
 msgstr ""
 
-#: components/ui/alarm_ui/src/ui_settings.c
-msgid "Enter the master or installer code"
-msgstr ""
-
 #. The code pad's hint line. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_settings.c
 msgid "This code can't open this section"
@@ -22657,7 +22663,7 @@ msgstr ""
 
 #. Settings > About, the Installer row's line. At most 111 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "Changes how the alarm works · needs the installer code"
+msgid "Changes how the alarm works · needs the master or installer code"
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).

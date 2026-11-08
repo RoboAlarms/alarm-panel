@@ -39,7 +39,7 @@ const DETAILS_END = [
   M.row_value({title: 'Free memory', value: '214 KB internal · 29.1 MB PSRAM'}),
   M.row_value({title: 'Firmware space', value: '2.3 MB of 4.5 MB used'}),
 ];
-const INSTALLER_ROW = M.row_link({glyph: 'wrench', color: 'blue', title: 'Installer', detail: 'Changes how the alarm works · needs the installer code', goTo: 'installer-locked'});
+const INSTALLER_ROW = M.row_link({glyph: 'wrench', color: 'blue', title: 'Installer', detail: 'Changes how the alarm works · needs the master or installer code', goTo: 'installer-locked'});
 const CREDITS = M.paragraph('Made with LVGL (MIT), the Inter typeface (SIL Open Font License 1.1), Lucide icons (ISC) and parts of Z-Wave JS (MIT).');
 
 about({id: 'settings-about', shot: 'about', title: 'About: System details on the page, under SD card',
@@ -47,13 +47,13 @@ about({id: 'settings-about', shot: 'about', title: 'About: System details on the
   body: {title: 'About this panel', body: [...ABOUT_TOP, DETAILS_START.join('')].join('')}});
 
 about({id: 'settings-about-end', shot: 'about_end', title: 'About, scrolled to the end: Installer under the details',
-  notes: 'Drawn scrolled to the end (Set up is above Hardware). Installer looks like any row and opens the page Settings > Installer opens today: Enter the installer code, then the Installer menu. The licence line stays last. The Settings list ends with About: no divider, no Installer. Who may do what doesn\'t change: the installer code opens the menu.',
+  notes: 'Drawn scrolled to the end (Set up is above Hardware). Installer looks like any row and opens the page Settings > Installer opens today: Enter the master or installer code, then the Installer menu. The licence line stays last. The Settings list ends with About: no divider, no Installer. Who may do what doesn\'t change: the installer code opens the menu.',
   body: {title: 'About this panel', body: [DETAILS_END.join(''), M.section(''), INSTALLER_ROW, CREDITS].join('')}});
 
 about({id: 'installer-locked', shot: 'installer_locked', title: 'Installer, opened from About',
   notes: 'The page itself is BL-187\'s (no factory code on show). Lost the installer code? as today.',
   body: {title: 'Installer', note: 'Installer settings change how the alarm works', back: 'settings-about-end', body: [
-    M.row_action({glyph: 'key-round', text: 'Enter the installer code', color: 'amber'}),
+    M.row_action({glyph: 'key-round', text: 'Enter the master or installer code', color: 'amber'}),
     M.row_link({glyph: 'life-buoy', color: 'gray', title: 'Lost the installer code?', goTo: 'installer-lost-code'}),
     M.paragraph('While you change settings nothing can be armed. Fire, CO and panic buttons keep working.'),
   ].join('')}});

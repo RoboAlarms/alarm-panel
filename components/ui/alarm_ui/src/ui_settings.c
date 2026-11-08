@@ -1988,7 +1988,7 @@ static void build_about(lv_obj_t *body, char *title, size_t tlen, char *note, si
         ui_section(body, ""); /* a gap before the Installer row */
         /* TR: Settings > About, the Installer row's line. At most 111 bytes */
         ui_row_link(body, UI_ICON_WRENCH, ui_tone_blue(), TR("Installer"),
-                    TR("Changes how the alarm works · needs the installer code"), NULL,
+                    TR("Changes how the alarm works · needs the master or installer code"), NULL,
                     UI_ICON_CHEVRON_RIGHT, about_open, (void *)(intptr_t)PAGE_INSTALLER);
     }
     ui_paragraph(body, TR("Made with LVGL (MIT), the Inter typeface (SIL Open Font License 1.1), "

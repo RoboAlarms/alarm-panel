@@ -383,8 +383,9 @@ alarm_voice_result_t alarm_engine_voice_withdraw(alarm_engine_t *e, uint16_t zon
 #define ALARM_PROGRAM_TIMEOUT_S 900 /* installer mode ends after 15 min without activity */
 #define ALARM_RECOVERY_WINDOW_S 120 /* power-up recovery: installer mode without a code */
 
-/* Enter installer mode with the installer code, or with no code (NULL or "") while the
- * power-up recovery window is open (options.power_up_program, the first
+/* Enter installer mode (Setup mode) with the installer code or the system master's (the
+ * Owner's: no code outranks it; anyone else -> ALARM_ERR_NOT_AUTHORIZED), or with no code (NULL
+ * or "") while the power-up recovery window is open (options.power_up_program, the first
  * ALARM_RECOVERY_WINDOW_S after init). Every partition must be
  * disarmed, silent and out of walk test. While active nothing can be armed; fire, CO, 24-hour
  * zones and panics stay live. Logged and reported (program_enter). Calling it again from the
@@ -393,8 +394,9 @@ alarm_result_t alarm_engine_program_enter(alarm_engine_t *e, const alarm_source_
                                           const char *code, alarm_ms_t now, uint8_t *user_out);
 
 /* CORE-PROG-011: installer mode for a user the platform has already identified (a Panel
- * Manager sign-in), without a code: the slot must hold the installer, read again now (anyone
- * else, user 0 or an empty slot -> ALARM_ERR_NOT_AUTHORIZED). Nothing counts toward a lockout;
+ * Manager sign-in, the server link), without a code: the slot must hold the installer or the
+ * system master, read again now (anyone else, user 0 or an empty slot ->
+ * ALARM_ERR_NOT_AUTHORIZED). Nothing counts toward a lockout;
  * everything else is alarm_engine_program_enter()'s (every partition idle, one source at a
  * time, logged and reported as program_enter by that user and src). */
 alarm_result_t alarm_engine_program_enter_as(alarm_engine_t *e, const alarm_source_t *src,

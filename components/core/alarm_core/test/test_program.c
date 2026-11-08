@@ -33,11 +33,10 @@ static alarm_snapshot_t snapshot(void)
     return snap;
 }
 
-/* CORE-PROG-001: the installer code (only) enters installer mode; logged and reported. */
+/* CORE-PROG-001: the installer code enters installer mode; logged and reported. */
 static void test_installer_code_enters_installer_mode(void)
 {
     uint8_t user = 99;
-    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, enter(CODE_MASTER, &user));
     EXPECT_RESULT(ALARM_ERR_INVALID_CODE, enter("8888", &user));
     EXPECT_EVENTS(&S, ALARM_EV_INVALID_CODE, 1);
     TEST_ASSERT_FALSE(alarm_engine_program_active(&S.eng));
@@ -58,6 +57,55 @@ static void test_installer_code_enters_installer_mode(void)
     const alarm_source_t other = {ALARM_SRC_KEYPAD, 2};
     EXPECT_RESULT(ALARM_ERR_BAD_STATE,
                   alarm_engine_program_enter(&S.eng, &other, CODE_INSTALLER, S.now, NULL));
+}
+
+/* CORE-PROG-001: the system master's code (the Owner's, which no code outranks) opens installer
+ * mode as the installer's does, logged and reported by user 2; no code below it does, and a
+ * refused one is no wrong code (it counts toward no lockout). */
+static void test_master_code_enters_installer_mode(void)
+{
+    static const char *const refused[] = {CODE_PMASTER, CODE_USER, CODE_ARMONLY, CODE_GUEST};
+    for (unsigned i = 0; i < sizeof(refused) / sizeof(refused[0]); i++) {
+        uint8_t who = 0;
+        EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, enter(refused[i], &who));
+        TEST_ASSERT_FALSE(alarm_engine_program_active(&S.eng));
+    }
+    EXPECT_EVENTS(&S, ALARM_EV_INVALID_CODE, 0);
+
+    uint8_t user = 99;
+    EXPECT_RESULT(ALARM_OK, enter(CODE_MASTER, &user));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, user);
+    TEST_ASSERT_TRUE(alarm_engine_program_active(&S.eng));
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, S.eng.program_user);
+    const alarm_event_t *ev = sim_last_report(&S, ALARM_EV_PROGRAM_ENTER);
+    TEST_ASSERT_NOT_NULL(ev);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, ev->user);
+    TEST_ASSERT_EQUAL_UINT8(0, ev->arg);
+
+    /* The same rules as the installer's: one source at a time, the codes set without the old. */
+    const alarm_source_t other = {ALARM_SRC_KEYPAD, 2};
+    EXPECT_RESULT(ALARM_ERR_BAD_STATE,
+                  alarm_engine_program_enter(&S.eng, &other, CODE_INSTALLER, S.now, NULL));
+    EXPECT_RESULT(ALARM_OK, alarm_engine_program_set_code(&S.eng, &S.keypad, ALARM_USER_MASTER,
+                                                          "8642", S.now));
+    EXPECT_RESULT(ALARM_ERR_BAD_STATE, sim_arm(&S, 1, "8642", ALARM_LEVEL_AWAY, 0));
+    leave();
+    ev = sim_last_report(&S, ALARM_EV_PROGRAM_EXIT);
+    TEST_ASSERT_NOT_NULL(ev);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, ev->user);
+
+    /* Only while every partition is idle, as for the installer. */
+    EXPECT_RESULT(ALARM_OK, sim_arm(&S, 1, "8642", ALARM_LEVEL_STAY, 0));
+    EXPECT_RESULT(ALARM_ERR_BAD_STATE, enter("8642", NULL));
+    EXPECT_RESULT(ALARM_OK, sim_disarm(&S, 1, "8642"));
+    EXPECT_RESULT(ALARM_OK, enter("8642", NULL));
+}
+
+/* The duress code never opens installer mode: refused like any code below the master. */
+static void test_duress_code_never_enters_installer_mode(void)
+{
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, enter(CODE_DURESS, NULL));
+    TEST_ASSERT_FALSE(alarm_engine_program_active(&S.eng));
 }
 
 /* CORE-PROG-002: only while every partition is disarmed, silent and out of walk test. */
@@ -129,14 +177,39 @@ static void test_program_enter_as_installer(void)
     EXPECT_EVENTS(&S, ALARM_EV_INVALID_CODE, 0);
 }
 
-/* CORE-PROG-011: installer authority only, asked again now; nothing counts toward a lockout. */
+/* CORE-PROG-011: the signed-in system master (the Owner) enters as the installer does. */
+static void test_program_enter_as_master(void)
+{
+    EXPECT_RESULT(ALARM_OK, alarm_engine_program_enter_as(&S.eng, &PM, ALARM_USER_MASTER, S.now));
+    TEST_ASSERT_TRUE(alarm_engine_program_active(&S.eng));
+    const alarm_event_t *ev = sim_last_report(&S, ALARM_EV_PROGRAM_ENTER);
+    TEST_ASSERT_NOT_NULL(ev);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_USER_MASTER, ev->user);
+    TEST_ASSERT_EQUAL_UINT8(0, ev->arg);
+    TEST_ASSERT_EQUAL_UINT8(ALARM_SRC_REMOTE, ev->source.kind);
+
+    /* Held by this source: the installer at a keypad waits, as for anyone's session. */
+    EXPECT_RESULT(ALARM_ERR_BAD_STATE, enter(CODE_INSTALLER, NULL));
+    alarm_engine_program_exit(&S.eng, &PM, S.now);
+
+    /* Asked again now: a slot 2 emptied since the sign-in no longer opens it. */
+    S.cfg.users[ALARM_USER_MASTER - 1u].authority = ALARM_AUTH_NONE;
+    EXPECT_RESULT(ALARM_OK, alarm_engine_set_config(&S.eng, &S.cfg, S.now));
+    EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
+                  alarm_engine_program_enter_as(&S.eng, &PM, ALARM_USER_MASTER, S.now));
+    TEST_ASSERT_FALSE(alarm_engine_program_active(&S.eng));
+}
+
+/* CORE-PROG-011: the installer and the system master only, asked again now; nothing counts
+ * toward a lockout. */
 static void test_program_enter_as_refusals(void)
 {
     for (int i = 0; i < 4; i++) {
         EXPECT_RESULT(ALARM_ERR_INVALID_CODE,
                       alarm_engine_program_enter(&S.eng, &PM, "8888", S.now, NULL));
     }
-    const uint8_t nobody[] = {0u, ALARM_USER_MASTER, 3u, 7u, 12u, (uint8_t)(ALARM_MAX_USERS + 1u)};
+    /* 3 standard, 6 duress, 7 partition master, 12 empty */
+    const uint8_t nobody[] = {0u, 3u, 6u, 7u, 12u, (uint8_t)(ALARM_MAX_USERS + 1u)};
     for (unsigned i = 0; i < sizeof(nobody); i++) {
         EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED,
                       alarm_engine_program_enter_as(&S.eng, &PM, nobody[i], S.now));
@@ -868,10 +941,13 @@ int main(void)
 {
     UNITY_BEGIN();
     RUN_TEST(test_installer_code_enters_installer_mode);
+    RUN_TEST(test_master_code_enters_installer_mode);
+    RUN_TEST(test_duress_code_never_enters_installer_mode);
     RUN_TEST(test_installer_mode_only_when_idle);
     RUN_TEST(test_installer_mode_blocks_arming_only);
     RUN_TEST(test_installer_mode_exit_and_timeout);
     RUN_TEST(test_program_enter_as_installer);
+    RUN_TEST(test_program_enter_as_master);
     RUN_TEST(test_program_enter_as_refusals);
     RUN_TEST(test_program_enter_as_conditions);
     RUN_TEST(test_power_up_recovery);

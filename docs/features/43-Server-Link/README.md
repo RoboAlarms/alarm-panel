@@ -28,7 +28,20 @@ says what the panel does and what it doesn't yet.
   gets the same answer for 10 minutes.
 - **Tunnelled requests**: `panel_web_tunnel()` runs the Panel Manager's own handlers and access table as
   panel user N. Refused whatever the table says: `frame`, `screen`, `control`, `login`, `logout`,
-  `password`, `remote`, `factory-reset`, `developer*`.
+  `password`, `developer*`.
+- **Everything in Setup from the server** (the owner's decision of 2026-11-09): the Panel Manager's
+  switch (`GET/POST remote {web, developer}`), `POST factory-reset`, `GET/POST sirens` (the wired
+  outputs' and 433 MHz sirens' settings, `test`, `set`, `remove`), `GET/POST smart-home` (which devices
+  ask for an Owner code, and arranging), `POST setup-again` (the touchscreen's setup starts) and a
+  backup and restore in parts (`backup-make`, `backup-part`, `restore-begin`, `restore-part`,
+  `restore-finish`; the link carries 48 KB out, 4 KB in) are Setup's class: the step-up and the
+  ceiling's `remote_setup` hold them (`web_thispanel.c`, host test `web_thispanel`). The Owner's own
+  options change in an Owner session, which the Owner signed in through the network is too
+  (CORE-PROG-014, 015); the Admin's code never is.
+- **Remote keypad through the server**: the viewer's JSON on `down/scr`, the panel's on `up/scrmsg`
+  and its pictures on `up/scr` (QoS 0), the Panel Manager's remote keypad protocol (`web_screen.c`).
+  A hello needs `fresh` and a remote sign-in the ceiling lets into Setup; someone on the Panel
+  Manager's remote keypad keeps it.
 - **Network changes** (`POST wifi {ssid, password, operation}`, `POST config/network {values,
   operation}`): a two-minute trial, as from the Panel Manager. The server keeps it with `POST
   network-confirm {"operation":"<32 lowercase hex>"}` through the tunnel, by the same access as the
@@ -56,8 +69,8 @@ says what the panel does and what it doesn't yet.
   `setup_mode_in_use`. A Setup page's flat fields are wrapped for the Panel Manager's handlers
   (`values`, or `changes` with the current revision). The ceiling message carries the Owner's
   "Let the Admin code open Setup mode" as `installer_setup` (added 2026-11-08; absent from older
-  panels, read as true), sent again whenever it changes: the website and the app show it
-  read-only, since only the Owner changes it, at the panel.
+  panels, read as true), sent again whenever it changes: the Owner changes it from the
+  website too (an Owner session through the link, 2026-11-09); the Admin only sees it.
 - **People codes from the app** (MOB-044): `POST people {action:"create"|"set_code", ..., sealed_code}`;
   the code is sealed to this panel's X25519 key as `rs1|time|set_code|<user>|code` (or `create|0`),
   opened only here, for that slot, within 2 minutes and once (400 `bad_code` otherwise). The seal key
@@ -88,7 +101,7 @@ says what the panel does and what it doesn't yet.
   automations' per-run check must enforce the maker's own arm, disarm and device rights.
 - Panic through the server: the `command` message (`proto_srv_command_map`) takes no `panic` yet, so a
   phone raises one only directly (docs/features/31 WEB-032). The same `opt.app_panic_mask` would gate it.
-- The server path for files, emergency contacts on the alarm screen (`contacts` is ignored), cellular.
+- Emergency contacts on the alarm screen (`contacts` is ignored), cellular.
 - The app-push catch-up summary after an outage (NOTE-036): it sends one by one, within the gate's limits.
 - Per-phone level choice on a page, `browser` in `people` (always false), battery and region in
   `snapshot`, IANA time zone (the panel stores POSIX; alarm-server maps it).

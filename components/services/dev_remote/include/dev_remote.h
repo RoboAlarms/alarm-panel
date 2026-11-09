@@ -42,6 +42,9 @@ typedef struct {
     esp_err_t (*jpeg)(const uint8_t **data, size_t *length);
     uint16_t frame_interval_ms; /* board-tested capture budget; zero uses conservative default */
     void (*preferences_changed)(void);
+    /* Setup > Run the setup again, asked from alarm-server's website: the touchscreen shows the
+     * setup's first step (it can be left there). False: the screen couldn't now. NULL: no screen. */
+    bool (*run_setup)(void);
     bool (*browser_grant)(char one_time_token[65]);
 
     /* ---- the Panel Manager's remote keypad session (docs/features/31) ----

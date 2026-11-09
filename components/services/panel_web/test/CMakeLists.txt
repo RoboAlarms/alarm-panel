@@ -71,3 +71,9 @@ target_compile_definitions(test_web_keypads_headless PRIVATE CONFIG_ALARM_FEATUR
 alarm_add_test(web_net_confirm
                SOURCES test_web_net_confirm.c ${CMAKE_CURRENT_LIST_DIR}/../src/web_net_confirm.c
                LIBS unity INCLUDES ${CMAKE_CURRENT_LIST_DIR}/../src STRICT)
+
+# Setup through the server link (alarm-server's website, 2026-11-09): a backup in parts, the sirens
+# and outputs as settings, Smart Home's Owner-code devices.
+alarm_add_test(web_thispanel
+               SOURCES test_web_thispanel.c ${CMAKE_CURRENT_LIST_DIR}/../src/web_thispanel.c
+               LIBS web_cjson sirens home_control unity INCLUDES ${CMAKE_CURRENT_LIST_DIR}/../src STRICT)

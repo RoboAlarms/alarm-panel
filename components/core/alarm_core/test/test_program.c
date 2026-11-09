@@ -111,21 +111,29 @@ static void test_duress_code_never_enters_installer_mode(void)
 static const alarm_source_t PM = {ALARM_SRC_REMOTE, ALARM_SRC_ID_PANEL_MANAGER};
 
 /* CORE-PROG-014: whether the installer code opens installer mode is the Owner's to decide (the
- * owner's decision of 2026-11-08): on by default; only the system master, in installer mode at the
- * panel, turns it off or on - never the installer, never over the network. With no system master
- * yet nobody can turn the installer away. */
+ * owner's decision of 2026-11-08): on by default; only the system master turns it off or on - at
+ * the panel, or signed in through the network (the Panel Manager, alarm-server's website: the
+ * owner's decision of 2026-11-09) - never the installer, wherever. With no system master yet nobody
+ * can turn the installer away. */
 static void test_owner_decides_the_installer(void)
 {
     alarm_config_t c = S.cfg;
     TEST_ASSERT_EQUAL_UINT8(0u, c.opt.installer_setup_off);
     c.opt.installer_setup_off = 1u;
 
-    /* The installer can't turn itself off (nor on), nor can the master from the Panel Manager. */
+    /* The installer can't turn itself off (nor on), at the panel or through the network. */
     EXPECT_RESULT(ALARM_OK, enter(CODE_INSTALLER, NULL));
     EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, alarm_engine_set_config(&S.eng, &c, S.now));
     leave();
-    EXPECT_RESULT(ALARM_OK, alarm_engine_program_enter_as(&S.eng, &PM, ALARM_USER_MASTER, S.now));
+    EXPECT_RESULT(ALARM_OK, alarm_engine_program_enter_as(&S.eng, &PM, ALARM_USER_INSTALLER, S.now));
     EXPECT_RESULT(ALARM_ERR_NOT_AUTHORIZED, alarm_engine_set_config(&S.eng, &c, S.now));
+    alarm_engine_program_exit(&S.eng, &PM, S.now);
+    /* The Owner signed in through the network may (and puts it back here). */
+    EXPECT_RESULT(ALARM_OK, alarm_engine_program_enter_as(&S.eng, &PM, ALARM_USER_MASTER, S.now));
+    EXPECT_RESULT(ALARM_OK, alarm_engine_set_config(&S.eng, &c, S.now));
+    alarm_config_t back = c;
+    back.opt.installer_setup_off = 0u;
+    EXPECT_RESULT(ALARM_OK, alarm_engine_set_config(&S.eng, &back, S.now));
     alarm_engine_program_exit(&S.eng, &PM, S.now);
 
     /* The Owner at the panel turns it off: the installer's code and sign-in are refused. */

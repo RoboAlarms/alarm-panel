@@ -702,6 +702,17 @@ static void test_req_rules(void)
     TEST_ASSERT_EQUAL_STRING("step_up", proto_srv_req_refusal("POST", "installer-code", false));
     TEST_ASSERT_EQUAL_STRING("step_up", proto_srv_req_refusal("POST", "setup-mode", false));
     TEST_ASSERT_EQUAL(PROTO_SRV_ACT_ORDINARY, proto_srv_req_act("GET", "people"));
+    /* Setup's This panel and Test and start over from the website (2026-11-09): the same class, so
+     * the step-up and remote_setup hold them as they hold installer programming. */
+    static const char *const SETUP_TOO[] = {"remote", "factory-reset", "sirens", "smart-home", "setup-again",
+                                            "backup-make", "backup-part", "restore-begin", "restore-part",
+                                            "restore-finish"};
+    for (size_t i = 0; i < sizeof(SETUP_TOO) / sizeof(SETUP_TOO[0]); i++) {
+        TEST_ASSERT_EQUAL_MESSAGE(PROTO_SRV_ACT_SETUP, proto_srv_req_act("POST", SETUP_TOO[i]), SETUP_TOO[i]);
+        TEST_ASSERT_EQUAL_STRING_MESSAGE("step_up", proto_srv_req_refusal("POST", SETUP_TOO[i], false), SETUP_TOO[i]);
+    }
+    TEST_ASSERT_EQUAL(PROTO_SRV_ACT_ORDINARY, proto_srv_req_act("GET", "sirens"));
+    TEST_ASSERT_EQUAL(PROTO_SRV_ACT_ORDINARY, proto_srv_req_act("POST", "backup")); /* the Panel Manager's own */
 }
 
 static void test_command_map(void)

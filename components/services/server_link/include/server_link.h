@@ -101,6 +101,19 @@ typedef int (*server_link_req_fn)(uint8_t user, bool fresh, uint16_t source_id, 
                                   size_t *out_len);
 void server_link_set_req_handler(server_link_req_fn fn);
 
+/* ---- the remote keypad through the server (alarm-server's Setup > Remote keypad) ----------------
+ * The viewer's JSON comes on down/scr (the Panel Manager's remote keypad messages, with as, actor
+ * and fresh added by the server to its hello) and goes to the handler, on the link's task. The
+ * panel's messages go up on scrmsg (text) and its pictures on scr (12-byte header, then the
+ * picture), at most once (QoS 0): a lost picture is followed by the next. */
+typedef void (*server_link_screen_fn)(const char *json, size_t len);
+void server_link_set_screen_handler(server_link_screen_fn fn);
+/* Sends to the viewer; false while the link isn't up. text: queued, never waits. */
+bool server_link_screen_up(const void *data, size_t len, bool text);
+/* May this user use the remote keypad from the server: a remote sign-in of theirs, and the
+ * ceiling's remote_setup (the panel's own screen is Setup's reach, D6). */
+bool server_link_screen_allowed(uint8_t user);
+
 /* ---- direct mode (alarm-server's direct-mode.md) --------------------------------------------------
  * Phones paired at the panel. cert_sha256: of the Panel Manager's certificate, hosts: the addresses to
  * try, comma separated. uri is what the QR code holds. Only the caller checks the person's code. */

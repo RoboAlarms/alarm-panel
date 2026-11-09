@@ -349,6 +349,17 @@ static void metrics(char *out, size_t cap)
              s.forced_off ? "true" : "false", (unsigned)s.backlight);
 }
 #if CONFIG_ALARM_FEATURE_UI
+/* Run the setup again from the server (Setup > Test and start over): the touchscreen's own
+ * setup, which the person there - or the remote keypad - finishes or leaves. */
+static bool run_setup(void)
+{
+    if (!board_ui_lock(1000))
+        return false;
+    ui_app_run_setup();
+    board_ui_unlock();
+    return true;
+}
+
 static void preferences_changed(void)
 {
     ui_options_t opt;
@@ -610,6 +621,7 @@ esp_err_t dev_adapter_start(void)
                                     .jpeg = jpeg_frame,
                                     .frame_interval_ms = 100,
                                     .preferences_changed = preferences_changed,
+                                    .run_setup = run_setup,
 #endif
                                     .metrics = metrics,
                                     .browser_grant = panel_web_issue_grant,

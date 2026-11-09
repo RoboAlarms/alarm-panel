@@ -65,6 +65,10 @@ void web_screen_pause(bool paused)
 #include "net_wifi.h"
 #include "web_mem.h"
 #include "web_rules.h"
+#if CONFIG_ALARM_FEATURE_SERVER
+#include "server_link.h"
+#endif
+#include <limits.h>
 #include <math.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -82,6 +86,19 @@ static const char *TAG = "web_screen";
 #define TEXT_MAX     256      /* the panel's own messages are shorter */
 
 enum { PIC_H264_KEY = 1, PIC_H264 = 2, PIC_JPEG = 3 };
+
+/* The viewer through alarm-server (Setup > Remote keypad): not a socket here but the server link's
+ * scr channel. Its "fd" is this, which no socket has; what it is sent goes up the link. */
+#define LINK_FD INT_MAX
+static bool link_send(const char *json)
+{
+#if CONFIG_ALARM_FEATURE_SERVER
+    return server_link_screen_up(json, strlen(json), true);
+#else
+    (void)json;
+    return false;
+#endif
+}
 
 static dev_remote_adapter_t A;
 static httpd_handle_t server;  /* the running server, NULL while none: under lock */
@@ -248,6 +265,8 @@ static bool send_text(httpd_handle_t hd, int fd, const char *json)
  * may follow a frame cut off midway, PERF11) and false. */
 static bool reply(httpd_req_t *r, const char *json)
 {
+    if (!r)
+        return link_send(json);
     const int fd = httpd_req_to_sockfd(r);
     if (send_text(r->handle, fd, json))
         return true;
@@ -274,7 +293,10 @@ static esp_err_t bye(httpd_req_t *r, const char *why)
 {
     char *json = bye_json(why);
     if (json) {
-        (void)send_text(r->handle, httpd_req_to_sockfd(r), json); /* closed anyway */
+        if (r)
+            (void)send_text(r->handle, httpd_req_to_sockfd(r), json); /* closed anyway */
+        else
+            (void)link_send(json);
         cJSON_free(json);
     }
     return ESP_FAIL;
@@ -313,6 +335,17 @@ static void text_work(void *arg)
 /* Queues json for viewer (fd, id); close: then close its socket. lock held. */
 static void post_locked(int fd, uint32_t id, const char *json, bool close)
 {
+    if (fd == LINK_FD) { /* queued by the link, never waits */
+        (void)id;
+        if (json)
+            (void)link_send(json);
+        if (close) {
+            V.fd = -1;
+            if (task)
+                xTaskNotifyGive(task);
+        }
+        return;
+    }
     if (!server || fd < 0)
         return;
     const size_t n = json ? strlen(json) : 0;
@@ -458,6 +491,34 @@ static void stream_task(void *arg)
         for (unsigned i = 0; i < 4; i++)
             pic[8 + i] = (uint8_t)(ms >> (8 * i));
         memcpy(pic + HEADER, data, len);
+        if (fd == LINK_FD) {
+            /* Through the server: straight up the link from here, no worker in between. */
+            xSemaphoreTake(lock, portMAX_DELAY);
+            const bool ours = V.fd == fd && V.id == id && !V.ended;
+            const uint32_t n = V.sent + 1;
+            xSemaphoreGive(lock);
+            if (!ours)
+                continue;
+            for (unsigned i = 0; i < 4; i++)
+                pic[4 + i] = (uint8_t)(n >> (8 * i));
+#if CONFIG_ALARM_FEATURE_SERVER
+            const bool sent = server_link_screen_up(pic, HEADER + len, false);
+#else
+            const bool sent = false;
+#endif
+            xSemaphoreTake(lock, portMAX_DELAY);
+            if (V.id == id) {
+                if (sent) {
+                    V.sent = n;
+                    if (is_key)
+                        V.want_key = false;
+                } else {
+                    V.want_key = true;
+                }
+            }
+            xSemaphoreGive(lock);
+            continue;
+        }
         const uint8_t *frame = ws_frame(pic, HTTPD_WS_TYPE_BINARY, HEADER + len);
         bool queued = false;
         xSemaphoreTake(lock, portMAX_DELAY);
@@ -593,7 +654,7 @@ static esp_err_t hello(httpd_req_t *r, int fd, const cJSON *o)
     V.reported = is_paused ? DEV_INPUT_PAUSED : DEV_INPUT_OK;
     memset(p, 0, sizeof(*p));
     xSemaphoreGive(lock);
-    if (old >= 0) { /* the same person in another tab, or a viewer on its way out */
+    if (old >= 0 && old != LINK_FD) { /* the same person in another tab, or a viewer on its way out */
         char *json = bye_json(old_ended ? "ended" : "replaced");
         if (json) {
             (void)send_text(r->handle, old, json);
@@ -665,7 +726,7 @@ static esp_err_t handle(httpd_req_t *r, int fd, const cJSON *o)
     xSemaphoreTake(lock, portMAX_DELAY);
     const bool viewer = fd == V.fd && !V.ended;
     const bool waiting = !viewer && pending_for(fd, false) != NULL; /* its hello is on the way */
-    const bool alive = viewer && panel_web_ws_alive(V.session, V.token, NULL);
+    const bool alive = viewer && (fd == LINK_FD || panel_web_ws_alive(V.session, V.token, NULL));
     if (viewer && !alive)
         V.ended = true;
     if (alive)
@@ -731,9 +792,89 @@ static esp_err_t screen_handler(httpd_req_t *r)
     return ret;
 }
 
+#if CONFIG_ALARM_FEATURE_SERVER
+/* The hello through alarm-server: the server says who (as, actor) and that they confirmed it's them
+ * (fresh); the link checks their remote sign-in and the ceiling's remote_setup. Someone on the
+ * Panel Manager's remote keypad keeps it: in_use, as between two browsers. */
+static void link_hello(const cJSON *o)
+{
+    const cJSON *as = cJSON_GetObjectItemCaseSensitive(o, "as");
+    const cJSON *actor = cJSON_GetObjectItemCaseSensitive(o, "actor");
+    const char *name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(actor, "name"));
+    const cJSON *want = cJSON_GetObjectItemCaseSensitive(o, "codec");
+    if (!cJSON_IsNumber(as) || as->valuedouble < 1 || as->valuedouble > ALARM_MAX_USERS ||
+        !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(o, "fresh")) ||
+        !server_link_screen_allowed((uint8_t)as->valuedouble)) {
+        (void)bye(NULL, "forbidden");
+        return;
+    }
+    xSemaphoreTake(lock, portMAX_DELAY);
+    if (V.fd >= 0 && V.fd != LINK_FD && !V.ended) {
+        char why[ALARM_NAME_LEN + 8];
+        snprintf(why, sizeof(why), "in_use:%s", V.who);
+        xSemaphoreGive(lock);
+        (void)bye(NULL, why);
+        return;
+    }
+    const bool h264 = cJSON_IsString(want) && !strcmp(want->valuestring, "h264") &&
+                      (A.video_codecs & DEV_VIDEO_H264);
+    const bool is_paused = atomic_load(&paused);
+    V.fd = LINK_FD;
+    V.id = ++next_id;
+    V.session = NULL;
+    memset(V.token, 0, sizeof(V.token));
+    i18n_utf8_copy(V.who, sizeof(V.who), name ? name : "");
+    snprintf(V.where, sizeof(V.where), "%s", "RoboAlarms server");
+    V.codec = h264 ? DEV_VIDEO_H264 : DEV_VIDEO_JPEG;
+    V.viewing = true;
+    V.want_key = true;
+    V.ended = false;
+    V.sent = V.acked = 0;
+    V.last_rx = esp_timer_get_time();
+    V.reported = is_paused ? DEV_INPUT_PAUSED : DEV_INPUT_OK;
+    xSemaphoreGive(lock);
+    char json[200];
+    snprintf(json, sizeof(json),
+             "{\"t\":\"hello\",\"codec\":\"%s\",\"width\":%u,\"height\":%u,\"video\":[%s],\"paused\":%s}",
+             h264 ? "h264" : "jpeg", A.width, A.height,
+             (A.video_codecs & DEV_VIDEO_H264) ? "\"h264\",\"jpeg\"" : "\"jpeg\"",
+             is_paused ? "true" : "false");
+    (void)link_send(json);
+    ESP_LOGI(TAG, "remote keypad opened through the server (%s)", h264 ? "H.264" : "JPEG");
+    xTaskNotifyGive(task);
+}
+
+/* A message from the viewer through alarm-server (server_link's scr channel). */
+static void link_message(const char *json, size_t len)
+{
+    if (!task || !lock) {
+        (void)link_send("{\"t\":\"bye\",\"why\":\"not_supported\"}");
+        return;
+    }
+    cJSON *o = cJSON_ParseWithLength(json, len);
+    const char *t = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(o, "t"));
+    if (t && !strcmp(t, "hello")) {
+        link_hello(o);
+    } else if (t && !strcmp(t, "bye")) {
+        xSemaphoreTake(lock, portMAX_DELAY);
+        if (V.fd == LINK_FD)
+            V.fd = -1; /* the page left: the session ends, the banner goes */
+        xSemaphoreGive(lock);
+        xTaskNotifyGive(task);
+    } else if (t) {
+        (void)handle(NULL, LINK_FD, o);
+    }
+    wipe(o);
+    cJSON_Delete(o);
+}
+#endif
+
 esp_err_t web_screen_setup(const dev_remote_adapter_t *adapter)
 {
     A = *adapter;
+#if CONFIG_ALARM_FEATURE_SERVER
+    server_link_set_screen_handler(link_message);
+#endif
     if (!A.video || !A.video_codecs)
         return ESP_OK; /* no live screen on this board */
     lock = xSemaphoreCreateMutex();

@@ -60,14 +60,21 @@ bool eng_may_open_program(const alarm_engine_t *e, uint8_t user)
     return a == ALARM_AUTH_INSTALLER && alarm_config_installer_sets_up(&e->cfg);
 }
 
-/* An Owner session (CORE-PROG-014, 015): installer mode opened by the system master's code, or by
- * the power-up recovery, at the panel itself (its touchscreen or a keypad), never over the
- * network. Only it changes the Owner's own options. */
+/* An Owner session (CORE-PROG-014, 015): installer mode held by the system master - opened with
+ * their code at the panel, or as them through the network (the Panel Manager or alarm-server's
+ * website, where the Owner is signed in and confirmed it's them: the owner's decision of
+ * 2026-11-09, everything Setup shows changes from the server) - or by the power-up recovery, which
+ * only the panel itself can be (no user). Only it changes the Owner's own options; the Admin's code
+ * never does, wherever it is typed. */
 bool eng_owner_session(const alarm_engine_t *e)
 {
-    return e->program && e->program_src.kind == ALARM_SRC_KEYPAD &&
-           (e->program_user == 0u ||
-            eng_user_auth(e, e->program_user) == ALARM_AUTH_MASTER);
+    if (!e->program) {
+        return false;
+    }
+    if (e->program_user == 0u) {
+        return e->program_src.kind == ALARM_SRC_KEYPAD;
+    }
+    return eng_user_auth(e, e->program_user) == ALARM_AUTH_MASTER;
 }
 
 /* as: for the already-identified as_user instead of by a code (CORE-PROG-011). */

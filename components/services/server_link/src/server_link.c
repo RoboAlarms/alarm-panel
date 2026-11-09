@@ -1169,6 +1169,8 @@ static void run_orders(alarm_ms_t now)
     }
 }
 
+static server_link_screen_fn s_screen_fn; /* the remote keypad's (web_screen.c) */
+
 static void handle_in(const in_msg_t *m)
 {
     if (m->retained) {
@@ -1176,6 +1178,13 @@ static void handle_in(const in_msg_t *m)
         return;
     }
     const size_t tl = strlen(m->topic);
+    if (tl >= 9u && strcmp(m->topic + tl - 9u, "/down/scr") == 0) {
+        /* The remote keypad's own channel: not a link message (web_screen.c reads it). */
+        if (s_linked && s_screen_fn != NULL) {
+            s_screen_fn(m->payload, m->len);
+        }
+        return;
+    }
     const bool is_ack = tl >= 9u && strcmp(m->topic + tl - 9u, "/down/ack") == 0;
     const bool is_time = tl >= 10u && strcmp(m->topic + tl - 10u, "/down/time") == 0;
     proto_srv_parse(m->payload, m->len, is_ack, is_time, &s_parsed);
@@ -1705,6 +1714,34 @@ bool server_link_cert_sha256(uint8_t sha256[32])
 void server_link_set_req_handler(server_link_req_fn fn)
 {
     s_req_fn = fn;
+}
+
+void server_link_set_screen_handler(server_link_screen_fn fn)
+{
+    s_screen_fn = fn;
+}
+
+bool server_link_screen_up(const void *data, size_t len, bool text)
+{
+    char topic[56];
+    if (s_client == NULL || !s_connected || !s_linked ||
+        !proto_srv_topic(s_id, text ? "/up/scrmsg" : "/up/scr", topic, sizeof(topic))) {
+        return false;
+    }
+    return text ? esp_mqtt_client_enqueue(s_client, topic, data, (int)len, 0, 0, true) >= 0
+                : esp_mqtt_client_publish(s_client, topic, data, (int)len, 0, 0) >= 0;
+}
+
+bool server_link_screen_allowed(uint8_t user)
+{
+    if (!s_linked || !s_have_cfg || !remote_eligible(user)) {
+        return false;
+    }
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    const proto_srv_refusal_t refusal =
+        proto_srv_check(&s_ceiling, user, PROTO_SRV_ACT_SETUP, wall_ms());
+    xSemaphoreGive(s_lock);
+    return refusal == PROTO_SRV_OK;
 }
 
 void server_link_set_model(const char *model)

@@ -55,6 +55,8 @@
 #include "web_screen.h"
 #include "mdns.h"
 #include "web_readouts.h"
+#include "web_thispanel.h"
+#include "device_service.h"
 #include "web_signin_gate.h"
 #include "web_net_confirm.h"
 #include "tls_gate.h"
@@ -2282,6 +2284,324 @@ static esp_err_t voices_put(httpd_req_t *r)
     }
     return ESP_OK;
 }
+#define NULL_ANSWER ((esp_err_t)-12345) /* not one of this handler's paths */
+/* ---- Setup through the server: This panel, Sirens and outputs, Smart Home (web_thispanel.h) ----
+ * alarm-server's website changes everything a Setup page shows once the panel is connected
+ * (2026-11-09). Each is the installer's (sets_up, get_access's fail-closed default) and, through
+ * the link, behind the server's step-up and the ceiling's remote_setup (proto_srv_req_act). */
+static void ui_info(void *ctx, char *out, size_t cap);
+
+/* A backup made for the link, kept for its parts (the person who made it, five minutes), and a
+ * restore being taken in parts. One of each at a time; PSRAM; wiped when done or replaced. */
+static struct {
+    uint8_t *file;
+    size_t len;
+    uint8_t user;
+    int64_t until_us;
+} s_bk;
+static struct {
+    uint8_t *file;
+    size_t size, have;
+    uint8_t user;
+    int64_t until_us;
+} s_rs;
+#define PARTS_KEEP_US (5 * 60 * 1000000LL)
+
+static void bk_drop(void)
+{
+    if (s_bk.file) {
+        mbedtls_platform_zeroize(s_bk.file, s_bk.len);
+        free(s_bk.file);
+    }
+    memset(&s_bk, 0, sizeof(s_bk));
+}
+static void rs_drop(void)
+{
+    if (s_rs.file) {
+        mbedtls_platform_zeroize(s_rs.file, s_rs.size);
+        heap_caps_free(s_rs.file);
+    }
+    memset(&s_rs, 0, sizeof(s_rs));
+}
+
+static cJSON *sirens_json(void)
+{
+    outputs_wired_info_t wired[OW_CHANNELS];
+    outputs_rf_info_t rf[RFS_SIRENS];
+    outputs_service_wired(wired);
+    outputs_service_rf(rf);
+    web_wired_t w[OW_CHANNELS];
+    web_rf_t f[RFS_SIRENS];
+    for (size_t i = 0; i < OW_CHANNELS; i++)
+        w[i] = (web_wired_t){.c = wired[i].c, .on = wired[i].on, .trouble = wired[i].trouble};
+    for (size_t i = 0; i < RFS_SIRENS; i++)
+        f[i] = (web_rf_t){.c = rf[i].c, .sounding = rf[i].sounding};
+    uint8_t terms[16];
+    const size_t nt = outputs_service_free_terminals(OW_CHANNELS, terms, sizeof(terms));
+    return web_sirens_json(w, OW_CHANNELS, f, RFS_SIRENS, terms, nt);
+}
+
+#if CONFIG_ALARM_HOME_CONTROL
+/* The devices Smart Home lists, and the house's settings, read now. */
+typedef struct {
+    hc_device_t rows[HC_HOME_DEVICES];
+    web_home_dev_t devs[HC_HOME_DEVICES];
+    size_t n;
+    hc_home_t home;
+    uint8_t blob[HC_HOME_BLOB_MAX];
+} home_read_t;
+static home_read_t *home_read(void)
+{
+    home_read_t *h = web_alloc(sizeof(*h));
+    if (!h)
+        return NULL;
+    h->n = device_service_list(h->rows, HC_HOME_DEVICES);
+    for (size_t i = 0; i < h->n; i++)
+        h->devs[i] = (web_home_dev_t){.ref = h->rows[i].info.ref, .name = h->rows[i].info.name,
+                                      .area = h->rows[i].info.area};
+    hc_home_clear(&h->home);
+    const size_t len = device_service_home_get(h->blob, sizeof(h->blob));
+    if (len > 0u && !hc_home_decode(&h->home, h->blob, len))
+        hc_home_clear(&h->home);
+    return h;
+}
+#endif
+
+/* GET remote, sirens, smart-home. NULL_ANSWER: not one of these. */
+static esp_err_t thispanel_get(httpd_req_t *r, const char *path)
+{
+    if (!strcmp(path, "remote")) {
+        bool web = false, dev = false;
+        panel_web_get(&web, &dev);
+        char info[200] = "";
+        if (web)
+            ui_info(NULL, info, sizeof(info));
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddBoolToObject(o, "web", web);
+        cJSON_AddBoolToObject(o, "developer", dev);
+        if (info[0])
+            cJSON_AddStringToObject(o, "address", info);
+        return json(r, o);
+    }
+    if (!strcmp(path, "sirens")) {
+        cJSON *o = sirens_json();
+        return o ? json(r, o) : error(r, "503 Service Unavailable", "Memory busy");
+    }
+    if (!strcmp(path, "smart-home")) {
+#if CONFIG_ALARM_HOME_CONTROL
+        home_read_t *h = home_read();
+        if (!h)
+            return error(r, "503 Service Unavailable", "Memory busy");
+        cJSON *o = web_home_json(&h->home, h->devs, h->n);
+        free(h);
+        return o ? json(r, o) : error(r, "503 Service Unavailable", "Memory busy");
+#else
+        return error(r, "404 Not Found", "Smart Home is not in this firmware");
+#endif
+    }
+    return NULL_ANSWER;
+}
+
+static const char *const BACKUP_WORDS[] = {
+    [BACKUP_OK] = "backup_format",       [BACKUP_ERR_ARG] = "backup_format",
+    [BACKUP_ERR_PASSWORD] = "backup_decrypt", [BACKUP_ERR_FORMAT] = "backup_format",
+    [BACKUP_ERR_DECRYPT] = "backup_decrypt", [BACKUP_ERR_CRYPTO] = "backup_failed",
+    [BACKUP_ERR_BOARD] = "backup_board",  [BACKUP_ERR_CONTENT] = "backup_content"};
+
+/* POST sirens, smart-home, setup-again and the backup's parts (the installer's: the caller checked
+ * sets_up). NULL_ANSWER: not one of these. */
+static esp_err_t thispanel_post(httpd_req_t *r, session_t *s, alarm_authority_t authority,
+                                const char *path, const cJSON *o)
+{
+    (void)authority;
+    const int64_t now = esp_timer_get_time();
+    if (!strcmp(path, "sirens")) {
+        outputs_wired_info_t wired[OW_CHANNELS];
+        outputs_rf_info_t rf[RFS_SIRENS];
+        outputs_service_wired(wired);
+        outputs_service_rf(rf);
+        bool is_rf = false;
+        size_t slot = 0;
+        ow_config_t wc;
+        rfs_config_t rc;
+        memset(&wc, 0, sizeof(wc));
+        memset(&rc, 0, sizeof(rc));
+        /* the settings now of whichever it names, for the fields a SET doesn't */
+        uint32_t n = 0;
+        if (number(o, "number", 1, OW_CHANNELS, &n))
+            wc = wired[n - 1].c;
+        if (number(o, "number", 1, RFS_SIRENS, &n))
+            rc = rf[n - 1].c;
+        if (wc.function == OW_FN_NONE)
+            wc.sense = OW_SENSE_NONE;
+        const web_siren_op_t op = web_siren_request(o, &is_rf, &slot, &wc, &rc);
+        esp_err_t e = ESP_ERR_INVALID_ARG;
+        switch (op) {
+        case WEB_SIREN_TEST:
+            if (panel_locked())
+                return error(r, "409 Conflict", "locked");
+            e = is_rf ? outputs_service_rf_test(slot) : outputs_service_wired_test(slot);
+            break;
+        case WEB_SIREN_SET:
+            if (panel_locked())
+                return error(r, "409 Conflict", "locked");
+            if (is_rf) {
+                if (!rf[slot].c.used)
+                    return error(r, "404 Not Found", "no_siren");
+                rc.used = true;
+                e = outputs_service_rf_set(slot, &rc);
+            } else {
+                e = outputs_service_wired_set(slot, &wc);
+            }
+            break;
+        case WEB_SIREN_CLEAR:
+            if (panel_locked())
+                return error(r, "409 Conflict", "locked");
+            e = is_rf ? outputs_service_rf_clear(slot) : outputs_service_wired_clear(slot);
+            break;
+        default: return error(r, "400 Bad Request", "bad_request");
+        }
+        if (e == ESP_ERR_INVALID_STATE)
+            return error(r, "409 Conflict", "in_use");
+        if (e != ESP_OK)
+            return error(r, "409 Conflict", e == ESP_ERR_INVALID_ARG ? "bad_settings" : "not_saved");
+        cJSON *a = sirens_json();
+        return a ? json(r, a) : okay(r);
+    }
+    if (!strcmp(path, "smart-home")) {
+#if CONFIG_ALARM_HOME_CONTROL
+        home_read_t *h = home_read();
+        if (!h)
+            return error(r, "503 Service Unavailable", "Memory busy");
+        esp_err_t e;
+        if (!web_home_apply(&h->home, o, h->devs, h->n)) {
+            e = error(r, "400 Bad Request", "bad_request");
+        } else {
+            const size_t len = hc_home_encode(&h->home, h->blob, sizeof(h->blob));
+            if (len == 0u || !device_service_home_set(h->blob, len)) {
+                e = error(r, "503 Service Unavailable", "not_saved");
+            } else {
+                cJSON *a = web_home_json(&h->home, h->devs, h->n);
+                e = a ? json(r, a) : okay(r);
+            }
+        }
+        free(h);
+        return e;
+#else
+        return error(r, "404 Not Found", "Smart Home is not in this firmware");
+#endif
+    }
+    if (!strcmp(path, "setup-again")) {
+        if (panel_locked())
+            return error(r, "409 Conflict", "locked");
+        if (!A.run_setup)
+            return error(r, "404 Not Found", "This panel has no screen to run the setup on");
+        return A.run_setup() ? okay(r) : error(r, "503 Service Unavailable", "Display is busy");
+    }
+    if (!strcmp(path, "backup-make")) {
+        esp_err_t refused = ESP_OK;
+        if (!recent_password(r, s, str(o, "me_password"), &refused))
+            return refused;
+        bk_drop();
+        backup_result_t why = BACKUP_OK;
+        uint8_t *file = NULL;
+        size_t len = 0;
+        if (backup_service_make(str(o, "password"), SOURCE_NOW, s->user, &file, &len, &why) != ESP_OK)
+            return why == BACKUP_ERR_PASSWORD ? error(r, "400 Bad Request", "backup_password")
+                                              : error(r, "503 Service Unavailable", "backup_failed");
+        s_bk = (typeof(s_bk)){.file = file, .len = len, .user = s->user, .until_us = now + PARTS_KEEP_US};
+        char name[64] = "panel-backup.rabk";
+        const time_t t = time(NULL);
+        struct tm tm;
+        if (t > 1735689600 && localtime_r(&t, &tm))
+            strftime(name, sizeof(name), "panel-backup-%Y-%m-%d.rabk", &tm);
+        cJSON *a = cJSON_CreateObject();
+        cJSON_AddNumberToObject(a, "size", (double)len);
+        cJSON_AddStringToObject(a, "name", name);
+        return json(r, a);
+    }
+    if (!strcmp(path, "backup-part")) {
+        uint32_t off = 0;
+        if (!s_bk.file || s_bk.user != s->user || now > s_bk.until_us) {
+            bk_drop();
+            return error(r, "409 Conflict", "no_backup");
+        }
+        if (!number(o, "offset", 0, (uint32_t)s_bk.len - 1u, &off))
+            return error(r, "400 Bad Request", "bad_request");
+        cJSON *a = web_part_json(s_bk.file, s_bk.len, off);
+        if (!a)
+            return error(r, "503 Service Unavailable", "Memory busy");
+        if (off + WEB_PART_OUT >= s_bk.len)
+            bk_drop(); /* the last part: nothing of it stays */
+        return json(r, a);
+    }
+    if (!strcmp(path, "restore-begin")) {
+        uint32_t size = 0;
+        if (!number(o, "size", BACKUP_OVERHEAD, BACKUP_PAYLOAD_MAX + BACKUP_OVERHEAD, &size))
+            return error(r, "400 Bad Request", "backup_format");
+        if (panel_locked())
+            return error(r, "409 Conflict", "locked");
+        rs_drop();
+        s_rs.file = heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+        if (!s_rs.file)
+            return error(r, "503 Service Unavailable", "Memory busy");
+        s_rs.size = size;
+        s_rs.user = s->user;
+        s_rs.until_us = now + PARTS_KEEP_US;
+        return okay(r);
+    }
+    if (!strcmp(path, "restore-part")) {
+        uint32_t off = 0;
+        if (!s_rs.file || s_rs.user != s->user || now > s_rs.until_us) {
+            rs_drop();
+            return error(r, "409 Conflict", "no_restore");
+        }
+        if (!number(o, "offset", 0, (uint32_t)s_rs.size, &off))
+            return error(r, "400 Bad Request", "backup_format");
+        const char *why = web_part_take(s_rs.file, s_rs.size, &s_rs.have, off, str(o, "data"));
+        if (why) {
+            rs_drop();
+            return error(r, "400 Bad Request", why);
+        }
+        s_rs.until_us = now + PARTS_KEEP_US;
+        return okay(r);
+    }
+    if (!strcmp(path, "restore-finish")) {
+        esp_err_t refused = ESP_OK;
+        if (!recent_password(r, s, str(o, "me_password"), &refused))
+            return refused;
+        if (!s_rs.file || s_rs.user != s->user || s_rs.have != s_rs.size) {
+            rs_drop();
+            return error(r, "400 Bad Request", "backup_format");
+        }
+        const bool take_codes = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(o, "codes"));
+        if (take_codes && authority != ALARM_AUTH_MASTER) {
+            rs_drop();
+            return error(r, "403 Forbidden", "owner_only");
+        }
+        backup_summary_t sum;
+        memset(&sum, 0, sizeof(sum));
+        backup_result_t why = BACKUP_ERR_FORMAT;
+        const esp_err_t e = backup_service_restore(s_rs.file, s_rs.size, str(o, "password"), SOURCE_NOW,
+                                                   s->user, take_codes, &sum, &why);
+        rs_drop();
+        if (e == ESP_ERR_INVALID_STATE)
+            return error(r, "409 Conflict", "locked");
+        if (e == ESP_ERR_INVALID_ARG)
+            return error(r, "400 Bad Request",
+                         (unsigned)why < sizeof(BACKUP_WORDS) / sizeof(BACKUP_WORDS[0]) ? BACKUP_WORDS[why] : "backup_format");
+        cJSON *a = cJSON_CreateObject();
+        cJSON_AddBoolToObject(a, "ok", e == ESP_OK);
+        cJSON_AddBoolToObject(a, "restarting", true);
+        cJSON_AddNumberToObject(a, "zones", sum.zones);
+        cJSON_AddNumberToObject(a, "users", sum.users);
+        if (e != ESP_OK)
+            cJSON_AddStringToObject(a, "error", "backup_partial");
+        return json(r, a);
+    }
+    return NULL_ANSWER;
+}
+
 static esp_err_t get(httpd_req_t *r)
 {
     alarm_authority_t authority;
@@ -2337,6 +2657,11 @@ static esp_err_t get(httpd_req_t *r)
     }
     if (!strcmp(path, "zwave")) /* the installer's (get_access): docs/features/36 screens.md §11 */
         return json(r, web_zwave_get(&B));
+    {
+        const esp_err_t mine = thispanel_get(r, path);
+        if (mine != NULL_ANSWER)
+            return mine;
+    }
 #if CONFIG_ALARM_FEATURE_SERVER
     if (!strcmp(path, "server-link")) {
         /* Integrations > RoboAlarms (docs/features/43): linking, Allow and the remote ceiling are
@@ -2978,6 +3303,11 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
         cJSON_AddStringToObject(res, "result", w);
         return json(r, res);
     }
+    if (sets_up(authority)) {
+        const esp_err_t mine = thispanel_post(r, s, authority, path, o);
+        if (mine != NULL_ANSWER)
+            return mine;
+    }
     if (!strcmp(path, "remote")) {
         const cJSON *w = cJSON_GetObjectItemCaseSensitive(o, "web"),
                     *d = cJSON_GetObjectItemCaseSensitive(o, "developer");
@@ -3450,7 +3780,6 @@ static bool phone_proof_ok(const session_t *s, const char *path, const cJSON *o)
                                     action[0] ? action : path, sig, &user) &&
            user == s->user;
 }
-#define NULL_ANSWER ((esp_err_t)-12345) /* not one of the paths that need no session */
 /* POST phone/sender: who the panel is to the relay, for a phone to make it a handle (push-api.md).
  * POST phone/push {handle, kid, key, levels?}: this phone's handle and key; {} stops its alerts. */
 static esp_err_t phone_session_path(httpd_req_t *r, const session_t *s, const char *path, const cJSON *o)
@@ -4041,8 +4370,11 @@ static esp_err_t serialized(httpd_req_t *r)
  * "fresh ... except factory reset and turning remote access off"). */
 static bool tunnel_refused(const char *path)
 {
-    static const char *const NEVER[] = {"frame",  "screen",        "control",  "login", "logout",
-                                        "password", "remote",      "factory-reset"};
+    /* Since 2026-11-09 the Panel Manager's switch ("remote") and a factory reset are the
+     * website's too (Setup > This panel, Test and start over), behind the server's step-up
+     * (fresh) and the remote ceiling's remote_setup, as installer programming is. The screen
+     * has a channel of its own (web_screen.c, the link's scr leaf). */
+    static const char *const NEVER[] = {"frame", "screen", "control", "login", "logout", "password"};
     for (size_t i = 0; i < sizeof(NEVER) / sizeof(NEVER[0]); i++)
         if (!strcmp(path, NEVER[i]))
             return true;

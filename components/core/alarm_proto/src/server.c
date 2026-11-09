@@ -853,6 +853,16 @@ proto_srv_act_t proto_srv_req_act(const char *method, const char *path)
         strncmp(path, "installer-code", 14) == 0) {
         return PROTO_SRV_ACT_SETUP;
     }
+    /* Setup's This panel, Sensors and devices and Test and start over from the server (alarm-server's
+     * website, 2026-11-09): the Panel Manager's switch, a factory reset, the sirens and outputs,
+     * Smart Home's Owner-code devices, the setup again, a backup and a restore. */
+    static const char *const SETUP_TOO[] = {"remote", "factory-reset", "sirens", "smart-home",
+                                            "setup-again", "backup-", "restore-"};
+    for (size_t i = 0; i < sizeof(SETUP_TOO) / sizeof(SETUP_TOO[0]); i++) {
+        if (strncmp(path, SETUP_TOO[i], strlen(SETUP_TOO[i])) == 0) {
+            return PROTO_SRV_ACT_SETUP;
+        }
+    }
     return PROTO_SRV_ACT_ORDINARY;
 }
 

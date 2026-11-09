@@ -439,16 +439,24 @@ static esp_err_t jpeg_frame(const uint8_t **data, size_t *length)
 
 /* ---- H.264 ----------------------------------------------------------------------------------
  * The P4's hardware encoder takes packed YUV 4:2:0 (O_UYY_E_VYY) on v1 silicon; the PPA turns
- * the RGB565 screen into exactly that. The encoder needs about 82 KB of internal RAM, which
- * the alarm keeps first (docs/bugs/B001): it exists only while someone watches, and not at all when
- * internal RAM is short (the viewer gets JPEG instead). */
+ * the RGB565 screen into exactly that. It exists only while someone watches.
+ *
+ * esp_h264 asks for its reference window (three macroblock rows: 74 KB at 1024 wide, 58 KB at
+ * 800) in internal RAM only, in one piece. A linked 10in never has that much in one block, as
+ * the alarm's task stacks and buffers keep internal RAM in pieces, so the encoder never started
+ * there. The window goes to PSRAM instead (__wrap_esp_h264_aligned_malloc below, linked with
+ * --wrap in crowpanel_p4_app.cmake): the encoder's DMA already reads the whole reference picture,
+ * the screen and the YUV from PSRAM. What the encoder still takes from internal RAM is its DMA
+ * descriptors and a 6 KB deblocking line, so the alarm keeps its internal RAM (docs/bugs/B001);
+ * with less than H264_RESERVE free the viewer gets JPEG instead. */
 #define ENC_W        BOARD_LCD_H_RES
 #define ENC_H        BOARD_LCD_V_RES
 #define ENC_H_MB     ((ENC_H + 15) & ~15) /* 608: whole macroblocks, the SPS crops the rest */
 #define YUV_BYTES    (ENC_W * ENC_H_MB * 3 / 2)
 #define RGB_BYTES    (ENC_W * ENC_H * 2)
 #define H264_QP      26  /* fixed: text stays sharp, a still screen costs next to nothing */
-#define H264_RESERVE (160 * 1024) /* internal RAM left for the alarm with the encoder running */
+#define H264_RESERVE (64 * 1024) /* internal RAM free before the encoder may start */
+#define H264_INTERNAL_MAX (16 * 1024) /* a larger esp_h264 buffer goes to PSRAM */
 
 static struct {
     esp_h264_enc_handle_t enc;
@@ -462,6 +470,19 @@ static struct {
 } H;
 static uint32_t video_seen;
 static bool video_have;
+
+void *__real_esp_h264_aligned_malloc(uint32_t alignment, uint32_t n, uint32_t size,
+                                     uint32_t *actual_size, uint32_t caps);
+void *__wrap_esp_h264_aligned_malloc(uint32_t alignment, uint32_t n, uint32_t size,
+                                     uint32_t *actual_size, uint32_t caps);
+/* esp_h264's internal-only buffers: a large one (the reference window) goes to PSRAM. */
+void *__wrap_esp_h264_aligned_malloc(uint32_t alignment, uint32_t n, uint32_t size,
+                                     uint32_t *actual_size, uint32_t caps)
+{
+    if (!(caps & MALLOC_CAP_SPIRAM) && (uint64_t)n * size > H264_INTERNAL_MAX)
+        caps = ESP_H264_MEM_SPIRAM;
+    return __real_esp_h264_aligned_malloc(alignment, n, size, actual_size, caps);
+}
 
 static void h264_close(void)
 {

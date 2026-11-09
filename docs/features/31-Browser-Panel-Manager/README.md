@@ -180,8 +180,11 @@ asks for the file's codes (`X-Restore-Codes: yes`, CFG-006):
 - **H.264** (WEB-020): `esp_h264` 1.4.1 (component registry), the P4's hardware encoder: the PPA
   turns the RGB565 copy of the screen into packed YUV 4:2:0 (O_UYY_E_VYY, BT.601 limited), 1024 x
   608 cropped to 600 in the SPS, fixed QP 26, key picture on the page's request; the encoder
-  exists only while someone watches and only with 160 KB of internal RAM left (it takes ~82 KB),
-  else JPEG over the same socket. The SPS of every key picture is rewritten for no reordering
+  exists only while someone watches and only with 64 KB of internal RAM free, else JPEG over the
+  same socket. Its reference window (74 KB at 1024 wide), which esp_h264 asks for in internal RAM
+  in one piece, goes to PSRAM (`--wrap=esp_h264_aligned_malloc`, dev_adapter.c): a linked 10in
+  never had a block that large, so it never got video. The encoder keeps only its DMA descriptors
+  and a 6 KB line buffer internal. The SPS of every key picture is rewritten for no reordering
   (`components/core/h264_sps`, 3 host tests): Chromium's hardware decoders otherwise hold ~7
   pictures back. The browser decodes with WebCodecs (`optimizeForLatency`), falling back to JPEG
   where it can't (Firefox on Android, a non-secure page). `CONFIG_ESP_H264_DECODER_IRAM=n`.

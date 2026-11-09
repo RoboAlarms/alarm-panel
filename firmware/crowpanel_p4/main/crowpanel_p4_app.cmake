@@ -20,4 +20,6 @@ macro(crowpanel_p4_app board_component)
                                     esp_timer nvs_flash
                                     dev_remote panel_web esp_driver_jpeg esp_driver_ppa
                                     espressif__esp_h264 esp_mm h264_sps zwave_service)
+    # esp_h264's reference window to PSRAM (dev_adapter.c, __wrap_esp_h264_aligned_malloc).
+    target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=esp_h264_aligned_malloc")
 endmacro()

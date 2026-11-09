@@ -66,3 +66,8 @@ foreach(mode normal headless)
 endforeach()
 target_compile_definitions(test_web_keypads_normal PRIVATE CONFIG_ALARM_FEATURE_UI=1)
 target_compile_definitions(test_web_keypads_headless PRIVATE CONFIG_ALARM_FEATURE_UI=0)
+
+# docs/features/43: POST network-confirm through the server link, safe to repeat.
+alarm_add_test(web_net_confirm
+               SOURCES test_web_net_confirm.c ${CMAKE_CURRENT_LIST_DIR}/../src/web_net_confirm.c
+               LIBS unity INCLUDES ${CMAKE_CURRENT_LIST_DIR}/../src STRICT)

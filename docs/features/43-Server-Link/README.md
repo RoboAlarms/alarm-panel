@@ -29,6 +29,15 @@ says what the panel does and what it doesn't yet.
 - **Tunnelled requests**: `panel_web_tunnel()` runs the Panel Manager's own handlers and access table as
   panel user N. Refused whatever the table says: `frame`, `screen`, `control`, `login`, `logout`,
   `password`, `remote`, `factory-reset`, `developer*`.
+- **Network changes** (`POST wifi {ssid, password, operation}`, `POST config/network {values,
+  operation}`): a two-minute trial, as from the Panel Manager. The server keeps it with `POST
+  network-confirm {"operation":"<32 lowercase hex>"}` through the tunnel, by the same access as the
+  change (shared: a system or partition master, the installer), allowed while armed (refusing would change
+  the network): 200 `{"ok":true}` once the panel is back on its server with the new settings (from 3 s
+  into the trial), 409 `{"error":"not_confirmed"}` before that or for another operation, 400
+  `{"error":"bad_operation"}` for a missing or malformed one, 405 for any method but POST. Safe to
+  repeat: the operation that was kept answers 200 again for 130 s (`web_net_confirm.c`). With no 200
+  before the trial's 120 s, the panel goes back to its previous network.
 - **Direct mode**: phones paired by QR code on the panel's HTTPS API, signing in with their own key;
   disarm, silence, people and Setup each need a fresh signature the panel checks.
 - **App push**: per-phone AES-256-GCM to the relay, signed RFC 9421, using `notify`'s words and limits.

@@ -56,6 +56,7 @@
 #include "mdns.h"
 #include "web_readouts.h"
 #include "web_signin_gate.h"
+#include "web_net_confirm.h"
 #include "tls_gate.h"
 #include "tls_httpd.h"
 #include "web_setup.h"
@@ -444,7 +445,8 @@ static access_t post_access(const char *path, const cJSON *o)
     if (is(path, "people"))
         return ACC_USERS;
     if (is(path, "config/network") || is(path, "wifi") || is(path, "time") ||
-        is(path, "network-check") || is(path, "wifi-scan") || is(path, "languages"))
+        is(path, "network-confirm") || is(path, "network-check") || is(path, "wifi-scan") ||
+        is(path, "languages"))
         return ACC_SHARED; /* languages: the same people who may change the language */
     if (is(path, "updates")) {
         /* OTA-022: checking, installing and stopping are the system master's and the
@@ -485,6 +487,9 @@ static bool locked_exempt(const char *path, const cJSON *o)
     /* Stopping an update is allowed while armed (OTA-027); checking and installing are not. */
     if (is(path, "updates"))
         return !strcmp(str(o, "action"), "cancel");
+    /* Keeping a Wi-Fi change already made (server link): refusing it would change the network. */
+    if (is(path, "network-confirm"))
+        return true;
     return is(path, "logout") || is(path, "password") || is(path, "control");
 }
 static bool panel_locked(void)
@@ -2797,6 +2802,14 @@ static esp_err_t partition_action(httpd_req_t *r, session_t *s, alarm_authority_
     cJSON_AddNumberToObject(answer, "zone", res.not_ready_zone);
     return json(r, answer);
 }
+/* The last network change that was kept, from the home network or the server link: either
+ * one's repeat gets 200 again (web_net_confirm.h). Serve lock. */
+static web_net_confirm_memo_t s_net_confirmed;
+static bool net_trial_confirm(const char *op, void *ctx)
+{
+    (void)ctx;
+    return net_wifi_trial_confirm(op);
+}
 static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authority, const char *path,
                         cJSON *o)
 {
@@ -3112,6 +3125,16 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
                        net_wifi_set_ntp_server(str(o, "ntp")) == ESP_OK
                    ? okay(r)
                    : error(r, "400 Bad Request", "Invalid time settings");
+    }
+    if (!strcmp(path, "network-confirm")) {
+        /* The server link's (docs/features/43): keeps the Wi-Fi or address change it started with
+         * POST wifi or config/network {operation}. The home network's is continuity(). */
+        if (!is_tunnel(r))
+            return error(r, "404 Not Found", "not_found");
+        const web_net_confirm_t c = web_net_confirm(&s_net_confirmed, "POST", str(o, "operation"),
+                                                    esp_timer_get_time(), net_trial_confirm, NULL);
+        return c == WEB_NET_CONFIRM_OK ? okay(r)
+                                       : error(r, web_net_confirm_status(c), web_net_confirm_error(c));
     }
     if (!strcmp(path, "wifi")) {
         if (!str(o, "ssid")[0] || strlen(str(o, "ssid")) > 32 || strlen(str(o, "password")) > 64)
@@ -3603,7 +3626,8 @@ static esp_err_t continuity(httpd_req_t *r)
         char path[96];
         api_path(r, path, sizeof(path));
         if (!strcmp(path, "network-confirm"))
-            ok = net_wifi_trial_confirm(token);
+            ok = web_net_confirm(&s_net_confirmed, "POST", token, esp_timer_get_time(),
+                                 net_trial_confirm, NULL) == WEB_NET_CONFIRM_OK;
         else {
             char current[33], elf[65];
             bool required;
@@ -4165,6 +4189,8 @@ int panel_web_tunnel(uint8_t user, bool fresh, uint16_t source_id, const char *m
     path = mapped;
     const bool is_get = !strcmp(method, "GET");
     if (!is_get && strcmp(method, "POST"))
+        return 405;
+    if (!strcmp(path, "network-confirm") && !web_net_confirm_method_ok(method))
         return 405;
     char *wrapped = NULL;
     if (!is_get && body_json && !strncmp(bare, "setup/", 6) && strcmp(bare, "setup/people"))

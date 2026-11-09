@@ -4737,7 +4737,7 @@ msgid "Wireless sensors may not be heard while this lasts."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "See how each source is doing at the end of Installer > Zones."
+msgid "See how each source is doing at the end of Setup > Zones."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9060,7 +9060,7 @@ msgid "Master and Admin codes"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Sets the installer’s or the system master’s code without the old one, as Installer > Installer and master codes does at the panel. Everyone’s code, the installer’s too, also changes on People and codes."
+msgid "Sets the Admin code or the system master’s code without the old one, as Installer > Master and Admin codes does at the panel. Everyone’s code, the Admin code too, also changes on People and codes."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9136,7 +9136,7 @@ msgid "Whose code"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Installer (user 1)"
+msgid "Admin (user 1)"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -10678,7 +10678,7 @@ msgid "{0} Switch it on its page at the panel."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "{0} Make it a zone under Installer > Zones: open a zone, then Its sensor."
+msgid "{0} Make it a zone under Setup > Zones: open a zone, then Its sensor."
 msgstr ""
 
 #. The page title. At most 47 bytes.
@@ -11978,7 +11978,7 @@ msgid "Another key fob belongs to that person already."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "That isn’t the installer’s code."
+msgid "That isn’t the Admin code."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -31835,3 +31835,7 @@ msgstr ""
 
 msgid "Your own codes, no factory ones"
 msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Only the system master enrolls a workstation."
+msgstr "Only the system master enrols a workstation."

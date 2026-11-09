@@ -773,6 +773,7 @@ msgstr ""
 
 #. What a user's code may do (its level). At most 23 bytes.
 #: components/core/notify/src/notify_words.c
+#: components/services/panel_web/web/panel-pages.js
 msgctxt "user level"
 msgid "Admin"
 msgstr ""
@@ -3660,11 +3661,6 @@ msgid "Keyswitch"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgctxt "user level"
-msgid "Installer"
-msgstr ""
-
-#: components/services/panel_web/web/panel-pages.js
 msgid "Programs the alarm system and manages every user."
 msgstr ""
 
@@ -4721,7 +4717,7 @@ msgid "Wireless sensors may not be heard while this lasts."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "See how each source is doing at the end of Installer > Zones."
+msgid "See how each source is doing at the end of Setup > Zones."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9178,6 +9174,36 @@ msgid "Apply system options"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
+msgid "Setup mode"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Setup mode (installer mode) opens at the panel while everything is disarmed. The system master’s code always opens it."
+msgstr ""
+
+#. A switch row's title (one line).
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Let the Admin code open Setup mode"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "The Admin code opens it too."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Only the system master’s code opens it."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Change it at the panel."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Only the system master changes this, at the panel."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
 msgid "Browser access (this Panel Manager)"
 msgstr ""
 
@@ -9210,12 +9236,15 @@ msgstr ""
 msgid "Review"
 msgstr ""
 
+#. A list row's title (one line; a long one ends in ...).
+#. the page title. At most 47 bytes
 #: components/services/panel_web/web/panel-pages.js
-msgid "Installer and master codes"
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Master and Admin codes"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Sets the installer’s or the system master’s code without the old one, as Installer > Installer and master codes does at the panel. Everyone’s code, the installer’s too, also changes on People and codes."
+msgid "Sets the Admin code or the system master’s code without the old one, as Installer > Master and Admin codes does at the panel. Everyone’s code, the Admin code too, also changes on People and codes."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9291,7 +9320,7 @@ msgid "Whose code"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Installer (user 1)"
+msgid "Admin (user 1)"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9340,6 +9369,18 @@ msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 msgid "Everything the backup holds replaces this panel’s: zones, people and codes, Wi-Fi, integrations, Z-Wave. The panel checks the whole file first and changes nothing if any of it is wrong, then restarts."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "This panel keeps its master code and the owner’s settings."
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Also take the backup’s codes"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Otherwise the current master code and the owner’s settings are kept."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -10155,7 +10196,7 @@ msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 #: components/services/panel_web/web/panel.js
-msgid "Change the installer code first: the factory one is public."
+msgid "Change the Admin code first: the factory one is public."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -10357,6 +10398,10 @@ msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
 msgid "Port 6055, mutual TLS, for an enrolled workstation"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgid "Only the system master enrolls a workstation."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -10819,7 +10864,7 @@ msgid "{0} Switch it on its page at the panel."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "{0} Make it a zone under Installer > Zones: open a zone, then Its sensor."
+msgid "{0} Make it a zone under Setup > Zones: open a zone, then Its sensor."
 msgstr ""
 
 #. The page title. At most 47 bytes.
@@ -12122,7 +12167,7 @@ msgid "Another key fob belongs to that person already."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "That isn’t the installer’s code."
+msgid "That isn’t the Admin code."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -14035,8 +14080,8 @@ msgid "It would undo the arming at once."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Set up by Installer · uses {1}’s permission · warns {0} minute before"
-msgid_plural "Set up by Installer · uses {1}’s permission · warns {0} minutes before"
+msgid "Set up by Admin · uses {1}’s permission · warns {0} minute before"
+msgid_plural "Set up by Admin · uses {1}’s permission · warns {0} minutes before"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -15388,15 +15433,9 @@ msgstr ""
 msgid "Panel settings"
 msgstr ""
 
-#. the page title. At most 47 bytes
-#. Settings > About, the Installer row's line. At most 111 bytes
-#. Text from the layout XML, no context.
 #: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_installer.c
-#: components/ui/alarm_ui/src/ui_settings.c
-#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
-#: components/ui/alarm_ui/layouts/480x320/alarm_ui/screens/screen_main.xml
-msgid "Installer"
+#: components/services/panel_web/web/panel.js
+msgid "Setup"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -15482,6 +15521,10 @@ msgstr ""
 
 #: components/services/panel_web/web/panel.js
 msgid "This step can’t be stopped. It finishes in a moment."
+msgstr ""
+
+#: components/services/panel_web/web/panel.js
+msgid "Only the master code (the owner) can do that."
 msgstr ""
 
 #: components/services/panel_web/web/panel.js
@@ -15793,10 +15836,6 @@ msgstr ""
 
 #: components/services/panel_web/web/panel.js
 msgid "That user name and password don’t match a sign-in set on this panel. Keypad codes don’t work here: use your browser password."
-msgstr ""
-
-#: components/services/panel_web/web/panel.js
-msgid "Setup"
 msgstr ""
 
 #: components/services/panel_web/web/panel.js
@@ -19305,12 +19344,6 @@ msgstr ""
 msgid "Shown on the screen and in the event log"
 msgstr ""
 
-#. A list row's title (one line; a long one ends in ...).
-#. the page title. At most 47 bytes
-#: components/ui/alarm_ui/src/ui_installer.c
-msgid "Master and Admin codes"
-msgstr ""
-
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_wizard.c
@@ -19971,11 +20004,6 @@ msgstr ""
 msgid "The owner's code and the Admin's"
 msgstr ""
 
-#. A switch row's title (one line).
-#: components/ui/alarm_ui/src/ui_installer.c
-msgid "Let the Admin code open Setup mode"
-msgstr ""
-
 #. A switch row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
 msgid "On: the Admin can change settings. The master code always can"
@@ -20032,6 +20060,16 @@ msgstr ""
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_installer.c
 msgid "Unplug the panel for ten seconds. For two minutes after it starts, Installer opens without a code to set a new master code (unless the owner turned that off)."
+msgstr ""
+
+#. the page title. At most 47 bytes
+#. Settings > About, the Installer row's line. At most 111 bytes
+#. Text from the layout XML, no context.
+#: components/ui/alarm_ui/src/ui_installer.c
+#: components/ui/alarm_ui/src/ui_settings.c
+#: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
+#: components/ui/alarm_ui/layouts/480x320/alarm_ui/screens/screen_main.xml
+msgid "Installer"
 msgstr ""
 
 #. The MQTT row's state in the Integrations list. At most 63 bytes

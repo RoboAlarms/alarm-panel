@@ -43,7 +43,7 @@ const deviceClasses = () => [[0, tc('sensor kind', 'Other sensor')], [1, tc('sen
   [14, tc('sensor kind', 'Keyfob')], [15, tc('sensor kind', 'Keyswitch')]];
 const deviceClassName = cls => deviceClasses().find(d => d[0] === cls)?.[1] || '';
 const roles = () => ({
-  1: [tc('user level', 'Installer'), t('Programs the alarm system and manages every user.')],
+  1: [tc('user level', 'Admin'), t('Programs the alarm system and manages every user.')],
   2: [tc('user level', 'System master'), t('Manages users and household settings.')],
   3: [tc('user level', 'Partition master'), t('Manages users of their partitions.')],
   4: [tc('user level', 'Standard'), t('Arms and disarms.')],
@@ -98,9 +98,13 @@ const timezones = () => [
   [tc('time zone', 'New Zealand'), tc('time zone places', 'Auckland, Wellington · UTC+12'), 'NZST-12NZDT,M9.5.0,M4.1.0/3'],
 ];
 
-const isInstaller = () => state?.authority === 'installer';
+// Setup's pages (BL-090, the owner's decision of 2026-11-08): the system master's always, the Admin code's while the
+// Owner lets it open Setup mode. The panel says which in status access.installer and checks every request again.
+const setsUp = () => !!state?.access?.installer;
+// The Owner: the system master (user 2), who alone changes the update server, enrolls a workstation and takes a backup's codes.
+const isOwner = () => state?.authority === 'master';
 // The account line in the header: what the panel calls this person's code.
-const roleWord = authority => ({installer: tc('user level', 'Installer'), master: tc('user level', 'System master'),
+const roleWord = authority => ({installer: tc('user level', 'Admin'), master: tc('user level', 'System master'),
   partition_master: tc('user level', 'Partition master'), standard: t('Standard user')})[authority];
 
 // Partitions the signed-in panel reports as in use: [[bit, name], ...].
@@ -246,7 +250,7 @@ function trSystemKinds() {
     [icon('cpu'), 'soon', 'installer', 'health', t('The panel keeps protecting, but has no network.'),
       [t('See what System health last heard from it.'), t('If it stays, restart the panel.')]],
     [icon('radio'), 'protect', 'installer', 'zone-setup', t('Wireless sensors may not be heard while this lasts.'),
-      [t('See how each source is doing at the end of Installer > Zones.'), t('Look for what may be jamming the radio nearby.')]],
+      [t('See how each source is doing at the end of Setup > Zones.'), t('Look for what may be jamming the radio nearby.')]],
     [icon('bellOff'), 'protect', 'installer', 'health', t('An alarm may not sound at the siren.'),
       [t('Check the siren and its wiring.')]],
     [icon('shieldAlert'), 'protect', 'installer', 'health', t('The panel\'s cover was opened or the panel was moved.'),
@@ -326,7 +330,7 @@ function trWhen(ms) {
 }
 // Who fixes it, when it isn't this person; else ''.
 function trFixer(x) {
-  if (x.who === 'installer') return state.authority === 'installer' ? '' : t('Your installer fixes this');
+  if (x.who === 'installer') return setsUp() ? '' : t('Your installer fixes this');
   return x.who === 'page' && !pageAllowed(PAGES[x.page]) ? t('A system master fixes this') : '';
 }
 // The button for the page that fixes it.
@@ -1409,7 +1413,7 @@ const mqttSpecs = () => [
   {name: 'discovery', label: t('MQTT discovery'), type: 'switch', help: t('Announce the panel and its zones so home-automation software finds them.')},
   {name: 'commands', label: t('Allow arming and disarming over MQTT'), type: 'switch', help: t('Off: the broker only receives status.')},
   // docs/features/14: panics set off alarms, so this one is the installer's (BL-107)
-  {name: 'allow_panic', label: t('Allow panic alarms over MQTT'), type: 'switch', showIf: v => v.commands, locked: !isInstaller(),
+  {name: 'allow_panic', label: t('Allow panic alarms over MQTT'), type: 'switch', showIf: v => v.commands, locked: !setsUp(),
     help: t('Police, fire, medical and silent panic. Only the installer can change this.')},
   {name: 'prefix', label: t('Topic prefix'), type: 'text', advanced: true},
   {name: 'panel_id', label: t('Panel identifier'), type: 'text', advanced: true, help: t('Part of every topic. Change it only if several panels share a broker.')},
@@ -1828,7 +1832,7 @@ function spokenRow(s) {
   return `<div class="row spoken-row"><div><span class="label">${ht('Spoken name')}</span>
     <span class="help">${ht('The recorded words the panel says for this zone. Chosen at the keypad.')}</span></div>
     <div class="control"><span class="what"><strong>${esc(s.summary || '-')}</strong>${tag(word, kind)}</span>
-    ${isInstaller() ? `<a class="button small" href="#/keypad" data-k="spoken-keypad">${ht('Choose words on the panel')}</a>` : ''}</div></div>`;
+    ${setsUp() ? `<a class="button small" href="#/keypad" data-k="spoken-keypad">${ht('Choose words on the panel')}</a>` : ''}</div></div>`;
 }
 // The same, read-only, on a Zones > All zones card (every role that sees the zone).
 function spokenLine(s) {
@@ -2176,7 +2180,7 @@ async function zoneStatusPage() {
 }
 // The old addresses (#/zones/setup, #/zones/5) open the installer's page at its new one (BL-134).
 async function zonesPage(arg) {
-  return isInstaller() && arg ? zpMoved(arg === 'setup' ? '' : arg) : zoneStatusPage();
+  return setsUp() && arg ? zpMoved(arg === 'setup' ? '' : arg) : zoneStatusPage();
 }
 
 // ---- Installer > Zones (BL-134) ----------------------------------------------------------------------------------
@@ -2884,7 +2888,7 @@ async function partitionsPage() {
   const [alarm, links] = await Promise.all([loadAlarm(), api('keypads')]);
   const parts = alarm.partitions.filter(p => p.enabled), paired = links.keypads;
   const devices = alarm.devices.filter(d => d.enabled && !paired.some(k => k.number === d.number));
-  const editable = isInstaller() && !state.program && !state.locked && !links.busy;
+  const editable = setsUp() && !state.program && !state.locked && !links.busy;
   const partName = n => parts.find(p => p.number === n)?.name || t('All partitions');
   const removeButton = disabled => `<button type="button" class="danger" id="remove-entry" style="margin-right:auto"${disabled ? ' disabled' : ''}>${ht('Remove')}</button>`;
   const back = () => go('partitions');
@@ -3073,7 +3077,7 @@ async function optionsPage() {
   const extra = withSchema(known, alarm.schema.options).filter(s => !known.some(k => k.name === s.name));
   const groups = [...optionList.map(([title, specs]) => [title, withSchema(specs, alarm.schema.options, false)]), ...(extra.length ? [[t('Other'), extra]] : [])];
   const specs = groups.flatMap(g => g[1]);
-  const editable = isInstaller() && !state.program;
+  const editable = setsUp() && !state.program;
   return {
     html: pageHead(t('System options'), t('How the whole alarm behaves. The panel checks every value against its rules before applying.')) +
       installerNotice() +
@@ -3096,6 +3100,17 @@ async function optionsPage() {
 
 // Remote access, codes and factory reset
 
+// Who may open Setup mode at the panel (BL-090, CORE-PROG-014): the Owner's setting, shown here and changed only by the
+// system master at the panel (status installer_opens_setup). Read-only for everyone.
+function setupModeCard(on) {
+  return `<section class="card gap"><div class="card-head"><div><h2>${ht('Setup mode')}</h2>
+    <p>${ht('Setup mode (installer mode) opens at the panel while everything is disarmed. The system master’s code always opens it.')}</p></div></div>
+    <div class="rows"><div class="row"><div><span class="label">${ht('Let the Admin code open Setup mode')}</span>
+      <span class="help">${on ? ht('The Admin code opens it too.') : ht('Only the system master’s code opens it.')}
+        ${isOwner() ? ht('Change it at the panel.') : ht('Only the system master changes this, at the panel.')}</span></div>
+      <div class="control">${on ? tag(t('On'), 'good') : tag(t('Off'))}</div></div></div></section>`;
+}
+
 function accessPage() {
   const specs = [
     {name: 'web', label: t('Browser access (this Panel Manager)'), type: 'switch', local: true,
@@ -3107,9 +3122,10 @@ function accessPage() {
   return {
     html: pageHead(t('Access and maintenance'), t('Who can reach the panel over the network, the two special codes, and starting over.')) +
       settingsCard({id: 'access-form', title: t('Remote access'), specs, values, button: t('Review')}) +
-      `<section class="card gap"><div class="card-head"><div><h2>${ht('Installer and master codes')}</h2>
-        <p>${ht('Sets the installer’s or the system master’s code without the old one, as Installer > Installer and master codes does at the panel. Everyone’s code, the installer’s too, also changes on People and codes.')}</p></div></div>
+      `<section class="card gap"><div class="card-head"><div><h2>${ht('Master and Admin codes')}</h2>
+        <p>${ht('Sets the Admin code or the system master’s code without the old one, as Installer > Master and Admin codes does at the panel. Everyone’s code, the Admin code too, also changes on People and codes.')}</p></div></div>
         <div class="card-foot"><button type="button" id="change-code">${ht('Change a code…')}</button></div></section>
+      ${setupModeCard(state.installer_opens_setup !== false)}
       <section class="card gap"><div class="card-head"><div><h2>${ht('Backup')}</h2>
         <p>${ht('One file with everything needed to set this panel up again, or a replacement: zones and their sensors, people and their codes, Wi-Fi, integrations and the Z-Wave network. Encrypted with a password you choose; keep the two apart. It never holds the panel’s own identity or its event log.')}</p></div></div>
         <div class="card-foot"><button type="button" id="backup-download">${ht('Download a backup…')}</button></div></section>
@@ -3144,7 +3160,7 @@ function accessPage() {
         const min = (await api('people').catch(() => null))?.code_min || 4; // the panel's shortest allowed code
         openDialog(`<form id="code-form" novalidate><div class="dialog-head"><h2 id="dialog-title">${ht('Change a code')}</h2></div>
           <div class="dialog-body"><div class="rows">
-          ${fieldRow({name: 'number', label: t('Whose code'), type: 'select', numeric: true, options: [[1, t('Installer (user 1)')], [2, t('System master (user 2)')]]}, 1)}
+          ${fieldRow({name: 'number', label: t('Whose code'), type: 'select', numeric: true, options: [[1, t('Admin (user 1)')], [2, t('System master (user 2)')]]}, 1)}
           ${fieldRow({name: 'new_code', label: t('New code'), type: 'secret', inputmode: 'numeric', maxLength: 10, help: t('{0} to {1} digits', min, 10)}, '')}</div>
 </div>
           <p class="dialog-error" id="dialog-error" role="alert"></p>
@@ -3212,9 +3228,12 @@ function accessPage() {
         if (!file) return toast(t('Choose the backup file first.'), 'error');
         // The word to type stays English whatever the language, like the panel's own confirmations.
         openDialog(`<form id="restore-form" novalidate><div class="dialog-head"><h2 id="dialog-title">${ht('Restore {0}?', file.name)}</h2>
-          <p>${ht('Everything the backup holds replaces this panel’s: zones, people and codes, Wi-Fi, integrations, Z-Wave. The panel checks the whole file first and changes nothing if any of it is wrong, then restarts.')}</p></div>
+          <p>${ht('Everything the backup holds replaces this panel’s: zones, people and codes, Wi-Fi, integrations, Z-Wave. The panel checks the whole file first and changes nothing if any of it is wrong, then restarts.')}</p>
+          ${isOwner() ? '' : `<p>${ht('This panel keeps its master code and the owner’s settings.')}</p>`}</div>
           <div class="dialog-body"><div class="rows">
           ${fieldRow({name: 'password', label: t('Backup password'), type: 'secret', maxLength: 64}, '')}</div>
+          ${isOwner() ? `<label class="fws-check"><input type="checkbox" name="codes"><span>${ht('Also take the backup’s codes')}</span></label>
+          <p class="help">${ht('Otherwise the current master code and the owner’s settings are kept.')}</p>` : ''}
           <div class="code-field"><label for="restore-confirm">${ht('Type {0} to confirm', nt('RESTORE'))}</label><input id="restore-confirm" name="confirm" autocomplete="off" spellcheck="false"></div>
           ${passwordBox()}</div>
           <p class="dialog-error" id="dialog-error" role="alert"></p>
@@ -3231,7 +3250,9 @@ function accessPage() {
             button.disabled = true;
             $('#dialog-error').textContent = t('Checking the backup: the panel takes a few seconds to open it…');
             const response = await fetch('/api/v1/backup', {method: 'PUT', credentials: 'same-origin', cache: 'no-store',
-              headers: {'Content-Type': 'application/octet-stream', 'X-Panel-CSRF': csrf, 'X-Backup-Password': hex, ...(mePassword ? {'X-Panel-Password': hexOf(mePassword)} : {})},
+              headers: {'Content-Type': 'application/octet-stream', 'X-Panel-CSRF': csrf, 'X-Backup-Password': hex, ...(mePassword ? {'X-Panel-Password': hexOf(mePassword)} : {}),
+                // CFG-006: the backup's master code and the Owner's settings come back only when the Owner asks
+                ...(f.codes?.checked ? {'X-Restore-Codes': 'yes'} : {})},
               body: file, signal: AbortSignal.timeout(90000)}).catch(error => { throw unreachable(error); });
             const answer = await response.json().catch(() => ({}));
             if (!response.ok) throw answerError(answer, response.status);
@@ -3478,14 +3499,15 @@ function keypadUpdates(rows) {
 }
 async function updatesPage() {
   const first = await api('updates');
-  const keypadRows = isInstaller() ? (await api('keypads')).keypads : [];
+  const keypadRows = setsUp() ? (await api('keypads')).keypads : [];
   // Back from a restart this page lost the panel in: did the version it was installing come up?
   const saved = restartSaved();
   const interrupted = saved?.version && !updRunning(first) && !first.last && first.running !== saved.version ? saved.version : '';
   if (saved && !updRunning(first)) sessionStorage.removeItem('panel-restart');
   const decorate = x => interrupted && !updRunning(x) && !x.last ? {...x, interrupted} : x;
   let d = decorate(first);
-  const s = d.server, installer = isInstaller(), held = updRunning(d);
+  // The update server is the Owner's alone (the system master's answer has it); the channel is Setup's (BL-090).
+  const s = d.server, installer = setsUp(), held = updRunning(d), channelShown = typeof d.channel === 'string';
   const channels = fwsChannelWords();
   const channelSpecs = [{name: 'channel', label: t('Channel'), type: 'select', local: true,
     options: FWS_CHANNELS.map(c => [c, channels[c][0], channels[c][1]]), help: t('Which releases this panel is offered. A channel also gets the releases of the steadier ones; Dev stands apart.')}];
@@ -3500,11 +3522,11 @@ async function updatesPage() {
         <dl class="kv"><dt>${ht('Update server')}</dt><dd>${esc(s.domain)}</dd>
           <dt>${ht('Signing key')}</dt><dd>${fwsKeyHtml(s.key)}</dd></dl>
         <div class="card-foot">${held ? `<span class="fws-held">${icon('alert')}${ht('Not while an update runs.')}</span>`
-          : d.factory_code ? `<span class="fws-held">${icon('alert')}${ht('Change the installer code first: the factory one is public.')}</span>
+          : d.factory_code ? `<span class="fws-held">${icon('alert')}${ht('Change the Admin code first: the factory one is public.')}</span>
             <button type="button" data-go="access">${ht('Change a code…')}</button>` : ''}
           ${!s.official ? `<button type="button" id="fws-back"${held ? ' disabled' : ''}>${ht('Go back to roboalarms.com')}</button>` : ''}
-          <button type="button" id="fws-change"${d.factory_code || held ? ' disabled' : ''}>${ht('Change the update server…')}</button></div></div></section>
-        <section class="section">${held ? `<fieldset class="fws-hold" disabled>${channelCard}</fieldset>` : channelCard}</section>` : ''}
+          <button type="button" id="fws-change"${d.factory_code || held ? ' disabled' : ''}>${ht('Change the update server…')}</button></div></div></section>` : ''}
+      ${channelShown ? `<section class="section">${held ? `<fieldset class="fws-hold" disabled>${channelCard}</fieldset>` : channelCard}</section>` : ''}
       ${state.developer && installer ? `<section class="section"><form class="card" id="upload-form"><div class="card-head"><div><h2>${ht('Install a signed file')}</h2>
         <p>${ht('Developer tools are on. Choose a signed .bin built for this board and profile. The panel must be disarmed.')}</p></div></div>
         <div class="rows"><div class="row"><div><label class="label" for="image">${ht('Firmware file')}</label></div><div class="control"><input id="image" name="image" type="file" accept=".bin" required></div></div>
@@ -3577,9 +3599,11 @@ async function updatesPage() {
       };
       bindCard();
       poll(updFollow.tick, 1000);
-      if (s) {
+      if (channelShown) {
         bindSettingsCard('channel-form', channelSpecs, {channel: d.channel}, ({changes, values}) =>
           review({changes, intro: t('The panel checks for updates on the new channel at once.'), run: () => api('updates', {action: 'channel', channel: values.channel})}));
+      }
+      if (s) {
         const change = $('#fws-change');
         if (change) change.onclick = () => fwsTypeDialog(s);
         const back = $('#fws-back');
@@ -3686,7 +3710,7 @@ function fwsWarnDialog(domain, c) {
       await show();
     } catch (error) {
       if (!askPasswordAgain(error)) $('#dialog-error').textContent = error.code === 'factory_code'
-        ? t('Change the installer code first: the factory one is public.') : error.message;
+        ? t('Change the Admin code first: the factory one is public.') : error.message;
     }
   };
 }
@@ -3696,8 +3720,9 @@ function developerPage() {
     html: pageHead(t('Developer'), t('Tools for building and testing firmware on this panel.')) +
       `<section class="card">${kv([[t('Panel ID'), state.panel_id], [t('Address'), state.wifi.ip], [t('Board'), state.board],
         [t('Development service'), t('Port 6055, mutual TLS, for an enrolled workstation')]])}
-        <div class="card-foot"><button type="button" data-go="updates">${ht('Install a signed file')}</button>
-        <button type="button" id="enroll">${ht('Enroll a workstation…')}</button></div></section>
+        <div class="card-foot">${isOwner() ? '' : `<span class="note">${ht('Only the system master enrolls a workstation.')}</span>`}
+        <button type="button" data-go="updates">${ht('Install a signed file')}</button>
+        ${isOwner() ? `<button type="button" id="enroll">${ht('Enroll a workstation…')}</button>` : ''}</div></section>
       <section class="section"><div class="card"><div class="card-head"><div><h2>${ht('Development log')}</h2>
         <p>${ht('Service and health events. Credentials and raw console output are never included.')}</p></div><button type="button" id="load-log">${ht('Load')}</button></div>
         <pre class="log mono" id="log" hidden></pre></div></section>`,
@@ -3706,7 +3731,9 @@ function developerPage() {
         try { const d = await api('developer/logs'); $('#log').hidden = false; $('#log').textContent = d.text || t('(empty)'); }
         catch (error) { toast(error.message, 'error'); }
       };
-      $('#enroll').onclick = () => {
+      // The enrolled certificate signs in as the master: the Owner's alone (the owner's decision of 2026-11-08).
+      const enroll = $('#enroll');
+      if (enroll) enroll.onclick = () => {
         openDialog(`<form id="enroll-form"><div class="dialog-head"><h2 id="dialog-title">${ht('Enroll a workstation')}</h2>
           <p>${ht('Paste the public certificate made by panelctl on the workstation. Never paste a private key. This replaces the enrolled workstation.')}</p></div>
           <div class="dialog-body"><textarea name="certificate" rows="9" maxlength="2048" required spellcheck="false" placeholder="-----BEGIN CERTIFICATE-----"></textarea>
@@ -3834,7 +3861,7 @@ function zwDone(g, devices = []) {
         return ['good', t('Added · {0}', who), dev.kind === 2 ? t('{0} Open its page at the panel to set it up.', first)
           : t('{0} Switch it on its page at the panel.', first)];
       }
-      return ['good', t('Added · {0}', who), t('{0} Make it a zone under Installer > Zones: open a zone, then Its sensor.', first), 'zone-setup'];
+      return ['good', t('Added · {0}', who), t('{0} Make it a zone under Setup > Zones: open a zone, then Its sensor.', first), 'zone-setup'];
     }
     case 'added_insecure': return ['warn', t('Added without encryption'), zwWord(ZW_S2_WHY, g.s2_failure)];
     case 'downgraded': return ['warn', t('Added with weaker security'), t('It supports better security than it got.')];
@@ -4025,7 +4052,7 @@ async function zwavePage() {
     const acts = [d.listening ? `<button type="button" data-zwdev="ping" ${at}>${ht('Check it now')}</button>` : '',
       d.state === 5 ? `<button type="button" data-zwdev="setup" ${at}>${ht('Try its setup again')}</button>` : '',
       // BL-152: a finished device read again from the start (Z-Wave JS's re-interview), its zones kept
-      isInstaller() && (d.state === 0 || d.state === 3)
+      setsUp() && (d.state === 0 || d.state === 3)
         ? `<button type="button" data-zwdev="reread" data-sleeps="${d.listening ? 0 : 1}" ${at}>${ht('Set it up again')}</button>` : '',
       `<button type="button" data-zwdev="routes" ${at}>${ht('Rebuild its routes')}</button>`,
       `<button type="button" class="danger" data-zwdev="remove_failed" ${at}>${ht('Remove as failed')}</button>`].join('');
@@ -4394,7 +4421,7 @@ function zgRefusal(code) {
     bad_address: t('That isn’t a device address: 16 characters, 0 to 9 and A to F.'),
     full: t('No room: the panel has as many devices or install codes as it keeps, or its storage is full.'),
     not_found: t('That device isn’t in the network any more.'), in_use: t('Another key fob belongs to that person already.'),
-    wrong_code: t('That isn’t the installer’s code.'), locked_out: t('Too many wrong codes: try again in a few minutes.')}[code] || code;
+    wrong_code: t('That isn’t the Admin code.'), locked_out: t('Too many wrong codes: try again in a few minutes.')}[code] || code;
 }
 // How an operation ended (ui_zb_result_t), in words: [look, title, what it means].
 function zgResultWords(g) {
@@ -5689,7 +5716,7 @@ function auActionDetail(a) {
     const who = auMadeBy(a);
     if (!who) return '';
     if (a.saved_by) // the installer's (BL-224): it uses the system master's permission
-      return tn('Set up by Installer · uses {1}’s permission · warns {0} minute before', 'Set up by Installer · uses {1}’s permission · warns {0} minutes before', a.warn_min, who);
+      return tn('Set up by Admin · uses {1}’s permission · warns {0} minute before', 'Set up by Admin · uses {1}’s permission · warns {0} minutes before', a.warn_min, who);
     return a.bypass && au.data?.less_secure !== false
       ? tn('Set up by {1} · warns {0} minute before · bypasses open zones', 'Set up by {1} · warns {0} minutes before · bypasses open zones', a.warn_min, who)
       : tn('Set up by {1} · warns {0} minute before', 'Set up by {1} · warns {0} minutes before', a.warn_min, who);
@@ -6569,21 +6596,21 @@ const PAGES = {
   storage: {title: tx('Storage'), icon: 'drive', group: tx('Panel settings'), render: storagePage},
   // Installer > Zones first, then Z-Wave, as on the touchscreen (BL-134). Sensor sources and the sensor link live on
   // the zone pages now: their old addresses (#/sensors, #/binding/5) open those.
-  'zone-setup': {title: tx('Zones'), icon: 'door', group: tx('Installer'), access: 'installer', render: zpSetupPage},
+  'zone-setup': {title: tx('Zones'), icon: 'door', group: tx('Setup'), access: 'installer', render: zpSetupPage},
   sensors: {title: tx('Zones'), icon: 'door', nav: false, parent: 'zone-setup', access: 'installer', render: () => zpMoved('')},
   binding: {title: tx('Zones'), icon: 'door', nav: false, parent: 'zone-setup', access: 'installer', render: arg => zpMoved(arg)},
-  zwave: {title: tx('Z-Wave'), icon: 'radio', group: tx('Installer'), access: 'installer', render: zwavePage, when: () => !!state?.capabilities?.zwave},
+  zwave: {title: tx('Z-Wave'), icon: 'radio', group: tx('Setup'), access: 'installer', render: zwavePage, when: () => !!state?.capabilities?.zwave},
   zwaveradio: {title: tx('Z-Wave radio'), icon: 'radio', nav: false, parent: 'zwave', access: 'installer', render: zwaveRadioPage, when: () => !!state?.capabilities?.zwave},
   // Zigbee (devices.md §14, BL-145): right after Z-Wave, as on the touchscreen; on every panel that runs it, an empty socket included.
-  zigbee: {title: nt('Zigbee'), icon: 'radio', group: tx('Installer'), access: 'installer', render: zgMainPage, when: () => !!state?.capabilities?.zigbee},
+  zigbee: {title: nt('Zigbee'), icon: 'radio', group: tx('Setup'), access: 'installer', render: zgMainPage, when: () => !!state?.capabilities?.zigbee},
   'zigbee-add': {title: tx('Add a Zigbee device'), icon: 'radio', nav: false, parent: 'zigbee', access: 'installer', render: zgAddPage, when: () => !!state?.capabilities?.zigbee},
   'zigbee-code': {title: tx('Add with an install code'), icon: 'radio', nav: false, parent: 'zigbee', access: 'installer', render: zgCodePage, when: () => !!state?.capabilities?.zigbee},
   'zigbee-device': {title: tx('Zigbee device'), icon: 'radio', nav: false, parent: 'zigbee', access: 'installer', render: zgDevicePage, when: () => !!state?.capabilities?.zigbee},
   'zigbee-radio': {title: tx('Zigbee radio'), icon: 'radio', nav: false, parent: 'zigbee', access: 'installer', render: zgRadioPage, when: () => !!state?.capabilities?.zigbee},
   'zigbee-channel': {title: tx('Zigbee channel'), icon: 'radio', nav: false, parent: 'zigbee', access: 'installer', render: zgChannelPage, when: () => !!state?.capabilities?.zigbee},
-  partitions: {title: tx('Partitions and devices'), icon: 'layers', group: tx('Installer'), access: 'installer', render: partitionsPage},
-  options: {title: tx('System options'), icon: 'sliders', group: tx('Installer'), access: 'installer', render: optionsPage},
-  access: {title: tx('Access and maintenance'), icon: 'key', group: tx('Installer'), access: 'installer', render: accessPage},
+  partitions: {title: tx('Partitions and devices'), icon: 'layers', group: tx('Setup'), access: 'installer', render: partitionsPage},
+  options: {title: tx('System options'), icon: 'sliders', group: tx('Setup'), access: 'installer', render: optionsPage},
+  access: {title: tx('Access and maintenance'), icon: 'key', group: tx('Setup'), access: 'installer', render: accessPage},
   health: {title: tx('System health'), icon: 'heart', group: tx('System'), render: healthPage},
   walk: {title: tx('Walk test'), icon: 'walk', group: tx('System'), access: 'shared', render: walkPage, badge: walkBadge, badgeKind: 'info'},
   updates: {title: tx('Software updates'), icon: 'download', group: tx('System'), access: 'system', render: updatesPage},

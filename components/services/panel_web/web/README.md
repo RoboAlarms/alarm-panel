@@ -21,14 +21,16 @@ here as before: the build does the rest.
 
 Pages are grouped: **Overview / Remote keypad / Activity**, **Household** (people and codes,
 integrations, automations), **Panel settings** (display and sound, network, date and time, storage),
-**Installer** (sensor sources, partitions and devices, Z-Wave, system options, access and
+**Setup** (zones and sensor sources, partitions and devices, Z-Wave, Zigbee, system options, access and
 maintenance) and **System** (health, walk test, updates, developer). Each user sees only what the panel's
 own table lets them open (docs/features/14 "Who can change what"; the panel checks every request
 itself): a standard user gets the overview, the remote keypad, activity, the zone list in the
 panel's words, display and sound, date and time, storage, health and update status (a walk test
 running shows on their Overview, with End); a partition
 master adds people, network and the Walk test page; the system master integrations and automations (on a build
-with them, docs/features/41); the installer everything.
+with them, docs/features/41) and the Setup group (status `access.installer`: the system master always, the
+Admin code - the installer's - while the Owner lets it open Setup mode; BL-090). The Owner alone changes the update
+server, enrolls a workstation and takes a backup's codes (`owner_only` otherwise); the Admin never arms or disarms.
 Every change opens a review that lists each setting as before → after; alarm programming,
 sensor links, users and remote access also ask for your keypad code. Nothing changes while the
 panel is armed or an alarm sounds.
@@ -51,7 +53,8 @@ with `standard user`; pages that confirm a change ask for that person's keypad c
 The mock answers `/api/v1` with the firmware's shapes and schemas, applies the firmware's access
 table, and keeps changes in memory until it stops. Its remote keypad (`mock-screen.cjs`) streams
 real H.264 that the browser decodes (or PNG), with pretend keys that light when clicked and
-blocks for typed letters. `MOCK_AUTOLOGIN=installer` (or `master`, `partition`, `standard`)
+blocks for typed letters. `MOCK_ADMIN_SETUP=0` starts with the Owner's "Let the Admin code open Setup mode" off
+(status `installer_opens_setup`; POST `mock/admin-setup` `{on}` sets it). `MOCK_AUTOLOGIN=installer` (or `master`, `partition`, `standard`)
 skips sign-in, for headless screenshots; `MOCK_LOCKED=1` pretends the panel is armed;
 `MOCK_PARTITIONS=2` puts a second partition (the garage) in use; `MOCK_ZWAVE=0` a panel
 without Z-Wave (by default it has a radio, three devices - one not heard, its setup stopped - and a

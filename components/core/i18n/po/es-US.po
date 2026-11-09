@@ -6214,8 +6214,8 @@ msgstr "Puede que no se oigan los sensores inalámbricos mientras dure."
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "See how each source is doing at the end of Installer > Zones."
-msgstr "Vea cómo va cada fuente al final de Instalador > Zonas."
+msgid "See how each source is doing at the end of Setup > Zones."
+msgstr "Vea cómo va cada fuente al final de Configuración > Zonas."
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -12147,8 +12147,8 @@ msgstr "Códigos maestro y de administrador"
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "Sets the installer’s or the system master’s code without the old one, as Installer > Installer and master codes does at the panel. Everyone’s code, the installer’s too, also changes on People and codes."
-msgstr "Establece el código del instalador o del maestro del sistema sin el anterior, como lo hace Instalador > Códigos de instalador y maestro en el panel. El código de cualquier persona, también el del instalador, se cambia además en Personas y códigos."
+msgid "Sets the Admin code or the system master’s code without the old one, as Installer > Master and Admin codes does at the panel. Everyone’s code, the Admin code too, also changes on People and codes."
+msgstr "Establece el código de administrador o el del maestro del sistema sin el anterior, como lo hace Instalador > Códigos maestro y de administrador en el panel. El código de cualquier persona, también el de administrador, se cambia además en Personas y códigos."
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -12261,8 +12261,8 @@ msgstr "Código de quién"
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "Installer (user 1)"
-msgstr "Instalador (usuario 1)"
+msgid "Admin (user 1)"
+msgstr "Administrador (usuario 1)"
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -14197,8 +14197,8 @@ msgstr "{0} Acciónelo desde su página en el panel."
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "{0} Make it a zone under Installer > Zones: open a zone, then Its sensor."
-msgstr "{0} Conviértalo en zona en Instalador > Zonas: abra una zona y luego Su sensor."
+msgid "{0} Make it a zone under Setup > Zones: open a zone, then Its sensor."
+msgstr "{0} Conviértalo en zona en Configuración > Zonas: abra una zona y luego Su sensor."
 
 #. The page title. At most 47 bytes.
 #: components/services/panel_web/web/panel-pages.js
@@ -16032,8 +16032,8 @@ msgstr "Otro llavero ya pertenece a esa persona."
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "That isn’t the installer’s code."
-msgstr "Ese no es el código del instalador."
+msgid "That isn’t the Admin code."
+msgstr "Ese no es el código de administrador."
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft

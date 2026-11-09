@@ -6,6 +6,8 @@
 //   Sign in as alex / "correct horse battery" (system master), installer / "installer password"
 //   (installer), pat / "partition master" (partition master) or sam / "standard user" (standard).
 //   Keypad codes (asked for changes): 1234 Alex, 4321 installer, 5555 Pat, 1111 Sam.
+//   MOCK_ADMIN_SETUP=0: the Owner has turned "Let the Admin code open Setup mode" off at the panel: the installer's sign-in
+//   gets no Setup pages (status installer_opens_setup false, access.installer false). POST mock/admin-setup {on} sets it.
 //   MOCK_CODE_MIN=6: the system's shortest allowed code (GET people code_min; 4 when unset).
 //   MOCK_LOCKED=1: the panel is armed (changes refused, as on the panel; arming and disarming still work).
 //   MOCK_SCENARIO=ready|notready|motion|exit|armed|stay|entry|alarm|memory|fire|troubles: the first partition's
@@ -60,8 +62,14 @@ const AUTHORITY = {1: 'installer', 2: 'master', 3: 'partition_master', 4: 'stand
 // The firmware's table (panel_web.c get_access/post_access): who may use which path.
 const ACC = {anyone: () => true, users: a => ['installer', 'master', 'partition_master'].includes(a),
   shared: a => ['installer', 'master', 'partition_master'].includes(a), system: a => ['installer', 'master'].includes(a),
-  // Setup mode's, and everything the installer does: the system master's too (CORE-PROG-001, the owner's decision of 2026-11-08)
-  installer: a => ['installer', 'master'].includes(a)};
+  // Setup mode's, and everything the installer does: the system master's always, the Admin (installer) code's while the
+  // Owner lets it open Setup mode (panel_web.c sets_up(); CORE-PROG-001, 014, the owner's decision of 2026-11-08)
+  installer: a => a === 'master' || (a === 'installer' && adminSetup.on)};
+// The Owner's "Let the Admin code open Setup mode" (status installer_opens_setup), changed only at the panel: here by
+// MOCK_ADMIN_SETUP=0 at the start, or POST mock/admin-setup {on}.
+const adminSetup = {on: process.env.MOCK_ADMIN_SETUP !== '0'};
+// The Owner's alone (the owner's decision of 2026-11-08): the update server, a workstation's enrolment, a backup's codes.
+const isOwner = s => s.authority === 'master';
 const GET_ACCESS = p => ['status', 'frame', 'screen', 'history', 'activity', 'time', 'zone-status', 'troubles', 'storage', 'config/display', 'languages', 'voices'].includes(p) ? 'anyone'
   : p === 'people' ? 'users' : ['config/network', 'network-check', 'wifi-scan', 'walk-test'].includes(p) ? 'shared'
   : ['updates', 'config/mqtt', 'config/ntfy', 'config/pushover', 'home_assistant', 'notification-status', 'automations', 'automations/devices',
@@ -1435,9 +1443,10 @@ function status(s) {
       display: {frames: 5213440, late: 0, guard_trips: 0, forced_off: false}},
     name: users.find(u => u.number === s.user)?.name || '', has_password: true, password_change_required: temporary.has(s.user),
     access: {...Object.fromEntries(['users', 'shared', 'system'].map(k => [k, ACC[k](s.authority)])),
-      // setup: what the server takes; installer: the pages the browser shows (the installer's alone until approved, WEB-026)
-      setup: ACC.installer(s.authority), installer: s.authority === 'installer', arm: s.authority !== 'installer',
+      // setup and installer (the older name): the Setup pages - the system master's, the Admin code's while allowed (BL-090)
+      setup: ACC.installer(s.authority), installer: ACC.installer(s.authority), arm: s.authority !== 'installer',
       panic: s.authority === 'installer' ? [] : appPanics(alarm.options.app_panic_mask)}, // USR-001; WEB-032
+    installer_opens_setup: adminSetup.on, // CORE-PROG-014: read-only here
     config_revision: alarm.revision, program: false, troubles: live.troubles, trouble_count: troubleList(s).length, trouble_sig: troubleSig(troubleList(s)), locked: isLocked(), updating: updating(),
     // An automation's coming arming or its hold, on the partitions this person sees (panel_web.c status, D19, D27).
     ...(automationsOn ? {automation_warnings: auWarningsFor(viewerPartitions(s).map(p => p.number)),
@@ -1711,13 +1720,13 @@ async function apiGet(p, s, res, query = new URLSearchParams()) {
   if (p === 'walk-test') return ok(walkTest(s, query)); // docs/features/40 WALK-017, WALK-018
   if (p === 'time') return ok({timezone: tz, ntp, now_ms: Date.now() + clockOffsetMs, clock: clockJson()});
   if (p === 'home_assistant') { if (ha.window_s > 0) { ha.window_s = Math.max(0, ha.window_s - 3); if (ha.window_s < 170 && !ha.code) ha.code = '482 913'; } return ok(ha); }
-  if (p === 'updates') { // OTA-017..OTA-022: the system master's and the installer's; the server, key and channel the installer's only
+  if (p === 'updates') { // OTA-017..OTA-022: the system master's and the installer's; the server, key and check the Owner's only, the channel Setup's
     const key = SERVERS[updateServer.domain];
     const shown = SERVER_KEY === 'none' ? null : SERVER_KEY === 'unnamed' ? {...key, name: ''} : {...key};
     return ok({running: run.running, ...runAnswer(), latest: update.latest, available: update.available && run.running !== update.latest, has_source: true,
       withdrawn: withdrawn, critical: withdrawn && update.available, installed_channel: updateServer.channel,
-      ...(s.authority === 'installer' ? {server: {domain: updateServer.domain, official: updateServer.domain === 'roboalarms.com', key: shown},
-        channel: updateServer.channel, factory_code: factoryCode, check: serverCheck} : {})});
+      ...(isOwner(s) ? {server: {domain: updateServer.domain, official: updateServer.domain === 'roboalarms.com', key: shown},
+        channel: updateServer.channel, factory_code: factoryCode, check: serverCheck} : ACC.installer(s.authority) ? {channel: updateServer.channel} : {})});
   }
   if (p === 'zone-status') {
     const mask = ['installer', 'master'].includes(s.authority) ? 15 : users.find(u => u.number === s.user).partitions;
@@ -1931,6 +1940,7 @@ async function apiPost(p, s, body, res) {
   if (p === 'updates') {
     runTick();
     const a = body.action;
+    if (['server_check', 'server'].includes(a) && !isOwner(s)) return fail('owner_only', 403); // a server could lock the Owner out
     if (a === 'server_check') {
       const domain = serverDomain(body.domain);
       if (!domain) return fail('bad_domain', 400);
@@ -2003,6 +2013,7 @@ async function apiPost(p, s, body, res) {
     return no ? send(res, 403, no) : ok();
   }
   if (p === 'developer/enroll') {
+    if (!isOwner(s)) return fail('owner_only', 403); // it signs in as the master: no Admin leaves a way in that outranks the Owner
     const no = needPassword(s, body.me_password);
     return no ? send(res, 403, no) : send(res, 200, {id: '30eda0123456', host: body.host, port: 6055, certificate_der: 'MII...'});
   }
@@ -2159,6 +2170,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && p === 'mock/automation-warning') { auSetWarning((await readBody(req)).state || ''); return send(res, 200, {ok: true}); }
   if (req.method === 'POST' && p === 'mock/automation-reminder') { auSetReminder(!!(await readBody(req)).on); return send(res, 200, {ok: true}); }
   if (req.method === 'POST' && p === 'mock/keypad-event') { keypadEvent((await readBody(req)).event); return send(res, 200, {ok: true}); }
+  if (req.method === 'POST' && p === 'mock/admin-setup') { adminSetup.on = !!(await readBody(req)).on; return send(res, 200, {ok: true}); }
   if (req.method === 'POST' && p === 'mock/confirmation') { s.confirmed = (await readBody(req)).recent ? Date.now() : 0; return send(res, 200, {ok: true}); }
   if (req.method === 'POST' && p === 'backup') { // CFG-005: the installer, a recent password, a backup password
     const body = await readBody(req);
@@ -2176,6 +2188,9 @@ const server = http.createServer(async (req, res) => {
     const chunks = [];
     for await (const c of req) chunks.push(c); // the file is read first, so an early answer doesn't cut the upload
     if (!ACC.installer(s.authority)) return send(res, 403, {error: 'not_allowed'});
+    // CFG-006: the backup's master code and the Owner's settings come back only when the Owner asks (X-Restore-Codes: yes)
+    const takeCodes = req.headers['x-restore-codes'] === 'yes';
+    if (takeCodes && !isOwner(s)) return send(res, 403, {error: 'owner_only'});
     const no = needPassword(s, hexPassword(req.headers['x-panel-password'] || ''));
     if (no) return send(res, 403, no);
     const password = hexPassword(req.headers['x-backup-password']);

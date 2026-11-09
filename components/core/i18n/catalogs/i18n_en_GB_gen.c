@@ -13,6 +13,7 @@ static const i18n_entry_t entries[] = {
     {0x14ac18c9u, 1100u},
     {0x1cf6dcbcu, 535u},
     {0x23fff466u, 1122u},
+    {0x26bc3c42u, 1125u | I18N_ENTRY_WEB},
     {0x30848604u, 101u},
     {0x3d591fb1u, 643u},
     {0x42463213u, 13u},
@@ -87,8 +88,9 @@ static const char strings[] =
     "Made with LVGL (MIT), the Inter typeface (SIL Open Font License 1.1), Lucide icons (ISC) and parts of Z-Wave JS (MIT).\000"
     "Saturday 19 September\000"
     "pm\000"
+    "Only the system master enrols a workstation.\000"
     ;
 
 const i18n_catalog_t i18n_catalog_en_GB = {
-    "en-GB", I18N_PLURALS_EN, 1, 38u, entries, strings,
+    "en-GB", I18N_PLURALS_EN, 1, 39u, entries, strings,
 };

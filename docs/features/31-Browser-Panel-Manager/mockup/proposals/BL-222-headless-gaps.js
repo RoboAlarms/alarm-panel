@@ -122,7 +122,7 @@ proposal({
     ICONS.fan = '<path d="M10.827 16.379a6.082 6.082 0 0 1-8.618-7.002l5.412 1.45a6.082 6.082 0 0 1 7.002-8.618l-1.45 5.412a6.082 6.082 0 0 1 8.618 7.002l-5.412-1.45a6.082 6.082 0 0 1-7.002 8.618l1.45-5.412Z"/><path d="M12 12v.01"/>';
 
     // ---- new pages, each in its group ----
-    hgPlace('outputs', {title: tx('Sirens and outputs'), icon: 'siren', group: tx('Installer'), access: 'installer', render: hgOutputsPage}, 'partitions');
+    hgPlace('outputs', {title: tx('Sirens and outputs'), icon: 'siren', group: tx('Setup'), access: 'installer', render: hgOutputsPage}, 'partitions');
     hgPlace('output', {title: tx('Sirens and outputs'), icon: 'siren', nav: false, parent: 'outputs', access: 'installer', render: hgOutputPage}, 'outputs');
     hgPlace('devices', {title: tx('Smart Home'), icon: 'bulb', group: tx('Household'), render: hgDevicesPage}, 'people');
     hgPlace('zwave-device', {title: tx('Z-Wave device'), icon: 'radio', nav: false, parent: 'zwave', access: 'installer', render: hgZwDevicePage,
@@ -241,7 +241,7 @@ function hgOutAnswer() {
 }
 // The panel's own answers to a change: who, while armed, a free terminal, something to sound for, room.
 function hgOutDo(b) {
-  if (!isInstaller()) return 'not_allowed';
+  if (!setsUp()) return 'not_allowed';
   if (state?.locked) return 'armed';
   const s = hgOutSet(), v = b.values || {};
   const list = b.kind === 'rf' ? s.rf : s.wired, item = list.find(x => x.slot === b.slot);
@@ -310,7 +310,7 @@ function hgWiredLine(w) {
 async function hgOutputsPage(arg) {
   hgOut.mode = ['empty', 'trouble'].includes(arg) ? arg : 'full';
   const o = await api('outputs');
-  const may = isInstaller() && !state.locked;
+  const may = setsUp() && !state.locked;
   const fns = hgFns();
   const wired = o.wired.map(w => {
     const [state_, kind] = hgWiredState(w), [title, , glyph] = fns[w.function];
@@ -409,7 +409,7 @@ function hgCheckCard(rows) {
 }
 const hgFoot = label => `<div class="card-foot"><span class="note">${ht('Changes apply after you review them.')}</span><button class="primary">${esc(label)}</button></div>`;
 function hgWiredPage(o, w, back) {
-  const isNew = !w, fns = hgFns(), may = isInstaller() && !state.locked;
+  const isNew = !w, fns = hgFns(), may = setsUp() && !state.locked;
   const values = isNew ? {function: 'siren', gpio: o.free[0] || 0, active_low: 1, burglary: true, fire: true, partitions: hgFirstBit(), also: 0, squawk: false, sense: 0}
     : {...w, active_low: w.active_low ? 1 : 0};
   const {scope, wiring} = hgWiredSpecs(o, w, values.function), specs = [...wiring, ...scope];
@@ -463,7 +463,7 @@ function hgWiredPage(o, w, back) {
   };
 }
 function hgRfPage(o, r, back) {
-  const may = isInstaller() && !state.locked;
+  const may = setsUp() && !state.locked;
   const scope = hgScopeSpecs(() => false, () => true, {fire: t('Its one sound')});
   const specs = [...scope, {name: 'squawk', label: t('Chirp when arming and disarming'), type: 'switch', help: t('Its own arm and disarm sounds')}];
   const title = t('433 MHz siren {0}', r.slot);
@@ -502,7 +502,7 @@ function hgRfPage(o, r, back) {
   };
 }
 function hgPairPage(o, r, back) {
-  const may = isInstaller() && !state.locked;
+  const may = setsUp() && !state.locked;
   return {
     html: pageHead(t('Pair a 433 MHz siren'), t('433 MHz siren {0}', r.slot), '', back) + installerNotice() + hgLockedNotice() +
       (o.transmitter ? '' : notice('warn', t('Nothing can transmit on 433 MHz'))) +
@@ -607,7 +607,7 @@ function hgHomeAnswer() {
     : {rooms: [...hgHome.rooms], devices: hgHome.devices.map(d => ({...d})), arrange_code: hgHome.arrange_code};
 }
 const hgIsMaster = () => ['master', 'partition_master'].includes(state?.authority);
-const hgMayArrange = () => !hgHome.arrange_code || hgIsMaster() || isInstaller();
+const hgMayArrange = () => !hgHome.arrange_code || hgIsMaster() || setsUp();
 const hgNeedsCode = (d, action) => d.code && ((d.kind === 'lock' && action === 'unlock') || (d.kind === 'cover' && action === 'open' && d.always_code) || !d.always_code);
 function hgHomeDo(b) {
   const d = hgHome.devices.find(x => x.id === b.id);
@@ -729,7 +729,7 @@ async function hgDevicesPage(arg) {
   const room = /^room-(\d+)$/.exec(tab);
   const shown = tab === '' ? data.devices.filter(d => d.favorite) : tab === 'other' ? other : tab === 'all' ? data.devices
     : data.devices.filter(d => d.room === data.rooms[Number(room[1])]);
-  const system = !!state.access?.system, mayArrange = !data.arrange_code || hgIsMaster() || isInstaller();
+  const system = !!state.access?.system, mayArrange = !data.arrange_code || hgIsMaster() || setsUp();
   const codeSpecs = data.devices.map(d => ({name: 'code-' + d.id, label: d.name, type: 'switch', locked: d.always_code,
     help: d.always_code ? (d.kind === 'lock' ? t('Unlocking asks for a code anyway') : t('Opening asks for a code anyway')) : ''}));
   const codeValues = Object.fromEntries(data.devices.map(d => ['code-' + d.id, d.code]));
@@ -808,7 +808,7 @@ function hgDevChange(data, d, tab) {
   ];
   const values = {room: data.rooms.includes(d.room) ? d.room : '', favorite: d.favorite};
   editDialog({title: t('Change {0}', d.name), intro: data.arrange_code ? t('Arranging asks for a master code') : '', specs, values,
-    readOnly: !(!data.arrange_code || hgIsMaster() || isInstaller()),
+    readOnly: !(!data.arrange_code || hgIsMaster() || setsUp()),
     reviewOptions: {title: t('Change {0}', d.name), password: !!data.arrange_code, done: '', after: () => go('devices', tab),
       run: v => hgHomeSend({op: 'set', id: d.id, room: v.room ?? values.room, favorite: v.favorite ?? values.favorite})}});
 }
@@ -832,7 +832,7 @@ const HG_ZW_ACTIONS = ['identify', 'wakeup', 'fw_check', 'fw_install', 'fw_stop'
 const hgZw = {wake: {2: 3600, 7: 14400, 8: 3600, 9: 43200, 11: 3600, 12: 3600}, fw: {}, on: {3: false, 13: true}, level: {13: 60}, relays: {15: [false, false]},
   garage: {15: {relay: 1, zone: 2}}, siren: {14: {burglary: true, fire: true, partitions: 1, also: 0, squawk: true, volume: 0, supervision_min: 240}}};
 function hgZwDo(b, mock) {
-  if (!isInstaller()) return 'not_allowed';
+  if (!setsUp()) return 'not_allowed';
   if (state?.locked) return 'armed';
   const n = b.node;
   switch (b.action) {
@@ -863,7 +863,7 @@ async function hgZwDevicePage(arg) {
   const d = z.devices?.find(x => String(x.node) === String(arg)) || (arg === '' ? z.devices?.[0] : null);
   if (!d) return {html: pageHead(t('Z-Wave device'), '', '', back) + notice('info', t('It was removed.'))};
   const name = d.model || zwWord(ZW_KINDS, d.kind, t('Device'));
-  const may = isInstaller() && !state.locked, off = hgOff(may);
+  const may = setsUp() && !state.locked, off = hgOff(may);
   const at = {node: d.node, generation: d.generation};
   const [stateWords, stateKind] = zwStatus(d);
   const cards = [];
@@ -986,7 +986,7 @@ function hgZwAction(d, name, data) {
 // Z-Wave radio > Network: the region and the reset, as the touchscreen's Z-Wave page has them.
 const HG_ZW_BANDS = {1: 'us', 9: 'us', 0: 'eu', 11: 'eu'};
 function hgZwNetworkCard(z) {
-  const may = isInstaller() && !state.locked;
+  const may = setsUp() && !state.locked;
   const regions = Object.entries(ZW_REGIONS).map(([v, l]) => [Number(v), t(l)]);
   return `<section class="section" id="hg-zw-net"><div class="card"><div class="card-head"><div><h2>${ht('Network')}</h2>
     <p>${ht('Changing the region is done in installer mode.')}</p></div></div><div class="rows">

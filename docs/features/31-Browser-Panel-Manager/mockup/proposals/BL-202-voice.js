@@ -91,7 +91,7 @@ const voiceDemo = {
       draft: this.mode === 'ready' || this.mode === 'unavailable', ready, reason: installed ? (ready ? '' : 'unavailable') : 'no_pack', free: 1.4e6};
   },
 };
-const voiceRoleMay = () => isInstaller() || state?.authority === 'master';
+const voiceRoleMay = () => setsUp() || state?.authority === 'master';
 // The pretend choices: [value, label, mode, announcements on]
 const VOICE_PRETEND = [
   ['ready', 'Pretend: draft pack ready, announcements on', 'ready', true],
@@ -118,7 +118,7 @@ function spokenState(s) {
 function spokenRow(n) {
   const s = spokenOf(n);
   const [word, kind] = spokenState(s);
-  const may = isInstaller();
+  const may = setsUp();
   return `<div class="row spoken-row"><div><span class="label">${ht('Spoken name')}</span>
     <span class="help">${ht('The recorded words the panel says for this zone. Chosen at the keypad.')}</span></div>
     <div class="control"><span class="what"><strong>${esc(s.summary || '-')}</strong>${tag(word, kind)}</span>

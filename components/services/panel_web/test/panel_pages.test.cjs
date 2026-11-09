@@ -73,7 +73,8 @@ const ARGS = {integration: ['mqtt', 'ntfy', 'pushover', 'home_assistant'], bindi
 // What each role finds in the menu: the panel's table, page by page.
 const EXPECTED = {
   installer: ['people', 'integrations', 'automations', 'network', 'walk', 'zone-setup', 'partitions', 'zwave', 'zwaveradio', 'zigbee', 'zigbee-device', 'options', 'access', 'updates', 'developer'],
-  master: ['people', 'integrations', 'automations', 'network', 'walk', 'updates'],
+  // BL-090: the system master (the Owner) gets the Setup group and Developer as the Admin does
+  master: ['people', 'integrations', 'automations', 'network', 'walk', 'zone-setup', 'partitions', 'zwave', 'zwaveradio', 'zigbee', 'zigbee-device', 'options', 'access', 'updates', 'developer'],
   partition: ['people', 'network', 'walk'],
   standard: [],
 };
@@ -160,6 +161,17 @@ test('the panel refuses what a role cannot open at the panel', async () => {
   assert.equal((await post('partition', 'updates', {action: 'channel', channel: 'beta'})).status, 403, 'the channel is the installer’s');
   assert.equal((await post('partition', 'updates', {action: 'server_check', domain: 'example.net'})).status, 403);
   assert.equal((await post('master', 'updates', {action: 'server_check', domain: 'example.net'})).status, 200, 'the master can\'t check a server');
+  // The update server and a workstation are the Owner's alone (the owner's decision of 2026-11-08): the Admin is refused
+  for (const body of [{action: 'server_check', domain: 'example.net'}, {action: 'server', domain: 'example.net', key_sha256: '0'.repeat(64)}]) {
+    const refused = await post('installer', 'updates', body);
+    assert.equal(refused.status, 403, `the Admin ran ${body.action}`);
+    assert.equal((await refused.json()).error, 'owner_only');
+  }
+  assert.equal((await post('installer', 'updates', {action: 'channel', channel: 'stable'})).status, 200, 'the channel stays the Admin\'s');
+  const enrol = await post('installer', 'developer/enroll', {certificate: '-----BEGIN CERTIFICATE-----', host: 'panel.test', me_password: 'installer password'});
+  assert.equal(enrol.status, 403, 'the Admin enrolled a workstation');
+  assert.equal((await enrol.json()).error, 'owner_only');
+  assert.equal((await post('master', 'developer/enroll', {certificate: '-----BEGIN CERTIFICATE-----', host: 'panel.test', me_password: 'correct horse battery'})).status, 200, 'the Owner can\'t enroll');
 });
 
 // docs/features/36 screens.md §11 (ZW-024): the Z-Wave page is the installer's; a code is checked
@@ -300,7 +312,7 @@ test('Z-Wave: each device row says its setup state, and the added card says what
     return vm.runInContext('zwOpCard(__g, __devices).html', context);
   };
   const sensor = await card(2, 1);
-  assert.match(sensor, /Make it a zone under Installer &gt; Zones: open a zone, then Its sensor/);
+  assert.match(sensor, /Make it a zone under Setup &gt; Zones: open a zone, then Its sensor/);
   assert.match(sensor, /data-zwgo="zone-setup"/);
   assert.doesNotMatch(sensor, /Sensor sources/);
   const sw = await card(3, 2);
@@ -455,7 +467,7 @@ test('who manages whom: the installer everyone, a master all but the installer',
 
 // Found by the review of 2026-09-24: the status and update answers carried more than the panel
 // shows these people.
-test('status lists your own partitions; the update server is the installer\'s', async () => {
+test('status lists your own partitions; the update server is the Owner\'s', async () => {
   const two = {MOCK_PARTITIONS: '2'};
   const standard = await start('standard', two), master = await start('master', two);
   try {
@@ -466,12 +478,14 @@ test('status lists your own partitions; the update server is the installer\'s', 
     standard.child.kill();
     master.child.kill();
   }
-  // OTA-017: the server, the channel and the check are in the installer's answer only
+  // OTA-017: the server and the check are in the system master's answer only (the owner's decision of 2026-11-08);
+  // the channel in the Admin's too (BL-090)
   for (const who of ['installer', 'master']) {
     const updates = await (await fetch(servers[who].base + '/api/v1/updates')).json();
     assert.ok(!('source' in updates), 'source is gone');
-    for (const k of ['server', 'channel', 'check', 'factory_code'])
-      assert.equal(k in updates, who === 'installer', `${who}: ${k}`);
+    for (const k of ['server', 'check', 'factory_code'])
+      assert.equal(k in updates, who === 'master', `${who}: ${k}`);
+    assert.equal(updates.channel, 'stable', `${who}: channel`);
     for (const k of ['withdrawn', 'critical', 'installed_channel']) assert.ok(k in updates, `${who}: ${k}`);
   }
 });
@@ -635,6 +649,14 @@ test('backup: the installer downloads an encrypted file and restores it', async 
   assert.equal(answer.restarting, true);
   assert.equal(answer.firmware, '0.6.0');
   assert.ok(answer.zones >= 0 && answer.users >= 0 && answer.created > 0);
+  // CFG-006: the backup's codes (its master code, the Owner's settings) come back only when the Owner asks
+  const take = (who, mePassword) => fetch(base(who), {method: 'PUT', body: file,
+    headers: {'Content-Type': 'application/octet-stream', 'X-Panel-CSRF': 'auto', 'X-Backup-Password': hex('Harbor House 2026'),
+      'X-Restore-Codes': 'yes', 'X-Panel-Password': hex(mePassword)}});
+  const admin = await take('installer', 'installer password');
+  assert.equal(admin.status, 403, 'the Admin took the backup\'s codes');
+  assert.equal((await admin.json()).error, 'owner_only');
+  assert.equal((await take('master', 'correct horse battery')).status, 200, 'the Owner can\'t take the backup\'s codes');
 
   // The page itself: the installer's Access and maintenance offers both, in words.
   const context = browser(servers.installer.base);
@@ -643,6 +665,7 @@ test('backup: the installer downloads an encrypted file and restores it', async 
   assert.match(html, /Download a backup…/);
   assert.match(html, /Restore…/);
   assert.match(vm.runInContext('friendly("backup_board")', context), /another kind of panel/);
+  assert.equal(vm.runInContext('friendly("owner_only")', context), 'Only the master code (the owner) can do that.');
 });
 
 
@@ -2635,10 +2658,10 @@ const zreview = (context, call) => {
 };
 const sentTo = (context, name) => context.__posts.filter(([url]) => url.endsWith('/' + name)).map(([, body]) => body);
 
-test('Installer > Zones is first in its group, Z-Wave next; the old addresses open the new page (BL-134, WORD-006)', async () => {
+test('Setup > Zones is first in its group, Z-Wave next; the old addresses open the new page (BL-134, WORD-006)', async () => {
   await withPage('installer', {}, async (context, html) => {
     await zrun(context, 'refreshStatus()');
-    const group = zrun(context, `Object.entries(PAGES).filter(([id, p]) => p.group === 'Installer' && p.nav !== false && pageAllowed(p)).map(([id]) => id)`);
+    const group = zrun(context, `Object.entries(PAGES).filter(([id, p]) => p.group === 'Setup' && p.nav !== false && pageAllowed(p)).map(([id]) => id)`);
     assert.deepEqual(Array.from(group), ['zone-setup', 'zwave', 'zigbee', 'partitions', 'options', 'access'], 'Sensor sources is no longer an entry; Zigbee after Z-Wave (BL-145)');
     assert.equal(zrun(context, `PAGES['zone-setup'].title`), zrun(context, `PAGES.zones.title`), 'two entries are called Zones, as drawn');
     assert.equal(zrun(context, `PAGES['zone-setup'].icon`), 'door');
@@ -2652,11 +2675,16 @@ test('Installer > Zones is first in its group, Z-Wave next; the old addresses op
       await out.bind?.();
       assert.equal(context.__hash, hash, `#/${id}/${arg}`);
       assert.equal(out.html.includes('id="zones-live"'), hash === null, `#/${id}/${arg} opens ${hash ? 'the zone pages' : 'the everyday Zones'}`);
-      if (hash) assert.equal(zrun(context, 'page'), 'zone-setup', 'the menu marks Installer > Zones');
+      if (hash) assert.equal(zrun(context, 'page'), 'zone-setup', 'the menu marks Setup > Zones');
     }
   });
-  // a master has no Installer menu, and #/zones/5 stays the everyday page for them
+  // the system master has the Setup menu too (BL-090), and #/zones/5 opens the zone's page for them; a partition master
+  // has no Setup menu, and #/zones/5 stays the everyday page
   await withPage('master', {}, async (context, html) => {
+    await zrun(context, 'refreshStatus()');
+    assert.ok(zrun(context, `pageAllowed(PAGES['zone-setup'])`));
+  });
+  await withPage('partition', {}, async (context, html) => {
     await zrun(context, 'refreshStatus()');
     assert.ok((await html('zones', '5')).includes('id="zones-live"'));
     assert.ok(!zrun(context, `pageAllowed(PAGES['zone-setup'])`));
@@ -3739,9 +3767,10 @@ test('AUT-015 D25: with the installer option off, Unlock, Open and Stop aren\'t 
   });
 });
 
-test('AUT-015: the option and the page are only on a build with automations; a master never sees System options', async () => {
-  const master = await auContext(servers.master);
-  assert.equal(master.run('pageAllowed(PAGES.options)'), false);
+test('AUT-015: the option and the page are only on a build with automations; a partition master never sees System options', async () => {
+  const partition = await auContext(servers.partition);
+  assert.equal(partition.run('pageAllowed(PAGES.options)'), false);
+  assert.equal((await auContext(servers.master)).run('pageAllowed(PAGES.options)'), true, 'the Owner has System options (BL-090)');
   await withServer('installer', {MOCK_AUTOMATIONS: '0'}, async server => {
     const a = await auContext(server);
     assert.equal(a.run('pageAllowed(PAGES.automations)'), false, 'no Automations entry');
@@ -4057,14 +4086,14 @@ test('BL-224 AUT-011: on a new panel the installer sees the arming ideas and no 
     assert.ok(!a.run('auBody()').includes('No devices to choose'));
     a.edit('dev', 'alarm:arm', {i: '0', k: 'dev-0'});
     a.edit('arm-level', 'away', {i: '0', k: 'arm-level-0'});
-    assert.match(a.words(a.run('auBody()')), /Arm Away Set up by Installer · uses Alex’s permission · warns 5 minutes before/);
+    assert.match(a.words(a.run('auBody()')), /Arm Away Set up by Admin · uses Alex’s permission · warns 5 minutes before/);
     assert.equal(a.run('auWhenText(au.now.when)'), 'At 11:00 PM every day');
     await a.click('save');
     assert.deepEqual(a.posts().at(-1).automation.then, [{kind: 'arm', partition: 1, level: 'away', warn_min: 5, bypass: false}]);
     const saved = (await auGet(server)).automations[0];
     assert.deepEqual([saved.when.minute, saved.when.days.length, saved.then[0].made_by, saved.then[0].saved_by], [1380, 7, 'Alex', 'Installer']);
     assert.match(a.words((await a.page('')).html), /At 11:00 PM every day.*Arm Away/);
-    assert.match(a.words((await a.page('1')).html), /Set up by Installer · uses Alex’s permission · warns 5 minutes before/);
+    assert.match(a.words((await a.page('1')).html), /Set up by Admin · uses Alex’s permission · warns 5 minutes before/);
     assert.ok(!/arms as/i.test(a.words((await a.page('1')).html)), 'D30');
     // the installer never disarms (BL-187): refused whatever the page offers
     assert.deepEqual(await auSave(server, [{kind: 'disarm', partition: 1}], undefined, 2), [409, {error: 'action_not_allowed', index: 0}]);
@@ -4347,24 +4376,25 @@ async function checked(base, domain) {
 }
 
 // OTA-017: who sees the page and which cards
-test('Software updates: the installer has the server and the channel cards, the system master only the status (OTA-017)', async () => {
-  await withPage('installer', {}, async (context, html) => {
-    await vm.runInContext('refreshStatus()', context);
-    const page = await html('updates');
-    clean(page, 'updates (installer)');
-    for (const w of ['Where updates come from', 'Update server', 'roboalarms.com', 'RoboAlarms release', '3F9A 1C2B 77D0 E415', 'Change the update server…',
-      'Update channel', 'Check now'])
-      assert.ok(words(page).includes(w), `the installer's page lacks "${w}"`);
-    assert.ok(!words(page).includes('Go back to roboalarms.com'), 'roboalarms.com is in use already');
-    assert.ok(!page.includes('disabled>') || !/id="fws-change"[^>]*disabled/.test(page), 'Change is held back only for the factory code');
-  });
+// BL-090 (the owner's decision of 2026-11-08): the update server is the Owner's alone, the channel Setup's
+test('Software updates: the system master has the server and the channel cards, the Admin the channel only (OTA-017)', async () => {
   await withPage('master', {}, async (context, html) => {
     await vm.runInContext('refreshStatus()', context);
     const page = await html('updates');
     clean(page, 'updates (master)');
-    assert.ok(words(page).includes('Check now'));
-    for (const w of ['Where updates come from', 'Update channel', 'Change the update server'])
-      assert.ok(!words(page).includes(w), `the system master sees "${w}"`);
+    for (const w of ['Where updates come from', 'Update server', 'roboalarms.com', 'RoboAlarms release', '3F9A 1C2B 77D0 E415', 'Change the update server…',
+      'Update channel', 'Check now'])
+      assert.ok(words(page).includes(w), `the system master's page lacks "${w}"`);
+    assert.ok(!words(page).includes('Go back to roboalarms.com'), 'roboalarms.com is in use already');
+    assert.ok(!page.includes('disabled>') || !/id="fws-change"[^>]*disabled/.test(page), 'Change is held back only for the factory code');
+  });
+  await withPage('installer', {}, async (context, html) => {
+    await vm.runInContext('refreshStatus()', context);
+    const page = await html('updates');
+    clean(page, 'updates (installer)');
+    for (const w of ['Check now', 'Update channel']) assert.ok(words(page).includes(w), `the Admin's page lacks "${w}"`);
+    for (const w of ['Where updates come from', 'Change the update server'])
+      assert.ok(!words(page).includes(w), `the Admin sees "${w}"`);
   });
   for (const who of ['partition', 'standard']) {
     const context = browser(servers[who].base);
@@ -4375,7 +4405,7 @@ test('Software updates: the installer has the server and the channel cards, the 
 
 // OTA-018, OTA-019, OTA-020: the check, the warning for a key the panel doesn't trust, then the commit
 test('update server: a check, then the warning (key, tick, password), then it is kept (OTA-018, OTA-019, OTA-020)', async () => {
-  const s = await start('installer');
+  const s = await start('master');
   try {
     const call = (action, extra = {}) => postTo(s.base, 'updates', {action, ...extra});
     assert.equal((await call('server_check', {domain: 'not a domain'})).status, 400);
@@ -4387,7 +4417,7 @@ test('update server: a check, then the warning (key, tick, password), then it is
     assert.equal(c.key.fingerprint, '8C41 0E9D 52A7 B3F6');
     assert.equal(c.key.sha256.length, 64);
     // what the installer saw is what is kept
-    const stale = await call('server', {domain: 'example.net', key_sha256: 'f'.repeat(64), me_password: 'installer password'});
+    const stale = await call('server', {domain: 'example.net', key_sha256: 'f'.repeat(64), me_password: 'correct horse battery'});
     assert.equal(stale.status, 409);
     assert.equal((await stale.json()).error, 'stale');
     // a password, since the window has run out (WEB-016); the stale answer above asked for it first and counted it
@@ -4396,7 +4426,7 @@ test('update server: a check, then the warning (key, tick, password), then it is
     assert.equal((await none.json()).error, 'password_required');
     const wrong = await call('server', {domain: 'example.net', key_sha256: c.key.sha256, me_password: 'nope'});
     assert.equal((await wrong.json()).error, 'wrong_password');
-    assert.equal((await call('server', {domain: 'example.net', key_sha256: c.key.sha256, me_password: 'installer password'})).status, 200);
+    assert.equal((await call('server', {domain: 'example.net', key_sha256: c.key.sha256, me_password: 'correct horse battery'})).status, 200);
     const after = await updatesOf(s.base);
     assert.equal(after.server.domain, 'example.net');
     assert.equal(after.server.official, false);
@@ -4415,7 +4445,7 @@ test('update server: a check, then the warning (key, tick, password), then it is
       'password_required');
     // the page offers Go back while another server is in use
     assert.equal((await call('server', {domain: 'example.net', key_sha256: again.key.sha256,
-      me_password: 'installer password'})).status, 200);
+      me_password: 'correct horse battery'})).status, 200);
     const context = browser(s.base);
     await vm.runInContext('refreshStatus()', context);
     const out = await vm.runInContext("PAGES.updates.render('')", context);
@@ -4426,7 +4456,7 @@ test('update server: a check, then the warning (key, tick, password), then it is
 });
 
 test('update server: the three refusals, and the factory installer code holds a new key back (OTA-019, OTA-021)', async () => {
-  const s = await start('installer', {MOCK_FACTORY_CODE: '1'});
+  const s = await start('master', {MOCK_FACTORY_CODE: '1'});
   try {
     for (const [domain, result] of [['example.org', 'not_a_server'], ['example.com', 'no_firmware'], ['nothing-here.example.net', 'unreachable']]) {
       const c = await checked(s.base, domain);
@@ -4434,14 +4464,14 @@ test('update server: the three refusals, and the factory installer code holds a 
       assert.ok(!c.key, `${domain} has no key to show`);
     }
     const c = await checked(s.base, 'example.net');
-    const refused = await postTo(s.base, 'updates', {action: 'server', domain: 'example.net', key_sha256: c.key.sha256, me_password: 'installer password'});
+    const refused = await postTo(s.base, 'updates', {action: 'server', domain: 'example.net', key_sha256: c.key.sha256, me_password: 'correct horse battery'});
     assert.equal(refused.status, 409);
     assert.equal((await refused.json()).error, 'factory_code');
     assert.equal((await updatesOf(s.base)).factory_code, true);
     const context = browser(s.base);
     await vm.runInContext('refreshStatus()', context);
     const out = await vm.runInContext("PAGES.updates.render('')", context);
-    assert.ok(words(out.html).includes('Change the installer code first: the factory one is public.'));
+    assert.ok(words(out.html).includes('Change the Admin code first: the factory one is public.'));
     assert.match(out.html, /id="fws-change" disabled/);
     // a key the panel trusts already needs no code change
     const back = await checked(s.base, 'roboalarms.com');
@@ -4749,13 +4779,13 @@ test('Software updates: failed C6 installs show Update failed with the radio rea
 });
 
 test('Software updates: the server and the channel are held while an update runs (OTA-026, OTA-028)', async () => {
-  await updContext('installer', {}, async u => {
+  await updContext('master', {}, async u => {
     await u.set({reset: true, set: {stage: 'downloading', percent: 42}, update: OFFERED});
     const html = (await u.page()).html;
     assert.ok(words(html).includes('Not while an update runs.'));
     assert.match(html, /id="fws-change" disabled/);
     assert.match(html, /<fieldset class="fws-hold" disabled>/);
-    assert.ok(words(html).includes('Stop the update'), 'the installer has the same card');
+    assert.ok(words(html).includes('Stop the update'), 'the system master has the same card');
     for (const [body, error] of [[{action: 'server_check', domain: 'example.net'}, 'update_running'], [{action: 'channel', channel: 'beta'}, 'update_running'],
       [{action: 'server', domain: 'roboalarms.com', key_sha256: '3f9a1c2b77d0e415' + '5c0e'.repeat(12)}, 'update_running'], [{action: 'check'}, 'busy'], [{action: 'install'}, 'busy']]) {
       const r = await u.post(body);
@@ -4768,24 +4798,24 @@ test('Software updates: the server and the channel are held while an update runs
     assert.ok(!/id="fws-change" disabled/.test(idle) && !/<fieldset class="fws-hold"/.test(idle) && !words(idle).includes('Not while an update runs.'));
     for (const [code, want] of [['busy', 'Not while an update runs.'], ['update_running', 'Not while an update runs.'], ['no_update', 'It isn’t running any more.'],
       ['stale', 'The panel’s check of that server is out of date. Check it again.'], ['bad_domain', 'Type a domain, like roboalarms.com.'],
-      ['factory_code', 'Change the installer code first: the factory one is public.']])
+      ['factory_code', 'Change the Admin code first: the factory one is public.']])
       assert.equal(u.run(`friendly('${code}')`), want, code);
   });
 });
 
 test('the server change answers as the firmware: password, digest, a run, then the check (OTA-019, OTA-028)', async () => {
-  await updContext('installer', {}, async u => {
+  await updContext('master', {}, async u => {
     const c = await checked(u.server.base, 'example.net');
     await u.post({recent: false}, 'mock/confirmation');
     const call = body => u.post({action: 'server', domain: 'example.net', ...body});
     const code = async r => (await r.json()).error;
     assert.equal(await code(await call({key_sha256: 'abc'})), 'password_required', 'the password first, for a key the panel does not trust');
-    assert.equal(await code(await call({key_sha256: 'abc', me_password: 'installer password'})), 'bad_request', 'then the digest');
+    assert.equal(await code(await call({key_sha256: 'abc', me_password: 'correct horse battery'})), 'bad_request', 'then the digest');
     await u.set({set: {stage: 'verifying', percent: 100}});
-    assert.equal(await code(await call({key_sha256: c.key.sha256, me_password: 'installer password'})), 'update_running', 'then a run');
+    assert.equal(await code(await call({key_sha256: c.key.sha256, me_password: 'correct horse battery'})), 'update_running', 'then a run');
     await u.set({reset: true});
-    assert.equal(await code(await call({key_sha256: 'f'.repeat(64), me_password: 'installer password'})), 'stale');
-    assert.equal((await call({key_sha256: c.key.sha256, me_password: 'installer password'})).status, 200);
+    assert.equal(await code(await call({key_sha256: 'f'.repeat(64), me_password: 'correct horse battery'})), 'stale');
+    assert.equal((await call({key_sha256: c.key.sha256, me_password: 'correct horse battery'})).status, 200);
     // a trusted key needs no password, even when the window has run out
     await u.post({recent: false}, 'mock/confirmation');
     const back = await checked(u.server.base, 'roboalarms.com');
@@ -4795,7 +4825,7 @@ test('the server change answers as the firmware: password, digest, a run, then t
 });
 
 test('update server dialogs, end to end: type, checking, the warning (tick, password), then the review of a trusted key (OTA-018..OTA-020)', async () => {
-  await updContext('installer', {}, async u => {
+  await updContext('master', {}, async u => {
     u.context.setTimeout = fn => setTimeout(fn, 5);
     u.el('#dialog').open = true;
     u.context.__s = (await u.get()).server;
@@ -4816,7 +4846,7 @@ test('update server dialogs, end to end: type, checking, the warning (tick, pass
     assert.equal(u.el('#dialog-error').textContent, 'Tick the box to say you trust this server.');
     submit('#fws-warn', {target: {trust: {checked: true}}});
     assert.equal(u.el('#dialog-error').textContent, 'Enter your password.');
-    u.context.__password = {value: 'installer password', focus() {}};
+    u.context.__password = {value: 'correct horse battery', focus() {}};
     await submit('#fws-warn', {target: {trust: {checked: true}}});
     for (let i = 0; i < 50 && (await u.get()).server.domain !== 'example.net'; i++) await sleep(20);
     assert.equal((await u.get()).server.domain, 'example.net');
@@ -4837,7 +4867,7 @@ test('update server dialogs, end to end: type, checking, the warning (tick, pass
 
 test('the update server card shows a panel that sends no key, or a key without a name (OTA-017)', async () => {
   for (const [mode, want] of [['none', ['The key this version is signed with']], ['unnamed', ['The key this version is signed with', '3F9A 1C2B 77D0 E415']]]) {
-    await updContext('installer', {MOCK_SERVER_KEY: mode}, async u => {
+    await updContext('master', {MOCK_SERVER_KEY: mode}, async u => {
       const html = (await u.page()).html;
       clean(html, `server key ${mode}`);
       for (const w of want) assert.ok(words(html).includes(w), `${mode}: lacks "${w}"`);
@@ -5152,4 +5182,101 @@ test('headless setup: every setup page renders with its words', async () => {
   } finally {
     child.kill();
   }
+});
+
+// ---- BL-090: the Owner (the system master) gets the Setup pages; the Admin code opens Setup mode while the Owner allows it ----
+// The owner's decision of 2026-11-08: no code outranks the Owner. Status access.installer is the system master's always and the
+// Admin's (the installer's) while installer_opens_setup; the update server, a workstation and a backup's codes are the Owner's.
+test('BL-090: the system master has the Setup group, editable, and the Setup mode card', async () => {
+  const context = browser(servers.master.base);
+  await vm.runInContext('refreshStatus()', context);
+  const status = vm.runInContext('state', context);
+  assert.equal(status.access.installer, true, 'access.installer is the system master\'s');
+  assert.equal(status.access.setup, true);
+  assert.equal(status.installer_opens_setup, true, 'on by default');
+  assert.equal(status.access.arm, true, 'the Owner still arms');
+  vm.runInContext('page = "options"; renderNav()', context);
+  const nav = context.document.querySelector('#nav').innerHTML;
+  assert.match(nav, /<div class="nav-group">Setup<\/div>/);
+  assert.ok(!nav.includes('>Installer<'), 'the group is still called Installer');
+  for (const title of ['System options', 'Access and maintenance', 'Partitions and devices', 'Developer']) assert.ok(nav.includes(title), title);
+  const options = (await vm.runInContext('PAGES.options.render()', context)).html;
+  assert.ok(!/<fieldset disabled/.test(options) && options.includes('Review changes'), 'the system master\'s options are read-only');
+  const partitions = (await vm.runInContext('PAGES.partitions.render()', context)).html;
+  clean(partitions.replace(/\sstyle="[^"]*"/g, ''), 'partitions (master)');
+  const access = vm.runInContext('PAGES.access.render().html', context);
+  for (const w of ['Master and Admin codes', 'Setup mode', 'Let the Admin code open Setup mode', 'The Admin code opens it too.', 'Change it at the panel.', 'On'])
+    assert.ok(words(access).includes(w), `Access and maintenance lacks "${w}"`);
+  assert.ok(access.indexOf('Master and Admin codes') < access.indexOf('Setup mode') && access.indexOf('Setup mode') < access.indexOf('>Backup<'), 'the card sits after the codes');
+  assert.ok(!/installer code/i.test(words(access)), 'Access and maintenance says installer code');
+  assert.equal(vm.runInContext("roleWord('installer')", context), 'Admin');
+  assert.equal(vm.runInContext('roles()[1][0]', context), 'Admin');
+  // Developer: the Owner enrolls a workstation
+  const developer = vm.runInContext('PAGES.developer.render().html', context);
+  assert.ok(developer.includes('id="enroll"') && !words(developer).includes('Only the system master enrolls a workstation.'));
+});
+
+test('BL-090: the Admin reads the card, gets no Enroll, no update server and no backup codes; off, no Setup pages', async () => {
+  const context = browser(servers.installer.base);
+  await vm.runInContext('refreshStatus()', context);
+  assert.equal(vm.runInContext('state.access.installer && state.access.arm === false && state.access.panic.length === 0', context), true,
+    'the Admin never arms and has no panic buttons');
+  const access = vm.runInContext('PAGES.access.render().html', context);
+  for (const w of ['Let the Admin code open Setup mode', 'Only the system master changes this, at the panel.'])
+    assert.ok(words(access).includes(w), `the Admin's card lacks "${w}"`);
+  assert.ok(!words(access).includes('Change it at the panel.'));
+  const developer = vm.runInContext('PAGES.developer.render().html', context);
+  assert.ok(!developer.includes('id="enroll"') && words(developer).includes('Only the system master enrolls a workstation.'));
+
+  await withPage('installer', {MOCK_ADMIN_SETUP: '0'}, async (off, html, a) => {
+    await vm.runInContext('refreshStatus()', off);
+    const s = vm.runInContext('state', off);
+    assert.equal(s.installer_opens_setup, false);
+    assert.equal(s.access.installer, false, 'the Admin keeps the Setup pages');
+    assert.equal(s.access.setup, false);
+    for (const id of ['zone-setup', 'partitions', 'options', 'access', 'zwave'])
+      assert.equal(vm.runInContext(`pageAllowed(PAGES[${JSON.stringify(id)}])`, off), false, `the Admin may open ${id}`);
+    assert.equal((await a.get('alarm')).error, 'not_allowed', 'the panel still gives the Admin its programming');
+  });
+  await withPage('master', {MOCK_ADMIN_SETUP: '0'}, async (owner, html) => {
+    await vm.runInContext('refreshStatus()', owner);
+    const card = words(vm.runInContext('PAGES.access.render().html', owner));
+    assert.ok(card.includes('Only the system master’s code opens it.') && card.includes('Off'), 'the card doesn\'t say Off');
+  });
+});
+
+test('BL-090, CFG-006: the restore asks the Owner alone whether to take the backup\'s codes, and sends X-Restore-Codes', async () => {
+  for (const who of ['master', 'installer']) {
+    const context = browser(servers[who].base);
+    await vm.runInContext('refreshStatus()', context);
+    const sent = [];
+    const fetchBefore = context.fetch;
+    context.fetch = (url, options) => { if (options?.method === 'PUT') sent.push(options.headers); return Promise.resolve({ok: false, status: 400, json: async () => ({error: 'backup_format'})}); };
+    vm.runInContext('__dialogs = []; openDialog = html => { __dialogs.push(html); }; closeDialog = () => {};', context);
+    const page = vm.runInContext('PAGES.access.render()', context);
+    vm.runInContext('state.reauthUntil = Date.now() + 600000', context); // no password box: the password was typed just now
+    page.bind();
+    context.document.querySelector('#backup-file').files = [{name: 'harbor.rabk'}];
+    context.document.querySelector('#backup-restore').onclick();
+    const dialog = words(vm.runInContext('__dialogs.at(-1)', context));
+    assert.equal(dialog.includes('Also take the backup’s codes'), who === 'master', `${who}: the box`);
+    assert.equal(dialog.includes('Otherwise the current master code and the owner’s settings are kept.'), who === 'master');
+    assert.equal(dialog.includes('This panel keeps its master code and the owner’s settings.'), who !== 'master');
+    for (const take of who === 'master' ? [false, true] : [undefined]) {
+      const target = {confirm: {value: 'RESTORE'}, password: {value: 'Harbor House 2026'}, codes: take === undefined ? undefined : {checked: take},
+        querySelector: s => s === 'button.danger' ? {disabled: false} : null};
+      await context.document.querySelector('#restore-form').onsubmit({preventDefault() {}, target});
+      assert.equal(sent.at(-1)['X-Restore-Codes'], take ? 'yes' : undefined, `${who}: X-Restore-Codes when the box is ${take}`);
+    }
+    context.fetch = fetchBefore;
+  }
+});
+
+test('BL-090: the Panel Manager\'s words say Admin code, never installer code', () => {
+  for (const file of ['panel.js', 'panel-pages.js', 'panel.html']) {
+    const marked = [...read(file).matchAll(/\b(?:t|ht|tx|tn|tc|hx)\((?:'[^']*',\s*)?'((?:[^'\\]|\\.)*)'/g)].map(m => m[1]);
+    for (const text of marked) assert.ok(!/installer code|Installer and master codes/i.test(text), `${file}: "${text}"`);
+  }
+  assert.match(read('panel-pages.js'), /group: tx\('Setup'\)/);
+  assert.ok(!/group: tx\('Installer'\)/.test(read('panel-pages.js')), 'a page is still in the Installer group');
 });

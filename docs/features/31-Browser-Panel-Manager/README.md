@@ -85,9 +85,12 @@ rework after it.
 Every API path has one entry in `panel_web.c`'s table ("who may use what"), checked before its
 handler runs; anything not listed is the installer level's (fail closed). The levels are
 docs/features/14's. Since the owner's decision of 2026-11-08 the installer level is the system
-master's too (`sets_up()`), but the browser still shows the Installer pages to the installer alone
-(`status.access.installer`; `access.setup` says what the server takes) until the pages for the Owner
-are approved (WEB-026; the proposal is `mockup/proposals/BL-090-owner-installer-pages.js`):
+master's too (`sets_up()`), and the Admin (installer) code's only while the Owner lets it open Setup
+mode: the browser's Setup group (once "Installer") shows to whoever `status.access.installer` lets
+in (BL-090, built), and Access and maintenance shows the Owner's "Let the Admin code open Setup mode"
+read-only from `status.installer_opens_setup`. The update server and enrolling a workstation are the
+system master's alone (`owner_only`), and a restore keeps the current master code unless the master
+asks for the file's codes (`X-Restore-Codes: yes`, CFG-006):
 
 | Level | Who | Paths (GET / POST) |
 |---|---|---|

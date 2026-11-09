@@ -149,8 +149,8 @@ Deliberate choices:
   because it shows duress and silent alarms.
 - **Arming without a code, from the keypad or remotely, stays an installer option** (like Quick
   Arm on classic panels), even though the Home Assistant connection itself is the master's.
-- Later, the installer may hand single areas to the master (zone names
-  and chimes are the obvious candidates; BL-090).
+- Since the owner's decision of 2026-11-08 the master opens Setup mode itself, so nothing needs
+  handing over (this replaced BL-090's "the installer hands single areas to the master").
 - **Software updates are the household's too.** A master or Admin code installs one, never while the
   system is armed or sounding, and a failed update rolls itself back ([13](../13-OTA-Updates/README.md)).
 

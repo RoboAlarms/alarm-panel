@@ -51,7 +51,9 @@ const ERRORS = {
   no_update: tx('It isn’t running any more.'),
   not_stoppable: tx('This step can’t be stopped. It finishes in a moment.'),
   bad_domain: tx('Type a domain, like roboalarms.com.'),
-  factory_code: tx('Change the installer code first: the factory one is public.'),
+  factory_code: tx('Change the Admin code first: the factory one is public.'),
+  // The Owner's alone (the owner's decision of 2026-11-08): the update server, a workstation, a backup's codes
+  owner_only: tx('Only the master code (the owner) can do that.'),
   not_allowed: tx('Your sign-in doesn’t allow this. At the panel it needs another code too.'),
   backup_password: tx('Choose a backup password of 8 to 64 characters (letters, digits, spaces, punctuation).'),
   backup_failed: tx('The panel could not make the backup just now. Try again in a moment.'),

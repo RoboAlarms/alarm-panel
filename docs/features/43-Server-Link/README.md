@@ -40,12 +40,15 @@ says what the panel does and what it doesn't yet.
   once; direct push reaches only phones whose user has the event's partition.
 - **Setup mode** (`POST setup-mode {open}`): installer mode as the person, held by the server's source
   until it closes it or the 15-minute idle timeout ends it; Setup page changes apply inside it. The
-  system master (the Owner) may open it, and the installer while the Owner lets the installer code
-  open installer mode (CORE-PROG-014), as at a keypad (anyone else: 403 `installer_only`, the name
+  system master (the Owner) may open it, and the installer while the Owner lets the Admin code
+  open Setup mode (CORE-PROG-014), as at a keypad (anyone else: 403 `installer_only`, the name
   kept); the remote ceiling's `remote_setup` switch and the step-up
   still apply, and setting the installer or master code (`installer-code`) is behind them too; 409 `not_disarmed` or
   `setup_mode_in_use`. A Setup page's flat fields are wrapped for the Panel Manager's handlers
-  (`values`, or `changes` with the current revision).
+  (`values`, or `changes` with the current revision). The ceiling message carries the Owner's
+  "Let the Admin code open Setup mode" as `installer_setup` (added 2026-11-08; absent from older
+  panels, read as true), sent again whenever it changes: the website and the app show it
+  read-only, since only the Owner changes it, at the panel.
 - **People codes from the app** (MOB-044): `POST people {action:"create"|"set_code", ..., sealed_code}`;
   the code is sealed to this panel's X25519 key as `rs1|time|set_code|<user>|code` (or `create|0`),
   opened only here, for that slot, within 2 minutes and once (400 `bad_code` otherwise). The seal key

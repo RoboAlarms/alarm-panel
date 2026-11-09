@@ -336,12 +336,17 @@ static void test_people_and_ceiling(void)
     c.ask_code = true;
     c.rev = 9u;
     pj_init(&w, buf, sizeof(buf));
-    proto_srv_ceiling(&w, &c);
+    proto_srv_ceiling(&w, &c, true);
     TEST_ASSERT_NOT_EQUAL_size_t(0u, pj_finish(&w));
     TEST_ASSERT_EQUAL_STRING("{\"t\":\"ceiling\",\"rev\":9,\"remote_users\":[2,5],"
                              "\"remote_disarm\":false,\"remote_setup\":true,"
-                             "\"remote_people\":true,\"ask_code\":true}",
+                             "\"remote_people\":true,\"ask_code\":true,\"installer_setup\":true}",
                              buf);
+    /* CORE-PROG-014: the Owner turned the Admin code's Setup mode off */
+    pj_init(&w, buf, sizeof(buf));
+    proto_srv_ceiling(&w, &c, false);
+    TEST_ASSERT_NOT_EQUAL_size_t(0u, pj_finish(&w));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"installer_setup\":false}"));
 }
 
 static void test_small_messages(void)

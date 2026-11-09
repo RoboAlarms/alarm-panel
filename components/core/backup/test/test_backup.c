@@ -735,6 +735,72 @@ static void test_panel_through_a_file(void)
     TEST_ASSERT_EQUAL_UINT16(2, s.zones);
 }
 
+/* CFG-006, the owner's decision of 2026-11-08: a restore never brings back an old master code.
+ * The running master's slot and the Owner's settings stay, unless the Owner takes the file's
+ * codes; a file with another code salt (a replacement board's) leaves this panel's users whole. */
+static void test_restore_keeps_the_owner(void)
+{
+    static alarm_config_t current, stored;
+    static uint8_t blob[ALARM_CONFIG_BLOB_MAX];
+    alarm_config_t *cfg = &SCRATCH.cfg;
+    alarm_config_defaults(cfg);
+    for (unsigned i = 0; i < ALARM_CODE_SALT_LEN; i++) {
+        cfg->code_salt[i] = (uint8_t)i;
+    }
+    alarm_config_set_legacy_users(cfg, fake_hash, NULL); /* the file: the old master code */
+    cfg->users[3].authority = ALARM_AUTH_STANDARD;
+    cfg->users[3].partitions = 1u;
+    cfg->opt.installer_setup_off = 0u;
+    cfg->opt.power_up_program = false;
+    size_t cfg_len = 0;
+    TEST_ASSERT_EQUAL(ALARM_OK, alarm_config_encode(cfg, CFG_BLOB, sizeof(CFG_BLOB), &cfg_len));
+    backup_writer_t w;
+    backup_writer_init(&w, BUF, sizeof(BUF), &META);
+    const backup_entry_t e = ent("alarm", "config", BACKUP_T_BLOB, CFG_BLOB, (uint32_t)cfg_len);
+    TEST_ASSERT_TRUE(backup_writer_add(&w, &e));
+    size_t len = 0;
+    TEST_ASSERT_EQUAL(BACKUP_OK, backup_writer_finish(&w, &len));
+    backup_summary_t s;
+    TEST_ASSERT_EQUAL(BACKUP_OK, backup_check(BUF, len, NULL, &SCRATCH, &s));
+
+    /* The running panel: the same salt, a master code changed since, the Admin turned off. */
+    current = *cfg;
+    current.users[1].code_hash[0] ^= 0x5Au;
+    current.opt.installer_setup_off = 1u;
+    current.opt.power_up_program = true;
+    size_t n = 0;
+    TEST_ASSERT_EQUAL(BACKUP_OK, backup_restore_config_ex(BUF, len, &current, false, &SCRATCH,
+                                                          blob, sizeof(blob), &n));
+    TEST_ASSERT_EQUAL(ALARM_OK, alarm_config_decode(blob, n, &stored));
+    TEST_ASSERT_EQUAL_MEMORY(&current.users[1], &stored.users[1], sizeof(stored.users[1]));
+    TEST_ASSERT_EQUAL_MEMORY(&current.users[3], &stored.users[3], sizeof(stored.users[3]));
+    TEST_ASSERT_EQUAL_UINT8(1u, stored.opt.installer_setup_off);
+    TEST_ASSERT_TRUE(stored.opt.power_up_program);
+
+    /* The Owner asked for the file's codes: they come back, the file's settings too. */
+    TEST_ASSERT_EQUAL(BACKUP_OK, backup_check(BUF, len, NULL, &SCRATCH, &s));
+    TEST_ASSERT_EQUAL(BACKUP_OK, backup_restore_config_ex(BUF, len, &current, true, &SCRATCH,
+                                                          blob, sizeof(blob), &n));
+    TEST_ASSERT_EQUAL(ALARM_OK, alarm_config_decode(blob, n, &stored));
+    TEST_ASSERT_NOT_EQUAL(current.users[1].code_hash[0], stored.users[1].code_hash[0]);
+    TEST_ASSERT_EQUAL_UINT8(0u, stored.opt.installer_setup_off);
+
+    /* A replacement board (another salt): its own users and salt stay whole. */
+    alarm_config_defaults(&current);
+    for (unsigned i = 0; i < ALARM_CODE_SALT_LEN; i++) {
+        current.code_salt[i] = (uint8_t)(0xA0u + i);
+    }
+    current.users[1].authority = ALARM_AUTH_MASTER;
+    current.users[1].partitions = 1u;
+    current.users[1].code_hash[0] = 0x77u;
+    TEST_ASSERT_EQUAL(BACKUP_OK, backup_check(BUF, len, NULL, &SCRATCH, &s));
+    TEST_ASSERT_EQUAL(BACKUP_OK, backup_restore_config_ex(BUF, len, &current, false, &SCRATCH,
+                                                          blob, sizeof(blob), &n));
+    TEST_ASSERT_EQUAL(ALARM_OK, alarm_config_decode(blob, n, &stored));
+    TEST_ASSERT_EQUAL_MEMORY(current.code_salt, stored.code_salt, sizeof(stored.code_salt));
+    TEST_ASSERT_EQUAL_MEMORY(current.users, stored.users, sizeof(stored.users));
+}
+
 /* CORE-CFG-021, CFG-006: the configuration a restore stores is the file's with no approval and
  * fresh binding revisions above the running panel's and the file's; what it can't make is
  * refused before anything is written. */
@@ -1261,5 +1327,6 @@ int main(void)
     RUN_TEST(test_collect_reads_what_the_policy_keeps);
     RUN_TEST(test_collect_fails_on_what_it_cannot_read);
     RUN_TEST(test_erasable_lists_the_policy_keys_or_fails);
+    RUN_TEST(test_restore_keeps_the_owner);
     return UNITY_END();
 }

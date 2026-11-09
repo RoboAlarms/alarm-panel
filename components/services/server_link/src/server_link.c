@@ -423,6 +423,13 @@ static void refresh_config(void)
         alarm_service_get_config(s_cfg) == ESP_OK) {
         s_have_cfg = true;
         s_cfg_seq = s_snap.config_seq;
+        /* CORE-PROG-014: the ceiling carries the Owner's "Let the Admin code open Setup mode" */
+        static int s_sent_installer_setup = -1;
+        const int now = alarm_service_installer_sets_up() ? 1 : 0;
+        if (now != s_sent_installer_setup) {
+            s_sent_installer_setup = now;
+            s_sync_steps |= SYNC_CEILING;
+        }
     }
 }
 
@@ -553,7 +560,7 @@ static void send_ceiling(void)
     xSemaphoreGive(s_lock);
     pj_writer_t w;
     pj_init(&w, s_buf, BUF_MAX);
-    proto_srv_ceiling(&w, &c);
+    proto_srv_ceiling(&w, &c, alarm_service_installer_sets_up());
     publish_w("/up/state", &w);
 }
 

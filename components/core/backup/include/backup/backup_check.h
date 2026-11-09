@@ -47,6 +47,18 @@ backup_result_t backup_check(const uint8_t *payload, size_t len, const char *boa
  * enough). payload is one backup_check() accepted. BACKUP_ERR_ARG: a NULL argument or out too
  * small; BACKUP_ERR_CONTENT: no alarm/config blob, or one that doesn't decode. Nothing is to be
  * written unless this says BACKUP_OK. */
+/* CFG-006: a restore never brings back an old master code (the owner's decision of 2026-11-08):
+ * the running master's slot and the Owner's settings (installer_setup_off, power_up_program) are
+ * kept; a file with another code salt (a replacement board's) keeps this panel's users whole.
+ * Applied to 'restored' in place. */
+void backup_keep_owner(const alarm_config_t *current, alarm_config_t *restored);
+/* As backup_restore_config, with backup_keep_owner() unless take_codes (the Owner asked for the
+ * file's codes). */
+BACKUP_MUST_CHECK
+backup_result_t backup_restore_config_ex(const uint8_t *payload, size_t len,
+                                         const alarm_config_t *current, bool take_codes,
+                                         backup_scratch_t *scratch, uint8_t *out, size_t cap,
+                                         size_t *out_len);
 BACKUP_MUST_CHECK
 backup_result_t backup_restore_config(const uint8_t *payload, size_t len,
                                       const alarm_config_t *current, backup_scratch_t *scratch,

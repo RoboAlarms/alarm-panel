@@ -186,7 +186,10 @@ void proto_srv_snapshot(pj_writer_t *w, const alarm_config_t *cfg, const alarm_s
 /* browser: bit (user - 1) has a browser sign-in (NULL = none). */
 void proto_srv_people(pj_writer_t *w, const alarm_config_t *cfg, const proto_srv_ceiling_t *c,
                       const uint8_t *browser);
-void proto_srv_ceiling(pj_writer_t *w, const proto_srv_ceiling_t *c);
+/* installer_setup: the Owner's "Let the Admin code open Setup mode" (CORE-PROG-014,
+ * alarm_config_installer_sets_up): the key "installer_setup", added 2026-11-08 (older panels don't
+ * send it: the server reads absent as true). */
+void proto_srv_ceiling(pj_writer_t *w, const proto_srv_ceiling_t *c, bool installer_setup);
 
 typedef struct {
     const char *power;

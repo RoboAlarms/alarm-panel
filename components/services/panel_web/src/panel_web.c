@@ -1410,9 +1410,9 @@ static esp_err_t updates_get(httpd_req_t *r, alarm_authority_t authority)
     } *v = web_alloc(sizeof(*v));
     if (!v)
         return error(r, "503 Service Unavailable", "Memory busy");
-    /* The update server and channel: shown to the installer alone until the Owner's pages are
-     * approved (WEB-026); POST updates takes the system master too (post_access). */
-    const bool installer = authority == ALARM_AUTH_INSTALLER;
+    /* The update server: the Owner's alone (the owner's decision of 2026-11-08: a server that
+     * replaces the firmware could lock the Owner out); the channel: Setup's. */
+    const bool installer = authority == ALARM_AUTH_MASTER;
     panel_ota_get_status(&v->st);
     const panel_ota_status_t *st = &v->st;
     /* Who the last run was for or stopped by, by name ("" for the system). */
@@ -1486,6 +1486,8 @@ static esp_err_t updates_get(httpd_req_t *r, alarm_authority_t authority)
     if (cfg)
         mbedtls_platform_zeroize(cfg, sizeof(*cfg)); /* it holds the code hashes too */
     free(cfg);
+    if (!installer && sets_up(authority))
+        cJSON_AddStringToObject(o, "channel", st->channel); /* the Admin: the channel alone */
     if (installer) {
         /* The domain only: the full address is never shown (OTA-017). */
         cJSON *srv = cJSON_CreateObject();
@@ -1803,12 +1805,12 @@ static cJSON *status(session_t *s, alarm_authority_t authority)
     cJSON_AddBoolToObject(access, "users", allowed(authority, ACC_USERS));
     cJSON_AddBoolToObject(access, "shared", allowed(authority, ACC_SHARED));
     cJSON_AddBoolToObject(access, "system", allowed(authority, ACC_SYSTEM));
-    /* setup: the installer's pages may be used (the server checks each request). installer: the
-     * browser shows them - still the installer alone until the pages for the Owner are approved
-     * (docs/features/31 mockup, WEB-026). */
+    /* setup and installer (the older name): the Setup pages - the system master's, and the Admin
+     * (installer) code's while the Owner allows it (BL-090, approved 2026-11-08). */
     cJSON_AddBoolToObject(access, "setup", allowed(authority, ACC_INSTALLER));
-    cJSON_AddBoolToObject(access, "installer",
-                          authority == ALARM_AUTH_INSTALLER && allowed(authority, ACC_INSTALLER));
+    cJSON_AddBoolToObject(access, "installer", allowed(authority, ACC_INSTALLER));
+    /* CORE-PROG-014: the Owner's "Let the Admin code open Setup mode", read-only here. */
+    cJSON_AddBoolToObject(o, "installer_opens_setup", alarm_service_installer_sets_up());
     /* Arming and disarming: never the installer's (BL-187), anyone else's who has a code. */
     cJSON_AddBoolToObject(access, "arm",
                           authority != ALARM_AUTH_NONE && authority != ALARM_AUTH_INSTALLER);
@@ -3163,6 +3165,11 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
                    : e == ESP_ERR_NOT_SUPPORTED ? error(r, "409 Conflict", "not_stoppable")
                                                 : error(r, "409 Conflict", esp_err_to_name(e));
         }
+        /* The update server is the Owner's alone (the owner's decision of 2026-11-08): a server
+         * that replaces the firmware could lock the Owner out. */
+        if ((!strcmp(op, "server_check") || !strcmp(op, "server")) &&
+            authority != ALARM_AUTH_MASTER)
+            return error(r, "403 Forbidden", "owner_only");
         if (!strcmp(op, "server_check")) { /* answers at once; GET updates' check follows it */
             const esp_err_t e = panel_ota_server_check(str(o, "domain"));
             return e == ESP_OK                  ? okay(r)
@@ -3228,11 +3235,11 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
         if (!atomic_load(&dev_on))
             return error(r, "403 Forbidden", "Developer mode is disabled");
         /* The certificate enrolled here signs in as the master and updates the firmware,
-         * for as long as it exists: only those who can switch developer mode on (the installer
-         * and the system master, the owner's decision of 2026-11-08) get to choose it, with their
-         * password again (recent_password()). */
-        if (!sets_up(authority))
-            return error(r, "403 Forbidden", "Installer authority required");
+         * for as long as it exists: the Owner's alone (the owner's decision of 2026-11-08: no
+         * Admin may leave a way in that outranks the Owner), with their password again
+         * (recent_password()). */
+        if (authority != ALARM_AUTH_MASTER)
+            return error(r, "403 Forbidden", "owner_only");
         esp_err_t refused = ESP_OK;
         if (!recent_password(r, s, str(o, "me_password"), &refused))
             return refused;
@@ -3699,6 +3706,14 @@ static esp_err_t backup_put(httpd_req_t *r)
         return error(r, "409 Conflict", "locked");
     if (r->content_len < BACKUP_OVERHEAD || r->content_len > BACKUP_PAYLOAD_MAX + BACKUP_OVERHEAD)
         return error(r, "400 Bad Request", "backup_format");
+    /* CFG-006: a restore keeps the current master code and the Owner's settings; the backup's
+     * codes come back only when the Owner asks (the owner's decision of 2026-11-08). */
+    char take[8] = {0};
+    const bool take_codes = httpd_req_get_hdr_value_str(r, "X-Restore-Codes", take, sizeof(take)) ==
+                                ESP_OK &&
+                            !strcmp(take, "yes");
+    if (take_codes && authority != ALARM_AUTH_MASTER)
+        return error(r, "403 Forbidden", "owner_only");
     char hex[2 * BACKUP_PASSWORD_MAX + 2] = {0}, password[BACKUP_PASSWORD_MAX + 1];
     {
         char me_hex[2 * WEB_PASSWORD_MAX + 2] = {0}, me[WEB_PASSWORD_MAX + 1] = {0};
@@ -3740,7 +3755,8 @@ static esp_err_t backup_put(httpd_req_t *r)
     backup_result_t why = BACKUP_ERR_FORMAT;
     esp_err_t e = ESP_ERR_INVALID_ARG;
     if (got == r->content_len)
-        e = backup_service_restore(file, got, password, SOURCE_NOW, s->user, &sum, &why);
+        e = backup_service_restore(file, got, password, SOURCE_NOW, s->user, take_codes, &sum,
+                                   &why);
     mbedtls_platform_zeroize(password, sizeof(password));
     heap_caps_free(file);
     if (e == ESP_ERR_INVALID_STATE)

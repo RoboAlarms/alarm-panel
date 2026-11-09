@@ -404,7 +404,7 @@ void proto_srv_people(pj_writer_t *w, const alarm_config_t *cfg, const proto_srv
     pj_obj_end(w);
 }
 
-void proto_srv_ceiling(pj_writer_t *w, const proto_srv_ceiling_t *c)
+void proto_srv_ceiling(pj_writer_t *w, const proto_srv_ceiling_t *c, bool installer_setup)
 {
     pj_obj(w);
     pj_kstr(w, "t", "ceiling");
@@ -420,6 +420,7 @@ void proto_srv_ceiling(pj_writer_t *w, const proto_srv_ceiling_t *c)
     pj_kbool(w, "remote_setup", c->remote_setup);
     pj_kbool(w, "remote_people", c->remote_people);
     pj_kbool(w, "ask_code", c->ask_code);
+    pj_kbool(w, "installer_setup", installer_setup);
     pj_obj_end(w);
 }
 

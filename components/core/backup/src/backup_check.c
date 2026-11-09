@@ -104,9 +104,31 @@ backup_result_t backup_check(const uint8_t *payload, size_t len, const char *boa
     return config ? BACKUP_OK : BACKUP_ERR_CONTENT;
 }
 
+void backup_keep_owner(const alarm_config_t *current, alarm_config_t *restored)
+{
+    if (memcmp(current->code_salt, restored->code_salt, sizeof(current->code_salt)) == 0) {
+        restored->users[ALARM_USER_MASTER - 1u] = current->users[ALARM_USER_MASTER - 1u];
+    } else {
+        /* another salt (a replacement board's): the file's code hashes can't sit beside this
+         * panel's, so the users stay this panel's */
+        memcpy(restored->code_salt, current->code_salt, sizeof(restored->code_salt));
+        memcpy(restored->users, current->users, sizeof(restored->users));
+    }
+    restored->opt.installer_setup_off = current->opt.installer_setup_off;
+    restored->opt.power_up_program = current->opt.power_up_program;
+}
+
 backup_result_t backup_restore_config(const uint8_t *payload, size_t len,
                                       const alarm_config_t *current, backup_scratch_t *scratch,
                                       uint8_t *out, size_t cap, size_t *out_len)
+{
+    return backup_restore_config_ex(payload, len, current, true, scratch, out, cap, out_len);
+}
+
+backup_result_t backup_restore_config_ex(const uint8_t *payload, size_t len,
+                                         const alarm_config_t *current, bool take_codes,
+                                         backup_scratch_t *scratch, uint8_t *out, size_t cap,
+                                         size_t *out_len)
 {
     if (payload == NULL || current == NULL || scratch == NULL || out == NULL ||
         out_len == NULL) {
@@ -137,6 +159,9 @@ backup_result_t backup_restore_config(const uint8_t *payload, size_t len,
             return BACKUP_ERR_CONTENT;
         }
         alarm_config_voice_restore(current, &scratch->cfg);
+        if (!take_codes) {
+            backup_keep_owner(current, &scratch->cfg);
+        }
         size_t n = 0u;
         if (alarm_config_encode(&scratch->cfg, out, cap, &n) != ALARM_OK) {
             return BACKUP_ERR_ARG;

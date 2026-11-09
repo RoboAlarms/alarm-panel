@@ -41,8 +41,10 @@ esp_err_t backup_service_make(const char *password, const alarm_source_t *src, u
  * armed or sounding; ESP_ERR_INVALID_ARG: the file was refused (*why, and *summary for what
  * it held); ESP_FAIL: writing failed part way (the panel restarts anyway: restore again).
  * summary may be NULL. */
+/* take_codes: the file's master code and the Owner's settings too (only the Owner asks this);
+ * otherwise they stay the running panel's (backup_keep_owner). */
 esp_err_t backup_service_restore(const uint8_t *file, size_t len, const char *password,
-                                 const alarm_source_t *src, uint8_t user,
+                                 const alarm_source_t *src, uint8_t user, bool take_codes,
                                  backup_summary_t *summary, backup_result_t *why);
 
 /* The PSA port against the frozen format-1 file (components/core/backup/test): true when this

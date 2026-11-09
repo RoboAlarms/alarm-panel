@@ -422,8 +422,41 @@ static esp_err_t write_config(const uint8_t *blob, size_t len)
     return err;
 }
 
+/* The Owner's browser sign-in as it is now ("weblogin"/"u02"), kept through a restore that keeps
+ * the Owner's code (backup_keep_owner): NULL with *len 0 when there is none. */
+#define OWNER_LOGIN_KEY "u02"
+static uint8_t *owner_login_save(nvs_handle_t h, size_t *len)
+{
+    *len = 0;
+    size_t n = 0;
+    if (nvs_get_blob(h, OWNER_LOGIN_KEY, NULL, &n) != ESP_OK || n == 0) {
+        return NULL;
+    }
+    uint8_t *b = big(n);
+    if (b != NULL && nvs_get_blob(h, OWNER_LOGIN_KEY, b, &n) == ESP_OK) {
+        *len = n;
+        return b;
+    }
+    free(b);
+    return NULL;
+}
+
+static esp_err_t owner_login_put_back(nvs_handle_t h, uint8_t *b, size_t len)
+{
+    esp_err_t e = b != NULL ? nvs_set_blob(h, OWNER_LOGIN_KEY, b, len)
+                            : nvs_erase_key(h, OWNER_LOGIN_KEY);
+    if (e == ESP_ERR_NVS_NOT_FOUND) {
+        e = ESP_OK;
+    }
+    if (b != NULL) {
+        mbedtls_platform_zeroize(b, len);
+        free(b);
+    }
+    return e;
+}
+
 static esp_err_t apply(const uint8_t *payload, size_t len, const uint8_t *config,
-                       size_t config_len)
+                       size_t config_len, bool take_codes)
 {
     char *str = big(VALUE_MAX + 1u);
     if (str == NULL) {
@@ -440,6 +473,11 @@ static esp_err_t apply(const uint8_t *payload, size_t len, const uint8_t *config
         if (err != ESP_OK) {
             break;
         }
+        /* CFG-006: the Owner's sign-in stays the running panel's unless the Owner took the file's
+         * codes (the owner's decision of 2026-11-08) */
+        const bool keep_owner = !take_codes && strcmp(*ns, "weblogin") == 0;
+        size_t owner_len = 0;
+        uint8_t *owner = keep_owner ? owner_login_save(h, &owner_len) : NULL;
         err = clear_namespace(h, *ns);
         backup_reader_t r;
         backup_meta_t meta;
@@ -473,6 +511,12 @@ static esp_err_t apply(const uint8_t *payload, size_t len, const uint8_t *config
                 }
             }
         }
+        if (keep_owner) {
+            const esp_err_t kept = owner_login_put_back(h, owner, owner_len);
+            if (err == ESP_OK) {
+                err = kept;
+            }
+        }
         if (err == ESP_OK) {
             err = nvs_commit(h);
         }
@@ -484,7 +528,7 @@ static esp_err_t apply(const uint8_t *payload, size_t len, const uint8_t *config
 }
 
 esp_err_t backup_service_restore(const uint8_t *file, size_t len, const char *password,
-                                 const alarm_source_t *src, uint8_t user,
+                                 const alarm_source_t *src, uint8_t user, bool take_codes,
                                  backup_summary_t *summary, backup_result_t *why)
 {
     *why = BACKUP_OK;
@@ -546,8 +590,9 @@ esp_err_t backup_service_restore(const uint8_t *file, size_t len, const char *pa
             err = alarm_service_get_config(current);
         }
         if (err == ESP_OK) {
-            const backup_result_t r = backup_restore_config(payload, got, current, scratch, config,
-                                                            ALARM_CONFIG_BLOB_MAX, &config_len);
+            const backup_result_t r =
+                backup_restore_config_ex(payload, got, current, take_codes, scratch, config,
+                                         ALARM_CONFIG_BLOB_MAX, &config_len);
             if (r != BACKUP_OK) {
                 ESP_LOGE(TAG, "the file's configuration: %s", backup_result_name(r));
                 err = ESP_FAIL;
@@ -557,7 +602,7 @@ esp_err_t backup_service_restore(const uint8_t *file, size_t len, const char *pa
             ESP_LOGE(TAG, "restore abandoned before writing: %s", esp_err_to_name(err));
             err = ESP_FAIL;
         } else {
-            err = apply(payload, got, config, config_len);
+            err = apply(payload, got, config, config_len, take_codes);
             if (err != ESP_OK) {
                 ESP_LOGE(TAG, "restore stopped part way: %s", esp_err_to_name(err));
                 err = ESP_FAIL;

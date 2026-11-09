@@ -223,7 +223,9 @@ CrowPanel Advanced 7" just out of its box. Steps 1 and 2 are the ones you can't 
    Espressif's Installation Manager (EIM) or a manual install, and for the PC builds GCC, CMake
    and Ninja on PATH (CLion's bundled toolchain is found by itself). `tools/idf.ps1` reads the
    default `C:\Espressif` EIM layout (set `IDF_EIM_JSON` if yours is elsewhere); `tools/idf.sh`
-   takes an activated shell, `$IDF_PATH`, an EIM installation or `~/esp/esp-idf`. Run the host
+   takes an activated shell, `$IDF_PATH`, an EIM installation or `~/esp/esp-idf`. It reads an
+   EIM installation's environment with `activate_idf_v6.1.sh -e` instead of sourcing that script,
+   which exits when sourced from another script, so it builds non-interactively. Run the host
    tests and the preview ("Build and test") before you touch the board.
 2. **Back up the factory flash before you write anything.** The board ships with Elecrow's demo
    and there is no download of it: this backup is the only way back. `esptool` comes with

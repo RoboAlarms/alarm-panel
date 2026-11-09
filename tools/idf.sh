@@ -110,12 +110,43 @@ sys.exit(2)
 PY
 }
 
+# EIM's activate_idf_v*.sh is written for an interactive shell: sourced from this script it
+# exits (it takes bash's $0 for "not sourced", and under set -u it stops at $ZSH_VERSION), with
+# its message on the stdout we discard. Run with -e it prints the environment instead
+# (PATH=<tool dirs>, IDF_PATH=..., IDF_PYTHON_ENV_PATH=...), which is all a build needs.
+import_eim_env() {
+    local script=$1 lines line key value
+    lines=$(sh "$script" -e </dev/null 2>/dev/null) || return 1
+    printf '%s\n' "$lines" | grep -q '^IDF_PATH=' || return 1
+    while IFS= read -r line; do
+        key=${line%%=*}
+        value=${line#*=}
+        case "$key" in
+            PATH) PATH="$value:$PATH" ;;
+            ''|SYSTEM_PATH|*[!A-Za-z0-9_]*) ;;
+            *) export "$key=$value" ;;
+        esac
+    done <<< "$lines"
+    export PATH
+    [ -n "${IDF_PYTHON_ENV_PATH:-}" ] && export VIRTUAL_ENV=$IDF_PYTHON_ENV_PATH
+    return 0
+}
+
+# An EIM environment (activate_idf_v*.sh in this or a parent shell) exports IDF_PATH and
+# IDF_PYTHON_ENV_PATH but makes idf.py a shell function, which a child process can't see.
+eim_env_active() {
+    [ -n "${IDF_PATH:-}" ] && [ -n "${IDF_PYTHON_ENV_PATH:-}" ] &&
+        [ -f "$IDF_PATH/tools/idf.py" ] && [ -x "$IDF_PYTHON_ENV_PATH/bin/python" ]
+}
+
 activate_idf() {
-    if command -v idf.py >/dev/null 2>&1; then
-        return 0                      # already activated (you ran export.sh)
+    if command -v idf.py >/dev/null 2>&1 || eim_env_active; then
+        return 0                      # already activated (export.sh or EIM's activate script)
     fi
     local script=
-    if [ -n "${IDF_PATH:-}" ] && [ -f "$IDF_PATH/export.sh" ]; then
+    # EIM's IDF_PATH has an export.sh too, but it looks for a python_env that EIM doesn't make.
+    if [ -n "${IDF_PATH:-}" ] && [ -f "$IDF_PATH/export.sh" ] &&
+        [ ! -f "${IDF_TOOLS_PATH:-/nonexistent}/eim_idf.json" ]; then
         script=$IDF_PATH/export.sh
     else
         local json candidates=()
@@ -153,6 +184,11 @@ activate_idf() {
        IDF_EIM_JSON=/path/to/eim_idf.json
      ...or activate it yourself first:  . \$IDF_PATH/export.sh"
     [ -f "$script" ] || die "ESP-IDF activation script not found: $script"
+    if [ "${script##*/}" != export.sh ]; then
+        import_eim_env "$script" || die "running $script -e did not print the ESP-IDF environment"
+        eim_env_active || die "$script -e named no usable IDF_PATH / IDF_PYTHON_ENV_PATH"
+        return 0
+    fi
     # shellcheck disable=SC1090
     . "$script" >/dev/null
     command -v idf.py >/dev/null 2>&1 || die "sourcing $script did not put idf.py on PATH"
@@ -160,8 +196,15 @@ activate_idf() {
 
 activate_idf
 
+# export.sh puts idf.py on PATH; EIM only defines a shell function for it, so call it directly.
+if command -v idf.py >/dev/null 2>&1 && [ -f "$(command -v idf.py)" ]; then
+    idf_py=(idf.py)
+else
+    idf_py=("$IDF_PYTHON_ENV_PATH/bin/python" "$IDF_PATH/tools/idf.py")
+fi
+
 # The firmware pins ESP-IDF v6.1; other versions may configure or build differently.
-idf_version=$(idf.py --version 2>/dev/null | head -n 1 || true)
+idf_version=$("${idf_py[@]}" --version 2>/dev/null | head -n 1 || true)
 case "$idf_version" in
     *v6.1*) ;;
     *) note "idf.sh: warning: this project is built with ESP-IDF v6.1, found: ${idf_version:-unknown}" ;;
@@ -234,4 +277,4 @@ set -- -B "$build_dir" -D "SDKCONFIG=$sdkconfig" -D "SDKCONFIG_DEFAULTS=$default
 [ ${#idf_args[@]} -gt 0 ] && set -- "$@" "${idf_args[@]}"
 
 cd "$proj_dir"
-exec idf.py "$@"
+exec "${idf_py[@]}" "$@"

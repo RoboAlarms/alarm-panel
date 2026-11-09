@@ -132,7 +132,7 @@ step 5 ([22](../22-Zone-Sources/README.md)).
    goes to the alarm service so numbering continues.
 5. `alarm_service_start()`: load the configuration blob and runtime state from NVS (factory
    defaults on first boot), start the engine and the **alarm task**. The panel protects from
-   here on; the 2-minute power-up recovery window for a lost installer code starts now.
+   here on; the 2-minute power-up recovery window for a lost Admin code starts now.
 6. Backlight PWM (off; set up in step 1), MIPI-DSI, the EK79007's hardware
    reset once the lanes are idle, its init, the LVGL port, GT911 touch, UI with the stored
    preferences (the setup wizard on first boot), backlight on once a drawn picture is on the panel

@@ -77,11 +77,11 @@ static void installer_checked(const ui_call_t *c)
         if (r == ALARM_ERR_NOT_AUTHORIZED && user == ALARM_USER_INSTALLER) {
             /* TR: the code pad's hint after the installer code was refused because the owner
              * turned its installer mode off. At most 95 bytes */
-            ui_pad_error(TR("The owner turned installer mode off for the installer code"));
+            ui_pad_error(TR("The owner turned Setup mode off for the Admin code"));
             return;
         }
         ui_pad_error(r == ALARM_ERR_INVALID_CODE     ? TR("Wrong code, try again")
-                     : r == ALARM_ERR_NOT_AUTHORIZED ? TR("That isn't the master or installer code")
+                     : r == ALARM_ERR_NOT_AUTHORIZED ? TR("That isn't the master or Admin code")
                      : r == ALARM_ERR_BAD_STATE      ? TR("Disarm first, and silence any alarm")
                                                      : ui_result_text(r));
         return;
@@ -105,7 +105,7 @@ static void ask_code(void *ctx)
     (void)ctx;
     /* The system master's code opens it too: the Owner's, which no code outranks (CORE-PROG-001) */
     ui_pad_ask(HOST_SETTINGS, UI_ICON_WRENCH, TR("Installer mode"),
-               TR("Enter the master or installer code"), ui_tone_amber(), installer_code);
+               TR("Enter the master or Admin code"), ui_tone_amber(), installer_code);
 }
 
 static void recovery_confirmed(void)
@@ -390,7 +390,7 @@ static void build_locked_keypad(lv_obj_t *body, char *note, size_t nlen)
         }
         ui_paragraph(body, text, ui_tone_amber());
     }
-    lv_obj_t *enter = ui_row_action(body, UI_ICON_KEY, TR("Enter the master or installer code"),
+    lv_obj_t *enter = ui_row_action(body, UI_ICON_KEY, TR("Enter the master or Admin code"),
                                     ui_tone_amber(), ask_code, NULL);
     if (elsewhere) {
         ui_row_disable(enter);
@@ -412,7 +412,7 @@ static void build_locked(lv_obj_t *body, char *note, size_t nlen)
     }
     /* TR: the line under the page title. At most 127 bytes */
     i18n_utf8_copy(note, nlen, TR("Installer settings change how the alarm works"));
-    ui_row_action(body, UI_ICON_KEY, TR("Enter the master or installer code"), ui_tone_amber(),
+    ui_row_action(body, UI_ICON_KEY, TR("Enter the master or Admin code"), ui_tone_amber(),
                   ask_code, NULL);
     const alarm_ms_t now = S.be.now_ms(S.be.ctx);
     const alarm_ms_t elapsed = now > S.snap.taken_ms ? now - S.snap.taken_ms : 0u;
@@ -527,7 +527,7 @@ static void build_menu(lv_obj_t *body, char *note, size_t nlen)
     ui_row_link(body, UI_ICON_HOUSE, ui_tone_violet(), TR("System name"),
                 TR("Shown on the screen and in the event log"), S.edit->partitions[part_index()].name,
                 UI_ICON_CHEVRON_RIGHT, open_page, (void *)(intptr_t)PAGE_PARTITION);
-    ui_row_link(body, UI_ICON_KEY_ROUND, ui_tone_amber(), TR("Installer and master codes"),
+    ui_row_link(body, UI_ICON_KEY_ROUND, ui_tone_amber(), TR("Master and Admin codes"),
                 S.snap.default_codes != 0u ? TR("Factory codes still in use")
                                            : TR("Changed from the factory codes"),
                 NULL, UI_ICON_CHEVRON_RIGHT, open_page, (void *)(intptr_t)PAGE_CODES);
@@ -1913,7 +1913,7 @@ static bool new_code(const char *code)
     }
     ui_pad_cancel();
     ui_refresh(true);
-    ui_toast(s_code_user == ALARM_USER_INSTALLER ? TR("Installer code changed")
+    ui_toast(s_code_user == ALARM_USER_INSTALLER ? TR("Admin code changed")
                                                  : TR("Master code changed"));
     ui_page_rebuild();
     return true;
@@ -1923,7 +1923,7 @@ static void change_code(void *ctx)
 {
     s_code_user = (uint8_t)(uintptr_t)ctx;
     ui_pad_ask_new(HOST_SETTINGS, UI_ICON_KEY_ROUND,
-                   s_code_user == ALARM_USER_INSTALLER ? TR("New installer code") : TR("New master code"),
+                   s_code_user == ALARM_USER_INSTALLER ? TR("New Admin code") : TR("New master code"),
                    new_code);
 }
 
@@ -1954,7 +1954,7 @@ static void code_row(lv_obj_t *body, uint8_t user, bool may)
                                 : TR_C("code state", "Changed");
     lv_obj_t *row = ui_row_link(body, UI_ICON_KEY_ROUND,
                                 factory || none ? ui_tone_amber() : ui_tone_green(),
-                                user == ALARM_USER_INSTALLER ? TR("Installer code")
+                                user == ALARM_USER_INSTALLER ? TR("Admin code")
                                                              : TR("Master code"),
                                 detail, NULL, UI_ICON_CHEVRON_RIGHT, change_code,
                                 (void *)(uintptr_t)user);
@@ -1966,15 +1966,15 @@ static void code_row(lv_obj_t *body, uint8_t user, bool may)
 static void build_codes(lv_obj_t *body, char *note, size_t nlen)
 {
     /* TR: the line under the page title. At most 127 bytes */
-    i18n_utf8_copy(note, nlen, TR("The owner's code and the installer's"));
+    i18n_utf8_copy(note, nlen, TR("The owner's code and the Admin's"));
     const bool master_none = S.cfg->users[ALARM_USER_MASTER - 1u].authority == ALARM_AUTH_NONE;
     const bool by_installer = S.auth_user == ALARM_USER_INSTALLER;
     code_row(body, ALARM_USER_MASTER, !by_installer || master_none);
     code_row(body, ALARM_USER_INSTALLER, S.auth_user != 0u);
     /* CORE-PROG-014: the Owner's setting, changed only by the master code here */
     lv_obj_t *t = ui_row_toggle(
-        body, TR("Let the installer code open installer mode"),
-        owner_here() ? TR("On: the installer can change settings. The master code always can")
+        body, TR("Let the Admin code open Setup mode"),
+        owner_here() ? TR("On: the Admin can change settings. The master code always can")
                      : TR("Only the master code changes this"),
         S.edit->opt.installer_setup_off == 0u, on_installer_setup, NULL);
     if (!owner_here()) {
@@ -1987,8 +1987,8 @@ static void build_codes(lv_obj_t *body, char *note, size_t nlen)
                      ? TR("Hand the panel to the owner to make the master code: it arms, disarms "
                           "and outranks every other code. You can't change it afterwards.")
                      : TR("The master code is the owner's: it outranks every other code. The "
-                          "installer code programs the panel; it never arms or disarms. Everyone "
-                          "else's code, the installer's included, is in Settings > Users."),
+                          "Admin code programs the panel; it never arms or disarms. Everyone "
+                          "else's code, the Admin's included, is in Settings > Users."),
                  ui_tone_gray());
 }
 
@@ -2080,7 +2080,7 @@ bool ui_installer_build(page_id_t id, int32_t arg, lv_obj_t *body, char *title, 
         return true;
     case PAGE_CODES:
         /* TR: the page title. At most 47 bytes */
-        i18n_utf8_copy(title, tlen, TR("Installer and master codes"));
+        i18n_utf8_copy(title, tlen, TR("Master and Admin codes"));
         build_codes(body, note, nlen);
         return true;
     case PAGE_RESET:

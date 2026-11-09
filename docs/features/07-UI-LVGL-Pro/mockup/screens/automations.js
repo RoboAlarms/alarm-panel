@@ -69,8 +69,8 @@ auto({id: 'automations-problems', shot: 'automations_problems', title: 'Automati
 
 auto({id: 'automations-locked', shot: 'automations_locked', title: 'Automations: asks for the code first',
   notes: 'Without the system master\'s or the installer\'s code the page is the locked one (ui_settings_locked with ACCESS_SYSTEM). A partition master, standard, arm-only or guest code doesn\'t open it (docs/features/14 gains the row).',
-  page: {title: 'Automations', note: 'Automations are changed with the master or installer code.', body:
-    M.row_action({glyph: 'key', text: 'Enter the master or installer code', color: 'violet'})}});
+  page: {title: 'Automations', note: 'Automations are changed with the master or Admin code.', body:
+    M.row_action({glyph: 'key', text: 'Enter the master or Admin code', color: 'violet'})}});
 
 // ---- adding one: the ideas, then the pickers ----
 const LIST_PAGE = {title: 'Automations', note: '5 of 16 automations', body: ADD() + rows(LIST)};
@@ -100,8 +100,8 @@ auto({id: 'automation-add', shot: 'automation_ideas', title: 'Adding: ideas to s
   over: M.pick_sheet({title: 'Add an automation', fit: true, rows: [IDEA.bedtime, IDEA.morning, IDEA.remind, IDEA.armed,
     IDEA.open, IDEA.door, IDEA.chime, IDEA.scratch].join('')})});
 
-auto({id: 'automation-add-installer', shot: 'automation_ideas_installer', title: 'Adding with the installer code: arming ideas too',
-  notes: 'The installer sets up most new panels (the headless panel\'s phone setup signs in as the installer). The installer gets the arming ideas and Arm the panel; each arming automation acts as the system master, checked by the panel at every arming, so it is never more than the master could do (BL-224 N1). No "Disarm at opening time" and no Disarm action: the installer code never disarms (USR-001). A panel with an output for automations adds "Switch an output when an alarm sounds".',
+auto({id: 'automation-add-installer', shot: 'automation_ideas_installer', title: 'Adding with the Admin code: arming ideas too',
+  notes: 'The installer sets up most new panels (the headless panel\'s phone setup signs in as the installer). The installer gets the arming ideas and Arm the panel; each arming automation acts as the system master, checked by the panel at every arming, so it is never more than the master could do (BL-224 N1). No "Disarm at opening time" and no Disarm action: the Admin code never disarms (USR-001). A panel with an output for automations adds "Switch an output when an alarm sounds".',
   page: EMPTY_PAGE,
   over: M.pick_sheet({title: 'Add an automation', fit: true, rows: [IDEA.bedtime, IDEA.morning, IDEA.remind, IDEA.armed,
     IDEA.door, IDEA.chime, IDEA.output, IDEA.scratch].join('')})});

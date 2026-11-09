@@ -1112,7 +1112,7 @@ static void keypad_time_build(lv_obj_t *body, bool unlocked, char *note, size_t 
     if (!unlocked) {
         /* TR: a keypad's Time and language without a code, the line under the title. At most 127
          * bytes */
-        i18n_utf8_copy(note, nlen, TR("A master or installer code changes the language"));
+        i18n_utf8_copy(note, nlen, TR("A master or Admin code changes the language"));
         /* TR: a locked page: its title (cut to 31 bytes). At most 31 bytes */
         ui_settings_unlock_row(body, ACCESS_SHARED, TR("Time and language"));
         return;
@@ -1132,7 +1132,7 @@ void ui_time_build(lv_obj_t *body, bool unlocked, char *note, size_t nlen)
     if (!unlocked) {
         /* TR: Settings > Time and language without a code, the line under the title. At most 127
          * bytes */
-        i18n_utf8_copy(note, nlen, TR("A master or installer code changes the time zone and the language"));
+        i18n_utf8_copy(note, nlen, TR("A master or Admin code changes the time zone and the language"));
         ui_lang_clock_row(body); /* this keypad's and anyone's */
         /* TR: a locked page: its title (cut to 31 bytes). At most 31 bytes */
         ui_settings_unlock_row(body, ACCESS_SHARED, TR("Time and language"));

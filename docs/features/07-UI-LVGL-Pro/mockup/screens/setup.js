@@ -66,13 +66,13 @@ M.screen({
 
 M.screen({
   id: 'setup-codes-one', area: 'Setup', title: 'The first code', shot: 'setup_codes',
-  notes: 'A new or factory-reset panel has no codes (CORE-USR-041). The person at the panel makes the first: the owner\'s master code, or a helper\'s installer code for someone else\'s home (the owner makes the master code at the handover: Installer > Installer and master codes). Next stays off until a code is made. A panel that still has an older version\'s factory codes shows the old "Change the factory codes" rows instead.',
+  notes: 'A new or factory-reset panel has no codes (CORE-USR-041). The person at the panel makes the first: the owner\'s master code, or a helper\'s Admin code for someone else\'s home (the owner makes the master code at the handover: Installer > Master and Admin codes). Next stays off until a code is made. A panel that still has an older version\'s factory codes shows the old "Change the factory codes" rows instead.',
   render: () => M.wizard({step: 3, glyph: 'key', title: 'Make your code', leaveSide: true,
     note: 'This panel has no codes yet. The code you make now arms and disarms it, and no other code outranks it.',
     back: true, next: 'Next',
     body: [
       M.row_link({glyph: 'house', color: 'green', title: 'This alarm is mine', detail: 'Your code is the master code'}),
-      M.row_link({glyph: 'wrench', color: 'blue', title: 'I\'m setting it up for someone else', detail: 'Your installer code; the owner makes theirs at the handover'}),
+      M.row_link({glyph: 'wrench', color: 'blue', title: 'I\'m setting it up for someone else', detail: 'Your Admin code; the owner makes theirs at the handover'}),
     ].join('')}),
 });
 
@@ -83,6 +83,6 @@ M.screen({
     back: true, next: 'Next',
     body: [
       M.row_link({glyph: 'shield-check', color: 'green', title: 'Master code', detail: 'Made · arms, disarms, adds users', trail: ''}),
-      M.row_link({glyph: 'key-round', color: 'gray', title: 'Installer code', detail: 'None · the master code does everything it does', trail: ''}),
+      M.row_link({glyph: 'key-round', color: 'gray', title: 'Admin code', detail: 'None · the master code does everything it does', trail: ''}),
     ].join('')}),
 });

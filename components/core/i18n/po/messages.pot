@@ -773,9 +773,8 @@ msgstr ""
 
 #. What a user's code may do (its level). At most 23 bytes.
 #: components/core/notify/src/notify_words.c
-#: components/services/panel_web/web/panel-pages.js
 msgctxt "user level"
-msgid "Installer"
+msgid "Admin"
 msgstr ""
 
 #. What a user's code may do (its level). At most 23 bytes.
@@ -3658,6 +3657,11 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_text.c
 msgctxt "sensor kind"
 msgid "Keyswitch"
+msgstr ""
+
+#: components/services/panel_web/web/panel-pages.js
+msgctxt "user level"
+msgid "Installer"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9206,10 +9210,7 @@ msgstr ""
 msgid "Review"
 msgstr ""
 
-#. A list row's title (one line; a long one ends in ...).
-#. the page title. At most 47 bytes
 #: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_installer.c
 msgid "Installer and master codes"
 msgstr ""
 
@@ -16700,7 +16701,7 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_app.c
 #: components/ui/alarm_ui/src/ui_settings.c
 #: components/ui/alarm_ui/src/ui_walk.c
-msgid "Enter a master or installer code"
+msgid "Enter a master or Admin code"
 msgstr ""
 
 #. Activity, a warning row at the top: how many events the log could not save. At most 63 bytes
@@ -16724,7 +16725,7 @@ msgstr ""
 
 #. Activity, under the warning: who can clear it. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_app.c
-msgid "Only the master or installer code clears this warning."
+msgid "Only the master or Admin code clears this warning."
 msgstr ""
 
 #. Activity, the button at the end of the list that loads earlier events
@@ -18151,7 +18152,7 @@ msgstr ""
 
 #. a toast when an automation can't be saved. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_automations.c
-msgid "The master or installer code saves this one"
+msgid "The master or Admin code saves this one"
 msgstr ""
 
 #. a toast when an automation can't be saved. At most 127 bytes
@@ -18316,7 +18317,7 @@ msgstr ""
 
 #. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_automations.c
-msgid "Automations are changed with the master or installer code."
+msgid "Automations are changed with the master or Admin code."
 msgstr ""
 
 #. a temperature on a Smart Home tile, in the source's own unit
@@ -19045,13 +19046,13 @@ msgstr ""
 
 #. the code pad's hint after the installer code was refused because the owner turned its installer mode off. At most 95 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "The owner turned installer mode off for the installer code"
+msgid "The owner turned Setup mode off for the Admin code"
 msgstr ""
 
 #. The code pad's hint line. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_link.c
-msgid "That isn't the master or installer code"
+msgid "That isn't the master or Admin code"
 msgstr ""
 
 #. The code pad's hint line. At most 127 bytes.
@@ -19065,7 +19066,7 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "Enter the master or installer code"
+msgid "Enter the master or Admin code"
 msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
@@ -19302,6 +19303,12 @@ msgstr ""
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
 msgid "Shown on the screen and in the event log"
+msgstr ""
+
+#. A list row's title (one line; a long one ends in ...).
+#. the page title. At most 47 bytes
+#: components/ui/alarm_ui/src/ui_installer.c
+msgid "Master and Admin codes"
 msgstr ""
 
 #. A list row's detail line, under its title (one line).
@@ -19614,6 +19621,7 @@ msgstr ""
 
 #. A switch row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
+#: components/ui/alarm_ui/src/ui_update.c
 msgid "Only the master code changes this"
 msgstr ""
 
@@ -19905,7 +19913,7 @@ msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Installer code changed"
+msgid "Admin code changed"
 msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
@@ -19916,7 +19924,7 @@ msgstr ""
 #. The code pad's title. At most 63 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "New installer code"
+msgid "New Admin code"
 msgstr ""
 
 #. The code pad's title. At most 63 bytes.
@@ -19948,7 +19956,7 @@ msgstr ""
 #. setup, the installer code row: made, or none (it isn't needed). At most 95 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Installer code"
+msgid "Admin code"
 msgstr ""
 
 #. A list row's title (one line; a long one ends in ...).
@@ -19960,17 +19968,17 @@ msgstr ""
 
 #. the line under the page title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "The owner's code and the installer's"
+msgid "The owner's code and the Admin's"
 msgstr ""
 
 #. A switch row's title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Let the installer code open installer mode"
+msgid "Let the Admin code open Setup mode"
 msgstr ""
 
 #. A switch row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "On: the installer can change settings. The master code always can"
+msgid "On: the Admin can change settings. The master code always can"
 msgstr ""
 
 #. Installer > codes, while a panel set up for someone else has no master code yet. At most 191 bytes
@@ -19980,7 +19988,7 @@ msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "The master code is the owner's: it outranks every other code. The installer code programs the panel; it never arms or disarms. Everyone else's code, the installer's included, is in Settings > Users."
+msgid "The master code is the owner's: it outranks every other code. The Admin code programs the panel; it never arms or disarms. Everyone else's code, the Admin's included, is in Settings > Users."
 msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
@@ -20594,7 +20602,7 @@ msgstr ""
 
 #. A locked page: why it needs a code, under its title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_integrations.c
-msgid "The master or installer code connects other systems"
+msgid "The master or Admin code connects other systems"
 msgstr ""
 
 #. Time and language, the language list: a translation still being checked. At most 63 bytes
@@ -21574,7 +21582,7 @@ msgstr ""
 
 #. a keypad's Time and language without a code, the line under the title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_net.c
-msgid "A master or installer code changes the language"
+msgid "A master or Admin code changes the language"
 msgstr ""
 
 #. a locked page: its title (cut to 31 bytes). At most 31 bytes
@@ -21589,7 +21597,7 @@ msgstr ""
 
 #. Settings > Time and language without a code, the line under the title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_net.c
-msgid "A master or installer code changes the time zone and the language"
+msgid "A master or Admin code changes the time zone and the language"
 msgstr ""
 
 #. A list row's value, at its right end (keep it short).
@@ -22138,7 +22146,7 @@ msgstr ""
 
 #. A locked page: why it needs a code, under its title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_notify.c
-msgid "The master or installer code sets up notifications"
+msgid "The master or Admin code sets up notifications"
 msgstr ""
 
 #. The code pad's hint line. At most 127 bytes.
@@ -22459,7 +22467,7 @@ msgstr ""
 
 #. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "Enter a master or installer code to add, change or remove users"
+msgid "Enter a master or Admin code to add, change or remove users"
 msgstr ""
 
 #. Settings > Users, the line under the title: who is signed in ({0} is a user's name). At most 40 bytes
@@ -22691,7 +22699,7 @@ msgstr ""
 
 #. Settings > About, the Installer row's line. At most 111 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "Changes how the alarm works · needs the master or installer code"
+msgid "Changes how the alarm works · needs the master or Admin code"
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
@@ -22709,7 +22717,7 @@ msgstr ""
 
 #. a locked page: the line under the title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "The system master or installer code updates the software"
+msgid "The system master or Admin code updates the software"
 msgstr ""
 
 #. About > SD card, the line under the title. At most 127 bytes
@@ -22727,7 +22735,7 @@ msgstr ""
 
 #. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "A master or installer code changes the network"
+msgid "A master or Admin code changes the network"
 msgstr ""
 
 #. Settings > Wi-Fi, the line under the title. At most 127 bytes
@@ -22737,14 +22745,14 @@ msgstr ""
 
 #. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "A master or installer code sets the time"
+msgid "A master or Admin code sets the time"
 msgstr ""
 
 #. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_settings.c
 #: components/ui/alarm_ui/src/ui_walk.c
-msgid "A master or installer code starts a walk test"
+msgid "A master or Admin code starts a walk test"
 msgstr ""
 
 #. Settings, the page title (BL-220). At most 47 bytes
@@ -22756,7 +22764,7 @@ msgstr ""
 
 #. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "A master or installer code changes what asks for one"
+msgid "A master or Admin code changes what asks for one"
 msgstr ""
 
 #. a keypad's page of its alarm panel's while the link is down, the line under the title; {0} is the alarm panel's name (up to 47 bytes). At most 127 bytes
@@ -24719,7 +24727,7 @@ msgstr ""
 
 #. a toast: the update server can't change while the installer code is the factory one. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_update.c
-msgid "Change the installer code first"
+msgid "Change the Admin code first"
 msgstr ""
 
 #. a toast: the check of the new update server is no longer valid. At most 63 bytes
@@ -24784,9 +24792,9 @@ msgstr ""
 msgid "Every update must be signed with this key or with the key of the version it runs."
 msgstr ""
 
-#. the line under that row while the installer code is the factory one. At most 79 bytes
+#. the line under that row while the Admin code is an older panel's factory one. At most 79 bytes
 #: components/ui/alarm_ui/src/ui_update.c
-msgid "Change the installer code first: the factory one is public"
+msgid "Change the Admin code first: the factory one is public"
 msgstr ""
 
 #. the line under that row. At most 79 bytes
@@ -25576,7 +25584,7 @@ msgstr ""
 
 #. setup, the code pad's title for the panel's first code: the owner's (master) or, for someone else's home, the installer's. At most 31 bytes
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Your installer code"
+msgid "Your Admin code"
 msgstr ""
 
 #. First-time setup: the explanation under the step's title. At most 127 bytes.
@@ -25603,7 +25611,7 @@ msgstr ""
 #. setup, the first code: the row for a helper or installer. At most 63 bytes
 #. setup, under that row. At most 95 bytes
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "Your installer code; the owner makes theirs at the handover"
+msgid "Your Admin code; the owner makes theirs at the handover"
 msgstr ""
 
 #. First-time setup: the step's title on the left. At most 127 bytes.
@@ -25724,7 +25732,7 @@ msgstr ""
 
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_wizard.c
-msgid "The installer code is still the factory code"
+msgid "The Admin code is still the factory code"
 msgstr ""
 
 #: components/ui/alarm_ui/src/ui_wizard.c
@@ -27353,7 +27361,7 @@ msgstr ""
 #. a code pad's title, after confirming a Z-Wave region change that stops devices
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Enter the master or installer code once more"
+msgid "Enter the master or Admin code once more"
 msgstr ""
 
 #. the Zigbee reset's second confirmation, after "Continue"
@@ -27398,7 +27406,7 @@ msgstr ""
 #. a toast when the sensor radio trouble opens the locked Installer page. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Enter the master or installer code to see the radio"
+msgid "Enter the master or Admin code to see the radio"
 msgstr ""
 
 #. a toast, why the Z-Wave radio refused a request

@@ -125,7 +125,7 @@ page({id: 'zigbee-interference', shot: 'bl-144-zigbee-interference', title: 'Zig
   notes: 'From the radio\'s jamming report. Background noise in dBm is on Radio details only.'},
 () => zigbeePage('noisy', M.paragraph('Move Wi-Fi routers and other radios away from the panel, or choose a quieter channel below.', 'amber')));
 // No "locked" Zigbee page: looking at these pages needs installer mode, so installer mode ending pops back
-// to the locked Installer page and the Troubles row asks for the installer code first (ZB-027).
+// to the locked Installer page and the Troubles row asks for the Admin code first (ZB-027).
 
 // ================================ 3: adding a device ================================
 const STEPS = ['Listening', 'Joining', 'Reading what it can do', 'Setting it up', 'Ready'];
@@ -354,17 +354,17 @@ channelBody, {over: () => M.confirm_dialog({title: 'Move to channel 20?', note: 
 
 // ================================ 9: reset ================================
 page({id: 'zigbee-reset', shot: 'bl-144-reset', title: 'Reset the Zigbee network: confirm',
-  notes: 'Asked twice, as the Panel Manager asks (ZB-017): Continue, then "Reset it now?" (next screen), then the installer code once more; afterwards the page shows "Radio · Working" and "No devices".'},
+  notes: 'Asked twice, as the Panel Manager asks (ZB-017): Continue, then "Reset it now?" (next screen), then the Admin code once more; afterwards the page shows "Radio · Working" and "No devices".'},
 () => zigbeePage('working'),
 {over: () => M.confirm_dialog({title: 'Reset the Zigbee network?', note: 'All 8 devices lose the panel. Each must be reset and added again, and their zones show CHECK until then.', ok: 'Continue'})});
 page({id: 'zigbee-reset-again', shot: 'bl-144-reset-again', title: 'Reset the Zigbee network: asked a second time',
-  notes: 'The second question, in the Panel Manager\'s words; then the installer code.'},
+  notes: 'The second question, in the Panel Manager\'s words; then the Admin code.'},
 () => zigbeePage('working'),
 {over: () => M.confirm_dialog({title: 'Reset it now?', note: 'This can\'t be undone. Install codes waiting are kept.', ok: 'Reset the network'})});
-page({id: 'zigbee-reset-code', shot: 'bl-144-reset-code', title: 'Reset the Zigbee network: the installer code again',
-  notes: 'Only the installer code is taken; a master or user code is refused like a wrong one, and wrong codes count toward the lockout.'},
+page({id: 'zigbee-reset-code', shot: 'bl-144-reset-code', title: 'Reset the Zigbee network: the Admin code again',
+  notes: 'Only the Admin code is taken; a master or user code is refused like a wrong one, and wrong codes count toward the lockout.'},
 () => zigbeePage('working'),
-{over: () => M.modal_pad({title: 'Confirm the reset', tone: 'red', glyph: 'rotate-ccw', hint: 'Enter the master or installer code once more', digits: 3})});
+{over: () => M.modal_pad({title: 'Confirm the reset', tone: 'red', glyph: 'rotate-ccw', hint: 'Enter the master or Admin code once more', digits: 3})});
 
 // ================================ 10: install codes waiting ================================
 const codesBody = () => ({title: 'Install codes waiting', note: 'They may join whenever the panel listens', back: 'zigbee', body: [
@@ -405,7 +405,7 @@ page({id: 'zigbee-zone-edit', shot: 'bl-144-zone-edit', title: 'A zone with a Zi
 // Troubles is a rail view, not a settings page: its own frame.
 M.screen({
   id: 'zigbee-troubles', area: AREA, title: 'Troubles: the radio\'s trouble opens its page', shot: 'bl-144-troubles',
-  notes: '"Sensor radio problem" is the one trouble every sensor radio shares (sensor_radio). Tapped in installer mode, it opens the page of the radio that has the problem: here the Zigbee page, not answering. Outside installer mode it opens the locked Installer page with the toast "Enter the master or installer code to see the radio"; once the code is taken the Zigbee page follows (looking needs installer mode, built so). Its second line says it can be tapped. Nothing else on Troubles changes.',
+  notes: '"Sensor radio problem" is the one trouble every sensor radio shares (sensor_radio). Tapped in installer mode, it opens the page of the radio that has the problem: here the Zigbee page, not answering. Outside installer mode it opens the locked Installer page with the toast "Enter the master or Admin code to see the radio"; once the code is taken the Zigbee page follows (looking needs installer mode, built so). Its second line says it can be tapped. Nothing else on Troubles changes.',
   render: () => M.main({view: 'troubles', tone: 'amber', rail: {zones: 1, troubles: 2}, bar: {time: '10:48', troubles: 2}, content: `<div class="view column">
     <div class="row">${M.view_header({title: 'Troubles', note: '2 active'})}${M.button('Acknowledge', '', 'check')}</div><div class="list scroll">
       <div data-go="zigbee-not-answering">${M.trouble_row({glyph: 'radio-tower', title: 'Sensor radio problem', detail: 'Wireless sensors may not be heard · Tap to see the radio'})}</div>

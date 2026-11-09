@@ -1196,8 +1196,8 @@ static void walk_zwave(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -1503,7 +1503,7 @@ static void walk_zwave(void)
     tap_text("Change it");
     run(300);
     expect(find_label(lv_screen_active(), "Confirm the region") != NULL,
-           "ZW-045: a region change that stops devices did not ask for the master or installer code");
+           "ZW-045: a region change that stops devices did not ask for the master or Admin code");
     shot("zwave_region_code");
     type("8642k"); /* nobody's code */
     run(300);
@@ -1529,7 +1529,7 @@ static void walk_zwave(void)
     expect(find_label(lv_screen_active(), "Reset the Z-Wave network?") != NULL,
            "the reset dialog never opened");
     shot("zwave_reset_confirm");
-    /* ZW-013: only the master or installer code may confirm the second, plain question (the
+    /* ZW-013: only the master or Admin code may confirm the second, plain question (the
      * system master's too since the owner's decision of 2026-11-08) - any other is refused. */
     tap_text("Reset the network");
     run(300);
@@ -1649,8 +1649,8 @@ static void walk_zwave_recovery(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -1900,8 +1900,8 @@ static void walk_zwave_firmware(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -2085,8 +2085,8 @@ static void walk_zwave_switches(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -2217,8 +2217,8 @@ static void walk_zwave_smartstart(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -2357,8 +2357,8 @@ static void walk_zwave_network_care(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -2526,8 +2526,8 @@ static void zw_trouble_open(const char *row)
     run(600);
     if (lv_subject_get_int(&subject_toast_visible) == 1 &&
         strcmp(lv_subject_get_string(&subject_toast),
-               "Enter the master or installer code to see the radio") == 0) {
-        tap_text("Enter the master or installer code");
+               "Enter the master or Admin code to see the radio") == 0) {
+        tap_text("Enter the master or Admin code");
         run(300);
         type("69420k");
     }
@@ -2559,9 +2559,9 @@ static void walk_zwave_troubles(void)
            "ZW-019: the trouble opens the Z-Wave page without the installer code");
     expect(lv_subject_get_int(&subject_toast_visible) == 1 &&
                strcmp(lv_subject_get_string(&subject_toast),
-                      "Enter the master or installer code to see the radio") == 0,
+                      "Enter the master or Admin code to see the radio") == 0,
            "ZW-019: the Z-Wave trouble doesn't say the radio needs the installer code");
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     run(300);
     type("69420k");
     run(1600);
@@ -2634,8 +2634,8 @@ static void walk_zwave_region_change(void)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -3075,9 +3075,9 @@ static void walk_language(void)
     expect(find_visible(lv_screen_active(), "page_note") != NULL,
            "Time and language without a code doesn't say what a code changes");
     shot("language_locked"); /* the clock is anyone's */
-    tap_text("Enter a master or installer code");
+    tap_text("Enter a master or Admin code");
     run(300);
-    type("123456k"); /* the language and the region need a master or installer code */
+    type("123456k"); /* the language and the region need a master or Admin code */
     run(300);
     expect(find_label(by_name("page_body"), "Region") != NULL,
            "Time and language: a master's code didn't open the region");
@@ -3165,7 +3165,7 @@ static void open_language_page(void)
     tap_name("set_time");
     run(300);
     if (find_label(by_name("page_body"), "Region") == NULL) {
-        tap_text("Enter a master or installer code");
+        tap_text("Enter a master or Admin code");
         run(300);
         type("123456k");
         run(300);
@@ -3608,7 +3608,7 @@ static void walk_walk_test(const ui_options_t *start)
     expect(find_label(by_name("page_body"), "Start walk test") == NULL,
            "WALK-001: a start beside the summary opened without a code");
     shot("walk_test_summary");
-    tap_text("Enter a master or installer code");
+    tap_text("Enter a master or Admin code");
     run(300);
     type("123456k");
     run(500);
@@ -3687,8 +3687,8 @@ static void walk_walk_test(const ui_options_t *start)
     open_installer();
     run(300);
     if (lv_subject_get_int(&subject_settings_pad) == 0 &&
-        find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+        find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         run(300);
     }
     type("69420k");
@@ -7683,8 +7683,8 @@ static void walk_zigbee(const ui_options_t *start)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -8159,16 +8159,16 @@ static void walk_zigbee(const ui_options_t *start)
     shot("bl-144-reset");
     tap_name("dialog_ok");
     run(300);
-    /* ZB-017: asked twice, as the Panel Manager asks, then the master or installer code */
+    /* ZB-017: asked twice, as the Panel Manager asks, then the master or Admin code */
     expect(find_label(lv_screen_active(), "Reset it now?") != NULL,
            "ZB-017: the reset doesn't ask a second time");
-    expect(find_label(lv_screen_active(), "Enter the master or installer code once more") == NULL,
+    expect(find_label(lv_screen_active(), "Enter the master or Admin code once more") == NULL,
            "ZB-017: the reset asks for the code after one confirmation");
     shot("bl-144-reset-again");
     tap_name("dialog_ok");
     run(300);
-    expect(find_label(lv_screen_active(), "Enter the master or installer code once more") != NULL,
-           "ZB-017: the reset doesn't ask for the master or installer code again");
+    expect(find_label(lv_screen_active(), "Enter the master or Admin code once more") != NULL,
+           "ZB-017: the reset doesn't ask for the master or Admin code again");
     shot("bl-144-reset-code");
     type("8642k"); /* nobody's code */
     run(300);
@@ -8180,7 +8180,7 @@ static void walk_zigbee(const ui_options_t *start)
     run(300);
     zb_toast("Too many wrong codes: try again later",
              "ZB-017: the reset's code during the keypad's lockout isn't said");
-    expect(find_label(lv_screen_active(), "Enter the master or installer code once more") == NULL,
+    expect(find_label(lv_screen_active(), "Enter the master or Admin code once more") == NULL,
            "ZB-017: the reset's pad stays open during the keypad's lockout");
     expect(find_label_with(by_name("page_body"), "No devices yet") == NULL,
            "ZB-017: the network was reset during the keypad's lockout");
@@ -8224,9 +8224,9 @@ static void walk_zigbee(const ui_options_t *start)
     run(300);
     expect(find_label(by_name("page_body"), "Radio · Not answering") == NULL,
            "ZB-027: the sensor radio trouble shows the Zigbee page without the installer code");
-    zb_toast("Enter the master or installer code to see the radio",
+    zb_toast("Enter the master or Admin code to see the radio",
              "ZB-027: the sensor radio trouble doesn't say the radio needs the installer code");
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     run(300);
     type("69420k");
     run(600);
@@ -8276,8 +8276,8 @@ static void walk_zigbee_real(const ui_options_t *start)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -9150,14 +9150,14 @@ static void walk_automations(const ui_options_t *start)
     /* AUT-010, D3: the system master's or the installer's code first (screen 6) */
     auto_open_section();
     expect(lv_subject_get_int(&subject_settings_pad) == 1,
-           "AUT-010: Automations opened without the master or installer code");
+           "AUT-010: Automations opened without the master or Admin code");
     tap(lv_obj_find_by_name(by_name("settings_pad"), "pad_close"));
     run(300);
-    expect(find_label(by_name("page_body"), "Enter the master or installer code") != NULL &&
-               auto_note("Automations are changed with the master or installer code."),
-           "AUT-010: the locked page doesn't ask for the master or installer code");
+    expect(find_label(by_name("page_body"), "Enter the master or Admin code") != NULL &&
+               auto_note("Automations are changed with the master or Admin code."),
+           "AUT-010: the locked page doesn't ask for the master or Admin code");
     shot("automations_locked");
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     run(300);
     type("123456k");
     run(1100);
@@ -9801,8 +9801,8 @@ static void voice_installer_zone(const char *zone)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -10506,6 +10506,19 @@ static void fwsrv_check(const char *domain)
     run(300);
 }
 
+/* Leaves installer mode and opens it again with another code (keys ends with 'k'). */
+static void installer_as(const char *keys)
+{
+    scroll_to_text("page_body", "Leave installer mode");
+    tap_text("Leave installer mode");
+    run(500);
+    open_installer();
+    run(300);
+    tap_text("Enter the master or Admin code");
+    type(keys);
+    run(300);
+}
+
 static void update_server_shots(void)
 {
     printf("BL-186: Installer > Updates, the update server and the channel\n");
@@ -10517,6 +10530,19 @@ static void update_server_shots(void)
     host_panel_fw_preset(&st);
     host_panel_fw_server_preset("roboalarms.com", true, true);
     run(1500);
+
+    /* The update server is the Owner's alone (the owner's decision of 2026-11-08): the Admin
+     * code sees it, dimmed, with the reason */
+    scroll_to_text("page_body", "Update server");
+    tap_text("Update server");
+    run(300);
+    expect(find_label(by_name("page_body"), "Only the master code changes this") != NULL &&
+               page_row_disabled("Change the update server"),
+           "the Admin code can change the update server");
+    shot("fwsrv_admin");
+    tap_name("page_back");
+    run(300);
+    installer_as("123456k"); /* the Owner's installer mode from here */
 
     /* the menu: Updates after This panel, before Test and start over */
     scroll_to_text("page_body", "Test and start over");
@@ -10540,7 +10566,7 @@ static void update_server_shots(void)
     /* the factory installer code: Change is dimmed, with the reason */
     tap_text("Update server");
     run(300);
-    expect(find_label(by_name("page_body"), "Change the installer code first: the factory one is public") != NULL &&
+    expect(find_label(by_name("page_body"), "Change the Admin code first: the factory one is public") != NULL &&
                page_row_disabled("Change the update server"),
            "BL-186: the factory-code state doesn't dim Change");
     shot("fwsrv_factory_code");
@@ -10595,7 +10621,7 @@ static void update_server_shots(void)
     expect(be.program_set_code(be.ctx, ALARM_USER_INSTALLER, "69420") == ALARM_OK, "BL-186: the code wouldn't go back");
     run(500);
     hold_row("Hold to use this server");
-    expect(strcmp(lv_subject_get_string(&subject_toast), "Change the installer code first") == 0 &&
+    expect(strcmp(lv_subject_get_string(&subject_toast), "Change the Admin code first") == 0 &&
                find_label(by_name("page_body"), "The RoboAlarms update server") != NULL,
            "BL-186: the factory code didn't refuse the new server");
     shot("fwsrv_refused_factory");
@@ -10715,6 +10741,7 @@ static void update_server_shots(void)
     expect(!page_row_disabled("Update server"), "BL-186: the rows stayed held after the run");
     expect(be.program_set_code(be.ctx, ALARM_USER_INSTALLER, "69420") == ALARM_OK, "BL-186: the factory code wouldn't return");
     run(500);
+    installer_as("69420k"); /* back to the Admin code's installer mode */
 }
 
 static void update_progress_shots(void)
@@ -11406,7 +11433,7 @@ static void walk_link_keypad(void)
     tap_name("set_time");
     run(300);
     link_has("From Harbor House", "BL-048: a keypad's clock doesn't say where it comes from");
-    tap_text("Enter a master or installer code");
+    tap_text("Enter a master or Admin code");
     run(200);
     if (lv_subject_get_int(&subject_settings_pad) == 1) {
         type("123456k");
@@ -11432,7 +11459,7 @@ static void walk_link_keypad(void)
     expect(find_label(lv_screen_active(), "Hold to erase everything") == NULL,
            "BL-048: a stand-alone panel opens without the installer code (LINK-025: only after 10 "
            "min)");
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     run(200);
     type("69420k");
     run(300);
@@ -11535,7 +11562,7 @@ static void walk_link_keypad_kept(const ui_options_t *start)
     run(300);
     tap_link("Software update");
     run(300);
-    expect(find_label(lv_screen_active(), "The system master or installer code updates the "
+    expect(find_label(lv_screen_active(), "The system master or Admin code updates the "
                                           "software") == NULL,
            "BL-048: a keypad that needs an update asks for a code it can't check");
     tap_name("nav_home");
@@ -11563,7 +11590,7 @@ static void walk_link_keypad_kept(const ui_options_t *start)
            "BL-048: maintenance can't open Settings while the last status said armed (LINK-025)");
     tap_name("set_wifi");
     run(300);
-    expect(find_label(lv_screen_active(), "A master or installer code changes the network") == NULL,
+    expect(find_label(lv_screen_active(), "A master or Admin code changes the network") == NULL,
            "BL-048: maintenance's Wi-Fi asks for a code (LINK-025)");
     link_state(HOST_LINK_KEYPAD_ONLINE);
     run(300);
@@ -11590,8 +11617,8 @@ static void walk_link_master(const ui_options_t *start)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -11820,8 +11847,8 @@ static void walk_keypad_updates(const ui_options_t *start)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -12014,8 +12041,8 @@ static void walk_partition_policy(const ui_options_t *start)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -12080,7 +12107,7 @@ static void walk_link_keypad_master_pages(void)
     expect(find_label(by_name("page_body"), "Lost the master code?") == NULL,
            "BL-223: a keypad offers the alarm panel's lost-code page");
     shot("bl-223-kp-installer-locked");
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     run(200);
     type("69420k");
     run(400);
@@ -12722,7 +12749,7 @@ int main(int argc, char **argv)
     host_panel_log_loss(12, 3);
     run(1200);
     expect(find_label(by_name("event_list"), "12 events couldn't be saved") == NULL,
-           "LOG-010/LOG-008: the loss warning shows before a master or installer code");
+           "LOG-010/LOG-008: the loss warning shows before a master or Admin code");
     scroll_to_text("event_list", "Show private events");
     tap_text("Show private events");
     run(300);
@@ -12764,7 +12791,7 @@ int main(int argc, char **argv)
     shot("installer_locked");
     expect(find_label_with(by_name("page_body"), "69420") == NULL,
            "BL-187: the locked Installer page shows the factory code");
-    expect(find_label(by_name("page_body"), "Enter the master or installer code") != NULL,
+    expect(find_label(by_name("page_body"), "Enter the master or Admin code") != NULL,
            "BL-189: the locked Installer page lost its code row");
     /* BL-131: the lost-code explanation is a row of its own, opened before the code */
     tap_text("Lost the master code?");
@@ -12774,13 +12801,13 @@ int main(int argc, char **argv)
     shot("installer_lost_code");
     tap_name("page_back");
     run(300);
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     type("69420k");
     run(300);
     shot("installer_menu");
     update_server_shots();
-    scroll_to_text("page_body", "Installer and master codes");
-    tap_text("Installer and master codes");
+    scroll_to_text("page_body", "Master and Admin codes");
+    tap_text("Master and Admin codes");
     run(300);
     expect(find_label_with(by_name("page_body"), "69420") == NULL &&
                find_label_with(by_name("page_body"), "123456") == NULL,
@@ -12797,7 +12824,7 @@ int main(int argc, char **argv)
         static const char *const order[] = {"Sensors and devices", "Zones", "Partitions",
                                             "Keypads and devices", "How the alarm works",
                                             "Delays and arming", "This panel", "System name",
-                                            "Installer and master codes", "Test and start over",
+                                            "Master and Admin codes", "Test and start over",
                                             "Walk test", "Run the setup again", "Factory reset",
                                             "Leave installer mode"};
         int32_t last_y = -1;
@@ -13010,7 +13037,7 @@ int main(int argc, char **argv)
     tap_text("Software update");
     run(300);
     expect(lv_subject_get_int(&subject_settings_pad) == 1,
-           "BL-188: Software update opened without the master or installer code");
+           "BL-188: Software update opened without the master or Admin code");
     shot("software_update_locked");
     type("123456k");
     run(1200);
@@ -13070,7 +13097,7 @@ int main(int argc, char **argv)
 
     printf("First-boot setup\n");
     open_installer();
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     type("69420k");
     run(300);
     host_panel_forget_wifi();
@@ -13146,7 +13173,7 @@ int main(int argc, char **argv)
     run(300);
     shot("recovery_new_code");
 
-    printf("Shared sections ask for a master or installer code\n");
+    printf("Shared sections ask for a master or Admin code\n");
     tap_name("nav_home");
     run(300);
     host_panel_init(1789857660000LL + 7200000LL);
@@ -13271,7 +13298,7 @@ int main(int argc, char **argv)
     printf("Zone sources: a wired zone, then a sensor that stops answering\n");
     open_installer();
     run(300);
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     type("69420k");
     run(300);
     tap_text("Zones");
@@ -13424,7 +13451,7 @@ int main(int argc, char **argv)
     printf("Chime by one touch once the installer allows it\n");
     tap_name("bar_settings");
     open_installer();
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     type("69420k");
     run(300);
     tap_text("Delays and arming");
@@ -13756,7 +13783,7 @@ int main(int argc, char **argv)
     tap_name("bar_settings");
     open_installer();
     run(300);
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     type("69420k");
     run(300);
     tap_text("Zones");
@@ -13815,7 +13842,7 @@ int main(int argc, char **argv)
     shot("sd_card_locked");
     expect(find_label_with(by_name("page_body"), "59.6 GB") != NULL, "large SD capacity overflowed");
     expect(find_label(by_name("page_body"), "Format the card") == NULL, "format exposed without authority");
-    tap_text("Enter the master or installer code");
+    tap_text("Enter the master or Admin code");
     type("69420k");
     run(400);
     shot("sd_card");
@@ -13877,8 +13904,8 @@ int main(int argc, char **argv)
     tap_name("bar_settings");
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -14002,8 +14029,8 @@ int main(int argc, char **argv)
     tap_name("bar_settings");
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -14123,8 +14150,8 @@ int main(int argc, char **argv)
     tap_name("bar_settings");
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }
@@ -14325,8 +14352,8 @@ int main(int argc, char **argv)
     run(300);
     tap_name("set_time");
     run(300);
-    if (find_label(lv_screen_active(), "Enter a master or installer code") != NULL) {
-        tap_text("Enter a master or installer code");
+    if (find_label(lv_screen_active(), "Enter a master or Admin code") != NULL) {
+        tap_text("Enter a master or Admin code");
         type("69420k");
         run(300);
     }
@@ -14513,8 +14540,8 @@ int main(int argc, char **argv)
     run(300);
     open_installer();
     run(300);
-    if (find_label(lv_screen_active(), "Enter the master or installer code") != NULL) {
-        tap_text("Enter the master or installer code");
+    if (find_label(lv_screen_active(), "Enter the master or Admin code") != NULL) {
+        tap_text("Enter the master or Admin code");
         type("69420k");
         run(300);
     }

@@ -266,8 +266,8 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-056 | An automation's arming warning reaches the keypads (BL-222; docs/features/41 AUT-012, AUT-013): a master with automations offers PLINK_CAP_AUTO, a keypad with a screen too; the master sends its whole warning table (AUTO_WARN 0x3E, at most 8, arm time as epoch and as ms from sending) at a change, to a new session and every 30 s while not empty; the keypad shows it on Home as the alarm panel's own screen does, chimes once a minute while its partition's warning is on, and forgets a table older than 75 s. Put off from a keypad is PLINK_OP_PUT_OFF (6): the code checked on the master as the keypad's (ALARM_CMD_CODE_CHECK, its lockout), then the put-off by its user; the RESULT's not_ready_zone carries auto_put_off_t. Matters most on a master without a screen (docs/features/42). Frozen in `plink_auto_fixture_v1.h` | unit (`test_plink_msg.c`, `test_plink_link.c`, `test_plink_frame.c`); panels open |
 | LINK-057 | A keypad's own settings stay its own: Screen and sound, Wi-Fi and network, Time and language (its clock and time zone following its master, LINK-053), About, its software update and "Make it a stand-alone panel". Everything else on its Settings - users and codes, integrations, automations, Smart Home's settings, the walk test and the installer menu - is its master's, read from and saved on the master (BL-223; designed, not built) | unit, preview |
 | LINK-058 | The remote backend: in a session with `PLINK_CAP_RB` (0x0040) a keypad calls its master's `ui_backend_t` entries by frozen call id (RB_CALL 0x3F, RB_ANSWER 0x40, RB_MORE 0x41, RB_GRANT 0x42); arguments and answers are encoded in sections, appended only, paged to the transport's frame; an unknown call is answered UNAVAILABLE; a repeat of a req is answered from a cache kept 30 s and never runs twice; never a call: the master's factory reset, setup, updates and update server, developer access, its own Wi-Fi, time and Screen and sound, the voice editor. The calls and their records are `components/core/ui_remote`'s, frozen in `ui_remote_fixture_v1.h` | unit (`test_ui_remote.c`, `test_plink_msg.c`), frozen fixture |
-| LINK-059 | The master is the only judge: it runs each call on its own backend as `{KEYPAD, n}` from the session, under the grant it holds for that keypad (a code the keypad's code check, CMD op 2, had accepted on the master - a wrong one counts toward that keypad's lockout - or its installer code); each group needs its access (docs/features/14); user arguments are the grant's user; the grant ends after 5 min idle, when the keypad leaves the master's pages, or 60 s after its session is lost; answers never carry code material or a stored password or token | unit (`test_ui_remote.c`), link |
-| LINK-060 | Installer mode from a keypad: entered with the installer code as `{KEYPAD, n}`, held by one source at a time (BUSY elsewhere, RB_GRANT names the holder), ended by that keypad, by the master's own screen or Panel Manager installer, 60 s after the master stops hearing the keypad, or after `ALARM_PROGRAM_TIMEOUT_S` idle; every panel's status bar says where it is held | unit, link, preview |
+| LINK-059 | The master is the only judge: it runs each call on its own backend as `{KEYPAD, n}` from the session, under the grant it holds for that keypad (a code the keypad's code check, CMD op 2, had accepted on the master - a wrong one counts toward that keypad's lockout - or its Admin code); each group needs its access (docs/features/14); user arguments are the grant's user; the grant ends after 5 min idle, when the keypad leaves the master's pages, or 60 s after its session is lost; answers never carry code material or a stored password or token | unit (`test_ui_remote.c`), link |
+| LINK-060 | Installer mode from a keypad: entered with the Admin code as `{KEYPAD, n}`, held by one source at a time (BUSY elsewhere, RB_GRANT names the holder), ended by that keypad, by the master's own screen or Panel Manager installer, 60 s after the master stops hearing the keypad, or after `ALARM_PROGRAM_TIMEOUT_S` idle; every panel's status bar says where it is held | unit, link, preview |
 | LINK-061 | A configuration saved from a keypad carries the cfg_crc it was read at; the master refuses it STALE when its configuration changed since, and otherwise takes every field but code material, which it keeps; codes change only through `program_set_code` and the user calls | unit |
 | LINK-062 | Learn and pairing modes a keypad starts (zone learn, Z-Wave, Zigbee, 433 MHz, another keypad) run on the master's radios and belong to the keypad's grant: they stop when the keypad stops them or leaves the page, when the grant ends, or at the mode's own limit; the keypad shows the master's progress, read at most once a second; PINs and install codes go sealed and are wiped after use | unit, link (`link_smoke`), preview |
 | LINK-063 | A keypad's screen never waits for the remote backend: reads answer at once from the keypad's copy, asked again at most once a second while their page is open (a first read shows a steady "Getting it from Harbor House"); writes go through LINK-054's queue. While the link is down the master's pages are dimmed and send nothing; a write with no answer reads "Not confirmed" | PC (`calls_smoke`), preview |
@@ -1504,7 +1504,7 @@ its five questions in Decisions); being built.
   Time and language, About) and **Harbor House** (the master's name: Users, Integrations,
   Automations, Smart Home, Walk test, Installer). The second group's pages are the master's
   pages, the same rows and words as on a master with a screen, read from and saved on the master.
-- An installer types the installer code on any keypad and gets the master's installer menu:
+- An installer types the Admin code on any keypad and gets the master's installer menu:
   zones, partitions, keypads and devices, delays and arming, codes, sirens and outputs, Z-Wave,
   Zigbee and 433 MHz. Adding a zone, listening for a sensor, pairing a Z-Wave or Zigbee device,
   a 433 MHz siren or another keypad all run on the master's radios; the keypad shows the
@@ -1562,7 +1562,7 @@ The call groups (ids frozen once released; the full list is in `ui_remote.h`):
 
 | Ids | Group | Calls (the `ui_backend_t` entries) | Needs |
 |---|---|---|---|
-| 0x0001-0x000F | Session | end the grant, `program_enter`, `program_exit`, `program_keepalive`, `program_set_code` | the installer code for installer mode |
+| 0x0001-0x000F | Session | end the grant, `program_enter`, `program_exit`, `program_keepalive`, `program_set_code` | the Admin code for installer mode |
 | 0x0010-0x001F | Configuration | `set_config` (with its base cfg_crc) | installer mode |
 | 0x0020-0x002F | Users | `user_set`, `user_update`, `user_delete`, `web_login_get`, `_set`, `_clear` | a master code (docs/features/14) |
 | 0x0030-0x003F | Zones' sensors | `zone_sources`, `zone_learn`, `zone_candidates`, `zone_bind`, `zone_unbind`, `zone_info` | installer mode |
@@ -1597,7 +1597,7 @@ the voice editor (`voice_seen`, `voice_apply_approve`).
   asks while another source holds it gets BUSY, and RB_GRANT names the holder. The master's own
   screen and its Panel Manager's installer may end a keypad's installer mode (on the screen: a tap
   on the banner, "End installer mode at Keypad 2?", End it - no code, as leaving installer mode
-  never needs one; the proposal drew the installer code, a question for the owner). A keypad sends
+  never needs one; the proposal drew the Admin code, a question for the owner). A keypad sends
   `program_keepalive` every 30 s while a page of it is open. The master ends a keypad's
   installer mode 60 s after it stops hearing that keypad, and after 15 minutes without activity as
   today (`ALARM_PROGRAM_TIMEOUT_S`).
@@ -1689,7 +1689,7 @@ the voice editor (`voice_seen`, `voice_apply_approve`).
   about it, never another panel's settings.
 - With the master's settings on keypads (BL-223, designed), a device with a keypad's keys can
   read and change the master's settings only with a code the master accepts - a master code for
-  users, integrations and automations, the installer code for the installer menu - under the
+  users, integrations and automations, the Admin code for the installer menu - under the
   keypad's lockout. It never gets a code, a code hash or a stored password, and can't reset,
   update or set up the master, or turn on its developer access (LINK-058, LINK-059).
 
@@ -2137,13 +2137,13 @@ The master's settings and installer menu on keypads (BL-223):
   sections in the keypad's list (BL-223)
 - [ ] The screens as approved, in the simulator and the preview (`host_link_demo`): the Settings
   list's two groups, the keypad's Installer, installer mode held elsewhere, the pages dimmed while
-  the link is down, the banner's words and the installer code through the call task built; the
+  the link is down, the banner's words and the Admin code through the call task built; the
   other saves of the alarm panel's pages through the call task (LINK-054; they wait at most 13 s
   on the screen's task today), "Not confirmed", and the mockup's screens made today's, still to do
   (LINK-057, -063) (BL-223)
 - [x] On the panels (2026-10-21, both speakers off; the S3 the master, the 10.1" keypad 1, the 7"
   keypad 2; from the keypads' consoles, `plink rb ...`, which calls the screen's own proxies): the
-  installer code checked on the S3 (a wrong one refused, the right one in 140-240 ms); the S3's
+  Admin code checked on the S3 (a wrong one refused, the right one in 140-240 ms); the S3's
   sources and both kinds of sensors listed, the 7"'s own terminals among them; a zone saved in the
   S3's configuration (280-300 ms) and its sensor bound to the 7"'s IO3 (390 ms), then removed
   again; the 10.1" refused installer mode while the 7" held it, and named it as the holder; the 7"
@@ -2157,7 +2157,7 @@ The master's settings and installer menu on keypads (BL-223):
   supervision time (now the link's own clock); a read's old refusal outlived a new grant (copies
   now dropped at a grant change). The screens themselves were not looked at on the panels (BL-223)
 - [x] On the panels the other way round (2026-10-22, speakers off; the 7" the master with its own
-  Z-Wave and Zigbee radios, the 10.1" keypad 1, the S3 keypad 2): the installer code checked on the
+  Z-Wave and Zigbee radios, the 10.1" keypad 1, the S3 keypad 2): the Admin code checked on the
   7" (a wrong one refused, the right one in 106-261 ms); every kind of source listed - the 7"'s own
   terminals, its Zigbee and Z-Wave sensors in use, both keypads' terminals, the S3's among them; a
   zone saved (362 ms), bound to the S3's IO4 (320 ms), turned off (383 ms) and unbound (77 ms) from

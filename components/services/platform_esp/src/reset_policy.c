@@ -18,7 +18,7 @@ const char *reset_policy_refusal(bool engine_running, bool locked, bool installe
         return "refused while anything is armed, counting down or sounding";
     }
     if (!installer_code) {
-        return "the master or installer code is needed";
+        return "the master or Admin code is needed";
     }
     return NULL;
 }

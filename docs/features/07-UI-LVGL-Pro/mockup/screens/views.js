@@ -637,7 +637,7 @@ M.screen({
 
 M.screen({
   id: 'activity-log', area: 'Views', title: 'Activity: the event log', shot: 'event_log',
-  notes: 'The event log is Activity\'s since BL-131 finding 7: Settings has no Event log line. The filters (All, Alarms, Troubles, Arming, Bypass, System) sit under the title; private events and the loss warning ask for a master or installer code at the foot of the list.',
+  notes: 'The event log is Activity\'s since BL-131 finding 7: Settings has no Event log line. The filters (All, Alarms, Troubles, Arming, Bypass, System) sit under the title; private events and the loss warning ask for a master or Admin code at the foot of the list.',
   render: () => M.main({view: 'activity', rail: {troubles: 1}, bar: {time: '10:53', troubles: 1}, content: `<div class="view column">
     ${M.view_header({title: 'Activity', note: 'Everything the panel did, newest first'})}
     <div class="row" style="flex:none">${M.segments(['All', 'Alarms', 'Troubles', 'Arming', 'Bypass', 'System'])}</div>

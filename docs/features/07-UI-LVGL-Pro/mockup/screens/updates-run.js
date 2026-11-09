@@ -121,7 +121,7 @@ M.screen({id: 'installer-menu-update-held', shot: 'fwsrv_held', area: 'Installer
   render: () => M.main({view: 'settings', tone: 'blue', rail: {troubles: 1, tone: 'blue'}, bar: {banner: 'installer', time: '10:58', troubles: 1},
     content: M.settings({section: 'about', sections: PROG_SECTIONS, title: 'Installer', back: 'about-update-running', tags: UPDATING, body: [
       M.section('This panel'),
-      M.row_link({glyph: 'key-round', color: 'amber', title: 'Installer and master codes'}),
+      M.row_link({glyph: 'key-round', color: 'amber', title: 'Master and Admin codes'}),
       M.row_toggle({glyph: 'monitor', title: 'Panel Manager', detail: 'Change settings from a browser on your network', on: true}),
       M.section('Updates'),
       M.row_link({glyph: 'server', color: 'green', title: 'Update server', detail: 'Not while an update runs', value: 'roboalarms.com', disabled: true}),

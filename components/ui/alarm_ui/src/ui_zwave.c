@@ -4045,7 +4045,7 @@ static void region_ask_code(void)
 {
     /* TR: a code pad's title, after confirming a Z-Wave region change that stops devices */
     ui_pad_ask(HOST_SETTINGS, UI_ICON_TRIANGLE_ALERT, TR("Confirm the region"),
-               TR("Enter the master or installer code once more"), ui_tone_red(), region_code_ok);
+               TR("Enter the master or Admin code once more"), ui_tone_red(), region_code_ok);
 }
 
 /* What choosing `code` does (ZW-045): its ui_zw_region_change_t, and how many devices stop. */
@@ -4605,7 +4605,7 @@ static bool reset_code_ok(const char *code)
 static void reset_ask_code(void)
 {
     ui_pad_ask(HOST_SETTINGS, UI_ICON_TRIANGLE_ALERT, TR("Confirm the reset"),
-               TR("Enter the master or installer code once more"), ui_tone_red(), reset_code_ok);
+               TR("Enter the master or Admin code once more"), ui_tone_red(), reset_code_ok);
 }
 
 static void reset_row_tap(void *ctx)
@@ -6029,7 +6029,7 @@ static void trouble_open(lv_event_t *e)
     }
     s_after_code = true;
     /* TR: a toast when the sensor radio trouble opens the locked Installer page. At most 63 bytes */
-    ui_toast(TR("Enter the master or installer code to see the radio"));
+    ui_toast(TR("Enter the master or Admin code to see the radio"));
 }
 
 static void trouble_follow(void)

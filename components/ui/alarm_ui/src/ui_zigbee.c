@@ -4925,7 +4925,7 @@ static void reset_ask_code(void)
 {
     ui_pad_ask(HOST_MODAL, UI_ICON_ROTATE_CCW,
                /* TR: the code pad's title for the Zigbee network's reset */
-               TR("Confirm the reset"), TR("Enter the master or installer code once more"), ui_tone_red(),
+               TR("Confirm the reset"), TR("Enter the master or Admin code once more"), ui_tone_red(),
                reset_code);
 }
 
@@ -5118,7 +5118,7 @@ static void trouble_open(lv_event_t *e)
     }
     s_after_code = true;
     /* TR: a toast when the sensor radio trouble opens the locked Installer page. At most 63 bytes */
-    ui_toast(TR("Enter the master or installer code to see the radio"));
+    ui_toast(TR("Enter the master or Admin code to see the radio"));
 }
 
 /* The Zigbee page after the installer code, while the locked Installer page that asked for it is

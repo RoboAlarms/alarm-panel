@@ -10,10 +10,10 @@ Classic user codes with authority levels, per-partition access, duress, lockout 
 safe code storage.
 
 ## Reference behaviour
-A classic panel has an installer code (user 01), one system master (user 02), partition
+A classic panel has an Admin code (user 01), one system master (user 02), partition
 masters, and users with authority levels 0 = standard, 1 = arm only,
 2 = guest, 3 = duress, 4 = partition master. Guests may only disarm what they armed. A classic
-installer code arms and disarms what it armed; here it never arms or disarms (decided
+Admin code arms and disarms what it armed; here it never arms or disarms (decided
 2026-10-07: the installer programs, the household arms; docs/features/01 deliberate choice 16). Users are added with
 `master code + CODE (8) + user number + new code`.
 
@@ -32,21 +32,25 @@ installer code arms and disarms what it armed; here it never arms or disarms (de
 Masters and the installer have access to every partition. Everyone else has a partition mask.
 
 **The Owner is the top authority** (decided 2026-11-02 and 2026-11-08): the system master is the
-Owner, and no code outranks the Owner.
+Owner, and no code outranks the Owner. What people read calls the installer code (user 01) the
+**Admin code** and its level **Admin** (the roles of 2026-10-31); the code keeps its identifiers.
 - **Setup mode** (installer mode, [14](../14-Configuration-and-Installer-Programming/README.md))
   opens with the system master's code always, and with the installer's (the Admin's, in
-  alarm-server's words) while the Owner allows it: the Owner's setting "Let the installer code open
-  installer mode", on by default, changed only by the system master in installer mode at the panel
+  alarm-server's words) while the Owner allows it: the Owner's setting "Let the Admin code open
+  Setup mode", on by default, changed only by the system master in installer mode at the panel
   (CORE-PROG-001, 011, 014). Never a partition master's, a duress code or anyone else's.
-- Everything that was the installer's alone takes the system master too: the installer code once
+- Everything that was the installer's alone takes the system master too: the Admin code once
   more before a Z-Wave or Zigbee reset or a region change that drops devices, the Panel Manager's
   keypads, Z-Wave, Zigbee, remote access, developer tools, backups, factory reset and older
   firmware, a keypad's "Make it a stand-alone panel", clearing the event log's loss warning.
 - **No installer lockout**: the installer never changes or removes the Owner's code (it may make
   one where there is none yet, at the handover), never gives the Owner a browser sign-in, and can't
-  change the Owner's own settings (the installer code's Setup mode, the power-up recovery). The
+  change the Owner's own settings (the Admin code's Setup mode, the power-up recovery). The
   power-up recovery gives the panel back to the Owner: it sets a new master code, never an
-  installer code (CORE-USR-040, CORE-PROG-015).
+  Admin code (CORE-USR-040, CORE-PROG-015). The Owner alone changes the update server and enrols
+  a developer certificate (either could install firmware that locks the Owner out), and a backup's
+  restore keeps the current master code, the Owner's browser sign-in and the Owner's settings
+  unless the Owner restoring it takes the file's codes (CFG-006).
 
 ## Requirements
 | ID | Requirement | Verified by |
@@ -55,7 +59,7 @@ Owner, and no code outranks the Owner.
 | USR-002 | Codes are unique and **4-10 digits, chosen per user** (iPhone-style). `code_min_len` (4-10, default 4) sets the minimum for new or changed codes; existing shorter codes keep working | `CORE-USR-008, 017, 018`, `CORE-CFG-002` |
 | USR-003 | Codes are stored only as hashes: PBKDF2-HMAC-SHA256 with a per-panel random salt (PSA API) | platform (M2) |
 | USR-010 | Hashing that fails never passes for hashing that worked: a broken PSA yields an unpredictable, never-all-zero value, so a check fails closed; the panel refuses to create or change a code while hashing is broken, and refuses to start at all rather than come up with codes nobody could enter (`platform_esp/src/code_hash.c`, [06](../06-CrowPanel-P4-Platform/README.md) P4-015) | platform; `test_users.c` (CORE-USR-024) and the console's `crypto_test` at the hash clone (06 P4-015); fault injection at the PSA calls other than the hash clone still to do (BL-032) |
-| USR-004 | **No factory codes** (the owner's decision of 2026-11-08, replacing the factory codes installer 69420 and master 123456): a new or factory-reset panel has no codes, and its setup has the first person make the first (`alarm_engine_first_code()`): the master code by default, the Owner's; an installer code when setting it up for someone else, whose master code is made at the handover (Installer > Installer and master codes). A bench with nobody at its screen uses the service console's `first_code`, also only while there are no codes. A headless panel's claim makes both slots with codes nobody knows. Panels that kept the old factory codes keep them; the panel still recognises them (`alarm_engine_default_codes()`) and the status bar asks for a change until they are | `CORE-USR-019, 020, 041`, preview (`setup_codes`, `setup_codes_made`) |
+| USR-004 | **No factory codes** (the owner's decision of 2026-11-08, replacing the factory codes installer 69420 and master 123456): a new or factory-reset panel has no codes, and its setup has the first person make the first (`alarm_engine_first_code()`): the master code by default, the Owner's; an Admin code when setting it up for someone else, whose master code is made at the handover (Installer > Master and Admin codes). A bench with nobody at its screen uses the service console's `first_code`, also only while there are no codes. A headless panel's claim makes both slots with codes nobody knows. Panels that kept the old factory codes keep them; the panel still recognises them (`alarm_engine_default_codes()`) and the status bar asks for a change until they are | `CORE-USR-019, 020, 041`, preview (`setup_codes`, `setup_codes_made`) |
 | USR-005 | N invalid codes from one source lock that source for T (default 5 / 300 s); lockout is reported; panic keys still work | `CORE-USR-005, 006` |
 | USR-006 | Duress arms and disarms normally (a duress report whenever it arms or disarms); the event is silent locally and in Home Assistant's panel state, but published as a `duress` event | `CORE-USR-004, 026`, `test_proto.c` (MQTT-010) |
 | USR-007 | Users can be added, changed and deleted from the touch UI, from classic keystrokes (`code + CODE + uu + new code + #`, `code + CODE + uu + # 0`) and over MQTT by an authorised code; a name or authority changes without a new code (`alarm_engine_user_update`) | `CORE-USR-007, 013, 021, 022`, preview; MQTT not built (left out of M5, BL-075) |
@@ -88,11 +92,11 @@ Owner, and no code outranks the Owner.
   the snapshot's `local_lockout_until`; KPD-008).
 
 ### UI flows (as built, M4: `components/ui/alarm_ui/src/ui_settings.c`)
-- **Settings > Users** asks for a master, partition-master or installer code once; it is kept
+- **Settings > Users** asks for a master, partition-master or Admin code once; it is kept
   in RAM only while Settings is open and wiped when Settings closes or after 5 idle minutes (one code
   per visit is enough on a panel inside the home, and the engine still checks it on every change). The same code opens Wi-Fi and network,
   the time zone and the language (Time and language), Integrations and the event log (docs/features/14, "Who can change what"). **The
-  installer code opens Users too and manages every user** (decided; a classic rule
+  Admin code opens Users too and manages every user** (decided; a classic rule
   would limit it to the installer and master codes).
 - The list shows name, number and authority; the installer and the system master see everyone,
   a partition master itself and the users of its partitions. Who can open whom is
@@ -110,10 +114,10 @@ Owner, and no code outranks the Owner.
   delete (confirmation; not 01, 02 or yourself).
 - **Change your code** (the factory-code banner): current code, then the new one twice.
 - **Setup**: on a panel with no codes, "Make your code": "This alarm is mine" (the master code)
-  or "I'm setting it up for someone else" (an installer code), each new code twice; Next waits for
+  or "I'm setting it up for someone else" (an Admin code), each new code twice; Next waits for
   it. A panel that kept an older version's factory codes is offered the old change instead.
-- **Installer > Installer and master codes**: set either without the old one while in installer
-  mode (opened by the installer or the system master), which is how a lost installer code is
+- **Installer > Master and Admin codes**: set either without the old one while in installer
+  mode (opened by the installer or the system master), which is how a lost Admin code is
   replaced after the power-up recovery ([14](../14-Configuration-and-Installer-Programming/README.md)).
 - **Code pad**: one dot per typed digit, iPhone-style; the check key submits, since users can
   have different code lengths.

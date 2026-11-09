@@ -247,7 +247,7 @@ CrowPanel Advanced 7" just out of its box. Steps 1 and 2 are the ones you can't 
 
 On first boot the panel runs its setup on the touchscreen: Wi-Fi, the time zone, a name and your
 own code. There are no factory codes: the first person makes the master code (the owner's, which
-no other code outranks), or an installer code when setting it up for someone else, who makes the
+no other code outranks), or an Admin code when setting it up for someone else, who makes the
 master code at the handover. Panels from before this kept their old factory codes (installer
 69420, master 123456) until they are changed, and the status bar says so. A lost master code is
 recovered at the panel: unplug it for ten seconds, and for two minutes after it starts Settings >

@@ -1517,7 +1517,7 @@ static const char *check_words(auto_check_t why)
     case AUTO_ERR_TIME: return TR("Pick a time and at least one day");
     case AUTO_ERR_WINDOW: return TR("From and To can't be the same time");
     case AUTO_ERR_ARM_ALONE: return TR("Arming has to be its only action");
-    case AUTO_ERR_MAKER: return TR("The master or installer code saves this one");
+    case AUTO_ERR_MAKER: return TR("The master or Admin code saves this one");
     case AUTO_ERR_SAME_DEVICE: return TR("It already does something with that device");
     case AUTO_ERR_UNSUPPORTED: return TR("This software can't run that yet");
     case AUTO_ERR_NEEDS_CONFIRM: return TR("It has to be confirmed first");
@@ -2176,7 +2176,7 @@ void ui_automations_build(page_id_t id, int32_t arg, lv_obj_t *body, char *title
         /* AUT-010, D3: the system master or the installer (screen 6) */
         /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
         ui_settings_locked(body, ACCESS_SYSTEM, TR("Automations"),
-                           TR("Automations are changed with the master or installer code."), note, nlen);
+                           TR("Automations are changed with the master or Admin code."), note, nlen);
         return;
     }
     if (!read_rules()) {

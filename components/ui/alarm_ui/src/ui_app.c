@@ -2397,7 +2397,7 @@ static void activity_private_click(lv_event_t *e)
     /* TR: Activity, the title of the code pad that shows the private (silent) events. At most
      * 31 bytes */
     const char *title = TR("Show private events");
-    ui_pad_ask(HOST_MODAL, UI_ICON_KEY_ROUND, title, TR("Enter a master or installer code"),
+    ui_pad_ask(HOST_MODAL, UI_ICON_KEY_ROUND, title, TR("Enter a master or Admin code"),
                ui_tone_blue(), private_unlock);
 }
 
@@ -2459,7 +2459,7 @@ static void activity_loss_rows(void)
         lv_obj_add_event_cb(b, activity_clear_loss_click, LV_EVENT_CLICKED, NULL);
     } else {
         /* TR: Activity, under the warning: who can clear it. At most 127 bytes */
-        ui_paragraph(S.event_list, TR("Only the master or installer code clears this warning."),
+        ui_paragraph(S.event_list, TR("Only the master or Admin code clears this warning."),
                      ui_tone_gray());
     }
 }

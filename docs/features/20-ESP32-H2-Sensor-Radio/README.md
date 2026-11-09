@@ -190,7 +190,7 @@ Zigbee as the first-class wireless source on the P4 + ESP32-H2 RCP is recorded a
 | ZB-014 | Identify makes the device blink or beep itself (never the panel's screen); "Check it now" asks a listening device at once and a sleepy one at its next wake-up | host tests, HIL |
 | ZB-015 | Install codes on the touchscreen and in the Panel Manager (typed, or scanned there): length and CRC checked, given to the trust center, listed (address, added when; the code never shown again), kept until their device joins with them, forgotten on request; optional - any Zigbee 3.0 device may join in the window without one (devices.md §8) | host tests, preview, Panel Manager tests, HIL |
 | ZB-016 | The channel (11, 15, 20, 25) chosen by the installer with the quietest of the latest survey marked, after a warning that sleeping devices move at their next check-in and some may need adding again; stored; installer mode with every partition disarmed | host tests, HIL |
-| ZB-017 | Reset the Zigbee network: two confirmations and the installer code again; every device must be added again; logged | host tests, preview, HIL |
+| ZB-017 | Reset the Zigbee network: two confirmations and the Admin code again; every device must be added again; logged | host tests, preview, HIL |
 | ZB-018 | The radio page: state (and why it is paused), the radio's firmware version, channel, PAN id, extended PAN id, the panel's Zigbee address, background noise, the restart guard's count; Restart the radio; Try again when paused | preview, HIL |
 | ZB-019 | Events in the log: added (and how it joined), removed, forgotten, left by itself, replaced, a stranger refused, channel changed, network reset, radio restarted - appended event types with stable names and sentences (devices.md §11) | host tests (golden names) |
 | ZB-020 | Backup and restore of the network: the panel's `zbpanel` namespace, and the stack's network once its namespace is known; a restore re-enrolls every sensor and never lets the frame counter go back (devices.md §13) | host tests (policy), HIL |
@@ -413,7 +413,7 @@ and recorded devices ([testing.md](testing.md)), then the service, the pages and
   the device with no step count and says to open it and set it up again (wake it first if it
   sleeps), on both pages. Only a setup still running (asleep) "finishes when it next wakes".
 - The network reset asks twice on both pages (ZB-017): "Reset the Zigbee network?" with Continue,
-  then "Reset it now?", then the installer code (the touchscreen) or the password (the Panel
+  then "Reset it now?", then the Admin code (the touchscreen) or the password (the Panel
   Manager).
 - A Zigbee keypad has no silent panic, and a key fob's owner is a master, partition master,
   standard, arm-only or guest user (alarm-devices.md §3).

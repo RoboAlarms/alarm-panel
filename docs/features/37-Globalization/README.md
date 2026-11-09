@@ -236,7 +236,7 @@ AM/PM marker before the time, which the Home clock's separate AM/PM label must f
 `clock_24h` becomes a three-way choice, Automatic (the region's), 12 h and 24 h: every existing
 panel is English with 12 h as its default, so a stored 24 h stays 24 h and anything else becomes
 Automatic. First-time setup asks for the language first when the firmware has more than one; the
-Language and Region lists need a master or installer code, the Clock list anyone's.
+Language and Region lists need a master or Admin code, the Clock list anyone's.
 
 ### Fonts
 - **Latin, for every language and every name (G2):** the text fonts gain Latin-1 and Latin
@@ -528,7 +528,7 @@ Phases, each with what "done" means:
 ### G3 · Language and region (BL-004)
 - [x] Preferences `lang`, `region`, `clockmode` (from `clock24`), `ui_options_t` and the Panel Manager's
       Display and sound lists (`panel_pages.test.cjs`) (BL-004, 581fc91)
-- [x] Settings > Language and region (`ui_lang.c`) behind a master or installer code, the clock list
+- [x] Settings > Language and region (`ui_lang.c`) behind a master or Admin code, the clock list
       anyone's (open question 5) (BL-004, d483e94)
 - [x] First-time setup's language step, shown when the firmware has more than one language (BL-004, d483e94)
 - [x] The live change (`ui_language_apply`), including the XML's static texts, held while an alarm or

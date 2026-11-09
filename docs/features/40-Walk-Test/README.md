@@ -58,7 +58,7 @@ What we take:
 - **A summary at the end** (the untested zones listed), in the log and the end notification.
 
 ## Reference behaviour
-A keypad alarm panel: a user or installer code + TEST starts it; the external sounder sounds for a
+A keypad alarm panel: a user or Admin code + TEST starts it; the external sounder sounds for a
 second; each faulted zone gives three beeps and shows its number; a single beep about every 30-40 s
 reminds that the panel is in test; it ends after 4 hours, with a double beep every 30 s in the last
 5 minutes, or with code + OFF; a test report goes to the central station. An installer's mode
@@ -303,7 +303,7 @@ vibration and speech); a state can be linked (`?phase=ended&role=standard&theme=
   events, the end warning at 5 and 1 minutes, the counts, `can_test()` without the standard user
   (WALK-001, WALK-025); 01's CORE-TEST rows (CORE-TEST-004), CORE-USR-027 and deliberate choice 5 brought
   in step; 14's "Who can change what" gets the walk test's row (BL-128, 5153415)
-- [x] W2 Touchscreen: Settings > Walk test (master and installer codes), the walk test screen, the installer menu's entry; the
+- [x] W2 Touchscreen: Settings > Walk test (master and Admin codes), the walk test screen, the installer menu's entry; the
   screen held awake at day brightness (WALK-022, once UI-043's dimming is in); a start from
   elsewhere shown with its notice or banner (WALK-023); the preview's walk; the simulator (BL-128, 5153415)
 - [x] W3 Panel Manager: `GET walk-test`, the walk test actions in `POST partition` (start and

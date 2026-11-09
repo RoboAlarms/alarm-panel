@@ -444,9 +444,9 @@ static const char *access_hint(ui_access_t access)
 {
     switch (access) {
     case ACCESS_SYSTEM: /* TR: the code pad's hint and the row that opens it, on a locked page */
-        return TR("Enter the master or installer code");
+        return TR("Enter the master or Admin code");
     default: /* TR: the code pad's hint and the row that opens it, on a locked page */
-        return TR("Enter a master or installer code");
+        return TR("Enter a master or Admin code");
     }
 }
 
@@ -1372,7 +1372,7 @@ static void build_users(lv_obj_t *body, char *title, size_t tlen, char *note, si
     if (!ui_settings_allowed(ACCESS_USERS)) {
         /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
         ui_settings_locked(body, ACCESS_USERS, TR("Users"),
-                           TR("Enter a master or installer code to add, change or remove users"), note,
+                           TR("Enter a master or Admin code to add, change or remove users"), note,
                            nlen);
         return;
     }
@@ -1988,7 +1988,7 @@ static void build_about(lv_obj_t *body, char *title, size_t tlen, char *note, si
         ui_section(body, ""); /* a gap before the Installer row */
         /* TR: Settings > About, the Installer row's line. At most 111 bytes */
         ui_row_link(body, UI_ICON_WRENCH, ui_tone_blue(), TR("Installer"),
-                    TR("Changes how the alarm works · needs the master or installer code"), NULL,
+                    TR("Changes how the alarm works · needs the master or Admin code"), NULL,
                     UI_ICON_CHEVRON_RIGHT, about_open, (void *)(intptr_t)PAGE_INSTALLER);
     }
     ui_paragraph(body, TR("Made with LVGL (MIT), the Inter typeface (SIL Open Font License 1.1), "
@@ -2031,7 +2031,7 @@ static void build_page(void)
         if (!ui_settings_allowed(ACCESS_SYSTEM) && !ui_link_update_open()) {
             /* TR: a locked page: the line under the title. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SYSTEM, TR("Software update"),
-                               TR("The system master or installer code updates the software"),
+                               TR("The system master or Admin code updates the software"),
                                note, sizeof(note));
             ui_update_stop();
         } else {
@@ -2052,7 +2052,7 @@ static void build_page(void)
         if (!ui_settings_allowed(ACCESS_SHARED) && !ui_link_maintenance()) {
             /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SHARED, TR("Wi-Fi and network"),
-                               TR("A master or installer code changes the network"), note,
+                               TR("A master or Admin code changes the network"), note,
                                sizeof(note));
         } else {
             /* TR: Settings > Wi-Fi, the line under the title. At most 127 bytes */
@@ -2066,7 +2066,7 @@ static void build_page(void)
         if (!ui_settings_allowed(ACCESS_SHARED) && !ui_link_maintenance()) {
             /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SHARED, TR("Network"),
-                               TR("A master or installer code changes the network"), note,
+                               TR("A master or Admin code changes the network"), note,
                                sizeof(note));
         } else {
             ui_net_advanced_build(body, title, sizeof(title), note, sizeof(note));
@@ -2086,7 +2086,7 @@ static void build_page(void)
         if (!ui_settings_allowed(ACCESS_SHARED)) {
             /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SHARED, TR("Time and language"),
-                               TR("A master or installer code sets the time"), note, sizeof(note));
+                               TR("A master or Admin code sets the time"), note, sizeof(note));
         } else {
             ui_clock_build(body, note, sizeof(note));
         }
@@ -2102,7 +2102,7 @@ static void build_page(void)
         } else if (!ui_settings_allowed(ACCESS_SHARED)) {
             /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SHARED, TR("Walk test"),
-                               TR("A master or installer code starts a walk test"), note,
+                               TR("A master or Admin code starts a walk test"), note,
                                sizeof(note));
         } else {
             ui_walk_build(body, note, sizeof(note));
@@ -2150,7 +2150,7 @@ static void build_page(void)
         if (!ui_settings_allowed(ACCESS_SHARED)) {
             /* TR: a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes */
             ui_settings_locked(body, ACCESS_SHARED, TR_C("settings", "Smart Home"),
-                               TR("A master or installer code changes what asks for one"), note,
+                               TR("A master or Admin code changes what asks for one"), note,
                                sizeof(note));
         } else {
             ui_devices_settings_build(body, note, sizeof(note));

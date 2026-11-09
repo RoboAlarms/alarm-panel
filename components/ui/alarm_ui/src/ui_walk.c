@@ -525,7 +525,7 @@ static void on_extend(void *ctx)
         /* TR: the code pad's hint when Extend is pressed on the walk test's page opened
          * without a code. At most 95 bytes */
         ui_pad_ask(HOST_SETTINGS, UI_ICON_CLOCK, TR("Extend walk test"),
-                   TR("Enter a master or installer code"), ui_tone_blue(), extend_with);
+                   TR("Enter a master or Admin code"), ui_tone_blue(), extend_with);
         return;
     }
     if (!walk_command(s_part, ALARM_WALK_EXTEND, 0u, S.auth_code, extended)) {
@@ -860,7 +860,7 @@ void ui_walk_build(lv_obj_t *body, char *note, size_t nlen)
         }
         if (s_view) {
             /* The summary was shown without a code; a new test needs one (WALK-001). */
-            ui_paragraph(body, TR("A master or installer code starts a walk test"), ui_tone_gray());
+            ui_paragraph(body, TR("A master or Admin code starts a walk test"), ui_tone_gray());
             ui_settings_unlock_row(body, ACCESS_SHARED, TR("Walk test"));
             if (summary) {
                 list_zones(body, ps);

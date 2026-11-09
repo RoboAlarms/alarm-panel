@@ -89,7 +89,7 @@ The rail logo takes the state's tone (UI-037):
 | ![Display and sound](screens/18_settings_display.png) | ![Users: the master code first](screens/19_settings_users_code.png) |
 | ![Users](screens/20_settings_users.png) | ![On-screen keyboard](screens/21_keyboard.png) |
 | ![What this code can do](screens/22_user_authority.png) | ![A user](screens/23_user_page.png) |
-| ![Wi-Fi (master or installer code)](screens/24_settings_wifi.png) | ![Wi-Fi password](screens/25_wifi_password.png) |
+| ![Wi-Fi (master or Admin code)](screens/24_settings_wifi.png) | ![Wi-Fi password](screens/25_wifi_password.png) |
 | ![The cog: how the panel gets its address](screens/26_network_address.png) | ![Checking the connection](screens/27_network_check_running.png) |
 | ![Every check passed](screens/28_network_check_passed.png) | ![From the router, or a fixed address](screens/29_network_address_mode.png) |
 | ![A fixed address](screens/30_network_static.png) | ![The wrong router: the check says so](screens/31_network_check_failed.png) |
@@ -107,11 +107,11 @@ The rail logo takes the state's tone (UI-037):
 | ![About: an update is available](screens/54_about_update_available.png) | ![About: update waits until disarmed](screens/55_about_update_waiting.png) |
 | ![About: an update was rolled back](screens/56_about_rolled_back.png) |  |
 | ![Setup: welcome](screens/57_setup_welcome.png) | ![Setup: Wi-Fi](screens/58_setup_wifi.png) |
-| ![Setup: time zone](screens/59_setup_time_zone.png) | ![Setup: new installer code](screens/60_setup_new_code.png) |
+| ![Setup: time zone](screens/59_setup_time_zone.png) | ![Setup: new Admin code](screens/60_setup_new_code.png) |
 | ![Setup: codes](screens/61_setup_codes.png) | ![Setup: done](screens/62_setup_done.png) |
-| ![Home after the setup](screens/63_home_after_setup.png) | ![Lost installer code: power-up recovery](screens/64_installer_recovery.png) |
-| ![Recovery: confirm](screens/65_recovery_confirm.png) | ![Recovery: set a new installer code](screens/66_recovery_new_code.png) |
-| ![Wi-Fi asks for a master or installer code](screens/67_wifi_locked.png) |  |
+| ![Home after the setup](screens/63_home_after_setup.png) | ![Lost Admin code: power-up recovery](screens/64_installer_recovery.png) |
+| ![Recovery: confirm](screens/65_recovery_confirm.png) | ![Recovery: set a new Admin code](screens/66_recovery_new_code.png) |
+| ![Wi-Fi asks for a master or Admin code](screens/67_wifi_locked.png) |  |
 
 ### Zone sources (M11)
 
@@ -148,7 +148,7 @@ only with `pwsh tools/ui_preview.ps1 -ZWave` (shots 132-150, not in `screens/`).
 | UI-011 | Keypad role (docs/features/11, BL-048): the setup's role step on a first start and a keypad's Wi-Fi (not skippable) and pairing step (the code compared on both screens, its failures with Try again); Home while it connects, with "No system communication" (steady, state unknown, arming and Chime dimmed, zones Unknown, Panic still sent) and not paired (Pair again, no Panic); the role gate in Settings, a read-only clock and time zone, About's keypad rows and "Make it a stand-alone panel" | preview (M7 on panels) |
 | UI-012 | Installer screens: the menu (opened from About) with Updates (the update server and the channel, UI-021), system options (delays, arming including remote arming without a code, codes, power, recovery), zones (add, edit, remove), system name, installer and master codes, run the setup again (leavable, UI-033), factory reset (hold to confirm); Keypads and devices with the keypads on Wi-Fi (add one, its page, remove it with a hold, BL-048). Firmware (M6) and backup come with their milestones | preview |
 | UI-013 | UI regression screenshots rendered headless in CI | CI (`ui-preview` job) |
-| UI-015 | Settings: sections on the left, one line each in the rail's style (an icon and the name; a tag only when something needs you, About's "Update" while an update waits), Screen and sound, Users, Wi-Fi and network, Time and language, Integrations, Automations (when the build has them, docs/features/41), Walk test, About (BL-131; Installer is the last row of About, under System details, BL-189; the event log is Activity's since finding 7). Pages on the right with Back. Who opens what follows docs/features/14 "Who can change what": Screen and sound (brightness, volume, key clicks, screen saver, screen off and night hours (UI-043); the chime row follows UI-025), About (Software update inside it asks for the installer's or the system master's code, UI-021), and Time and language's clock rows (what the clock says, the 12/24-hour Clock) need no code; Users a master code; Wi-Fi and network, the rest of Time and language (time zone, language, region, time server; docs/features/37) a master or installer code (as do Activity's private events, docs/features/05 LOG-008); Integrations the system master or installer code; Installer, at the bottom of About, the installer code (or the power-up recovery). A code opens every section it allows until Settings closes | preview (`24`, `67`), code review |
+| UI-015 | Settings: sections on the left, one line each in the rail's style (an icon and the name; a tag only when something needs you, About's "Update" while an update waits), Screen and sound, Users, Wi-Fi and network, Time and language, Integrations, Automations (when the build has them, docs/features/41), Walk test, About (BL-131; Installer is the last row of About, under System details, BL-189; the event log is Activity's since finding 7). Pages on the right with Back. Who opens what follows docs/features/14 "Who can change what": Screen and sound (brightness, volume, key clicks, screen saver, screen off and night hours (UI-043); the chime row follows UI-025), About (Software update inside it asks for the installer's or the system master's code, UI-021), and Time and language's clock rows (what the clock says, the 12/24-hour Clock) need no code; Users a master code; Wi-Fi and network, the rest of Time and language (time zone, language, region, time server; docs/features/37) a master or Admin code (as do Activity's private events, docs/features/05 LOG-008); Integrations the system master or Admin code; Installer, at the bottom of About, the Admin code (or the power-up recovery). A code opens every section it allows until Settings closes | preview (`24`, `67`), code review |
 | UI-016 | On-screen keyboard for names, network names and passwords (lower/upper case, numbers, symbols; Lucide glyphs on the special keys); a password's field ends in an eye that shows what was typed and hides it again, and every sheet opens with it hidden (BL-131); choice lists and confirmations over the screen | preview |
 | UI-017 | First-boot setup on its own screen: welcome, Wi-Fi (scan, password, hidden network), time zone, the date and time (only where a clock module lost the time and there is no internet: docs/features/35 RTC-015), change the factory codes (optional), system name, done; every step skippable; an alarm takes the screen over and the setup continues after it | preview |
 | UI-033 | **The setup run again can be left.** On a panel that is already set up ("Run the setup again" in the installer menu), every step's footer offers "Leave setup" beside Back: it goes back to Home at once, and what the steps already did (Wi-Fi, time zone, codes, name) is saved as it happens, so there is nothing to undo and nothing to confirm. On a first boot the setup has nothing to go back to and the button isn't shown: it ends at "You're all set". The setup screenshots below are a re-run, so they show the button | preview (the walk-through runs the setup again, checks the way out is there on the welcome and the Wi-Fi step, and that it lands on Home) |
@@ -299,11 +299,11 @@ flowchart LR
   ARMED -- door opens --> ENTRY[Entry countdown + pad]
   ENTRY -- time runs out --> ALARM[Alarm: red + pad]
   ALARM -- code --> MEMORY[Alarm memory -> clear]
-  HOME --> ZONES[Zones + bypass] & ACT[Activity: the event log; private events need a master/installer code] & TRBL[Troubles + acknowledge] & PANIC[Emergency: hold 2 s]
+  HOME --> ZONES[Zones + bypass] & ACT[Activity: the event log; private events need a master/Admin code] & TRBL[Troubles + acknowledge] & PANIC[Emergency: hold 2 s]
   HOME -- 60 s idle --> SAVER[Screen saver] -- touch / state change --> HOME
   HOME -- gear --> SET[Settings]
-  SET --> DISP[Screen and sound] & USERS[Users: master code] & NET[Wi-Fi and network: master/installer code] & TIME[Time and language: the zone and language need a master/installer code] & INTEG[Integrations] & WALK[Walk test] & ABOUT[About]
-  ABOUT --> INST[Installer: installer code or power-up recovery] --> OPT[Options] & ZN[Zones] & NAME[Name] & PARTS[Partitions] & DEV[Keypads and devices] & CODES[Codes] & AGAIN[Run the setup again] & RESET[Factory reset] & UPD[Updates: server and channel]
+  SET --> DISP[Screen and sound] & USERS[Users: master code] & NET[Wi-Fi and network: master/Admin code] & TIME[Time and language: the zone and language need a master/Admin code] & INTEG[Integrations] & WALK[Walk test] & ABOUT[About]
+  ABOUT --> INST[Installer: Admin code or power-up recovery] --> OPT[Options] & ZN[Zones] & NAME[Name] & PARTS[Partitions] & DEV[Keypads and devices] & CODES[Codes] & AGAIN[Run the setup again] & RESET[Factory reset] & UPD[Updates: server and channel]
   FIRST((first boot)) --> SETUP[Setup: Wi-Fi, time zone, codes, name] --> HOME
 ```
 
@@ -489,7 +489,7 @@ Wi-Fi radio; on a remote keypad (M7) it will be the panel link client.
   factory code remains (BL-131 findings 21, 22, 5517778)
 - [x] The small fixes mockup-next lists: no "Setup finished" toast, the pad's keys dimmed while
   the keypad is locked out, a language named not coded, raw sensor states capitalised, a device's
-  Supervision a picker, no page note repeating its section, "Lost the installer code?" a row of
+  Supervision a picker, no page note repeating its section, "Lost the Admin code?" a row of
   its own, when Software update last checked (BL-131, 49cbaed)
 - [ ] The last of the approved redesign in mockup-next: Activity as the whole log, leaving Settings
   8 sections (finding 7, waiting on the maintainers' answer about LOG-008/LOG-010) (BL-131)

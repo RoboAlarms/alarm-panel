@@ -1250,6 +1250,14 @@ static void sv_read(ui_fw_server_t *srv)
     }
 }
 
+/* The update server is the Owner's alone (the owner's decision of 2026-11-08): a server that
+ * replaces the firmware could lock the Owner out, so only the master code's installer mode
+ * changes it. */
+static bool owner_here(void)
+{
+    return S.auth_user == ALARM_USER_MASTER;
+}
+
 static bool factory_installer_code(void)
 {
     return (S.snap.default_codes & ALARM_DEFAULT_CODE_INSTALLER) != 0u;
@@ -1418,7 +1426,7 @@ static void commit_now(void)
         if (r == UI_FW_COMMIT_FACTORY_CODE) {
             /* TR: a toast: the update server can't change while the installer code is the factory
              * one. At most 63 bytes */
-            ui_toast(TR("Change the installer code first"));
+            ui_toast(TR("Change the Admin code first"));
         } else if (r == UI_FW_COMMIT_RUNNING) {
             ui_toast(TR("Not while an update runs"));
         } else {
@@ -1491,6 +1499,9 @@ static void typed_done(const char *text)
 static void on_change(void *ctx)
 {
     (void)ctx;
+    if (!owner_here()) {
+        return;
+    }
     /* TR: Installer > Update server, the text sheet's title. At most 47 bytes */
     ui_text_sheet_kind(TR("Update server"),
                        /* TR: the text sheet's note: what to type. At most 127 bytes */
@@ -1502,6 +1513,9 @@ static void on_change(void *ctx)
 static void on_go_back(void *ctx)
 {
     (void)ctx;
+    if (!owner_here()) {
+        return;
+    }
     begin_check(OFFICIAL_DOMAIN);
 }
 
@@ -1586,16 +1600,20 @@ static void build_server(lv_obj_t *body, char *title, size_t tlen, char *note, s
     /* TR: Installer > Update server, the row that types a new domain. At most 47 bytes */
     lv_obj_t *change = ui_row_link(body, UI_ICON_PENCIL, factory_installer_code() ? ui_tone_gray() : ui_tone_blue(),
                                    TR("Change the update server"), NULL, NULL, UI_ICON_CHEVRON_RIGHT, on_change, NULL);
-    if (factory_installer_code()) {
-        /* TR: the line under that row while the installer code is the factory one. At most 79 bytes */
-        ui_row_set_detail(change, TR("Change the installer code first: the factory one is public"), false,
+    if (!owner_here()) {
+        ui_row_set_detail(change, TR("Only the master code changes this"), false, ui_tone_gray());
+        ui_row_disable(change);
+    } else if (factory_installer_code()) {
+        /* TR: the line under that row while the Admin code is an older panel's factory one. At most
+         * 79 bytes */
+        ui_row_set_detail(change, TR("Change the Admin code first: the factory one is public"), false,
                           ui_tone_gray());
         ui_row_disable(change);
     } else {
         /* TR: the line under that row. At most 79 bytes */
         ui_row_set_detail(change, TR("For your own builds or another project's"), false, ui_tone_gray());
     }
-    if (!srv.official) {
+    if (!srv.official && owner_here()) {
         char text[96];
         /* TR: Installer > Update server, the button that goes back to this build's own server; {0}
          * is its domain. At most 63 bytes */
@@ -1609,6 +1627,9 @@ static void build_server(lv_obj_t *body, char *title, size_t tlen, char *note, s
 static void use_it(void *ctx)
 {
     (void)ctx;
+    if (!owner_here()) {
+        return;
+    }
     commit_now();
 }
 

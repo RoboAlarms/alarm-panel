@@ -390,7 +390,7 @@ kpSet({id: 'kp-announcements-no-pack', shot: null, title: 'Keypad: Announcements
     body: KP_ANN({on: false, voice: 'none', refused: 'Announcements cannot be turned on because the voice pack is not installed.'})});
 
 kpSet({id: 'kp-time', shot: 'bl-048-kp-time', title: 'Keypad: Settings, Time and language'},
-  'A keypad\'s settings-time, opened with a master code (checked by Harbor House). The clock and the time zone come from Harbor House, so they are read-only here and say so; no Time server. The 12/24-hour clock, the language and the region are this keypad\'s. Without a code: the clock rows, Clock and "Enter a master or installer code", with the line "A master or installer code changes the language".',
+  'A keypad\'s settings-time, opened with a master code (checked by Harbor House). The clock and the time zone come from Harbor House, so they are read-only here and say so; no Time server. The 12/24-hour clock, the language and the region are this keypad\'s. Without a code: the clock rows, Clock and "Enter a master or Admin code", with the line "A master or Admin code changes the language".',
   {section: 'time', title: 'Time and language', body: [
     M.row_link({glyph: 'calendar-clock', color: 'green', title: 'Saturday, September 19 · 10:42 PM', detail: 'From Harbor House', trail: ''}),
     M.row_link({glyph: 'globe', title: 'Time zone', detail: 'Set on Harbor House', value: 'Eastern Time', trail: ''}),
@@ -428,7 +428,7 @@ kpSet({id: 'kp-about-end', shot: 'bl-048-kp-about-end', title: 'Keypad: About, s
   ].join('')});
 
 kpSet({id: 'kp-standalone', shot: 'bl-048-kp-standalone', title: 'Keypad: make it a stand-alone panel (factory reset, held)'},
-  'A keypad\'s factory-reset page, held half way after the installer code (checked by Harbor House through authenticate; any other code: "That isn\'t the master or installer code"). Before the code the hold is "Enter the master or installer code"; after 10 minutes with no system communication (link_info.maintenance, LINK-025) it opens without one, so a keypad whose alarm panel is gone isn\'t stuck. It erases everything and restarts in the setup, where the role is asked again. No event-log switch: a keypad has none.',
+  'A keypad\'s factory-reset page, held half way after the Admin code (checked by Harbor House through authenticate; any other code: "That isn\'t the master or Admin code"). Before the code the hold is "Enter the master or Admin code"; after 10 minutes with no system communication (link_info.maintenance, LINK-025) it opens without one, so a keypad whose alarm panel is gone isn\'t stuck. It erases everything and restarts in the setup, where the role is asked again. No event-log switch: a keypad has none.',
   {section: 'about', title: 'Make it a stand-alone panel', note: 'A factory reset', back: 'kp-about-end', body: [
     M.paragraph('Erases the pairing with Harbor House, Wi-Fi and every setting, then restarts with the setup.'),
     M.paragraph('Harbor House shows a trouble for this keypad until it is removed there.', 'amber'),

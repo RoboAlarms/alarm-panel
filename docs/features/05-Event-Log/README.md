@@ -25,7 +25,7 @@ it on the screen.
 | LOG-005 | The last event sequence is recovered at boot and handed to the engine | `test_last_seq_counts_events`, `test_wraps_and_levels_wear`; `alarm_service_set_min_event_seq` |
 | LOG-006 | Reportable events not yet acknowledged by MQTT are resent after reconnect, in order | `test_elog.c: test_read_after_*`, `test_report.c`, integration |
 | LOG-007 | Viewer with filters: alarms, troubles, arming, bypass, system | preview (`45_event_log.png`), `test_sparse_filter_with_scan_limit` |
-| LOG-008 | Silent events (duress, silent panic) are visible only to master/installer: Activity hides them until "Show private events" takes a master or installer code (a partition master's shows only their partitions'), forgotten on leaving Activity, at the screen saver and when an arming starts | code review, preview (`activity_private*`) |
+| LOG-008 | Silent events (duress, silent panic) are visible only to master/installer: Activity hides them until "Show private events" takes a master or Admin code (a partition master's shows only their partitions'), forgotten on leaving Activity, at the screen saver and when an arming starts | code review, preview (`activity_private*`) |
 | LOG-009 | Export as CSV/JSON (SD card or MQTT request) | CSV over the service console (M4); over MQTT: later |
 | LOG-010 | A record is never dropped in silence: reportable events have queue slots of their own, a failed append is tried again, one that still can't be kept is reported live instead ([10](../10-MQTT-and-Home-Assistant/README.md) MQTT-017), and whatever is lost is counted in NVS and holds the `storage` trouble until it is cleared — a later successful write never erases it | `test_failed_append_is_retried`, `test_report.c: test_lost_marker_is_never_replayed`; queue and flash fault injection on the bench; UI preview (`activity_loss*`) |
 
@@ -124,7 +124,7 @@ int    elog_clear(elog_t *log);
 Activity is the whole log (BL-131 finding 7): newest first with icon, words, who or which zone
 and when ("10:50 PM", "Yesterday, 9:01 PM", "Sep 19, 10:50 PM"), filters (All, Alarms, Troubles,
 Arming, Bypass, System), "Show older events" paging and how much it keeps. Silent events show,
-marked "Silent", only after "Show private events" takes a master or installer code (LOG-008;
+marked "Silent", only after "Show private events" takes a master or Admin code (LOG-008;
 dimmed while armed or in alarm), with LOG-010's latched loss at the top that the installer or the
 system master clears (the master too since the owner's decision of 2026-11-08). The Panel Manager's Activity page hides silent events too (`/api/v1/history`,
 [31](../31-Browser-Panel-Manager/README.md),

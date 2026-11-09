@@ -42,7 +42,7 @@ upd({id: 'settings-update', shot: 'about_update_available', title: 'Software upd
 // The Installer menu (installer.js installer-menu), scrolled to its Updates group. server: the Update server row.
 const INSTALLER_MENU = (server, channel = 'Stable') => [
   M.section('This panel'),
-  M.row_link({glyph: 'key-round', color: 'amber', title: 'Installer and master codes', detail: 'Factory codes still in use'}),
+  M.row_link({glyph: 'key-round', color: 'amber', title: 'Master and Admin codes', detail: 'Factory codes still in use'}),
   M.row_toggle({glyph: 'monitor', title: 'Panel Manager', detail: 'Change settings from a browser on your network'}),
   M.row_toggle({glyph: 'globe', title: 'Browser sign-in', detail: 'User name: Installer · a password, not the keypad code'}),
   M.row_toggle({glyph: 'code-xml', color: 'gray', title: 'Developer mode', detail: 'Enrolled development tools and signed network updates'}),
@@ -110,7 +110,7 @@ inst186({id: 'installer-update-server-checking', shot: 'fwsrv_checking', title: 
   ])});
 
 inst186({id: 'installer-update-server-warning', shot: 'fwsrv_warning', title: 'Update server: the warning before another project\'s server',
-  notes: 'Opens after a good check of a server that isn\'t roboalarms.com, or whose key the version it runs wasn\'t signed with. Back cancels; nothing changes until the hold completes. Then the panel keeps the domain and this key, logs "Update server changed" by the installer (it reaches the owner\'s notifications like other system events) and checks at once. Refused while the installer code is still the factory one (next screens).',
+  notes: 'Opens after a good check of a server that isn\'t roboalarms.com, or whose key the version it runs wasn\'t signed with. Back cancels; nothing changes until the hold completes. Then the panel keeps the domain and this key, logs "Update server changed" by the installer (it reaches the owner\'s notifications like other system events) and checks at once. Refused while the Admin code is still the factory one (next screens).',
   page: {title: 'Use example.net for updates?', note: 'Not the RoboAlarms update server', back: 'installer-update-server', body: [
     M.row_status({glyph: 'shield-alert', color: 'amber', title: 'example.net answered', detail: 'It has firmware for this panel'}),
     M.paragraph('Whoever runs this server can install firmware that changes everything this panel does, its alarms too. Continue only if you trust them.', 'amber'),
@@ -148,24 +148,24 @@ REFUSED({id: 'installer-update-server-no-firmware', shot: 'fwsrv_no_firmware'},
   'example.net has no firmware for this panel', 'It doesn\'t serve this model of panel',
   'The server answered, but its catalogue doesn\'t have this board, chip or build (unknown_device): nothing changes.');
 
-inst186({id: 'installer-update-server-factory-code', shot: 'fwsrv_refused_factory', title: 'Update server: the factory installer code is still in use',
-  notes: 'The row is dimmed until the installer code is changed (Installer > Installer and master codes). Going back to roboalarms.com, with a key the panel already trusts, stays allowed. The USB service console isn\'t held back: whoever has the cable can flash the panel anyway.',
+inst186({id: 'installer-update-server-factory-code', shot: 'fwsrv_refused_factory', title: 'Update server: the factory Admin code is still in use',
+  notes: 'The row is dimmed until the Admin code is changed (Installer > Master and Admin codes). Going back to roboalarms.com, with a key the panel already trusts, stays allowed. The USB service console isn\'t held back: whoever has the cable can flash the panel anyway.',
   page: SERVER_PAGE([
     M.row_status({glyph: 'server', color: 'green', title: 'roboalarms.com', detail: 'The RoboAlarms update server'}),
     M.section('Signing key'), RA_KEY, M.section(''),
-    M.row_link({glyph: 'pencil', color: 'gray', title: 'Change the update server', detail: 'Change the installer code first: the factory one is public', disabled: true}),
+    M.row_link({glyph: 'pencil', color: 'gray', title: 'Change the update server', detail: 'Change the Admin code first: the factory one is public', disabled: true}),
   ])});
 
-// BL-187: the installer code never arms or disarms (docs/features/03 USR-001), and the screen never
-// shows the factory installer code's digits.
+// BL-187: the Admin code never arms or disarms (docs/features/03 USR-001), and the screen never
+// shows the factory Admin code's digits.
 
 M.screen({
-  id: 'installer-codes', shot: 'installer_codes', area: 'Installer', title: 'Installer and master codes: no digits on show',
-  notes: 'The detail is the setup\'s words, without the code\'s digits ("Still the factory code"). The paragraph under the rows now says what each code is for: the installer code programs the panel but never arms or disarms it (USR-001). Arming with the installer code at the keypad gets today\'s refusal, "This code can\'t do that", with the error sound and no event. The installer still ends a walk test and silences a fire, CO or emergency alarm (neither disarms). Automations: an arming or disarming one acts as its maker, so the installer isn\'t offered one (the arming idea and the Arm and Disarm actions are left out), and one the installer made before fails at its time with today\'s failed line.',
+  id: 'installer-codes', shot: 'installer_codes', area: 'Installer', title: 'Master and Admin codes: no digits on show',
+  notes: 'The detail is the setup\'s words, without the code\'s digits ("Still the factory code"). The paragraph under the rows now says what each code is for: the Admin code programs the panel but never arms or disarms it (USR-001). Arming with the Admin code at the keypad gets today\'s refusal, "This code can\'t do that", with the error sound and no event. The installer still ends a walk test and silences a fire, CO or emergency alarm (neither disarms). Automations: an arming or disarming one acts as its maker, so the installer isn\'t offered one (the arming idea and the Arm and Disarm actions are left out), and one the installer made before fails at its time with today\'s failed line.',
   render: () => M.main({view: 'settings', tone: 'blue', rail: {troubles: 1, tone: 'blue'}, bar: {banner: 'installer', time: '10:52', troubles: 1},
-    content: M.settings({section: 'about', sections: ABOUT_SECTIONS, back: 'installer-menu', title: 'Installer and master codes', note: 'The two codes that can\'t be deleted', body: [
-      M.row_link({glyph: 'key-round', color: 'amber', title: 'Installer code', detail: 'Still the factory code'}),
+    content: M.settings({section: 'about', sections: ABOUT_SECTIONS, back: 'installer-menu', title: 'Master and Admin codes', note: 'The two codes that can\'t be deleted', body: [
+      M.row_link({glyph: 'key-round', color: 'amber', title: 'Admin code', detail: 'Still the factory code'}),
       M.row_link({glyph: 'key-round', color: 'amber', title: 'Master code', detail: 'Still the factory code'}),
-      M.paragraph('The installer code programs the panel; it never arms or disarms. The factory codes are public: anyone can look them up. Everyone else\'s code is managed in Settings > Users with the master code.'),
+      M.paragraph('The Admin code programs the panel; it never arms or disarms. The factory codes are public: anyone can look them up. Everyone else\'s code is managed in Settings > Users with the master code.'),
     ].join('')})}),
 });

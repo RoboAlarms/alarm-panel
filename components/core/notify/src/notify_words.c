@@ -122,7 +122,9 @@ const char *notify_authority_name(const i18n_catalog_t *cat, alarm_authority_t a
 {
     /* TR: What a user's code may do (its level). At most 23 bytes. */
     switch (a) {
-    case ALARM_AUTH_INSTALLER: return i18n_text(cat, "user level", "Installer");
+    /* the installer's level is called Admin (the roles of 2026-10-31, the owner's decision of
+     * 2026-11-08) */
+    case ALARM_AUTH_INSTALLER: return i18n_text(cat, "user level", "Admin");
     case ALARM_AUTH_MASTER: return i18n_text(cat, "user level", "System master");
     case ALARM_AUTH_PARTITION_MASTER: return i18n_text(cat, "user level", "Partition master");
     case ALARM_AUTH_STANDARD: return i18n_text(cat, "user level", "Standard");

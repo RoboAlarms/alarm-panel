@@ -1606,7 +1606,7 @@ static void standalone_checked(const ui_call_t *c)
         (S.cfg->users[user - 1u].authority != ALARM_AUTH_INSTALLER &&
          S.cfg->users[user - 1u].authority != ALARM_AUTH_MASTER)) {
         ui_beep(UI_BEEP_ERROR);
-        ui_pad_error(TR("That isn't the master or installer code"));
+        ui_pad_error(TR("That isn't the master or Admin code"));
         return;
     }
     L.standalone_ok = true;
@@ -1627,7 +1627,7 @@ static void standalone_ask(void *ctx)
 {
     (void)ctx;
     ui_pad_ask(HOST_SETTINGS, UI_ICON_ROTATE_CCW, TR("Make it a stand-alone panel"),
-               TR("Enter the master or installer code"), ui_tone_red(), standalone_code);
+               TR("Enter the master or Admin code"), ui_tone_red(), standalone_code);
 }
 
 static void standalone_now(void *ctx)
@@ -1665,7 +1665,7 @@ static void build_standalone(lv_obj_t *body, char *title, size_t tlen, char *not
     } else {
         /* the master or installer code, checked by the alarm panel; after 10 minutes without it,
          * none (LINK-025) */
-        ui_row_action(body, UI_ICON_KEY, TR("Enter the master or installer code"), ui_tone_amber(),
+        ui_row_action(body, UI_ICON_KEY, TR("Enter the master or Admin code"), ui_tone_amber(),
                       standalone_ask, NULL);
     }
     L.page_sig = ui_link_maintenance() ? 2u : 1u;

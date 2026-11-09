@@ -13,7 +13,7 @@ M.screen({
   id: 'installer-lost-code', area: 'Installer', title: 'Installer, before the code: a lost code', shot: 'installer_lost_code',
   notes: 'BL-131 small fix: the lost-code paragraph became a row that opens this page, before the code.',
   render: () => M.main({view: 'settings', rail: {troubles: 1}, bar: {time: '10:52', troubles: 1}, content: M.settings({
-    section: 'installer', back: 'installer-locked', title: 'Lost the installer code?', note: '',
+    section: 'installer', back: 'installer-locked', title: 'Lost the Admin code?', note: '',
     body: [
       M.paragraph('Unplug the panel for ten seconds. For two minutes after it starts, Installer opens without the code (unless the installer turned that off).'),
     ].join('')})}),
@@ -234,7 +234,7 @@ inst({id: 'factory-reset', title: 'Factory reset, held', shot: 'factory_reset'},
 
 // Z-Wave > Region (ui_zwave.c build_region; docs/features/36 screens.md §8, ZW-045): each other
 // region's row says what choosing it does to the devices; a change that stops some names how many,
-// then asks for the installer code once more, as the network reset does.
+// then asks for the Admin code once more, as the network reset does.
 const zwRegionBody = ({current = 'United States', others = [['United States with Long Range', 'Devices keep working']]} = {}) => {
   const stops = others.some(([, d]) => d.includes('stop'));
   return [
@@ -265,9 +265,9 @@ inst({id: 'zwave-region-drop-confirm', title: 'Z-Wave region: a change that stop
 }), {notes: 'Preview: zwave_region_drop_confirm. Leaving Long Range says "2 Long Range devices stop working. Each must be added again, and their zones show CHECK until then."',
   main: () => ({over: M.confirm_dialog({title: 'Change the region to Europe?', note: 'All 5 devices stop working. Each must be added again, and their zones show CHECK until then.', ok: 'Change it'})})});
 
-inst({id: 'zwave-region-code', title: 'Z-Wave region: the installer code once more', shot: null}, () => ({
-  pad: M.code_pad({title: 'Confirm the region', tone: 'red', glyph: 'triangle-alert', hint: 'Enter the master or installer code once more', width: 428}),
-}), {notes: 'Preview: zwave_region_code. The network reset\'s check: the master or installer code (the owner's decision of 2026-11-08); any other code says "Wrong code, try again"; the X closes it and nothing changes.'});
+inst({id: 'zwave-region-code', title: 'Z-Wave region: the Admin code once more', shot: null}, () => ({
+  pad: M.code_pad({title: 'Confirm the region', tone: 'red', glyph: 'triangle-alert', hint: 'Enter the master or Admin code once more', width: 428}),
+}), {notes: 'Preview: zwave_region_code. The network reset\'s check: the master or Admin code (the owner's decision of 2026-11-08); any other code says "Wrong code, try again"; the X closes it and nothing changes.'});
 
 inst({id: 'zwave-radio-details', title: 'Z-Wave radio details', shot: null}, () => ({
   title: 'Z-Wave radio', note: 'What the panel knows about its radio', back: true,

@@ -605,7 +605,7 @@ static void change_code(void *ctx)
     s_code_user = (uint8_t)(uintptr_t)ctx;
     s_code_first = false;
     ui_pad_ask_new(HOST_WIZARD, UI_ICON_KEY_ROUND,
-                   s_code_user == ALARM_USER_INSTALLER ? TR("New installer code")
+                   s_code_user == ALARM_USER_INSTALLER ? TR("New Admin code")
                                                        : TR("New master code"),
                    code_done);
 }
@@ -617,7 +617,7 @@ static void first_code(void *ctx)
     ui_pad_ask_new(HOST_WIZARD, UI_ICON_KEY_ROUND,
                    /* TR: setup, the code pad's title for the panel's first code: the owner's
                     * (master) or, for someone else's home, the installer's. At most 31 bytes */
-                   s_code_user == ALARM_USER_INSTALLER ? TR("Your installer code")
+                   s_code_user == ALARM_USER_INSTALLER ? TR("Your Admin code")
                                                        : TR("Your code"),
                    code_done);
 }
@@ -638,7 +638,7 @@ static void build_first_code(lv_obj_t *b)
     /* TR: setup, the first code: the row for a helper or installer. At most 63 bytes */
     ui_row_link(b, UI_ICON_WRENCH, ui_tone_blue(), TR("I'm setting it up for someone else"),
                 /* TR: setup, under that row. At most 95 bytes */
-                TR("Your installer code; the owner makes theirs at the handover"), NULL,
+                TR("Your Admin code; the owner makes theirs at the handover"), NULL,
                 UI_ICON_CHEVRON_RIGHT, first_code, (void *)(uintptr_t)ALARM_USER_INSTALLER);
     footer(TR("Next"), true);
     ui_set_int(&subject_wiz_next_on, 0); /* a panel is never left without a code */
@@ -667,7 +667,7 @@ static void build_codes(lv_obj_t *b)
                     NULL, NULL, NULL, NULL);
         /* TR: setup, the installer code row: made, or none (it isn't needed). At most 95 bytes */
         ui_row_link(b, inst_none ? UI_ICON_KEY_ROUND : UI_ICON_SHIELD_CHECK,
-                    inst_none ? ui_tone_gray() : ui_tone_green(), TR("Installer code"),
+                    inst_none ? ui_tone_gray() : ui_tone_green(), TR("Admin code"),
                     inst_none ? TR("None · the master code does everything it does")
                               : TR("Made · for programming the panel"),
                     NULL, NULL, NULL, NULL);
@@ -689,7 +689,7 @@ static void build_codes(lv_obj_t *b)
                                      /* TR: setup, the master code row once it was changed */
                                      : TR("Changed · arms, disarms, adds users");
     ui_row_link(b, inst ? UI_ICON_KEY_ROUND : UI_ICON_SHIELD_CHECK, inst ? ui_tone_amber() : ui_tone_green(),
-                TR("Installer code"), inst_note,
+                TR("Admin code"), inst_note,
                 inst ? TR_C("code row button", "Change") : TR_C("code row button", "Change again"),
                 UI_ICON_CHEVRON_RIGHT, change_code, (void *)(uintptr_t)ALARM_USER_INSTALLER);
     ui_row_link(b, master ? UI_ICON_KEY_ROUND : UI_ICON_SHIELD_CHECK, master ? ui_tone_amber() : ui_tone_green(),
@@ -792,7 +792,7 @@ static void build_done(lv_obj_t *b)
     } else {
         ui_row_link(b, UI_ICON_KEY_ROUND, ui_tone_amber(), TR_C("setup summary", "Codes"),
                     factory == ALARM_DEFAULT_CODE_MASTER      ? TR("The master code is still the factory code")
-                    : factory == ALARM_DEFAULT_CODE_INSTALLER ? TR("The installer code is still the factory code")
+                    : factory == ALARM_DEFAULT_CODE_INSTALLER ? TR("The Admin code is still the factory code")
                                                               : TR("Factory codes still in use"),
                     TR_C("code row button", "Change"), NULL, change_code,
                     (void *)(uintptr_t)((factory & ALARM_DEFAULT_CODE_MASTER) != 0u ? ALARM_USER_MASTER

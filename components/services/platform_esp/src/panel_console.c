@@ -947,9 +947,9 @@ static int cmd_factory_reset(int argc, char **argv)
 {
     if (argc < 2 || strcmp(argv[1], "confirm") != 0) {
         printf("erases zones, users, codes, Wi-Fi and preferences, then restarts with no\n"
-               "codes and the setup wizard. Needs the master or installer code, everything\n"
+               "codes and the setup wizard. Needs the master or Admin code, everything\n"
                "disarmed and quiet; the event log stays:\n"
-               "  factory_reset confirm <master or installer code>\n");
+               "  factory_reset confirm <master or Admin code>\n");
         return 1;
     }
     const bool erase_log = argc > 2 && strcmp(argv[2], "log") == 0;
@@ -1164,7 +1164,7 @@ esp_err_t panel_console_start(void)
          .hint = "[on|off]", .func = cmd_speaker},
 #endif
         {.command = "factory_reset", .help = "Erase everything and restart with no codes",
-         .hint = "confirm <master or installer code>", .func = cmd_factory_reset},
+         .hint = "confirm <master or Admin code>", .func = cmd_factory_reset},
         {.command = "first_code", .help = "Make the first code of a panel with none",
          .hint = "[installer] <code>", .func = cmd_first_code},
         {.command = "restart", .help = "Restart the panel", .func = cmd_restart},

@@ -1143,7 +1143,7 @@ void ui_integrations_build(page_id_t id, lv_obj_t *body, char *title, size_t tle
                                        : TR("Integrations"));
     if (!ui_settings_allowed(ACCESS_SYSTEM)) {
         ui_settings_locked(body, ACCESS_SYSTEM, TR("Integrations"),
-                           TR("The master or installer code connects other systems"), note, nlen);
+                           TR("The master or Admin code connects other systems"), note, nlen);
         return;
     }
     if (id == PAGE_ROBOALARMS) {

@@ -1013,8 +1013,8 @@ msgstr "No es posible"
 # review: draft
 #, fuzzy
 msgctxt "user level"
-msgid "Installer"
-msgstr "Instalador"
+msgid "Admin"
+msgstr "Administrador"
 
 #. What a user's code may do (its level). At most 23 bytes.
 #: components/core/notify/src/notify_words.c
@@ -12141,8 +12141,8 @@ msgstr "Revisar"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Installer and master codes"
-msgstr "Códigos de instalador y maestro"
+msgid "Master and Admin codes"
+msgstr "Códigos maestro y de administrador"
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -22156,8 +22156,8 @@ msgstr "Mostrar eventos privados"
 #: components/ui/alarm_ui/src/ui_walk.c
 # review: draft
 #, fuzzy
-msgid "Enter a master or installer code"
-msgstr "Ingrese un código maestro o de instalador"
+msgid "Enter a master or Admin code"
+msgstr "Ingrese un código maestro o de administrador"
 
 #. Activity, a warning row at the top: how many events the log could not save. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_app.c
@@ -22190,8 +22190,8 @@ msgstr "Quitar el aviso"
 #: components/ui/alarm_ui/src/ui_app.c
 # review: draft
 #, fuzzy
-msgid "Only the master or installer code clears this warning."
-msgstr "Solo el código maestro o de instalador borra esta advertencia."
+msgid "Only the master or Admin code clears this warning."
+msgstr "Solo el código maestro o de administrador borra esta advertencia."
 
 #. Activity, the button at the end of the list that loads earlier events
 #: components/ui/alarm_ui/src/ui_app.c
@@ -24036,8 +24036,8 @@ msgstr "Armar debe ser su única acción"
 #: components/ui/alarm_ui/src/ui_automations.c
 # review: draft
 #, fuzzy
-msgid "The master or installer code saves this one"
-msgstr "El código maestro o de instalador guarda esta"
+msgid "The master or Admin code saves this one"
+msgstr "El código maestro o de administrador guarda esta"
 
 #. a toast when an automation can't be saved. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_automations.c
@@ -24249,8 +24249,8 @@ msgstr "Nada lo vuelve a armar. Agregue una que arme por la tarde."
 #: components/ui/alarm_ui/src/ui_automations.c
 # review: draft
 #, fuzzy
-msgid "Automations are changed with the master or installer code."
-msgstr "Las automatizaciones se cambian con el código maestro o de instalador."
+msgid "Automations are changed with the master or Admin code."
+msgstr "Las automatizaciones se cambian con el código maestro o de administrador."
 
 #. a temperature on a Smart Home tile, in the source's own unit
 #: components/ui/alarm_ui/src/ui_devices.c
@@ -25170,7 +25170,7 @@ msgstr "Modo instalador sin código: establezca un código maestro nuevo"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "That isn't the master or installer code"
+msgid "That isn't the master or Admin code"
 msgstr "Ese no es el código maestro ni el de instalador"
 
 #. The code pad's hint line. At most 127 bytes.
@@ -26307,8 +26307,8 @@ msgstr "Se muestra en el protector de pantalla y en el registro de eventos."
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Installer code changed"
-msgstr "Código de instalador cambiado"
+msgid "Admin code changed"
+msgstr "Código de administrador cambiado"
 
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -26322,8 +26322,8 @@ msgstr "Código maestro cambiado"
 #: components/ui/alarm_ui/src/ui_wizard.c
 # review: draft
 #, fuzzy
-msgid "New installer code"
-msgstr "Código de instalador nuevo"
+msgid "New Admin code"
+msgstr "Código de administrador nuevo"
 
 #. The code pad's title. At most 63 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -26337,8 +26337,8 @@ msgstr "Código maestro nuevo"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "The owner's code and the installer's"
-msgstr "El código del propietario y el del instalador"
+msgid "The owner's code and the Admin's"
+msgstr "El código del propietario y el del administrador"
 
 #. Installer > codes, under a code row that is still the factory code (no digits on the screen: the factory codes are public, BL-187). At most 40 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -26360,8 +26360,8 @@ msgstr "Cambiado"
 #: components/ui/alarm_ui/src/ui_wizard.c
 # review: draft
 #, fuzzy
-msgid "Installer code"
-msgstr "Código de instalador"
+msgid "Admin code"
+msgstr "Código de administrador"
 
 #. A list row's title (one line; a long one ends in ...).
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -26373,8 +26373,8 @@ msgstr "Código maestro"
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "The master code is the owner's: it outranks every other code. The installer code programs the panel; it never arms or disarms. Everyone else's code, the installer's included, is in Settings > Users."
-msgstr "El código maestro es del propietario: está por encima de cualquier otro código. El código de instalador programa el panel; nunca arma ni desarma. Los códigos de los demás, incluido el del instalador, están en Configuración > Usuarios."
+msgid "The master code is the owner's: it outranks every other code. The Admin code programs the panel; it never arms or disarms. Everyone else's code, the Admin's included, is in Settings > Users."
+msgstr "El código maestro es del propietario: está por encima de cualquier otro código. El código de administrador programa el panel; nunca arma ni desarma. Los códigos de los demás, incluido el del administrador, están en Configuración > Usuarios."
 
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -26991,8 +26991,8 @@ msgstr "Forma parte de cada tema"
 #: components/ui/alarm_ui/src/ui_integrations.c
 # review: draft
 #, fuzzy
-msgid "The master or installer code connects other systems"
-msgstr "El código maestro o de instalador conecta otros sistemas"
+msgid "The master or Admin code connects other systems"
+msgstr "El código maestro o de administrador conecta otros sistemas"
 
 #. Time and language, the language list: a translation still being checked. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_lang.c
@@ -28186,7 +28186,7 @@ msgstr ""
 
 #. a keypad's Time and language without a code, the line under the title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_net.c
-msgid "A master or installer code changes the language"
+msgid "A master or Admin code changes the language"
 msgstr ""
 
 #. a locked page: its title (cut to 31 bytes). At most 31 bytes
@@ -28205,8 +28205,8 @@ msgstr "Hora e idioma"
 #: components/ui/alarm_ui/src/ui_net.c
 # review: draft
 #, fuzzy
-msgid "A master or installer code changes the time zone and the language"
-msgstr "Un código maestro o de instalador cambia la zona horaria y el idioma"
+msgid "A master or Admin code changes the time zone and the language"
+msgstr "Un código maestro o de administrador cambia la zona horaria y el idioma"
 
 #. A list row's value, at its right end (keep it short).
 #: components/ui/alarm_ui/src/ui_net.c
@@ -28987,14 +28987,14 @@ msgstr "Mostrar un código QR de la página de registro"
 #: components/ui/alarm_ui/src/ui_notify.c
 # review: draft
 #, fuzzy
-msgid "The master or installer code sets up notifications"
-msgstr "El código maestro o de instalador configura las notificaciones"
+msgid "The master or Admin code sets up notifications"
+msgstr "El código maestro o de administrador configura las notificaciones"
 
 #: components/ui/alarm_ui/src/ui_settings.c
 # review: draft
 #, fuzzy
-msgid "Enter the master or installer code"
-msgstr "Ingrese el código maestro o de instalador"
+msgid "Enter the master or Admin code"
+msgstr "Ingrese el código maestro o de administrador"
 
 #. The code pad's hint line. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_settings.c
@@ -29405,8 +29405,8 @@ msgstr "Usuarios"
 #: components/ui/alarm_ui/src/ui_settings.c
 # review: draft
 #, fuzzy
-msgid "Enter a master or installer code to add, change or remove users"
-msgstr "Ingrese un código maestro o de instalador para agregar, cambiar o eliminar usuarios"
+msgid "Enter a master or Admin code to add, change or remove users"
+msgstr "Ingrese un código maestro o de administrador para agregar, cambiar o eliminar usuarios"
 
 #. Settings > Users, the line under the title: who is signed in ({0} is a user's name). At most 40 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
@@ -29722,7 +29722,7 @@ msgstr "Panel RoboAlarms"
 
 #. Settings > About, the Installer row's line. At most 111 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "Changes how the alarm works · needs the master or installer code"
+msgid "Changes how the alarm works · needs the master or Admin code"
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
@@ -29744,7 +29744,7 @@ msgstr "Actualización de software"
 
 #. a locked page: the line under the title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "The system master or installer code updates the software"
+msgid "The system master or Admin code updates the software"
 msgstr ""
 
 #. About > SD card, the line under the title. At most 127 bytes
@@ -29768,8 +29768,8 @@ msgstr "Wi-Fi y red"
 #: components/ui/alarm_ui/src/ui_settings.c
 # review: draft
 #, fuzzy
-msgid "A master or installer code changes the network"
-msgstr "Un código maestro o de instalador cambia la red"
+msgid "A master or Admin code changes the network"
+msgstr "Un código maestro o de administrador cambia la red"
 
 #. Settings > Wi-Fi, the line under the title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
@@ -29782,8 +29782,8 @@ msgstr "La alarma sigue funcionando sin la red"
 #: components/ui/alarm_ui/src/ui_settings.c
 # review: draft
 #, fuzzy
-msgid "A master or installer code sets the time"
-msgstr "Un código maestro o de instalador ajusta la hora"
+msgid "A master or Admin code sets the time"
+msgstr "Un código maestro o de administrador ajusta la hora"
 
 #. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
 #. An explanation under a group of rows (wraps over several lines).
@@ -29791,8 +29791,8 @@ msgstr "Un código maestro o de instalador ajusta la hora"
 #: components/ui/alarm_ui/src/ui_walk.c
 # review: draft
 #, fuzzy
-msgid "A master or installer code starts a walk test"
-msgstr "Un código maestro o de instalador inicia una prueba de caminata"
+msgid "A master or Admin code starts a walk test"
+msgstr "Un código maestro o de administrador inicia una prueba de caminata"
 
 #. Settings, the page title (BL-220). At most 47 bytes
 #. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
@@ -29803,7 +29803,7 @@ msgstr ""
 
 #. a locked page: its title (cut to 31 bytes), then the explanation. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_settings.c
-msgid "A master or installer code changes what asks for one"
+msgid "A master or Admin code changes what asks for one"
 msgstr ""
 
 #. a toast: a siren's change or test is refused. At most 63 bytes
@@ -32144,7 +32144,7 @@ msgstr "Actualizaciones"
 
 #. a toast: the update server can't change while the installer code is the factory one. At most 63 bytes
 #: components/ui/alarm_ui/src/ui_update.c
-msgid "Change the installer code first"
+msgid "Change the Admin code first"
 msgstr ""
 
 #. a toast: the check of the new update server is no longer valid. At most 63 bytes
@@ -32211,7 +32211,7 @@ msgstr ""
 
 #. the line under that row while the installer code is the factory one. At most 79 bytes
 #: components/ui/alarm_ui/src/ui_update.c
-msgid "Change the installer code first: the factory one is public"
+msgid "Change the Admin code first: the factory one is public"
 msgstr ""
 
 #. the line under that row. At most 79 bytes
@@ -33228,8 +33228,8 @@ msgstr "El código maestro sigue siendo el de fábrica"
 #: components/ui/alarm_ui/src/ui_wizard.c
 # review: draft
 #, fuzzy
-msgid "The installer code is still the factory code"
-msgstr "El código de instalador sigue siendo el de fábrica"
+msgid "The Admin code is still the factory code"
+msgstr "El código de administrador sigue siendo el de fábrica"
 
 #: components/ui/alarm_ui/src/ui_wizard.c
 # review: draft
@@ -35408,8 +35408,8 @@ msgstr "Confirme el restablecimiento"
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Enter the master or installer code once more"
-msgstr "Ingrese de nuevo el código maestro o de instalador"
+msgid "Enter the master or Admin code once more"
+msgstr "Ingrese de nuevo el código maestro o de administrador"
 
 #. the Zigbee reset's second confirmation, after "Continue"
 #. the Zigbee reset's second confirmation. At most 127 bytes
@@ -35468,8 +35468,8 @@ msgstr "Puede que no se oigan los sensores inalámbricos · Toque para ver la ra
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Enter the master or installer code to see the radio"
-msgstr "Ingrese el código maestro o de instalador para ver la radio"
+msgid "Enter the master or Admin code to see the radio"
+msgstr "Ingrese el código maestro o de administrador para ver la radio"
 
 #. a toast, why the Z-Wave radio refused a request
 #. A toast (one line over the screen). At most 127 bytes.
@@ -41809,8 +41809,8 @@ msgstr "Salir"
 
 # review: draft
 #, fuzzy
-msgid "The owner turned installer mode off for the installer code"
-msgstr "El propietario desactivó el modo instalador para el código de instalador"
+msgid "The owner turned Setup mode off for the Admin code"
+msgstr "El propietario desactivó el modo de configuración para el código de administrador"
 
 # review: draft
 #, fuzzy
@@ -41825,13 +41825,13 @@ msgstr "Aún no creado"
 
 # review: draft
 #, fuzzy
-msgid "Let the installer code open installer mode"
-msgstr "Permitir que el código de instalador abra el modo instalador"
+msgid "Let the Admin code open Setup mode"
+msgstr "Permitir que el código de administrador abra el modo de configuración"
 
 # review: draft
 #, fuzzy
-msgid "On: the installer can change settings. The master code always can"
-msgstr "Activado: el instalador puede cambiar la configuración. El código maestro siempre puede"
+msgid "On: the Admin can change settings. The master code always can"
+msgstr "Activado: el administrador puede cambiar la configuración. El código maestro siempre puede"
 
 # review: draft
 #, fuzzy
@@ -41845,8 +41845,8 @@ msgstr "Cree su código"
 
 # review: draft
 #, fuzzy
-msgid "Your installer code"
-msgstr "Su código de instalador"
+msgid "Your Admin code"
+msgstr "Su código de administrador"
 
 # review: draft
 #, fuzzy
@@ -41870,8 +41870,8 @@ msgstr "La estoy configurando para otra persona"
 
 # review: draft
 #, fuzzy
-msgid "Your installer code; the owner makes theirs at the handover"
-msgstr "Su código de instalador; el dueño crea el suyo en la entrega"
+msgid "Your Admin code; the owner makes theirs at the handover"
+msgstr "Su código de administrador; el dueño crea el suyo al entregar"
 
 # review: draft
 #, fuzzy

@@ -231,7 +231,7 @@ set({id: 'wifi-password-shown', title: 'Wi-Fi: the password shown', shot: 'wifi_
   main: () => ({over: M.text_sheet({...PASSWORD, shown: true})})});
 
 // Time and language (BL-131 finding 2): what the clock says, the time zone and one Clock choice,
-// then the language; the time server under Advanced. Without a master or installer code only the
+// then the language; the time server under Advanced. Without a master or Admin code only the
 // clock's rows show (docs/features/14). The clock's row opens the setter only where a time set by
 // hand is kept (RTC-008): settings-time-settable.
 const CLOCK_NOW = (more = {}) => M.row_link({glyph: 'calendar-clock', color: 'green', title: 'Saturday, September 19 · 10:50 PM', detail: 'Kept right by the internet', trail: '', ...more});
@@ -269,11 +269,11 @@ M.screen({
 });
 
 set({id: 'settings-time-locked', title: 'Time and language without a code', shot: 'language_locked'}, () => ({
-  section: 'time', title: 'Time and language', note: 'A master or installer code changes the time zone and the language',
+  section: 'time', title: 'Time and language', note: 'A master or Admin code changes the time zone and the language',
   body: [
     CLOCK_NOW(),
     CLOCK_CHOICE(),
-    M.row_action({glyph: 'key', text: 'Enter a master or installer code', color: 'violet'}),
+    M.row_action({glyph: 'key', text: 'Enter a master or Admin code', color: 'violet'}),
   ].join(''),
 }), {notes: 'The clock\'s rows are anyone\'s: the 12/24-hour clock is this keypad\'s.'});
 

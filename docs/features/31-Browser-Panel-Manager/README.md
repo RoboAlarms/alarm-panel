@@ -95,7 +95,7 @@ are approved (WEB-026; the proposal is `mockup/proposals/BL-090-owner-installer-
 | users | installer, system or partition master | `people` (the users you see; changes as yourself, no code, never by a workstation's grant: the engine applies your authority, CORE-USR-028) |
 | shared | the same | `walk-test` (the walk test page's list) and `partition`'s `walk_test_start` and `walk_test_extend` (docs/features/40), `config/display` changes with `lang` or `region`, `languages` (install a pack, remove, download), `config/network`, `wifi`, `wifi-scan`, `network-check`, `time` changes |
 | system | system master, installer | integrations (`config/mqtt|ntfy|pushover`, `home_assistant`, notification test/status, ntfy topic, certificate authorities), SD card actions, `PUT voices` (the body is a signed `.robovoice`, 8192 to 970752 bytes in whole 4096-byte blocks, else `too_big` before it is read; never while armed or in alarm: `armed`; every answer is `{result}`: `ok`, `too_big`, `bad_signature`, `armed`, `busy`, `not_allowed`, or the language upload's `no_space`, `flash`, `off`; installing never changes the Announcements switches, AUD-029; the body is received and installed by one upload task of its own, never the HTTPS worker, so arming, disarming and the Remote keypad answer during a slow upload, and the sign-in is checked again before installing), `updates` (the status, check, install and stop; the update server and the channel are the installer's), `automations` and `automations/devices` (docs/features/41: the rules, the pickers and their edits; a POST as yourself, never by a workstation's grant, and not while armed); a `config/mqtt` change to `allow_panic` is the installer's (BL-107) |
-| installer | system master (the Owner, the owner's decision of 2026-11-08), and the installer while the Owner lets the installer code open installer mode (CORE-PROG-014, `alarm_service_installer_sets_up()`) | `alarm` (as the signed-in person, CORE-PROG-011), `sources`, `binding/N`, `zone-sources`, sensor search/listen, `installer-code`, `factory-reset` (+ a recent password), `backup` (+ a recent password), `remote` (+ a recent password), developer logs, enrolment (+ a recent password), signed upload |
+| installer | system master (the Owner, the owner's decision of 2026-11-08), and the installer while the Owner lets the Admin code open installer mode (CORE-PROG-014, `alarm_service_installer_sets_up()`) | `alarm` (as the signed-in person, CORE-PROG-011), `sources`, `binding/N`, `zone-sources`, sensor search/listen, `installer-code`, `factory-reset` (+ a recent password), `backup` (+ a recent password), `remote` (+ a recent password), developer logs, enrolment (+ a recent password), signed upload |
 
 - **Recent password** (OWASP ASVS 5.0 V7.5; decided 2026-10-02): before what lets a computer in
   for good, carries every secret away or can't be undone - `remote` (the Web server and
@@ -240,9 +240,9 @@ a signed file upload to the installer level.
 | ntfy/Pushover | Enable, servers/topics/tokens, categories, silent events, emergency/sound, CA, topic generation, explicit test/status | Master/installer; existing provider setters, tests never sent automatically |
 | Alarm programming | Every `alarm_options_t` field, all partitions/zones/devices, panic-key assignments; `alarm` | The signed-in installer (CORE-PROG-011), expected config revision, atomic enter/apply/exit on alarm task; engine validates complete candidate and idle state |
 | Zones and their sensors (BL-134) | Installer > Zones, first in its group: every zone with its type, where its sensor is and how it is now (zones with no sensor named first), then how each sensor source is doing as the last section (Sensor sources is no longer a menu entry; #/zones/setup, #/zones/N, #/binding/N and #/sensors open the new pages). One page per zone, in the touchscreen's groups and words (WORD-006): how the zone is right now; The zone (its Spoken name read-only, with Choose words on the panel opening the Remote keypad, BL-202 D14; every role's Zones > All zones card shows the same line, without the link); Its sensor, picked from what each source sees (wired terminals, Home Assistant with a search, radios while the panel listens; a sensor another zone uses says which and can't be picked, one that just changed goes first - on 433 MHz the source's order, with "Found it" and when each was last heard, and a tamper or low-battery input lists only its own sensor's codes, as the touchscreen does (RF-011, RF-021) - an address can be typed one tap deeper), with its mapping, supervision, response time, hold (433 MHz and Z-Wave only, RF-022) and the tamper and low-battery inputs; What it does (only the options the type has); Advanced; removing the sensor or the zone apart. Choices stand in for typed seconds. Changes wait in one bar ("N changes") and are saved with one review, the zone and its sensor together, with no code (BL-135); leaving the page drops unsaved changes. Removing a zone also frees its sensor. `sources`, `binding/<zone>`, `sources/search`, `sources/learn`, `zone-sources` (installer: `{zones:[{zone, address:{kind, input, id, ref}}]}` for every zone with a sensor, so the list is one request), `zone-status` | Installer for binding; existing source capabilities and zone service; RF433/H2 hardware not invented |
-| Users and codes | Add/update/delete, names, authority, partition masks, own/master/installer code operations; `people`, `installer-code` | Existing master/installer authority matrix, as the signed-in person (CORE-USR-028, CORE-PROG-011); no code/hash/salt retrieval |
+| Users and codes | Add/update/delete, names, authority, partition masks, own/master/Admin code operations; `people`, `installer-code` | Existing master/installer authority matrix, as the signed-in person (CORE-USR-028, CORE-PROG-011); no code/hash/salt retrieval |
 | Storage | SD details, check/eject, generation-bound format; internal-flash accounting; `storage` | Master/installer and idle gate, literal destructive confirmation for format |
-| Firmware (docs/features/13) | Software updates: what is offered, check, install, Stop; a run's stage, level bar and steps, kept in view through the panel's restart and said at the next sign-in; the Wi-Fi module's update; the update server (its domain, checked first, its signing key read and ticked with the installer's password when new) and the channel, held while an update runs and not with the factory installer code (`updates`: `server_check`, `server`, `channel`, `cancel`); developer signed file upload/stage/install/reconnect | System master and installer for the page, Stop included (Stop is allowed while armed); the server and channel are the installer's alone (OTA-020..OTA-022); idle and shared signature/board/profile/version/rollback checks; raw upload additionally needs Developer mode |
+| Firmware (docs/features/13) | Software updates: what is offered, check, install, Stop; a run's stage, level bar and steps, kept in view through the panel's restart and said at the next sign-in; the Wi-Fi module's update; the update server (its domain, checked first, its signing key read and ticked with the installer's password when new) and the channel, held while an update runs and not with the factory Admin code (`updates`: `server_check`, `server`, `channel`, `cancel`); developer signed file upload/stage/install/reconnect | System master and installer for the page, Stop included (Stop is allowed while armed); the server and channel are the installer's alone (OTA-020..OTA-022); idle and shared signature/board/profile/version/rollback checks; raw upload additionally needs Developer mode |
 | Remote access | Web/Developer switches; `remote` and local Installer controls | Installer, persisted mode; disabled web has no recovery listener |
 | Factory reset | Existing reset, optional event-log erase; `factory-reset` | Installer and a recent password, explicit confirmation and existing idle/programming rules |
 | Backup and restore (docs/features/14 CFG-005, CFG-006) | The encrypted backup file downloaded (`POST backup`: password, me_password) and restored (`PUT backup`: the file, `X-Backup-Password` and `X-Panel-Password` as hex) | Installer and a recent password; a restore every partition disarmed and quiet, the whole file checked before anything is written, then a restart |
@@ -328,13 +328,13 @@ platform settings use their existing setters and are not a cross-domain transact
 ## Sign-in (2026-09-23)
 
 **Design:** a sign-in is enabled per user on the panel, with a password entered there; the user
-name is the name on the Users screen. The installer's password is its own, not the installer code
+name is the name on the Users screen. The installer's password is its own, not the Admin code
 (why below).
 
 | Who | User name | Password | Set where |
 |---|---|---|---|
 | A system master | their name on Settings > Users (not case-sensitive, spaces around it ignored) | 12-64 characters of their own | Settings > Users > the user > **Allow browser sign-in** (a master code opens the page) |
-| The installer | their name on Settings > Users, like everyone (**Installer** from the factory; a blank name still answers to it) | 12-64 characters of their own - **not the installer code** | Settings > Installer (installer mode) > **Allow browser sign-in** |
+| The installer | their name on Settings > Users, like everyone (**Installer** from the factory; a blank name still answers to it) | 12-64 characters of their own - **not the Admin code** | Settings > Installer (installer mode) > **Allow browser sign-in** |
 
 **One rule for everyone:** the installer signs in with their name on the Users screen, not the panel
 ID. It is one rule on the panel (`web_login.c` `login_name()`) and on the touchscreen
@@ -349,15 +349,15 @@ manages a user can also set it in the Panel Manager's People page (temporary unt
 the first sign-in, unless they choose that the person keeps it); see "Users in the browser".
 
 A password under 12 characters is refused as a keypad code, with where to set a browser password,
-and is not counted as a wrong sign-in (B010): the installer code typed at the sign-in before a
+and is not counted as a wrong sign-in (B010): the Admin code typed at the sign-in before a
 browser password exists would otherwise lock the person out. Codes still do not sign in.
 
 Research behind it (NIST SP 800-63B-4 and the OWASP ASVS / Authentication Cheat Sheet):
 - **A keypad code is a poor network password.** 4-10 digits (10^4-10^10), typed at the door
-  where it can be watched, and the installer code also opens installer mode at the keypad.
+  where it can be watched, and the Admin code also opens installer mode at the keypad.
   With the 2 s spacing and a 5-then-doubling gate, a 4-digit code falls to an online guesser in
   about two weeks, and one read over a shoulder would open the panel from the network as well.
-  So the installer's browser password is separate from the installer code, as it is for the
+  So the installer's browser password is separate from the Admin code, as it is for the
   masters; the installer's user name is their own name (above). The code is still asked where it was
   (alarm programming, sensor links, people and codes, factory reset), which makes those
   changes two-factor.
@@ -522,7 +522,7 @@ Each open box names its row in [the backlog](../../BACKLOG.md). v1 was accepted 
   keyboard and by clicking; hold Panic; tap the banner at the panel; watch `display` for late
   frames while streaming, and internal RAM with the encoder running (BL-080)
 - [ ] A browser password set on the panel's screen (Allow browser sign-in, with a master code or
-  the installer code at the screen), then a sign-in with it (BL-080)
+  the Admin code at the screen), then a sign-in with it (BL-080)
 - [ ] A second panel over the site-to-site VPN with its own identity: its URL and certificate,
   browser sign-in and the remote keypad, a signed upload and its rollback (a signed update
   already reached it over the VPN on 2026-09-24, "Test and acceptance") (BL-035)

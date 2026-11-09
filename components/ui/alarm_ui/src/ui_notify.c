@@ -855,7 +855,7 @@ void ui_notify_build(page_id_t id, lv_obj_t *body, char *title, size_t tlen, cha
     snprintf(title, tlen, "%s", id == PAGE_NTFY ? NOTR("ntfy") : NOTR("Pushover")); /* product names */
     if (!ui_settings_allowed(ACCESS_SYSTEM)) {
         ui_settings_locked(body, ACCESS_SYSTEM, id == PAGE_NTFY ? NOTR("ntfy") : NOTR("Pushover"),
-                           TR("The master or installer code sets up notifications"), note, nlen);
+                           TR("The master or Admin code sets up notifications"), note, nlen);
         return;
     }
     if (id == PAGE_NTFY) {

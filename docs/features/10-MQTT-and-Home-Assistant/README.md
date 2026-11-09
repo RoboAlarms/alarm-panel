@@ -103,7 +103,7 @@ Troubles (`active` drives the Home Assistant problem sensor; restored ones wait 
 Event (`ts` is when it happened, `null` while the clock wasn't set; type-specific fields:
 `level` and arm flags for `armed`, `cause` for `alarm`, `family` and `trouble` for troubles,
 `result` for `arm_failed`, `target` for user changes, `recovery` / `timeout` / `log_erased`
-for installer mode and factory reset; for `automation_failed` (docs/features/41 AUT-009, with
+for Setup mode and factory reset; for `automation_failed` (docs/features/41 AUT-009, with
 `"source":"automation"`, its uid in `source_id`), `automation` (its trigger clause, as on every
 event an automation causes), `action` (`lock`, `close` or `arm`) and `reason` (`unreachable`, `no_answer`, `refused`, `missing`, `busy`, `not_allowed` or
 `no_warning`), golden payloads in `test_proto.c: test_automation_failed_event_golden`; for
@@ -262,7 +262,7 @@ address, port (empty = the usual one), user name, password (stored, never shown)
 (encrypted with a public certificate, encrypted with your own certificate authority, or not
 encrypted with a warning), then "What goes over the broker": "Announce the panel" (discovery),
 "Arm and disarm over MQTT" (off = anything listening can only watch), whether arming needs a
-code (an installer option: Installer > System options > "Arm remotely without a code"), topic
+code (an installer option: Setup > System options > "Arm remotely without a code"), topic
 prefix and panel id. Panics over MQTT are not on the touchscreen: the installer allows them on
 the Panel Manager's MQTT page or the service console (BL-107).
 

@@ -842,11 +842,11 @@ static void update_panel(void)
     case MODE_PROGRAM:
         /* TR: Home, the card on the right while the installer changes settings. At most 127
          * bytes */
-        title = TR("Installer mode");
+        title = TR("Setup mode");
         /* TR: Home, the card on the right: this keypad is in installer mode, or another one
          * is. At most 127 bytes */
         note = S.program
-                   ? TR("Tap to finish and leave installer mode")
+                   ? TR("Tap to finish and leave Setup mode")
                    : TR("The installer is changing settings. Arming is off until they finish");
         break;
     default: break;
@@ -1762,7 +1762,7 @@ static void apply_mode(void)
         icon = UI_ICON_SHIELD;
         tone = ui_tone_blue();
         /* TR: Home, the state card's headline. At most 47 bytes */
-        i18n_utf8_copy(headline, sizeof(headline), TR("Installer mode"));
+        i18n_utf8_copy(headline, sizeof(headline), TR("Setup mode"));
         /* TR: Home, the line under the state card's headline. At most 127 bytes */
         i18n_utf8_copy(detail, sizeof(detail), TR("Settings are being changed"));
         /* TR: Home, the foot of the state card. At most 127 bytes */
@@ -3017,19 +3017,19 @@ static void program_words(void)
     if (ui_link_keypad() && !ui_link_remote_installer() && holder == UI_LINK_HOLDER_PANEL) {
         /* TR: a keypad's status bar while its alarm panel's own screen or Panel Manager holds
          * installer mode; {0} is the alarm panel's name. At most 95 bytes */
-        I18N_FORMAT(text, sizeof(text), TR("Installer on {0} · Arming off"), ui_link_master_name());
+        I18N_FORMAT(text, sizeof(text), TR("Setup on {0} · Arming off"), ui_link_master_name());
     } else if (ui_link_keypad() && !ui_link_remote_installer() && holder != UI_LINK_HOLDER_NONE) {
         /* TR: a keypad's status bar while another keypad holds installer mode; {0} is its
          * number. At most 95 bytes */
-        I18N_FORMAT(text, sizeof(text), TR("Installer at Keypad {0} · Arming off"),
+        I18N_FORMAT(text, sizeof(text), TR("Setup at Keypad {0} · Arming off"),
                     (unsigned)holder);
     } else if (ui_link_master() && !S.program && holder >= 1u && holder <= UI_LINK_KEYPADS_MAX) {
         /* TR: the alarm panel's status bar while a keypad holds its installer mode; {0} is the
          * keypad's number. At most 95 bytes */
-        I18N_FORMAT(text, sizeof(text), TR("Installer at Keypad {0} · Arming off · Tap to end"),
+        I18N_FORMAT(text, sizeof(text), TR("Setup at Keypad {0} · Arming off · Tap to end"),
                     (unsigned)holder);
     } else {
-        i18n_utf8_copy(text, sizeof(text), TR("Installer · Arming off · Tap to leave"));
+        i18n_utf8_copy(text, sizeof(text), TR("Setup · Arming off · Tap to leave"));
     }
     if (strcmp(lv_subject_get_string(&subject_program_text), text) != 0) {
         ui_set_str(&subject_program_text, text);
@@ -3174,7 +3174,7 @@ static void remote_turned_off(void)
 {
     const bool off = S.be.remote_set != NULL && S.be.remote_set(S.be.ctx, false, false);
     /* TR: a toast; the last "Installer" is the Settings section of that name */
-    ui_toast(off ? TR("Remote access is off. The installer turns it back on in Installer")
+    ui_toast(off ? TR("Remote access is off. The installer turns it back on in Setup")
                  : TR("Remote access could not be turned off. Try again"));
 }
 
@@ -3521,7 +3521,7 @@ static void on_disarm_tile(void)
             char title[64];
             /* TR: the alarm panel's question when its installer banner is tapped while a keypad
              * holds installer mode; {0} is the keypad's number. At most 63 bytes */
-            I18N_FORMAT(title, sizeof(title), TR("End installer mode at Keypad {0}?"),
+            I18N_FORMAT(title, sizeof(title), TR("End Setup mode at Keypad {0}?"),
                         (unsigned)holder);
             /* TR: under it. At most 95 bytes */
             ui_confirm(title, TR("The installer there loses what they haven't saved."),

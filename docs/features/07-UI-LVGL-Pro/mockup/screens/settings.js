@@ -62,7 +62,7 @@ const ann = (id, title, shot, opts, notes) => set({id, title, shot}, () => ({
   section: 'display', title: 'Announcements', note: 'Screen and sound', back: 'settings-display', body: annBody(opts),
 }), {notes: notes + ' ' + ANN_WHY});
 ann('settings-announcements-off', 'Announcements: off, as shipped', 'voice_announcements_off', {},
-  'D06. Back returns to Screen and sound, where the Voice volume stays. On by default, as on modern panels (D06, 2026-10-12); turned off, the other two keep their choices but are dimmed. Preview plays a sample name ("Front Door" with the en-US voice) with the switch off too, and changes nothing; it respects volume, power saving and alarms. Zone words stay installer-only (Installer > Zones); installing or removing a pack stays system-master/installer-only (the Panel Manager).');
+  'D06. Back returns to Screen and sound, where the Voice volume stays. On by default, as on modern panels (D06, 2026-10-12); turned off, the other two keep their choices but are dimmed. Preview plays a sample name ("Front Door" with the en-US voice) with the switch off too, and changes nothing; it respects volume, power saving and alarms. Zone words stay installer-only (Setup > Zones); installing or removing a pack stays system-master/installer-only (the Panel Manager).');
 ann('settings-announcements-on', 'Announcements: on', 'voice_announcements_on', {on: true},
   'The switches are live. Voice volume zero stays silent; Preview plays at the Voice volume set in Screen and sound.');
 ann('settings-announcements-refused', 'Announcements: no voice pack', 'voice_announcements_refused',

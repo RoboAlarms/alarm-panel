@@ -7,7 +7,7 @@
 // removed keypad has no Panic. Four places:
 //   A. the setup on a panel's first start: the role after Welcome and, for a keypad, Wi-Fi it can't skip
 //      and the pairing step (docs/features/09 NET-001);
-//   B. the alarm panel, installer mode, Keypads and devices: the keypads on Wi-Fi, adding one (the code
+//   B. the alarm panel, Setup mode, Keypads and devices: the keypads on Wi-Fi, adding one (the code
 //      compared on both screens, LINK-004, LINK-016), a keypad's page and removing it (LINK-014);
 //   C. a panel in the keypad role: Home while it connects, without the alarm panel ("No system
 //      communication", LINK-008) and not paired, Emergency, Smart Home (the alarm panel's devices,
@@ -107,7 +107,7 @@ linkSetup({id:'setup-pair-done',shot:'bl-048-setup-pair-done',title:'Setup: keyp
       M.row_status({glyph:'wifi',color:'green',title:'Wi-Fi connected'})});
 
 // ================================ B. The alarm panel: Keypads and devices ================================
-// Installer mode, under About (BL-189), as installer-menu.
+// Setup mode, under About (BL-189), as installer-menu.
 const LINK_INST_SECTIONS = M.settings_sections({drop: ['installer']}).filter((s) => !s.divider);
 const linkInst = (meta, notes, page, extra = {}) => M.screen({...meta, area: 'Installer', notes,
   render: () => M.main({view: 'settings', tone: 'blue', rail: {tone: 'blue'},
@@ -124,7 +124,7 @@ const BEDROOM = M.row_link_alert({glyph: 'keyboard', color: 'amber', title: 'Bed
   value: 'Not responding', valueColor: 'amber', goTo: 'keypad-page-silent'});
 
 linkInst({id: 'installer-devices', shot: 'bl-048-devices-empty', title: 'Installer: Keypads and devices, no keypad on Wi-Fi yet'},
-  'In a firmware with the panel link, on the alarm panel: the Keypads section on top, then the installer\'s own table of the 16 device numbers under a heading of its own (a row each: the name, or "Device 4", and its partition when in use, else "Not in use"). Add a keypad is there in installer mode with every partition disarmed. The installer menu\'s row counts both. Without the link the page is the table alone, as before.',
+  'In a firmware with the panel link, on the alarm panel: the Keypads section on top, then the installer\'s own table of the 16 device numbers under a heading of its own (a row each: the name, or "Device 4", and its partition when in use, else "Not in use"). Add a keypad is there in Setup mode with every partition disarmed. The installer menu\'s row counts both. Without the link the page is the table alone, as before.',
   {...DEVICES_PAGE, body: [
     M.section('Keypads'), ADD_ROW,
     M.paragraph('Another RoboAlarms panel on this Wi-Fi can be a keypad for this one.'),
@@ -142,7 +142,7 @@ linkInst({id: 'installer-devices-keypads', shot: 'bl-048-devices', title: 'Insta
 // ---- adding a keypad ----
 const ADD = {title: 'Add a keypad', back: 'installer-devices'};
 linkInst({id: 'keypad-add-open', shot: 'bl-048-add-open', title: 'Installer: Add a keypad, pairing open'},
-  'Opening the page opens pairing for 2 minutes (PAIR_OPEN); leaving it, or Stop, closes it (PAIR_STOP), as Zigbee\'s Add a device. The time left in the line under the title changes once a second, nothing else moves. A refusal says why on the page: "Not started: only in installer mode, with everything disarmed." (NOT_ALLOWED) or "Not started: that can\'t be done now." (BUSY, FAILED), with Try again.',
+  'Opening the page opens pairing for 2 minutes (PAIR_OPEN); leaving it, or Stop, closes it (PAIR_STOP), as Zigbee\'s Add a device. The time left in the line under the title changes once a second, nothing else moves. A refusal says why on the page: "Not started: only in Setup mode, with everything disarmed." (NOT_ALLOWED) or "Not started: that can\'t be done now." (BUSY, FAILED), with Try again.',
   {...ADD, note: 'Waiting for a keypad · 1 min 48 s left', body: [
     M.section('On the new keypad'),
     M.row_link({glyph: 'wifi', title: 'Join the same Wi-Fi', detail: 'Harbor House, as this panel', trail: ''}),

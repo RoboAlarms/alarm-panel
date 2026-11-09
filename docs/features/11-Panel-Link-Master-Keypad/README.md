@@ -201,9 +201,9 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
      in the first version, the zones' spoken-name editor stay on it and its Panel Manager.
   3. A keypad's clock and time zone keep following its alarm panel (LINK-053); its 12- or
      24-hour clock, language and region are its own.
-  4. Installer mode is open in one place at a time; the alarm panel's screen and Panel Manager
+  4. Setup mode is open in one place at a time; the alarm panel's screen and Panel Manager
      may end a keypad's.
-  5. Another keypad may be paired from a keypad in installer mode.
+  5. Another keypad may be paired from a keypad in Setup mode.
 
 ## Requirements
 | ID | Requirement | Verified by |
@@ -211,7 +211,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-001 | One master, up to 8 panel-link keypads on device numbers 1-8, shared with the Zigbee keypads: a new keypad takes the lowest number no Zigbee keypad, no link keypad and no enabled entry of the installer's device table holds, chosen under the Zigbee zone lock (docs/features/20 alarm-devices.md §4); numbers 9-16 are the Z-Wave keypads' (docs/features/36 ZW-031) | unit |
 | LINK-002 | Keypads render the master's status and send commands; they never validate codes | review + unit |
 | LINK-003 | Every data frame is authenticated and encrypted (AES-128-CCM, 8-byte tag) under per-session, per-direction keys; sequence numbers start at 1 and a 64-frame sliding window, updated only after the tag verifies, rejects replayed frames; frames of another session, net or direction are refused | host crypto tests |
-| LINK-004 | Pairing needs the installer at the master (touchscreen installer mode or an authenticated Panel Manager installer session, including a headless master), uses commit-then-reveal, and both sides show the same 6-digit code and peer identity, confirmed on both (defeats a device in the middle; [browser enrollment](../31-Browser-Panel-Manager/keypad-enrollment.md), approved 2026-10-18 by the owner) | unit + HIL |
+| LINK-004 | Pairing needs the installer at the master (touchscreen Setup mode or an authenticated Panel Manager installer session, including a headless master), uses commit-then-reveal, and both sides show the same 6-digit code and peer identity, confirmed on both (defeats a device in the middle; [browser enrollment](../31-Browser-Panel-Manager/keypad-enrollment.md), approved 2026-10-18 by the owner) | unit + HIL |
 | LINK-005 | ESP-NOW control frames fit in 250 bytes; a UDP datagram is at most 1200 bytes; bulk data (configuration, events, zones) is paged to the transport's largest frame | unit |
 | LINK-006 | The master sends status on change (repeated at +250 ms and +1 s, at most one per 100 ms per keypad) and at least every 10 s; keypads send heartbeats every 10 s (±1 s jitter) | unit + HIL |
 | LINK-007 | The master raises a device supervision trouble (`alarm_service_device_reachable(n, false)`) for a keypad not heard for its supervision time (5 min by default, per keypad: 1 min, 5 min, 15 min or not supervised; decided 2026-10-15), or one that reports no fresh status for that long; it clears it when both directions are fresh again and before a removed keypad's number is freed; supervision pauses while the master has no transport to its keypads - its own Wi-Fi down and its ESP-NOW radio not ready (the network trouble covers it) - and resumes one period after either is back; with Wi-Fi down and the radio up it runs | unit + HIL |
@@ -267,7 +267,7 @@ add encrypted wireless keypads, enrolled at the panel by the installer.
 | LINK-057 | A keypad's own settings stay its own: Screen and sound, Wi-Fi and network, Time and language (its clock and time zone following its master, LINK-053), About, its software update and "Make it a stand-alone panel". Everything else on its Settings - users and codes, integrations, automations, Smart Home's settings, the walk test and the installer menu - is its master's, read from and saved on the master (BL-223; designed, not built) | unit, preview |
 | LINK-058 | The remote backend: in a session with `PLINK_CAP_RB` (0x0040) a keypad calls its master's `ui_backend_t` entries by frozen call id (RB_CALL 0x3F, RB_ANSWER 0x40, RB_MORE 0x41, RB_GRANT 0x42); arguments and answers are encoded in sections, appended only, paged to the transport's frame; an unknown call is answered UNAVAILABLE; a repeat of a req is answered from a cache kept 30 s and never runs twice; never a call: the master's factory reset, setup, updates and update server, developer access, its own Wi-Fi, time and Screen and sound, the voice editor. The calls and their records are `components/core/ui_remote`'s, frozen in `ui_remote_fixture_v1.h` | unit (`test_ui_remote.c`, `test_plink_msg.c`), frozen fixture |
 | LINK-059 | The master is the only judge: it runs each call on its own backend as `{KEYPAD, n}` from the session, under the grant it holds for that keypad (a code the keypad's code check, CMD op 2, had accepted on the master - a wrong one counts toward that keypad's lockout - or its Admin code); each group needs its access (docs/features/14); user arguments are the grant's user; the grant ends after 5 min idle, when the keypad leaves the master's pages, or 60 s after its session is lost; answers never carry code material or a stored password or token | unit (`test_ui_remote.c`), link |
-| LINK-060 | Installer mode from a keypad: entered with the Admin code as `{KEYPAD, n}`, held by one source at a time (BUSY elsewhere, RB_GRANT names the holder), ended by that keypad, by the master's own screen or Panel Manager installer, 60 s after the master stops hearing the keypad, or after `ALARM_PROGRAM_TIMEOUT_S` idle; every panel's status bar says where it is held | unit, link, preview |
+| LINK-060 | Setup mode from a keypad: entered with the Admin code as `{KEYPAD, n}`, held by one source at a time (BUSY elsewhere, RB_GRANT names the holder), ended by that keypad, by the master's own screen or Panel Manager installer, 60 s after the master stops hearing the keypad, or after `ALARM_PROGRAM_TIMEOUT_S` idle; every panel's status bar says where it is held | unit, link, preview |
 | LINK-061 | A configuration saved from a keypad carries the cfg_crc it was read at; the master refuses it STALE when its configuration changed since, and otherwise takes every field but code material, which it keeps; codes change only through `program_set_code` and the user calls | unit |
 | LINK-062 | Learn and pairing modes a keypad starts (zone learn, Z-Wave, Zigbee, 433 MHz, another keypad) run on the master's radios and belong to the keypad's grant: they stop when the keypad stops them or leaves the page, when the grant ends, or at the mode's own limit; the keypad shows the master's progress, read at most once a second; PINs and install codes go sealed and are wiped after use | unit, link (`link_smoke`), preview |
 | LINK-063 | A keypad's screen never waits for the remote backend: reads answer at once from the keypad's copy, asked again at most once a second while their page is open (a first read shows a steady "Getting it from Harbor House"); writes go through LINK-054's queue. While the link is down the master's pages are dimmed and send nothing; a write with no answer reads "Not confirmed" | PC (`calls_smoke`), preview |
@@ -438,7 +438,7 @@ command is dropped and its keypad's resend gets it once a command's answer is 3 
 
 ## Pairing
 
-1. The installer, in installer mode at the master, opens pairing: 2 minutes, announced in mDNS
+1. The installer, in Setup mode at the master, opens pairing: 2 minutes, announced in mDNS
    (`pair=1`).
 2. A person on the new panel chooses *Keypad* (setup wizard, or `plink role keypad` on a bench) and
    starts pairing. It finds a master with pairing open (two of them end it: "More than one alarm
@@ -599,7 +599,7 @@ goes to its HELLO's source without moving it). Firmware with the link sets
 - **The keypad backend** serves from the link: snapshot, configuration, recent events, commands,
   code checks and code changes, and the master's devices and their actions; locally: Wi-Fi,
   screen, sound (its Voice volume and Announcements too, LINK-028), language, updates, About. The
-  master-only pages (installer mode, users, zone sources, integrations, event log, automations,
+  master-only pages (Setup mode, users, zone sources, integrations, event log, automations,
   the zones' spoken-name editor) are hidden by a role gate the UI reads (`ui_link_keypad`,
   `ui_voice_editor_present`); `program_enter` and `user_*` answer UNAVAILABLE. User editing never
   goes over the link. Smart Home (BL-216, built) shows under the master's rule, from the master's
@@ -1509,7 +1509,7 @@ its five questions in Decisions); being built.
   Zigbee and 433 MHz. Adding a zone, listening for a sensor, pairing a Z-Wave or Zigbee device,
   a 433 MHz siren or another keypad all run on the master's radios; the keypad shows the
   master's progress.
-- Installer mode is one place at a time. While a keypad holds it, every panel's status bar says
+- Setup mode is one place at a time. While a keypad holds it, every panel's status bar says
   so ("Installer at Keypad 2 · Arming off"), and the master's own screen, if it has one, or its
   Panel Manager can end it.
 - A few things stay on the master itself or its Panel Manager: its factory reset, running its
@@ -1526,7 +1526,7 @@ backend, on a headless master too. On a keypad, the entries for the master's pag
 **proxies**: each one sends a call over the link, and the master runs the same entry of its own
 backend and sends the answer back. So the keypad runs the master's UI code unchanged (one UI,
 ADR-036), and the master judges every call with the same functions its screen and its Panel
-Manager use: installer mode, the partitions' state, codes and lockouts.
+Manager use: Setup mode, the partitions' state, codes and lockouts.
 - **Calls** have frozen ids (`ui_remote.h`), grouped by area. Each call's arguments and answer are
   encoded field by field in sections (LINK-017, LINK-040), never as a C struct, so a keypad and a
   master on different versions still agree. Strings carry their length.
@@ -1550,11 +1550,11 @@ Manager use: installer mode, the partitions' state, codes and lockouts.
 | 0x3F | `RB_CALL` | K->M | RB | req u32 (not 0); call u16; offset u32, total u32; len u16 + the arguments' bytes [offset, offset + len), sent in order from 0 |
 | 0x40 | `RB_ANSWER` | M->K | RB | req u32; status u8; total u32, offset u32; answer (len u16 + bytes) |
 | 0x41 | `RB_MORE` | K->M | RB | req u32, offset u32, max u16: the next part of a long answer |
-| 0x42 | `RB_GRANT` | M->K | RB | grant section (user u8, authority u8, partitions u8, installer u8, idle_left_s u16); holder section (installer mode's source: kind u8, id u16); areas u32 (the call groups this master serves) |
+| 0x42 | `RB_GRANT` | M->K | RB | grant section (user u8, authority u8, partitions u8, installer u8, idle_left_s u16); holder section (Setup mode's source: kind u8, id u16); areas u32 (the call groups this master serves) |
 
 `PLINK_CAP_RB` is 0x0040, offered by a master whose backend serves the calls and by a keypad with
 a screen. Statuses: OK, UNAVAILABLE (an unknown call, or one this master doesn't serve),
-NOT_AUTHORIZED (no grant for it), NEED_INSTALLER, BUSY (installer mode held elsewhere, or a call
+NOT_AUTHORIZED (no grant for it), NEED_INSTALLER, BUSY (Setup mode held elsewhere, or a call
 already running), LOCKED_OUT, STALE (the configuration changed since it was read), TOO_BIG, GONE
 (the answer is no longer kept: call again).
 
@@ -1562,17 +1562,17 @@ The call groups (ids frozen once released; the full list is in `ui_remote.h`):
 
 | Ids | Group | Calls (the `ui_backend_t` entries) | Needs |
 |---|---|---|---|
-| 0x0001-0x000F | Session | end the grant, `program_enter`, `program_exit`, `program_keepalive`, `program_set_code` | the Admin code for installer mode |
-| 0x0010-0x001F | Configuration | `set_config` (with its base cfg_crc) | installer mode |
+| 0x0001-0x000F | Session | end the grant, `program_enter`, `program_exit`, `program_keepalive`, `program_set_code` | the Admin code for Setup mode |
+| 0x0010-0x001F | Configuration | `set_config` (with its base cfg_crc) | Setup mode |
 | 0x0020-0x002F | Users | `user_set`, `user_update`, `user_delete`, `web_login_get`, `_set`, `_clear` | a master code (docs/features/14) |
-| 0x0030-0x003F | Zones' sensors | `zone_sources`, `zone_learn`, `zone_candidates`, `zone_bind`, `zone_unbind`, `zone_info` | installer mode |
-| 0x0040-0x004F | Z-Wave | `zw_status`, `zw_devices`, `zw_device`, `zw_request`, `zw_progress`, `zw_prov`, `zw_prov_register`, `zw_prov_change` | installer mode |
-| 0x0050-0x005F | Zigbee | `zb_status`, `zb_devices`, `zb_device`, `zb_request`, `zb_progress`, `zb_codes` | installer mode |
-| 0x0060-0x006F | Sirens, outputs, 433 MHz | `out_status`, `out_wired`, `out_wired_set`, `out_wired_test`, `out_terminals`, `out_rf`, `out_rf_add`, `_set`, `_clear`, `_pair`, `_test` | installer mode |
+| 0x0030-0x003F | Zones' sensors | `zone_sources`, `zone_learn`, `zone_candidates`, `zone_bind`, `zone_unbind`, `zone_info` | Setup mode |
+| 0x0040-0x004F | Z-Wave | `zw_status`, `zw_devices`, `zw_device`, `zw_request`, `zw_progress`, `zw_prov`, `zw_prov_register`, `zw_prov_change` | Setup mode |
+| 0x0050-0x005F | Zigbee | `zb_status`, `zb_devices`, `zb_device`, `zb_request`, `zb_progress`, `zb_codes` | Setup mode |
+| 0x0060-0x006F | Sirens, outputs, 433 MHz | `out_status`, `out_wired`, `out_wired_set`, `out_wired_test`, `out_terminals`, `out_rf`, `out_rf_add`, `_set`, `_clear`, `_pair`, `_test` | Setup mode |
 | 0x0070-0x007F | Automations | `auto_list`, `auto_gen`, `auto_read_only`, `auto_less_secure`, `auto_save`, `auto_delete_slot`, `auto_set_off`, `auto_status`, `auto_try` | a master code |
 | 0x0080-0x008F | Smart Home settings | `dev_home_get`, `dev_home_set` | a master code |
 | 0x0090-0x009F | Integrations | `mqtt_*`, `halink_*`, `notify_*`, `ntfy_*`, `pushover_*`, `remote_get`, `remote_set` (the Panel Manager only, never developer access) | a master code |
-| 0x00A0-0x00AF | Keypads | `link_keypads`, `link_request`, `link_pair_status` (the master's keypads page; pairing) | installer mode |
+| 0x00A0-0x00AF | Keypads | `link_keypads`, `link_request`, `link_pair_status` (the master's keypads page; pairing) | Setup mode |
 | 0x00B0-0x00BF | Event log | `log_read`, `log_loss`, `log_clear_loss` | a master code |
 
 The walk test needs no call: it already goes as CMD's walk operations.
@@ -1592,21 +1592,21 @@ the voice editor (`voice_seen`, `voice_apply_approve`).
   keypad's lockout (USR-005), as a code at the master's own pad does. A right one gives a grant: the user, their authority and partitions. It ends after 5
   minutes without a call, when the keypad leaves the master's pages, and 60 s after the keypad's
   session is lost (a new session within 60 s keeps it). RB_GRANT tells the keypad what it holds.
-- **Installer mode.** `program_enter` from a keypad enters the engine's installer mode as
+- **Setup mode.** `program_enter` from a keypad enters the engine's Setup mode as
   `{KEYPAD, n}` (`program_src`), with the usual event. Only one holder at a time: a keypad that
   asks while another source holds it gets BUSY, and RB_GRANT names the holder. The master's own
-  screen and its Panel Manager's installer may end a keypad's installer mode (on the screen: a tap
-  on the banner, "End installer mode at Keypad 2?", End it - no code, as leaving installer mode
+  screen and its Panel Manager's installer may end a keypad's Setup mode (on the screen: a tap
+  on the banner, "End Setup mode at Keypad 2?", End it - no code, as leaving Setup mode
   never needs one; the proposal drew the Admin code, a question for the owner). A keypad sends
   `program_keepalive` every 30 s while a page of it is open. The master ends a keypad's
-  installer mode 60 s after it stops hearing that keypad, and after 15 minutes without activity as
+  Setup mode 60 s after it stops hearing that keypad, and after 15 minutes without activity as
   today (`ALARM_PROGRAM_TIMEOUT_S`).
 - **Learn and pairing modes run on the master** (zone learn, Z-Wave inclusion and exclusion,
   Zigbee joining, 433 MHz pairing, keypad pairing). Each one a keypad started belongs to its
   grant: it stops when the keypad stops it or leaves the page, when the grant ends, or at the
   mode's own limit, whichever comes first. A PIN or install code typed for it goes sealed and is
   wiped after use, as codes are.
-- **Pairing another keypad from a keypad** (LINK-004): the installer in installer mode at a
+- **Pairing another keypad from a keypad** (LINK-004): the installer in Setup mode at a
   paired, online keypad opens pairing on the master. The comparison code shows on that keypad
   through the link. The new keypad confirms on its own screen as today.
 - **Secrets are write-only.** Answers never carry code material (LINK-019) or a stored password
@@ -1637,7 +1637,7 @@ the voice editor (`voice_seen`, `voice_apply_approve`).
   keypad's proxies in `plink_backend.c`.
 - `components/ui/alarm_ui`: the role gate becomes per group (RB_GRANT's areas); the Settings
   list's two groups; the "Getting it", "can't be reached" and "Not confirmed" states;
-  installer mode's holder in the status bar; writes from the master's pages through `ui_calls.c`.
+  Setup mode's holder in the status bar; writes from the master's pages through `ui_calls.c`.
 - `host/link_sim`: the virtual master serves the calls from the PC simulator's backend;
   `link_smoke` adds a zone and pairs a simulated device from the virtual keypad.
 
@@ -1649,9 +1649,9 @@ the voice editor (`voice_seen`, `voice_apply_approve`).
    (recommended).
 3. Time: the keypad's clock and time zone keep following its master, as decided with LINK-053 on
    2026-10-18; its 12- or 24-hour clock, language and region stay its own (recommended).
-4. Installer mode at one place at a time; the master's screen and Panel Manager may end a
+4. Setup mode at one place at a time; the master's screen and Panel Manager may end a
    keypad's (recommended).
-5. Another keypad may be paired from a keypad in installer mode (recommended).
+5. Another keypad may be paired from a keypad in Setup mode (recommended).
 
 ## Design
 - **`components/core/panel_link`** (portable, host-tested, prefix `plink_`): the crypto helpers
@@ -1870,7 +1870,7 @@ These sources inform the wording; the exact phrase is this project's design choi
 
 The touchscreen implements the approved
 [partition-switch mockup](../07-UI-LVGL-Pro/mockup/screens/partition-switch.js).
-Installer > Keypads and devices > This panel (or a paired keypad) sets the default, switching
+Setup > Keypads and devices > This panel (or a paired keypad) sets the default, switching
 permission, seconds and Never toggle. Locked is the migration default. The switcher appears
 below Home's left card only with switching allowed and multiple enabled partitions. Switching
 closes any old code prompt and refreshes the current view without writing local preferences.
@@ -1927,7 +1927,7 @@ panels; a successful host preview is not hardware acceptance.
 - Smart Home and Home Assistant on keypads (BL-216; its 13 questions were decided 2026-10-16, in
   Decisions). Not designed, only if the owner asks (each needs its own proposal): a notice on a
   panel when a setting changed from elsewhere (new words); a keypad's Screen and sound rows on the
-  master's Installer > Keypads page; a Panel Manager page for keypads (docs/features/31 mockup).
+  master's Setup > Keypads page; a Panel Manager page for keypads (docs/features/31 mockup).
   No proposal is needed for a setting applied from elsewhere (the existing rows show it, and an
   open page refuses the change) or for the Home Assistant entity names (the integration's own
   strings, reviewed in its pull request). A keypad's mains and battery in Home Assistant wait for
@@ -1953,7 +1953,7 @@ panels; a successful host preview is not hardware acceptance.
   backend for `ui_backend_t` rendering the master's status and sending its commands (LINK-002,
   LINK-020), sounds from the master, the update gate and `PANEL_OTA_OK_LINK` (BL-048, c7e4396,
   2bea2f7, dbf172f, 32894bf); the 4" board's side is docs/features/19 CYD-015
-- [x] Pairing screens and the keypads' section in installer mode, the setup's role step, the
+- [x] Pairing screens and the keypads' section in Setup mode, the setup's role step, the
   keypad's Connecting, "No system communication", removed and no-code maintenance states, the role
   gate in Settings and About (LINK-004, -008, -014, -025; UI-011, UI-012): `ui_link.c`,
   `ui_wizard.c`, walked in the preview over `host/ui_preview/host_link_demo.c`; the mockup's
@@ -2136,7 +2136,7 @@ The master's settings and installer menu on keypads (BL-223):
 - [ ] Automations, Smart Home's settings, integrations and the event log: their groups, then their
   sections in the keypad's list (BL-223)
 - [ ] The screens as approved, in the simulator and the preview (`host_link_demo`): the Settings
-  list's two groups, the keypad's Installer, installer mode held elsewhere, the pages dimmed while
+  list's two groups, the keypad's Installer, Setup mode held elsewhere, the pages dimmed while
   the link is down, the banner's words and the Admin code through the call task built; the
   other saves of the alarm panel's pages through the call task (LINK-054; they wait at most 13 s
   on the screen's task today), "Not confirmed", and the mockup's screens made today's, still to do
@@ -2146,9 +2146,9 @@ The master's settings and installer menu on keypads (BL-223):
   Admin code checked on the S3 (a wrong one refused, the right one in 140-240 ms); the S3's
   sources and both kinds of sensors listed, the 7"'s own terminals among them; a zone saved in the
   S3's configuration (280-300 ms) and its sensor bound to the 7"'s IO3 (390 ms), then removed
-  again; the 10.1" refused installer mode while the 7" held it, and named it as the holder; the 7"
-  held in reset 85 s: the S3 ended its installer mode a minute later, its terminals' zones went to
-  CHECK at 75 s and back after; the 10.1" took installer mode then. Alarm commands from a keypad
+  again; the 10.1" refused Setup mode while the 7" held it, and named it as the holder; the 7"
+  held in reset 85 s: the S3 ended its Setup mode a minute later, its terminals' zones went to
+  CHECK at 75 s and back after; the 10.1" took Setup mode then. Alarm commands from a keypad
   during installer work: 128-190 ms. Z-Wave on the S3: no radio fitted, answered as such. The new
   keypad with the old S3 first: online, no master pages offered, commands as before (LINK-065).
   Found and fixed there: the calls ran on the commands' worker, whose 4 KB stack overflowed on a
@@ -2163,8 +2163,8 @@ The master's settings and installer menu on keypads (BL-223):
   zone saved (362 ms), bound to the S3's IO4 (320 ms), turned off (383 ms) and unbound (77 ms) from
   the 10.1"; the 7"'s real Z-Wave radio put into adding mode from the 10.1" (its 60 s count shown)
   and stopped (87 ms); Zigbee and the sirens' page answered; the 10.1" held in reset 90 s: the 7"
-  ended its installer mode at 60 s, and the 10.1" took it again after. The S3, without a screen,
-  offers no master pages (by design), so one keypad holding installer mode while another asks was
+  ended its Setup mode at 60 s, and the 10.1" took it again after. The S3, without a screen,
+  offers no master pages (by design), so one keypad holding Setup mode while another asks was
   not repeated here (it was the night before). Alarm commands: Stay from the S3, Off from the
   10.1" (124-198 ms). Not tried: a real Z-Wave device added (needs a person at the device) (BL-223)
 - [ ] On the panels, by a person: the keypad's Settings and Installer pages on the 7" and 10.1"

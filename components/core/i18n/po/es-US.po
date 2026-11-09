@@ -2409,8 +2409,8 @@ msgstr "Ahora {0}"
 #: components/ui/alarm_ui/src/ui_status.c
 # review: draft
 #, fuzzy
-msgid "Installer mode"
-msgstr "Modo instalador"
+msgid "Setup mode"
+msgstr "Modo de configuración"
 
 #. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
 #: components/core/notify/src/notify_words.c
@@ -2423,15 +2423,15 @@ msgstr "Abierto sin código tras encender"
 #: components/core/notify/src/notify_words.c
 # review: draft
 #, fuzzy
-msgid "Opened with the installer code"
-msgstr "Abierto con el código de instalador"
+msgid "Opened with the master or Admin code"
+msgstr "Abierto con el código de administrador"
 
 #. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
 #: components/core/notify/src/notify_words.c
 # review: draft
 #, fuzzy
-msgid "Installer mode ended"
-msgstr "Modo instalador terminado"
+msgid "Setup mode ended"
+msgstr "Modo de configuración terminado"
 
 #. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
 #: components/core/notify/src/notify_words.c
@@ -2439,13 +2439,6 @@ msgstr "Modo instalador terminado"
 #, fuzzy
 msgid "After 15 minutes without activity"
 msgstr "Tras 15 minutos sin actividad"
-
-#. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
-#: components/core/notify/src/notify_words.c
-# review: draft
-#, fuzzy
-msgid "The installer left"
-msgstr "El instalador salió"
 
 #. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
 #. A list row's title (one line; a long one ends in ...).
@@ -5866,14 +5859,14 @@ msgstr "No cambió nada."
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "Installer mode is open at the panel"
-msgstr "El modo instalador está abierto en el panel"
+msgid "Setup mode is open at the panel"
+msgstr "El modo de configuración está abierto en el panel"
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "Changes from this browser wait until installer mode is closed on the keypad."
-msgstr "Los cambios de este navegador esperan a que se cierre el modo instalador en el teclado."
+msgid "Changes from this browser wait until Setup mode is closed on the keypad."
+msgstr "Los cambios de este navegador esperan a que se cierre el modo de configuración en el teclado."
 
 #. Settings > Automations, "Armed how?": the arming levels, as the arming buttons say them. At most 47 bytes each
 #. Text from the layout XML, no context.
@@ -11994,8 +11987,8 @@ msgstr "Recuperación del instalador al encender"
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "For a short time after power-up, installer mode opens without a code."
-msgstr "Por un momento tras encender, el modo instalador se abre sin código."
+msgid "For a short time after power-up, Setup mode opens without a code."
+msgstr "Por un momento tras encender, el modo de configuración se abre sin código."
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -12095,7 +12088,7 @@ msgstr "Acceso por navegador (este Administrador del panel)"
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "Off closes this page for everyone. Turn it back on at the panel, under Settings > About > Installer."
+msgid "Off closes this page for everyone. Turn it back on at the panel, under Settings > About > Setup."
 msgstr "Apagado cierra esta página para todos. Vuelva a activarlo en el panel, en Configuración > Acerca de > Instalador."
 
 #: components/services/panel_web/web/panel-pages.js
@@ -12147,8 +12140,8 @@ msgstr "Códigos maestro y de administrador"
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "Sets the Admin code or the system master’s code without the old one, as Installer > Master and Admin codes does at the panel. Everyone’s code, the Admin code too, also changes on People and codes."
-msgstr "Establece el código de administrador o el del maestro del sistema sin el anterior, como lo hace Instalador > Códigos maestro y de administrador en el panel. El código de cualquier persona, también el de administrador, se cambia además en Personas y códigos."
+msgid "Sets the Admin code or the system master’s code without the old one, as Setup > Master and Admin codes does at the panel. Everyone’s code, the Admin code too, also changes on People and codes."
+msgstr "Establece el código de administrador o el del maestro del sistema sin el anterior, como lo hace Configuración > Códigos maestro y de administrador en el panel. El código de cualquier persona, también el de administrador, se cambia además en Personas y códigos."
 
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
@@ -12243,7 +12236,7 @@ msgstr "El acceso por navegador está apagado"
 #: components/services/panel_web/web/panel-pages.js
 # review: draft
 #, fuzzy
-msgid "Turn it back on at the panel: Settings > About > Installer."
+msgid "Turn it back on at the panel: Settings > About > Setup."
 msgstr "Vuelva a activarlo en el panel: Configuración > Acerca de > Instalador."
 
 #: components/services/panel_web/web/panel-pages.js
@@ -12725,11 +12718,11 @@ msgid "Installer mode is on"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "It installs once installer mode is off"
+msgid "It installs once Setup mode is off"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Leave installer mode and the panel restarts to install it."
+msgid "Leave Setup mode and the panel restarts to install it."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -21649,8 +21642,8 @@ msgstr "Ingrese su código para borrarla"
 #: components/ui/alarm_ui/src/ui_app.c
 # review: draft
 #, fuzzy
-msgid "Tap to finish and leave installer mode"
-msgstr "Toque para terminar y salir del modo instalador"
+msgid "Tap to finish and leave Setup mode"
+msgstr "Toque para terminar y salir del modo de configuración"
 
 #. Home, the card on the right: this keypad is in installer mode, or another one is. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_app.c
@@ -22316,7 +22309,7 @@ msgstr "Remoto: alguien · toque para pausar"
 #: components/ui/alarm_ui/src/ui_app.c
 # review: draft
 #, fuzzy
-msgid "Remote access is off. The installer turns it back on in Installer"
+msgid "Remote access is off. The installer turns it back on in Setup"
 msgstr "El acceso remoto está desactivado. El instalador lo reactiva en Instalador"
 
 #. a toast; the last "Installer" is the Settings section of that name
@@ -25163,8 +25156,8 @@ msgstr "Mantenga presionado 2 segundos"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Installer mode without a code: set a new master code"
-msgstr "Modo instalador sin código: establezca un código maestro nuevo"
+msgid "Setup mode without a code: set a new master code"
+msgstr "Modo de configuración sin código: establezca un código maestro nuevo"
 
 #. The code pad's hint line. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -25192,8 +25185,8 @@ msgstr "Ya pasaron los dos minutos tras el encendido"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Open installer mode without the code?"
-msgstr "¿Abrir el modo instalador sin el código?"
+msgid "Open Setup mode without the code?"
+msgstr "¿Abrir el modo de configuración sin el código?"
 
 #. A confirmation sheet. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -25206,8 +25199,8 @@ msgstr "Para un código maestro perdido, solo al encender. Se registra y se info
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Open installer mode"
-msgstr "Abrir el modo instalador"
+msgid "Open Setup mode"
+msgstr "Abrir el modo de configuración"
 
 #. the toasts below say why the installer's changes were not saved; {0} is a number
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -25332,15 +25325,15 @@ msgstr "No se guardó: {0}"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Installer mode ended · arming is on again"
-msgstr "Modo instalador terminado · el armado vuelve a estar activo"
+msgid "Setup mode ended · arming is on again"
+msgstr "Modo de configuración terminado · el armado vuelve a estar activo"
 
 #. the line under the page title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Installer settings change how the alarm works"
-msgstr "Los ajustes del instalador cambian cómo funciona la alarma"
+msgid "Setup changes how the alarm works"
+msgstr "La configuración cambia cómo funciona la alarma"
 
 #. a locked page, a row; {0} is the seconds left. At most 70 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -25524,8 +25517,8 @@ msgstr "Probar y empezar de nuevo"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Leaves installer mode and starts one"
-msgstr "Sale del modo instalador y empieza uno"
+msgid "Leaves Setup mode and starts one"
+msgstr "Sale del modo de configuración y empieza uno"
 
 #. A list row's title (one line; a long one ends in ...).
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -25552,8 +25545,8 @@ msgstr "Borrar todo"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "Leave installer mode"
-msgstr "Salir del modo instalador"
+msgid "Leave Setup mode"
+msgstr "Salir del modo de configuración"
 
 #. the line under the page title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -25901,8 +25894,8 @@ msgstr "Recuperación del código maestro"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-msgid "For two minutes after power-up, Installer opens without a code to set a new master code. When off, a lost master code can't be recovered"
-msgstr "Durante dos minutos después de encender, Instalador se abre sin código para establecer un código maestro nuevo. Si está desactivado, un código maestro perdido no se puede recuperar"
+msgid "For two minutes after power-up, Setup opens without a code to set a new master code. When off, a lost master code can't be recovered"
+msgstr "Durante dos minutos después de encender, Configuración se abre sin código para establecer un código maestro nuevo. Si está desactivado, un código maestro perdido no se puede recuperar"
 
 #. A number row's title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
@@ -26432,8 +26425,8 @@ msgstr "Mantenga presionado para borrar todo"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: changed source
 #, fuzzy
-msgid "Unplug the panel for ten seconds. For two minutes after it starts, Installer opens without a code to set a new master code (unless the owner turned that off)."
-msgstr "Desconecte el panel durante diez segundos. Durante dos minutos después de encender, Instalador se abre sin código para establecer un código maestro nuevo (a menos que el propietario lo haya desactivado)."
+msgid "Unplug the panel for ten seconds. For two minutes after it starts, Setup opens without a code to set a new master code (unless the owner turned that off)."
+msgstr "Desconecte el panel durante diez segundos. Durante dos minutos después de encender, Configuración se abre sin código para establecer un código maestro nuevo (a menos que el propietario lo haya desactivado)."
 
 #. The MQTT row's state in the Integrations list. At most 63 bytes
 #. The Home Assistant row's state in the Integrations list. At most 63 bytes
@@ -26963,7 +26956,7 @@ msgstr "Código para armar"
 #: components/ui/alarm_ui/src/ui_integrations.c
 # review: draft
 #, fuzzy
-msgid "Not needed (installer setting)"
+msgid "Not needed (Setup setting)"
 msgstr "No se necesita (ajuste del instalador)"
 
 #. A list row's value, at its right end (keep it short).
@@ -27240,8 +27233,8 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Only in installer mode, with everything disarmed"
-msgstr "Solo en modo instalador, con todo desarmado"
+msgid "Only in Setup mode, with everything disarmed"
+msgstr "Solo en modo de configuración, con todo desarmado"
 
 #. a toast, why the Zigbee radio refused a request
 #. a toast, why the Z-Wave radio refused a request
@@ -27472,8 +27465,8 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Not started: only in installer mode, with everything disarmed."
-msgstr "No se inició: solo en modo instalador, con todo desarmado."
+msgid "Not started: only in Setup mode, with everything disarmed."
+msgstr "No se inició: solo en modo de configuración, con todo desarmado."
 
 #. An explanation under a group of rows (wraps over several lines).
 #. a paragraph on the Add page, why nothing started
@@ -27572,7 +27565,7 @@ msgstr ""
 
 #. A Settings page: the line under its title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_link.c
-msgid "Installer · Partition settings"
+msgid "Setup · Partition settings"
 msgstr ""
 
 #. a keypad's page once it is no longer paired (removed meanwhile)
@@ -31820,7 +31813,7 @@ msgstr ""
 
 #. Software update, waiting for the restart: what ends the wait; each is joined with a middle dot to the reason. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_update.c
-msgid "Installs once installer mode is off"
+msgid "Installs once Setup mode is off"
 msgstr ""
 
 #. the line under it. At most 111 bytes
@@ -31843,7 +31836,7 @@ msgid "Installs within 30 seconds"
 msgstr ""
 
 #: components/ui/alarm_ui/src/ui_update.c
-msgid "Leave installer mode and the panel restarts to install it. It takes about a minute."
+msgid "Leave Setup mode and the panel restarts to install it. It takes about a minute."
 msgstr ""
 
 #: components/ui/alarm_ui/src/ui_update.c
@@ -32562,8 +32555,8 @@ msgstr "Ya hay una prueba de caminata en curso"
 #: components/ui/alarm_ui/src/ui_walk.c
 # review: draft
 #, fuzzy
-msgid "Leave installer mode first"
-msgstr "Salga primero del modo instalador"
+msgid "Leave Setup mode first"
+msgstr "Salga primero del modo de configuración"
 
 #. a toast when Start is pressed while the partition is armed. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_walk.c
@@ -32583,8 +32576,8 @@ msgstr "Silencie primero la alarma"
 #: components/ui/alarm_ui/src/ui_walk.c
 # review: draft
 #, fuzzy
-msgid "Installer mode ended · {0}"
-msgstr "Modo instalador terminado · {0}"
+msgid "Setup mode ended · {0}"
+msgstr "Modo de configuración terminado · {0}"
 
 #. the question when End is pressed during a walk test (Home's card or its page), its explanation, and its two buttons. At most 127 bytes each
 #: components/ui/alarm_ui/src/ui_walk.c
@@ -33791,8 +33784,8 @@ msgstr "Zigbee no está disponible en este panel."
 #: components/ui/alarm_ui/src/ui_zigbee.c
 # review: draft
 #, fuzzy
-msgid "Adding, removing and changing Zigbee devices is done in installer mode."
-msgstr "Agregar, eliminar y cambiar dispositivos Zigbee se hace en modo instalador."
+msgid "Adding, removing and changing Zigbee devices is done in Setup mode."
+msgstr "Agregar, eliminar y cambiar dispositivos Zigbee se hace en modo de configuración."
 
 #. under "Add a device" on the Zigbee page
 #: components/ui/alarm_ui/src/ui_zigbee.c
@@ -34162,8 +34155,8 @@ msgstr "Algo salió mal. Inténtelo de nuevo."
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Adding a device is done in installer mode."
-msgstr "Los dispositivos se agregan en modo instalador."
+msgid "Adding a device is done in Setup mode."
+msgstr "Los dispositivos se agregan en modo de configuración."
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_zigbee.c
@@ -35230,8 +35223,8 @@ msgstr "Eliminar {0}"
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Removing a device is done in installer mode."
-msgstr "Los dispositivos se eliminan en modo instalador."
+msgid "Removing a device is done in Setup mode."
+msgstr "Los dispositivos se eliminan en modo de configuración."
 
 #. a paragraph on the remove page when nothing runs
 #. An explanation under a group of rows (wraps over several lines).
@@ -35302,8 +35295,8 @@ msgstr "La dirección Zigbee del panel"
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Done in installer mode"
-msgstr "Se hace en modo instalador"
+msgid "Done in Setup mode"
+msgstr "Se hace en modo de configuración"
 
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_zigbee.c
@@ -35932,8 +35925,8 @@ msgstr "Actualizando"
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Changing the region is done in installer mode."
-msgstr "La región se cambia en modo instalador."
+msgid "Changing the region is done in Setup mode."
+msgstr "La región se cambia en modo de configuración."
 
 #. a row or paragraph on a Z-Wave page
 #. An explanation under a group of rows (wraps over several lines).
@@ -36384,8 +36377,8 @@ msgstr "Restablecer la red Z-Wave"
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Adding and removing devices is done in installer mode."
-msgstr "Los dispositivos se agregan y eliminan en modo instalador."
+msgid "Adding and removing devices is done in Setup mode."
+msgstr "Los dispositivos se agregan y eliminan en modo de configuración."
 
 #. under a sleeping device's "Checks in" row. At most 79 bytes
 #: components/ui/alarm_ui/src/ui_zwave.c
@@ -37750,7 +37743,7 @@ msgstr ""
 
 #. a paragraph on the Z-Wave radio's page
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Disarm every partition, in installer mode, then try again."
+msgid "Disarm every partition, in Setup mode, then try again."
 msgstr ""
 
 #. a paragraph on the Z-Wave radio's page
@@ -38485,8 +38478,8 @@ msgstr "Ese código no puede unirse solo: agréguelo con su PIN"
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Only in installer mode"
-msgstr "Solo en modo instalador"
+msgid "Only in Setup mode"
+msgstr "Solo en modo de configuración"
 
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
@@ -38525,8 +38518,8 @@ msgstr "Escriba su clave de 40 dígitos o escanéela con un celular"
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Registering a sensor is done in installer mode."
-msgstr "Los sensores se registran en modo instalador."
+msgid "Registering a sensor is done in Setup mode."
+msgstr "Los sensores se registran en modo de configuración."
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_zwave.c
@@ -38623,8 +38616,8 @@ msgstr "Se unió sin seguridad S2."
 #: components/ui/alarm_ui/src/ui_zwave.c
 # review: draft
 #, fuzzy
-msgid "Changing it is done in installer mode."
-msgstr "Se cambia en modo instalador."
+msgid "Changing it is done in Setup mode."
+msgstr "Se cambia en modo de configuración."
 
 #. A button row's text (one line).
 #: components/ui/alarm_ui/src/ui_zwave.c
@@ -38807,8 +38800,8 @@ msgstr "Pánico"
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
 # review: draft
 #, fuzzy
-msgid "Installer · Arming off · Tap to leave"
-msgstr "Instalador · sin armado · salir"
+msgid "Setup · Arming off · Tap to leave"
+msgstr "Configuración · sin armado · salir"
 
 #. Text from the layout XML, no context.
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
@@ -40170,8 +40163,8 @@ msgstr "Salir"
 #: components/ui/alarm_ui/src/ui_installer.c
 # review: draft
 #, fuzzy
-#~ msgid "Installer mode · arming is off until you leave"
-#~ msgstr "Modo instalador · el armado está desactivado hasta que salga"
+#~ msgid "Setup mode · arming is off until you leave"
+msgstr ""
 
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c

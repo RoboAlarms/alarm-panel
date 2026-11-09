@@ -66,7 +66,7 @@ written from a read-only map of the repository, three independent designs and th
 - **B1 Boot baseline.** The first snapshot after start is a baseline. A restored armed state at power-up emits no ARMED event (engine.c:219-264) and makes no occurrence here.
 - **B2 Settle.** Zone occurrences are ignored until start + `cfg.opt.power_up_settle_s` (default 60). The engine's `settle_until` is private (zones.c:453-455), so the module keeps its own grace and the engine doesn't change. The first snapshot after the grace becomes the zone baseline.
 - **B3 Re-baselining.** A change of `snapshot.config_seq` re-baselines every zone. `on_zones_reset` re-baselines the zones it names. The automation task then reloads zone types.
-- **B4 Walk test and installer mode.** No zone occurrences while `snapshot.program` is set, or while any partition has `part[p].walk_test`. A walk test in any partition holds every zone, because the snapshot carries no zone partition; zone occurrences carry partition 0 and the runner reads the zone's partition from the configuration. Zones still show FAULT then (zones.c:310-318). The zones re-baseline when it ends.
+- **B4 Walk test and Setup mode.** No zone occurrences while `snapshot.program` is set, or while any partition has `part[p].walk_test`. A walk test in any partition holds every zone, because the snapshot carries no zone partition; zone occurrences carry partition 0 and the runner reads the zone's partition from the configuration. Zones still show FAULT then (zones.c:310-318). The zones re-baseline when it ends.
 - **B5 Trouble.** A zone edge is dropped when the old or new flags carry `ALARM_ZS_TROUBLE|TAMPER|SUPERVISION` (alarm_types.h:176-182): a sensor that went missing hasn't opened.
 - **B6 Queue overflow.** The listener never blocks. On overflow it counts `missed`, and the console shows the count.
 - **Silent and duress.** An `ALARM_EV_ALARM` carrying `ALARM_EVF_SILENT` never fires anything. `ALARM_EV_DURESS` is never a trigger. A duress arm or disarm fires exactly like a normal one (arming.c:194-198, 270-273), so nothing observable reveals a duress code.
@@ -105,7 +105,7 @@ written from a read-only map of the repository, three independent designs and th
 
 No new `net_wifi_tz_gen()` contract is needed: T5's bound catches zone changes larger than an hour. A change of exactly one hour behaves like DST (documented).
 
-**Arming and walk tests.** Arming triggers can't occur in a walk test or installer mode, because the engine refuses. Alarm and fire triggers still work in installer mode, because fire is 24-hour.
+**Arming and walk tests.** Arming triggers can't occur in a walk test or Setup mode, because the engine refuses. Alarm and fire triggers still work in Setup mode, because fire is 24-hour.
 
 ## 3. Actions
 
@@ -191,7 +191,7 @@ No new `net_wifi_tz_gen()` contract is needed: T5's bound catches zone changes l
 
    There is no "Arm now": that would be quick arm, an installer option (14:100).
 5. **At arm time.** The service calls `alarm_service_command_as(&{ARM, p, level, 0, ""}, &{AUTOMATION, uid}, made_by, ALARM_SVC_WHEN_DISARMED, &res)`.
-   - The state check runs on the alarm task in the same call and also refuses installer mode (alarm_service.c:795-819).
+   - The state check runs on the alarm task in the same call and also refuses Setup mode (alarm_service.c:795-819).
    - If the partition isn't disarmed, the answer is BAD_STATE **without** an engine log, recorded only as "already armed". It never re-arms at another level, which would restart exit time and could turn a family's Night into Away (arming.c:136-139).
    - The engine re-checks that `made_by` still holds a user with that partition who may arm (arming.c:706-711, `can_arm`). A deleted or demoted maker stops the rule.
 6. **Not ready.** Without "Bypass open zones" the arm fails. The engine logs `ARM_FAILED` and plays its error sound, and U-C2 makes `ARM_FAILED` REPORT_NOW for the AUTOMATION and SCHEDULE sources (arming.c:115-120 is REPORT_NONE today). During the warning the card has already said the panel is not ready (D28). Walk test, sounding and HELD are refused the same way.
@@ -457,7 +457,7 @@ void     auto_run_status(const auto_run_t *r, uint16_t uid, auto_status_t *out);
 
 | Who | Touchscreen | Panel Manager |
 |---|---|---|
-| System master, installer, installer mode | Settings > Automations (`ACCESS_SYSTEM`, ui_settings.c:233-258): see, add, change, turn off, delete, Try it now | `GET automations`, `GET automations/devices`, `POST automations` at `ACC_SYSTEM`. Grant sessions are refused for POST (`403 password_sign_in_required`, panel_web.c:1783-1784). |
+| System master, installer, Setup mode | Settings > Automations (`ACCESS_SYSTEM`, ui_settings.c:233-258): see, add, change, turn off, delete, Try it now | `GET automations`, `GET automations/devices`, `POST automations` at `ACC_SYSTEM`. Grant sessions are refused for POST (`403 password_sign_in_required`, panel_web.c:1783-1784). |
 | Partition master, standard, arm-only, guest | The Settings line opens the locked page | Page hidden (`access:'system'`); GET answers 403 |
 | Anyone at the wall (C) | Put off arming, with any user code (SCH-003). A duress code reports duress silently. | — |
 | While armed or in alarm | Settings gear dimmed (UI-022). Automations keep running. | GET is read-only with a notice. POST answers 409 `locked` (panel_web.c:300-317), not in `locked_exempt`. `automation_service_save` also refuses when `alarm_snapshot_locked()`. |

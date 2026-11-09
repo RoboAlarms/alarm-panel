@@ -1,4 +1,4 @@
-// Settings > Installer (ui_installer.c): locked, then installer mode with arming off. Who may open
+// Settings > Installer (ui_installer.c): locked, then Setup mode with arming off. Who may open
 // what follows docs/features/14 "Who can change what".
 
 const INST_RAIL = {troubles: 1, tone: 'blue'};
@@ -280,7 +280,7 @@ inst({id: 'zwave-radio-details', title: 'Z-Wave radio details', shot: null}, () 
   ].join(''),
 }), {notes: 'Preview: zwave_radio_details (the -ZWave walk). BL-152: Background noise (the quietest channel; "Not measured yet" before a reading). While the radio updates, or another change runs, Restart is gray: "Not while its software installs" / "Not while another change runs".'});
 
-// Settings > Installer > Z-Wave > Add a device (ui_zwave.c build_add), refused for want of storage
+// Settings > Setup > Z-Wave > Add a device (ui_zwave.c build_add), refused for want of storage
 // (BL-152, ZW-039; docs/features/20 devices.md "The NVS budget"). Drawn and built
 // without waiting for review (docs/features/36 ZD-3 (k)). Fictional data.
 inst({id: 'zwave-add-full', title: 'Z-Wave: Add refused, the storage is full', shot: null}, () => ({
@@ -291,7 +291,7 @@ inst({id: 'zwave-add-full', title: 'Z-Wave: Add refused, the storage is full', s
   ].join(''),
 }), {notes: 'BL-152 (ZW-039): while NVS has fewer free entries than a new device needs (the alarm configuration\'s rewrite, the node cache\'s growth, and its own rewrite once it is large), Add and Replace answer FULL. The page says why in Zigbee\'s words, as the Zigbee Add page does; a Replace refused the same way shows this page too, and the device page\'s Replace it shows the toast "No room for another device: the panel\'s storage is full". SmartStart devices waiting under SmartStart codes simply don\'t join until there is room (the radio stops listening for them). Changing what is there still works. The Panel Manager (which adds but does not replace) says the same when its Add is refused: "No room for another device: the panel’s storage is full."'});
 
-// Settings > Installer > Z-Wave (ui_zwave.c radio_look), while the storage is full (BL-152, ZW-039):
+// Settings > Setup > Z-Wave (ui_zwave.c radio_look), while the storage is full (BL-152, ZW-039):
 // the radio's row says why nothing new can be added; SmartStart devices on the list wait. Drawn
 // and built without waiting for review (docs/features/36 ZD-3 (k)). Fictional data.
 inst({id: 'zwave-storage-full', title: 'Z-Wave: the storage is full', shot: null}, () => ({
@@ -323,7 +323,7 @@ const ZW_DEVICE_PAGE = {title: 'Door sensor', note: 'Z-Wave sensor · device 7',
 
 inst({id: 'zwave-device-health', title: 'Z-Wave device: Check it now and Set it up again', shot: null}, () => ({
   ...ZW_DEVICE_PAGE, body: zwDeviceBody(),
-}), {notes: 'Preview: zwave_device_health_actions. BL-152. A listening device that answers has Check it now too (its answer a toast: "It answered" or "No answer"). Set it up again: installer mode, a device whose setup is done (Ready, or can\'t report).'});
+}), {notes: 'Preview: zwave_device_health_actions. BL-152. A listening device that answers has Check it now too (its answer a toast: "It answered" or "No answer"). Set it up again: Setup mode, a device whose setup is done (Ready, or can\'t report).'});
 
 inst({id: 'zwave-device-setup-again-confirm', title: 'Z-Wave device: Set it up again, confirmed first', shot: null}, () => ({
   ...ZW_DEVICE_PAGE, body: zwDeviceBody(),

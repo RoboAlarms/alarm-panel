@@ -22,7 +22,7 @@ A house that is armed through the window just waits for the next day. There is n
 
 Before the first automatic install ships, four things in today's code must change. Each makes every restart worse than the "about a minute" the screen promises:
 - The 60 s settle after boot drops short fire, CO and panic signals.
-- Every restart opens a 120 s way into installer mode with no code.
+- Every restart opens a 120 s way into Setup mode with no code.
 - The self-test doesn't check the sounder, the reporting or the radios.
 - A failed self-test restarts at once, even during exit time or a fire alarm.
 
@@ -36,7 +36,7 @@ The gap must also be measured on a panel, and the bench runs still owed must pas
 - **Checks:**
   - The first check runs 3 min after boot (`panel_ota.c:61`, `:1396`). After that, one every 24 h of uptime, with no randomness (`:1418-1428`).
   - A failed check is tried again after 10 min, doubling up to 6 h (OTA-015, README:40).
-- **The install gate** checks only four things: installer mode, armed, a bell or sounder, and a walk test (`components/core/alarm_proto/src/fw.c:459-483`).
+- **The install gate** checks only four things: Setup mode, armed, a bell or sounder, and a walk test (`components/core/alarm_proto/src/fw.c:459-483`).
   - The gate is asked again just before the slot switch (`panel_ota.c:845-897`).
   - The panel restarts at the first quiet second. Bench run 4 restarted 1 s after a disarm (README:314).
 - **A waiting image is kept in RAM only** (`panel_ota.c:126`). The approved BL-188 says a power cut forgets it (`docs/features/07-UI-LVGL-Pro/mockup/screens/updates-run.js`).
@@ -47,7 +47,7 @@ The gap must also be measured on a panel, and the bench runs still owed must pas
   - For 60 s the engine ignores zone alarms (`components/core/alarm_core/src/config.c:44`; set on every start, `engine.c:273-275`).
   - A fault that restores inside those 60 s never alarms. When they end, only zones still faulted act (`zones.c:453-469`, `:512-526`).
   - A verified-fire zone then starts a 6 s smoke reset and a 90 s window (`zones.c:231-242`, `config.c:34-35`).
-  - Every start also opens 120 s of installer mode with no code (`config.c:55`, `engine.c:276-278`, `include/alarm/alarm_engine.h:349-356`). The engine already knows why it started (`components/services/platform_esp/src/alarm_service.c:262-279`).
+  - Every start also opens 120 s of Setup mode with no code (`config.c:55`, `engine.c:276-278`, `include/alarm/alarm_engine.h:349-356`). The engine already knows why it started (`components/services/platform_esp/src/alarm_service.c:262-279`).
 - **What the self-test checks:**
   - Five heartbeats: engine, log, screen, sensor-input processing and touch (`components/services/panel_ota/include/panel_ota.h:144-152`). It never checks the sounder, the reporting or the radios.
   - A failure restarts at once, armed or not (`panel_ota.c:1302-1303`; OTA-031, README:56).
@@ -81,8 +81,8 @@ P1-P3 and P7 also fix today's person-started installs.
 | # | What | Why (source) |
 |---|---|---|
 | P1 | **Settle (CORE-PWR-008).** During any settle, latch a fault on a fire, CO, 24-hour or panic zone from a radio sensor, so a fault then a restore still alarms when the settle ends. After a planned software start (`ALARM_START_SOFTWARE` after an `installing` or `rolling_back` record), use a separate settle, measured on the bench, for wired loops only. Measure `esp_restart()` to the end of the settle and to MQTT reconnect on a CrowPanel, and put that figure (N) in the words. | Short events inside the 60 s are lost today, not delayed (`zones.c:453-469`, `:512-526`; PWR-002, `docs/features/17-Power-and-Supervision/README.md:47`). "About a minute" is wording only (`components/ui/alarm_ui/src/ui_update.c:92`, `:329`). |
-| P2 | **No recovery after a software start (CORE-PROG-013).** Open `recovery_until` only for `ALARM_START_POWER_ON` (and optionally BROWNOUT and EXTERNAL), never for SOFTWARE, PANIC or WATCHDOG. | `engine.c:276-278` ignores the reason. Recovery works only when everything is disarmed (`alarm_engine.h:351-356`), which an automatic install guarantees. While installer mode is on, nothing can be armed, and codes and zones can be changed. The screen's own words are "right after power-up only" (`components/ui/alarm_ui/src/ui_installer.c:100`). |
-| P3 | **Gate (OTA-004, every install).** Refuse while any zone is `ALARM_ZS_VERIFYING`, or is `ALARM_ZS_ALARM` with the zone still faulted. Reasons: "A fire alarm is being checked" and "A sensor is still in alarm". Add tests in `test_fw.c`. | The gate checks only installer mode, the state, the bell, the sounder and the walk test (`fw.c:459-483`). Verification sounds nothing (`zones.c:231-242`), and verification state isn't stored (`include/alarm/alarm_config.h:107-128`), so a restart throws away the first trip. |
+| P2 | **No recovery after a software start (CORE-PROG-013).** Open `recovery_until` only for `ALARM_START_POWER_ON` (and optionally BROWNOUT and EXTERNAL), never for SOFTWARE, PANIC or WATCHDOG. | `engine.c:276-278` ignores the reason. Recovery works only when everything is disarmed (`alarm_engine.h:351-356`), which an automatic install guarantees. While Setup mode is on, nothing can be armed, and codes and zones can be changed. The screen's own words are "right after power-up only" (`components/ui/alarm_ui/src/ui_installer.c:100`). |
+| P3 | **Gate (OTA-004, every install).** Refuse while any zone is `ALARM_ZS_VERIFYING`, or is `ALARM_ZS_ALARM` with the zone still faulted. Reasons: "A fire alarm is being checked" and "A sensor is still in alarm". Add tests in `test_fw.c`. | The gate checks only Setup mode, the state, the bell, the sounder and the walk test (`fw.c:459-483`). Verification sounds nothing (`zones.c:231-242`), and verification state isn't stored (`include/alarm/alarm_config.h:107-128`), so a restart throws away the first trip. |
 | P4 | **Self-test (OTA-046, OTA-031).** Check the outputs, and hold the rollback during exit or entry time and alarms (section 4). | Five heartbeats only (`panel_ota.h:144-152`). Rollback with no gate (`panel_ota.c:1302-1303`). |
 | P5 | **After confirmation (OTA-047).** Keep the previous image for 7 days, count crash restarts, and send PANIC and WATCHDOG starts to Trouble. | Once the image is confirmed there is no way back (`panel_ota.c:1272-1287`). Abnormal starts go to System, which is off (`notify_words.c:1165`). |
 | P6 | **Signed release statements, and a release key separate from the development key** (D5, Q5, Q6). | The section 1 facts on the unsigned offer and the single key. |

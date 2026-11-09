@@ -664,7 +664,7 @@ void alarm_ui_init_gen(const char * asset_path)
                            subject_program_text_buf,
                            subject_program_text_prev_buf,
                            UI_SUBJECT_STRING_LENGTH,
-                           alarm_ui_tr("Installer \xC2\xB7 Arming off \xC2\xB7 Tap to leave")
+                           alarm_ui_tr("Setup \xC2\xB7 Arming off \xC2\xB7 Tap to leave")
                           );
     lv_subject_init_int(&subject_view, 0);
     lv_subject_set_min_value_int(&subject_view, 0);

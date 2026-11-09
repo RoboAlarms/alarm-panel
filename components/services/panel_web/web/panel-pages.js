@@ -147,8 +147,8 @@ function bindSettingsCard(id, specs, values, save) {
   };
 }
 function installerNotice() {
-  if (state.program) return notice('warn', t('Installer mode is open at the panel'),
-    t('Changes from this browser wait until installer mode is closed on the keypad.'));
+  if (state.program) return notice('warn', t('Setup mode is open at the panel'),
+    t('Changes from this browser wait until Setup mode is closed on the keypad.'));
   return '';
 }
 
@@ -715,7 +715,7 @@ function overviewBody() {
   if (live.chime && !live.busy.has(live.chime.p)) live.chime = null;
   const events = live.history.slice(0, 6);
   return `<div class="page-head"><div><h1>${ht('Overview')}</h1><p data-now></p></div></div>
-    ${state.program ? notice('info', t('Installer mode is open at the panel')) : ''}
+    ${state.program ? notice('info', t('Setup mode is open at the panel')) : ''}
     <div class="grid${parts.length > 1 ? ' two' : ''}">${parts.map(overviewPartition).join('')}</div>
     <div class="grid four gap">${overviewTiles().map(([to, glyph, label, kind, value, detail]) => `<a class="card tile ${kind}" href="#/${to}">
       ${icon('chev', 'go-to')}<span class="tile-label">${glyph}${esc(label)}</span><span class="tile-value">${esc(value)}</span><span class="tile-detail">${esc(detail)}</span></a>`).join('')}</div>
@@ -3048,7 +3048,7 @@ const optionGroups = () => {
     [t('Power and start-up'), [
       {name: 'power_up_previous_state', label: t('Restore arming after a power cut'), type: 'switch'},
       {name: 'power_up_settle_s', label: t('Settle time after start-up'), type: 'number', unit: s, help: t('Zone alarms are ignored while sensors settle.')},
-      {name: 'power_up_program', label: t('Installer recovery after power-up'), type: 'switch', help: t('For a short time after power-up, installer mode opens without a code.')},
+      {name: 'power_up_program', label: t('Installer recovery after power-up'), type: 'switch', help: t('For a short time after power-up, Setup mode opens without a code.')},
     ]],
     [t('Troubles'), [
       {name: 'trouble_beep_mask', label: t('Troubles that beep at the keypad'), type: 'bits', wide: true, options: troubleBits()},
@@ -3104,7 +3104,7 @@ async function optionsPage() {
 // system master at the panel (status installer_opens_setup). Read-only for everyone.
 function setupModeCard(on) {
   return `<section class="card gap"><div class="card-head"><div><h2>${ht('Setup mode')}</h2>
-    <p>${ht('Setup mode (installer mode) opens at the panel while everything is disarmed. The system master’s code always opens it.')}</p></div></div>
+    <p>${ht('Setup mode opens at the panel while everything is disarmed. The system master’s code always opens it.')}</p></div></div>
     <div class="rows"><div class="row"><div><span class="label">${ht('Let the Admin code open Setup mode')}</span>
       <span class="help">${on ? ht('The Admin code opens it too.') : ht('Only the system master’s code opens it.')}
         ${isOwner() ? ht('Change it at the panel.') : ht('Only the system master changes this, at the panel.')}</span></div>
@@ -3114,7 +3114,7 @@ function setupModeCard(on) {
 function accessPage() {
   const specs = [
     {name: 'web', label: t('Browser access (this Panel Manager)'), type: 'switch', local: true,
-      help: t('Off closes this page for everyone. Turn it back on at the panel, under Settings > About > Installer.')},
+      help: t('Off closes this page for everyone. Turn it back on at the panel, under Settings > About > Setup.')},
     {name: 'developer', label: t('Developer tools'), type: 'switch', local: true, showIf: v => v.web,
       help: t('Signed firmware upload from a file, diagnostic logs and an enrolled development workstation.')},
   ];
@@ -3123,7 +3123,7 @@ function accessPage() {
     html: pageHead(t('Access and maintenance'), t('Who can reach the panel over the network, the two special codes, and starting over.')) +
       settingsCard({id: 'access-form', title: t('Remote access'), specs, values, button: t('Review')}) +
       `<section class="card gap"><div class="card-head"><div><h2>${ht('Master and Admin codes')}</h2>
-        <p>${ht('Sets the Admin code or the system master’s code without the old one, as Installer > Master and Admin codes does at the panel. Everyone’s code, the Admin code too, also changes on People and codes.')}</p></div></div>
+        <p>${ht('Sets the Admin code or the system master’s code without the old one, as Setup > Master and Admin codes does at the panel. Everyone’s code, the Admin code too, also changes on People and codes.')}</p></div></div>
         <div class="card-foot"><button type="button" id="change-code">${ht('Change a code…')}</button></div></section>
       ${setupModeCard(state.installer_opens_setup !== false)}
       <section class="card gap"><div class="card-head"><div><h2>${ht('Backup')}</h2>
@@ -3148,7 +3148,7 @@ function accessPage() {
           after: async () => {
             if (!web) {
               state = null;
-              $('#main').innerHTML = pageHead(t('Browser access is off'), t('Turn it back on at the panel: Settings > About > Installer.'));
+              $('#main').innerHTML = pageHead(t('Browser access is off'), t('Turn it back on at the panel: Settings > About > Setup.'));
               $('#nav').replaceChildren();
               return;
             }
@@ -3364,7 +3364,7 @@ function updLostKind(d) {
 // What holds the update, and what ends the wait. The panel's own reasons are marked here and read with t().
 function updHold(reason) {
   const holds = {
-    [tx('Installer mode is on')]: [t('It installs once installer mode is off'), t('Leave installer mode and the panel restarts to install it.')],
+    [tx('Installer mode is on')]: [t('It installs once Setup mode is off'), t('Leave Setup mode and the panel restarts to install it.')],
     [tx('The system is armed')]: [t('It installs once everything is disarmed'), t('Disarm everything and the panel restarts to install it.')],
     [tx('An alarm is sounding')]: [t('It installs once the alarm is silenced'), t('Silence the alarm and the panel restarts to install it.')],
     [tx('A walk test is running')]: [t('It installs once the walk test ends'), t('End the walk test and the panel restarts to install it.')],

@@ -1773,7 +1773,7 @@ const char *ui_login_name(const alarm_config_t *cfg, uint8_t user)
     while (*p == ' ') {
         p++;
     }
-    return user == ALARM_USER_INSTALLER && *p == '\0' ? NOTR("Installer") : name;
+    return user == ALARM_USER_INSTALLER && *p == '\0' ? NOTR("Setup") : name;
 }
 
 void ui_login_rows(lv_obj_t *body, uint8_t user, const char *username, bool heading)
@@ -1987,7 +1987,7 @@ static void build_about(lv_obj_t *body, char *title, size_t tlen, char *note, si
     } else {
         ui_section(body, ""); /* a gap before the Installer row */
         /* TR: Settings > About, the Installer row's line. At most 111 bytes */
-        ui_row_link(body, UI_ICON_WRENCH, ui_tone_blue(), TR("Installer"),
+        ui_row_link(body, UI_ICON_WRENCH, ui_tone_blue(), TR("Setup"),
                     TR("Changes how the alarm works · needs the master or Admin code"), NULL,
                     UI_ICON_CHEVRON_RIGHT, about_open, (void *)(intptr_t)PAGE_INSTALLER);
     }

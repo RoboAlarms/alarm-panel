@@ -424,7 +424,7 @@ static const char *refusal(alarm_result_t r, alarm_walk_op_t op)
     }
     if (S.snap.program) {
         /* TR: a toast when Start is pressed in installer mode. At most 127 bytes */
-        return TR("Leave installer mode first");
+        return TR("Leave Setup mode first");
     }
     if (ps->state != ALARM_STATE_DISARMED) {
         /* TR: a toast when Start is pressed while the partition is armed. At most 127 bytes */
@@ -460,7 +460,7 @@ static void started(const ui_call_t *c)
                 /* TR: a toast when the installer menu's Walk test left installer mode and the
                  * start was then refused; {0} is the reason, a sentence (up to 90 bytes). At most
                  * 127 bytes */
-                I18N_FORMAT(text, sizeof(text), TR("Installer mode ended · {0}"),
+                I18N_FORMAT(text, sizeof(text), TR("Setup mode ended · {0}"),
                             refusal(r, ALARM_WALK_START));
                 ui_toast(text);
             }

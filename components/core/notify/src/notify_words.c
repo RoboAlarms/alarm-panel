@@ -1059,17 +1059,17 @@ bool notify_words(const i18n_catalog_t *cat, const alarm_config_t *cfg, const al
     case ALARM_EV_PROGRAM_ENTER:
         out->icon = NOTIFY_ICON_WRENCH;
         out->accent = ev->arg == 1u ? NOTIFY_ACCENT_AMBER : NOTIFY_ACCENT_BLUE;
-        put(out->title, sizeof(out->title), i18n_text(cat, NULL, "Installer mode"));
+        put(out->title, sizeof(out->title), i18n_text(cat, NULL, "Setup mode"));
         put(out->body, sizeof(out->body),
             ev->arg == 1u ? i18n_text(cat, NULL, "Opened without a code after power-up")
-                          : i18n_text(cat, NULL, "Opened with the installer code"));
+                          : i18n_text(cat, NULL, "Opened with the master or Admin code"));
         break;
     case ALARM_EV_PROGRAM_EXIT:
         out->icon = NOTIFY_ICON_WRENCH;
-        put(out->title, sizeof(out->title), i18n_text(cat, NULL, "Installer mode ended"));
+        put(out->title, sizeof(out->title), i18n_text(cat, NULL, "Setup mode ended"));
         put(out->body, sizeof(out->body),
             ev->arg == 1u ? i18n_text(cat, NULL, "After 15 minutes without activity")
-                          : i18n_text(cat, NULL, "The installer left"));
+                          : i18n_text(cat, NULL, "Closed"));
         break;
     case ALARM_EV_FACTORY_RESET:
         out->icon = NOTIFY_ICON_ROTATE_CCW;

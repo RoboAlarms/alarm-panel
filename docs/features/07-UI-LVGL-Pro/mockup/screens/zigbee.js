@@ -1,18 +1,18 @@
-// Settings > Installer > Zigbee and the pages under it (ui_zigbee.c): the radio's page, adding a
+// Settings > Setup > Zigbee and the pages under it (ui_zigbee.c): the radio's page, adding a
 // device (with an install code too), a device's page, removing, radio details, channel, reset,
 // install codes waiting, the zone editor's Zigbee rows, the trouble, and the siren, keypad and key
 // fob pages. Built from the BL-144 proposal with BL-147's siren and BL-148's keypad and key fob
 // (docs/features/20), in Z-Wave's words wherever the two do the same thing.
 //
-// Who: looking at any of these pages needs installer mode (the trouble asks for the code first,
-// ZB-027), and every change needs installer mode with every partition disarmed. Nothing on these
+// Who: looking at any of these pages needs Setup mode (the trouble asks for the code first,
+// ZB-027), and every change needs Setup mode with every partition disarmed. Nothing on these
 // pages blinks; countdowns and live words change at most once a second (UI-020, UI-023).
 // Departures from the drawing are written in the notes of the screens they touch. All data is fictional.
 
 const RAIL = {tone: 'blue'};
 const BAR = {banner: 'installer', time: '10:52'};
 const AREA = 'Zigbee';
-// A page in Settings > Installer, in installer mode. extra.over: a sheet or dialog over it; extra.toast.
+// A page in Settings > Installer, in Setup mode. extra.over: a sheet or dialog over it; extra.toast.
 const page = (meta, body, extra = {}) => M.screen({
   shot: null, area: AREA, ...meta,
   render: () => M.main({view: 'settings', tone: 'blue', rail: RAIL, bar: extra.bar || BAR,
@@ -124,7 +124,7 @@ page({id: 'zigbee-socket-zwave', shot: 'bl-144-zigbee-socket-zwave', title: 'Zig
 page({id: 'zigbee-interference', shot: 'bl-144-zigbee-interference', title: 'Zigbee: interference',
   notes: 'From the radio\'s jamming report. Background noise in dBm is on Radio details only.'},
 () => zigbeePage('noisy', M.paragraph('Move Wi-Fi routers and other radios away from the panel, or choose a quieter channel below.', 'amber')));
-// No "locked" Zigbee page: looking at these pages needs installer mode, so installer mode ending pops back
+// No "locked" Zigbee page: looking at these pages needs Setup mode, so Setup mode ending pops back
 // to the locked Installer page and the Troubles row asks for the Admin code first (ZB-027).
 
 // ================================ 3: adding a device ================================
@@ -254,7 +254,7 @@ const removeRows = (name, role = false) => [
 const FRONT = {name: 'Front Door', model: 'Aqara MCCGQ11LM', kind: 'Door and window contact', power: 'Battery 92 %',
   signal: 'Good', heard: '2 min ago', joined: 'With its install code', sw: '3.0.1'};
 page({id: 'zigbee-device', shot: 'bl-144-device', title: 'A device\'s page',
-  notes: 'Facts first, then what uses it, then what to do with it. Name renames it (the text sheet); a device in a zone is named after the zone until renamed. How it joined: "With its install code" or "With the standard key". Its words follow it in place, at most once a second. Only installer mode changes anything.'},
+  notes: 'Facts first, then what uses it, then what to do with it. Name renames it (the text sheet); a device in a zone is named after the zone until renamed. How it joined: "With its install code" or "With the standard key". Its words follow it in place, at most once a second. Only Setup mode changes anything.'},
 () => ({...DEVICE, body: facts(FRONT) + M.section('Used by') +
   M.row_link({glyph: 'door-closed', color: 'green', title: 'Zone 1 · Front Door', detail: 'Entry/exit 1', goTo: 'zigbee-zone-edit'})}));
 page({id: 'zigbee-device-end', shot: 'bl-144-device-end', title: 'A device\'s page, scrolled: its actions',
@@ -405,7 +405,7 @@ page({id: 'zigbee-zone-edit', shot: 'bl-144-zone-edit', title: 'A zone with a Zi
 // Troubles is a rail view, not a settings page: its own frame.
 M.screen({
   id: 'zigbee-troubles', area: AREA, title: 'Troubles: the radio\'s trouble opens its page', shot: 'bl-144-troubles',
-  notes: '"Sensor radio problem" is the one trouble every sensor radio shares (sensor_radio). Tapped in installer mode, it opens the page of the radio that has the problem: here the Zigbee page, not answering. Outside installer mode it opens the locked Installer page with the toast "Enter the master or Admin code to see the radio"; once the code is taken the Zigbee page follows (looking needs installer mode, built so). Its second line says it can be tapped. Nothing else on Troubles changes.',
+  notes: '"Sensor radio problem" is the one trouble every sensor radio shares (sensor_radio). Tapped in Setup mode, it opens the page of the radio that has the problem: here the Zigbee page, not answering. Outside Setup mode it opens the locked Installer page with the toast "Enter the master or Admin code to see the radio"; once the code is taken the Zigbee page follows (looking needs Setup mode, built so). Its second line says it can be tapped. Nothing else on Troubles changes.',
   render: () => M.main({view: 'troubles', tone: 'amber', rail: {zones: 1, troubles: 2}, bar: {time: '10:48', troubles: 2}, content: `<div class="view column">
     <div class="row">${M.view_header({title: 'Troubles', note: '2 active'})}${M.button('Acknowledge', '', 'check')}</div><div class="list scroll">
       <div data-go="zigbee-not-answering">${M.trouble_row({glyph: 'radio-tower', title: 'Sensor radio problem', detail: 'Wireless sensors may not be heard · Tap to see the radio'})}</div>

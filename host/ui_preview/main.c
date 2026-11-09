@@ -872,7 +872,7 @@ static void tap_text(const char *text);
 static void open_installer(void)
 {
     tap_name("set_about");
-    tap_text("Installer");
+    tap_text("Setup");
 }
 
 static void tap_text(const char *text)
@@ -1570,8 +1570,8 @@ static void walk_zwave(void)
     run(300);
     tap_name("page_back");
     run(300);
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -1852,14 +1852,14 @@ static void walk_zwave_recovery(void)
     host_panel_zwave_keypad_keys("123456", ZW_ENTRY_EVENT_ARM_AWAY);
     run(1500);
     expect(host_panel_zwave_keypad_last() != ALARM_OK,
-           "ZW-031: the keypad armed the panel in installer mode");
+           "ZW-031: the keypad armed the panel in Setup mode");
 
     tap_name("page_back");
     run(300);
     tap_name("page_back");
     run(300);
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -2042,8 +2042,8 @@ static void walk_zwave_firmware(void)
     run(300);
     tap_name("page_back");
     run(300);
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -2196,8 +2196,8 @@ static void walk_zwave_switches(void)
     run(300);
     tap_name("page_back");
     run(300);
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -2313,8 +2313,8 @@ static void walk_zwave_smartstart(void)
                  "ZW-024: a kept code did not let the reset sensor join again");
     tap_name("page_back");
     run(300);
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -2507,12 +2507,12 @@ static void walk_zwave_network_care(void)
            "ZW-025: an old radio's page doesn't point to Check for an update");
     shot("zwave_radio_advised");
     host_panel_zwave_radio_advised(false);
-    for (int i = 0; i < 4 && find_label(lv_screen_active(), "Leave installer mode") == NULL; i++) {
+    for (int i = 0; i < 4 && find_label(lv_screen_active(), "Leave Setup mode") == NULL; i++) {
         tap_name("page_back"); /* back to the installer menu, wherever "Done" left it */
         run(300);
     }
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -2571,7 +2571,7 @@ static void walk_zwave_troubles(void)
            "ZW-019: the Z-Wave page opened from the trouble has no way back");
     tap_name("page_back");
     run(300);
-    expect(visible_text("Leave installer mode") || find_label(by_name("page_body"), "Leave installer mode") != NULL,
+    expect(visible_text("Leave Setup mode") || find_label(by_name("page_body"), "Leave Setup mode") != NULL,
            "ZW-019: back from the trouble's Z-Wave page isn't the installer menu");
 
     /* installer mode now: the row opens the page at once; both radios in trouble list each */
@@ -2586,7 +2586,7 @@ static void walk_zwave_troubles(void)
     shot("zwave_trouble_both");
     zw_trouble_open("Z-Wave radio problem");
     expect(find_label(by_name("page_body"), "Radio · Not answering") != NULL,
-           "ZW-019: the Z-Wave row, in installer mode, doesn't open the Z-Wave page");
+           "ZW-019: the Z-Wave row, in Setup mode, doesn't open the Z-Wave page");
     tap_name("page_back");
     run(300);
     tap_name("nav_home");
@@ -2660,12 +2660,12 @@ static void walk_zwave_region_change(void)
     zw_wait(region_europe, 20000u, "ZW-045: the installer code did not change the region to Europe");
     wait_for_text("Radio · Working", 20000u,
                   "ZW-018: the radio did not come back after the region change");
-    for (int i = 0; i < 4 && find_label(lv_screen_active(), "Leave installer mode") == NULL; i++) {
+    for (int i = 0; i < 4 && find_label(lv_screen_active(), "Leave Setup mode") == NULL; i++) {
         tap_name("page_back");
         run(300);
     }
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -3693,12 +3693,12 @@ static void walk_walk_test(const ui_options_t *start)
     }
     type("69420k");
     run(500);
-    lv_obj_t *walk_row = find_label(by_name("page_body"), "Leaves installer mode and starts one");
+    lv_obj_t *walk_row = find_label(by_name("page_body"), "Leaves Setup mode and starts one");
     expect(walk_row != NULL, "the installer menu has no walk test");
     scroll_into_view(walk_row);
     run(300);
     shot("installer_walk_test");
-    tap_text("Leaves installer mode and starts one");
+    tap_text("Leaves Setup mode and starts one");
     run(1500);
     expect(lv_subject_get_int(&subject_view) == 0 && lv_subject_get_int(&subject_panel) == 4,
            "the installer menu's Walk test didn't start one");
@@ -8143,7 +8143,7 @@ static void walk_zigbee(const ui_options_t *start)
     expect(find_label(lv_screen_active(), "Add a new Zigbee device") != NULL,
            "ZB-002: the picker lost its add row");
     shot("bl-144-sensor-picker");
-    zb_back_to("Leave installer mode");
+    zb_back_to("Leave Setup mode");
 
     /* 9: reset the network - asked twice, then the installer code once more (ZB-017) */
     scroll_to_text("page_body", "Zigbee");
@@ -8204,8 +8204,8 @@ static void walk_zigbee(const ui_options_t *start)
     tap_name("page_back");
     run(300);
     walk_sirens(); /* BL-037: on the installer menu */
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -8236,11 +8236,11 @@ static void walk_zigbee(const ui_options_t *start)
            "ZB-027: the Zigbee page opened from the trouble has no way back");
     tap_name("page_back");
     run(300);
-    expect(find_label(by_name("page_body"), "Leave installer mode") != NULL,
+    expect(find_label(by_name("page_body"), "Leave Setup mode") != NULL,
            "ZB-027: back from the trouble's Zigbee page isn't the installer menu");
     zb_state(HOST_ZB_WORKING);
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     host_panel_trouble(ALARM_TRBL_SENSOR_RADIO, false);
     tap_name("nav_home");
@@ -8343,9 +8343,9 @@ static void walk_zigbee_real(const ui_options_t *start)
     zb_top();
     zb_has("Porch Door", "ZB-021: the renamed device isn't listed by its name");
 
-    zb_back_to("Leave installer mode");
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    zb_back_to("Leave Setup mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -8358,16 +8358,16 @@ static void walk_zigbee_real(const ui_options_t *start)
  * left, and the Panel Manager holds it only inside one change. */
 static void walk_installer_elsewhere(void)
 {
-    printf("Installer mode at another keypad\n");
+    printf("Setup mode at another keypad\n");
     wake();
     tap_name("nav_home");
     run(4000); /* the last walk's toasts gone */
     expect(host_panel_keypad2_program(true) == ALARM_OK,
-           "B008: installer mode at another keypad was refused");
+           "B008: Setup mode at another keypad was refused");
     run(1500);
-    expect(strcmp(lv_subject_get_string(&subject_headline), "Installer mode") == 0 &&
-               find_label(lv_screen_active(), "Installer mode") != NULL,
-           "B008: Home doesn't show installer mode entered elsewhere");
+    expect(strcmp(lv_subject_get_string(&subject_headline), "Setup mode") == 0 &&
+               find_label(lv_screen_active(), "Setup mode") != NULL,
+           "B008: Home doesn't show Setup mode entered elsewhere");
     expect(lv_subject_get_int(&subject_bar_banner) == 2,
            "B008: the status bar doesn't say the installer is working");
     shot("home_installer_mode_elsewhere");
@@ -8381,9 +8381,9 @@ static void walk_installer_elsewhere(void)
            "B008: a tap at this keypad ended the installer's mode elsewhere");
     host_panel_keypad2_program(false);
     run(1500);
-    expect(strcmp(lv_subject_get_string(&subject_headline), "Installer mode") != 0 &&
+    expect(strcmp(lv_subject_get_string(&subject_headline), "Setup mode") != 0 &&
                lv_subject_get_int(&subject_bar_banner) != 2,
-           "B008: Home still shows installer mode after it ended elsewhere");
+           "B008: Home still shows Setup mode after it ended elsewhere");
     run(4000);
 }
 
@@ -10277,8 +10277,8 @@ static void walk_voice(const ui_options_t *start)
     }
     run(1500);
     expect(!voice_editor_open() && lv_subject_get_int(&subject_sheet) == 0,
-           "UI-045: the editor stays open after installer mode ended");
-    expect(host_panel_voice_leases() == 0u, "UI-045: the editor kept its lease after installer mode ended");
+           "UI-045: the editor stays open after Setup mode ended");
+    expect(host_panel_voice_leases() == 0u, "UI-045: the editor kept its lease after Setup mode ended");
     tap_name("page_back");
     run(300);
     tap_name("nav_home");
@@ -10509,8 +10509,8 @@ static void fwsrv_check(const char *domain)
 /* Leaves installer mode and opens it again with another code (keys ends with 'k'). */
 static void installer_as(const char *keys)
 {
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(500);
     open_installer();
     run(300);
@@ -10521,7 +10521,7 @@ static void installer_as(const char *keys)
 
 static void update_server_shots(void)
 {
-    printf("BL-186: Installer > Updates, the update server and the channel\n");
+    printf("BL-186: Setup > Updates, the update server and the channel\n");
     ui_backend_t be;
     host_panel_backend(&be);
     ui_fw_status_t st = fw_run(UI_FW_STAGE_NONE);
@@ -11449,8 +11449,8 @@ static void walk_link_keypad(void)
     link_has("Keypad 2 of Harbor House", "BL-048: About doesn't say what this is a keypad of");
     link_has("Connected · shows and arms Home",
              "BL-048: About doesn't say the keypad is connected");
-    expect(find_label(by_name("page_body"), "Installer") == NULL,
-           "BL-048: a keypad's About has Installer");
+    expect(find_label(by_name("page_body"), "Setup") == NULL,
+           "BL-048: a keypad's About has Setup");
     shot("bl-048-kp-about");
     scroll_to_text("page_body", "Make it a stand-alone panel");
     shot("bl-048-kp-about-end");
@@ -11708,8 +11708,8 @@ static void walk_link_master(const ui_options_t *start)
     run(4000);
     tap_name("page_back");
     run(300);
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -11859,8 +11859,8 @@ static void walk_keypad_updates(const ui_options_t *start)
     shot("bl-048-fw-installer-keypads");
     tap_name("page_back");
     run(300);
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -12116,7 +12116,7 @@ static void walk_link_keypad_master_pages(void)
                               UI_LINK_AREA_OUTPUTS,
                           true, (uint8_t)2);
     run(1100);
-    link_has("Leave installer mode", "BL-223: the installer code didn't open the menu from a keypad");
+    link_has("Leave Setup mode", "BL-223: the installer code didn't open the menu from a keypad");
     expect(find_label(by_name("page_body"), "Factory reset") == NULL &&
                find_label(by_name("page_body"), "Run the setup again") == NULL &&
                find_label(by_name("page_body"), "Update server") == NULL,
@@ -12779,13 +12779,13 @@ int main(int argc, char **argv)
         }
         expect(about != NULL && a.y2 < H && find_label(lv_screen_active(), "Automations") != NULL,
                "BL-131 finding 7: About falls below the fold with Automations shown");
-        expect(find_label(lv_screen_active(), "Installer") == NULL,
-               "BL-189: the Settings list still has an Installer line");
+        expect(find_label(lv_screen_active(), "Setup") == NULL,
+               "BL-189: the Settings list still has a Setup line");
         lv_subject_set_int(&subject_automations_avail, 0);
         run(100);
     }
 
-    printf("Installer mode\n");
+    printf("Setup mode\n");
     open_installer();
     run(300);
     shot("installer_locked");
@@ -12826,7 +12826,7 @@ int main(int argc, char **argv)
                                             "Delays and arming", "This panel", "System name",
                                             "Master and Admin codes", "Test and start over",
                                             "Walk test", "Run the setup again", "Factory reset",
-                                            "Leave installer mode"};
+                                            "Leave Setup mode"};
         int32_t last_y = -1;
         for (size_t i = 0; i < sizeof(order) / sizeof(order[0]); i++) {
             lv_obj_t *l = find_label(body, order[i]);
@@ -12838,7 +12838,7 @@ int main(int argc, char **argv)
                 last_y = a.y1;
             }
         }
-        expect(find_label(lv_screen_active(), "Installer mode · arming is off until you leave") ==
+        expect(find_label(lv_screen_active(), "Setup mode · arming is off until you leave") ==
                    NULL,
                "the installer menu repeats the banner in a note");
         expect(find_label(body, "System options") == NULL && find_label(body, "Web server") == NULL &&
@@ -13031,7 +13031,7 @@ int main(int argc, char **argv)
     lv_obj_scroll_to_y(by_name("page_body"), LV_COORD_MAX, LV_ANIM_OFF); /* the end: the licence line */
     run(100);
     expect(find_label(by_name("page_body"), "Firmware space") != NULL, "About lost Firmware space");
-    expect(find_label(by_name("page_body"), "Installer") != NULL, "About lost the Installer row");
+    expect(find_label(by_name("page_body"), "Setup") != NULL, "About lost the Setup row");
     shot("about_end");
     scroll_to_text("page_body", "Software update");
     tap_text("Software update");
@@ -14339,8 +14339,8 @@ int main(int argc, char **argv)
     run(300);
     tap_name("page_back");
     run(300);
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);
@@ -14635,8 +14635,8 @@ int main(int argc, char **argv)
     run(300);
     tap_name("page_back");
     run(300);
-    scroll_to_text("page_body", "Leave installer mode");
-    tap_text("Leave installer mode");
+    scroll_to_text("page_body", "Leave Setup mode");
+    tap_text("Leave Setup mode");
     run(300);
     tap_name("nav_home");
     run(300);

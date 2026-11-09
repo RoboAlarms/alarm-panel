@@ -690,7 +690,7 @@ int main(int argc, char **argv)
     ir = RBE.program_enter(RBE.ctx, ALARM_LEGACY_INSTALLER_CODE, &iuser);
     if (ir != ALARM_OK || !M.eng.program || M.eng.program_src.kind != ALARM_SRC_KEYPAD ||
         M.eng.program_src.id != DEVICE) {
-        return fail("installer mode from the keypad: %s (held by %u/%u)", alarm_result_name(ir),
+        return fail("Setup mode from the keypad: %s (held by %u/%u)", alarm_result_name(ir),
                     (unsigned)M.eng.program_src.kind, (unsigned)M.eng.program_src.id);
     }
     ui_zone_source_t srcs[4];
@@ -772,11 +772,11 @@ int main(int argc, char **argv)
     }
     RBE.program_exit(RBE.ctx);
     if (M.eng.program) {
-        return fail("installer mode stayed on after the keypad left it");
+        return fail("Setup mode stayed on after the keypad left it");
     }
     ir = RBE.set_config(RBE.ctx, &ncfg);
     if (ir != ALARM_ERR_NOT_AUTHORIZED) {
-        return fail("a save outside installer mode was answered %s", alarm_result_name(ir));
+        return fail("a save outside Setup mode was answered %s", alarm_result_name(ir));
     }
     printf("  installer from the keypad: %u calls served on the master\n", M.rb.runs);
 

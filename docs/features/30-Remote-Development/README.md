@@ -129,7 +129,7 @@ and sdkconfig files. POSIX equivalents are `tools/idf.sh --profile dev [--chip-r
 and `--dark`. Windows uses `-Profile dev`, `-ChipRev v3`, `-Dark`.
 
 Since Feature 31 (ADR-033) every profile carries this service. It runs only while a
-workstation is enrolled and the Installer's Developer switch is on (Installer > Remote access:
+workstation is enrolled and the Installer's Developer switch is on (Setup > Remote access:
 Web server and Developer, both off on a fresh panel).
 
 | Profile | Remote development | Service console | Signed project name |
@@ -371,7 +371,7 @@ than 5 ms: an entry that could not wait becomes a gap, counted in `lost`.
 
 These map onto `ui_zw_request_t` (and the reset line's request) and go through `zwave_service`'s
 one request slot, the console's, answered within 2 s. `allowed` is the console's: every
-partition disarmed. Installer mode isn't asked for - the enrolled workstation is trusted as the
+partition disarmed. Setup mode isn't asked for - the enrolled workstation is trusted as the
 service console is; the touch pages still ask for it. The panel decides as for the console:
 adding, removing, removing a failed device, region, reset, restart, check-in and the reset line
 are `not_allowed` while a partition is armed; `stop`, `keep_listening`, `allow`, `pin`,

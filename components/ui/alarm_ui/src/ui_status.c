@@ -164,7 +164,7 @@ static void words(const alarm_snapshot_t *snap, const alarm_partition_status_t *
     } else if (snap->program) {
         /* TR: the status screen's headline while the installer changes settings. At most 47
          * bytes */
-        i18n_utf8_copy(headline, hl, TR("Installer mode"));
+        i18n_utf8_copy(headline, hl, TR("Setup mode"));
         /* TR: the status screen, under "Installer mode". At most 63 bytes */
         i18n_utf8_copy(detail, dl, TR("Settings are being changed"));
         *tone = ui_tone_blue();

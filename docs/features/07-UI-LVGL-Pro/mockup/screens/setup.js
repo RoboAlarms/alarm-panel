@@ -5,7 +5,7 @@ M.screen({
   id: 'setup-welcome', area: 'Setup', title: 'Welcome', shot: 'setup_welcome',
   render: () => M.wizard({step: 0, glyph: 'sparkles', title: 'Welcome',
     note: 'Let\'s get your alarm panel ready. It takes about two minutes, and you can change everything later in Settings.',
-    leaveSide: true, exit: true, next: 'Start', toast: 'Installer mode ended · arming is on again',
+    leaveSide: true, exit: true, next: 'Start', toast: 'Setup mode ended · arming is on again',
     body: [
       M.row_link({glyph: 'wifi', title: 'Join Wi-Fi', detail: 'For the clock and updates', trail: ''}),
       M.row_link({glyph: 'globe', title: 'Choose your time zone', detail: 'So the event log shows your local time', trail: ''}),
@@ -66,7 +66,7 @@ M.screen({
 
 M.screen({
   id: 'setup-codes-one', area: 'Setup', title: 'The first code', shot: 'setup_codes',
-  notes: 'A new or factory-reset panel has no codes (CORE-USR-041). The person at the panel makes the first: the owner\'s master code, or a helper\'s Admin code for someone else\'s home (the owner makes the master code at the handover: Installer > Master and Admin codes). Next stays off until a code is made. A panel that still has an older version\'s factory codes shows the old "Change the factory codes" rows instead.',
+  notes: 'A new or factory-reset panel has no codes (CORE-USR-041). The person at the panel makes the first: the owner\'s master code, or a helper\'s Admin code for someone else\'s home (the owner makes the master code at the handover: Setup > Master and Admin codes). Next stays off until a code is made. A panel that still has an older version\'s factory codes shows the old "Change the factory codes" rows instead.',
   render: () => M.wizard({step: 3, glyph: 'key', title: 'Make your code', leaveSide: true,
     note: 'This panel has no codes yet. The code you make now arms and disarms it, and no other code outranks it.',
     back: true, next: 'Next',

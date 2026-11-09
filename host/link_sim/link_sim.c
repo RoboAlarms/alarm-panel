@@ -117,7 +117,7 @@ static void help(void)
     if (O.master) {
         say_line(NULL,
                  "commands:\n"
-                 "  pair            open pairing for 2 minutes (installer mode at a panel)\n"
+                 "  pair            open pairing for 2 minutes (Setup mode at a panel)\n"
                  "  allow | reject  the codes on both screens match, or don't\n"
                  "  stop            cancel pairing\n"
                  "  list            the keypads\n"

@@ -1111,7 +1111,7 @@ static void build_mqtt(lv_obj_t *body, char *note, size_t nlen)
                   TR("Off: anything listening can only watch. The panel always checks the code"),
                   s_set.commands, on_commands, NULL);
     ui_row_value(body, TR("Code to arm"),
-                 S.cfg->opt.remote_arm_without_code ? TR("Not needed (installer setting)")
+                 S.cfg->opt.remote_arm_without_code ? TR("Not needed (Setup setting)")
                                                     : TR("Needed"));
     if (s_set.discovery && ha_available() && s_ha.paired) {
         ui_paragraph(body, TR("Paired with the Home Assistant integration, so the panel is added "

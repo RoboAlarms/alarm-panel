@@ -195,7 +195,7 @@ const char *web_keypads_post(uint8_t user, const cJSON *o)
         if (attempt.active || plink_service_role() != PLINK_SERVICE_MASTER)
             return "Pairing is busy";
         if (!begin(user))
-            return "Installer mode is busy or the system is armed";
+            return "Setup mode is busy or the system is armed";
         ui_link_req_t r = {.kind = UI_LINK_REQ_PAIR_OPEN};
         const uint8_t result = plink_service_manage(NULL, &r);
         if (result != UI_LINK_REQ_OK) {
@@ -271,7 +271,7 @@ const char *web_keypads_post(uint8_t user, const cJSON *o)
         return "This panel has no built-in keypad";
 #endif
     if (!begin(user))
-        return "Installer mode is busy or the system is armed";
+        return "Setup mode is busy or the system is armed";
     const char *error = NULL;
     alarm_config_t *cfg = web_alloc(sizeof *cfg);
     if (!cfg || alarm_service_get_config(cfg) != ESP_OK ||

@@ -3011,7 +3011,7 @@ static esp_err_t action(httpd_req_t *r, session_t *s, alarm_authority_t authorit
         if (!current) {
             free(cfg);
             return error(r, "409 Conflict",
-                         "Configuration changed or installer mode is already occupied; reload");
+                         "Configuration changed or Setup mode is already occupied; reload");
         }
         if (alarm_service_get_config(cfg) != ESP_OK ||
             !web_alarm_config_patch(cfg, cJSON_GetObjectItemCaseSensitive(o, "changes"), why,

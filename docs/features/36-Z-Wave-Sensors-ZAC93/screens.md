@@ -16,11 +16,11 @@ Rules every screen here follows (CONTRIBUTING.md "Rules for the UI"):
   "checks in". Node IDs appear once, as "device 7", on the device page. Home IDs, DSKs beyond
   the PIN screen, CC names and dBm figures live in the console, the radio details page and the
   Panel Manager diagnostics.
-- **Who:** adding, removing, replacing, region, routes and reset need **installer mode with
+- **Who:** adding, removing, replacing, region, routes and reset need **Setup mode with
   every partition disarmed** (docs/features/14; zones are installer business). The pages sit in
-  the installer menu, so looking at them needs installer mode too (decided while building it,
+  the installer menu, so looking at them needs Setup mode too (decided while building it,
   Z7); a homeowner meets a Z-Wave sensor through its zone (state, low battery, CHECK), as for
-  every source. A page opened when installer mode has ended shows what it is locked for.
+  every source. A page opened when Setup mode has ended shows what it is locked for.
 - String subjects hold at most 127 bytes: every line below is shorter.
 - Z-Wave is a sensor technology, like Zigbee: it may be named in the source picker, the zone's
   Source row, and its own pages (UI-018 is about integrations).
@@ -37,7 +37,7 @@ flowchart TD
   ZW --> REG[Region: 15]
   ZW --> SS[Waiting to join: 18, phase 2]
   ZW --> RST[Reset the Z-Wave network: 16]
-  Z[Installer > Zones > Add a zone] --> SRC[Where is the sensor?: 09]
+  Z[Setup > Zones > Add a zone] --> SRC[Where is the sensor?: 09]
   SRC --> PICK[Pick the sensor: 10]
   PICK -->|Add a new Z-Wave device| ADD
   PICK --> ZP[Zone page: 11]
@@ -242,14 +242,14 @@ battery or bring it closer, then wake it: <wake words>." Then **Replace it** "A 
 takes its place: its zones follow it" (Z10: `UI_ZW_REQ_REPLACE`; confirmed, then the add page as
 "Replace a Z-Wave device" with its own words, no "Keep listening", ending "Replaced · It took the
 old device's place: its zones follow it."; "Not replaced" when the old one answered or the radio
-doesn't count it as failed yet). In installer mode a set-up device also has **Rebuild its
+doesn't count it as failed yet). In Setup mode a set-up device also has **Rebuild its
 routes** ("Refresh how its signals reach the panel"; a sleeper: "Tap, then press its button to
 wake it" and the toast "Wake it now: press its button"; its end a toast), and a device with
 Indicator v3 **Blink its light** ("Find which device this is"; toast "Its light blinks 3 times"
 - the device's own light, 3 blinks 0.8 s apart: never the panel's screen). As built (BL-152),
 every listening device has **Check it now**, reachable or not and in any mode - a ping is
 harmless, and Z-Wave JS lets any user ping (its answer a toast, "It answered" or "No answer"; not
-while its software is updated). In installer mode a set-up device (Ready, or "can't report") has
+while its software is updated). In Setup mode a set-up device (Ready, or "can't report") has
 **Set it up again** "Read what it can do again: its zones keep working" (Z-Wave JS's
 re-interview, refreshInfo): confirmed first ("Set it up again?" "The panel reads what it can do
 again. Its zones keep working, and it keeps its security."; a sleeper's: "It's read again at its
@@ -304,7 +304,7 @@ reads "Changes to every 12 hours when it next wakes up" and its value stays what
 now. The row's words follow it in place, at most once a second (the page is not made again): once
 the device took it the line goes and the value reads "Every 12 hours"; a device that refuses it
 keeps its interval, and the line goes too. A choice not taken before the panel restarts is sent again (network.md
-§7). A refusal says why in a short message ("Only in installer mode, with everything disarmed",
+§7). A refusal says why in a short message ("Only in Setup mode, with everything disarmed",
 "The Z-Wave radio isn't working").
 
 **Controls, as built (ZW-034, ZW-035; preview 175-180):** a device that switches has a
@@ -401,7 +401,7 @@ Background noise (phase 2, "-94 dBm (quietest channel)", "Not measured yet" befo
 the touchscreen, on purpose, for finding interference), and **Restart the radio** (a soft reset;
 "Takes a few seconds; zones keep their state", gray with "Not while its software installs" while the radio updates, or "Not while another change runs"). As built: "Its Z-Wave software is older than
 the panel wants: update it." for an SDK before 7.22.1, and (Z11, §14) a **Software** section: "Check
-for an update" (installer mode; "Checked only when you ask; nothing installs by itself"), then
+for an update" (Setup mode; "Checked only when you ask; nothing installs by itself"), then
 "Install version 2.30" with its notes, confirmed ("Update the radio to 2.30?" · "Z-Wave sensors
 aren't heard for up to 15 minutes, and arming waits until the radio is back. Keep the panel
 powered." · "Update"), "Updating the radio: 38 %. Z-Wave sensors aren't heard until it's back."
@@ -417,7 +417,7 @@ their state" asks once more - **Restart the Z-Wave radio?** · "Takes a few seco
 their state." · **Restart** and **Cancel** - then the radio starts again with its devices, keys
 and node cache as they were. The State row follows it in place, at most once a second: "Starting",
 then "Working" (or "Not answering" when it does not come back); no message, the row says it.
-Outside installer mode the row says "Done in installer mode" and does nothing. A region change
+Outside Setup mode the row says "Done in Setup mode" and does nothing. A region change
 and the network reset restart the radio the same way, and the Z-Wave page's first row follows
 them ("Radio · Starting", then "Radio · Working").
 
@@ -457,7 +457,7 @@ or gone" removal from the device page says "Its SmartStart code was forgotten to
   status (ZW-019, as built): when the Z-Wave radio is jammed, not answering, unusable or another
   system's, its row is titled "Z-Wave radio problem" and says "Wireless sensors may not be heard ·
   Tap to see the radio"; tapped, it opens the Z-Wave page on top of the installer menu (outside
-  installer mode: the locked Installer page, the toast "Enter the installer code to see the radio",
+  Setup mode: the locked Installer page, the toast "Enter the installer code to see the radio",
   then the Z-Wave page once the code is taken). With the Zigbee radio in trouble too, the list shows
   a row for each ("Zigbee radio problem", "Z-Wave radio problem"), each opening its own page.
   Drawn in mockup/proposals/BL-152-zw-trouble-link.js.

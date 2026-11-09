@@ -470,7 +470,7 @@ static esp_err_t upload(httpd_req_t *r)
         return fail(r, "403 Forbidden", "Unauthorized");
     const char *why = NULL;
     if (!panel_ota_system_idle(&why))
-        return fail(r, "409 Conflict", "Disarm and leave installer mode first");
+        return fail(r, "409 Conflict", "Disarm and leave Setup mode first");
     char shahex[65], op[33], older[4] = "", reason[96] = "Upload failed", version[32];
     uint8_t sha[32], opbytes[16];
     if (httpd_req_get_hdr_value_str(r, "X-Image-SHA256", shahex, sizeof(shahex)) != ESP_OK ||

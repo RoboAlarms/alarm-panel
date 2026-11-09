@@ -15,7 +15,7 @@ const upd = ({id, shot, title, notes, page, over}) => M.screen({
 
 const RA_KEY = M.row_value({title: 'RoboAlarms release', value: '3F9A 1C2B 77D0 E415'});
 const EX_KEY = M.row_value({title: 'Example Builds', value: '8C41 0E9D 52A7 B3F6'});
-// The Installer menu's pages: installer mode (the blue frame and its banner), opened from the bottom of
+// The Installer menu's pages: Setup mode (the blue frame and its banner), opened from the bottom of
 // About, which stays lit; the Settings list ends with About.
 const ABOUT_SECTIONS = M.settings_sections({drop: ['installer']}).filter((s) => !s.divider);
 const INST186_RAIL = {troubles: 1, tone: 'blue'};
@@ -31,7 +31,7 @@ const CHANGE_ROW = M.row_link({glyph: 'pencil', title: 'Change the update server
 // ---- Software update ----
 
 upd({id: 'settings-update', shot: 'about_update_available', title: 'Software update: what is ready, and Install',
-  notes: 'The same page for the installer and the system master: no Advanced section (the update source is the installer\'s, in Installer > Updates). Software update opens for the installer and the system master only; for everyone else the About row is the usual locked row. A panel on another project\'s server says nothing about it here: the Installer menu says so.',
+  notes: 'The same page for the installer and the system master: no Advanced section (the update source is the installer\'s, in Setup > Updates). Software update opens for the installer and the system master only; for everyone else the About row is the usual locked row. A panel on another project\'s server says nothing about it here: the Installer menu says so.',
   page: {title: 'Software update', back: 'settings-about', tags: {about: {text: 'Update', tone: 'violet'}}, body: [
     M.row_link({glyph: 'sparkles', color: 'violet', title: 'Version 0.6.1 is ready to install', detail: 'You have 0.6.0 · the alarm keeps working while it downloads', trail: ''}),
     M.row_action({glyph: 'download', text: 'Install version 0.6.1', color: 'blue'}),
@@ -50,10 +50,10 @@ const INSTALLER_MENU = (server, channel = 'Stable') => [
   server,
   M.row_link({glyph: 'layers', title: 'Update channel', detail: 'Which releases this panel is offered', value: channel, goTo: 'installer-update-channel'}),
   M.section('Test and start over'),
-  M.row_link({glyph: 'footprints', title: 'Walk test', detail: 'Leaves installer mode and starts one'}),
+  M.row_link({glyph: 'footprints', title: 'Walk test', detail: 'Leaves Setup mode and starts one'}),
   M.row_link({glyph: 'sparkles', color: 'rose', title: 'Run the setup again', detail: 'Wi-Fi, time zone, codes and name, step by step'}),
   M.row_link({glyph: 'rotate-ccw', color: 'red', title: 'Factory reset', detail: 'Erase everything'}),
-  M.row_action({glyph: 'log-out', text: 'Leave installer mode', color: 'blue'}),
+  M.row_action({glyph: 'log-out', text: 'Leave Setup mode', color: 'blue'}),
 ].join('');
 const RA_SERVER_ROW = M.row_link({glyph: 'server', color: 'green', title: 'Update server', detail: 'Where updates come from', value: 'roboalarms.com', goTo: 'installer-update-server'});
 
@@ -75,7 +75,7 @@ upd({id: 'settings-update-withdrawn', shot: 'upd_withdrawn', title: 'Software up
   ].join('')}});
 
 inst186({id: 'installer-update-channel', shot: 'fwsrv_channel', title: 'Choosing the update channel',
-  notes: 'The installer only (Installer > Updates). A change checks at once. A channel offers its own releases and those of the channels to its right: Alpha also gets Beta and Stable releases; Dev stands apart.',
+  notes: 'The installer only (Setup > Updates). A change checks at once. A channel offers its own releases and those of the channels to its right: Alpha also gets Beta and Stable releases; Dev stands apart.',
   page: {title: 'Installer', body: INSTALLER_MENU(RA_SERVER_ROW)},
   over: M.pick_sheet({title: 'Update channel', note: 'Which releases this panel is offered', fit: true, rows: [
     M.row_link({glyph: 'shield-check', color: 'green', title: 'Stable', detail: 'Tested the longest. Right for most homes', trail: 'check'}),
@@ -87,7 +87,7 @@ inst186({id: 'installer-update-channel', shot: 'fwsrv_channel', title: 'Choosing
 // ---- the update server ----
 
 inst186({id: 'installer-update-server', shot: 'fwsrv_server', title: 'Update server: RoboAlarms\'',
-  notes: 'The installer only: it opens from Installer > Updates. The server shows as its domain only: the panel adds https://firmware. by itself and nobody needs the full address. The fingerprint is the first 16 hex digits of the key\'s SHA-256, in groups of four, as espsecure and the server\'s Signing keys page show it; the console prints all 64.',
+  notes: 'The installer only: it opens from Setup > Updates. The server shows as its domain only: the panel adds https://firmware. by itself and nobody needs the full address. The fingerprint is the first 16 hex digits of the key\'s SHA-256, in groups of four, as espsecure and the server\'s Signing keys page show it; the console prints all 64.',
   page: SERVER_PAGE([
     M.row_status({glyph: 'server', color: 'green', title: 'roboalarms.com', detail: 'The RoboAlarms update server'}),
     M.section('Signing key'),
@@ -149,7 +149,7 @@ REFUSED({id: 'installer-update-server-no-firmware', shot: 'fwsrv_no_firmware'},
   'The server answered, but its catalogue doesn\'t have this board, chip or build (unknown_device): nothing changes.');
 
 inst186({id: 'installer-update-server-factory-code', shot: 'fwsrv_refused_factory', title: 'Update server: the factory Admin code is still in use',
-  notes: 'The row is dimmed until the Admin code is changed (Installer > Master and Admin codes). Going back to roboalarms.com, with a key the panel already trusts, stays allowed. The USB service console isn\'t held back: whoever has the cable can flash the panel anyway.',
+  notes: 'The row is dimmed until the Admin code is changed (Setup > Master and Admin codes). Going back to roboalarms.com, with a key the panel already trusts, stays allowed. The USB service console isn\'t held back: whoever has the cable can flash the panel anyway.',
   page: SERVER_PAGE([
     M.row_status({glyph: 'server', color: 'green', title: 'roboalarms.com', detail: 'The RoboAlarms update server'}),
     M.section('Signing key'), RA_KEY, M.section(''),

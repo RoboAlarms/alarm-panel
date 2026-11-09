@@ -60,7 +60,7 @@ prog({id: 'settings-update-install-question', shot: 'upd_install_question', bar:
 // ---- running ----
 
 prog({id: 'settings-update-downloading', shot: 'upd_downloading', title: 'Downloading: the bar, the size and Stop the update',
-  notes: 'The level bar is the list row\'s own (ui_row_status level), stepped to the whole percent at most once a second with no animation (LV_ANIM_OFF), like the SD card\'s; the title doesn\'t change while it downloads, only the detail ("1.1 of 2.7 MB · 42 %", the catalog\'s percent). Before the first bytes the detail says "Starting the download" and the bar is empty; that covers an Install that has to ask the server first. Software update opens for the installer and the system master only (BL-186); Stop needs the same code (ACCESS_SYSTEM). Check again is hidden while an update runs, and Installer > Updates holds the server and the channel (the Installer menu, below). Arming closes Settings as today; the Home banner says the rest.',
+  notes: 'The level bar is the list row\'s own (ui_row_status level), stepped to the whole percent at most once a second with no animation (LV_ANIM_OFF), like the SD card\'s; the title doesn\'t change while it downloads, only the detail ("1.1 of 2.7 MB · 42 %", the catalog\'s percent). Before the first bytes the detail says "Starting the download" and the bar is empty; that covers an Install that has to ask the server first. Software update opens for the installer and the system master only (BL-186); Stop needs the same code (ACCESS_SYSTEM). Check again is hidden while an update runs, and Setup > Updates holds the server and the channel (the Installer menu, below). Arming closes Settings as today; the Home banner says the rest.',
   body: DOWNLOADING});
 
 prog({id: 'settings-update-checking', shot: 'upd_checking', bar: BANNER('Checking the download', 'shield-check'), title: 'Checking the download',
@@ -73,11 +73,11 @@ prog({id: 'settings-update-checking', shot: 'upd_checking', bar: BANNER('Checkin
   ]});
 
 prog({id: 'settings-update-waiting', shot: 'upd_waiting', bar: BANNER('Update waiting · installs once disarmed', 'clock'), title: 'Waiting until everything is disarmed',
-  notes: 'Named "Waiting", not "Ready": "Version 0.6.1 is ready to install" asks for Install, this one installs by itself. One detail and one paragraph per reason the panel gives: "Installer mode is on" (Installs once installer mode is off / Leave installer mode and the panel restarts to install it.), "The system is armed" (Installs once everything is disarmed / Disarm everything ...), "An alarm is sounding" (Installs once the alarm is silenced / Silence the alarm ...), "A walk test is running" (Installs once the walk test ends / End the walk test ...), "Trying again shortly" (the next screen). Stop here throws the checked download away, as at every step: Install later downloads it again. A restart while it waits (a power cut) forgets the update: the panel keeps 0.6.0 and Software update offers 0.6.1 again.',
+  notes: 'Named "Waiting", not "Ready": "Version 0.6.1 is ready to install" asks for Install, this one installs by itself. One detail and one paragraph per reason the panel gives: "Setup mode is on" (Installs once Setup mode is off / Leave Setup mode and the panel restarts to install it.), "The system is armed" (Installs once everything is disarmed / Disarm everything ...), "An alarm is sounding" (Installs once the alarm is silenced / Silence the alarm ...), "A walk test is running" (Installs once the walk test ends / End the walk test ...), "Trying again shortly" (the next screen). Stop here throws the checked download away, as at every step: Install later downloads it again. A restart while it waits (a power cut) forgets the update: the panel keeps 0.6.0 and Software update offers 0.6.1 again.',
   body: [
-    M.row_status({glyph: 'clock', color: 'amber', title: 'Waiting to install version 0.6.1', detail: 'Installs once installer mode is off · Installer mode is on'}),
+    M.row_status({glyph: 'clock', color: 'amber', title: 'Waiting to install version 0.6.1', detail: 'Installs once Setup mode is off · Setup mode is on'}),
     STOP,
-    M.paragraph('Leave installer mode and the panel restarts to install it. It takes about a minute.'),
+    M.paragraph('Leave Setup mode and the panel restarts to install it. It takes about a minute.'),
     steps(2),
   ]});
 
@@ -117,7 +117,7 @@ prog({id: 'settings-update-failed', shot: 'upd_failed', bar: PROG_BAR, title: 'F
   ]});
 
 M.screen({id: 'installer-menu-update-held', shot: 'fwsrv_held', area: 'Installer', title: 'Installer menu: the server and the channel held while an update runs',
-  notes: 'In Installer > Updates (BL-186), Update server and Update channel are dimmed with the detail "Not while an update runs" from Install to the end of the self-test; the Panel Manager holds the same, and the firmware refuses a server or channel change meanwhile. Installer mode makes the update wait, so the installer can be here while it downloads. Drawn scrolled to the group; the update banner gives way to the installer banner.',
+  notes: 'In Setup > Updates (BL-186), Update server and Update channel are dimmed with the detail "Not while an update runs" from Install to the end of the self-test; the Panel Manager holds the same, and the firmware refuses a server or channel change meanwhile. Setup mode makes the update wait, so the installer can be here while it downloads. Drawn scrolled to the group; the update banner gives way to the installer banner.',
   render: () => M.main({view: 'settings', tone: 'blue', rail: {troubles: 1, tone: 'blue'}, bar: {banner: 'installer', time: '10:58', troubles: 1},
     content: M.settings({section: 'about', sections: PROG_SECTIONS, title: 'Installer', back: 'about-update-running', tags: UPDATING, body: [
       M.section('This panel'),
@@ -128,7 +128,7 @@ M.screen({id: 'installer-menu-update-held', shot: 'fwsrv_held', area: 'Installer
       M.row_link({glyph: 'layers', title: 'Update channel', detail: 'Not while an update runs', value: 'Stable', disabled: true}),
       M.section('Panel Manager'),
       M.row_link({glyph: 'globe', title: 'Allow browser sign-in', detail: 'User name: Installer', value: 'Off'}),
-      M.row_action({glyph: 'log-out', text: 'Leave installer mode', color: 'blue'}),
+      M.row_action({glyph: 'log-out', text: 'Leave Setup mode', color: 'blue'}),
     ].join('')})})});
 
 // ---- the restart: a banner, never a sheet ----

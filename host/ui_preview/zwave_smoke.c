@@ -250,7 +250,7 @@ int main(void)
         ui_backend_t be;
         host_panel_backend(&be);
         uint8_t user = 0u;
-        expect(be.program_enter(be.ctx, "69420", &user) == ALARM_OK, "installer mode opens");
+        expect(be.program_enter(be.ctx, "69420", &user) == ALARM_OK, "Setup mode opens");
         ui_zw_device_t list[8];
         const size_t n = be.zw_devices(be.ctx, list, 8u);
         for (size_t i = 0; i < n; i++) {

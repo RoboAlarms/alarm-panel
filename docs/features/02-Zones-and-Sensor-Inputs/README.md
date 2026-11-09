@@ -70,7 +70,7 @@ typedef struct {
 Hardware choices (which pins, expanders, resistor values) are yours; the software keeps them
 in the source table so no code changes are needed.
 
-### Enrollment flow (installer mode)
+### Enrollment flow (Setup mode)
 The first sketch. As built (M11), the zone editor asks "Where is the sensor?" and offers the
 sources that can be used now ([22](../22-Zone-Sources/README.md), `ui_sources.c`).
 
@@ -114,7 +114,7 @@ sources that can be used now ([22](../22-Zone-Sources/README.md), `ui_sources.c`
 
 ## Tasks
 - [x] Zone model and all zone types in the core
-- [x] Zone programming on the touchscreen: add, name, type, sensor kind, chime, night, bypassable, report, remove (M4, installer mode)
+- [x] Zone programming on the touchscreen: add, name, type, sensor kind, chime, night, bypassable, report, remove (M4, Setup mode)
 - [x] Zone source framework, bindings + NVS persistence ([22](../22-Zone-Sources/README.md), M11)
 - [x] Simulator source: serial console (`zone <n> open|close|trouble|tamper|lowbat|checkin|unreachable|reachable`) with eight demo zones (M2; behind the interface in M11)
 - [ ] Developer screen with a toggle per zone (the console's `zone <n> <event>` covers this on a

@@ -19,7 +19,7 @@ and what the installer can do to the network. Frame layouts are in
   UI, the console and the Panel Manager ask it to do things through its request queue; only
   one **network operation** (add, remove, replace, remove-failed, route repair, region change,
   restart, reset, backup, update) runs at a time. The UI shows which one and refuses a second.
-- Network operations need **installer mode with every partition disarmed** (the rule for
+- Network operations need **Setup mode with every partition disarmed** (the rule for
   changing zones, docs/features/22 ZSRC-012; docs/features/14 access). Reading the network needs nothing.
 
 ## 2. What lives where
@@ -844,7 +844,7 @@ gates and sheds.
 - **Logged** as `zwave_device_software` with the radio's own stages (arg2 3-5, device 0):
   started (by whom), updated, failed.
 - **From an SD card** (2026-10-20, the "Z-Wave updates" follow-up of BL-037): the touchscreen's
-  Radio details offer "Install from an SD card" in installer mode: the one `.gbl` at the card's top
+  Radio details offer "Install from an SD card" in Setup mode: the one `.gbl` at the card's top
   or in a folder named `zwave` is read by a worker task (never the UI's) into PSRAM and handed to
   the same `zwave_service_radio_file` as the Panel Manager's upload, with the same checks. No card,
   no file, two files or a file over 1 MB each say so in a sentence. When the radio's software is

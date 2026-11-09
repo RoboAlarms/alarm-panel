@@ -58,8 +58,8 @@ about({id: 'installer-locked', shot: 'installer_locked', title: 'Installer, open
     M.paragraph('While you change settings nothing can be armed. Fire, CO and panic buttons keep working.'),
   ].join('')}});
 
-about({id: 'installer-menu', shot: 'installer_menu', title: 'Installer mode: the menu, under About', installer: true,
-  notes: 'Back goes to About; installer mode stays on until Leave installer mode or a tap on the banner. Four groups plus Updates, the risky ones last (BL-131 finding 18); the update server and the channel are the installer\'s (OTA-020, OTA-021) and are drawn on their own screens. With Z-Wave built in, a Z-Wave row follows Zones (docs/features/36). The Panel Manager is one switch with the installer\'s own sign-in under it; while it runs, its detail is its address and certificate (WEB-002). Installer mode\'s pages (Zones, Delays and arming ...) keep About lit in the list.',
+about({id: 'installer-menu', shot: 'installer_menu', title: 'Setup mode: the menu, under About', installer: true,
+  notes: 'Back goes to About; Setup mode stays on until Leave Setup mode or a tap on the banner. Four groups plus Updates, the risky ones last (BL-131 finding 18); the update server and the channel are the installer\'s (OTA-020, OTA-021) and are drawn on their own screens. With Z-Wave built in, a Z-Wave row follows Zones (docs/features/36). The Panel Manager is one switch with the installer\'s own sign-in under it; while it runs, its detail is its address and certificate (WEB-002). Setup mode\'s pages (Zones, Delays and arming ...) keep About lit in the list.',
   body: {title: 'Installer', back: 'settings-about-end', body: [
     M.section('Sensors and devices'),
     M.row_link({glyph: 'door-closed', color: 'green', title: 'Zones', detail: 'Sensors, types, names', value: '8 in use', goTo: 'installer-zones'}),
@@ -77,13 +77,13 @@ about({id: 'installer-menu', shot: 'installer_menu', title: 'Installer mode: the
     M.row_link({glyph: 'server', color: 'green', title: 'Update server', detail: 'Where updates come from', value: 'roboalarms.com', goTo: 'installer-update-server'}),
     M.row_link({glyph: 'layers', title: 'Update channel', detail: 'Which releases this panel is offered', value: 'Stable', goTo: 'installer-update-channel'}),
     M.section('Test and start over'),
-    M.row_link({glyph: 'footprints', title: 'Walk test', detail: 'Leaves installer mode and starts one'}),
+    M.row_link({glyph: 'footprints', title: 'Walk test', detail: 'Leaves Setup mode and starts one'}),
     M.row_link({glyph: 'sparkles', color: 'rose', title: 'Run the setup again', detail: 'Wi-Fi, time zone, codes and name, step by step', goTo: 'setup-welcome'}),
     M.row_link({glyph: 'rotate-ccw', color: 'red', title: 'Factory reset', detail: 'Erase everything', goTo: 'factory-reset'}),
-    M.row_action({glyph: 'log-out', text: 'Leave installer mode', color: 'blue'}),
+    M.row_action({glyph: 'log-out', text: 'Leave Setup mode', color: 'blue'}),
   ].join('')}});
 
-// Installer > Keypads and devices (ui_installer.c build_devices, build_device): the engine's table of
+// Setup > Keypads and devices (ui_installer.c build_devices, build_device): the engine's table of
 // supervised devices, every one of its 16 numbers a row, is drawn with the panel link's keypads on top
 // (panel-link.js installer-devices); a device's page here.
 about({id: 'installer-device', shot: null, title: 'Installer: one supervised device', installer: true,

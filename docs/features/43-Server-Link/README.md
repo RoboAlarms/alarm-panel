@@ -38,7 +38,7 @@ says what the panel does and what it doesn't yet.
   (commands carry the disarm ceiling and the code) and a people or Setup change without `fresh`.
   A phone goes with its user on every config change, linked or not; a removed phone's session ends at
   once; direct push reaches only phones whose user has the event's partition.
-- **Setup mode** (`POST setup-mode {open}`): installer mode as the person, held by the server's source
+- **Setup mode** (`POST setup-mode {open}`): Setup mode as the person, held by the server's source
   until it closes it or the 15-minute idle timeout ends it; Setup page changes apply inside it. The
   system master (the Owner) may open it, and the installer while the Owner lets the Admin code
   open Setup mode (CORE-PROG-014), as at a keypad (anyone else: 403 `installer_only`, the name
@@ -58,7 +58,7 @@ says what the panel does and what it doesn't yet.
   remote ceiling lets that person disarm from afar without a code anyway.
 - **Read-only for the app**: `GET outputs` (`{outputs:[{number, kind, name, on, trouble}]}`, the wired
   outputs by channel and the 433 MHz sirens) and `GET backup` (`{last_at, by, by_name, size}` of the
-  last backup made; never the file), the system master's without installer mode.
+  last backup made; never the file), the system master's without Setup mode.
 - **Found on the home network**: while the Panel Manager is on, mDNS `_roboalarms-app._tcp` on 443 with TXT `id`
   (the id the pairing QR code carries), `name` and, when linked, `srv` (the server's base URL), on the shared
   responder, all the time as HomeKit and Matter devices do; no firmware version or model (the owner, 2026-11-06). It grants nothing: pairing still needs the code shown at the panel (DIR-001). `web` on

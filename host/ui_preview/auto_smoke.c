@@ -1109,11 +1109,11 @@ static void test_arm_in_installer_mode(void)
     start(AT_7PM_MS);
     const uint16_t uid = save_night_arm(0);
     host_panel_advance(5u * MIN_MS + 10000u); /* 7:05:11, the warning on */
-    check(host_panel_keypad2_program(true) == ALARM_OK, "installer mode at the second keypad");
+    check(host_panel_keypad2_program(true) == ALARM_OK, "Setup mode at the second keypad");
     host_panel_advance(5u * MIN_MS); /* 7:10:11 */
-    check(part1_state() == ALARM_STATE_DISARMED, "AUT-011: not armed in installer mode");
+    check(part1_state() == ALARM_STATE_DISARMED, "AUT-011: not armed in Setup mode");
     check(result(uid) == AUTO_RES_ARM_REFUSED, "AUT-011: refused, not \"armed already\"");
-    check(host_panel_keypad2_program(false) == ALARM_OK, "installer mode ended");
+    check(host_panel_keypad2_program(false) == ALARM_OK, "Setup mode ended");
 }
 
 /* AUT-013, D26: an hour with the master code; the warning comes back 5 minutes before 8:10. */

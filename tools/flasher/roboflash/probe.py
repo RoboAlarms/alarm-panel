@@ -50,7 +50,7 @@ class ProbeResult:
             armed = [s for s in self.states if s != "disarmed"]
             if armed:
                 return f"The panel is {armed[0].replace('_', ' ')}: disarm it first."
-            return "The panel is busy (armed, in installer mode, or an alarm is showing): finish that first."
+            return "The panel is busy (armed, in Setup mode, or an alarm is showing): finish that first."
         if self.probation or self.confirm_required:
             return "The panel is checking a new firmware (probation): wait a minute and look again."
         return ""

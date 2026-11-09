@@ -352,7 +352,7 @@ auto({id: 'automations-option-off', title: 'Automations: an unlock the installer
     ROWS.fire, ROWS.leak])}});
 
 auto({id: 'automation-option-off', title: 'An automation the installer option stops',
-  notes: 'Its page says why, and the action row what to do: ask the installer, who alone changes the option (Installer > Delays and arming). The switch keeps its place and the rows can still be edited, but Unlock can\'t be picked again while the option is off ("Try it now" refuses too). Nothing is sent until the option is back on (AUT-015). The same words say "opening" or "disarming" for an open, a stop or a disarm.',
+  notes: 'Its page says why, and the action row what to do: ask the installer, who alone changes the option (Setup > Delays and arming). The switch keeps its place and the rows can still be edited, but Unlock can\'t be picked again while the option is off ("Try it now" refuses too). Nothing is sent until the option is back on (AUT-015). The same words say "opening" or "disarming" for an open, a stop or a disarm.',
   page: LOCK_PAGE(USE(CANT_RUN, {detailColor: 'amber'}), {when: WHEN_DISARMED,
     then: M.row_link_alert({glyph: 'lock-open', color: 'gray', title: 'Unlock Front Door Lock', detail: 'Ask your installer to allow less secure automations',
       detailColor: 'amber', goTo: 'automation-device-do-lock'})})});
@@ -624,7 +624,7 @@ auto({id: 'automation-notify-none', shot: 'automation_notify_none', title: 'Send
   ].join('')})});
 
 auto({id: 'automation-output-do', shot: 'automation_output_do', title: 'What should an output do?',
-  notes: 'A wired output set "For automations" in Installer > Sirens and outputs (AUTO_ACT_OUTPUT = 3), as a light\'s: Turn on or Turn off. "Turn on" gets the page\'s "Turn it off after" row (5 minutes to 1 hour, or Leave it on), so a timed output is one automation. At least 10 seconds between two automation actions on one output (AUT-007): it can never be made to flash. While one of two actions is changed, "Remove this action" is the last row.',
+  notes: 'A wired output set "For automations" in Setup > Sirens and outputs (AUTO_ACT_OUTPUT = 3), as a light\'s: Turn on or Turn off. "Turn on" gets the page\'s "Turn it off after" row (5 minutes to 1 hour, or Leave it on), so a timed output is one automation. At least 10 seconds between two automation actions on one output (AUT-007): it can never be made to flash. While one of two actions is changed, "Remove this action" is the last row.',
   page: EMPTY_PAGE,
   over: M.pick_sheet({title: 'What should Garden Lights do?', fit: true, rows: [
     M.row_link({glyph: 'toggle-right', title: 'Turn on', trail: ''}),

@@ -25,7 +25,7 @@ report problems as troubles.
 | NET-007 | No HTTP/Telnet server on the panel by default (smallest attack surface; with the Panel Manager on, port 80 only redirects to its HTTPS, docs/features/31 WEB-023). The one planned listener is the Home Assistant integration's API: only while enabled, mutual TLS with pinned certificates after pairing (docs/features/23) | review |
 | NET-008 | Wi-Fi credentials stored in the P4's NVS (encrypted in production builds), not on the C6 (`WIFI_STORAGE_RAM` there), so they survive C6 firmware updates | review |
 | NET-009 | ESP-NOW and STA share the channel: the master's ESP-NOW channel follows its AP; channel changes are announced to keypads ([11](../11-Panel-Link-Master-Keypad/README.md)) | HIL |
-| NET-010 | Settings > Wi-Fi: change Wi-Fi, see the signal (in words: strong, good, fair, weak; left out while the module reports none) and IP/MAC, forget network; opens with a master or Admin code, outside installer mode, so a new router never needs the installer (docs/features/14) | preview (`24_settings_wifi.png`), HIL |
+| NET-010 | Settings > Wi-Fi: change Wi-Fi, see the signal (in words: strong, good, fair, weak; left out while the module reports none) and IP/MAC, forget network; opens with a master or Admin code, outside Setup mode, so a new router never needs the installer (docs/features/14) | preview (`24_settings_wifi.png`), HIL |
 | NET-011 | The panel's address: from the router (DHCP, the default) or a fixed one (address, network mask, router), plus up to two name servers that win over the router's ones (also with DHCP). A cog on the connection row of Settings > Wi-Fi opens them; a mask may be typed as `255.255.255.0` or `24`. A fixed address is applied only when address, mask and router are all filled in and the router is on the panel's own network; one that can't be used is turned off at start-up, so a typo can never leave the panel unreachable. Same code as Wi-Fi itself (master or installer) | preview (`26_network_address.png`, `30_network_static.png`), HIL, console `ip` |
 | NET-012 | "Check the connection" walks the network in the order the panel needs it - Wi-Fi, address, router, name lookup, internet, time server, connected service - and says what each step found or where it went wrong. It runs by itself after an address change, and from the button any time. Read-only: it changes nothing, and nothing it needs is required to protect the house | preview (`28_network_check_passed.png`, `31_network_check_failed.png`), HIL, console `netcheck` |
 
@@ -95,7 +95,7 @@ Notes on the table (2026-09-28):
 ### As built (M5)
 - **Wi-Fi and the time are their own Settings sections** (Wi-Fi and network, Time and
   language), opened with a master
-  (partition master too) or Admin code. They used to sit in installer mode, which meant calling the
+  (partition master too) or Admin code. They used to sit in Setup mode, which meant calling the
   installer after changing the router (docs/features/14, "Who can change what").
 - MQTT turns `net_wifi_set_required(NET_WIFI_REQ_MQTT, true)` on while it is enabled, so a
   network down for 5 minutes becomes the `network` trouble (NET-003), next to `comm_fail` for
@@ -103,7 +103,7 @@ Notes on the table (2026-09-28):
   sets its bit when its listener starts and keeps it until the panel restarts
   (docs/features/26, /23).
 - **Setup** (`ui_wizard.c`): runs when `sys/setup` isn't set (first boot, after a factory reset)
-  or from Installer > Run the setup again.
+  or from Setup > Run the setup again.
 
 ### As built (addresses and the check)
 - **Settings > Wi-Fi > the cog** (`ui_net.c`, `PAGE_NETWORK`, title "Network"): the address in

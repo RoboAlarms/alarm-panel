@@ -1,6 +1,6 @@
 # 14 · Configuration and installer programming
 
-**Status:** Implemented v1 - versioned storage, installer mode, factory reset, power-up recovery
+**Status:** Implemented v1 - versioned storage, Setup mode, factory reset, power-up recovery
 and the access table are host-, preview- and page-tested; the Panel Manager follows the table,
 the installer manages every user and sets everything at the panel, and the backup file
 (CFG-005, CFG-006) is built and host- and page-tested. Left: the installer's new pages and the
@@ -17,7 +17,7 @@ changes add saved rollback on timeout/reboot. Normal firmware includes persisten
 Panel Manager (the web server) / Developer mode toggles. See Feature 31 for coverage and measured acceptance.
 
 All panel settings live in versioned, validated structures stored in NVS. They're edited
-through an installer mode on the touchscreen (the friendly equivalent of numbered data-field
+through an Setup mode on the touchscreen (the friendly equivalent of numbered data-field
 programming) and can be backed up and restored.
 
 ## Reference behaviour
@@ -31,18 +31,18 @@ power-up. Touchscreen panels use menus behind the Admin code.
 | ID | Requirement | Verified by |
 |---|---|---|
 | CFG-001 | Core configuration is `alarm_config_t` (validated by `alarm_config_validate`); platform settings are separate NVS keys | `CORE-CFG-*` |
-| CFG-002 | Installer mode (Setup mode) needs the system master's code (the Owner's: no code outranks it, decided 2026-11-02) or the installer's while the Owner allows it (CORE-PROG-014, decided 2026-11-08), only while every partition is disarmed and silent; entering and leaving are logged and reported; ends after 15 min without activity; nothing can be armed meanwhile; fire, CO, 24-hour zones and panics stay live | `CORE-PROG-001..004` |
+| CFG-002 | Setup mode needs the system master's code (the Owner's: no code outranks it, decided 2026-11-02) or the installer's while the Owner allows it (CORE-PROG-014, decided 2026-11-08), only while every partition is disarmed and silent; entering and leaving are logged and reported; ends after 15 min without activity; nothing can be armed meanwhile; fire, CO, 24-hour zones and panics stay live | `CORE-PROG-001..004` |
 | CFG-003 | Changes are applied with `alarm_engine_set_config` (atomic; rejected unless idle) when a page is left, and stored before the call returns | `CORE-CFG-005`, UI |
 | CFG-004 | The configuration is stored as a versioned, self-describing blob: newer firmware reads older blobs (missing fields keep defaults), older firmware reads newer ones (unknown fields skipped), frozen fixtures from every format stay decodable | `CORE-CFG-012..017` |
 | CFG-005 | Backup: one file the installer downloads in the Panel Manager, always encrypted with a password the installer chooses (PBKDF2 and AES-GCM), holding everything needed to rebuild the panel - the configuration, users (code hashes and salts), zones and their bindings, the Z-Wave keys, node cache and SmartStart list, the integrations' settings and secrets and the Wi-Fi network - but never the panel's own identity (its certificates and keys, the developer enrollment, the panel ID). | `components/core/backup/test/test_backup.c` (CFG-005), `panel_pages.test.cjs` "backup"; on a panel (BL-002) |
 | CFG-006 | Restore, by the installer with every partition disarmed, onto the same panel or a replacement board: the file is decrypted and validated in full first, then applied all or nothing, then the panel restarts; a replacement board keeps its own identity and takes over the Z-Wave radio the file's keys belong to. A restore never brings back an old master code (the owner's decision of 2026-11-08): the running master code, the Owner's browser sign-in and the Owner's settings stay, and a file with another code salt (a replacement board's) leaves the board's users whole - unless the Owner restoring it asks for the file's codes (`X-Restore-Codes: yes`, the master's alone) | `test_backup.c` (CFG-006), `panel_pages.test.cjs` "backup"; on a panel and a replacement board (BL-002) |
-| CFG-007 | Factory reset from installer mode on the touchscreen (hold to confirm) or the service console: wipes NVS (and the event log if asked), logs `factory_reset` first, restarts with no codes and the setup wizard, where the first person makes their own (no factory codes, the owner's decision of 2026-11-08; the service console's reset takes the master or Admin code). **No physical button is ever needed** (the boards sit behind a case) | preview, HIL |
+| CFG-007 | Factory reset from Setup mode on the touchscreen (hold to confirm) or the service console: wipes NVS (and the event log if asked), logs `factory_reset` first, restarts with no codes and the setup wizard, where the first person makes their own (no factory codes, the owner's decision of 2026-11-08; the service console's reset takes the master or Admin code). **No physical button is ever needed** (the boards sit behind a case) | preview, HIL |
 | CFG-008 | Validation warnings, not errors: entry time + report delay > 60 s, no night zones while Night arming exists | preview |
-| CFG-009 | **Lost master code**: for 2 minutes after power-up, with every partition disarmed, installer mode opens from the touchscreen without a code; logged and reported (`program_enter`, arg 1); it gives the panel back to the Owner: a new master code is set without the old one, never an Admin code. Only the Owner turns this off ("Master code recovery", in an Owner session at the panel), so no installer can take it away (the owner's decision of 2026-11-08) | `CORE-PROG-005..007, 015`, preview |
+| CFG-009 | **Lost master code**: for 2 minutes after power-up, with every partition disarmed, Setup mode opens from the touchscreen without a code; logged and reported (`program_enter`, arg 1); it gives the panel back to the Owner: a new master code is set without the old one, never an Admin code. Only the Owner turns this off ("Master code recovery", in an Owner session at the panel), so no installer can take it away (the owner's decision of 2026-11-08) | `CORE-PROG-005..007, 015`, preview |
 | CFG-010 | An unreadable stored configuration (damaged, or written by a newer firmware before a rollback) is kept, not overwritten: the panel runs on factory defaults in RAM and raises the `storage` trouble. A stored configuration that decodes but the engine rejects is treated the same way. Only a positively **absent** NVS key ever writes the factory configuration | code review |
 | CFG-012 | A load that failed for want of resources (no memory, NVS unusable) is not a verdict on what is stored: the panel retries, then refuses to start rather than replace the installation, and never hands unvalidated configuration to the engine. **An allocation failure can never cause a factory reset** | code review; allocation fault injection still to do |
 | CFG-013 | A configuration or runtime write that failed is never reported as durable: it stays outstanding, is retried with backoff, coalesces to the newest state and raises the `storage` trouble until it lands. The in-memory state is never rolled back because flash refused (a disarm stays a disarm); `alarm_service_store_status()` reports it ([06](../06-CrowPanel-P4-Platform/README.md) P4-013) | code review; flash fault injection still to do |
-| CFG-011 | Access follows the table in [Who can change what](#who-can-change-what): the homeowner (master code) changes Wi-Fi, date and time, integrations and household users without the installer; the installer changes what detects, delays, sounds or reports alarms, in installer mode; both reach the shared settings with their own code, outside installer mode | preview, code review |
+| CFG-011 | Access follows the table in [Who can change what](#who-can-change-what): the homeowner (master code) changes Wi-Fi, date and time, integrations and household users without the installer; the installer changes what detects, delays, sounds or reports alarms, in Setup mode; both reach the shared settings with their own code, outside Setup mode | preview, code review |
 
 ## Who can change what
 
@@ -56,10 +56,10 @@ how an alarm is detected, delayed, sounded or reported, plus the master code its
 
 ### This panel
 **The Owner is the top authority** (the owner's decisions of 2026-11-02 and 2026-11-08,
-[03](../03-Users-Codes-and-Authority/README.md)): the system master opens installer mode too, so
-every row below marked "installer mode" or the installer's sign-in is the system master's as well;
+[03](../03-Users-Codes-and-Authority/README.md)): the system master opens Setup mode too, so
+every row below marked "Setup mode" or the installer's sign-in is the system master's as well;
 the installer's rows are the installer's only while the Owner lets the Admin code open
-installer mode. The installer never changes the Owner's code or the Owner's own settings.
+Setup mode. The installer never changes the Owner's code or the Owner's own settings.
 
 | Area | Anyone | Master | Installer | Where |
 |---|---|---|---|---|
@@ -78,29 +78,29 @@ installer mode. The installer never changes the Owner's code or the Owner's own 
 | Panic alarms over MQTT (police, fire, medical, silent): allowed or not, off by default | | sees it | yes | Panel Manager > Integrations > MQTT (the installer's sign-in); the service console's `mqtt panic` |
 | Event log with silent events | | yes | yes | Activity > Show private events (LOG-008, BL-131) |
 | Automations: add, change, turn off, delete; one that arms or disarms the panel acts as the person who saved it (docs/features/41 AUT-010, AUT-011; decided 2026-10-05: the master decides). Not while armed or in alarm | | yes (system master) | yes | Settings > Automations; Panel Manager > Automations |
-| Master and Admin codes without the old one | | the system master, in installer mode: both | installer mode: its own, and the master code only where there is none yet (the handover) | Installer > Master and Admin codes |
-| The Owner's settings: "Let the Admin code open Setup mode" (CORE-PROG-014) and "Master code recovery" (CORE-PROG-015), both on by default | | the system master, in installer mode at the panel (never the Panel Manager or the server) | sees them | Installer > Master and Admin codes; Installer > Delays and arming |
-| Zones and sensors, delays, siren time, lockout, power options, system name | | | installer mode | Installer |
-| Z-Wave: add, remove, replace a device, region, routes, reset the Z-Wave network (every partition disarmed); the device list and a device's page are in the installer menu too (docs/features/36) | | | installer mode | Installer > Z-Wave |
-| Arming without a code (keypad quick arm, remote arming), chime without a code | | | installer mode | Installer > Delays and arming |
-| Allow less secure automations: automations that disarm, unlock or open (on by default; docs/features/41 AUT-015) | | | installer mode | Installer, beside arming without a code |
-| Run the setup again, factory reset | | | installer mode | Installer |
+| Master and Admin codes without the old one | | the system master, in Setup mode: both | Setup mode: its own, and the master code only where there is none yet (the handover) | Setup > Master and Admin codes |
+| The Owner's settings: "Let the Admin code open Setup mode" (CORE-PROG-014) and "Master code recovery" (CORE-PROG-015), both on by default | | the system master, in Setup mode at the panel (never the Panel Manager or the server) | sees them | Setup > Master and Admin codes; Setup > Delays and arming |
+| Zones and sensors, delays, siren time, lockout, power options, system name | | | Setup mode | Installer |
+| Z-Wave: add, remove, replace a device, region, routes, reset the Z-Wave network (every partition disarmed); the device list and a device's page are in the installer menu too (docs/features/36) | | | Setup mode | Setup > Z-Wave |
+| Arming without a code (keypad quick arm, remote arming), chime without a code | | | Setup mode | Setup > Delays and arming |
+| Allow less secure automations: automations that disarm, unlock or open (on by default; docs/features/41 AUT-015) | | | Setup mode | Installer, beside arming without a code |
+| Run the setup again, factory reset | | | Setup mode | Installer |
 | About (versions, memory, network, System details), whether an update exists or runs | yes | yes | yes | Settings > About |
 | Storage information: SD capacity/state, firmware space, flash allocation | yes | yes | yes | Settings > About > Storage |
 | SD card: check, safely remove, format (explicit erase confirmation) | | yes (system master) | yes | About > Storage > SD card |
 | Software update: see what is offered, check, install, stop (restarts only once everything is disarmed; OTA-022, OTA-027) | | yes (system master) | yes | Settings > About > Software update; Panel Manager > Software updates |
-| The update server (a domain; a new one's signing key is read and held to accept; the Owner's alone, the owner's decision of 2026-11-08) and the update channel (OTA-020..OTA-022) | | the server: the system master alone; the channel: Setup | the channel only (installer mode; in the browser the Admin signed in) | Settings > About > Installer > Updates; Panel Manager > Software updates |
+| The update server (a domain; a new one's signing key is read and held to accept; the Owner's alone, the owner's decision of 2026-11-08) and the update channel (OTA-020..OTA-022) | | the server: the system master alone; the channel: Setup | the channel only (Setup mode; in the browser the Admin signed in) | Settings > About > Setup > Updates; Panel Manager > Software updates |
 | Panel Manager browser sign-in (password), for the installer, system and partition masters and standard users: on, off, a new password | | whoever manages the user (never the installer's) | everyone's | Settings > Users > the user; Panel Manager > People and codes (no code). One set for somebody else is temporary at the panel; in the Panel Manager the person setting it chooses whether they keep it or choose their own at their first sign-in. Your own: Panel Manager > Your password, which asks for the current one, never People and codes |
 | Panel Manager browser sign-in: the installer's own (user name: their name on Users, "Installer" from the factory) | | | yes | Installer, or Users with the Admin code; Panel Manager > Your password (the current one first) |
-| Arm, disarm, clear the alarm memory, acknowledge (trouble beeps, and it silences a fire, CO or auxiliary siren remotely, as OFF alone does at a keypad), bypass and the chime from the Panel Manager, as the signed-in person without a code (their sign-in proved who they are); each only in the state it is for (disarm while armed, in exit or entry time or in an alarm; acknowledge always; the rest while disarmed and outside installer mode); disarm and acknowledge also while armed or in alarm, since disarming ends the lock (docs/features/31 WEB-024) | anyone with a browser sign-in, as far as their own code allows it (authority and partitions, the same rules as at a keypad) | yes | not arm or disarm: the installer's code never does, from any source (USR-001, [03](../03-Users-Codes-and-Authority/README.md)) | Panel Manager > Overview; the event names the person and "Panel Manager" |
-| Walk test: start one (disarmed, silent, outside installer mode), extend it, see its list and summary in the Panel Manager (docs/features/40 WALK-001; at the touchscreen the list and the summary need no code, WALK-025) | | yes (system master; a partition master on its partitions) | yes | Settings > Walk test; Installer > Walk test; Panel Manager > System > Walk test (a password sign-in); a keypad's code + TEST |
+| Arm, disarm, clear the alarm memory, acknowledge (trouble beeps, and it silences a fire, CO or auxiliary siren remotely, as OFF alone does at a keypad), bypass and the chime from the Panel Manager, as the signed-in person without a code (their sign-in proved who they are); each only in the state it is for (disarm while armed, in exit or entry time or in an alarm; acknowledge always; the rest while disarmed and outside Setup mode); disarm and acknowledge also while armed or in alarm, since disarming ends the lock (docs/features/31 WEB-024) | anyone with a browser sign-in, as far as their own code allows it (authority and partitions, the same rules as at a keypad) | yes | not arm or disarm: the installer's code never does, from any source (USR-001, [03](../03-Users-Codes-and-Authority/README.md)) | Panel Manager > Overview; the event names the person and "Panel Manager" |
+| Walk test: start one (disarmed, silent, outside Setup mode), extend it, see its list and summary in the Panel Manager (docs/features/40 WALK-001; at the touchscreen the list and the summary need no code, WALK-025) | | yes (system master; a partition master on its partitions) | yes | Settings > Walk test; Setup > Walk test; Panel Manager > System > Walk test (a password sign-in); a keypad's code + TEST |
 | Walk test: end one that is running (WALK-025) | every code that may disarm the partition; at the touchscreen no code (a question) | yes | yes | code + OFF, a keyfob's Disarm, End on the walk test screen or Home; Panel Manager > Overview |
 | Remote keypad (the panel's own screen from the Panel Manager: anything a person at the panel could do, codes still asked) | anyone with a browser sign-in | yes | yes | Panel Manager > Remote keypad; the panel shows a red banner and the person there can pause it or turn remote access off (UI-039) |
-| Remote access switches (web server, developer mode), workstation enrolment (enrolment: the system master alone, the owner's decision of 2026-11-08) | | the system master: all of it | the switches: installer mode / in the browser the Admin signed in, with their password again unless typed in the last 10 minutes | Installer; Panel Manager > Access and maintenance, Developer |
+| Remote access switches (web server, developer mode), workstation enrolment (enrolment: the system master alone, the owner's decision of 2026-11-08) | | the system master: all of it | the switches: Setup mode / in the browser the Admin signed in, with their password again unless typed in the last 10 minutes | Installer; Panel Manager > Access and maintenance, Developer |
 
 "Master" means the system master and partition masters unless the table says otherwise. A code
 typed in Settings opens every section it allows until Settings closes (after 5 idle minutes at
-the latest); entering installer mode with the Admin code counts as that code.
+the latest); entering Setup mode with the Admin code counts as that code.
 
 **Planned annunciation controls (Feature 08; not implemented, BL-044):** ordinary voice enable,
 voice-chime mode, library voice and preview follow Screen and sound access and lockdown;
@@ -140,10 +140,10 @@ Deliberate choices:
   ([B005](../../bugs/B005-panel-manager-code-guessing.md)).
 - **Browser sign-in is its own password, not a keypad code** (docs/features/31 "Sign-in"): a
   user name and a browser password set on the panel's screen; the installer's is the installer's
-  own, set in installer mode. Whoever manages a user sets or removes theirs, at the panel or in
+  own, set in Setup mode. Whoever manages a user sets or removes theirs, at the panel or in
   the Panel Manager as themselves; one set for somebody else is temporary (in the Panel Manager,
   unless the person setting it chooses that they keep it); it goes with the user or their role.
-- **Shared settings don't need installer mode.** Installer mode stops arming; changing the Wi-Fi
+- **Shared settings don't need Setup mode.** Setup mode stops arming; changing the Wi-Fi
   or the time zone shouldn't.
 - **The event log needs a master or Admin code** (LOG-008), not any user code,
   because it shows duress and silent alarms.
@@ -164,7 +164,7 @@ Deliberate choices:
 | `net/*` | Wi-Fi SSID and password, DHCP or static address, POSIX time zone, time server | Settings > Wi-Fi and network, Time and language, setup; the Panel Manager's network page |
 | `ui/*` | brightness, screen saver, the screen going dark (`off_ms`) and the night hours (`night`, `night_from`, `night_to`, `night_bright`, `night_off_ms`; [07](../07-UI-LVGL-Pro/README.md) UI-043), volume, key clicks, the clock choice (`clockmode`; `clock24` still written as the clock it comes to, for a rollback), the language (`lang`) and region (`region`) ([37](../37-Globalization/README.md)), the appearance (`appearance`: 0 Dark, 1 Light, 2 Automatic; `contrast`, high contrast; [07](../07-UI-LVGL-Pro/README.md) UI-010) | Settings > Display and sound; the clock on Settings > Date and time; the Panel Manager's Display and sound |
 | `sys/setup` | first-boot setup finished | end of the setup |
-| `zones/bind` | the binding blob: which sensor feeds each zone ([22](../22-Zone-Sources/README.md)) | a zone's sensor picked or removed (installer mode, or the console while disarmed); first start with zone sources |
+| `zones/bind` | the binding blob: which sensor feeds each zone ([22](../22-Zone-Sources/README.md)) | a zone's sensor picked or removed (Setup mode, or the console while disarmed); first start with zone sources |
 | `log/*` | boot counter and the lost-record counters (`lost`, `lostrep`) of the event log ([05](../05-Event-Log/README.md) LOG-010) | every start; when a record could not be kept |
 | `mqtt/*` | broker, account, TLS and its certificate authority, discovery, commands, topic prefix ([10](../10-MQTT-and-Home-Assistant/README.md)) | Settings > Integrations > MQTT, the Panel Manager |
 | `halink`, `notify`, `ntfy`, `pushover`, `weblogin`, `panelweb`, `devrem`, `devota`, `ota`, `nettrial`, `clock`, `rf`, `zwave`, `zbpanel`, `automations` (and `touch` on the 4") | each service's own settings and state, described in its feature document (09, 13, 19, 20, 23, 25-28, 30, 31, 35, 36, 41) | their own pages |
@@ -192,7 +192,7 @@ token IDs in exactly 16 bytes) and its voice revisions (zone 0x0C-0x0E, system 0
 docs/features/08 voice-first-build.md D07) are written only when not zero. `compat` is raised only by a writer that older readers would misread. Field ids
 are an external contract: never reuse or renumber one.
 
-### Installer mode (engine: `components/core/alarm_core/src/program.c`)
+### Setup mode (engine: `components/core/alarm_core/src/program.c`)
 `alarm_engine_program_enter/exit/keepalive/set_code`, `alarm_engine_recovery_left`; state
 reported in the snapshot (`program`, `recovery_left_ms`). The installer's code or the system
 master's opens it (`program_user` is 1 or 2; 0 for the power-up recovery), from a code
@@ -200,12 +200,12 @@ master's opens it (`program_user` is 1 or 2; 0 for the power-up recovery), from 
 (`alarm_engine_program_enter_as`: a Panel Manager sign-in, the server link); anyone else gets
 `not_authorized`. One installer session at a time
 (another source gets `bad_state`). Arming and the walk test are refused (`bad_state`);
-alarms, fire, CO and panics work as always. The engine ends installer mode itself after
+alarms, fire, CO and panics work as always. The engine ends Setup mode itself after
 `ALARM_PROGRAM_TIMEOUT_S` (15 min) without `keepalive`/`set_config`; the touchscreen sends a
 keepalive every 30 s while the installer is touching it.
 
 ### Installer screens (touch, `components/ui/alarm_ui/src/ui_installer.c`)
-Settings > About > Installer (the last row of About, BL-189). Locked: "Enter the master or Admin code" (the screen
+Settings > About > Setup (the last row of About, BL-189). Locked: "Enter the master or Admin code" (the screen
 never shows the factory code's digits, BL-187), and during the recovery window "Forgot the code? Open without it (N s left)" with a
 confirmation. Unlocked (status bar: "Installer · Arming off · Tap to leave"):
 
@@ -238,12 +238,12 @@ confirmation. Unlocked (status bar: "Installer · Arming off · Tap to leave"):
   low-battery inputs are set here too, and a user's partitions in Settings > Users with the
   Admin code: everything the Panel Manager sets but certificate authorities and developer
   tools ([07](../07-UI-LVGL-Pro/README.md) UI-041).
-- Wi-Fi and date and time moved out of installer mode to their own Settings sections (M5, see
+- Wi-Fi and date and time moved out of Setup mode to their own Settings sections (M5, see
   [Who can change what](#who-can-change-what)).
 
 Pages edit a working copy; leaving a page applies the options, partitions, zones and devices of
 the copy on top of the current configuration (so code changes made meanwhile are kept),
-validated first. Leaving the Installer section or Settings, or 5 idle minutes, ends installer mode.
+validated first. Leaving the Installer section or Settings, or 5 idle minutes, ends Setup mode.
 
 ### Factory reset (`components/services/platform_esp/src/panel_system.c`)
 `panel_system_factory_reset()`: `alarm_service_factory_reset()` logs `factory_reset`
@@ -253,7 +253,7 @@ the setup wizard.
 
 ### The backup file (CFG-005, CFG-006)
 `components/core/backup` (portable, host-tested) is the file; `components/services/backup_service`
-makes and restores it on the panel; the Panel Manager offers it on Installer > Access and
+makes and restores it on the panel; the Panel Manager offers it on Setup > Access and
 maintenance (`POST` / `PUT /api/v1/backup`).
 
 - **The file:** `"RABK"`, format 1, then the payload encrypted with AES-256-GCM under a key from
@@ -346,13 +346,13 @@ switches; web-off disables both. See docs/features/31 for the field/action inven
 Each open box names its row in [the backlog](../../BACKLOG.md).
 
 - [x] Versioned configuration blob + host tests with a frozen fixture (M4)
-- [x] Installer mode in the engine + screens (M4)
+- [x] Setup mode in the engine + screens (M4)
 - [x] Factory reset paths (touchscreen, console) and power-up recovery (M4)
 - [x] Durable-write tracking with retry, and a start-up that never resets to factory defaults to
       recover from a failure it could not diagnose (CFG-010, -012, -013)
 - [x] The Panel Manager follows the access table, the installer manages every user, and the
       installer screens set everything the browser sets (CFG-011, UI-041; e07106d)
-- [x] The update server and the channel are the installer's: Installer > Updates and the Panel Manager's
+- [x] The update server and the channel are the installer's: Setup > Updates and the Panel Manager's
       Software updates page; Software update is the installer's and the system master's (BL-186, OTA-022)
 - [x] The Admin code never arms or disarms ([03](../03-Users-Codes-and-Authority/README.md) USR-001, BL-187)
 - [x] The backup file (CFG-005, CFG-006): codec and encryption with host tests, the Panel

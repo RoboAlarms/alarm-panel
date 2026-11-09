@@ -286,7 +286,7 @@ static const char *refused_words(uint8_t r)
 {
     switch (r) {
     /* The words the Zigbee pages say for the same refusals (ui_zigbee.c) */
-    case UI_LINK_REQ_NOT_ALLOWED: return TR("Only in installer mode, with everything disarmed");
+    case UI_LINK_REQ_NOT_ALLOWED: return TR("Only in Setup mode, with everything disarmed");
     case UI_LINK_REQ_FAILED: return TR("Not saved");
     default: return TR("That can't be done now");
     }
@@ -886,7 +886,7 @@ static void build_add(lv_obj_t *body, char *title, size_t tlen, char *note, size
         /* The Zigbee add page's words for the same refusals (ui_zigbee.c) */
         ui_paragraph(body,
                      A.refused == UI_LINK_REQ_NOT_ALLOWED
-                         ? TR("Not started: only in installer mode, with everything disarmed.")
+                         ? TR("Not started: only in Setup mode, with everything disarmed.")
                          : TR("Not started: that can't be done now."),
                      ui_tone_amber());
         ui_row_action(body, UI_ICON_REFRESH, TR("Try again"), ui_tone_blue(), add_retry, NULL);
@@ -1283,7 +1283,7 @@ static void build_keypad(int32_t arg, lv_obj_t *body, char *title, size_t tlen, 
     L.page_sig = keypad_sig(k);
     if (s_kp_device == 0u) {
         i18n_utf8_copy(title, tlen, TR("This panel"));
-        i18n_utf8_copy(note, nlen, TR("Installer · Partition settings"));
+        i18n_utf8_copy(note, nlen, TR("Setup · Partition settings"));
         if (S.program) policy_rows(body, k);
         return;
     }

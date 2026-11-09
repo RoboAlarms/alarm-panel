@@ -1,5 +1,5 @@
-// Settings > Installer > Sirens and outputs, a wired output, a 433 MHz siren and its pairing,
-// Installer > 433 MHz, a Z-Wave siren's rows, the Z-Wave radio's software from an SD card, a Zigbee
+// Settings > Setup > Sirens and outputs, a wired output, a 433 MHz siren and its pairing,
+// Setup > 433 MHz, a Z-Wave siren's rows, the Z-Wave radio's software from an SD card, a Zigbee
 // smoke detector's own sounder as a siren, and a wired zone's end-of-line Contact choices
 // (ui_sirens.c, ui_zwave.c, ui_zigbee.c, ui_sources.c; docs/features/16, 25, 36, 20, 02).
 // Drawn as the BL-037 proposal (with BL-215 and BL-063) and approved by the owner on 2026-10-20

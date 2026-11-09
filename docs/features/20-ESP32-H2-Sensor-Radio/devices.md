@@ -29,10 +29,10 @@ additions to `components/core/zone_hub/include/zone_hub/zsrc_zigbee.h` and
 - **One operation at a time** (section 6), as Z-Wave: add, add with a code, remove, forget,
   replace, ping, identify, set up again, channel, survey, reset, restart, a siren's test. A second
   is refused BUSY. Settings (rename, codes, a siren's or keypad's assignment) answer at once.
-- **Who may.** `allowed` means what it means for `zwz_panel_request`: one flag, installer mode
+- **Who may.** `allowed` means what it means for `zwz_panel_request`: one flag, Setup mode
   with every partition disarmed (docs/features/22 ZSRC-012). Every request needs it except
   "Check it now", Identify, the survey and Dismiss, which change nothing and don't read it - as
-  Z-Wave's ping and identify don't: for them installer mode is the caller's alone, and every
+  Z-Wave's ping and identify don't: for them Setup mode is the caller's alone, and every
   caller (the pages, `/api/v1/zigbee`, the console) is installer-only. Restarting the radio, a
   siren's test and every setting need `allowed` too. The network reset also needs the installer
   code typed again (section 6). Reading needs nothing. (Decided 2026-10-02 without waiting for review: the first contract let one flag stand for two levels.)
@@ -490,7 +490,7 @@ added again - the channel page says so before the installer confirms (ZB-016).
 Optional as a set: a NULL `zb_status`, or one that returns false, hides every Zigbee row and page
 (a firmware or a simulator without Zigbee). The touchscreen pages are drawn in
 `docs/features/07-UI-LVGL-Pro/mockup/screens/zigbee.js`, the Panel Manager's in its `panel-pages.js`
-(`zg*` pages). Looking at any Zigbee page needs installer mode (decided in building it: the radio's
+(`zg*` pages). Looking at any Zigbee page needs Setup mode (decided in building it: the radio's
 page shows the network's addresses): outside it the Troubles row asks for the installer code first,
 then the page follows.
 
@@ -508,7 +508,7 @@ then the page follows.
 | 10 Install codes waiting | `zb_codes` | CODE_ADD, CODE_FORGET |
 | 11 Zone editor hand-off | the picker's "Add a new Zigbee device" opens page 3 and returns with the new device on top, "Just added" (the source's `new_join`) | ADD |
 | 12 Zone page's "Zigbee device" row | `zb_device` via the zone's device id | - |
-| 13 Trouble "Sensor radio problem" | opens page 2 in installer mode; otherwise the locked Installer page asks for the installer code first (toast "Enter the installer code to see the radio"), and page 2 follows | - |
+| 13 Trouble "Sensor radio problem" | opens page 2 in Setup mode; otherwise the locked Installer page asks for the installer code first (toast "Enter the installer code to see the radio"), and page 2 follows | - |
 | 14 Siren, 15 keypad, 16 key fob | `zb_device`'s `siren`, `keypad`, `fob` (a keypad's device number is shown, never asked for: alarm-devices.md §4) | SIREN, SIREN_TEST, KEYPAD, FOB |
 
 Pages 14-16 read the assignments zbz_panel holds (alarm-devices.md §2 and §3, "Wired in

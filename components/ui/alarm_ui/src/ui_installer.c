@@ -51,7 +51,7 @@ static void enter_program(uint8_t user, bool recovery)
     memcpy(S.edit, S.cfg, sizeof(alarm_config_t));
     S.edit_dirty = false;
     if (recovery) {
-        ui_toast(TR("Installer mode without a code: set a new master code"));
+        ui_toast(TR("Setup mode without a code: set a new master code"));
         ui_page_open(PAGE_CODES, 0);
     } else {
         ui_page_rebuild();
@@ -104,7 +104,7 @@ static void ask_code(void *ctx)
 {
     (void)ctx;
     /* The system master's code opens it too: the Owner's, which no code outranks (CORE-PROG-001) */
-    ui_pad_ask(HOST_SETTINGS, UI_ICON_WRENCH, TR("Installer mode"),
+    ui_pad_ask(HOST_SETTINGS, UI_ICON_WRENCH, TR("Setup mode"),
                TR("Enter the master or Admin code"), ui_tone_amber(), installer_code);
 }
 
@@ -131,10 +131,10 @@ static void open_lost_code(void *ctx)
 static void ask_recovery(void *ctx)
 {
     (void)ctx;
-    ui_confirm(TR("Open installer mode without the code?"),
+    ui_confirm(TR("Open Setup mode without the code?"),
                TR("For a lost master code, right after power-up only. It is logged and "
                   "reported. Choose a new master code next."),
-               TR("Open installer mode"), recovery_confirmed);
+               TR("Open Setup mode"), recovery_confirmed);
 }
 
 /* Why the installer's changes were not saved (CORE-CFG-019), in the screen's language. Only what
@@ -302,7 +302,7 @@ static void leave_mode(bool say)
     }
     ui_refresh(true);
     if (say) {
-        ui_toast(TR("Installer mode ended · arming is on again"));
+        ui_toast(TR("Setup mode ended · arming is on again"));
     }
     const unsigned root = ui_installer_root();
     if (lv_subject_get_int(&subject_view) == VIEW_SETTINGS &&
@@ -379,13 +379,13 @@ static void build_locked_keypad(lv_obj_t *body, char *note, size_t nlen)
             /* TR: a keypad's Installer while installer mode is held at the alarm panel itself or
              * its Panel Manager; {0} is the alarm panel's name. At most 127 bytes */
             I18N_FORMAT(text, sizeof(text),
-                        TR("Installer mode is open on {0}. It can be open in one place at a time."),
+                        TR("Setup mode is open on {0}. It can be open in one place at a time."),
                         master);
         } else {
             /* TR: a keypad's Installer while another keypad holds installer mode; {0} is that
              * keypad's number. At most 127 bytes */
             I18N_FORMAT(text, sizeof(text),
-                        TR("Installer mode is open at Keypad {0}. It can be open in one place at a time."),
+                        TR("Setup mode is open at Keypad {0}. It can be open in one place at a time."),
                         (unsigned)holder);
         }
         ui_paragraph(body, text, ui_tone_amber());
@@ -411,7 +411,7 @@ static void build_locked(lv_obj_t *body, char *note, size_t nlen)
         return;
     }
     /* TR: the line under the page title. At most 127 bytes */
-    i18n_utf8_copy(note, nlen, TR("Installer settings change how the alarm works"));
+    i18n_utf8_copy(note, nlen, TR("Setup changes how the alarm works"));
     ui_row_action(body, UI_ICON_KEY, TR("Enter the master or Admin code"), ui_tone_amber(),
                   ask_code, NULL);
     const alarm_ms_t now = S.be.now_ms(S.be.ctx);
@@ -560,7 +560,7 @@ static void build_menu(lv_obj_t *body, char *note, size_t nlen)
         ui_section(body, TR("Test and start over"));
         /* TR: the Installer menu's walk test row and the line under it (docs/features/40) */
         ui_row_link(body, UI_ICON_FOOTPRINTS, ui_tone_blue(), TR("Walk test"),
-                    TR("Leaves installer mode and starts one"), NULL, UI_ICON_CHEVRON_RIGHT,
+                    TR("Leaves Setup mode and starts one"), NULL, UI_ICON_CHEVRON_RIGHT,
                     run_walk_test, NULL);
         char line[160];
         /* TR: a keypad's Installer menu, what it doesn't hold; {0} is its alarm panel's name (up
@@ -570,7 +570,7 @@ static void build_menu(lv_obj_t *body, char *note, size_t nlen)
                        "Panel Manager."),
                     ui_link_master_name());
         ui_paragraph(body, line, ui_tone_gray());
-        ui_row_action(body, UI_ICON_LOG_OUT, TR("Leave installer mode"), ui_tone_blue(),
+        ui_row_action(body, UI_ICON_LOG_OUT, TR("Leave Setup mode"), ui_tone_blue(),
                       leave_clicked, NULL);
         return;
     }
@@ -579,14 +579,14 @@ static void build_menu(lv_obj_t *body, char *note, size_t nlen)
     ui_section(body, TR("Test and start over"));
     /* TR: the Installer menu's walk test row and the line under it (docs/features/40) */
     ui_row_link(body, UI_ICON_FOOTPRINTS, ui_tone_blue(), TR("Walk test"),
-                TR("Leaves installer mode and starts one"), NULL, UI_ICON_CHEVRON_RIGHT,
+                TR("Leaves Setup mode and starts one"), NULL, UI_ICON_CHEVRON_RIGHT,
                 run_walk_test, NULL);
     ui_row_link(body, UI_ICON_SPARKLES, ui_tone_rose(), TR("Run the setup again"),
                 TR("Wi-Fi, time zone, codes and name, step by step"), NULL, UI_ICON_CHEVRON_RIGHT,
                 run_setup, NULL);
     ui_row_link(body, UI_ICON_ROTATE_CCW, ui_tone_red(), TR("Factory reset"), TR("Erase everything"), NULL,
                 UI_ICON_CHEVRON_RIGHT, open_page, (void *)(intptr_t)PAGE_RESET);
-    ui_row_action(body, UI_ICON_LOG_OUT, TR("Leave installer mode"), ui_tone_blue(), leave_clicked,
+    ui_row_action(body, UI_ICON_LOG_OUT, TR("Leave Setup mode"), ui_tone_blue(), leave_clicked,
                   NULL);
 }
 
@@ -787,7 +787,7 @@ static void build_options(lv_obj_t *body, char *note, size_t nlen)
     /* CORE-PROG-015: the Owner's own: only the master changes it, never the installer */
     lv_obj_t *recovery = ui_row_toggle(
         body, TR("Master code recovery"),
-        owner_here() ? TR("For two minutes after power-up, Installer opens without a code to set a "
+        owner_here() ? TR("For two minutes after power-up, Setup opens without a code to set a "
                           "new master code. When off, a lost master code can't be recovered")
                      : TR("Only the master code changes this"),
         o->power_up_program, on_flag, (void *)(intptr_t)FLAG_RECOVERY);
@@ -2038,14 +2038,14 @@ bool ui_installer_build(page_id_t id, int32_t arg, lv_obj_t *body, char *title, 
         i18n_utf8_copy(title, tlen, TR("Lost the master code?"));
         ui_paragraph(body,
                      TR("Unplug the panel for ten seconds. For two minutes after it starts, "
-                        "Installer opens without a code to set a new master code (unless the owner "
+                        "Setup opens without a code to set a new master code (unless the owner "
                         "turned that off)."),
                      ui_tone_gray());
         return true;
     }
     if (id == PAGE_INSTALLER) {
         /* TR: the page title. At most 47 bytes */
-        i18n_utf8_copy(title, tlen, TR("Installer"));
+        i18n_utf8_copy(title, tlen, TR("Setup"));
         if (!S.program) {
             build_locked(body, note, nlen);
         } else {
@@ -2055,7 +2055,7 @@ bool ui_installer_build(page_id_t id, int32_t arg, lv_obj_t *body, char *title, 
     }
     if (!S.program || S.edit == NULL) {
         /* TR: the page title. At most 47 bytes */
-        i18n_utf8_copy(title, tlen, TR("Installer"));
+        i18n_utf8_copy(title, tlen, TR("Setup"));
         build_locked(body, note, nlen);
         return true;
     }

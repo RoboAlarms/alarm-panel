@@ -26,7 +26,7 @@ are driven by the panel, and the rules that keep them from weakening it. Device 
   device table (§4).
 - **Nothing on the panel flashes.** A siren's strobe is the siren's; the pages say "strobe" in
   words.
-- **Changes need installer mode with every partition disarmed**, as every Zigbee change; a
+- **Changes need Setup mode with every partition disarmed**, as every Zigbee change; a
   siren's test too (devices.md §1).
 
 ## 2. Sirens and strobes (IAS WD, ZB-023)
@@ -397,7 +397,7 @@ keypad's source (or the fob's user); wrong codes and lockouts are the engine's a
 Assigning or clearing a siren, keypad or fob is a configuration change logged as the installer's
 (ZB-M10/ZB-M11 decide whether it needs an event type of its own; if so it is appended, devices.md
 §11). ZB-M11 adds none for keypads and fobs (decided 2026-10-02): assignments change only in
-installer mode with every partition disarmed, whose entry and exit the engine logs, and every
+Setup mode with every partition disarmed, whose entry and exit the engine logs, and every
 arm, disarm, wrong code, lockout and panic they lead to is the engine's own event with the
 keypad's number or the fob's user. An event of its own (say `zigbee_assigned`) can be appended
 later without a format change if the assignment itself is wanted in the log.

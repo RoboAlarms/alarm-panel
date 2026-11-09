@@ -279,7 +279,7 @@ void zwfj_not_started(zwfj_t *j, ui_zw_req_result_t why)
         fail(j, UI_ZW_FW_FILE_FAILED, "Not started: the Z-Wave radio isn't working.");
         break;
     case UI_ZW_REQ_NOT_ALLOWED:
-        fail(j, UI_ZW_FW_FILE_FAILED, "Not started: installer mode ended, or something is armed.");
+        fail(j, UI_ZW_FW_FILE_FAILED, "Not started: Setup mode ended, or something is armed.");
         break;
     default:
         fail(j, UI_ZW_FW_FILE_FAILED, "Not started: it can't take an update now.");

@@ -1,11 +1,11 @@
 // BL-222: what a panel without a screen (the headless ESP32-S3 board, firmware/esp32s3_devkitc, docs/features/42)
 // still needs from the Panel Manager: everything a person does at the touchscreen today but can't do in the browser.
 // Drawn as Panel Manager pages, with panel-pages.js's helpers and panel.css's parts (WEB-026); nothing here is built.
-//   - Installer > Sirens and outputs: wired outputs and 433 MHz sirens (ui_sirens.c), with a review and Test it
+//   - Setup > Sirens and outputs: wired outputs and 433 MHz sirens (ui_sirens.c), with a review and Test it
 //   - Overview: Emergency (police, fire, medical), each behind a confirmation (screen_main.xml's Emergency)
 //   - Smart Home: the devices' tiles by room, their controls, what asks for a master code (ui_devices.c)
 //   - Z-Wave: a device's page (blink, wake-up, software, replace, switch, dimmer, relays, siren), region and reset
-//   - Installer > Zones: the source "Keypad input" (ZSRC_KEYPAD, ui_sources.c), and Partitions and devices' keypad inputs
+//   - Setup > Zones: the source "Keypad input" (ZSRC_KEYPAD, ui_sources.c), and Partitions and devices' keypad inputs
 //   - Network: Forget this network
 proposal({
   bl: 'BL-222',
@@ -15,10 +15,10 @@ proposal({
   role: 'installer',
   why: [
     'A panel without a screen is set up and run only from the Panel Manager, but sirens and outputs, the emergency buttons, Smart Home, several Z-Wave actions, a zone on a keypad\'s terminal and forgetting the Wi-Fi are still only on the touchscreen. On a headless panel nobody can do them at all.',
-    'Each gets its Panel Manager page or card, in the touchscreen\'s words: Installer > Sirens and outputs, Emergency on the Overview, a Smart Home page, a page for each Z-Wave device with the region and the network reset on Z-Wave radio, Keypad input in a zone\'s sensor with the keypads\' inputs under Partitions and devices, and Forget this network.',
+    'Each gets its Panel Manager page or card, in the touchscreen\'s words: Setup > Sirens and outputs, Emergency on the Overview, a Smart Home page, a page for each Z-Wave device with the region and the network reset on Z-Wave radio, Keypad input in a zone\'s sensor with the keypads\' inputs under Partitions and devices, and Forget this network.',
   ],
   look: [
-    ['outputs', 'Installer > Sirens and outputs: the wired outputs, the 433 MHz sirens and the radios\' sirens, each with its state; Test it beside each siren', {role: 'installer', scenario: 'ready', parts: '1'}],
+    ['outputs', 'Setup > Sirens and outputs: the wired outputs, the 433 MHz sirens and the radios\' sirens, each with its state; Test it beside each siren', {role: 'installer', scenario: 'ready', parts: '1'}],
     ['output/w1', 'A wired siren: what it sounds for, its partitions, how it is wired, its supervision input; change something, then Review', {role: 'installer', scenario: 'ready'}],
     ['output/w3', 'An armed light: on while its partitions are armed (no siren rows)', {role: 'installer', scenario: 'ready'}],
     ['output/new-wired', 'Add a wired output: what it is and a free terminal first; the review lists everything it will save', {role: 'installer', scenario: 'ready'}],
@@ -45,7 +45,7 @@ proposal({
     ['zwave-device/2', 'A battery sensor: Checks in (its wake-up interval), software that waits for a wake-up, Replace it', {role: 'installer', scenario: 'ready', zwave: '1'}],
     ['zwave-device/14', 'Armed Away: the device\'s page reads, its changes and tests wait', {role: 'installer', scenario: 'armed', zwave: '1'}],
     ['zwaveradio', 'Z-Wave radio: Network, with Region and Reset the network, each with a review and your password', {role: 'installer', scenario: 'ready', zwave: '1'}],
-    ['zone-setup/new', 'Installer > Zones, a new zone: Where is the sensor? offers Keypad input; pick it: the keypad\'s terminals, IO5 opens and closes and is marked', {role: 'installer', scenario: 'ready'}],
+    ['zone-setup/new', 'Setup > Zones, a new zone: Where is the sensor? offers Keypad input; pick it: the keypad\'s terminals, IO5 opens and closes and is marked', {role: 'installer', scenario: 'ready'}],
     ['zone-setup/11', 'Zone 11, Workshop door: its sensor is Keypad input · Keypad 1 · IO4', {role: 'installer', scenario: 'ready'}],
     ['partitions', 'Partitions and devices: Hall keypad says 4 inputs, 1 feeds a zone; Keypad inputs lists IO4 to IO7 and what each feeds', {role: 'installer', scenario: 'ready'}],
     ['partitions/keypad-offline', 'The keypad isn\'t answering: its inputs aren\'t known, its zone shows Check', {role: 'installer', scenario: 'ready'}],
@@ -68,7 +68,7 @@ proposal({
     'API (new): GET /api/v1/devices {rooms, arrange_code, devices: [{id, name, kind: switch|dimmer|thermostat|cover|fan|lock|scene, room, favorite, online, offline_since, failed, code, always_code, on, level, mode, target, now, doing, position, can_stop, speed, locked, ran}]} and POST /api/v1/devices {op: act|set|codes|room_add|room_rename|room_remove, ...} answering {result: ok|offline|busy|not_allowed}, the same as the touchscreen\'s dev_* backend (home_control). Open question for the owner: should a guest see Smart Home? Here everyone signed in does, as at the panel.',
     'Z-Wave (web_zwave.c says these stay at the panel): each row of Z-Wave > Devices gains Open its page. A device\'s page: Blink its light, Replace it, Check for an update and Update (a sleeping one waits for a wake-up), for a battery device Checks in (its wake-up interval: "It changes when it next wakes up"), for a switch On and Off, for a dimmer Brightness, for a relay kit its relays and the garage door opener (relay and sensor zone), for a siren the touchscreen\'s siren rows (sounds for, partitions, chirps, volume, supervision, Test it). Z-Wave radio gains Network: Region (the review says how many devices stop working) and Reset the network (all devices lose the panel), each with the installer\'s password, as the touchscreen asks for the installer code once more.',
     'API (changed): POST /api/v1/zwave gains the actions identify, wakeup {seconds}, fw_check, fw_install, fw_stop, replace, switch {on}, level {level}, relay {relay, on}, garage {relay, zone}, siren {values}, siren_test, region {region, me_password}, reset {me_password}, each the touchscreen\'s UI_ZW_REQ_* request; GET /api/v1/zwave gains, per device, its wake-up interval, software state and siren or relay settings. Here the pretend panel gains a dimmer (13), a siren (14) and a relay kit (15), and this file answers the new actions.',
-    'Keypad input (Installer > Zones): the source picker offers "Keypad input · A contact wired to a keypad" (it is already in panel-pages.js\'s words; the panel\'s GET /api/v1/sources lists kind 6 once a keypad offers inputs). Its terminals are named as on the touchscreen, "IO5" with "Keypad 1", Open or Closed; one that changes while the picker is open is marked "Just opened or closed" and goes first. A zone on one reads "Keypad input · Keypad 1 · IO4" (today panel-pages.js would say "Input 0": the address is input 0, id = keypad << 8 | terminal). A terminal another zone uses says "In use: Workshop door".',
+    'Keypad input (Setup > Zones): the source picker offers "Keypad input · A contact wired to a keypad" (it is already in panel-pages.js\'s words; the panel\'s GET /api/v1/sources lists kind 6 once a keypad offers inputs). Its terminals are named as on the touchscreen, "IO5" with "Keypad 1", Open or Closed; one that changes while the picker is open is marked "Just opened or closed" and goes first. A zone on one reads "Keypad input · Keypad 1 · IO4" (today panel-pages.js would say "Input 0": the address is input 0, id = keypad << 8 | terminal). A terminal another zone uses says "In use: Workshop door".',
     'Partitions and devices: a keypad that offers inputs says how many and how many feed a zone; a new Keypad inputs section lists each terminal (IO4 to IO7), what it feeds (Open its zone) or Free (Make it a zone), and Not read yet; while the keypad isn\'t answering its inputs aren\'t known and its zones show Check. The panel\'s own keypad has no inputs of its own (its terminals are the wired zones) and isn\'t listed there.',
     'API (new): POST /api/v1/sources/search {kind: 6} answers the keypads\' terminals (zsrc_keypad) as candidates; GET /api/v1/keypads gains per keypad inputs: [{gpio, known, open, zone}]. The mockup asks keypads/inputs for that, since a proposal can\'t extend the pretend panel\'s keypads answer; built, it is one field of GET /api/v1/keypads. Mockup only: zone 11, Workshop door, is put on IO4 of the Hall keypad.',
     'Network: Forget this network ("The panel leaves Harbor House and forgets its password"), for whoever may change the network, after a review with the password; refused while armed (the panel\'s own lock). On a panel without a screen the panel then opens its setup Wi-Fi, as when it was new (BL-048); the review says so and how to get back. API (changed): POST /api/v1/wifi {action: "forget", me_password}.',
@@ -215,7 +215,7 @@ const hgButton = (text, attrs, cls = 'small') => `<button type="button" class="$
 const hgOff = on => on ? '' : ' disabled';
 const hgNow = () => new Date().toLocaleTimeString(wordsLocale(), {hour: '2-digit', minute: '2-digit'});
 
-// ---- Installer > Sirens and outputs ------------------------------------------------------------------------------------
+// ---- Setup > Sirens and outputs ------------------------------------------------------------------------------------
 
 // What the pretend panel says (mockup only). mode: full, empty, trouble (the siren's supervision input open, no transmitter).
 const hgOut = {mode: 'full', sets: null, last: 0};
@@ -274,7 +274,7 @@ function hgOutDo(b) {
 }
 const hgOutWords = () => ({armed: t('Not while one of its partitions is armed'), in_use: t('That terminal is in use: pick a free one'),
   incomplete: t('Not saved: it must sound for something, in a partition'), full: t('No room for another one'),
-  sounding: t('Not while it sounds'), failed: t('Not saved: try again'), not_allowed: t('Changes are made in installer mode.')});
+  sounding: t('Not while it sounds'), failed: t('Not saved: try again'), not_allowed: t('Changes are made in Setup mode.')});
 async function hgOutSend(body) {
   const r = await api('outputs', body);
   if (r.result !== 'ok') throw new Error(hgOutWords()[r.result] || t('The panel answered {0}.', r.result));
@@ -850,7 +850,7 @@ function hgZwDo(b, mock) {
     default: return 'ok';
   }
 }
-const hgZwWords = () => ({armed: t('Not while one of its partitions is armed'), not_allowed: t('Changes are made in installer mode.')});
+const hgZwWords = () => ({armed: t('Not while one of its partitions is armed'), not_allowed: t('Changes are made in Setup mode.')});
 async function hgZwSend(body) {
   const r = await api('zwave', body);
   if (r.result !== 'ok') throw new Error(hgZwWords()[r.result] || zwWord(ZW_RESULTS, r.result, r.result));
@@ -989,7 +989,7 @@ function hgZwNetworkCard(z) {
   const may = setsUp() && !state.locked;
   const regions = Object.entries(ZW_REGIONS).map(([v, l]) => [Number(v), t(l)]);
   return `<section class="section" id="hg-zw-net"><div class="card"><div class="card-head"><div><h2>${ht('Network')}</h2>
-    <p>${ht('Changing the region is done in installer mode.')}</p></div></div><div class="rows">
+    <p>${ht('Changing the region is done in Setup mode.')}</p></div></div><div class="rows">
     ${fieldRow({name: 'hg_region', label: t('Region'), type: 'select', numeric: true, options: regions, locked: !may,
       help: t('The radio\'s frequencies. Devices on another band stop working.')}, z.radio.region)}
     ${hgRow(t('Reset the Z-Wave network'), z.devices.length ? tn('{0} device loses the panel', 'All {0} devices lose the panel', z.devices.length) : t('No devices have joined'),

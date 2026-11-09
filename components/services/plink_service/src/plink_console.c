@@ -51,7 +51,7 @@ static const char *result_word(uint8_t r)
     switch (r) {
     case UI_LINK_REQ_OK: return "done";
     case UI_LINK_REQ_NOT_ALLOWED:
-        return "not allowed: installer mode with every partition disarmed";
+        return "not allowed: Setup mode with every partition disarmed";
     case UI_LINK_REQ_FULL: return "keypad numbers 1-8 are all in use";
     case UI_LINK_REQ_BUSY: return "busy, try again";
     case UI_LINK_REQ_FAILED: return "failed (see the log)";

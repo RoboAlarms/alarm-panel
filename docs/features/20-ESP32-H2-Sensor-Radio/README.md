@@ -57,7 +57,7 @@ regained (Next bench acceptance, steps 1 and 4); no sensor yet.
   radio (`fake/zbz_fake_radio.c`) with virtual devices from `test/signatures/*.json`. Host-tested,
   in the PC simulator (the real `zbz_panel` over virtual devices, `host/ui_preview/host_zigbee_real.c`)
   and the UI preview; not yet with a real sensor (BL-036).
-- The pages: the touchscreen's Installer > Zigbee (`ui_zigbee.c`, drawn in
+- The pages: the touchscreen's Setup > Zigbee (`ui_zigbee.c`, drawn in
   `docs/features/07-UI-LVGL-Pro/mockup/screens/zigbee.js`; the radio, the devices, adding with and
   without an install code, a device's page, removing, the radio's details, the channel, the reset,
   sirens, keypads and fobs) and the Panel Manager's Zigbee pages (`web_zigbee.c`,
@@ -175,7 +175,7 @@ Zigbee as the first-class wireless source on the P4 + ESP32-H2 RCP is recorded a
 | ID | Requirement | Verified by |
 |---|---|---|
 | ZB-001 | Zigbee 3.0 coordinator and trust center on the P4 with an ESP32-H2 RCP on a UART; the panel updates the RCP firmware | HIL |
-| ZB-002 | Pairing only in a learn window opened from the zone editor (installer mode), 3 minutes, install codes supported; permit-join closes afterwards | HIL, preview |
+| ZB-002 | Pairing only in a learn window opened from the zone editor (Setup mode), 3 minutes, install codes supported; permit-join closes afterwards | HIL, preview |
 | ZB-003 | IAS Zone devices are enrolled (CIE address, enroll response, retried in sleepy devices' wake windows); status bits map to FAULT / RESTORE / TAMPER / LOW_BATTERY; the IAS zone type suggests the zone type (docs/features/22 defaults) | host tests (mapping), HIL |
 | ZB-004 | Also supported: On/Off and Occupancy Sensing clusters (contacts and motion that don't use IAS), Temperature Measurement (freeze zones), Power Configuration (battery %) | host tests, HIL |
 | ZB-005 | Supervision: periodic IAS reports or Poll Control check-ins count as check-ins; a device silent past the zone's supervision time, or gone from the network, is CHECK (ZSRC-007); the radio itself not answering is the `sensor_radio` trouble | HIL |
@@ -189,7 +189,7 @@ Zigbee as the first-class wireless source on the P4 + ESP32-H2 RCP is recorded a
 | ZB-013 | Remove asks a device to leave and says whether it answered; Forget removes a gone or broken device without its answer; Replace gives a new device the old one's zones; each lists the zones that now need a sensor (devices.md §6) | host tests (`zbz_panel`: Remove and Replace under the binding gate, armed meanwhile refused - ZB21, RF32), preview, HIL |
 | ZB-014 | Identify makes the device blink or beep itself (never the panel's screen); "Check it now" asks a listening device at once and a sleepy one at its next wake-up | host tests, HIL |
 | ZB-015 | Install codes on the touchscreen and in the Panel Manager (typed, or scanned there): length and CRC checked, given to the trust center, listed (address, added when; the code never shown again), kept until their device joins with them, forgotten on request; optional - any Zigbee 3.0 device may join in the window without one (devices.md §8) | host tests, preview, Panel Manager tests, HIL |
-| ZB-016 | The channel (11, 15, 20, 25) chosen by the installer with the quietest of the latest survey marked, after a warning that sleeping devices move at their next check-in and some may need adding again; stored; installer mode with every partition disarmed | host tests, HIL |
+| ZB-016 | The channel (11, 15, 20, 25) chosen by the installer with the quietest of the latest survey marked, after a warning that sleeping devices move at their next check-in and some may need adding again; stored; Setup mode with every partition disarmed | host tests, HIL |
 | ZB-017 | Reset the Zigbee network: two confirmations and the Admin code again; every device must be added again; logged | host tests, preview, HIL |
 | ZB-018 | The radio page: state (and why it is paused), the radio's firmware version, channel, PAN id, extended PAN id, the panel's Zigbee address, background noise, the restart guard's count; Restart the radio; Try again when paused | preview, HIL |
 | ZB-019 | Events in the log: added (and how it joined), removed, forgotten, left by itself, replaced, a stranger refused, channel changed, network reset, radio restarted - appended event types with stable names and sentences (devices.md §11) | host tests (golden names) |
@@ -200,7 +200,7 @@ Zigbee as the first-class wireless source on the P4 + ESP32-H2 RCP is recorded a
 | ZB-024 | Zigbee keypads and key fobs (IAS ACE) arm and disarm a chosen partition: codes always checked by the engine through the alarm task, the five-wrong-codes lockout applies, the panel's state shown on the keypad, its emergency buttons only as allowed; a fob acts as its user, may disarm only when the installer turned that on (off by default), its panic button off by default (alarm-devices.md §3) | host tests (golden frames, policy tables), HIL |
 | ZB-025 | The Panel Manager's Zigbee page: the radio, the devices, adding (with install codes typed or scanned), each device's actions and the radio details, following the operation each second (`/api/v1/zigbee`, devices.md §14) | Panel Manager tests, HIL |
 | ZB-026 | MQTT diagnostics: the Zigbee radio's state and counts as a retained topic and a diagnostic entity, and each Zigbee zone's battery and signal; additive keys with golden payloads (devices.md §15) | host tests (golden payloads) |
-| ZB-027 | The touchscreen's Zigbee pages in installer mode (the installer menu row, the Zigbee page, adding with and without an install code, the device page, removing, radio details, channel, reset, codes waiting, the zone editor hand-off, the zone page's device row, the trouble's link, and the siren, keypad and fob pages), hidden when the panel has no Zigbee (devices.md §9) | host tests (contract), preview |
+| ZB-027 | The touchscreen's Zigbee pages in Setup mode (the installer menu row, the Zigbee page, adding with and without an install code, the device page, removing, radio details, channel, reset, codes waiting, the zone editor hand-off, the zone page's device row, the trouble's link, and the siren, keypad and fob pages), hidden when the panel has no Zigbee (devices.md §9) | host tests (contract), preview |
 | ZB-028 | **The newest state wins** (B020): every zone status notification is followed at once, in order, so an opening that lasted a moment is told to the engine (on an armed partition, an alarm). Two changes of a device's alarm bits within `ZSRC_ZB_BURST_MS` (3 s) are a burst - a magnet bouncing, which may leave out its last change: once the device has been quiet for `ZSRC_ZB_REREAD_MS` (1 s) the panel reads its zoneStatus, and the answer wins. Unanswered within `ZSRC_ZB_REREAD_WAIT_MS` (10 s), it is asked again at the device's next frame (a router at once), twice in all. A plain change, a repeated status or an unbound device is never read. No dedupe by ZCL sequence number: a repeat changes nothing, and a lost change is worse than a repeated one | `test_zigbee.c` (`test_a_burst_is_read_again_and_the_answer_wins`, `test_a_plain_change_is_not_read_again`, `test_an_unanswered_reread_is_asked_at_the_next_frame`, `test_a_momentary_opening_while_armed_counts`), bench |
 
 ## Design
@@ -424,7 +424,7 @@ and recorded devices ([testing.md](testing.md)), then the service, the pages and
   the file in `po/MARKED`, WAKE1 reworded to read after a colon). Meanwhile the Panel Manager shows
   them as they come in English and, in another language, their translation under "wake up" once
   the catalog has one, else its own sentence - never an English clause in a translated page.
-- Kept as built: outside installer mode the sensor radio trouble still opens the locked Installer
+- Kept as built: outside Setup mode the sensor radio trouble still opens the locked Installer
   page ("Tap to see the radio", page 13): the person at the panel is often the installer, who types
   the code there and the Zigbee page follows.
 

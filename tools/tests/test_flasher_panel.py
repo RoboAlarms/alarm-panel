@@ -370,7 +370,7 @@ class ResetGateTests(unittest.TestCase):
         seen_idle = d.probe
         self.c.console_open("COM6")
         dev = self.world.devices["COM6"]
-        expected = {"armed": "armed", "installer": "installer mode", "probation": "probation",
+        expected = {"armed": "armed", "installer": "Setup mode", "probation": "probation",
                     "confirm": "probation", "silent": "did not answer"}
         for state, words in expected.items():
             self.state["COM6"] = state

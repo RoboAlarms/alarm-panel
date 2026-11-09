@@ -1929,7 +1929,7 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_app.c
 #: components/ui/alarm_ui/src/ui_installer.c
 #: components/ui/alarm_ui/src/ui_status.c
-msgid "Installer mode"
+msgid "Setup mode"
 msgstr ""
 
 #. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
@@ -1939,22 +1939,17 @@ msgstr ""
 
 #. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
 #: components/core/notify/src/notify_words.c
-msgid "Opened with the installer code"
+msgid "Opened with the master or Admin code"
 msgstr ""
 
 #. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
 #: components/core/notify/src/notify_words.c
-msgid "Installer mode ended"
+msgid "Setup mode ended"
 msgstr ""
 
 #. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
 #: components/core/notify/src/notify_words.c
 msgid "After 15 minutes without activity"
-msgstr ""
-
-#. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
-#: components/core/notify/src/notify_words.c
-msgid "The installer left"
 msgstr ""
 
 #. An event in the Activity list (title, and the line under it), and in a phone notification. A title is at most 63 bytes, the line under it 95. {0} is a household name (cut to 23 bytes).
@@ -4483,11 +4478,11 @@ msgid "Nothing changed."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Installer mode is open at the panel"
+msgid "Setup mode is open at the panel"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Changes from this browser wait until installer mode is closed on the keypad."
+msgid "Changes from this browser wait until Setup mode is closed on the keypad."
 msgstr ""
 
 #. Settings > Automations, "Armed how?": the arming levels, as the arming buttons say them. At most 47 bytes each
@@ -8955,7 +8950,7 @@ msgid "Installer recovery after power-up"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "For a short time after power-up, installer mode opens without a code."
+msgid "For a short time after power-up, Setup mode opens without a code."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9024,7 +9019,7 @@ msgid "Browser access (this Panel Manager)"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Off closes this page for everyone. Turn it back on at the panel, under Settings > About > Installer."
+msgid "Off closes this page for everyone. Turn it back on at the panel, under Settings > About > Setup."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9060,7 +9055,7 @@ msgid "Master and Admin codes"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Sets the Admin code or the system master’s code without the old one, as Installer > Master and Admin codes does at the panel. Everyone’s code, the Admin code too, also changes on People and codes."
+msgid "Sets the Admin code or the system master’s code without the old one, as Setup > Master and Admin codes does at the panel. Everyone’s code, the Admin code too, also changes on People and codes."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9124,7 +9119,7 @@ msgid "Browser access is off"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Turn it back on at the panel: Settings > About > Installer."
+msgid "Turn it back on at the panel: Settings > About > Setup."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -9477,11 +9472,11 @@ msgid "Installer mode is on"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "It installs once installer mode is off"
+msgid "It installs once Setup mode is off"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Leave installer mode and the panel restarts to install it."
+msgid "Leave Setup mode and the panel restarts to install it."
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
@@ -16187,7 +16182,7 @@ msgstr ""
 
 #. Home, the card on the right: this keypad is in installer mode, or another one is. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_app.c
-msgid "Tap to finish and leave installer mode"
+msgid "Tap to finish and leave Setup mode"
 msgstr ""
 
 #. Home, the card on the right: this keypad is in installer mode, or another one is. At most 127 bytes
@@ -16679,7 +16674,7 @@ msgstr ""
 #. a toast; the last "Installer" is the Settings section of that name
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_app.c
-msgid "Remote access is off. The installer turns it back on in Installer"
+msgid "Remote access is off. The installer turns it back on in Setup"
 msgstr ""
 
 #. a toast; the last "Installer" is the Settings section of that name
@@ -18866,7 +18861,7 @@ msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Installer mode without a code: set a new master code"
+msgid "Setup mode without a code: set a new master code"
 msgstr ""
 
 #. The code pad's hint line. At most 127 bytes.
@@ -18887,7 +18882,7 @@ msgstr ""
 
 #. A confirmation sheet. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Open installer mode without the code?"
+msgid "Open Setup mode without the code?"
 msgstr ""
 
 #. A confirmation sheet. At most 127 bytes.
@@ -18897,7 +18892,7 @@ msgstr ""
 
 #. A confirmation sheet. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Open installer mode"
+msgid "Open Setup mode"
 msgstr ""
 
 #. the toasts below say why the installer's changes were not saved; {0} is a number
@@ -18987,12 +18982,12 @@ msgstr ""
 
 #. A toast (one line over the screen). At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Installer mode ended · arming is on again"
+msgid "Setup mode ended · arming is on again"
 msgstr ""
 
 #. the line under the page title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Installer settings change how the alarm works"
+msgid "Setup changes how the alarm works"
 msgstr ""
 
 #. a locked page, a row; {0} is the seconds left. At most 70 bytes
@@ -19127,7 +19122,7 @@ msgstr ""
 #. the Installer menu's walk test row and the line under it (docs/features/40)
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Leaves installer mode and starts one"
+msgid "Leaves Setup mode and starts one"
 msgstr ""
 
 #. A list row's title (one line; a long one ends in ...).
@@ -19147,7 +19142,7 @@ msgstr ""
 
 #. A button row's text (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Leave installer mode"
+msgid "Leave Setup mode"
 msgstr ""
 
 #. the line under the page title. At most 127 bytes
@@ -19396,7 +19391,7 @@ msgstr ""
 
 #. A switch row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "For two minutes after power-up, Installer opens without a code to set a new master code. When off, a lost master code can't be recovered"
+msgid "For two minutes after power-up, Setup opens without a code to set a new master code. When off, a lost master code can't be recovered"
 msgstr ""
 
 #. A number row's title (one line).
@@ -19780,7 +19775,7 @@ msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_installer.c
-msgid "Unplug the panel for ten seconds. For two minutes after it starts, Installer opens without a code to set a new master code (unless the owner turned that off)."
+msgid "Unplug the panel for ten seconds. For two minutes after it starts, Setup opens without a code to set a new master code (unless the owner turned that off)."
 msgstr ""
 
 #. The MQTT row's state in the Integrations list. At most 63 bytes
@@ -20163,7 +20158,7 @@ msgstr ""
 
 #. A list row's value, at its right end (keep it short).
 #: components/ui/alarm_ui/src/ui_integrations.c
-msgid "Not needed (installer setting)"
+msgid "Not needed (Setup setting)"
 msgstr ""
 
 #. A list row's value, at its right end (keep it short).
@@ -20371,7 +20366,7 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Only in installer mode, with everything disarmed"
+msgid "Only in Setup mode, with everything disarmed"
 msgstr ""
 
 #. a toast, why the Zigbee radio refused a request
@@ -20598,7 +20593,7 @@ msgstr ""
 #: components/ui/alarm_ui/src/ui_link.c
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Not started: only in installer mode, with everything disarmed."
+msgid "Not started: only in Setup mode, with everything disarmed."
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
@@ -20696,7 +20691,7 @@ msgstr ""
 
 #. A Settings page: the line under its title. At most 127 bytes.
 #: components/ui/alarm_ui/src/ui_link.c
-msgid "Installer · Partition settings"
+msgid "Setup · Partition settings"
 msgstr ""
 
 #. a keypad's page once it is no longer paired (removed meanwhile)
@@ -24029,7 +24024,7 @@ msgstr ""
 
 #. Software update, waiting for the restart: what ends the wait; each is joined with a middle dot to the reason. At most 47 bytes
 #: components/ui/alarm_ui/src/ui_update.c
-msgid "Installs once installer mode is off"
+msgid "Installs once Setup mode is off"
 msgstr ""
 
 #. the line under it. At most 111 bytes
@@ -24050,7 +24045,7 @@ msgid "Installs within 30 seconds"
 msgstr ""
 
 #: components/ui/alarm_ui/src/ui_update.c
-msgid "Leave installer mode and the panel restarts to install it. It takes about a minute."
+msgid "Leave Setup mode and the panel restarts to install it. It takes about a minute."
 msgstr ""
 
 #: components/ui/alarm_ui/src/ui_update.c
@@ -24702,7 +24697,7 @@ msgstr ""
 
 #. a toast when Start is pressed in installer mode. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_walk.c
-msgid "Leave installer mode first"
+msgid "Leave Setup mode first"
 msgstr ""
 
 #. a toast when Start is pressed while the partition is armed. At most 127 bytes
@@ -24717,7 +24712,7 @@ msgstr ""
 
 #. a toast when the installer menu's Walk test left installer mode and the start was then refused; {0} is the reason, a sentence (up to 90 bytes). At most 127 bytes
 #: components/ui/alarm_ui/src/ui_walk.c
-msgid "Installer mode ended · {0}"
+msgid "Setup mode ended · {0}"
 msgstr ""
 
 #. the question when End is pressed during a walk test (Home's card or its page), its explanation, and its two buttons. At most 127 bytes each
@@ -25685,7 +25680,7 @@ msgstr ""
 #. a paragraph on the Zigbee page outside installer mode
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_zigbee.c
-msgid "Adding, removing and changing Zigbee devices is done in installer mode."
+msgid "Adding, removing and changing Zigbee devices is done in Setup mode."
 msgstr ""
 
 #. under "Add a device" on the Zigbee page
@@ -25959,7 +25954,7 @@ msgstr ""
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Adding a device is done in installer mode."
+msgid "Adding a device is done in Setup mode."
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
@@ -26757,7 +26752,7 @@ msgstr ""
 #. a paragraph on the Remove a device page, for someone who is not in installer mode
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Removing a device is done in installer mode."
+msgid "Removing a device is done in Setup mode."
 msgstr ""
 
 #. a paragraph on the remove page when nothing runs
@@ -26811,7 +26806,7 @@ msgstr ""
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_zigbee.c
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Done in installer mode"
+msgid "Done in Setup mode"
 msgstr ""
 
 #. A list row's detail line, under its title (one line).
@@ -27282,7 +27277,7 @@ msgstr ""
 
 #. a paragraph on the Z-Wave region page, for someone who is not in installer mode
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Changing the region is done in installer mode."
+msgid "Changing the region is done in Setup mode."
 msgstr ""
 
 #. a row or paragraph on a Z-Wave page
@@ -27610,7 +27605,7 @@ msgstr ""
 #. a row or paragraph on a Z-Wave page
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Adding and removing devices is done in installer mode."
+msgid "Adding and removing devices is done in Setup mode."
 msgstr ""
 
 #. under a sleeping device's "Checks in" row. At most 79 bytes
@@ -28613,7 +28608,7 @@ msgstr ""
 
 #. a paragraph on the Z-Wave radio's page
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Disarm every partition, in installer mode, then try again."
+msgid "Disarm every partition, in Setup mode, then try again."
 msgstr ""
 
 #. a paragraph on the Z-Wave radio's page
@@ -29148,7 +29143,7 @@ msgid "That code can't join by itself: add it with its PIN"
 msgstr ""
 
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Only in installer mode"
+msgid "Only in Setup mode"
 msgstr ""
 
 #: components/ui/alarm_ui/src/ui_zwave.c
@@ -29176,7 +29171,7 @@ msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Registering a sensor is done in installer mode."
+msgid "Registering a sensor is done in Setup mode."
 msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
@@ -29246,7 +29241,7 @@ msgstr ""
 
 #. An explanation under a group of rows (wraps over several lines).
 #: components/ui/alarm_ui/src/ui_zwave.c
-msgid "Changing it is done in installer mode."
+msgid "Changing it is done in Setup mode."
 msgstr ""
 
 #. A button row's text (one line).
@@ -29386,7 +29381,7 @@ msgstr ""
 
 #. Text from the layout XML, no context.
 #: components/ui/alarm_ui/layouts/1024x600/alarm_ui/screens/screen_main.xml
-msgid "Installer · Arming off · Tap to leave"
+msgid "Setup · Arming off · Tap to leave"
 msgstr ""
 
 #. Text from the layout XML, no context.
@@ -30489,8 +30484,8 @@ msgstr ""
 
 #. the line under the page title. At most 127 bytes
 #: components/ui/alarm_ui/src/ui_installer.c
-#~ msgid "Installer mode · arming is off until you leave"
-#~ msgstr ""
+#~ msgid "Setup mode · arming is off until you leave"
+msgstr ""
 
 #. A list row's detail line, under its title (one line).
 #: components/ui/alarm_ui/src/ui_installer.c

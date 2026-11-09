@@ -1861,7 +1861,7 @@ async function apiPost(p, s, body, res) {
   if (p === 'alarm') {
     const why = needInstaller(s);
     if (why) return fail(why, 403);
-    if (body.revision !== alarm.revision) return fail('Configuration changed or installer mode is already occupied; reload');
+    if (body.revision !== alarm.revision) return fail('Configuration changed or Setup mode is already occupied; reload');
     const c = body.changes || {};
     if (keypadState.busy) return fail('Finish pairing first');
     if ((c.devices || []).some(d => keypadState.keypads.some(k => k.number === d.number))) return fail('Edit paired keypads in their popup');

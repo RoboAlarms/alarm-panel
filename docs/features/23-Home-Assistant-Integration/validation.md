@@ -94,7 +94,7 @@ git-ignored `build/bl027/`.
   ended the flow `pair_rejected` with nothing added; a second pairing with **Allow** created the
   entry and the panel reported "connected".
 - Entities: the alarm panel (disarmed, numeric code, arm home/away/night), eight zones each with
-  tamper, low-battery and supervision sensors, AC power, trouble, installer mode, chime switch,
+  tamper, low-battery and supervision sensors, AC power, trouble, Setup mode, chime switch,
   exit-restart button, event, uptime, Wi-Fi signal and firmware update.
 - Zone events from the panel's simulator: open, close, tamper and low battery in Home Assistant
   as soon as the console command returned; supervision after the panel's 58 s grace for a
@@ -110,7 +110,7 @@ git-ignored `build/bl027/`.
 
 - The code steps (arm away and home with a real code, a wrong code, an entry alarm,
   duress) - a script asks for the codes and never shows them.
-- A zone bound to the shared door at the panel's picker (installer mode), following it and
+- A zone bound to the shared door at the panel's picker (Setup mode), following it and
   going to CHECK when it turns unavailable; the zone set back to Not used.
 - The factory-reset repair (it erases the panel's Wi-Fi too) and discovery on a real
   home network (Docker Desktop's network doesn't carry mDNS from the LAN).
@@ -146,7 +146,7 @@ every state change, service call and panel event.
 
 ## Passed on the panel
 - Pairing by address: the same code on both screens, Allow, the entry created; the panel's eight
-  zones (each with tamper, battery and supervision), trouble, AC power, installer mode, chime,
+  zones (each with tamper, battery and supervision), trouble, AC power, Setup mode, chime,
   exit restart, event, uptime and Wi-Fi signal as entities.
 - Devices, panel to Home Assistant (the console's `devices act` and taps on Smart Home): lights
   on, off and to 30 %; switches on, off and toggled; an input boolean; locks unlocked and locked
@@ -202,7 +202,7 @@ every state change, service call and panel event.
   and removed, the factory-reset repair and discovery on a home network (BL-027).
 - An unlock or an opening with a code typed at the touchscreen (a remote session can't type
   one): someone at the panel (BL-045).
-- A Home Assistant sensor bound at the touchscreen's picker (installer mode) (BL-027).
+- A Home Assistant sensor bound at the touchscreen's picker (Setup mode) (BL-027).
 
 # The bench's fixes on the same panel, part 3 — 2026-10-06
 

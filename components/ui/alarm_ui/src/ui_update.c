@@ -289,7 +289,7 @@ static const char *wait_ends(int why)
     switch (why) {
     /* TR: Software update, waiting for the restart: what ends the wait; each is joined with a
      * middle dot to the reason. At most 47 bytes */
-    case WHY_INSTALLER: return TR("Installs once installer mode is off");
+    case WHY_INSTALLER: return TR("Installs once Setup mode is off");
     case WHY_ARMED: return TR("Installs once everything is disarmed");
     case WHY_ALARM: return TR("Installs once the alarm is silenced");
     case WHY_WALK: return TR("Installs once the walk test ends");
@@ -304,7 +304,7 @@ static const char *wait_paragraph(int why)
     /* TR: Software update, the paragraph under Stop while the update waits to restart. At most
      * 111 bytes */
     case WHY_INSTALLER:
-        return TR("Leave installer mode and the panel restarts to install it. It takes about a minute.");
+        return TR("Leave Setup mode and the panel restarts to install it. It takes about a minute.");
     case WHY_ARMED:
         return TR("Disarm everything and the panel restarts to install it. It takes about a minute.");
     case WHY_ALARM:

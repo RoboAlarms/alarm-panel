@@ -105,8 +105,8 @@ each siren kind's trouble ------------------> alarm_service_bell_trouble(owner) 
   after the supervision time: older firmware skips it as a later field, the frozen
   `wd_fixture_v2.h`), and a Panel Manager page that doesn't send it keeps what the siren has.
 - **Screens** (approved 2026-10-20; the mockup's `screens/sirens.js`, `ui_sirens.c`):
-  Installer > Sirens and outputs (every siren), a wired output's page, a 433 MHz siren's page and
-  its pairing, Installer > 433 MHz (receiver, transmitter, sensors, sirens), and the siren rows of a
+  Setup > Sirens and outputs (every siren), a wired output's page, a 433 MHz siren's page and
+  its pairing, Setup > 433 MHz (receiver, transmitter, sensors, sirens), and the siren rows of a
   Z-Wave siren's device page (`ui_zwave.c`).
 - **Console:** `out` (wired and 433 MHz; `out wired <n> auto <gpio> [low] [name <words>]`, `out
   wired <n> on|off` for an output for automations), `rf send`, `rf txpin`, `zwave siren`.

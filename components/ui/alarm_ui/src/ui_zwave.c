@@ -69,7 +69,7 @@ static const char *request_refused(ui_zw_req_result_t r)
 {
     switch (r) {
     /* TR: a toast, why the Z-Wave radio refused a request */
-    case UI_ZW_REQ_NOT_ALLOWED: return TR("Only in installer mode, with everything disarmed");
+    case UI_ZW_REQ_NOT_ALLOWED: return TR("Only in Setup mode, with everything disarmed");
     /* TR: a toast, why the Z-Wave radio refused a request */
     case UI_ZW_REQ_BUSY: return TR("The radio is busy: try again when it's done");
     /* TR: a toast, why the Z-Wave radio refused a request */
@@ -92,7 +92,7 @@ static const char *request_not_started(ui_zw_req_result_t r)
     /* TR: a paragraph on the Add or Remove page, why nothing started */
     case UI_ZW_REQ_NOT_ALLOWED:
         /* TR: a paragraph on the Add or Remove page, why nothing started */
-        return TR("Not started: only in installer mode, with everything disarmed.");
+        return TR("Not started: only in Setup mode, with everything disarmed.");
     /* TR: a paragraph on the Add or Remove page, why nothing started */
     case UI_ZW_REQ_BUSY: return TR("Not started: the radio is busy: try again when it's done.");
     /* TR: a paragraph on the Add or Remove page, why nothing started */
@@ -493,11 +493,11 @@ static void locked_paragraph(lv_obj_t *body, locked_what_t what)
     const char *text;
     switch (what) {
     /* TR: a paragraph on the Add a device page, for someone who is not in installer mode */
-    case LOCKED_ADD: text = TR("Adding a device is done in installer mode."); break;
+    case LOCKED_ADD: text = TR("Adding a device is done in Setup mode."); break;
     /* TR: a paragraph on the Remove a device page, for someone who is not in installer mode */
-    case LOCKED_REMOVE: text = TR("Removing a device is done in installer mode."); break;
+    case LOCKED_REMOVE: text = TR("Removing a device is done in Setup mode."); break;
     /* TR: a paragraph on the Z-Wave region page, for someone who is not in installer mode */
-    default: text = TR("Changing the region is done in installer mode."); break;
+    default: text = TR("Changing the region is done in Setup mode."); break;
     }
     ui_paragraph(body, text, ui_tone_gray());
 }
@@ -1619,7 +1619,7 @@ static void build_network(int32_t arg, lv_obj_t *body, char *title, size_t tlen,
         set_words(reset, "title_label", TR("Reset the Z-Wave network"), ui_tone_red());
     } else {
         /* TR: a row or paragraph on a Z-Wave page */
-        ui_paragraph(body, TR("Adding and removing devices is done in installer mode."),
+        ui_paragraph(body, TR("Adding and removing devices is done in Setup mode."),
                      ui_tone_gray());
     }
     /* The device rows last: their bindings can then be dropped and made again on their own. */
@@ -4317,7 +4317,7 @@ static const char *sd_words(uint8_t st)
     /* TR: a paragraph on the Z-Wave radio's page */
     case UI_ZW_SD_REFUSED: return TR("The file isn't one for this radio. It keeps its software.");
     /* TR: a paragraph on the Z-Wave radio's page */
-    case UI_ZW_SD_NOT_ALLOWED: return TR("Disarm every partition, in installer mode, then try again.");
+    case UI_ZW_SD_NOT_ALLOWED: return TR("Disarm every partition, in Setup mode, then try again.");
     /* TR: a paragraph on the Z-Wave radio's page */
     case UI_ZW_SD_BUSY: return TR("The radio is busy: try again when it's done.");
     default: return NULL;
@@ -4420,7 +4420,7 @@ static void radio_software_rows(lv_obj_t *body, const ui_zw_status_t *st)
     }
     if (!installer()) {
         ui_row_link(body, UI_ICON_REFRESH, ui_tone_gray(), TR("Check for an update"),
-                    TR("Done in installer mode"), NULL, NULL, NULL, NULL);
+                    TR("Done in Setup mode"), NULL, NULL, NULL, NULL);
         return;
     }
     switch (st->radio_fw_check) {
@@ -4539,7 +4539,7 @@ static void build_radio(int32_t arg, lv_obj_t *body, char *title, size_t tlen, c
                     UI_ICON_CHEVRON_RIGHT, restart_row_tap, NULL);
     } else {
         ui_row_link(body, UI_ICON_ROTATE_CCW, ui_tone_gray(), TR("Restart the radio"),
-                    TR("Done in installer mode"), NULL, NULL, NULL, NULL);
+                    TR("Done in Setup mode"), NULL, NULL, NULL, NULL);
     }
     if (st.update_advised) {
         ui_paragraph(body, TR("Its Z-Wave software is older than the panel wants: update it."),
@@ -5732,7 +5732,7 @@ static const char *smart_refused(ui_zw_prov_result_t r)
     case UI_ZW_PROV_CHECKSUM: return TR("That code is damaged: scan or type it again");
     case UI_ZW_PROV_FULL: return TR("32 sensors are registered: forget one first");
     case UI_ZW_PROV_S2_ONLY: return TR("That code can't join by itself: add it with its PIN");
-    case UI_ZW_PROV_NOT_ALLOWED: return TR("Only in installer mode");
+    case UI_ZW_PROV_NOT_ALLOWED: return TR("Only in Setup mode");
     case UI_ZW_PROV_JOINED_ALREADY: return TR("That device is in the network already");
     default: return TR("It's no longer registered");
     }
@@ -5809,7 +5809,7 @@ static void build_smart(int32_t arg, lv_obj_t *body, char *title, size_t tlen, c
                     TR("Type its 40-digit key, or scan it with a phone"), NULL, UI_ICON_CHEVRON_RIGHT,
                     smart_register, NULL);
     } else {
-        ui_paragraph(body, TR("Registering a sensor is done in installer mode."), ui_tone_gray());
+        ui_paragraph(body, TR("Registering a sensor is done in Setup mode."), ui_tone_gray());
     }
     ui_paragraph(body,
                  TR("A registered sensor joins by itself when it is powered, secured with S2: no "
@@ -5949,7 +5949,7 @@ static void build_smart_entry(int32_t arg, lv_obj_t *body, char *title, size_t t
         ui_paragraph(body, TR("It joined without S2 security."), ui_tone_gray());
     }
     if (!can) {
-        ui_paragraph(body, TR("Changing it is done in installer mode."), ui_tone_gray());
+        ui_paragraph(body, TR("Changing it is done in Setup mode."), ui_tone_gray());
         return;
     }
     if (e->state == UI_ZW_PROV_OFF || e->state == UI_ZW_PROV_STOPPED) {

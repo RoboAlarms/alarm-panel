@@ -33,7 +33,7 @@ A recorded compound such as Living room counts as one entry. Repeated entries ar
 
 ## The touchscreen editor
 
-**Decision (D03):** Add Spoken name immediately after Name in Installer > Zones > zone. Use existing sheets and submitted search; build no new visual component or drag control.
+**Decision (D03):** Add Spoken name immediately after Name in Setup > Zones > zone. Use existing sheets and submitted search; build no new visual component or drag control.
 
 *Why:* ui_form_sheet_open, ui_pick_sheet and the sensor-search pattern already supply the necessary controls. Categories contain at most 84 current entries, below the picker’s 128-row limit. Feature 14 explicitly reserves zone-word assignment for installer programming.
 
@@ -208,7 +208,7 @@ Uploads require bounded Content-Length and at most 970752 bytes in PSRAM. Flash 
 
 At boot, after the alarm and tone path are running, read primary through the broker, verify it and copy the complete signed blob to PSRAM. Playback holds no flash mapping and needs no SD or network. Maintain one active immutable copy; replacement may temporarily hold two copies. Stop/cancel the worker, swap by generation, and free the retired copy after decoder/UI leases end. Do not adopt language packs’ append-only eight-load lifetime. Failure leaves tones and stored recipes available.
 
-On a bench panel the tester uses the normal CrowPanel v1 build with -Profile dev, without -ChipRev v3; installs the signed draft pack through the enrolled dev link or Panel Manager; approves zone recipes; leaves installer mode; explicitly enables Announcements; and turns speaker on only when ready to hear it. Every build retains the existing dev silence work and its NVS value. 
+On a bench panel the tester uses the normal CrowPanel v1 build with -Profile dev, without -ChipRev v3; installs the signed draft pack through the enrolled dev link or Panel Manager; approves zone recipes; leaves Setup mode; explicitly enables Announcements; and turns speaker on only when ready to hear it. Every build retains the existing dev silence work and its NVS value. 
 
 Create separate follow-up rows for Flasher initial-install/update bundle support and release-manifest voice download/selection. Ordinary firmware updates preserve the installed voice blob.
 

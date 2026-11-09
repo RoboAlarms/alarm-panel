@@ -169,7 +169,7 @@ its reserved bytes, and the build asserts its size and field offsets.
 | Platform | Entities |
 |---|---|
 | `alarm_control_panel` | one per partition (Home / Away / Night, code format number, arming without a code only if the panel allows it) |
-| `binary_sensor` | per zone: open (device class from the zone), plus diagnostic tamper, low battery, supervision (CHECK); panel: trouble (problem), AC power, installer mode |
+| `binary_sensor` | per zone: open (device class from the zone), plus diagnostic tamper, low battery, supervision (CHECK); panel: trouble (problem), AC power, Setup mode |
 | `sensor` | per zone: battery %, signal (when the source reports them, e.g. Zigbee); panel: Wi-Fi signal, uptime (diagnostic) |
 | `switch` | chime per partition |
 | `button` | exit restart per partition |

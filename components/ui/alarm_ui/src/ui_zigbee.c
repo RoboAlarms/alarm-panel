@@ -107,7 +107,7 @@ static const char *refused_words(ui_zb_req_result_t r)
 {
     switch (r) {
     /* TR: a toast, why the Zigbee radio refused a request */
-    case UI_ZB_REQ_NOT_ALLOWED: return TR("Only in installer mode, with everything disarmed");
+    case UI_ZB_REQ_NOT_ALLOWED: return TR("Only in Setup mode, with everything disarmed");
     /* TR: a toast, why the Zigbee radio refused a request */
     case UI_ZB_REQ_BUSY: return TR("The radio is busy: try again when it's done");
     /* TR: a toast, why the Zigbee radio refused a request */
@@ -129,7 +129,7 @@ static const char *not_started_words(ui_zb_req_result_t r)
     switch (r) {
     case UI_ZB_REQ_NOT_ALLOWED:
         /* TR: a paragraph on the Add page, why nothing started */
-        return TR("Not started: only in installer mode, with everything disarmed.");
+        return TR("Not started: only in Setup mode, with everything disarmed.");
     /* TR: a paragraph on the Add page, why nothing started */
     case UI_ZB_REQ_BUSY: return TR("Not started: the radio is busy: try again when it's done.");
     /* TR: a paragraph on the Add page, why nothing started */
@@ -1199,7 +1199,7 @@ static void build_network(int32_t arg, lv_obj_t *body, char *title, size_t tlen,
     if (!can) {
         ui_paragraph(body,
                      /* TR: a paragraph on the Zigbee page outside installer mode */
-                     TR("Adding, removing and changing Zigbee devices is done in installer mode."),
+                     TR("Adding, removing and changing Zigbee devices is done in Setup mode."),
                      ui_tone_gray());
     }
     action_row(body, UI_ICON_PLUS, ui_tone_green(), TR("Add a device"),
@@ -1834,7 +1834,7 @@ static void build_add(int32_t arg, lv_obj_t *body, char *title, size_t tlen, cha
     }
     if (!installer()) {
         /* TR: a paragraph on the Add a device page, for someone who is not in installer mode */
-        ui_paragraph(body, TR("Adding a device is done in installer mode."), ui_tone_gray());
+        ui_paragraph(body, TR("Adding a device is done in Setup mode."), ui_tone_gray());
         return;
     }
     ui_zb_progress_t p;
@@ -1949,7 +1949,7 @@ static void build_added(int32_t arg, lv_obj_t *body, char *title, size_t tlen, c
         return;
     }
     if (!installer()) {
-        ui_paragraph(body, TR("Adding a device is done in installer mode."), ui_tone_gray());
+        ui_paragraph(body, TR("Adding a device is done in Setup mode."), ui_tone_gray());
         return;
     }
     /* TR: a section heading on the Added page */
@@ -3966,7 +3966,7 @@ static void build_code(int32_t arg, lv_obj_t *body, char *title, size_t tlen, ch
         return;
     }
     if (!installer()) {
-        ui_paragraph(body, TR("Adding a device is done in installer mode."), ui_tone_gray());
+        ui_paragraph(body, TR("Adding a device is done in Setup mode."), ui_tone_gray());
         return;
     }
     uint64_t ieee;
@@ -4472,7 +4472,7 @@ static void build_remove(int32_t arg, lv_obj_t *body, char *title, size_t tlen, 
     I18N_FORMAT(title, tlen, TR("Remove {0}"), s_rm.name);
     if (!installer()) {
         /* TR: a paragraph on the remove page outside installer mode */
-        ui_paragraph(body, TR("Removing a device is done in installer mode."), ui_tone_gray());
+        ui_paragraph(body, TR("Removing a device is done in Setup mode."), ui_tone_gray());
         return;
     }
     ui_zb_progress_t p;
@@ -4661,7 +4661,7 @@ static void build_radio(int32_t arg, lv_obj_t *body, char *title, size_t tlen, c
     s_radio.restarts = ui_row_value(body, TR("Panel restarts it caused"), text);
     if (!installer()) {
         ui_row_link(body, UI_ICON_REFRESH, ui_tone_gray(), TR("Restart the radio"),
-                    TR("Done in installer mode"), NULL, NULL, NULL, NULL);
+                    TR("Done in Setup mode"), NULL, NULL, NULL, NULL);
     } else if (st.radio == UI_ZB_RADIO_PAUSED) {
         ui_row_action(body, UI_ICON_REFRESH, TR("Try again"), ui_tone_blue(), retry_radio, NULL);
     } else {

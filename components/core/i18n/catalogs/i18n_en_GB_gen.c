@@ -8,43 +8,43 @@
 extern const i18n_catalog_t i18n_catalog_en_GB;
 
 static const i18n_entry_t entries[] = {
-    {0x09018abfu, 423u | I18N_ENTRY_WEB},
-    {0x0b984865u, 556u},
-    {0x14ac18c9u, 1100u},
-    {0x1cf6dcbcu, 535u},
-    {0x23fff466u, 1122u},
-    {0x26bc3c42u, 1125u | I18N_ENTRY_WEB},
+    {0x09018abfu, 468u | I18N_ENTRY_WEB},
+    {0x0b984865u, 601u},
+    {0x14ac18c9u, 1145u},
+    {0x1cf6dcbcu, 580u},
+    {0x23fff466u, 1167u},
+    {0x26bc3c42u, 423u | I18N_ENTRY_WEB},
     {0x30848604u, 101u},
-    {0x3d591fb1u, 643u},
+    {0x3d591fb1u, 688u},
     {0x42463213u, 13u},
-    {0x42adee1au, 568u},
-    {0x65da579du, 920u},
+    {0x42adee1au, 613u},
+    {0x65da579du, 965u},
     {0x698fa8ffu, 40u},
-    {0x6ea8dc1cu, 840u},
-    {0x6f16966eu, 587u},
-    {0x6fcb755au, 486u},
+    {0x6ea8dc1cu, 885u},
+    {0x6f16966eu, 632u},
+    {0x6fcb755au, 531u},
     {0x77c09d7eu, 314u | I18N_ENTRY_WEB},
     {0x821c1ac1u, 0u},
-    {0x8c14fe85u, 466u | I18N_ENTRY_WEB},
-    {0x8c40e68au, 851u},
-    {0x9122cf68u, 898u},
-    {0xa36dece2u, 499u},
-    {0xa7a176c3u, 981u},
-    {0xb6a572b3u, 875u},
-    {0xba3cd364u, 941u},
-    {0xbd2409e9u, 446u | I18N_ENTRY_WEB},
-    {0xbfdb2ef4u, 792u},
-    {0xc1ee1837u, 513u},
+    {0x8c14fe85u, 511u | I18N_ENTRY_WEB},
+    {0x8c40e68au, 896u},
+    {0x9122cf68u, 943u},
+    {0xa36dece2u, 544u},
+    {0xa7a176c3u, 1026u},
+    {0xb6a572b3u, 920u},
+    {0xba3cd364u, 986u},
+    {0xbd2409e9u, 491u | I18N_ENTRY_WEB},
+    {0xbfdb2ef4u, 837u},
+    {0xc1ee1837u, 558u},
     {0xc27b13d5u, 222u | I18N_ENTRY_WEB},
-    {0xcb1f5fb9u, 472u},
-    {0xd597e3b4u, 625u},
+    {0xcb1f5fb9u, 517u},
+    {0xd597e3b4u, 670u},
     {0xe8de203bu, 410u | I18N_ENTRY_WEB},
     {0xea147497u, 145u | I18N_ENTRY_WEB},
-    {0xec2b60e5u, 505u},
+    {0xec2b60e5u, 550u},
     {0xf02cf968u, 18u},
     {0xf4021eadu, 21u},
-    {0xf6b95f38u, 749u},
-    {0xf745658eu, 677u},
+    {0xf6b95f38u, 794u},
+    {0xf745658eu, 722u},
     {0xf9a410f7u, 355u | I18N_ENTRY_WEB},
     {0xfe071015u, 24u | I18N_ENTRY_WEB},
 };
@@ -62,6 +62,7 @@ static const char strings[] =
     "Stronger colours, every button outlined.\000"
     "The region's, or 14:30 or 2:30 pm whatever the region.\000"
     "Synchronised\000"
+    "Only the system master enrols a workstation.\000"
     "Enrol a workstation\342\200\246\000"
     "Enrol a workstation\000"
     "Enrol\000"
@@ -88,7 +89,6 @@ static const char strings[] =
     "Made with LVGL (MIT), the Inter typeface (SIL Open Font License 1.1), Lucide icons (ISC) and parts of Z-Wave JS (MIT).\000"
     "Saturday 19 September\000"
     "pm\000"
-    "Only the system master enrols a workstation.\000"
     ;
 
 const i18n_catalog_t i18n_catalog_en_GB = {

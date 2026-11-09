@@ -110,24 +110,32 @@ function harness({secure = false, stored = {}} = {}) {
   return h;
 }
 
-test('the page says hello with its CSRF token and the pictures it can decode', async () => {
+test('the page says hello with its CSRF token and asks for video', async () => {
   const h = harness();
   await h.start();
   assert.equal(h.socket.url, 'wss://panel.test/api/v1/screen');
   const [hello] = h.socket.messages('hello');
   assert.equal(hello.csrf, 'c'.repeat(64));
-  assert.equal(hello.codec, 'jpeg', 'no WebCodecs here: JPEG');
+  assert.equal(hello.codec, 'h264');
   assert.match(h.nodes['#control-state'].textContent, /You have control/);
 });
 
-test('the page asks for video where the browser decodes it, and still pictures when chosen', async () => {
-  const video = harness({secure: true});
+// Video only (Robert, 2026-11-09): no Still pictures choice, and an old one remembered is ignored.
+test('the page asks for video whatever this browser remembers; only a panel without video sends JPEG', async () => {
+  const video = harness({secure: true, stored: {'panel-manager.keypad-picture': 'jpeg'}});
   await video.start();
   assert.equal(video.socket.messages('hello')[0].codec, 'h264');
-  // The way out if the video ever looks wrong on a panel: "Still pictures (JPEG)" on the page.
-  const still = harness({secure: true, stored: {'panel-manager.keypad-picture': 'jpeg'}});
-  await still.start();
-  assert.equal(still.socket.messages('hello')[0].codec, 'jpeg');
+  const small = harness({secure: true});
+  small.context.state.capabilities.video = ['jpeg'];
+  await small.start();
+  assert.equal(small.socket.messages('hello')[0].codec, 'jpeg');
+});
+
+test('a browser that cannot play the video is told so, and no session opens', async () => {
+  const h = harness();
+  await h.context.bindKeypadPage();
+  assert.equal(h.sockets.length, 0);
+  assert.match(h.nodes['#frame-status'].textContent, /Not connected/);
 });
 
 // Found 2026-09-23: over the VPN a key sometimes registered twice. A quick click is now

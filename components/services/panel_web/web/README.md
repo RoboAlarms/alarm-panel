@@ -15,7 +15,7 @@ here as before: the build does the rest.
 | `panel-words.js` | the words (docs/features/37): `t()`, `tc()`, `tn()`, `ht()` (escaped for HTML), `hx()` (around values already HTML), `tx()` (marks a table of the page's own words), `nt()` (fixed text); this browser's language, else the panel's (`/i18n/panel`), loaded first from `/i18n/<locale>.json`, keyed by the hash `i18n_hash` uses. Every word a page shows goes through them: `tools/i18n.py check` reads these files and `panel.html` (`data-t`, `data-t-label`, `translate="no"`) |
 | `panel.js` | core: API calls, navigation (`#/page/arg`), form builder, review dialog, sign-in, network-trial and firmware-update flows |
 | `panel-pages.js` | every page, and the words for the panel's numbers (zone types, roles, troubles, time zones, the same words as the touchscreen). `PAGES` at the end is the navigation |
-| `panel-keypad.js` | the remote keypad: one WebSocket, the H.264 (WebCodecs) or JPEG picture on a canvas, taps / holds / drags, the computer's keyboard (tested by `components/services/panel_web/test/panel_frames.test.cjs`) |
+| `panel-keypad.js` | the remote keypad: one WebSocket, the H.264 video (WebCodecs) on a canvas (JPEG only from a panel without a video encoder), taps / holds / drags, the computer's keyboard (tested by `components/services/panel_web/test/panel_frames.test.cjs`) |
 | `mock-panel.cjs` | **PC only**: a pretend panel for trying UI changes (below) |
 | `mock-screen.cjs` | **PC only**: the mock's remote keypad WebSocket, streaming real H.264 (I_PCM) or PNG of a pretend screen |
 
@@ -120,9 +120,10 @@ Node to run, openable on a phone. A change to what the pages show starts there a
    to 64 characters, stored salted and hashed (PBKDF2-HMAC-SHA256) and never shown. After five
    wrong sign-ins, sign-in waits a minute (doubling to 15 minutes). A keypad code (anything
    under 12 characters) is refused with directions and does not count as a wrong sign-in (B010).
-4. **Remote keypad** shows the panel's screen, H.264 where the browser decodes it (WebCodecs,
-   on an HTTPS page), JPEG otherwise or when you choose **Still pictures (JPEG)** above the
-   screen (remembered in that browser), a new picture only when the screen changes. Being on the
+4. **Remote keypad** (in the main menu) shows the panel's screen as H.264 video (WebCodecs, on an
+   HTTPS page): video only, with no choice of still pictures; a browser that can't decode it is
+   told so. Only a panel without a video encoder sends JPEG. A new picture comes only when the
+   screen changes. Being on the
    page is control: click to press, hold for a long press (Panic), drag to scroll; type on the
    computer's keyboard when the panel shows a text box or a code pad. A touch at the panel's own
    screen wins for a few seconds. While you are there the panel shows a red banner; the person at

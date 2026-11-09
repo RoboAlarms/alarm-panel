@@ -1,7 +1,8 @@
 'use strict';
 // Remote keypad: the panel's own screen, live, and every press, key and typed letter sent to it
-// (docs/features/31). One WebSocket (/api/v1/screen) carries both ways. Pictures come as H.264,
-// decoded by the browser (WebCodecs), or as JPEG where it can't decode that; the panel sends one
+// (docs/features/31). One WebSocket (/api/v1/screen) carries both ways. Pictures come as H.264 video,
+// decoded by the browser (WebCodecs): video only, no choice of still pictures (Robert, 2026-11-09).
+// Only a panel without a video encoder (the small 480x320 boards) sends JPEG; the panel sends one
 // only when its screen changed, at most two ahead of what this page has drawn. Presses, keys and
 // text go back as small JSON messages. Being on the page is control: a touch at the panel wins
 // for a moment, and the person there can pause it with the red banner the panel shows.
@@ -55,37 +56,18 @@ async function h264Decodes() {
     return false;
   }
 }
-// Which pictures to ask for: video (H.264) where the browser decodes it, or JPEG when chosen on
-// the page - the way out if the video ever looks wrong on a panel. Remembered in this browser.
-const PICTURE_KEY = 'panel-manager.keypad-picture';
-function pictureChoice() {
-  try {
-    return localStorage.getItem(PICTURE_KEY) === 'jpeg' ? 'jpeg' : 'h264';
-  } catch {
-    return 'h264';
+// Video where the panel has it; a browser that can't decode it is told so (no still pictures instead).
+const hasVideo = caps => (caps.video || []).includes('h264');
+async function bindKeypadPage() {
+  if (hasVideo(state.capabilities) && !await h264Decodes()) {
+    const shell = $('#screen-shell');
+    if (shell) shell.replaceChildren(Object.assign(document.createElement('p'), {className: 'muted', textContent: t('This browser can’t play the panel’s video. Use a current Chrome, Edge, Safari or Firefox.')}));
+    const status = $('#frame-status');
+    if (status) status.textContent = t('Not connected');
+    const control = $('#control-state');
+    if (control) control.textContent = '';
+    return;
   }
-}
-function pictureChoiceHtml(caps) {
-  if (!(caps.video || []).includes('h264')) return '';
-  const chosen = pictureChoice();
-  return `<div class="filters" role="group" aria-label="${ht('Pictures')}">${[['h264', t('Video (H.264)')], ['jpeg', t('Still pictures (JPEG)')]]
-    .map(([v, l]) => `<button type="button" data-picture="${v}" aria-pressed="${v === chosen}">${esc(l)}</button>`).join('')}</div>`;
-}
-function bindKeypadPage() {
-  const buttons = $$('[data-picture]');
-  const show = chosen => buttons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.picture === chosen)));
-  buttons.forEach(b => b.onclick = () => {
-    try { localStorage.setItem(PICTURE_KEY, b.dataset.picture); } catch { /* not remembered (private window) */ }
-    show(b.dataset.picture);
-    startFrame();
-  });
-  h264Decodes().then(ok => {
-    const video = buttons.find(b => b.dataset.picture === 'h264');
-    if (ok || !video) return;
-    video.disabled = true;
-    video.title = t('This browser can’t decode H.264 on this page');
-    show('jpeg');
-  });
   startFrame();
 }
 
@@ -214,8 +196,7 @@ function openSession(canvas, caps) {
     ws.binaryType = 'arraybuffer';
     s.ws = ws;
     ws.onopen = async () => {
-      const wanted = pictureChoice() === 'h264' && (caps.video || []).includes('h264') && await h264Decodes() ? 'h264' : 'jpeg';
-      if (ws.readyState === 1) ws.send(JSON.stringify({t: 'hello', csrf, codec: wanted}));
+      if (ws.readyState === 1) ws.send(JSON.stringify({t: 'hello', csrf, codec: hasVideo(caps) ? 'h264' : 'jpeg'}));
     };
     ws.onmessage = event => {
       if (typeof event.data === 'string') {

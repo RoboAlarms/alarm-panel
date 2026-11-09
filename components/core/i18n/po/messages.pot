@@ -3264,19 +3264,16 @@ msgid "The alarm panel’s screen. Click to press, type to enter text."
 msgstr ""
 
 #: components/services/panel_web/web/panel-keypad.js
-msgid "Pictures"
+msgid "This browser can’t play the panel’s video. Use a current Chrome, Edge, Safari or Firefox."
 msgstr ""
 
+#. the Wi-Fi status title. At most 47 bytes
+#. A list row's value, at its right end (keep it short).
 #: components/services/panel_web/web/panel-keypad.js
-msgid "Video (H.264)"
-msgstr ""
-
-#: components/services/panel_web/web/panel-keypad.js
-msgid "Still pictures (JPEG)"
-msgstr ""
-
-#: components/services/panel_web/web/panel-keypad.js
-msgid "This browser can’t decode H.264 on this page"
+#: components/services/panel_web/web/panel-pages.js
+#: components/ui/alarm_ui/src/ui_net.c
+#: components/ui/alarm_ui/src/ui_settings.c
+msgid "Not connected"
 msgstr ""
 
 #: components/services/panel_web/web/panel-keypad.js
@@ -3301,15 +3298,6 @@ msgstr ""
 
 #: components/services/panel_web/web/panel-keypad.js
 msgid "Live · {0}"
-msgstr ""
-
-#. the Wi-Fi status title. At most 47 bytes
-#. A list row's value, at its right end (keep it short).
-#: components/services/panel_web/web/panel-keypad.js
-#: components/services/panel_web/web/panel-pages.js
-#: components/ui/alarm_ui/src/ui_net.c
-#: components/ui/alarm_ui/src/ui_settings.c
-msgid "Not connected"
 msgstr ""
 
 #: components/services/panel_web/web/panel-keypad.js
@@ -5653,7 +5641,7 @@ msgid "Connecting to the panel…"
 msgstr ""
 
 #: components/services/panel_web/web/panel-pages.js
-msgid "Click to press a button; hold for a long press (Panic) and drag to scroll. While you are here the panel shows a red banner saying so, and the person at the panel can pause you from it. Settings on the panel still ask for their code, and when you leave, the panel signs out of anything you opened. If the video ever looks wrong, choose still pictures: this browser remembers it."
+msgid "Click to press a button; hold for a long press (Panic) and drag to scroll. While you are here the panel shows a red banner saying so, and the person at the panel can pause you from it. Settings on the panel still ask for their code, and when you leave, the panel signs out of anything you opened."
 msgstr ""
 
 #. Text from the layout XML, no context.

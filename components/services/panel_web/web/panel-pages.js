@@ -1019,10 +1019,10 @@ function keypadPage() {
   return {
     html: pageHead(t('Remote keypad'), t('The panel’s own screen: press its buttons here, and type on your keyboard when a text box or code pad is showing.')) +
       `<section class="card screen-card"><div class="screen-toolbar"><div><strong>${ht('Live screen')}</strong><p id="frame-status">${ht('Connecting…')}</p></div>
-      <div class="screen-tools"><span class="muted" id="frame-rate"></span>${pictureChoiceHtml(caps)}</div></div>
+      <div class="screen-tools"><span class="muted" id="frame-rate"></span></div></div>
       <div class="screen-stage"><div class="panel-shell" id="screen-shell"></div></div>
       <div class="frame-details"><span>${caps.width} × ${caps.height}</span><span id="control-state">${ht('Connecting to the panel…')}</span></div></section>
-      <p class="gap muted"><small>${ht('Click to press a button; hold for a long press (Panic) and drag to scroll. While you are here the panel shows a red banner saying so, and the person at the panel can pause you from it. Settings on the panel still ask for their code, and when you leave, the panel signs out of anything you opened. If the video ever looks wrong, choose still pictures: this browser remembers it.')}</small></p>`,
+      <p class="gap muted"><small>${ht('Click to press a button; hold for a long press (Panic) and drag to scroll. While you are here the panel shows a red banner saying so, and the person at the panel can pause you from it. Settings on the panel still ask for their code, and when you leave, the panel signs out of anything you opened.')}</small></p>`,
     bind: bindKeypadPage,
   };
 }
